@@ -1,4 +1,3 @@
-#!venv/bin/python
 # -*- coding: UTF-8 -*-
 
 # ;===========================================================
@@ -22,19 +21,30 @@ from libs.libpsb import astra_version
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
-parser.add_argument('--testlist',
+parser.add_argument('-t', '--testlist',
                     action='store',
                     choices=['base'],  # 'mac', 'mic', 'acl']
                     required=False,
                     default='base',
                     help='testlist',
                     dest='TEST_LIST')
-parser.add_argument('--dbprep',
+
+parser.add_argument('-m', '--mode',
+                    action='store',
+                    choices=['default',
+                             'extended'],  # 'mac', 'mic', 'acl']
+                    required=False,
+                    default='default',
+                    help='Get default parameters (default) or parameters from config (extended)',
+                    dest='MODE')
+
+parser.add_argument('-db', '--dbprep',
                     action='store_true',
                     required=False,
                     help='prepare host, create cluster, init database ...',
                     dest='DB_PREPARE')
-parser.add_argument('--cleaner',
+
+parser.add_argument('-c', '--cleaner',
                     action='store_true',
                     required=False,
                     help='delete cluster, delete database ...',
@@ -60,334 +70,145 @@ if args.DB_PREPARE:
                        stderr=subprocess.DEVNULL)
 
 
-scale_factor = SCALE_FACTOR
-scale_factor_step = SCALE_FACTOR_STEP
-limite_scale_factor = LIMITE_SCALE_FACTOR
-
-transactions = TRANSACTIONS
-transactions_step = TRANSACTIONS_STEP
-limite_transactions = LIMITE_TRANSACTIONS
-
-threads = THREADS
-threads_step = THREADS_STEP
-limite_threads = LIMITE_THREADS
-
-clients = CLIENTS
-clients_step = CLIENTS_STEP
-limite_clients = LIMITE_CLIENTS
-
-max_scale_factor = 0
-max_transactions_count = 0
-max_threads_count = 0
-max_clients_count = 0
-
 if args.TEST_LIST == 'base':
-    '''
-        Проверка на втроенных сценариях.
-        Нахождение предельного коэффициента масштаба.
-    '''
-    while scale_factor < limite_scale_factor:
-        test = Test(scale=scale_factor)
-        result = test.run_test()
-        if result is False:
-            max_scale_factor = scale_factor
-            break
-        else:
-            max_scale_factor = scale_factor
-            scale_factor += scale_factor_step
-            print(result)
-    '''
-        Проверка на втроенных сценариях.
-        Нахождение предельного числа транзакций.
-    '''
-    while transactions < limite_transactions:
-        test = Test(trs=transactions)
-        result = test.run_test()
-        if result is False:
-            max_transactions_count = transactions
-            break
-        else:
-            max_transactions_count = transactions
-            transactions += transactions_step
-            print(result)
-    '''
-        Проверка на втроенных сценариях.
-        Нахождение предельного числа потоков. 
-    '''
-    while threads < limite_threads:
-        test = Test(ths=threads)
-        result = test.run_test()
-        if result is False:
-            max_threads_count = threads
-            break
-        else:
-            max_threads_count = threads
-            threads += threads_step
-            print(result)
-    '''
-        Проверка на втроенных сценариях.
-        Нахождение предельного числа клиентов. 
-    '''
-    while clients < limite_clients:
-        test = Test(cls=clients)
-        result = test.run_test()
-        if result is False:
-            max_clients_count = clients
-            break
-        else:
-            max_clients_count = clients
+    if args.MODE == 'default':
+
+        '''
+            Запуск на оптимальных настройках
+        '''
+        scale_factor = 500
+        transactions = 100000
+        threads = 200
+        clients = 100
+        clients_step = 100
+        step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
+        limite_clients = 10000
+
+        print('# INFO # --- scale factor {}'.format(str(scale_factor)))
+        print('# INFO # --- transactions count {}'.format(str(transactions)))
+        print('# INFO # --- threads count {}'.format(str(threads)))
+        print('# INFO # --- max clients count {}'.format(str(limite_clients)))
+
+        while clients <= limite_clients:
+            print('# INFO # --- clients count {}'.format(str(clients)))
+            test = Test(scale=scale_factor,
+                        trs=transactions,
+                        ths=threads,
+                        cls=clients)
+            print(test.run_test())
             clients += clients_step
-            print(result)
+            clients_step *= step_ratio_by_clients
 
-    print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
-    print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
-    print('# INFO # --- max threads count {}'.format(str(max_threads_count)))
-    print('# INFO # --- max clients count {}'.format(str(max_clients_count)))
+    if args.MODE == 'extended':
+        '''
+            Проверка на втроенных сценариях.
+            Нахождение предельного коэффициента масштаба.
+        '''
+        scale_factor = SCALE_FACTOR
+        scale_factor_step = SCALE_FACTOR_STEP
+        limite_scale_factor = LIMITE_SCALE_FACTOR
+        max_scale_factor = 0
 
-    '''
-        Запуск на максимально допустимых настройках
-    '''
-    scale_factor = SCALE_FACTOR
-    scale_factor_step = SCALE_FACTOR_STEP
-    transactions = TRANSACTIONS
-    transactions_step = TRANSACTIONS_STEP
-    threads = THREADS
-    threads_step = THREADS_STEP
-    clients = CLIENTS
-    clients_step = CLIENTS_STEP
+        while scale_factor < limite_scale_factor:
+            test = Test(scale=scale_factor)
+            result = test.run_test()
+            if result is False:
+                max_scale_factor = scale_factor
+                break
+            else:
+                max_scale_factor = scale_factor
+                scale_factor += scale_factor_step
+                print(result)
 
-    while (scale_factor <= max_scale_factor) and \
-            (transactions <= max_transactions_count) and \
-            (threads <= max_threads_count) and \
-            (clients <= max_clients_count):
-        test = Test(scale=scale_factor,
-                    trs=transactions,
-                    ths=threads,
-                    cls=clients)
-        print(test.run_test())
-        scale_factor += scale_factor_step
-        transactions += transactions_step
-        threads += threads_step
-        clients += clients_step
+        '''
+            Проверка на втроенных сценариях.
+            Нахождение предельного числа транзакций.
+        '''
+        transactions = TRANSACTIONS
+        transactions_step = TRANSACTIONS_STEP
+        limite_transactions = LIMITE_TRANSACTIONS
+        max_transactions_count = 0
 
-if args.TEST_LIST == 'mac':
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного коэффициента масштаба.
-    '''
-    while scale_factor < limite_scale_factor:
-        test = Test(scale=scale_factor)
-        result = test.run_test_custom(upgrade_script=MAC_SQL_UPGRADE,
-                                      test_script=MAC_SQL_TRANSACTION)
-        if result is False:
-            max_scale_factor = scale_factor
-            break
-        else:
+        while transactions < limite_transactions:
+            test = Test(trs=transactions)
+            result = test.run_test()
+            if result is False:
+                max_transactions_count = transactions
+                break
+            else:
+                max_transactions_count = transactions
+                transactions += transactions_step
+                print(result)
+        '''
+            Проверка на втроенных сценариях.
+            Нахождение предельного числа потоков. 
+        '''
+        threads = THREADS
+        threads_step = THREADS_STEP
+        limite_threads = LIMITE_THREADS
+        max_threads_count = 0
+
+        while threads < limite_threads:
+            test = Test(ths=threads)
+            result = test.run_test()
+            if result is False:
+                max_threads_count = threads
+                break
+            else:
+                max_threads_count = threads
+                threads += threads_step
+                print(result)
+        '''
+            Проверка на втроенных сценариях.
+            Нахождение предельного числа клиентов. 
+        '''
+        clients = CLIENTS
+        clients_step = CLIENTS_STEP
+        limite_clients = LIMITE_CLIENTS
+        max_clients_count = 0
+
+        while clients < limite_clients:
+            test = Test(cls=clients)
+            result = test.run_test()
+            if result is False:
+                max_clients_count = clients
+                break
+            else:
+                max_clients_count = clients
+                clients += clients_step
+                print(result)
+
+        print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
+        print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
+        print('# INFO # --- max threads count {}'.format(str(max_threads_count)))
+        print('# INFO # --- max clients count {}'.format(str(max_clients_count)))
+
+        '''
+            Запуск на максимально допустимых настройках
+        '''
+        scale_factor = SCALE_FACTOR
+        scale_factor_step = SCALE_FACTOR_STEP
+        transactions = TRANSACTIONS
+        transactions_step = TRANSACTIONS_STEP
+        threads = THREADS
+        threads_step = THREADS_STEP
+        clients = CLIENTS
+        clients_step = CLIENTS_STEP
+
+        while (scale_factor <= max_scale_factor) and \
+                (transactions <= max_transactions_count) and \
+                (threads <= max_threads_count) and \
+                (clients <= max_clients_count):
+            test = Test(scale=scale_factor,
+                        trs=transactions,
+                        ths=threads,
+                        cls=clients)
+            print(test.run_test())
             scale_factor += scale_factor_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа транзакций.
-    '''
-    while transactions < limite_transactions:
-        test = Test(trs=transactions)
-        result = test.run_test_custom(upgrade_script=MAC_SQL_UPGRADE,
-                                      test_script=MAC_SQL_TRANSACTION)
-        if result is False:
-            max_transactions_count = transactions
-            break
-        else:
             transactions += transactions_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа потоков. 
-    '''
-    while threads < limite_threads:
-        test = Test(ths=threads)
-        result = test.run_test_custom(upgrade_script=MAC_SQL_UPGRADE,
-                                      test_script=MAC_SQL_TRANSACTION)
-        if result is False:
-            max_threads_count = threads
-            break
-        else:
             threads += threads_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа клиентов. 
-    '''
-    while clients < limite_clients:
-        test = Test(cls=clients)
-        result = test.run_test_custom(upgrade_script=MAC_SQL_UPGRADE,
-                                      test_script=MAC_SQL_TRANSACTION)
-        if result is False:
-            max_clients_count = clients
-            break
-        else:
             clients += clients_step
-            print(result)
 
-    print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
-    print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
-    print('# INFO # --- max threads count {}'.format(str(max_threads_count)))
-    print('# INFO # --- max clients count {}'.format(str(max_clients_count)))
-
-    '''
-        Запуск на максимально допустимых настройках
-    '''
-    test = Test(scale=max_scale_factor,
-                trs=max_transactions_count,
-                ths=max_threads_count,
-                cls=max_clients_count)
-    print(test.run_test_custom(upgrade_script=MAC_SQL_UPGRADE,
-                               test_script=MAC_SQL_TRANSACTION))
-
-if args.TEST_LIST == 'mic':
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного коэффициента масштаба.
-    '''
-    while scale_factor < limite_scale_factor:
-        test = Test(scale=scale_factor)
-        result = test.run_test_custom(upgrade_script=MIC_SQL_UPGRADE,
-                                      test_script=MIC_SQL_TRANSACTION)
-        if result is False:
-            max_scale_factor = scale_factor
-            break
-        else:
-            scale_factor += scale_factor_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа транзакций.
-    '''
-    while transactions < limite_transactions:
-        test = Test(trs=transactions)
-        result = test.run_test_custom(upgrade_script=MIC_SQL_UPGRADE,
-                                      test_script=MIC_SQL_TRANSACTION)
-        if result is False:
-            max_transactions_count = transactions
-            break
-        else:
-            transactions += transactions_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа потоков. 
-    '''
-    while threads < limite_threads:
-        test = Test(ths=threads)
-        result = test.run_test_custom(upgrade_script=MIC_SQL_UPGRADE,
-                                      test_script=MIC_SQL_TRANSACTION)
-        if result is False:
-            max_threads_count = threads
-            break
-        else:
-            threads += threads_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа клиентов. 
-    '''
-    while clients < limite_clients:
-        test = Test(cls=clients)
-        result = test.run_test_custom(upgrade_script=MIC_SQL_UPGRADE,
-                                      test_script=MIC_SQL_TRANSACTION)
-        if result is False:
-            max_clients_count = clients
-            break
-        else:
-            clients += clients_step
-            print(result)
-
-    print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
-    print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
-    print('# INFO # --- max threads count {}'.format(str(max_threads_count)))
-    print('# INFO # --- max clients count {}'.format(str(max_clients_count)))
-
-    '''
-        Запуск на максимально допустимых настройках
-    '''
-    test = Test(scale=max_scale_factor,
-                trs=max_transactions_count,
-                ths=max_threads_count,
-                cls=max_clients_count)
-    print(test.run_test_custom(upgrade_script=MIC_SQL_UPGRADE,
-                               test_script=MIC_SQL_TRANSACTION))
-
-if args.TEST_LIST == 'acl':
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного коэффициента масштаба.
-    '''
-    while scale_factor < limite_scale_factor:
-        test = Test(scale=scale_factor)
-        result = test.run_test_custom(upgrade_script=ACL_SQL_UPGRADE,
-                                      test_script=ACL_SQL_TRANSACTION)
-        if result is False:
-            max_scale_factor = scale_factor
-            break
-        else:
-            scale_factor += scale_factor_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа транзакций.
-    '''
-    while transactions < limite_transactions:
-        test = Test(trs=transactions)
-        result = test.run_test_custom(upgrade_script=ACL_SQL_UPGRADE,
-                                      test_script=ACL_SQL_TRANSACTION)
-        if result is False:
-            max_transactions_count = transactions
-            break
-        else:
-            transactions += transactions_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа потоков. 
-    '''
-    while threads < limite_threads:
-        test = Test(ths=threads)
-        result = test.run_test_custom(upgrade_script=ACL_SQL_UPGRADE,
-                                      test_script=ACL_SQL_TRANSACTION)
-        if result is False:
-            max_threads_count = threads
-            break
-        else:
-            threads += threads_step
-            print(result)
-    '''
-        Проверка на внешних сценариях.
-        Нахождение предельного числа клиентов. 
-    '''
-    while clients < limite_clients:
-        test = Test(cls=clients)
-        result = test.run_test_custom(upgrade_script=ACL_SQL_UPGRADE,
-                                      test_script=ACL_SQL_TRANSACTION)
-        if result is False:
-            max_clients_count = clients
-            break
-        else:
-            clients += clients_step
-            print(result)
-
-    print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
-    print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
-    print('# INFO # --- max threads count {}'.format(str(max_threads_count)))
-    print('# INFO # --- max clients count {}'.format(str(max_clients_count)))
-
-    '''
-        Запуск на максимально допустимых настройках
-    '''
-    test = Test(scale=max_scale_factor,
-                trs=max_transactions_count,
-                ths=max_threads_count,
-                cls=max_clients_count)
-    print(test.run_test_custom(upgrade_script=ACL_SQL_UPGRADE,
-                               test_script=ACL_SQL_TRANSACTION))
 
 if args.CLEANER:
     '''

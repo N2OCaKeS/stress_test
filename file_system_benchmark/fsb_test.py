@@ -1,0 +1,239 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
+import logging
+import argparse
+
+from time import time
+from libs.libtests import TestSet
+from fsb_conf import LOG_FILENAME, \
+        START_BORDER_FOR_DATA, STEP_FOR_BORDER, END_BORDER_FOR_DATA, TIMEOUT, \
+        TH_START_BORDER_FOR_DATA, TH_STEP_FOR_BORDER, TH_END_BORDER_FOR_DATA
+
+DESCRIPTION = ""
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('--test-set',
+                    action='store',
+                    choices=['base_load',
+                             'timeout',
+                             'multithreaded',
+                             'big_files',
+                             'fs_mark_count',
+                             'fs_mark_size'],
+                    required=True,
+                    dest='TS')
+
+parser.add_argument('--data-from-config',
+                    action='store_false',
+                    required=False,
+                    help='get data from config',
+                    dest='CONFIG')
+args = parser.parse_args()
+
+logging.basicConfig(filename=LOG_FILENAME,
+                    filemode="a+",
+                    level=logging.INFO,
+                    format='%(levelname)s: t:%(created)f th:%(thread)d ps:%(process)d <%(name)s> | %(message)s')
+log = logging.getLogger()
+
+
+if args.TS == 'base_load':
+    '''
+        Прогон 1.
+        Средняя загрузка разными файлами на r/w.
+        Потоков:                                       1
+        Количество тестовых структур (разных файлов):  count
+        Нижняя граница загрузки:                       40%
+        Верхняя граница загрузки:                      70%
+        Шаг загрузки:                                  5%
+    '''
+    start_time = time()
+
+    # 1000 - 10000 c шагов в 1000 файлов
+    for count in range(1000, 10000, 1000):
+        run_test = TestSet(file_count=count) # количество файлов
+        try:
+            run_test.test_1_base_load()
+        except Exception as exeption:
+            log.info(exeption)
+        finally:
+            log.info("--- {} sec ---".format(round(time() - start_time)))
+            print("# INFO # --- {} files {} sec ---".format(count, round(time() - start_time)))
+    log.info("--- 1000-10000 {} sec ---".format(round(time() - start_time)))
+    print("# INFO # --- 1000-10000 {} sec ---".format(round(time() - start_time)))
+
+    # 10000 - 100000 c шагов в 10000 файлов
+    for count in range(10000, 100000, 10000):
+        run_test = TestSet(file_count=count) # количество файлов
+        try:
+            run_test.test_1_base_load()
+        except Exception as exeption:
+            log.info(exeption)
+        finally:
+            log.info("--- {} sec ---".format(round(time() - start_time)))
+            print("# INFO # --- {} files {} sec ---".format(count, round(time() - start_time)))
+    log.info("--- 10000-100000 {} sec ---".format(round(time() - start_time)))
+    print("# INFO # --- 10000-100000 {} sec ---".format(round(time() - start_time)))
+
+    # 100000 - 1000000 c шагов в 100000 файлов
+    for count in range(100000, 1000000, 100000):
+        run_test = TestSet(file_count=count) # количество файлов
+        try:
+            run_test.test_1_base_load()
+        except Exception as exeption:
+            log.info(exeption)
+        finally:
+            log.info("--- {} sec ---".format(round(time() - start_time)))
+            print("# INFO # --- {} files {} sec ---".format(count, round(time() - start_time)))
+    log.info("--- 100000-1000000 {} sec ---".format(round(time() - start_time)))
+    print("# INFO # --- 100000-1000000 {} sec ---".format(round(time() - start_time)))
+
+if args.TS == 'timeout':
+    '''
+        Прогон 2.
+        Средняя загрузка разными файлами на r/w на протяжении времени.
+        Потоков:                                       1
+        Количество тестовых структур (разных файлов):  5000
+        Нижняя граница загрузки:                       40%
+        Верхняя граница загрузки:                      70%
+        Шаг загрузки:                                  5%
+        Время загрузки                                 7200 (2 часа)
+    '''
+    start_time = time()
+    if args.CONFIG:
+        run_test = TestSet(test_timeout=TIMEOUT)
+    else:
+        run_test = TestSet(test_timeout=7200)
+
+    try:
+        run_test.test_2_timeout()
+    except Exception as exeption:
+        log.info(exeption)
+    finally:
+        log.info("--- {}/7200 sec ---".format(round(time() - start_time)))
+        print("--- {}/7200 sec ---".format(round(time() - start_time)))
+
+if args.TS == 'multithreaded':
+    '''    
+        Прогон 3.
+        Средняя загрузка разными файлами на r/w на протяжении времени.
+        Потоков:                                       3,4,5
+        Количество тестовых структур (разных файлов):  5000
+        Нижняя граница загрузки:                       10%
+        Верхняя граница загрузки:                      20%
+        Шаг загрузки:                                  2%
+    '''
+    if args.CONFIG:
+        run_test = TestSet(start_burder=TH_START_BORDER_FOR_DATA,
+                           end_burder=TH_END_BORDER_FOR_DATA,
+                           step=TH_STEP_FOR_BORDER)
+    else:
+        run_test = TestSet(start_burder=10,  # загрузка свободного места в процентах на один поток
+                           end_burder=20,
+                           step=2)
+    start_time = time()
+    # 3 потока. 3 типа файлов
+    try:
+        run_test.test_3_threads()
+    except Exception as exeption:
+        log.info(exeption)
+    finally:
+        log.info("--- {} sec ---".format(round(time() - start_time)))
+        print("# INFO # --- {} sec ---".format(round(time() - start_time)))
+
+    # 4 потока. 4 типа файлов
+    try:
+        run_test.test_4_threads()
+    except Exception as exeption:
+        log.info(exeption)
+    finally:
+        log.info("--- {} sec ---".format(round(time() - start_time)))
+        print("# INFO # --- {} sec ---".format(round(time() - start_time)))
+
+    # 5 потоков. 5 типов файлов
+    try:
+        run_test.test_5_threads()
+    except Exception as exeption:
+        log.info(exeption)
+    finally:
+        log.info("--- {} sec ---".format(round(time() - start_time)))
+        print("# INFO # --- {} sec ---".format(round(time() - start_time)))
+
+if args.TS == 'big_files':
+    '''    
+        Прогон 4.
+        Средняя загрузка разными файлами на r/w на протяжении времени.
+        Потоков:                                       1
+        Количество тестовых структур (разных файлов):  2
+        Нижняя граница загрузки:                       10%
+        Верхняя граница загрузки:                      40%
+        Шаг загрузки:                                  5%
+    '''
+    start_time = time()
+    if args.CONFIG:
+        run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
+                           end_burder=END_BORDER_FOR_DATA,
+                           step=STEP_FOR_BORDER)
+    else:
+        run_test = TestSet(start_burder=10,  # загрузка свободного места в процентах
+                           end_burder=40,
+                           step=5)
+    try:
+        run_test.test_6_big_files()
+    except Exception as exeption:
+        log.info(exeption)
+    finally:
+        log.info("--- {} sec ---".format(round(time() - start_time)))
+        print("# INFO # --- {} sec ---".format(round(time() - start_time)))
+
+if args.TS == 'fs_mark_count':
+    '''    
+        Прогон 5.
+        fs_mark
+    '''
+    # Изменение количества файлов
+    start_time = time()
+    if args.CONFIG:
+        run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
+                           end_burder=END_BORDER_FOR_DATA,
+                           step=STEP_FOR_BORDER)
+    else:
+        run_test = TestSet(start_burder=10,  # количество файлов
+                           end_burder=40,
+                           step=5)
+
+    try:
+        run_test.test_7_fs_mark33_count()
+    except Exception as exeption:
+        log.info(exeption)
+    finally:
+        log.info("--- {} sec ---".format(round(time() - start_time)))
+        print("# INFO # --- {} sec ---".format(round(time() - start_time)))
+
+
+if args.TS == 'fs_mark_size':
+    '''    
+        Прогон 6.
+        fs_mark
+    '''
+    # Изменение размера файлов
+    start_time = time()
+    if args.CONFIG:
+        run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
+                           end_burder=END_BORDER_FOR_DATA,
+                           step=STEP_FOR_BORDER)
+    else:
+        run_test = TestSet(start_burder=1024,  # размер в байтах
+                           end_burder=10240,
+                           step=1024)
+    try:
+        run_test.test_8_fs_mark33_size()
+    except Exception as exeption:
+        log.info(exeption)
+    finally:
+        log.info("--- {} sec ---".format(round(time() - start_time)))
+        print("# INFO # --- {} sec ---".format(round(time() - start_time)))

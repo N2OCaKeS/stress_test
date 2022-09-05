@@ -1,5 +1,8 @@
-SCRIPT_DIR = '/media/sf_git/skts-test/testlink/postgresql_benchmark'
-LOG_FILENAME = '/media/sf_git/skts-test/testlink/postgresql_benchmark/psb_report.txt'
+SCRIPT_DIR = '/media/sf_git/stress_test/postgresql_benchmark'
+LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
+REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
+REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
+
 '''
    Названия скриптов из папки sql.
    *upgrade - скрипт донастройки после pgbech -i

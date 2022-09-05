@@ -12,7 +12,7 @@ import logging
 
 from psb_conf import LOG_FILENAME, DATABASE_NAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
-    TABLESPACE_DEFAULT
+    TABLESPACE_DEFAULT, REPORT_FILENAME
 from libs.libpsb import init_test_tables, upgrade_test_table, pgbench, pgbench_custom
 
 
@@ -78,7 +78,7 @@ class Test:
                 result += '--- \033[91mfail\033[0m'
 
             # in file
-            with open('../report/psb_report.txt', 'a+') as report_file:
+            with open(REPORT_FILENAME, 'a+') as report_file:
                 report_file.write(' {} {} {}\n'.format(latency_average,
                                                        tps_including_connections_establishing,
                                                        tps_excluding_connections_establishing))

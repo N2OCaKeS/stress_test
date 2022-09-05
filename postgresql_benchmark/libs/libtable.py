@@ -2,13 +2,14 @@ import pandas
 import mpld3
 from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
+from psb_conf import REPORT_FILENAME, REPORT_PATH
 from pretty_html_table import build_table
 
 
 class Report:
 
     def __init__(self):
-        with open('../report/psb_report.txt', 'r') as report_file:
+        with open(REPORT_FILENAME, 'r') as report_file:
             raw_data = report_file.read().split()
         self.raw_table = pandas.DataFrame({'clients': [int(client_number) for client_number in raw_data[0::4]],
                                            'la': [float(la) for la in raw_data[1::4]],
@@ -17,7 +18,7 @@ class Report:
 
     @staticmethod
     def data_from_file():
-        with open('../report/psb_report.txt', 'r') as report_file:
+        with open(REPORT_FILENAME, 'r') as report_file:
             raw_data = report_file.read().split()
         return ([int(client_number) for client_number in raw_data[0::4]],  # clients
                 [float(la) for la in raw_data[1::4]],  # latency average data
@@ -26,7 +27,7 @@ class Report:
 
     def create_beauty_table(self):
         beauty_table = build_table(self.raw_table, 'blue_light')
-        with open('../report/psb_report.html', 'w') as beauty_html_table:
+        with open(REPORT_FILENAME, 'w') as beauty_html_table:
             beauty_html_table.write(beauty_table)
 
     def create_psb_plot_cl_la(self):
@@ -41,7 +42,7 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('Latency averege')
         plt.grid(True)
-        plt.savefig('../report/psb_plot_cl_la')
+        plt.savefig('{}/psb_plot_cl_la'.format(REPORT_PATH))
 
     def create_psb_plot_cl_tps1(self):
         '''
@@ -56,7 +57,7 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('../report/psb_plot_cl_tps1')
+        plt.savefig('{}/psb_plot_cl_tps1'.format(REPORT_PATH))
 
     def create_psb_plot_cl_tps2(self):
         '''
@@ -71,7 +72,7 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('../report/psb_plot_cl_tps2')
+        plt.savefig('{}/psb_plot_cl_tps2'.format(REPORT_PATH))
 
     def create_psb_plot_cl_tpsall(self):
         '''
@@ -86,7 +87,7 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('../report/psb_plot_cl_tpsall')
+        plt.savefig('{}/psb_plot_cl_tpsall'.format(REPORT_PATH))
 
     @staticmethod
     def merge_plots_and_tables():

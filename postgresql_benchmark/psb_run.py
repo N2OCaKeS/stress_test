@@ -8,7 +8,7 @@
 import argparse
 import subprocess
 
-from psb_conf import SCRIPT_DIR, LOG_FILENAME, \
+from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
     MIC_SQL_UPGRADE, MIC_SQL_TRANSACTION, \
     ACL_SQL_UPGRADE, ACL_SQL_TRANSACTION, \
@@ -53,9 +53,9 @@ parser.add_argument('-c', '--cleaner',
 
 args = parser.parse_args()
 
-subprocess.run('rm -rf {file}'.format(file=LOG_FILENAME),
-               shell=True,
-               stderr=subprocess.DEVNULL)
+report = open(LOG_FILENAME, 'w')
+report.close()
+
 version = astra_version()
 if args.DB_PREPARE:
     '''
@@ -96,7 +96,7 @@ if args.TEST_LIST == 'base':
         limite_clients = 100
 
         # clean conf
-        report = open('report/psb_report.txt', 'w')
+        report = open(REPORT_FILENAME, 'w')
         report.close()
 
         print('# INFO # --- scale factor {}'.format(str(scale_factor)))
@@ -118,7 +118,6 @@ if args.TEST_LIST == 'base':
 
         report = Report()
         report.create_full_report()
-
 
     if args.MODE == 'extended':
         '''

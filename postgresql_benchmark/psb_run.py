@@ -32,7 +32,7 @@ parser.add_argument('-t', '--testlist',
 parser.add_argument('-m', '--mode',
                     action='store',
                     choices=['default',
-                             'extended'],  # 'mac', 'mic', 'acl']
+                             'extended'],
                     required=False,
                     default='default',
                     help='Get default parameters (default) or parameters from config (extended)',
@@ -61,11 +61,13 @@ if args.DB_PREPARE:
         Настроить машину, инициализировать тестовую БД
     '''
     if version[0] == '1.7' or version[0] == '4.7':
-        subprocess.run('sudo bash {dir}/psb_db_prep_11.sh'.format(dir=SCRIPT_DIR),
+        subprocess.run('sudo bash {dir}/psb_db_prep_11.sh {init_file}'.format(dir=SCRIPT_DIR,
+                                                                              init_file='psb_init.sql'),
                        shell=True,
                        stderr=subprocess.DEVNULL)
     elif version[0] == '1.6' or version[0] == '8.1' or version[0] == '2.12':
-        subprocess.run('sudo bash {dir}/psb_db_prep_96.sh'.format(dir=SCRIPT_DIR),
+        subprocess.run('sudo bash {dir}/psb_db_prep_96.sh {init_file}'.format(dir=SCRIPT_DIR,
+                                                                              init_file='psb_init.sql'),
                        shell=True,
                        stderr=subprocess.DEVNULL)
 

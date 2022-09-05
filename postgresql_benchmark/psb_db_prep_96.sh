@@ -84,9 +84,7 @@ setfacl -R -m u:postgres:r /etc/parsec/macdb/*
 setfacl -R -m u:postgres:r /etc/parsec/capdb/*
 
 # Создать базу
-sql_script=psb_init.sql
-#su -c "psql -p 5432 -f $sql_script" postgres
-
+sql_script=$1
 for port in $(pg_lsclusters -h | gawk '{print $3}');
 do
   cp $MAIN_DIR/sql/$sql_script /tmp/$sql_script

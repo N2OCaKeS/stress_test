@@ -82,6 +82,23 @@ chown postgres.postgres /etc/postgresql/$PG_VERSION/$PG_SEFOREIGN_CLUSTER/*
 pg_createcluster $PG_VERSION $PG_FILES_CLUSTER -D /$PG_FILES_CLUSTER --port $PG_FILES_PORT
 cp $hba_tst /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/pg_hba.conf
 sed -i 's/ac_enable_maclabels_on_files.*/ac_enable_maclabels_on_files = true/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*max_connections.*/max_connections = 200/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*shared_buffers.*/shared_buffers = 8GB/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*effective_cache_size.*/effective_cache_size = 24GB/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*maintenance_work_mem.*/maintenance_work_mem = 2GB/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*checkpoint_completion_target.*/checkpoint_completion_target = 0.9/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*wal_buffers.*/wal_buffers = 16MB/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*default_statistics_target.*/default_statistics_target = 100/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*random_page_cost.*/random_page_cost = 1.1/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*effective_io_concurrency.*/effective_io_concurrency = 200/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*work_mem.*/work_mem = 10485kB/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*min_wal_size.*/min_wal_size = 1GB/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*max_wal_size.*/max_wal_size = 4GB/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*max_worker_processes.*/max_worker_processes = 8/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 8/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER/postgresql.conf
+
 
 # Перезапуск кластеров
 pg_ctlcluster $PG_VERSION $PG_SETEST_CLUSTER restart
@@ -97,9 +114,7 @@ setfacl -R -m u:postgres:r /etc/parsec/macdb/*
 setfacl -R -m u:postgres:r /etc/parsec/capdb/*
 
 # Создать базу
-sql_script=psb_init.sql
-#su -c "psql -p 5432 -f $sql_script" postgres
-
+sql_script=$1
 for port in $(pg_lsclusters -h | gawk '{print $3}');
 do
   cp $MAIN_DIR/sql/$sql_script /tmp/$sql_script

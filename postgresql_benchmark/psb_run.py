@@ -18,6 +18,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS
 from libs.libpsqbtests import Test
 from libs.libpsb import astra_version
+from libs.libtable import Report
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -78,13 +79,25 @@ if args.TEST_LIST == 'base':
         '''
             Запуск на оптимальных настройках
         '''
-        scale_factor = 500
-        transactions = 100000
-        threads = 200
-        clients = 100
-        clients_step = 100
+        # scale_factor = 500
+        # transactions = 100000
+        # threads = 200
+        # clients = 100
+        # clients_step = 100
+        # step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
+        # limite_clients = 10000
+
+        scale_factor = 1
+        transactions = 100
+        threads = 100
+        clients = 1
+        clients_step = 1
         step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
-        limite_clients = 10000
+        limite_clients = 100
+
+        # clean conf
+        report = open('report/psb_report.txt', 'w')
+        report.close()
 
         print('# INFO # --- scale factor {}'.format(str(scale_factor)))
         print('# INFO # --- transactions count {}'.format(str(transactions)))
@@ -93,6 +106,8 @@ if args.TEST_LIST == 'base':
 
         while clients <= limite_clients:
             print('# INFO # --- clients count {}'.format(str(clients)))
+            with open('report/psb_report.txt', 'a+') as report_file:
+                report_file.write(str(clients))
             test = Test(scale=scale_factor,
                         trs=transactions,
                         ths=threads,
@@ -100,6 +115,10 @@ if args.TEST_LIST == 'base':
             print(test.run_test())
             clients += clients_step
             clients_step *= step_ratio_by_clients
+
+        report = Report()
+        report.create_full_report()
+
 
     if args.MODE == 'extended':
         '''

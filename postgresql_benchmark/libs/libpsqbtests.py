@@ -65,13 +65,23 @@ class Test:
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])
             self.logger.error(err)
 
-            result += '{la} {tps1}|{tps2} '.format(la=re.search(r'(\d+\.\d+ ms)', out).group(1),
-                                                   tps1=re.findall(r'tps\s=\s(\d+\.\d+)', out)[0],
-                                                   tps2=re.findall(r'tps\s=\s(\d+\.\d+)', out)[1])
+            latency_average = re.search(r'(\d+\.\d+)', out).group(1)
+            tps_including_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[0]
+            tps_excluding_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[1]
+
+            result += '{la} {tps1}|{tps2} '.format(la=latency_average+' ms',
+                                                   tps1=tps_including_connections_establishing,
+                                                   tps2=tps_excluding_connections_establishing)
             if re.search(r'(\d+)/', out).group(1) == re.search(r'/(\d+)', out).group(1):
                 result += '--- \033[92mpass\033[0m'
             else:
                 result += '--- \033[91mfail\033[0m'
+
+            # in file
+            with open('../report/psb_report.txt', 'a+') as report_file:
+                report_file.write(' {} {} {}\n'.format(latency_average,
+                                                       tps_including_connections_establishing,
+                                                       tps_excluding_connections_establishing))
 
         except Exception as exception:
             self.logger.error('Тестирование завершилось исключением:\n')

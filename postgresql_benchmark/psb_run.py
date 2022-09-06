@@ -93,7 +93,7 @@ if args.TEST_LIST == 'base':
         clients = 1
         clients_step = 1
         step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
-        limite_clients = 100
+        limite_clients = 20
 
         # clean conf
         report = open(REPORT_FILENAME, 'w')
@@ -106,7 +106,7 @@ if args.TEST_LIST == 'base':
 
         while clients <= limite_clients:
             print('# INFO # --- clients count {}'.format(str(clients)))
-            with open('report/psb_report.txt', 'a+') as report_file:
+            with open(REPORT_FILENAME, 'a+') as report_file:
                 report_file.write(str(clients))
             test = Test(scale=scale_factor,
                         trs=transactions,
@@ -116,14 +116,20 @@ if args.TEST_LIST == 'base':
             clients += clients_step
             clients_step *= step_ratio_by_clients
 
+        # create report
         report = Report()
-        report.create_full_report()
+        report.create_beauty_table()
+        report.create_psb_cl_la_graph()
+        report.create_psb_cl_tpsall_graph()
 
     if args.MODE == 'extended':
         '''
             Проверка на втроенных сценариях.
             Нахождение предельного коэффициента масштаба.
         '''
+        report = open(REPORT_FILENAME, 'w')
+        report.close()
+
         scale_factor = SCALE_FACTOR
         scale_factor_step = SCALE_FACTOR_STEP
         limite_scale_factor = LIMITE_SCALE_FACTOR
@@ -140,10 +146,19 @@ if args.TEST_LIST == 'base':
                 scale_factor += scale_factor_step
                 print(result)
 
+        # create report
+        report = Report()
+        report.create_beauty_table()
+        report.create_psb_sc_la_graph()
+        report.create_psb_sc_tpsall_graph()
+
         '''
             Проверка на втроенных сценариях.
             Нахождение предельного числа транзакций.
         '''
+        report = open(REPORT_FILENAME, 'w')
+        report.close()
+
         transactions = TRANSACTIONS
         transactions_step = TRANSACTIONS_STEP
         limite_transactions = LIMITE_TRANSACTIONS
@@ -159,10 +174,20 @@ if args.TEST_LIST == 'base':
                 max_transactions_count = transactions
                 transactions += transactions_step
                 print(result)
+
+        # create report
+        report = Report()
+        report.create_beauty_table()
+        report.create_psb_tr_la_graph()
+        report.create_psb_tr_tpsall_graph()
+
         '''
             Проверка на втроенных сценариях.
             Нахождение предельного числа потоков. 
         '''
+        report = open(REPORT_FILENAME, 'w')
+        report.close()
+
         threads = THREADS
         threads_step = THREADS_STEP
         limite_threads = LIMITE_THREADS
@@ -178,10 +203,19 @@ if args.TEST_LIST == 'base':
                 max_threads_count = threads
                 threads += threads_step
                 print(result)
+
+        # create report
+        report = Report()
+        report.create_beauty_table()
+        report.create_psb_th_la_graph()
+        report.create_psb_th_tpsall_graph()
         '''
             Проверка на втроенных сценариях.
             Нахождение предельного числа клиентов. 
         '''
+        report = open(REPORT_FILENAME, 'w')
+        report.close()
+
         clients = CLIENTS
         clients_step = CLIENTS_STEP
         limite_clients = LIMITE_CLIENTS
@@ -206,6 +240,9 @@ if args.TEST_LIST == 'base':
         '''
             Запуск на максимально допустимых настройках
         '''
+        report = open(REPORT_FILENAME, 'w')
+        report.close()
+
         scale_factor = SCALE_FACTOR
         scale_factor_step = SCALE_FACTOR_STEP
         transactions = TRANSACTIONS

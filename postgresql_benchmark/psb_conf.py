@@ -3,6 +3,7 @@ LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
 
+
 '''
    Названия скриптов из папки sql.
    *upgrade - скрипт донастройки после pgbech -i

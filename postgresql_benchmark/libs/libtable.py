@@ -42,7 +42,7 @@ class Report:
     '''
         Графики для теста: 'Нахождение предельного числа клиентов' 
     '''
-    def create_psb_cl_la_graph(self):
+    def create_psb_cl_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['la']]
         plt.figure()
@@ -51,9 +51,9 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.savefig('{}/psb_cl_la_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_cl_la_graph'.format(path))
 
-    def create_psb_cl_tps1_graph(self):
+    def create_psb_cl_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps1']]
         plt.figure()
@@ -62,9 +62,9 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_cl_tps1_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_cl_tps1_graph'.format(path))
 
-    def create_psb_cl_tps2_graph(self):
+    def create_psb_cl_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps2']]
         plt.figure()
@@ -73,9 +73,9 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_cl_tps2_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_cl_tps2_graph'.format(path))
 
-    def create_psb_cl_tpsall_graph(self):
+    def create_psb_cl_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
         plt.figure()
@@ -85,12 +85,12 @@ class Report:
         plt.xlabel('Clients')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_cl_tpsall_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_cl_tpsall_graph'.format(path))
 
     '''
         Графики для теста: 'Нахождение предельного коэффициента масштаба' 
     '''
-    def create_psb_sc_la_graph(self):
+    def create_psb_sc_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['la']]
         plt.figure()
@@ -99,9 +99,9 @@ class Report:
         plt.xlabel('Scale')
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.savefig('{}/psb_sc_la_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_sc_la_graph'.format(path))
 
-    def create_psb_sc_tps1_graph(self):
+    def create_psb_sc_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps1']]
         plt.figure()
@@ -110,9 +110,9 @@ class Report:
         plt.xlabel('Scale')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_sc_tps1_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_sc_tps1_graph'.format(path))
 
-    def create_psb_sc_tps2_graph(self):
+    def create_psb_sc_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps2']]
         plt.figure()
@@ -121,9 +121,9 @@ class Report:
         plt.xlabel('Scale')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_sc_tps2_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_sc_tps2_graph'.format(path))
 
-    def create_psb_sc_tpsall_graph(self):
+    def create_psb_sc_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
         plt.figure()
@@ -133,12 +133,12 @@ class Report:
         plt.xlabel('Scale')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_sc_tpsall_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_sc_tpsall_graph'.format(path))
 
     '''
         Графики для теста: 'Нахождение предельного числа транзакций' 
     '''
-    def create_psb_tr_la_graph(self):
+    def create_psb_tr_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['la']]
         plt.figure()
@@ -147,9 +147,9 @@ class Report:
         plt.xlabel('Transactions')
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.savefig('{}/psb_tr_la_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_tr_la_graph'.format(path))
 
-    def create_psb_tr_tps1_graph(self):
+    def create_psb_tr_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps1']]
         plt.figure()
@@ -158,9 +158,9 @@ class Report:
         plt.xlabel('Transactions')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_tr_tps1_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_tr_tps1_graph'.format(path))
 
-    def create_psb_tr_tps2_graph(self):
+    def create_psb_tr_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps2']]
         plt.figure()
@@ -169,9 +169,9 @@ class Report:
         plt.xlabel('Transactions')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_tr_tps2_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_tr_tps2_graph'.format(path))
 
-    def create_psb_tr_tpsall_graph(self):
+    def create_psb_tr_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
         plt.figure()
@@ -181,12 +181,12 @@ class Report:
         plt.xlabel('Transactions')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_tr_tpsall_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_tr_tpsall_graph'.format(path))
 
     '''
         Графики для теста: 'Нахождение предельного числа потоков' 
     '''
-    def create_psb_th_la_graph(self):
+    def create_psb_th_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['la']]
         plt.figure()
@@ -195,9 +195,9 @@ class Report:
         plt.xlabel('Threads')
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.savefig('{}/psb_th_la_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_th_la_graph'.format(path))
 
-    def create_psb_th_tps1_graph(self):
+    def create_psb_th_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps1']]
         plt.figure()
@@ -206,9 +206,9 @@ class Report:
         plt.xlabel('Threads')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_th_tps1_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_th_tps1_graph'.format(path))
 
-    def create_psb_th_tps2_graph(self):
+    def create_psb_th_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps2']]
         plt.figure()
@@ -217,9 +217,9 @@ class Report:
         plt.xlabel('Threads')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_th_tps2_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_th_tps2_graph'.format(path))
 
-    def create_psb_th_tpsall_graph(self):
+    def create_psb_th_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
         plt.figure()
@@ -229,7 +229,7 @@ class Report:
         plt.xlabel('Threads')
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.savefig('{}/psb_th_tpsall_graph'.format(REPORT_PATH))
+        plt.savefig('{}/psb_th_tpsall_graph'.format(path))
 
 
     @staticmethod

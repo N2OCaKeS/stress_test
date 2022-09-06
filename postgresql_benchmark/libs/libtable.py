@@ -140,7 +140,7 @@ class Report:
         pass
 
     @staticmethod
-    def merge(self, table_lst, graph_lst, path=REPORT_PATH):
+    def merge(table_lst, graph_lst, path=REPORT_PATH):
         '''
             Создать HTML
         '''
@@ -148,12 +148,11 @@ class Report:
         tables_in_total_html = []
         for table in table_lst:
             with open('{}/{}'.format(path, table)) as file:
-                tables_in_total_html.append('<div class="table_block">{}</div>'.format(file.read()))
+                tables_in_total_html.append('<div class="table_block">{}</div>\n'.format(file.read()))
 
         graphs_in_total_html = []
         for graph in graph_lst:
-            with open('{}/{}'.format(path, graph)) as file:
-                graphs_in_total_html.append('<div class="graph_block">{}</div>'.format(file.read()))
+            graphs_in_total_html.append('<div class="graph_block"><img src="{}/{}"></div>\n'.format(path, graph))
 
         html_template_part1 = [
             '<!DOCTYPE html>\n',
@@ -197,17 +196,21 @@ class Report:
             '    <div class="line_block">\n',
         ]
 
-        total_html_template_part2 = [
+        html_template_part2 = [
             '    </div>\n',
             '    <div class="line_block">\n',
         ]
 
-        total_html_template_part3 = [
-            '       {graphs}\n',
+        html_template_part3 = [
             '    </div>\n',
             '  </body>\n',
             '</html>\n'
-            ]
+        ]
 
-
+        with open('{}/main_report.html'.format(path), 'w') as total_html:
+            total_html.writelines(html_template_part1)
+            total_html.writelines(tables_in_total_html)
+            total_html.writelines(html_template_part2)
+            total_html.writelines(graphs_in_total_html)
+            total_html.writelines(html_template_part3)
 

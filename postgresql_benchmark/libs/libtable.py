@@ -4,7 +4,8 @@ from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
 from psb_conf import REPORT_FILENAME, REPORT_PATH
 from pretty_html_table import build_table
-
+import numpy as np
+import warnings
 
 class Report:
 
@@ -29,10 +30,26 @@ class Report:
     def data_from_file(report_file=REPORT_FILENAME):
         with open(report_file, 'r') as file:
             raw_data = file.read().split()
-        return ([int(client_number) for client_number in raw_data[0::4]],  # clients
+        return ([int(param) for param in raw_data[0::4]],
                 [float(la) for la in raw_data[1::4]],  # latency average data
                 [float(tps1) for tps1 in raw_data[2::4]],  # tps including connections establishing data
                 [float(tps2) for tps2 in raw_data[3::4]])  # tps excluding connections establishing data
+
+    @staticmethod
+    def data_aproximation(x, y, polinom_factor=10):
+        '''
+        :param x: [x1, x1, x3, ...] последовательность значений x
+        :param y: [y1, y1, y3, ...] последовательность значений y
+        :param polinom_factor: коэффициент полиномизации
+        :return: f(x)
+        '''
+        while True:
+            with warnings.catch_warnings():
+                warnings.filterwarnings('error')
+                try:
+                    return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
+                except np.RankWarning:
+                    polinom_factor -= 1
 
     def create_beauty_table(self, path=REPORT_PATH, table_name='psb_report_table.html'):
         beauty_table = build_table(self.raw_table, 'blue_light')
@@ -45,8 +62,10 @@ class Report:
     def create_psb_cl_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['la']]
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[1])
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o', x, f(x))
         plt.title('{}({}). Clients/Latency average'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
         plt.ylabel('Latency average')

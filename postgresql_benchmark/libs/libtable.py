@@ -8,13 +8,22 @@ from pretty_html_table import build_table
 
 class Report:
 
-    def __init__(self, report_file=REPORT_FILENAME):
+    def __init__(self, param_name='clients', report_file=REPORT_FILENAME, all_params=False):
         with open(report_file, 'r') as report_file:
             raw_data = report_file.read().split()
-        self.raw_table = pandas.DataFrame({'clients': [int(client_number) for client_number in raw_data[0::4]],
-                                           'la': [float(la) for la in raw_data[1::4]],
-                                           'tps1': [float(tps1) for tps1 in raw_data[2::4]],
-                                           'tps2': [float(tps2) for tps2 in raw_data[3::4]]})
+        if all_params:
+            self.raw_table = pandas.DataFrame({'scale': [int(param) for param in raw_data[0::7]],
+                                               'transactions': [int(param) for param in raw_data[1::7]],
+                                               'threads': [int(param) for param in raw_data[2::7]],
+                                               'clients': [int(param) for param in raw_data[3::7]],
+                                               'la': [float(la) for la in raw_data[4::7]],
+                                               'tps1': [float(tps1) for tps1 in raw_data[5::7]],
+                                               'tps2': [float(tps2) for tps2 in raw_data[6::7]]})
+        else:
+            self.raw_table = pandas.DataFrame({param_name: [int(param) for param in raw_data[0::4]],
+                                               'la': [float(la) for la in raw_data[1::4]],
+                                               'tps1': [float(tps1) for tps1 in raw_data[2::4]],
+                                               'tps2': [float(tps2) for tps2 in raw_data[3::4]]})
 
     @staticmethod
     def data_from_file(report_file=REPORT_FILENAME):
@@ -34,38 +43,28 @@ class Report:
         Графики для теста: 'Нахождение предельного числа клиентов' 
     '''
     def create_psb_cl_la_graph(self):
-        '''
-            Шаблон графика psb_graph_cl_la:
-        '''
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['la']]
         plt.figure()
         plt.plot(x, y)
-        plt.title('{}({}). Clients/Latency averege'.format(astra_version()[0], astra_version()[1]))
+        plt.title('{}({}). Clients/Latency average'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
-        plt.ylabel('Latency averege')
+        plt.ylabel('Latency average')
         plt.grid(True)
         plt.savefig('{}/psb_cl_la_graph'.format(REPORT_PATH))
 
     def create_psb_cl_tps1_graph(self):
-        '''
-            Шаблон графика psb_graph_cl_tps1
-        '''
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps1']]
         plt.figure()
         plt.plot(x, y)
-        plt.title(
-            '{}({}). Clients/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
+        plt.title('{}({}). Clients/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
         plt.ylabel('TPS')
         plt.grid(True)
         plt.savefig('{}/psb_cl_tps1_graph'.format(REPORT_PATH))
 
     def create_psb_cl_tps2_graph(self):
-        '''
-            Шаблон графика psb_graph_cl_tps2
-        '''
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps2']]
         plt.figure()
@@ -77,9 +76,6 @@ class Report:
         plt.savefig('{}/psb_cl_tps2_graph'.format(REPORT_PATH))
 
     def create_psb_cl_tpsall_graph(self):
-        '''
-            Шаблон графика psb_graph_cl_tpsall
-        '''
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
         plt.figure()
@@ -92,52 +88,149 @@ class Report:
         plt.savefig('{}/psb_cl_tpsall_graph'.format(REPORT_PATH))
 
     '''
-        TODO:
-        Графики для теста: 'Нахождение предельного коэффициента масштаба'
+        Графики для теста: 'Нахождение предельного коэффициента масштаба' 
     '''
     def create_psb_sc_la_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['scale']]
+        y = self.raw_table.loc[:, ['la']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Scale/Latency average'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Scale')
+        plt.ylabel('Latency average')
+        plt.grid(True)
+        plt.savefig('{}/psb_sc_la_graph'.format(REPORT_PATH))
 
     def create_psb_sc_tps1_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['scale']]
+        y = self.raw_table.loc[:, ['tps1']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Scale/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Scale')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_sc_tps1_graph'.format(REPORT_PATH))
 
     def create_psb_sc_tps2_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['scale']]
+        y = self.raw_table.loc[:, ['tps2']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Scale/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Scale')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_sc_tps2_graph'.format(REPORT_PATH))
 
     def create_psb_sc_tpsall_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['scale']]
+        y = self.raw_table.loc[:, ['tps1', 'tps2']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Scale/TPS'.format(astra_version()[0], astra_version()[1]))
+        plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
+        plt.xlabel('Scale')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_sc_tpsall_graph'.format(REPORT_PATH))
 
-    ''' 
-        TODO:
-        Графики для теста: 'Нахождение предельного числа транзакций'
+    '''
+        Графики для теста: 'Нахождение предельного числа транзакций' 
     '''
     def create_psb_tr_la_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['transactions']]
+        y = self.raw_table.loc[:, ['la']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Transactions/Latency averege'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Transactions')
+        plt.ylabel('Latency average')
+        plt.grid(True)
+        plt.savefig('{}/psb_tr_la_graph'.format(REPORT_PATH))
 
     def create_psb_tr_tps1_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['transactions']]
+        y = self.raw_table.loc[:, ['tps1']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Transactions/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Transactions')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_tr_tps1_graph'.format(REPORT_PATH))
 
     def create_psb_tr_tps2_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['transactions']]
+        y = self.raw_table.loc[:, ['tps2']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Transactions/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Transactions')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_tr_tps2_graph'.format(REPORT_PATH))
 
     def create_psb_tr_tpsall_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['transactions']]
+        y = self.raw_table.loc[:, ['tps1', 'tps2']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Transactions/TPS'.format(astra_version()[0], astra_version()[1]))
+        plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
+        plt.xlabel('Transactions')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_tr_tpsall_graph'.format(REPORT_PATH))
 
-    ''' 
-        TODO:
-        Графики для теста: 'Нахождение предельного числа потоков'
+    '''
+        Графики для теста: 'Нахождение предельного числа потоков' 
     '''
     def create_psb_th_la_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['threads']]
+        y = self.raw_table.loc[:, ['la']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Threads/Latency averege'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Threads')
+        plt.ylabel('Latency average')
+        plt.grid(True)
+        plt.savefig('{}/psb_th_la_graph'.format(REPORT_PATH))
 
     def create_psb_th_tps1_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['threads']]
+        y = self.raw_table.loc[:, ['tps1']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Threads/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Threads')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_th_tps1_graph'.format(REPORT_PATH))
 
     def create_psb_th_tps2_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['threads']]
+        y = self.raw_table.loc[:, ['tps2']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Threads/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
+        plt.xlabel('Threads')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_th_tps2_graph'.format(REPORT_PATH))
 
     def create_psb_th_tpsall_graph(self):
-        pass
+        x = self.raw_table.loc[:, ['threads']]
+        y = self.raw_table.loc[:, ['tps1', 'tps2']]
+        plt.figure()
+        plt.plot(x, y)
+        plt.title('{}({}). Threads/TPS'.format(astra_version()[0], astra_version()[1]))
+        plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
+        plt.xlabel('Threads')
+        plt.ylabel('TPS')
+        plt.grid(True)
+        plt.savefig('{}/psb_th_tpsall_graph'.format(REPORT_PATH))
+
 
     @staticmethod
     def merge(table_lst, graph_lst, path=REPORT_PATH):

@@ -117,7 +117,7 @@ if args.TEST_LIST == 'base':
             clients_step *= step_ratio_by_clients
 
         # create report
-        report = Report()
+        report = Report(param_name='clients')
         report.create_beauty_table()
         report.create_psb_cl_la_graph()
         report.create_psb_cl_tpsall_graph()
@@ -138,6 +138,8 @@ if args.TEST_LIST == 'base':
         max_scale_factor = 0
 
         while scale_factor < limite_scale_factor:
+            with open(REPORT_FILENAME, 'a+') as report_file:
+                report_file.write(str(scale_factor))
             test = Test(scale=scale_factor)
             result = test.run_test()
             if result is False:
@@ -149,8 +151,8 @@ if args.TEST_LIST == 'base':
                 print(result)
 
         # create report
-        report = Report()
-        report.create_beauty_table()
+        report = Report(param_name='scale')
+        report.create_beauty_table('psb_scale_table.html')
         report.create_psb_sc_la_graph()
         report.create_psb_sc_tpsall_graph()
 
@@ -167,6 +169,8 @@ if args.TEST_LIST == 'base':
         max_transactions_count = 0
 
         while transactions < limite_transactions:
+            with open(REPORT_FILENAME, 'a+') as report_file:
+                report_file.write(str(transactions))
             test = Test(trs=transactions)
             result = test.run_test()
             if result is False:
@@ -178,8 +182,8 @@ if args.TEST_LIST == 'base':
                 print(result)
 
         # create report
-        report = Report()
-        report.create_beauty_table()
+        report = Report(param_name='transactions')
+        report.create_beauty_table('psb_transactions_table.html')
         report.create_psb_tr_la_graph()
         report.create_psb_tr_tpsall_graph()
 
@@ -196,6 +200,8 @@ if args.TEST_LIST == 'base':
         max_threads_count = 0
 
         while threads < limite_threads:
+            with open(REPORT_FILENAME, 'a+') as report_file:
+                report_file.write(str(threads))
             test = Test(ths=threads)
             result = test.run_test()
             if result is False:
@@ -207,8 +213,8 @@ if args.TEST_LIST == 'base':
                 print(result)
 
         # create report
-        report = Report()
-        report.create_beauty_table()
+        report = Report(param_name='threads')
+        report.create_beauty_table('psb_threads_table.html')
         report.create_psb_th_la_graph()
         report.create_psb_th_tpsall_graph()
 
@@ -225,6 +231,8 @@ if args.TEST_LIST == 'base':
         max_clients_count = 0
 
         while clients < limite_clients:
+            with open(REPORT_FILENAME, 'a+') as report_file:
+                report_file.write(str(clients))
             test = Test(cls=clients)
             result = test.run_test()
             if result is False:
@@ -236,8 +244,8 @@ if args.TEST_LIST == 'base':
                 print(result)
 
         # create report
-        report = Report()
-        report.create_beauty_table()
+        report = Report(param_name='clients')
+        report.create_beauty_table('psb_clients_table.html')
         report.create_psb_cl_la_graph()
         report.create_psb_cl_tpsall_graph()
 
@@ -265,6 +273,11 @@ if args.TEST_LIST == 'base':
                 (transactions <= max_transactions_count) and \
                 (threads <= max_threads_count) and \
                 (clients <= max_clients_count):
+            with open(REPORT_FILENAME, 'a+') as report_file:
+                report_file.write(str(scale_factor))
+                report_file.write(str(transactions))
+                report_file.write(str(threads))
+                report_file.write(str(clients))
             test = Test(scale=scale_factor,
                         trs=transactions,
                         ths=threads,
@@ -274,6 +287,23 @@ if args.TEST_LIST == 'base':
             transactions += transactions_step
             threads += threads_step
             clients += clients_step
+
+        report = Report(all_params=True)
+        report.create_beauty_table('psb_max_table.html')
+        report.merge(table_lst=['psb_scale_table.html',
+                                'psb_transactions_table.html',
+                                'psb_threads_table.html',
+                                'psb_clients_table.html',
+                                'psb_max_table.html'],
+                     graph_lst=['psb_sc_la_graph.png',
+                                'psb_sc_tpsall_graph.png',
+                                'psb_tr_la_graph.png',
+                                'psb_tr_tpsall_graph.png',
+                                'psb_th_la_graph.png',
+                                'psb_th_tpsall_graph.png',
+                                'psb_cl_la_graph.png',
+                                'psb_cl_tpsall_graph.png'])
+
 
 if args.CLEANER:
     '''

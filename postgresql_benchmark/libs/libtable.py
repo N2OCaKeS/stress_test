@@ -152,7 +152,7 @@ class Report:
 
         graphs_in_total_html = []
         for graph in graph_lst:
-            graphs_in_total_html.append('<div class="graph_block"><img src="{}/{}"></div>\n'.format(path, graph))
+            graphs_in_total_html.append('<div class="graph_block"><img src="{}"></div>\n'.format(graph))
 
         html_template_part1 = [
             '<!DOCTYPE html>\n',

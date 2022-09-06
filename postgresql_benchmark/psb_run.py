@@ -121,6 +121,8 @@ if args.TEST_LIST == 'base':
         report.create_beauty_table()
         report.create_psb_cl_la_graph()
         report.create_psb_cl_tpsall_graph()
+        report.merge(table_lst=['psb_report_table.html'],
+                     graph_lst=['psb_cl_la_graph.png', 'psb_cl_tpsall_graph.png'])
 
     if args.MODE == 'extended':
         '''
@@ -209,6 +211,7 @@ if args.TEST_LIST == 'base':
         report.create_beauty_table()
         report.create_psb_th_la_graph()
         report.create_psb_th_tpsall_graph()
+
         '''
             Проверка на втроенных сценариях.
             Нахождение предельного числа клиентов. 
@@ -231,6 +234,12 @@ if args.TEST_LIST == 'base':
                 max_clients_count = clients
                 clients += clients_step
                 print(result)
+
+        # create report
+        report = Report()
+        report.create_beauty_table()
+        report.create_psb_cl_la_graph()
+        report.create_psb_cl_tpsall_graph()
 
         print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
         print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
@@ -265,7 +274,6 @@ if args.TEST_LIST == 'base':
             transactions += transactions_step
             threads += threads_step
             clients += clients_step
-
 
 if args.CLEANER:
     '''

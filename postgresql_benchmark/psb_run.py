@@ -92,7 +92,7 @@ if args.TEST_LIST == 'base':
         threads = 100
         clients = 1
         clients_step = 1
-        step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
+        step_ratio_by_clients = 1  # (client_step)*(step_ratio_by_clients) every iteration
         limite_clients = 20
 
         # clean conf
@@ -120,9 +120,15 @@ if args.TEST_LIST == 'base':
         report = Report(param_name='clients')
         report.create_beauty_table()
         report.create_psb_cl_la_graph()
+        report.create_psb_cl_tps1_graph()
+        report.create_psb_cl_tps2_graph()
         report.create_psb_cl_tpsall_graph()
         report.merge(table_lst=['psb_report_table.html'],
-                     graph_lst=['psb_cl_la_graph.png', 'psb_cl_tpsall_graph.png'])
+                     graph_lst=['psb_cl_la_graph.png',
+                                'psb_cl_tps1_graph.png',
+                                'psb_cl_tps2_graph.png',
+                                'psb_cl_tpsall_graph.png'])
+        report.create_tar()
 
     if args.MODE == 'extended':
         '''

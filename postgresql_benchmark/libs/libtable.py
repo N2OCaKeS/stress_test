@@ -1,11 +1,15 @@
 import pandas
 import mpld3
+import tarfile
+from os import listdir
+from time import time
 from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
 from psb_conf import REPORT_FILENAME, REPORT_PATH
 from pretty_html_table import build_table
 import numpy as np
 import warnings
+
 
 class Report:
 
@@ -62,8 +66,11 @@ class Report:
     def create_psb_cl_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['la']]
+
         data_arrays = self.data_from_file()
         f = self.data_aproximation(data_arrays[0], data_arrays[1])
+
+        # build graph
         plt.figure()
         plt.plot(x, y, 'o', x, f(x))
         plt.title('{}({}). Clients/Latency average'.format(astra_version()[0], astra_version()[1]))
@@ -75,8 +82,13 @@ class Report:
     def create_psb_cl_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps1']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o', x, f(x))
         plt.title('{}({}). Clients/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
         plt.ylabel('TPS')
@@ -86,8 +98,13 @@ class Report:
     def create_psb_cl_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps2']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o', x, f(x))
         plt.title('{}({}). Clients/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
         plt.ylabel('TPS')
@@ -97,6 +114,8 @@ class Report:
     def create_psb_cl_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
+
+        # build graph
         plt.figure()
         plt.plot(x, y)
         plt.title('{}({}). Clients/TPS'.format(astra_version()[0], astra_version()[1]))
@@ -112,8 +131,13 @@ class Report:
     def create_psb_sc_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['la']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[1])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Scale/Latency average'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
         plt.ylabel('Latency average')
@@ -123,8 +147,13 @@ class Report:
     def create_psb_sc_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps1']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Scale/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
         plt.ylabel('TPS')
@@ -134,8 +163,13 @@ class Report:
     def create_psb_sc_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps2']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Scale/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
         plt.ylabel('TPS')
@@ -145,6 +179,8 @@ class Report:
     def create_psb_sc_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
+
+        # build graph
         plt.figure()
         plt.plot(x, y)
         plt.title('{}({}). Scale/TPS'.format(astra_version()[0], astra_version()[1]))
@@ -160,8 +196,13 @@ class Report:
     def create_psb_tr_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['la']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[1])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Transactions/Latency averege'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
         plt.ylabel('Latency average')
@@ -171,8 +212,13 @@ class Report:
     def create_psb_tr_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps1']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Transactions/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
         plt.ylabel('TPS')
@@ -182,8 +228,13 @@ class Report:
     def create_psb_tr_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps2']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Transactions/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
         plt.ylabel('TPS')
@@ -193,6 +244,8 @@ class Report:
     def create_psb_tr_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
+
+        # build graph
         plt.figure()
         plt.plot(x, y)
         plt.title('{}({}). Transactions/TPS'.format(astra_version()[0], astra_version()[1]))
@@ -208,8 +261,13 @@ class Report:
     def create_psb_th_la_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['la']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[1])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Threads/Latency averege'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
         plt.ylabel('Latency average')
@@ -219,8 +277,13 @@ class Report:
     def create_psb_th_tps1_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps1']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Threads/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
         plt.ylabel('TPS')
@@ -230,8 +293,13 @@ class Report:
     def create_psb_th_tps2_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps2']]
+
+        data_arrays = self.data_from_file()
+        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+
+        # build graph
         plt.figure()
-        plt.plot(x, y)
+        plt.plot(x, y, 'o')
         plt.title('{}({}). Threads/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
         plt.ylabel('TPS')
@@ -241,6 +309,8 @@ class Report:
     def create_psb_th_tpsall_graph(self, path=REPORT_PATH):
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps1', 'tps2']]
+
+        # build graph
         plt.figure()
         plt.plot(x, y)
         plt.title('{}({}). Threads/TPS'.format(astra_version()[0], astra_version()[1]))
@@ -249,7 +319,6 @@ class Report:
         plt.ylabel('TPS')
         plt.grid(True)
         plt.savefig('{}/psb_th_tpsall_graph'.format(path))
-
 
     @staticmethod
     def merge(table_lst, graph_lst, path=REPORT_PATH):
@@ -326,3 +395,13 @@ class Report:
             total_html.writelines(graphs_in_total_html)
             total_html.writelines(html_template_part3)
 
+    @staticmethod
+    def create_tar(path=REPORT_PATH):
+        '''
+            tar архив с результатами тестирования
+        '''
+        with tarfile.open('report{v}_{m}_{t}.tar'.format(v=astra_version()[0],
+                                                         m=astra_version()[1],
+                                                         t=time()), 'w') as tar:
+            for file in listdir(path):
+                tar.add('{}/{}'.format('report', file))

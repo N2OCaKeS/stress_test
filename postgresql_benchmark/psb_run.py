@@ -79,21 +79,13 @@ if args.TEST_LIST == 'base':
         '''
             Запуск на оптимальных настройках
         '''
-        # scale_factor = 500
-        # transactions = 100000
-        # threads = 200
-        # clients = 100
-        # clients_step = 100
-        # step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
-        # limite_clients = 10000
-
-        scale_factor = 1
-        transactions = 100
-        threads = 100
-        clients = 1
-        clients_step = 1
-        step_ratio_by_clients = 1  # (client_step)*(step_ratio_by_clients) every iteration
-        limite_clients = 20
+        scale_factor = 500
+        transactions = 100000
+        threads = 200
+        clients = 100
+        clients_step = 100
+        step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
+        limite_clients = 10000
 
         # clean conf
         report = open(REPORT_FILENAME, 'w')

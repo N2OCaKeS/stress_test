@@ -1,15 +1,15 @@
 import pandas
-import mpld3
 import tarfile
-from os import listdir
+import warnings
+import numpy as np
+
 from time import time
+from os import listdir
 from scipy import integrate
 from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
-from psb_conf import REPORT_FILENAME, REPORT_PATH
 from pretty_html_table import build_table
-import numpy as np
-import warnings
+from psb_conf import REPORT_FILENAME, REPORT_PATH
 
 
 class Report:

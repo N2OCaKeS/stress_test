@@ -3,6 +3,7 @@ import mpld3
 import tarfile
 from os import listdir
 from time import time
+from scipy import integrate
 from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
 from psb_conf import REPORT_FILENAME, REPORT_PATH
@@ -340,8 +341,28 @@ class Report:
         plt.grid(True)
         plt.savefig('{}/psb_th_tpsall_graph'.format(path))
 
-    @staticmethod
-    def merge(table_lst, graph_lst, path=REPORT_PATH):
+    def get_la_rating(self, lower_limit=1, upper_limit=6400):
+        data_arrays = self.data_from_file()
+        func_la = self.data_aproximation(data_arrays[0], data_arrays[1])
+        Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
+        return 1 / Ila
+
+    def get_tps1_rating(self, lower_limit=1, upper_limit=6400):
+        data_arrays = self.data_from_file()
+        func_tps1 = self.data_aproximation(data_arrays[0], data_arrays[2])
+        Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
+        return 1 / Itps1
+
+    def get_tps2_rating(self, lower_limit=1, upper_limit=6400):
+        data_arrays = self.data_from_file()
+        func_tps2 = self.data_aproximation(data_arrays[0], data_arrays[3])
+        Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
+        return 1 / Itps2
+
+    def get_total_rating(self, lower_lim=1, upper_lim=6400):
+        return round((self.get_la_rating(lower_lim, upper_lim) + self.get_tps1_rating(lower_lim, upper_lim) + self.get_tps2_rating(lower_lim, upper_lim)), 5)
+
+    def merge(self, table_lst, graph_lst, path=REPORT_PATH):
         '''
             Создать HTML
         '''
@@ -402,6 +423,7 @@ class Report:
 
         html_template_part2 = [
             '    </div>\n',
+            '    <div class="line_block">Total rating: {} astra</div>\n'.format(self.get_total_rating()),
             '    <div class="line_block">\n',
         ]
 

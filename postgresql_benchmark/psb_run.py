@@ -17,7 +17,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, \
     SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
-    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS
 from libs.libpsqbtests import Test
 from libs.libpsb import astra_version
 from libs.libtable import Report
@@ -88,10 +88,10 @@ if args.TEST_LIST == 'base':
         scale_factor = 500
         transactions = 100000
         threads = 200
-        clients = 100
-        clients_step = 100
-        step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
-        limite_clients = 10000
+        clients = CLIENTS
+        clients_step = CLIENTS_STEP
+        step_ratio_by_clients = STEP_RATIO_BY_CLIENTS  # (client_step)*(step_ratio_by_clients) every iteration
+        limite_clients = LIMITE_CLIENTS
 
         # clean conf
         report = open(REPORT_FILENAME, 'w')

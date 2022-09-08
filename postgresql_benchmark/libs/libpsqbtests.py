@@ -84,6 +84,8 @@ class Test:
                                                        tps_excluding_connections_establishing))
 
         except Exception as exception:
+            with open(REPORT_FILENAME, 'a+') as report_file:
+                report_file.write(' 0 0 0\n')
             self.logger.error('Тестирование завершилось исключением:\n')
             self.logger.error(exception)
             return False

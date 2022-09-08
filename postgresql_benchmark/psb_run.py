@@ -8,6 +8,8 @@
 import argparse
 import subprocess
 
+from sys import exit
+from os import getuid
 from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
     MIC_SQL_UPGRADE, MIC_SQL_TRANSACTION, \
@@ -52,6 +54,10 @@ parser.add_argument('-c', '--cleaner',
                     dest='CLEANER')
 
 args = parser.parse_args()
+
+# is root?
+if getuid() != 0:
+    exit(2)
 
 report = open(LOG_FILENAME, 'w')
 report.close()

@@ -40,15 +40,15 @@ class Test:
         self.transactions = trs
         self.clients = cls
         self.mac_sql_script = mac_sql_trn
-        self.pgbench_cmd = "su -c 'pgbench -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
-                                                                                       t=self.transactions,
-                                                                                       j=self.threads,
-                                                                                       c=self.clients)
-        self.pgbench_cmd_custom = "su -c 'pgbench -t {t} -j {j} -c {c} -f {f}@2 {db}' postgres".format(db=self.db,
-                                                                                                       t=self.transactions,
-                                                                                                       j=self.threads,
-                                                                                                       c=self.clients,
-                                                                                                       f=self.mac_sql_script)
+        self.pgbench_cmd = "su -c 'pgbench -h localhost -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
+                                                                                                    t=self.transactions,
+                                                                                                    j=self.threads,
+                                                                                                    c=self.clients)
+        self.pgbench_cmd_custom = "su -c 'pgbench -h localhost -t {t} -j {j} -c {c} -f {f}@2 {db}' postgres".format(db=self.db,
+                                                                                                                    t=self.transactions,
+                                                                                                                    j=self.threads,
+                                                                                                                    c=self.clients,
+                                                                                                                    f=self.mac_sql_script)
 
     def run_test(self):
         '''

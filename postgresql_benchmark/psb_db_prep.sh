@@ -4,11 +4,11 @@ set -vx
 export PG_MAIN_CLUSTER=main
 export PG_MAIN_PORT=5432
 PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION =' | awk '{print $3}')
-MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}')
-PG_SETEST_CLUSTER=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}')
+MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}' | tr -d "'")
+PG_SETEST_CLUSTER=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}' | tr -d "'")
 PG_SETEST_PORT=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}')
-TABLESPACE_DEFAULT=$(cat psb_conf.py | grep 'TABLESPACE_DEFAULT_PATH =' | awk '{print $3}')
-TABLESPACE_MAC=$(cat psb_conf.py | grep 'TABLESPACE_MAC_PATH =' | awk '{print $3}')
+TABLESPACE_DEFAULT=$(cat psb_conf.py | grep 'TABLESPACE_DEFAULT_PATH =' | awk '{print $3}' | tr -d "'")
+TABLESPACE_MAC=$(cat psb_conf.py | grep 'TABLESPACE_MAC_PATH =' | awk '{print $3}' | tr -d "'")
 
 # Проверка прав суперпользователя
 if ["$UID" -ne "0"]; then

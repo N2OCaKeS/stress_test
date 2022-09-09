@@ -2,8 +2,6 @@ SCRIPT_DIR = '/media/sf_git/stress_test/postgresql_benchmark'
 LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
-
-
 '''
    Названия скриптов из папки sql.
    *upgrade - скрипт донастройки после pgbech -i
@@ -18,9 +16,15 @@ ACL_SQL_TRANSACTION = ''
 '''
     Параметры БД
 '''
+PG_VERSION = 11
 DATABASE_NAME = 'mtest'
+TABLESPACE_DEFAULT_PATH = '/var/lib/postgresql/11/pg_default'
 TABLESPACE_DEFAULT = 'pg_default'
-TABLESPACE_DEFAULT_MAC = 'pg_default_mac'
+TABLESPACE_MAC_PATH = '/pg_default_mac'
+TABLESPACE_MAC = 'pg_default_mac'
+PG_SETEST_CLUSTER = 'setest_cl'
+PG_SETEST_PORT = 6000
+
 '''
     Создать таблицы pgbench_accounts, pgbench_tellers и pgbench_branches с заданным фактором заполнения. 
 '''

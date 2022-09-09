@@ -75,7 +75,7 @@ if args.DB_PREPARE:
         Настроить машину, инициализировать тестовую БД
     '''
     if version[0] == '1.7' or version[0] == '4.7':
-        subprocess.run('sudo bash {dir}/psb_db_prep_11.sh {init_file}'.format(dir=SCRIPT_DIR,
+        subprocess.run('sudo bash {dir}/psb_db_prep.sh {init_file}'.format(dir=SCRIPT_DIR,
                                                                               init_file='psb_init.sql'),
                        shell=True,
                        stderr=subprocess.DEVNULL)

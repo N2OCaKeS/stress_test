@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
 set -vx
-# TODO: брать название из конфига
-export PG_VERSION=11
 
 export PG_MAIN_CLUSTER=main
-export PG_SETEST_CLUSTER=setest_cl
-#export PG_SEFOREIGN_CLUSTER=seforeign_cl
-#export PG_FILES_CLUSTER=file_cl
-
 export PG_MAIN_PORT=5432
-export PG_SETEST_PORT=6000
-#export PG_SEFOREIGN_PORT=6001
-#export PG_FILES_PORT=6002
-
-export MAIN_DIR=/media/sf_git/stress_test/postgresql_benchmark
+PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION =' | awk '{print $3}')
+MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}')
+PG_SETEST_CLUSTER=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}')
+PG_SETEST_PORT=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}')
+TABLESPACE_DEFAULT=$(cat psb_conf.py | grep 'TABLESPACE_DEFAULT_PATH =' | awk '{print $3}')
+TABLESPACE_MAC=$(cat psb_conf.py | grep 'TABLESPACE_MAC_PATH =' | awk '{print $3}')
 
 # Проверка прав суперпользователя
 if ["$UID" -ne "0"]; then
@@ -50,22 +45,18 @@ fi
 # fi
 
 # Создание тестового табличного пространства в ФС
-# TODO: брать название из конфига
-spc_tst=/var/lib/postgresql/$PG_VERSION/pg_default
-if [ ! -e $spc_tst ]; then
-	mkdir $spc_tst
-	chown postgres:postgres $spc_tst
+if [ ! -e $TABLESPACE_DEFAULT ]; then
+	mkdir $TABLESPACE_DEFAULT
+	chown postgres:postgres $TABLESPACE_DEFAULT
 fi
 
 # Создание тестового табличного пространства для работы с MAC
-# TODO: брать название из конфига
-spc_tst_2=/pg_default_mac
-if [ ! -e $spc_tst_2 ]
+if [ ! -e $TABLESPACE_MAC ]
 then
-	mkdir $spc_tst_2
-	chown postgres:postgres $spc_tst_2
-	sudo chmod 770 $spc_tst_2
-	sudo pdpl-file 3:0:3:ccnr $spc_tst_2
+	mkdir $TABLESPACE_MAC
+	chown postgres:postgres $TABLESPACE_MAC
+	sudo chmod 770 $TABLESPACE_MAC
+	sudo pdpl-file 3:0:3:ccnr $TABLESPACE_MAC
 fi
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-

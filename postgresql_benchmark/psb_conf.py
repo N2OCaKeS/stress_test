@@ -20,6 +20,7 @@ ACL_SQL_TRANSACTION = ''
 '''
 DATABASE_NAME = 'mtest'
 TABLESPACE_DEFAULT = 'pg_default'
+TABLESPACE_DEFAULT_MAC = 'pg_default_mac'
 '''
     Создать таблицы pgbench_accounts, pgbench_tellers и pgbench_branches с заданным фактором заполнения. 
 '''

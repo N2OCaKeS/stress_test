@@ -85,7 +85,6 @@ if args.DB_PREPARE:
                        shell=True,
                        stderr=subprocess.DEVNULL)
 
-
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':
 

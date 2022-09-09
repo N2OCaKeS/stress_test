@@ -69,6 +69,7 @@ def astra_version():
 
 def init_test_tables(database,
                      tablespace,
+                     port,
                      t_scale_factor,
                      t_filling_factor):
 
@@ -76,10 +77,11 @@ def init_test_tables(database,
         pgbench -i создаёт четыре таблицы
         pgbench_accounts, pgbench_branches, pgbench_history и pgbench_tellers
     '''
-    cmd("su -c 'pgbench -i -h localhost -p 6000 --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
-                                                                                                       ts=tablespace,
-                                                                                                       s=t_scale_factor,
-                                                                                                       f=t_filling_factor))
+    cmd("su -c 'pgbench -i -h localhost -p {p} --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
+                                                                                                      ts=tablespace,
+                                                                                                      p=port,
+                                                                                                      s=t_scale_factor,
+                                                                                                      f=t_filling_factor))
 
     # TODO: Сделать вывод размера БД
 

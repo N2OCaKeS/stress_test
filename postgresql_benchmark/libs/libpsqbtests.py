@@ -12,7 +12,7 @@ import logging
 
 from psb_conf import LOG_FILENAME, DATABASE_NAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
-    TABLESPACE_DEFAULT, REPORT_FILENAME
+    TABLESPACE_DEFAULT, REPORT_FILENAME, PG_SETEST_PORT
 from libs.libpsb import init_test_tables, upgrade_test_table, pgbench, pgbench_custom
 
 
@@ -20,6 +20,7 @@ class Test:
     def __init__(self,
                  database=DATABASE_NAME,
                  tablespace=TABLESPACE_DEFAULT,
+                 cluster_port=PG_SETEST_PORT,
                  scale=1,
                  filling=100,
                  ths=10,
@@ -33,6 +34,7 @@ class Test:
                             format='%(levelname)s: t:%(created)f th:%(thread)d ps:%(process)d <%(name)s> | %(message)s')
         self.logger = logging.getLogger()
         self.db = database
+        self.port = cluster_port
         self.tspace = tablespace
         self.scale_factor = scale
         self.filling_factor = filling
@@ -40,15 +42,17 @@ class Test:
         self.transactions = trs
         self.clients = cls
         self.mac_sql_script = mac_sql_trn
-        self.pgbench_cmd = "su -c 'pgbench -h localhost -p 6000 -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
-                                                                                                    t=self.transactions,
-                                                                                                    j=self.threads,
-                                                                                                    c=self.clients)
-        self.pgbench_cmd_custom = "su -c 'pgbench -h localhost -p 6000 -t {t} -j {j} -c {c} -f {f}@2 {db}' postgres".format(db=self.db,
-                                                                                                                    t=self.transactions,
-                                                                                                                    j=self.threads,
-                                                                                                                    c=self.clients,
-                                                                                                                    f=self.mac_sql_script)
+        self.pgbench_cmd = "su -c 'pgbench -h localhost -p {p} -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
+                                                                                                           p=self.port,
+                                                                                                           t=self.transactions,
+                                                                                                           j=self.threads,
+                                                                                                           c=self.clients)
+        self.pgbench_cmd_custom = "su -c 'pgbench -h localhost -p {p} -t {t} -j {j} -c {c} -f {f}@2 {db}' postgres".format(db=self.db,
+                                                                                                                           p=self.port,
+                                                                                                                           t=self.transactions,
+                                                                                                                           j=self.threads,
+                                                                                                                           c=self.clients,
+                                                                                                                           f=self.mac_sql_script)
 
     def run_test(self):
         '''
@@ -56,7 +60,7 @@ class Test:
             tpcb-like simple-update и select-only
             Работает.
         '''
-        init_test_tables(self.db, self.tspace, self.scale_factor, self.filling_factor)
+        init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor)
         result = '# TEST # --- '
         try:
             decode_std = pgbench(self.pgbench_cmd)

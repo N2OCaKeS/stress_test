@@ -12,7 +12,7 @@ export PG_SETEST_PORT=6000
 #export PG_SEFOREIGN_PORT=6001
 #export PG_FILES_PORT=6002
 
-export MAIN_DIR=/media/sf_git/skts-test/testlink/postgresql_benchmark
+export MAIN_DIR=/media/sf_git/stress_test/testlink/postgresql_benchmark
 
 # Проверка прав суперпользователя
 if ["$UID" -ne "0"]; then
@@ -21,8 +21,8 @@ fi
 
 # Остановка кластеров
 pg_ctlcluster $PG_VERSION $PG_SETEST_CLUSTER stop
-pg_ctlcluster $PG_VERSION $PG_SEFOREIGN_CLUSTER stop
-pg_ctlcluster $PG_VERSION $PG_FILES_CLUSTER stop
+# pg_ctlcluster $PG_VERSION $PG_SEFOREIGN_CLUSTER stop
+# pg_ctlcluster $PG_VERSION $PG_FILES_CLUSTER stop
 
 # Удаление тестовых пользователей
 usermac -d u_0_00 && userdel u_0_00
@@ -34,9 +34,9 @@ rm -rf /pg_test_tablespace
 
 # Удаление кластеров
 pg_dropcluster $PG_VERSION $PG_SETEST_CLUSTER --stop
-pg_dropcluster $PG_VERSION $PG_SEFOREIGN_CLUSTER --stop
-pg_dropcluster $PG_VERSION $PG_FILES_CLUSTER --stop
+# pg_dropcluster $PG_VERSION $PG_SEFOREIGN_CLUSTER --stop
+# pg_dropcluster $PG_VERSION $PG_FILES_CLUSTER --stop
 
 rm -rf /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER
-rm -rf /etc/postgresql/$PG_VERSION/$PG_SEFOREIGN_CLUSTER
-rm -rf /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER
+# rm -rf /etc/postgresql/$PG_VERSION/$PG_SEFOREIGN_CLUSTER
+# rm -rf /etc/postgresql/$PG_VERSION/$PG_FILES_CLUSTER

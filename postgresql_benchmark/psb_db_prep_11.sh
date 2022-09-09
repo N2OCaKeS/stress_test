@@ -13,7 +13,7 @@ export PG_SETEST_PORT=6000
 #export PG_SEFOREIGN_PORT=6001
 #export PG_FILES_PORT=6002
 
-export MAIN_DIR=/media/sf_git/stress_test/testlink/postgresql_benchmark
+export MAIN_DIR=/media/sf_git/stress_test/postgresql_benchmark
 
 # Проверка прав суперпользователя
 if ["$UID" -ne "0"]; then

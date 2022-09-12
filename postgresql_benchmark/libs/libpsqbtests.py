@@ -70,26 +70,30 @@ class Test:
             self.logger.error(err)
 
             latency_average = re.search(r'(\d+\.\d+)', out).group(1)
+            completed_transactions = re.search(r'(\d+)/', out).group(1)
+            expected_transactions = re.search(r'/(\d+)', out).group(1)
             tps_including_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[0]
             tps_excluding_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[1]
 
             result += '{la} {tps1}|{tps2} '.format(la=latency_average+' ms',
                                                    tps1=tps_including_connections_establishing,
                                                    tps2=tps_excluding_connections_establishing)
-            if re.search(r'(\d+)/', out).group(1) == re.search(r'/(\d+)', out).group(1):
+            if completed_transactions == expected_transactions:
                 result += '--- \033[92mpass\033[0m'
             else:
                 result += '--- \033[91mfail\033[0m'
 
             # in file
             with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(' {} {} {}\n'.format(latency_average,
-                                                       tps_including_connections_establishing,
-                                                       tps_excluding_connections_establishing))
+                report_file.write(' {} {} {} {} {}\n'.format(latency_average,
+                                                             tps_including_connections_establishing,
+                                                             tps_excluding_connections_establishing,
+                                                             completed_transactions,
+                                                             expected_transactions))
 
         except Exception as exception:
             with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(' 0 0 0\n')
+                report_file.write(' 0 0 0 0 0\n')
             self.logger.error('Тестирование завершилось исключением:\n')
             self.logger.error(exception)
             return False

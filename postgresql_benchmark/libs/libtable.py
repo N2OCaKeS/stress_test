@@ -19,18 +19,25 @@ class Report:
         with open(report_file, 'r') as report_file:
             raw_data = report_file.read().split()
         if all_params:
-            self.raw_table = pandas.DataFrame({'scale': [int(param) for param in raw_data[0::7]],
-                                               'transactions': [int(param) for param in raw_data[1::7]],
-                                               'threads': [int(param) for param in raw_data[2::7]],
-                                               'clients': [int(param) for param in raw_data[3::7]],
-                                               'la': [float(la) for la in raw_data[4::7]],
-                                               'tps1': [float(tps1) for tps1 in raw_data[5::7]],
-                                               'tps2': [float(tps2) for tps2 in raw_data[6::7]]})
+            self.raw_table = pandas.DataFrame({'scale': [int(param) for param in raw_data[0::9]],
+                                               'transactions': [int(param) for param in raw_data[1::9]],
+                                               'threads': [int(param) for param in raw_data[2::9]],
+                                               'clients': [int(param) for param in raw_data[3::9]],
+                                               'la': [float(la) for la in raw_data[4::9]],
+                                               'tps1': [float(tps1) for tps1 in raw_data[5::9]],
+                                               'tps2': [float(tps2) for tps2 in raw_data[6::9]],
+                                               'com_tr': [float(c_trs) for c_trs in raw_data[7::9]],
+                                               'exp_tr': [float(e_trs) for e_trs in raw_data[8::9]]})
         else:
-            self.raw_table = pandas.DataFrame({param_name: [int(param) for param in raw_data[0::4]],
-                                               'la': [float(la) for la in raw_data[1::4]],
-                                               'tps1': [float(tps1) for tps1 in raw_data[2::4]],
-                                               'tps2': [float(tps2) for tps2 in raw_data[3::4]]})
+            self.raw_table = pandas.DataFrame({param_name: [int(param) for param in raw_data[0::6]],
+                                               'la': [float(la) for la in raw_data[1::6]],
+                                               'tps1': [float(tps1) for tps1 in raw_data[2::6]],
+                                               'tps2': [float(tps2) for tps2 in raw_data[3::6]],
+                                               'com_tr': [float(c_trs) for c_trs in raw_data[4::6]],
+                                               'exp_tr': [float(e_trs) for e_trs in raw_data[5::6]]})
+
+        # added column with result (% completed transactions)
+        self.raw_table['result (%)'] = round(self.raw_table['com_tr'] / self.raw_table['exp_tr'] * 100, 2)
 
         # graph size
         self.width = 25
@@ -40,10 +47,12 @@ class Report:
     def data_from_file(report_file=REPORT_FILENAME):
         with open(report_file, 'r') as file:
             raw_data = file.read().split()
-        return ([int(param) for param in raw_data[0::4]],
-                [float(la) for la in raw_data[1::4]],  # latency average data
-                [float(tps1) for tps1 in raw_data[2::4]],  # tps including connections establishing data
-                [float(tps2) for tps2 in raw_data[3::4]])  # tps excluding connections establishing data
+        return ([int(param) for param in raw_data[0::6]],
+                [float(la) for la in raw_data[1::6]],  # latency average data
+                [float(tps1) for tps1 in raw_data[2::6]],  # tps including connections establishing data
+                [float(tps2) for tps2 in raw_data[3::6]],  # tps excluding connections establishing data
+                [float(c_trs) for c_trs in raw_data[4::6]],  # completed transactions
+                [float(e_trs) for e_trs in raw_data[5::6]])  # expected transactions
 
     @staticmethod
     def data_aproximation(x, y, polinom_factor=10):

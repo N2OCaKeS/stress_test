@@ -10,7 +10,11 @@ from scipy import integrate
 from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
 from pretty_html_table import build_table
-from psb_conf import REPORT_FILENAME, REPORT_PATH, LOG_FILENAME
+from psb_conf import SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
+    TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
+    THREADS, THREADS_STEP, LIMITE_THREADS, \
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, \
+    REPORT_FILENAME, REPORT_PATH, LOG_FILENAME
 
 
 class Report:
@@ -40,7 +44,7 @@ class Report:
         self.raw_table['result (%)'] = round(self.raw_table['com_tr'] / self.raw_table['exp_tr'] * 100, 2)
 
         # graph size
-        self.width = 25
+        self.width = 27
         self.height = 15
 
     @staticmethod
@@ -74,6 +78,12 @@ class Report:
     def cm_to_inch(value):
         return value / 2.54
 
+    @staticmethod
+    def last_passed(lst1, lst2):
+        for index in range(len(lst1)):
+            if lst1[index] != lst2[index]:
+                return index - 1
+
     def create_beauty_table(self, path=REPORT_PATH, table_name='psb_report_table.html'):
         beauty_table = build_table(self.raw_table, 'blue_light')
         with open('{}/{}'.format(path, table_name), 'w') as beauty_html_table:
@@ -87,17 +97,24 @@ class Report:
         y = self.raw_table.loc[:, ['la']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o', x, f(x))
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Clients/Latency average'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_cl_la_graph'.format(path))
 
     def create_psb_cl_tps1_graph(self, path=REPORT_PATH):
@@ -105,17 +122,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps1']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o', x, f(x))
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Clients/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_cl_tps1_graph'.format(path))
 
     def create_psb_cl_tps2_graph(self, path=REPORT_PATH):
@@ -123,17 +147,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps2']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o', x, f(x))
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Clients/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_cl_tps2_graph'.format(path))
 
     def create_psb_cl_tpsall_graph(self, path=REPORT_PATH):
@@ -142,7 +173,7 @@ class Report:
         data_arrays = self.data_from_file()
 
         # build graph
-        plt.figure()
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y)
         plt.title('{}({}). Clients/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
@@ -150,7 +181,13 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_cl_tpsall_graph'.format(path))
 
     '''
@@ -161,17 +198,24 @@ class Report:
         y = self.raw_table.loc[:, ['la']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Scale/Latency average'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_sc_la_graph'.format(path))
 
     def create_psb_sc_tps1_graph(self, path=REPORT_PATH):
@@ -179,17 +223,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps1']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Scale/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_sc_tps1_graph'.format(path))
 
     def create_psb_sc_tps2_graph(self, path=REPORT_PATH):
@@ -197,17 +248,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps2']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Scale/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_sc_tps2_graph'.format(path))
 
     def create_psb_sc_tpsall_graph(self, path=REPORT_PATH):
@@ -216,7 +274,7 @@ class Report:
         data_arrays = self.data_from_file()
 
         # build graph
-        plt.figure()
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y)
         plt.title('{}({}). Scale/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
@@ -224,7 +282,13 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_sc_tpsall_graph'.format(path))
 
     '''
@@ -235,17 +299,24 @@ class Report:
         y = self.raw_table.loc[:, ['la']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Transactions/Latency averege'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_tr_la_graph'.format(path))
 
     def create_psb_tr_tps1_graph(self, path=REPORT_PATH):
@@ -253,17 +324,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps1']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Transactions/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_tr_tps1_graph'.format(path))
 
     def create_psb_tr_tps2_graph(self, path=REPORT_PATH):
@@ -271,17 +349,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps2']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Transactions/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_tr_tps2_graph'.format(path))
 
     def create_psb_tr_tpsall_graph(self, path=REPORT_PATH):
@@ -290,7 +375,7 @@ class Report:
         data_arrays = self.data_from_file()
 
         # build graph
-        plt.figure()
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y)
         plt.title('{}({}). Transactions/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
@@ -298,7 +383,13 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_tr_tpsall_graph'.format(path))
 
     '''
@@ -309,17 +400,24 @@ class Report:
         y = self.raw_table.loc[:, ['la']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Threads/Latency averege'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_th_la_graph'.format(path))
 
     def create_psb_th_tps1_graph(self, path=REPORT_PATH):
@@ -327,17 +425,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps1']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Threads/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_th_tps1_graph'.format(path))
 
     def create_psb_th_tps2_graph(self, path=REPORT_PATH):
@@ -345,17 +450,24 @@ class Report:
         y = self.raw_table.loc[:, ['tps2']]
 
         data_arrays = self.data_from_file()
-        f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
+        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
 
         # build graph
-        plt.figure()
-        plt.plot(x, y, 'o')
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Threads/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_th_tps2_graph'.format(path))
 
     def create_psb_th_tpsall_graph(self, path=REPORT_PATH):
@@ -364,7 +476,7 @@ class Report:
         data_arrays = self.data_from_file()
 
         # build graph
-        plt.figure()
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y)
         plt.title('{}({}). Threads/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
@@ -372,7 +484,13 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+
+        # colorized 100% zone
+        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
+        plt.fill_between(data_arrays[0][0:last_passed_test],
+                         data_arrays[1][0:last_passed_test],
+                         color='palegreen')
+
         plt.savefig('{}/psb_th_tpsall_graph'.format(path))
 
     def get_la_rating(self, lower_limit=1, upper_limit=6400):

@@ -3,13 +3,14 @@ import tarfile
 import warnings
 import numpy as np
 
+from shutil import copy
 from time import time
 from os import listdir
 from scipy import integrate
 from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
 from pretty_html_table import build_table
-from psb_conf import REPORT_FILENAME, REPORT_PATH
+from psb_conf import REPORT_FILENAME, REPORT_PATH, LOG_FILENAME
 
 
 class Report:
@@ -30,6 +31,10 @@ class Report:
                                                'la': [float(la) for la in raw_data[1::4]],
                                                'tps1': [float(tps1) for tps1 in raw_data[2::4]],
                                                'tps2': [float(tps2) for tps2 in raw_data[3::4]]})
+
+        # graph size
+        self.width = 25
+        self.height = 15
 
     @staticmethod
     def data_from_file(report_file=REPORT_FILENAME):
@@ -56,6 +61,10 @@ class Report:
                 except np.RankWarning:
                     polinom_factor -= 1
 
+    @staticmethod
+    def cm_to_inch(value):
+        return value / 2.54
+
     def create_beauty_table(self, path=REPORT_PATH, table_name='psb_report_table.html'):
         beauty_table = build_table(self.raw_table, 'blue_light')
         with open('{}/{}'.format(path, table_name), 'w') as beauty_html_table:
@@ -79,6 +88,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_cl_la_graph'.format(path))
 
     def create_psb_cl_tps1_graph(self, path=REPORT_PATH):
@@ -96,6 +106,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_cl_tps1_graph'.format(path))
 
     def create_psb_cl_tps2_graph(self, path=REPORT_PATH):
@@ -113,6 +124,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_cl_tps2_graph'.format(path))
 
     def create_psb_cl_tpsall_graph(self, path=REPORT_PATH):
@@ -129,6 +141,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_cl_tpsall_graph'.format(path))
 
     '''
@@ -149,6 +162,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_sc_la_graph'.format(path))
 
     def create_psb_sc_tps1_graph(self, path=REPORT_PATH):
@@ -166,6 +180,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_sc_tps1_graph'.format(path))
 
     def create_psb_sc_tps2_graph(self, path=REPORT_PATH):
@@ -183,6 +198,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_sc_tps2_graph'.format(path))
 
     def create_psb_sc_tpsall_graph(self, path=REPORT_PATH):
@@ -199,6 +215,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_sc_tpsall_graph'.format(path))
 
     '''
@@ -219,6 +236,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_tr_la_graph'.format(path))
 
     def create_psb_tr_tps1_graph(self, path=REPORT_PATH):
@@ -236,6 +254,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_tr_tps1_graph'.format(path))
 
     def create_psb_tr_tps2_graph(self, path=REPORT_PATH):
@@ -253,6 +272,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_tr_tps2_graph'.format(path))
 
     def create_psb_tr_tpsall_graph(self, path=REPORT_PATH):
@@ -269,6 +289,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_tr_tpsall_graph'.format(path))
 
     '''
@@ -289,6 +310,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('Latency average')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_th_la_graph'.format(path))
 
     def create_psb_th_tps1_graph(self, path=REPORT_PATH):
@@ -306,6 +328,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_th_tps1_graph'.format(path))
 
     def create_psb_th_tps2_graph(self, path=REPORT_PATH):
@@ -323,6 +346,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_th_tps2_graph'.format(path))
 
     def create_psb_th_tpsall_graph(self, path=REPORT_PATH):
@@ -339,6 +363,7 @@ class Report:
         plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
         plt.ylabel('TPS')
         plt.grid(True)
+        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.savefig('{}/psb_th_tpsall_graph'.format(path))
 
     def get_la_rating(self, lower_limit=1, upper_limit=6400):
@@ -359,8 +384,8 @@ class Report:
         Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
         return 1 / Itps2
 
-    def get_total_rating(self, lower_lim=1, upper_lim=6400):
-        return round((self.get_la_rating(lower_lim, upper_lim) + self.get_tps1_rating(lower_lim, upper_lim) + self.get_tps2_rating(lower_lim, upper_lim)), 5)
+    def get_total_rating(self, lower_lim=1, upper_lim=6400, accuracy=10):
+        return round((self.get_la_rating(lower_lim, upper_lim) + self.get_tps1_rating(lower_lim, upper_lim) + self.get_tps2_rating(lower_lim, upper_lim)), accuracy)
 
     def merge(self, table_lst, graph_lst, path=REPORT_PATH):
         '''
@@ -445,6 +470,7 @@ class Report:
         '''
             tar архив с результатами тестирования
         '''
+        copy(LOG_FILENAME, '{}/main_log'.format(path))
         with tarfile.open('report{v}_{m}_{t}.tar'.format(v=astra_version()[0],
                                                          m=astra_version()[1],
                                                          t=time()), 'w') as tar:

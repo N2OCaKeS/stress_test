@@ -23,22 +23,37 @@ class Report:
         with open(report_file, 'r') as report_file:
             raw_data = report_file.read().split()
         if all_params:
-            self.raw_table = pandas.DataFrame({'scale': [int(param) for param in raw_data[0::9]],
-                                               'transactions': [int(param) for param in raw_data[1::9]],
-                                               'threads': [int(param) for param in raw_data[2::9]],
-                                               'clients': [int(param) for param in raw_data[3::9]],
-                                               'la': [float(la) for la in raw_data[4::9]],
-                                               'tps1': [float(tps1) for tps1 in raw_data[5::9]],
-                                               'tps2': [float(tps2) for tps2 in raw_data[6::9]],
-                                               'com_tr': [float(c_trs) for c_trs in raw_data[7::9]],
-                                               'exp_tr': [float(e_trs) for e_trs in raw_data[8::9]]})
+            self.scales_lst = [int(param) for param in raw_data[0::9]]
+            self.transactions_lst = [int(param) for param in raw_data[1::9]]
+            self.threads_lst = [int(param) for param in raw_data[2::9]]
+            self.clients_lst = [int(param) for param in raw_data[3::9]]
+            self.la_lst = [float(la) for la in raw_data[4::9]]
+            self.tps1_lst = [float(tps1) for tps1 in raw_data[5::9]]
+            self.tps2_lst = [float(tps2) for tps2 in raw_data[6::9]]
+            self.com_tr_lst = [float(c_trs) for c_trs in raw_data[7::9]]
+            self.exp_tr_lst = [float(e_trs) for e_trs in raw_data[8::9]]
+            self.raw_table = pandas.DataFrame({'scale': self.scales_lst,
+                                               'transactions': self.transactions_lst,
+                                               'threads': self.threads_lst,
+                                               'clients': self.clients_lst,
+                                               'la': self.la_lst,
+                                               'tps1': self.tps1_lst,
+                                               'tps2': self.tps2_lst,
+                                               'com_tr': self.com_tr_lst,
+                                               'exp_tr': self.exp_tr_lst})
         else:
-            self.raw_table = pandas.DataFrame({param_name: [int(param) for param in raw_data[0::6]],
-                                               'la': [float(la) for la in raw_data[1::6]],
-                                               'tps1': [float(tps1) for tps1 in raw_data[2::6]],
-                                               'tps2': [float(tps2) for tps2 in raw_data[3::6]],
-                                               'com_tr': [float(c_trs) for c_trs in raw_data[4::6]],
-                                               'exp_tr': [float(e_trs) for e_trs in raw_data[5::6]]})
+            self.param_lst = [int(param) for param in raw_data[0::6]]
+            self.la_lst = [float(la) for la in raw_data[1::6]]
+            self.tps1_lst = [float(tps1) for tps1 in raw_data[2::6]]
+            self.tps2_lst = [float(tps2) for tps2 in raw_data[3::6]]
+            self.com_tr_lst = [float(c_trs) for c_trs in raw_data[4::6]]
+            self.exp_tr_lst = [float(e_trs) for e_trs in raw_data[5::6]]
+            self.raw_table_lst = pandas.DataFrame({param_name: self.param_lst,
+                                                   'la': self.la_lst,
+                                                   'tps1': self.tps1_lst,
+                                                   'tps2': self.tps2_lst,
+                                                   'com_tr': self.com_tr_lst,
+                                                   'exp_tr': self.exp_tr_lst})
 
         # added column with result (% completed transactions)
         self.raw_table['result (%)'] = round(self.raw_table['com_tr'] / self.raw_table['exp_tr'] * 100, 2)

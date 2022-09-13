@@ -12,7 +12,7 @@ from sys import exit
 from time import sleep
 from fabric import Connection
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, LOG_FILENAME
+    HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -70,7 +70,7 @@ args = parser.parse_args()
 '''
     main
 '''
-script_dir = '/media/sf_git/skts-test/testlink/file_system_benchmark'
+script_dir = SCRIPT_DIR
 run_storage_init = 'sudo {dir}/venv/bin/python {dir}/fsb_storage_init.py --fs {fs}'
 run_test = 'sudo {dir}/venv/bin/python {dir}/fsb_test.py --test-set {ts}'
 
@@ -80,6 +80,7 @@ run_test = 'sudo {dir}/venv/bin/python {dir}/fsb_test.py --test-set {ts}'
 vm_dir = '/home/$USER/VirtualBox\ VMs/'
 vm_restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {shapshot}'
 vm_storage_create = 'VBoxManage createmedium disk --filename {dir}{fs}_storage --size {size} --format VDI --variant Standard'
+vm_storage_detache = ''
 vm_storage_remove = 'rm -rf {dir}{fs}_storage.vdi'
 vm_storage_attach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium {dir}{fs}_storage.vdi'
 vm_power_on = 'VBoxManage startvm {host}_{postfix}'

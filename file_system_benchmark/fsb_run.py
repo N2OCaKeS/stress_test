@@ -12,7 +12,7 @@ from sys import exit
 from time import sleep
 from fabric import Connection
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    hosts, USER, PASSWORD, LOG_FILENAME
+    HOSTS, USER, PASSWORD, LOG_FILENAME
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -43,16 +43,8 @@ parser.add_argument('--fs',
 
 parser.add_argument('--host',
                     action='store',
-                    choices=['sudcm',
-                             'sufs',
-                             'susrv',
-                             'sudcs',
-                             'suac',
-                             'fidcm',
-                             'fidcr1',
-                             'fidcr2',
-                             'fisrv',
-                             'fiac'],
+                    choices=['sudcm' 
+                             'stand1'],
                     required=True,
                     help='hostname where the storage is located',
                     dest='HOST')
@@ -104,7 +96,7 @@ def host_is_available(node):
     try:
         if args.VIRTUAL:  # вирт. стенд
             with Connection(host='127.0.0.1',
-                            port=hosts[node]['port'],
+                            port=HOSTS[node]['port'],
                             user=USER,
                             connect_kwargs={"password": PASSWORD}) as node_client:
                 if str(node_client.run('uptime')):
@@ -150,7 +142,7 @@ if args.VIRTUAL: # вирт. стенд
     '''
     try:
         with Connection(host='127.0.0.1',
-                        port=hosts[args.HOST]['port'],
+                        port=HOSTS[args.HOST]['port'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
             storage_host_client.run(run_storage_init.format(dir=script_dir,
@@ -170,7 +162,7 @@ if args.VIRTUAL: # вирт. стенд
 
     try:
         with Connection(host='127.0.0.1',
-                        port=hosts[args.HOST]['port'],
+                        port=HOSTS[args.HOST]['port'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as node_client:
             node_client.run(run_test.format(dir=script_dir,

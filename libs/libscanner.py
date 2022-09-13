@@ -79,13 +79,13 @@ class Scanner:
     Засечь время
     """
     def start_the_time(self):
-        self.time_start = datetime.now()
+        self.time_start = datetime.now().timestamp()
         return self.time_start
 
     """
     Остановить время
     """
     def stop_the_time(self):
-        self.time_end = datetime.now() - self.time_start
+        self.time_end = datetime.now().timestamp() - self.time_start
         self.times.append(self.time_end)
         return self.time_end

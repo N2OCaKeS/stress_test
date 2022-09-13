@@ -16,9 +16,12 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
 '''
     Основной лог файл в который попадают результаты тестирования
 '''
-LOG_FILENAME = 'fsb_report.txt'
-MAIN_DIR = '/media/sf_git/skts-test/testlink/file_system_benchmark'
-LOG_PATH = '{}/{}'.format(MAIN_DIR, LOG_FILENAME)
+SCRIPT_DIR = '/media/sf_git/stress_test/file_system_benchmark'
+LOG_FILENAME = 'fsb_log'
+LOG_PATH = '{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
+REPORT_FILENAME = 'fsb_report.txt'
+REPORT_PATH = '{}/report/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
+
 '''
     Количество Inode
 '''
@@ -38,7 +41,7 @@ MACHINE_POSTFIX = 'osse'
 '''
     Имя снапшота для восстановления
 '''
-SNAPSHOT_NAME = '1.7-testing-1.7.2.5 (Smolensk)'
+SNAPSHOT_NAME = '1.7.2.s'
 
 PORT = '7777'
 '''

@@ -10,7 +10,7 @@ import argparse
 
 from time import time
 from libs.libtests import TestSet
-from fsb_conf import LOG_FILENAME, \
+from fsb_conf import LOG_PATH, \
         START_BORDER_FOR_DATA, STEP_FOR_BORDER, END_BORDER_FOR_DATA, TIMEOUT, \
         TH_START_BORDER_FOR_DATA, TH_STEP_FOR_BORDER, TH_END_BORDER_FOR_DATA
 
@@ -34,7 +34,7 @@ parser.add_argument('--data-from-config',
                     dest='CONFIG')
 args = parser.parse_args()
 
-logging.basicConfig(filename=LOG_FILENAME,
+logging.basicConfig(filename=LOG_PATH,
                     filemode="a+",
                     level=logging.INFO,
                     format='%(levelname)s: t:%(created)f th:%(thread)d ps:%(process)d <%(name)s> | %(message)s')

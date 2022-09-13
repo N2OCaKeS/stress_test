@@ -1,9 +1,15 @@
 # -*- coding: UTF-8 -*-
 
+# ;===========================================================
+# ; Author: ivelikanov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import os
 import shutil
 import time
 from datetime import datetime
+
 
 class Scanner:
 
@@ -20,15 +26,15 @@ class Scanner:
     - Первый аргумент № ядра. По умолчанию 0 - суммарная загрузка
     """
     def get_cpu_load(self, number_kernel=0):
-        def cat_proc_cpu(number_kernel):
-            if os.cpu_count() < number_kernel:
-                print("\033[31mВы пытаетесь узнать загрузку ядра №{kernel}, но существует только {os_count}!\033[0m".format(kernel=number_kernel, os_count=os.cpu_count()))
+        def cat_proc_cpu(num_kernel):
+            if os.cpu_count() < num_kernel:
+                print("\033[31mВы пытаетесь узнать загрузку ядра №{kernel}, но существует только {os_count}!\033[0m".format(kernel=num_kernel, os_count=os.cpu_count()))
                 raise ValueError
             else:
                 with open('/proc/stat', 'r') as procfile:
                     temp_str = []
-                    for _ in range(number_kernel + 1):
-                        if number_kernel is 0:
+                    for _ in range(num_kernel + 1):
+                        if num_kernel is 0:
                             temp_str = procfile.readline().split(' ')[2:-1]
                         else:
                             temp_str = procfile.readline().split(' ')[1:-1]

@@ -30,8 +30,8 @@ class Report:
             self.la_lst = [float(la) for la in raw_data[4::9]]
             self.tps1_lst = [float(tps1) for tps1 in raw_data[5::9]]
             self.tps2_lst = [float(tps2) for tps2 in raw_data[6::9]]
-            self.com_tr_lst = [float(c_trs) for c_trs in raw_data[7::9]]
-            self.exp_tr_lst = [float(e_trs) for e_trs in raw_data[8::9]]
+            self.com_tr_lst = [int(c_trs) for c_trs in raw_data[7::9]]
+            self.exp_tr_lst = [int(e_trs) for e_trs in raw_data[8::9]]
             self.raw_table = pandas.DataFrame({'scale': self.scales_lst,
                                                'transactions': self.transactions_lst,
                                                'threads': self.threads_lst,
@@ -46,14 +46,14 @@ class Report:
             self.la_lst = [float(la) for la in raw_data[1::6]]
             self.tps1_lst = [float(tps1) for tps1 in raw_data[2::6]]
             self.tps2_lst = [float(tps2) for tps2 in raw_data[3::6]]
-            self.com_tr_lst = [float(c_trs) for c_trs in raw_data[4::6]]
-            self.exp_tr_lst = [float(e_trs) for e_trs in raw_data[5::6]]
-            self.raw_table_lst = pandas.DataFrame({param_name: self.param_lst,
-                                                   'la': self.la_lst,
-                                                   'tps1': self.tps1_lst,
-                                                   'tps2': self.tps2_lst,
-                                                   'com_tr': self.com_tr_lst,
-                                                   'exp_tr': self.exp_tr_lst})
+            self.com_tr_lst = [int(c_trs) for c_trs in raw_data[4::6]]
+            self.exp_tr_lst = [int(e_trs) for e_trs in raw_data[5::6]]
+            self.raw_table = pandas.DataFrame({param_name: self.param_lst,
+                                               'la': self.la_lst,
+                                               'tps1': self.tps1_lst,
+                                               'tps2': self.tps2_lst,
+                                               'com_tr': self.com_tr_lst,
+                                               'exp_tr': self.exp_tr_lst})
 
         # added column with result (% completed transactions)
         self.raw_table['result (%)'] = round(self.raw_table['com_tr'] / self.raw_table['exp_tr'] * 100, 2)
@@ -97,7 +97,7 @@ class Report:
     def last_passed(lst1, lst2):
         for index in range(len(lst1)):
             if lst1[index] != lst2[index]:
-                return index - 1
+                return index
 
     def create_beauty_table(self, path=REPORT_PATH, table_name='psb_report_table.html'):
         beauty_table = build_table(self.raw_table, 'blue_light')
@@ -111,23 +111,22 @@ class Report:
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['la']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Clients/Latency average'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('Latency average')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.la_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_cl_la_graph'.format(path))
@@ -136,23 +135,22 @@ class Report:
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps1']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Clients/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_cl_tps1_graph'.format(path))
@@ -161,46 +159,47 @@ class Report:
         x = self.raw_table.loc[:, ['clients']]
         y = self.raw_table.loc[:, ['tps2']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Clients/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Clients')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_cl_tps2_graph'.format(path))
 
     def create_psb_cl_tpsall_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['clients']]
-        y = self.raw_table.loc[:, ['tps1', 'tps2']]
-        data_arrays = self.data_from_file()
 
+        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
+        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
+        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
         # build graph
+
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y)
+        plt.plot(aprx_x, aprx_f1(aprx_x))
+        plt.plot(aprx_x, aprx_f2(aprx_x))
         plt.title('{}({}). Clients/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
         plt.xlabel('Clients')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_cl_tpsall_graph'.format(path))
@@ -212,23 +211,22 @@ class Report:
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['la']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Scale/Latency average'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('Latency average')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.la_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_sc_la_graph'.format(path))
@@ -237,23 +235,22 @@ class Report:
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps1']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Scale/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_sc_tps1_graph'.format(path))
@@ -262,46 +259,47 @@ class Report:
         x = self.raw_table.loc[:, ['scale']]
         y = self.raw_table.loc[:, ['tps2']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Scale/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Scale')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps2_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_sc_tps2_graph'.format(path))
 
     def create_psb_sc_tpsall_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['scale']]
-        y = self.raw_table.loc[:, ['tps1', 'tps2']]
-        data_arrays = self.data_from_file()
+
+        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
+        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
+        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y)
+        plt.plot(aprx_x, aprx_f1(aprx_x))
+        plt.plot(aprx_x, aprx_f2(aprx_x))
         plt.title('{}({}). Scale/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
         plt.xlabel('Scale')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_sc_tpsall_graph'.format(path))
@@ -313,23 +311,22 @@ class Report:
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['la']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Transactions/Latency averege'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('Latency average')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.la_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_tr_la_graph'.format(path))
@@ -338,23 +335,22 @@ class Report:
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps1']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Transactions/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_tr_tps1_graph'.format(path))
@@ -363,46 +359,47 @@ class Report:
         x = self.raw_table.loc[:, ['transactions']]
         y = self.raw_table.loc[:, ['tps2']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Transactions/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Transactions')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps2_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_tr_tps2_graph'.format(path))
 
     def create_psb_tr_tpsall_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['transactions']]
-        y = self.raw_table.loc[:, ['tps1', 'tps2']]
-        data_arrays = self.data_from_file()
+
+        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
+        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
+        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y)
+        plt.plot(aprx_x, aprx_f1(aprx_x))
+        plt.plot(aprx_x, aprx_f2(aprx_x))
         plt.title('{}({}). Transactions/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
         plt.xlabel('Transactions')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_tr_tpsall_graph'.format(path))
@@ -414,23 +411,22 @@ class Report:
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['la']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[1])
+        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Threads/Latency averege'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('Latency average')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.la_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_th_la_graph'.format(path))
@@ -439,23 +435,22 @@ class Report:
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps1']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[2])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Threads/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_th_tps1_graph'.format(path))
@@ -464,70 +459,68 @@ class Report:
         x = self.raw_table.loc[:, ['threads']]
         y = self.raw_table.loc[:, ['tps2']]
 
-        data_arrays = self.data_from_file()
         aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
-        aprx_f = self.data_aproximation(data_arrays[0], data_arrays[3])
+        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
         plt.title('{}({}). Threads/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
         plt.xlabel('Threads')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps2_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_th_tps2_graph'.format(path))
 
     def create_psb_th_tpsall_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['threads']]
-        y = self.raw_table.loc[:, ['tps1', 'tps2']]
-        data_arrays = self.data_from_file()
+
+        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
+        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
+        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y)
+        plt.plot(aprx_x, aprx_f1(aprx_x))
+        plt.plot(aprx_x, aprx_f2(aprx_x))
         plt.title('{}({}). Threads/TPS'.format(astra_version()[0], astra_version()[1]))
         plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
         plt.xlabel('Threads')
-        plt.xticks(np.arange(len(data_arrays[0])), data_arrays[0])
+        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
         plt.ylabel('TPS')
         plt.grid(True)
 
         # colorized 100% zone
-        last_passed_test = self.last_passed(data_arrays[4], data_arrays[5])
-        plt.fill_between(data_arrays[0][0:last_passed_test],
-                         data_arrays[1][0:last_passed_test],
+        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+        plt.fill_between(self.param_lst[0:last_passed_test],
+                         self.tps1_lst[0:last_passed_test],
                          color='palegreen')
 
         plt.savefig('{}/psb_th_tpsall_graph'.format(path))
 
-    def get_la_rating(self, lower_limit=1, upper_limit=6400):
-        data_arrays = self.data_from_file()
-        func_la = self.data_aproximation(data_arrays[0], data_arrays[1])
+    def get_la_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
+        func_la = self.data_aproximation(self.param_lst, self.la_lst)
         Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
         return 1 / Ila
 
-    def get_tps1_rating(self, lower_limit=1, upper_limit=6400):
-        data_arrays = self.data_from_file()
-        func_tps1 = self.data_aproximation(data_arrays[0], data_arrays[2])
+    def get_tps1_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
+        func_tps1 = self.data_aproximation(self.param_lst, self.tps1_lst)
         Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
         return 1 / Itps1
 
-    def get_tps2_rating(self, lower_limit=1, upper_limit=6400):
-        data_arrays = self.data_from_file()
-        func_tps2 = self.data_aproximation(data_arrays[0], data_arrays[3])
+    def get_tps2_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
+        func_tps2 = self.data_aproximation(self.param_lst, self.tps2_lst)
         Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
         return 1 / Itps2
 
-    def get_total_rating(self, lower_lim=1, upper_lim=6400, accuracy=10):
-        return round((self.get_la_rating(lower_lim, upper_lim) + self.get_tps1_rating(lower_lim, upper_lim) + self.get_tps2_rating(lower_lim, upper_lim)), accuracy)
+    def get_total_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS, accuracy=10):
+        return round((self.get_la_rating(lower_limit, upper_limit) + self.get_tps1_rating(lower_limit, upper_limit) + self.get_tps2_rating(lower_limit, upper_limit)), accuracy)*1000000
 
     def merge(self, table_lst, graph_lst, path=REPORT_PATH):
         '''
@@ -590,7 +583,7 @@ class Report:
 
         html_template_part2 = [
             '    </div>\n',
-            '    <div class="line_block">Total rating: {} astra</div>\n'.format(self.get_total_rating()),
+            '    <div class="line_block">Total rating: {} elefants</div>\n'.format(self.get_total_rating()),
             '    <div class="line_block">\n',
         ]
 

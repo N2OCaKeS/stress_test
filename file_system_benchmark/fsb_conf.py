@@ -20,7 +20,7 @@ SCRIPT_DIR = '/media/sf_git/stress_test/file_system_benchmark'
 LOG_FILENAME = 'fsb_log'
 LOG_PATH = '{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 REPORT_FILENAME = 'fsb_report.txt'
-REPORT_PATH = '{}/report/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
+REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 
 '''
     Количество Inode

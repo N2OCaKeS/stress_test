@@ -8,11 +8,13 @@
 import argparse
 import subprocess
 
+
 from sys import exit
 from time import sleep
+from os import getuid, path, mkdir
 from fabric import Connection
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME
+    HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -161,6 +163,13 @@ if args.VIRTUAL: # вирт. стенд
     log_file = open(LOG_FILENAME, 'w')
     log_file.close()
 
+    # Создать /report
+    try:
+        if not path.exists(REPORT_PATH):
+            mkdir(REPORT_PATH, mode=0o755)
+    except FileNotFoundError:
+        pass
+
     try:
         with Connection(host='127.0.0.1',
                         port=HOSTS[args.HOST]['port'],
@@ -200,6 +209,10 @@ else: # физ. стенд
     # Очистить лог
     log_file = open(LOG_FILENAME, 'w')
     log_file.close()
+
+    # Создать /report
+    if not path.exists(REPORT_PATH):
+        mkdir(REPORT_PATH, mode=0o755)
 
     try:
         cmd(run_test.format(dir=script_dir))

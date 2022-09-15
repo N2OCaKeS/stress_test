@@ -1,0 +1,149 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
+import subprocess
+import argparse
+from sys import exit
+from os import popen
+from time import sleep
+from cfs_conf import STORAGE_NAME, HOSTS, INODE_COUNT, STORAGE_MOUNT_DIR
+
+DESCRIPTION = ""
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('--fs',
+                    action='store',
+                    choices=['ocfs2', 'gfs2'],
+                    required=True,
+                    help='filesystem',
+                    dest='FS')
+
+parser.add_argument('--host-storage',
+                    action='store',
+                    required=True,
+                    help='hostname where the storage is located',
+                    dest='STORAGE')
+
+parser.add_argument('--nodes',
+                    action='store',
+                    nargs="+",
+                    required=True,
+                    help='nodes list <hostname1 hostname2 hostname3 ...>',
+                    dest='NODES')
+
+args = parser.parse_args()
+
+
+def cmd(command,
+        good_color='\033[92m',
+        mid_color='\033[93m',
+        bad_color='\033[91m',
+        def_color='\033[0m'):
+
+    code = subprocess.run(command, shell=True, stderr=subprocess.DEVNULL).returncode
+    if code == 0:
+        print('{}# +++ {}{}'.format(good_color, command, def_color))
+    elif code == 1:
+        print('{}# +-+ {}{}'.format(mid_color, command, def_color))
+        # exit(1)
+    else:
+        print('{}# --- {}{}'.format(bad_color, command, def_color))
+        exit(2)
+
+
+if args.FS == 'ocfs2':
+    # Проброс ssh key
+    cmd('sudo /media/sf_git/skts-test/testlink/cluster_file_system/ssh_key.sh')
+
+    # Установка пакета
+    cmd('apt-get install -y targetcli-fb ocfs2-tools')
+
+    # Проверка наличия диска
+    cmd('lsblk | grep sdb')
+
+    # Создание блока памяти
+    cmd('targetcli /backstores/block create storage01 {stor_dev}'.format(stor_dev=STORAGE_NAME))
+
+    # Создать таргет
+    cmd('targetcli /iscsi create')
+
+    # Установить параметры авторизации
+    iscsi_iqn = popen('targetcli ls /iscsi | grep iqn | cut -d" " -f4').read().strip()
+    # Установить параметры авторизации для остальных машин
+    node_iqn_dict = {}
+    index = 0
+    for node in args.NODES:  # словарь переменная_N -> значение
+        index += 1
+        cmd('ssh {ip} sudo apt-get install -y open-iscsi bridge-utils ocfs2-tools'.format(ip=HOSTS[node]['ip']))
+        node_iqn_dict['node{}_iqn'.format(index)] = popen(
+            'ssh {ip} sudo cat /etc/iscsi/initiatorname.iscsi | grep -v "##" | cut -d "=" -f2'.format(
+                ip=HOSTS[node]['ip'])).read().strip()
+
+    cmd('targetcli /iscsi/{iqn}/dtpg1 set parameter AuthMethod=None'.format(iqn=iscsi_iqn))
+    sleep(1)
+
+    cmd('targetcli /iscsi/{iqn}/tpg1 set attribute authentication=0'.format(iqn=iscsi_iqn))
+    sleep(1)
+
+    for nodeN_iqn in node_iqn_dict.keys():  # key = nodeN_iqn
+        cmd('targetcli /iscsi/{iqn}/tpg1/acls create {node_iqn}'.format(iqn=iscsi_iqn,
+                                                                        node_iqn=node_iqn_dict[nodeN_iqn]))
+        sleep(1)
+
+    # Создать LUNs
+    cmd('targetcli /iscsi/{iqn}/tpg1/luns create /backstores/block/storage01'.format(iqn=iscsi_iqn))
+
+    # Сохранить настройки
+    cmd('targetcli / saveconfig')
+
+    # Установка ISCSI-initiator
+    # Поиск LUNs
+    for node in args.NODES:
+        cmd('ssh {node_ip} "sudo iscsiadm -m discovery -t st -p {storage_ip}"'.format(node_ip=HOSTS[node]['ip'],
+                                                                                      storage_ip=HOSTS[args.STORAGE][
+                                                                                          'ip']))
+
+    # Автоподключение LUNs
+    for node in args.NODES:
+        cmd('ssh {node_ip} "sudo iscsiadm -m node -p {storage_ip} -l"'.format(node_ip=HOSTS[node]['ip'],
+                                                                              storage_ip=HOSTS[args.STORAGE]['ip']))
+        sleep(1)
+        cmd('ssh {node_ip} "sudo iscsiadm -m node -p {storage_ip} -o update -n node.startup -v automatic"'.format(
+            node_ip=HOSTS[node]['ip'], storage_ip=HOSTS[args.STORAGE]['ip']))
+
+    # Проверка автоподключение LUNs
+    cmd1 = 'ssh {node_ip} "sudo cat /etc/iscsi/nodes/{iqn}/{storage_ip}\,3260\,1/default | grep node.startup | grep automatic"'
+    cmd2 = 'ssh {node_ip} "if [ $? != 0 ]; then exit 1; fi"'
+    for node in args.NODES:
+        cmd(cmd1.format(node_ip=HOSTS[node]['ip'], iqn=iscsi_iqn, storage_ip=HOSTS[args.STORAGE]['ip']))
+        cmd(cmd2.format(node_ip=HOSTS[node]['ip']))
+
+    # Установить файловую систему ocfs2
+    for node in args.NODES:
+        cmd('ssh {node_ip} "sudo cp /media/sf_git/skts-test/testlink/cluster_file_system/cluster.conf /etc/ocfs2/cluster.conf"'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} "sudo sed -i "s/false/true/" /etc/default/o2cb"'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} "sudo dpkg-reconfigure ocfs2-tools -f noninteractive"'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} "sudo systemctl restart o2cb"'.format(node_ip=HOSTS[node]['ip']))
+
+    # Проверка конфига
+    for node in args.NODES:
+        cmd('ssh {node_ip} "sudo debconf-show ocfs2-tools | grep init | grep true"'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} "if [ $? != 0 ]; then exit 1; fi"'.format(node_ip=HOSTS[node]['ip']))
+
+    # Форматировать LUNs в ocfs2
+    # cmd('ssh {node_ip} "sudo mkfs.ocfs2 --cluster-stack=o2cb --cluster-name=ocfs2 {ic} {st_name}"'.format(node_ip=HOSTS[args.NODES[0]]['ip'], st_name=STORAGE_NAME, ic=INODE_COUNT))
+    cmd('ssh {node_ip} "sudo mkfs.ocfs2 --cluster-stack=o2cb --cluster-name=ocfs2 {st_name}"'.format(node_ip=HOSTS[args.NODES[0]]['ip'], st_name=STORAGE_NAME))
+
+    # Сделать запись в /etc/fstab
+    sdd_uuid = popen("blkid -o list | grep sdb | awk '{print $NF}'").read().strip()
+    id_system = popen("onedatastore list | grep system_oc | awk '{print $1}'").read().strip()
+    id_image = popen("onedatastore list | grep image_oc | awk '{print $1}'").read().strip()
+    for node in args.NODES:
+        cmd('ssh {node_ip} "sudo echo -e \"UUID={uuid}\t{mount_dir}/{id}\tocfs2\t_netdev,x-systemd.requires=o2cb.service\t0\t0\" >> /etc/fstab"'.format(node_ip=HOSTS[node]['ip'],
+                                                                                                                                                        uuid=sdd_uuid,
+                                                                                                                                                        mount_dir=STORAGE_MOUNT_DIR,
+                                                                                                                                                        id=id_system))
+        subprocess.run('ssh {node_ip} "sudo reboot"'.format(node_ip=HOSTS[node]['ip']), shell=True)

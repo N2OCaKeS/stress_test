@@ -54,8 +54,11 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
 # physical stand
 # ...
 
-LOG_FILENAME = '/media/sf_git/skts-test/testlink/cluster_file_system/cfs_report.txt'
-MAIN_DIR = '/media/sf_git/skts-test/testlink/cluster_file_system'
+SCRIPT_DIR = '/media/sf_git/stress_test/cluster_file_system_benchmark'
+LOG_FILENAME = 'cfs_log'
+LOG_PATH ='{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
+REPORT_FILENAME = 'cfs_report.txt'
+REPORT_PATH ='{}/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
 
 # Количество Inode
 INODE_COUNT = '-N 255'
@@ -66,7 +69,7 @@ STORAGE_MOUNT_DIR = '/var/lib/one/datastores'
 #
 MACHINE_POSTFIX = 'osse'
 #
-SNAPSHOT_NAME = '1.7.1 (Smolensk)'
+SNAPSHOT_NAME = '1.7.1.s'
 #
 PORT = '7777'
 #

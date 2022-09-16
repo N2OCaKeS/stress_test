@@ -12,7 +12,7 @@ import concurrent.futures
 from time import time
 from pathlib import Path
 from os import listdir, linesep
-from cfs_conf import STORAGE_MOUNT_DIR, LOG_FILENAME, MAIN_DIR
+from cfs_conf import STORAGE_MOUNT_DIR, LOG_FILENAME, SCRIPT_DIR
 from libs.libactions import create_file, del_file, \
     create_symlink, del_symlink, \
     create_hardlink, del_hardlink, \
@@ -311,7 +311,7 @@ class Test:
         return True
 
     @staticmethod
-    def fs_mark33_count(start=10, end=100, step=5, size=1024, mount_dir=STORAGE_MOUNT_DIR, scr_dir=MAIN_DIR):
+    def fs_mark33_count(start=10, end=100, step=5, size=1024, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_count.__name__))
 
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
@@ -340,7 +340,7 @@ class Test:
         return True
 
     @staticmethod
-    def fs_mark33_size(start=1024, end=10240, step=1024, count=1000, mount_dir=STORAGE_MOUNT_DIR, scr_dir=MAIN_DIR):
+    def fs_mark33_size(start=1024, end=10240, step=1024, count=1000, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_size.__name__))
 
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'

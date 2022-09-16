@@ -56,7 +56,7 @@ def cmd(command,
 
 if args.FS == 'ocfs2':
     # Проброс ssh key
-    cmd('sudo /media/sf_git/skts-test/testlink/cluster_file_system/ssh_key.sh')
+    cmd('sudo /media/sf_git/stress_test/cluster_file_system_benchmark/ssh_key.sh')
 
     # Установка пакета
     cmd('apt-get install -y targetcli-fb ocfs2-tools')
@@ -123,7 +123,7 @@ if args.FS == 'ocfs2':
 
     # Установить файловую систему ocfs2
     for node in args.NODES:
-        cmd('ssh {node_ip} "sudo cp /media/sf_git/skts-test/testlink/cluster_file_system/cluster.conf /etc/ocfs2/cluster.conf"'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} "sudo cp /media/sf_git/stress_test/cluster_file_system_benchmark/cluster.conf /etc/ocfs2/cluster.conf"'.format(node_ip=HOSTS[node]['ip']))
         cmd('ssh {node_ip} "sudo sed -i "s/false/true/" /etc/default/o2cb"'.format(node_ip=HOSTS[node]['ip']))
         cmd('ssh {node_ip} "sudo dpkg-reconfigure ocfs2-tools -f noninteractive"'.format(node_ip=HOSTS[node]['ip']))
         cmd('ssh {node_ip} "sudo systemctl restart o2cb"'.format(node_ip=HOSTS[node]['ip']))
@@ -134,16 +134,13 @@ if args.FS == 'ocfs2':
         cmd('ssh {node_ip} "if [ $? != 0 ]; then exit 1; fi"'.format(node_ip=HOSTS[node]['ip']))
 
     # Форматировать LUNs в ocfs2
-    # cmd('ssh {node_ip} "sudo mkfs.ocfs2 --cluster-stack=o2cb --cluster-name=ocfs2 {ic} {st_name}"'.format(node_ip=HOSTS[args.NODES[0]]['ip'], st_name=STORAGE_NAME, ic=INODE_COUNT))
-    cmd('ssh {node_ip} "sudo mkfs.ocfs2 --cluster-stack=o2cb --cluster-name=ocfs2 {st_name}"'.format(node_ip=HOSTS[args.NODES[0]]['ip'], st_name=STORAGE_NAME))
+    cmd('ssh {node_ip} "sudo mkfs.ocfs2 --cluster-stack=o2cb --cluster-name=ocfs2 {device}"'.format(node_ip=HOSTS[args.NODES[0]]['ip'], device=STORAGE_NAME))
 
     # Сделать запись в /etc/fstab
-    sdd_uuid = popen("blkid -o list | grep sdb | awk '{print $NF}'").read().strip()
-    id_system = popen("onedatastore list | grep system_oc | awk '{print $1}'").read().strip()
-    id_image = popen("onedatastore list | grep image_oc | awk '{print $1}'").read().strip()
+    sd_uuid = popen("blkid -o list | grep sdb | awk '{print $NF}'").read().strip()
     for node in args.NODES:
-        cmd('ssh {node_ip} "sudo echo -e \"UUID={uuid}\t{mount_dir}/{id}\tocfs2\t_netdev,x-systemd.requires=o2cb.service\t0\t0\" >> /etc/fstab"'.format(node_ip=HOSTS[node]['ip'],
-                                                                                                                                                        uuid=sdd_uuid,
-                                                                                                                                                        mount_dir=STORAGE_MOUNT_DIR,
-                                                                                                                                                        id=id_system))
+        cmd('ssh {node_ip} "sudo bash -c \'echo -e dlm >> /etc/modules-load.d/modules.conf\'"'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} "sudo echo -e \"UUID={uuid}\t{mount_dir}\tocfs2\t_netdev,x-systemd.requires=o2cb.service\t0\t0\" >> /etc/fstab"'.format(node_ip=HOSTS[node]['ip'],
+                                                                                                                                                   uuid=sd_uuid,
+                                                                                                                                                   mount_dir=STORAGE_MOUNT_DIR))
         subprocess.run('ssh {node_ip} "sudo reboot"'.format(node_ip=HOSTS[node]['ip']), shell=True)

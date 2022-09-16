@@ -13,7 +13,7 @@ from sys import exit
 from fabric import Connection
 from time import sleep
 from cfs_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME
+    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -69,7 +69,7 @@ parser.add_argument('--thread-variant',
                              'hardlinks',
                              'archs',
                              'isos'],
-                    required=True,
+                    required=False,
                     help='type of file for multihost threads test',
                     dest='VARIANT')
 
@@ -77,7 +77,6 @@ args = parser.parse_args()
 all_hosts = args.NODES + [args.STORAGE]
 
 #
-script_dir = '/media/sf_git/skts-test/testlink/cluster_file_system'
 
 # bash cmd # /home/$USER/VirtualBox\ VMs/
 restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {shapshot}'
@@ -92,7 +91,7 @@ pm_on = ''
 pm_off = ''
 
 ssh_keygen = 'ssh-keygen -f "/home/$USER/.ssh/known_hosts" -R {ip}'
-add_nodes_in_ssh_scrt = "sed -i '3s/.*/ips=({nodes} {host})/' /home/$USER/git/skts-test/testlink/cluster_file_system/ssh_key.sh"
+add_nodes_in_ssh_scrt = "sed -i '3s/.*/ips=({nodes} {host})/' /home/$USER/git/stress_test/cluster_file_system_benchmark/ssh_key.sh"
 run_storage_init = 'sudo {dir}/venv/bin/python {dir}/cfs_storage_init.py --fs {fs} --host-storage {st_host} --nodes {hosts}'
 run_single_test = 'sudo {dir}/venv/bin/python {dir}/cfs_test.py --test-set {ts}'
 run_th_test = 'sudo {dir}/venv/bin/python {dir}/cfs_th_test.py -v {variant}'
@@ -124,12 +123,12 @@ def run_thread_test(node, v):
                             port=HOSTS[node]['port'],
                             user=USER,
                             connect_kwargs={"password": PASSWORD}) as node_client:
-                node_client.run(run_th_test.format(dir=script_dir, variant=v))
+                node_client.run(run_th_test.format(dir=SCRIPT_DIR, variant=v))
         else:  # физ. стенд
             with Connection(host=HOSTS[node]['ip'],
                             user=USER,
                             connect_kwargs={"password": PASSWORD}) as node_client:
-                node_client.run(run_th_test.format(dir=script_dir, variant=v))
+                node_client.run(run_th_test.format(dir=SCRIPT_DIR, variant=v))
     except Exception as exptn:
        print("\033[91m Тестирование завершилось исключением.\033[0m")
        print(exptn)
@@ -202,7 +201,7 @@ for host in all_hosts:
 ips = ["'"+HOSTS[node]['ip']+"'" for node in args.NODES]
 cmd(add_nodes_in_ssh_scrt.format(nodes=' '.join(ips),
                                  host="'"+HOSTS[args.STORAGE]['ip']+"'",
-                                 dir=script_dir))
+                                 dir=SCRIPT_DIR))
 
 # Сгенерировать cluster.conf
 conf = ['cluster:\n',
@@ -210,7 +209,7 @@ conf = ['cluster:\n',
         '        name = {fs}\n'.format(fs=args.FS),
         '\n']
 
-index = 0
+index = -1
 for node in args.NODES:
     index += 1
     node_conf = ['node:\n',
@@ -236,7 +235,7 @@ try:
                         port=HOSTS[args.STORAGE]['port'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
-            storage_host_client.run(run_storage_init.format(dir=script_dir,
+            storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
                                                             fs=args.FS,
                                                             st_host=args.STORAGE,
                                                             hosts=str_hosts))
@@ -244,7 +243,7 @@ try:
         with Connection(host=HOSTS[args.STORAGE]['ip'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
-            storage_host_client.run(run_storage_init.format(dir=script_dir,
+            storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
                                                             fs=args.FS,
                                                             st_host=args.STORAGE,
                                                             hosts=str_hosts))
@@ -273,12 +272,12 @@ try:
                         port=HOSTS[args.NODES[0]]['port'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as node_client:
-            node_client.run(run_single_test.format(dir=script_dir, ts=args.TS))
+            node_client.run(run_single_test.format(dir=SCRIPT_DIR, ts=args.TS))
     else:  # физ. стенд
         with Connection(host=HOSTS[args.NODES[0]]['ip'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as node_client:
-            node_client.run(run_single_test.format(dir=script_dir, ts=args.TS))
+            node_client.run(run_single_test.format(dir=SCRIPT_DIR, ts=args.TS))
 except Exception as exception:
     print("\033[91m Тестирование завершилось исключением.\033[0m")
     print(exception)

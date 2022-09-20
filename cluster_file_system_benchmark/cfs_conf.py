@@ -63,7 +63,7 @@ REPORT_PATH ='{}/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
 # Количество Inode
 INODE_COUNT = '-N 255'
 #
-STORAGE_NAME = '/dev/sdb'
+STORAGE_NAME = 'sdb'
 #
 STORAGE_MOUNT_DIR = '/var/lib/one/datastores'
 #

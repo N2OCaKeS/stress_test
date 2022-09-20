@@ -86,7 +86,7 @@ startvm = 'VBoxManage startvm {host}_{postfix}'
 controlvm_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
 
 # Физ. машина
-restore_snapshot_agb = 'sudo agbackup restore {snapshot}'
+restore_snapshot_agb = ''
 pm_on = ''
 pm_off = ''
 
@@ -170,10 +170,6 @@ if args.VIRTUAL: # вирт. стенд
                              postfix=MACHINE_POSTFIX,
                              fs=args.FS))
 else:  # физ. стенд
-    for host in all_hosts:
-        sleep(1)
-        cmd(restore_snapshot_agb.format(host=host,
-                                        shapshot=SNAPSHOT_NAME))
     for host in all_hosts:
         while host_is_available(host) is False:
             sleep(1)

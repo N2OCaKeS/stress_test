@@ -65,7 +65,7 @@ if args.FS == 'ocfs2':
     cmd('lsblk | grep sdb')
 
     # Создание блока памяти
-    cmd('targetcli /backstores/block create storage01 {stor_dev}'.format(stor_dev=STORAGE_NAME))
+    cmd('targetcli /backstores/block create storage01 /dev/{stor_dev}'.format(stor_dev=STORAGE_NAME))
 
     # Создать таргет
     cmd('targetcli /iscsi create')
@@ -134,7 +134,7 @@ if args.FS == 'ocfs2':
         cmd('ssh {node_ip} "if [ $? != 0 ]; then exit 1; fi"'.format(node_ip=HOSTS[node]['ip']))
 
     # Форматировать LUNs в ocfs2
-    cmd('ssh {node_ip} "sudo mkfs.ocfs2 --cluster-stack=o2cb --cluster-name=ocfs2 {device}"'.format(node_ip=HOSTS[args.NODES[0]]['ip'], device=STORAGE_NAME))
+    cmd('ssh {node_ip} "sudo mkfs.ocfs2 --cluster-stack=o2cb --cluster-name=ocfs2 /dev/{device}"'.format(node_ip=HOSTS[args.NODES[0]]['ip'], device=STORAGE_NAME))
 
     # Сделать запись в /etc/fstab
     sd_uuid = popen("blkid -o list | grep sdb | awk '{print $NF}'").read().strip()

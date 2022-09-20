@@ -6,18 +6,19 @@
 # ;===========================================================
 
 import argparse
+import os
 import subprocess
 
 from sys import exit
-from os import getuid
-from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, \
+from os import getuid, path
+from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
     MIC_SQL_UPGRADE, MIC_SQL_TRANSACTION, \
     ACL_SQL_UPGRADE, ACL_SQL_TRANSACTION, \
     SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
-    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS
 from libs.libpsqbtests import Test
 from libs.libpsb import astra_version
 from libs.libtable import Report
@@ -59,8 +60,14 @@ args = parser.parse_args()
 if getuid() != 0:
     exit(2)
 
-report = open(LOG_FILENAME, 'w')
-report.close()
+# clean log
+if path.exists(LOG_FILENAME):
+    report = open(LOG_FILENAME, 'w')
+    report.close()
+
+# create dir
+if not path.exists(REPORT_PATH):
+    os.mkdir(REPORT_PATH, mode=0o755)
 
 version = astra_version()
 if args.DB_PREPARE:
@@ -68,7 +75,7 @@ if args.DB_PREPARE:
         Настроить машину, инициализировать тестовую БД
     '''
     if version[0] == '1.7' or version[0] == '4.7':
-        subprocess.run('sudo bash {dir}/psb_db_prep_11.sh {init_file}'.format(dir=SCRIPT_DIR,
+        subprocess.run('sudo bash {dir}/psb_db_prep.sh {init_file}'.format(dir=SCRIPT_DIR,
                                                                               init_file='psb_init.sql'),
                        shell=True,
                        stderr=subprocess.DEVNULL)
@@ -77,7 +84,6 @@ if args.DB_PREPARE:
                                                                               init_file='psb_init.sql'),
                        shell=True,
                        stderr=subprocess.DEVNULL)
-
 
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':
@@ -88,10 +94,10 @@ if args.TEST_LIST == 'base':
         scale_factor = 500
         transactions = 100000
         threads = 200
-        clients = 100
-        clients_step = 100
-        step_ratio_by_clients = 2  # (client_step)*(step_ratio_by_clients) every iteration
-        limite_clients = 10000
+        clients = CLIENTS
+        clients_step = CLIENTS_STEP
+        step_ratio_by_clients = STEP_RATIO_BY_CLIENTS  # (client_step)*(step_ratio_by_clients) every iteration
+        limite_clients = LIMITE_CLIENTS
 
         # clean conf
         report = open(REPORT_FILENAME, 'w')

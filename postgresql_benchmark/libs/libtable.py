@@ -1,6 +1,7 @@
 import pandas
 import tarfile
 import warnings
+#import pdfkit
 import numpy as np
 
 from shutil import copy
@@ -605,9 +606,14 @@ class Report:
         '''
             tar архив с результатами тестирования
         '''
+        time_mark = time()
         copy(LOG_FILENAME, '{}/main_log'.format(path))
+        #pdfkit.from_file('{}/main_report.html'.format(path),
+        #                 'report{v}_{m}_{t}.pdf'.format(v=astra_version()[0],
+        #                                                m=astra_version()[1],
+        #                                                t=time_mark))
         with tarfile.open('report{v}_{m}_{t}.tar'.format(v=astra_version()[0],
                                                          m=astra_version()[1],
-                                                         t=time()), 'w') as tar:
+                                                         t=time_mark), 'w') as tar:
             for file in listdir(path):
                 tar.add('{}/{}'.format('report', file))

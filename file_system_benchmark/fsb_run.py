@@ -14,7 +14,7 @@ from time import sleep
 from os import getuid, path, mkdir
 from fabric import Connection
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH
+    HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -217,3 +217,5 @@ else: # физ. стенд
         print("\033[91m Тестирование завершилось исключением.\033[0m")
         print(exception)
         exit(2)
+
+    cmd('umount {}'.format(STORAGE_MOUNT_DIR))

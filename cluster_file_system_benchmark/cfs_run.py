@@ -201,6 +201,7 @@ cmd(add_nodes_in_ssh_scrt.format(nodes=' '.join(ips),
 
 # Сгенерировать cluster.conf
 conf = ['cluster:\n',
+        '        heartbeat_mode = local\n',
         '        node_count = {count}\n'.format(count=len(args.NODES)),
         '        name = {fs}\n'.format(fs=args.FS),
         '\n']
@@ -288,4 +289,4 @@ print("###### - END - ######")
 print("#####################")
 
 # Выключаем все машины
-shutdown_all_hosts()
+#shutdown_all_hosts()

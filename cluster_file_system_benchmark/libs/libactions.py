@@ -12,7 +12,7 @@ import subprocess
 
 
 def vd_capacity():
-    raw_data = int(str(popen("lsblk | grep sdb | awk '{print $4}'").read().strip())[:-1])
+    raw_data = int(str(popen("lsblk | grep sdb1 | awk '{print $4}'").read().strip())[:-1])
     return raw_data * 1024 * 1024 * 1024
 
 

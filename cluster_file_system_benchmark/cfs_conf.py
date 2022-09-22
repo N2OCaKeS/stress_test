@@ -65,11 +65,11 @@ INODE_COUNT = '-N 255'
 #
 STORAGE_NAME = 'sdb'
 #
-STORAGE_MOUNT_DIR = '/var/lib/one/datastores'
+STORAGE_MOUNT_DIR = '/mnt'
 #
 MACHINE_POSTFIX = 'osse'
 #
-SNAPSHOT_NAME = '1.7.1.s'
+SNAPSHOT_NAME = '2'
 #
 PORT = '7777'
 #

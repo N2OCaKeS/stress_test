@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 # -*- coding: UTF-8 -*-
 
 # ;===========================================================
@@ -283,4 +281,3 @@ if args.TS == 'fs_mark_size':
                             'fsb_file_size_close_graph.png',
                             'fsb_file_size_unlink_graph.png'])
     report.create_tar()
->>>>>>> file_systems

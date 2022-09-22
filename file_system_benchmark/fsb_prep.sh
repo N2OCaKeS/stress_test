@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 #!/bin/bash
 
 # create venv in script_dir
@@ -10,4 +8,4 @@ python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip3 install -r req.txt
->>>>>>> file_systems
+

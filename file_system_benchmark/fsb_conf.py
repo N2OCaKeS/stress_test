@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 '''
     astra qa stand
     Все машины стенда, пригодные ддля проведения тестирования
@@ -75,4 +73,3 @@ NUMBER_OF_TEST_FILES = 5000
 TH_START_BORDER_FOR_DATA = 15
 TH_STEP_FOR_BORDER = 5
 TH_END_BORDER_FOR_DATA = 25
->>>>>>> file_systems

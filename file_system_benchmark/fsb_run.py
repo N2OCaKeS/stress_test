@@ -1,6 +1,3 @@
-
-<<<<<<< HEAD
-=======
 # ;===========================================================
 # ; Author: rkuznetsov@astralinux.ru
 # ; Date: 2022
@@ -220,4 +217,3 @@ else: # физ. стенд
         exit(2)
 
     cmd('umount {}'.format(STORAGE_MOUNT_DIR))
->>>>>>> file_systems

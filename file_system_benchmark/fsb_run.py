@@ -45,9 +45,8 @@ parser.add_argument('--fs',
 
 parser.add_argument('--host',
                     action='store',
-                    choices=['sudcm',
-                             'stand1'],
-                    required=True,
+                    choices=['sudcm'],
+                    required=False,
                     help='hostname where the storage is located',
                     dest='HOST')
 

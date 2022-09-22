@@ -187,10 +187,6 @@ if args.VIRTUAL: # вирт. стенд
     cmd(vm_power_off.format(host=args.HOST, postfix=MACHINE_POSTFIX))
     cmd(vm_storage_remove.format(fs=args.FS, dir=vm_dir))
 else: # физ. стенд
-    # Дождаться окончания загрузки
-    while host_is_available(args.HOST) is False:
-        sleep(1)
-    sleep(10)
     '''
         Запустить скрипт настройки тестовой машины.
     '''
@@ -215,7 +211,8 @@ else: # физ. стенд
         mkdir(REPORT_PATH, mode=0o755)
 
     try:
-        cmd(run_test.format(dir=script_dir))
+        cmd(run_test.format(dir=script_dir,
+                            ts=args.TS))
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
         print(exception)

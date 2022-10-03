@@ -82,7 +82,7 @@ all_hosts = args.NODES + [args.STORAGE]
 restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {shapshot}'
 storagecreate = 'VBoxManage createmedium disk --filename /home/$USER/VirtualBox\ VMs/{fs}_storage --size {size} --format VDI --variant Standard'
 storageattach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium /home/$USER/VirtualBox\ VMs/{fs}_storage.vdi'
-startvm = 'VBoxManage startvm {host}_{postfix}'
+startvm = 'VBoxManage startvm {host}_{postfix} --type headless'
 controlvm_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
 
 # Физ. машина
@@ -214,7 +214,7 @@ for node in args.NODES:
                  '        cluster = {fs}\n'.format(fs=args.FS),
                  '        ip_port = {p}\n'.format(p=PORT),
                  '        ip_address = {ip}\n'.format(ip=HOSTS[node]['ip']),
-                 '        name = {hostname}\n'.format(hostname=HOSTS[node]['full_name']),
+                 '        name = {hostname}\n'.format(hostname=HOSTS[node]['short_name']),
                  '\n']
     conf += node_conf
 

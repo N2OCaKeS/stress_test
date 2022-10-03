@@ -69,7 +69,7 @@ STORAGE_MOUNT_DIR = '/mnt'
 #
 MACHINE_POSTFIX = 'osse'
 #
-SNAPSHOT_NAME = '2'
+SNAPSHOT_NAME = '4'
 #
 PORT = '7777'
 #

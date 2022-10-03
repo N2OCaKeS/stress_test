@@ -147,8 +147,27 @@ if args.FS == 'ocfs2':
     for node in args.NODES:
         cmd('ssh {node_ip} "sudo debconf-show ocfs2-tools | grep init | grep true"'.format(node_ip=HOSTS[node]['ip']))
 
+    # Добавить unit восстановления targetcli
+    unit = ["[unit]\n",
+            "Description=Restore LIO kernel target configuration\n",
+            "Requires=sys-kernel-config.mount\n",
+            "After=sys-kernel-config.mount network.target local-fs.target\n",
+            "[Service]\n",
+            "Type=oneshot\n",
+            "RemainAfterExit=yes\n",
+            "ExecStart=/usr/bin/targetctl restore\n",
+            "ExecStop=/usr/bin/targetctl clear\n",
+            "SyslogIdentifier=target\n",
+            "[Install]\n",
+            "WantedBy=multi-user.target\n"]
+    with open('/lib/systemd/system/target.service', 'w') as service_file:
+        service_file.writelines(unit)
+    cmd('systemctl daemon-reload')
+    sleep(1)
+    cmd('systemctl enable target')
+
     # Форматировать LUNs в ocfs2
-    cmd('parted -s /dev/{device} mklabel msdos mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
+    cmd('parted -s /dev/{device} mklabel gpt mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
 
     # Перезагрузить ноды
     for node in args.NODES:
@@ -168,7 +187,7 @@ if args.FS == 'ocfs2':
 
     for node in args.NODES:
         cmd('ssh {node_ip} "sudo bash -c \'echo -e dlm >> /etc/modules-load.d/modules.conf\'"'.format(node_ip=HOSTS[node]['ip']))
-        cmd('ssh {node_ip} "sudo echo -e \"UUID={uuid}\t{mount_dir}\tocfs2\t_netdev,x-systemd.requires=o2cb.service\t0\t0\" >> /etc/fstab"'.format(node_ip=HOSTS[node]['ip'],
-                                                                                                                                                   uuid=sd_uuid,
-                                                                                                                                                   mount_dir=STORAGE_MOUNT_DIR))
+        cmd('ssh {node_ip} "sudo echo -e \"UUID={uuid}\t{mount_dir}\tocfs2\t_netdev,defaults\t0\t0\" >> /etc/fstab"'.format(node_ip=HOSTS[node]['ip'],
+                                                                                                                            uuid=sd_uuid,
+                                                                                                                            mount_dir=STORAGE_MOUNT_DIR))
         subprocess.run('ssh {node_ip} "sudo reboot"'.format(node_ip=HOSTS[node]['ip']), shell=True)

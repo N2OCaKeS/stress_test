@@ -9,11 +9,12 @@ import argparse
 import subprocess
 import concurrent.futures
 
+from os import path, mkdir
 from sys import exit
 from fabric import Connection
 from time import sleep
 from cfs_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR
+    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_PATH
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -260,7 +261,15 @@ print("###### - TESTING - ######")
 print("#########################")
 
 # Очистить лог
-cmd('rm -f {}'.format(LOG_FILENAME))
+log_file = open(LOG_FILENAME, 'w')
+log_file.close()
+
+# Создать /report
+try:
+    if not path.exists('report'):
+        mkdir('report', mode=0o755)
+except FileNotFoundError:
+    pass
 
 # На одной машине
 try:

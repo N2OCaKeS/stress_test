@@ -12,7 +12,7 @@ import concurrent.futures
 from time import time
 from pathlib import Path
 from os import listdir, linesep
-from cfs_conf import STORAGE_MOUNT_DIR, LOG_FILENAME, SCRIPT_DIR
+from cfs_conf import STORAGE_MOUNT_DIR, LOG_PATH, SCRIPT_DIR, REPORT_PATH, REPORT_FILENAME
 from libs.libactions import create_file, del_file, \
     create_symlink, del_symlink, \
     create_hardlink, del_hardlink, \
@@ -22,7 +22,7 @@ from libs.libactions import create_file, del_file, \
     create_big_arch, \
     create_big_iso
 
-logging.basicConfig(filename=LOG_FILENAME,
+logging.basicConfig(filename=LOG_PATH,
                     filemode="a+",
                     level=logging.INFO,
                     format='%(levelname)s: t:%(created)f th:%(thread)d ps:%(process)d <%(name)s> | %(message)s')
@@ -314,9 +314,11 @@ class Test:
     def fs_mark33_count(start=10, end=100, step=5, size=1024, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_count.__name__))
 
+        report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
+        report_file.close()
+
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
-        print(
-            'FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')
+        print('FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')
         for count in range(start, end, step):
             test = subprocess.run(run_fs_mark.format(script_dir=scr_dir,
                                                      test_dir=mount_dir,
@@ -325,10 +327,15 @@ class Test:
                                   shell=True,
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE)
+            print(test.stdout)
+            print(test.stdout.decode("utf-8").splitlines())
+            print(test.returncode)
             out = linesep.join([s for s in test.stdout.decode("utf-8").splitlines() if s])
             err = linesep.join([s for s in test.stdout.decode("utf-8").splitlines() if s])
 
             if test.returncode == 0:
+                with open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'a+') as report_file:
+                    report_file.write(out.splitlines()[-1]+'\n')
                 print("{} | \033[92mpass\033[0m".format(out.splitlines()[-1]))
                 log.info("{} | ".format(out))
             else:
@@ -343,9 +350,11 @@ class Test:
     def fs_mark33_size(start=1024, end=10240, step=1024, count=1000, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_size.__name__))
 
+        report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
+        report_file.close()
+
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
-        print(
-            'FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')
+        print('FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')
         for size in range(start, end, step):
             test = subprocess.run(run_fs_mark.format(script_dir=scr_dir,
                                                      test_dir=mount_dir,
@@ -358,6 +367,8 @@ class Test:
             err = linesep.join([s for s in test.stdout.decode("utf-8").splitlines() if s])
 
             if test.returncode == 0:
+                with open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'a+') as report_file:
+                    report_file.write(out.splitlines()[-1]+'\n')
                 print("{} | \033[92mpass\033[0m".format(out.splitlines()[-1]))
                 log.info("{} | ".format(out))
             else:

@@ -8,10 +8,10 @@
 import subprocess
 import argparse
 from sys import exit
-from os import popen
+from os import popen, path, mkdir
 from time import sleep
 from fabric import Connection
-from cfs_conf import STORAGE_NAME, HOSTS, INODE_COUNT, \
+from cfs_conf import STORAGE_NAME, HOSTS, REPORT_PATH, \
     STORAGE_MOUNT_DIR, USER, PASSWORD, SCRIPT_DIR
 
 DESCRIPTION = ""
@@ -65,7 +65,6 @@ def host_is_available(node):
                 return True
     except Exception:
         return False
-
 
 if args.FS == 'ocfs2':
     # Проброс ssh key
@@ -138,7 +137,7 @@ if args.FS == 'ocfs2':
 
     # Установить файловую систему ocfs2
     for node in args.NODES:
-        cmd('ssh {node_ip} "sudo cp /media/sf_git/stress_test/cluster_file_system_benchmark/cluster.conf /etc/ocfs2/cluster.conf"'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} "sudo cp {script_dir}/cluster.conf /etc/ocfs2/cluster.conf"'.format(script_dir=SCRIPT_DIR, node_ip=HOSTS[node]['ip']))
         cmd('ssh {node_ip} "sudo sed -i "s/false/true/" /etc/default/o2cb"'.format(node_ip=HOSTS[node]['ip']))
         cmd('ssh {node_ip} "sudo dpkg-reconfigure ocfs2-tools -f noninteractive"'.format(node_ip=HOSTS[node]['ip']))
         cmd('ssh {node_ip} "sudo systemctl restart o2cb"'.format(node_ip=HOSTS[node]['ip']))

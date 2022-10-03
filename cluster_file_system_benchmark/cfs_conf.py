@@ -58,7 +58,7 @@ SCRIPT_DIR = '/media/sf_git/stress_test/cluster_file_system_benchmark'
 LOG_FILENAME = 'cfs_log'
 LOG_PATH ='{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 REPORT_FILENAME = 'cfs_report.txt'
-REPORT_PATH ='{}/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
+REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 
 # Количество Inode
 INODE_COUNT = '-N 255'

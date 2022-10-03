@@ -46,12 +46,19 @@
 
 
     START_BORDER_FOR_DATA
+
     STEP_FOR_BORDER
+
     END_BORDER_FOR_DATA
+
     TIMEOUT
+
     NUMBER_OF_TEST_FILES
+
     TH_START_BORDER_FOR_DATA
+
     TH_STEP_FOR_BORDER
+
     TH_END_BORDER_FOR_DATA
 
 ### **Проведение тестирования**

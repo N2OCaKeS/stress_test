@@ -128,10 +128,10 @@ if args.TEST_LIST == 'base':
         report.create_psb_cl_tps2_graph()
         report.create_psb_cl_tpsall_graph()
         report.merge(table_lst=['psb_report_table.html'],
-                     graph_lst=['psb_cl_la_graph.png',
-                                'psb_cl_tps1_graph.png',
-                                'psb_cl_tps2_graph.png',
-                                'psb_cl_tpsall_graph.png'])
+                     graph_lst=['psb_clients_la_graph.png',
+                                'psb_clients_tps1_graph.png',
+                                'psb_clients_tps2_graph.png',
+                                'psb_clients_tpsall_graph.png'])
         report.create_tar()
 
     if args.MODE == 'extended':

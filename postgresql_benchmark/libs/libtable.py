@@ -1,7 +1,6 @@
 import pandas
 import tarfile
 import warnings
-#import pdfkit
 import numpy as np
 
 from shutil import copy
@@ -105,405 +104,216 @@ class Report:
         with open('{}/{}'.format(path, table_name), 'w') as beauty_html_table:
             beauty_html_table.write(beauty_table)
 
-    '''
-        Графики для теста: 'Нахождение предельного числа клиентов' 
-    '''
-    def create_psb_cl_la_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['clients']]
-        y = self.raw_table.loc[:, ['la']]
+    def template_aproximated_graph(self,
+                                   ox_param_table_name=None,
+                                   ox_lst=None,
+                                   ox_lower_limit=None,
+                                   ox_upper_limit=None,
+                                   oy_param_table_name=None,
+                                   oy_lst=None,
+                                   double_tps_graph=False,
+                                   path=REPORT_PATH):
 
-        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
+        if not double_tps_graph:
+            '''
+                Шаблон графика с апроксимацией и точками
+            '''
+            # points
+            x = self.raw_table.loc[:, [ox_param_table_name]]
+            y = self.raw_table.loc[:, [oy_param_table_name]]
 
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Clients/Latency average'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Clients')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('Latency average')
-        plt.grid(True)
+            # build function f(x)
+            aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 0.1)
+            aprx_f = self.data_aproximation(ox_lst, oy_lst)
 
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.la_lst[0:last_passed_test],
-                         color='palegreen')
+            # build graph
+            plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+            plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
+            plt.title('{digit_varsion}({mode}). {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
+                                                                          mode=astra_version()[1],
+                                                                          xtitle=ox_param_table_name,
+                                                                          ytitle=oy_param_table_name))
+            plt.xlabel(ox_param_table_name)
+            plt.xticks(ox_lst, ox_lst, rotation='vertical')
+            plt.ylabel('{}'.format(oy_param_table_name))
+            plt.grid(True)
 
-        plt.savefig('{}/psb_cl_la_graph'.format(path))
+            # colorized 100% zone
+            last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+            plt.fill_between(ox_lst[0:last_passed_test],
+                             oy_lst[0:last_passed_test],
+                             color='palegreen')
 
-    def create_psb_cl_tps1_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['clients']]
-        y = self.raw_table.loc[:, ['tps1']]
+            plt.savefig('{p}/psb_{ox}_{oy}_graph'.format(p=path,
+                                                         ox=ox_param_table_name,
+                                                         oy=oy_param_table_name))
+        else:
+            '''
+                Шаблон графика с апроксимацией и точками для сравнения tps1 и tps2
+            '''
+            # build function f(x)
+            aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 0.1)
+            aprx_f1 = self.data_aproximation(ox_lst, self.tps1_lst)
+            aprx_f2 = self.data_aproximation(ox_lst, self.tps2_lst)
 
-        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
+            # build graph
+            plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+            plt.plot(aprx_x, aprx_f1(aprx_x))
+            plt.plot(aprx_x, aprx_f2(aprx_x))
+            plt.title('{digit_varsion}({mode}). TPS/{xtitle}'.format(digit_varsion=astra_version()[0],
+                                                                     mode=astra_version()[1],
+                                                                     xtitle=ox_param_table_name))
+            plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
+            plt.xlabel(ox_param_table_name)
+            plt.xticks(ox_lst, ox_lst, rotation='vertical')
+            plt.ylabel('TPS')
+            plt.grid(True)
 
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Clients/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Clients')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
+            # colorized 100% zone
+            last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
+            plt.fill_between(ox_lst[0:last_passed_test],
+                             self.tps1_lst[0:last_passed_test],
+                             color='palegreen')
 
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_cl_tps1_graph'.format(path))
-
-    def create_psb_cl_tps2_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['clients']]
-        y = self.raw_table.loc[:, ['tps2']]
-
-        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Clients/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Clients')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_cl_tps2_graph'.format(path))
-
-    def create_psb_cl_tpsall_graph(self, path=REPORT_PATH):
-
-        aprx_x = np.arange(CLIENTS, LIMITE_CLIENTS, 0.1)
-        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
-        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
-        # build graph
-
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(aprx_x, aprx_f1(aprx_x))
-        plt.plot(aprx_x, aprx_f2(aprx_x))
-        plt.title('{}({}). Clients/TPS'.format(astra_version()[0], astra_version()[1]))
-        plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
-        plt.xlabel('Clients')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_cl_tpsall_graph'.format(path))
+            plt.savefig('{p}/psb_{ox}_tpsall_graph'.format(p=path,
+                                                           ox=ox_param_table_name))
 
     '''
         Графики для теста: 'Нахождение предельного коэффициента масштаба' 
     '''
-    def create_psb_sc_la_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['scale']]
-        y = self.raw_table.loc[:, ['la']]
+    def create_psb_sc_la_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='scale',
+                                        ox_lst=self.scales_lst,
+                                        ox_lower_limit=SCALE_FACTOR,
+                                        ox_upper_limit=LIMITE_SCALE_FACTOR,
+                                        oy_param_table_name='la',
+                                        oy_lst=self.la_lst)
 
-        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
+    def create_psb_sc_tps1_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='scale',
+                                        ox_lst=self.scales_lst,
+                                        ox_lower_limit=SCALE_FACTOR,
+                                        ox_upper_limit=LIMITE_SCALE_FACTOR,
+                                        oy_param_table_name='tps1',
+                                        oy_lst=self.tps1_lst)
 
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Scale/Latency average'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Scale')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('Latency average')
-        plt.grid(True)
+    def create_psb_sc_tps2_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='scale',
+                                        ox_lst=self.scales_lst,
+                                        ox_lower_limit=SCALE_FACTOR,
+                                        ox_upper_limit=LIMITE_SCALE_FACTOR,
+                                        oy_param_table_name='tps2',
+                                        oy_lst=self.tps2_lst)
 
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.la_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_sc_la_graph'.format(path))
-
-    def create_psb_sc_tps1_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['scale']]
-        y = self.raw_table.loc[:, ['tps1']]
-
-        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Scale/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Scale')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_sc_tps1_graph'.format(path))
-
-    def create_psb_sc_tps2_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['scale']]
-        y = self.raw_table.loc[:, ['tps2']]
-
-        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Scale/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Scale')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps2_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_sc_tps2_graph'.format(path))
-
-    def create_psb_sc_tpsall_graph(self, path=REPORT_PATH):
-
-        aprx_x = np.arange(SCALE_FACTOR, LIMITE_SCALE_FACTOR, 0.1)
-        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
-        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(aprx_x, aprx_f1(aprx_x))
-        plt.plot(aprx_x, aprx_f2(aprx_x))
-        plt.title('{}({}). Scale/TPS'.format(astra_version()[0], astra_version()[1]))
-        plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
-        plt.xlabel('Scale')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_sc_tpsall_graph'.format(path))
+    def create_psb_sc_tpsall_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='scale',
+                                        ox_lst=self.scales_lst,
+                                        ox_lower_limit=SCALE_FACTOR,
+                                        ox_upper_limit=LIMITE_SCALE_FACTOR,
+                                        double_tps_graph=True)
 
     '''
         Графики для теста: 'Нахождение предельного числа транзакций' 
     '''
-    def create_psb_tr_la_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['transactions']]
-        y = self.raw_table.loc[:, ['la']]
+    def create_psb_tr_la_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='transactions',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=TRANSACTIONS,
+                                        ox_upper_limit=LIMITE_TRANSACTIONS,
+                                        oy_param_table_name='la',
+                                        oy_lst=self.la_lst)
 
-        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
+    def create_psb_tr_tps1_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='transactions',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=TRANSACTIONS,
+                                        ox_upper_limit=LIMITE_TRANSACTIONS,
+                                        oy_param_table_name='tps1',
+                                        oy_lst=self.tps1_lst)
 
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Transactions/Latency averege'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Transactions')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('Latency average')
-        plt.grid(True)
+    def create_psb_tr_tps2_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='transactions',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=TRANSACTIONS,
+                                        ox_upper_limit=LIMITE_TRANSACTIONS,
+                                        oy_param_table_name='tps2',
+                                        oy_lst=self.tps2_lst)
 
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.la_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_tr_la_graph'.format(path))
-
-    def create_psb_tr_tps1_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['transactions']]
-        y = self.raw_table.loc[:, ['tps1']]
-
-        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Transactions/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Transactions')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_tr_tps1_graph'.format(path))
-
-    def create_psb_tr_tps2_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['transactions']]
-        y = self.raw_table.loc[:, ['tps2']]
-
-        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Transactions/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Transactions')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps2_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_tr_tps2_graph'.format(path))
-
-    def create_psb_tr_tpsall_graph(self, path=REPORT_PATH):
-
-        aprx_x = np.arange(TRANSACTIONS, LIMITE_TRANSACTIONS, 0.1)
-        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
-        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(aprx_x, aprx_f1(aprx_x))
-        plt.plot(aprx_x, aprx_f2(aprx_x))
-        plt.title('{}({}). Transactions/TPS'.format(astra_version()[0], astra_version()[1]))
-        plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
-        plt.xlabel('Transactions')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_tr_tpsall_graph'.format(path))
+    def create_psb_tr_tpsall_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='transactions',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=TRANSACTIONS,
+                                        ox_upper_limit=LIMITE_TRANSACTIONS,
+                                        double_tps_graph=True)
 
     '''
         Графики для теста: 'Нахождение предельного числа потоков' 
     '''
-    def create_psb_th_la_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['threads']]
-        y = self.raw_table.loc[:, ['la']]
+    def create_psb_th_la_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='threads',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=THREADS,
+                                        ox_upper_limit=LIMITE_THREADS,
+                                        oy_param_table_name='la',
+                                        oy_lst=self.la_lst)
 
-        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.la_lst)
+    def create_psb_th_tps1_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='threads',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=THREADS,
+                                        ox_upper_limit=LIMITE_THREADS,
+                                        oy_param_table_name='tps1',
+                                        oy_lst=self.tps1_lst)
 
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Threads/Latency averege'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Threads')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('Latency average')
-        plt.grid(True)
+    def create_psb_th_tps2_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='threads',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=THREADS,
+                                        ox_upper_limit=LIMITE_THREADS,
+                                        oy_param_table_name='tps2',
+                                        oy_lst=self.tps2_lst)
 
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.la_lst[0:last_passed_test],
-                         color='palegreen')
+    def create_psb_th_tpsall_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='threads',
+                                        ox_lst=self.transactions_lst,
+                                        ox_lower_limit=THREADS,
+                                        ox_upper_limit=LIMITE_THREADS,
+                                        double_tps_graph=True)
 
-        plt.savefig('{}/psb_th_la_graph'.format(path))
 
-    def create_psb_th_tps1_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['threads']]
-        y = self.raw_table.loc[:, ['tps1']]
+    '''
+        Графики для теста: 'Нахождение предельного числа клиентов' 
+    '''
+    def create_psb_cl_la_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='clients',
+                                        ox_lst=self.param_lst,
+                                        ox_lower_limit=CLIENTS,
+                                        ox_upper_limit=LIMITE_CLIENTS,
+                                        oy_param_table_name='la',
+                                        oy_lst=self.la_lst)
 
-        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps1_lst)
+    def create_psb_cl_tps1_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='clients',
+                                        ox_lst=self.param_lst,
+                                        ox_lower_limit=CLIENTS,
+                                        ox_upper_limit=LIMITE_CLIENTS,
+                                        oy_param_table_name='tps1',
+                                        oy_lst=self.tps1_lst)
 
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Threads/TPS(including connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Threads')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
+    def create_psb_cl_tps2_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='clients',
+                                        ox_lst=self.param_lst,
+                                        ox_lower_limit=CLIENTS,
+                                        ox_upper_limit=LIMITE_CLIENTS,
+                                        oy_param_table_name='tps2',
+                                        oy_lst=self.tps2_lst)
 
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_th_tps1_graph'.format(path))
-
-    def create_psb_th_tps2_graph(self, path=REPORT_PATH):
-        x = self.raw_table.loc[:, ['threads']]
-        y = self.raw_table.loc[:, ['tps2']]
-
-        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
-        aprx_f = self.data_aproximation(self.param_lst, self.tps2_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
-        plt.title('{}({}). Threads/TPS(excluding connections establishing)'.format(astra_version()[0], astra_version()[1]))
-        plt.xlabel('Threads')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps2_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_th_tps2_graph'.format(path))
-
-    def create_psb_th_tpsall_graph(self, path=REPORT_PATH):
-
-        aprx_x = np.arange(THREADS, LIMITE_THREADS, 0.1)
-        aprx_f1 = self.data_aproximation(self.param_lst, self.tps1_lst)
-        aprx_f2 = self.data_aproximation(self.param_lst, self.tps2_lst)
-
-        # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(aprx_x, aprx_f1(aprx_x))
-        plt.plot(aprx_x, aprx_f2(aprx_x))
-        plt.title('{}({}). Threads/TPS'.format(astra_version()[0], astra_version()[1]))
-        plt.legend(['TPS(including connections establishing)', 'TPS(excluding connections establishing)'])
-        plt.xlabel('Threads')
-        plt.xticks(self.param_lst, self.param_lst, rotation='vertical')
-        plt.ylabel('TPS')
-        plt.grid(True)
-
-        # colorized 100% zone
-        last_passed_test = self.last_passed(self.com_tr_lst, self.exp_tr_lst)
-        plt.fill_between(self.param_lst[0:last_passed_test],
-                         self.tps1_lst[0:last_passed_test],
-                         color='palegreen')
-
-        plt.savefig('{}/psb_th_tpsall_graph'.format(path))
+    def create_psb_cl_tpsall_graph(self):
+        self.template_aproximated_graph(ox_param_table_name='clients',
+                                        ox_lst=self.param_lst,
+                                        ox_lower_limit=CLIENTS,
+                                        ox_upper_limit=LIMITE_CLIENTS,
+                                        double_tps_graph=True)
 
     def get_la_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
         func_la = self.data_aproximation(self.param_lst, self.la_lst)
@@ -608,10 +418,6 @@ class Report:
         '''
         time_mark = time()
         copy(LOG_FILENAME, '{}/main_log'.format(path))
-        #pdfkit.from_file('{}/main_report.html'.format(path),
-        #                 'report{v}_{m}_{t}.pdf'.format(v=astra_version()[0],
-        #                                                m=astra_version()[1],
-        #                                                t=time_mark))
         with tarfile.open('report{v}_{m}_{t}.tar'.format(v=astra_version()[0],
                                                          m=astra_version()[1],
                                                          t=time_mark), 'w') as tar:

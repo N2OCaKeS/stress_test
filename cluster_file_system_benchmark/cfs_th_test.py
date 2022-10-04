@@ -8,7 +8,7 @@
 import time
 import argparse
 from libs.libtests import Test, TestSet
-from cfs_conf import START_BORDER_FOR_DATA, STEP_FOR_BORDER, \
+from cfs_conf import START_BORDER_FOR_DATA, STEP_FOR_DATA, \
     END_BORDER_FOR_DATA, TIMEOUT, NUMBER_OF_TEST_FILES
 
 DESCRIPTION = ""
@@ -34,7 +34,7 @@ if args.VARIANT == 'files':
         assert Test.file_filling(count=NUMBER_OF_TEST_FILES,
                                  start=START_BORDER_FOR_DATA,
                                  end=END_BORDER_FOR_DATA,
-                                 step=STEP_FOR_BORDER) is True
+                                 step=STEP_FOR_DATA) is True
         end_time = time.time()
         excute_time += end_time - start_time
 
@@ -44,7 +44,7 @@ if args.VARIANT == 'symlinks':
         assert Test.symlink_filling(count=NUMBER_OF_TEST_FILES,
                                     start=START_BORDER_FOR_DATA,
                                     end=END_BORDER_FOR_DATA,
-                                    step=STEP_FOR_BORDER) is True
+                                    step=STEP_FOR_DATA) is True
         end_time = time.time()
         excute_time += end_time - start_time
 
@@ -54,7 +54,7 @@ if args.VARIANT == 'hardlinks':
         assert Test.hardlink_filling(count=NUMBER_OF_TEST_FILES,
                                      start=START_BORDER_FOR_DATA,
                                      end=END_BORDER_FOR_DATA,
-                                     step=STEP_FOR_BORDER) is True
+                                     step=STEP_FOR_DATA) is True
         end_time = time.time()
         excute_time += end_time - start_time
 
@@ -64,7 +64,7 @@ if args.VARIANT == 'archs':
         assert Test.arch_filling(count=NUMBER_OF_TEST_FILES,
                                  start=START_BORDER_FOR_DATA,
                                  end=END_BORDER_FOR_DATA,
-                                 step=STEP_FOR_BORDER) is True
+                                 step=STEP_FOR_DATA) is True
         end_time = time.time()
         excute_time += end_time - start_time
 
@@ -74,6 +74,6 @@ if args.VARIANT == 'isos':
         assert Test.iso_filling(count=NUMBER_OF_TEST_FILES,
                                 start=START_BORDER_FOR_DATA,
                                 end=END_BORDER_FOR_DATA,
-                                step=STEP_FOR_BORDER) is True
+                                step=STEP_FOR_DATA) is True
         end_time = time.time()
         excute_time += end_time - start_time

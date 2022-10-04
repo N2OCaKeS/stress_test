@@ -9,9 +9,10 @@ import logging
 import argparse
 
 from time import time
-from cfs_conf import LOG_FILENAME, \
-    START_BORDER_FOR_DATA, STEP_FOR_BORDER, END_BORDER_FOR_DATA, TIMEOUT
 from libs.libtests import TestSet
+from libs.libtable import Report
+from cfs_conf import LOG_FILENAME, \
+    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, TIMEOUT
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -25,7 +26,6 @@ parser.add_argument('--test-set',
                              'fs_mark_size'],
                     required=True,
                     dest='TS')
-args = parser.parse_args()
 
 parser.add_argument('--data-from-config',
                     action='store_false',
@@ -131,7 +131,7 @@ if args.TS == 'multithreaded':
     if args.CONFIG:
         run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
                            end_burder=END_BORDER_FOR_DATA,
-                           step=STEP_FOR_BORDER)
+                           step=STEP_FOR_DATA)
     else:
         run_test = TestSet(start_burder=10,  # загрузка свободного места в процентах на один поток
                            end_burder=20,
@@ -178,7 +178,7 @@ if args.TS == 'big_files':
     if args.CONFIG:
         run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
                            end_burder=END_BORDER_FOR_DATA,
-                           step=STEP_FOR_BORDER)
+                           step=STEP_FOR_DATA)
     else:
         run_test = TestSet(start_burder=10,  # загрузка свободного места в процентах
                            end_burder=40,
@@ -201,7 +201,7 @@ if args.TS == 'fs_mark_count':
     if args.CONFIG:
         run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
                            end_burder=END_BORDER_FOR_DATA,
-                           step=STEP_FOR_BORDER)
+                           step=STEP_FOR_DATA)
     else:
         run_test = TestSet(start_burder=10,  # количество файлов
                            end_burder=40,
@@ -215,6 +215,28 @@ if args.TS == 'fs_mark_count':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
+    report = Report()
+    report.create_beauty_table()
+    report.create_cfs_fc_sp_graph()
+    report.create_cfs_fc_app_overhead_graph()
+    report.create_cfs_fc_create_graph()
+    report.create_cfs_fc_write_graph()
+    report.create_cfs_fc_fsync_graph()
+    report.create_cfs_fc_sync_graph()
+    report.create_cfs_fc_close_graph()
+    report.create_cfs_fc_unlink_graph()
+    report.merge(ox_lst=report.file_count_lst,
+                 table_lst=['cfs_report_table.html'],
+                 graph_lst=['cfs_file_count_speed_graph.png',
+                            'cfs_file_count_app_overhead_graph.png',
+                            'cfs_file_count_create_graph.png',
+                            'cfs_file_count_write_graph.png',
+                            'cfs_file_count_fsync_graph.png',
+                            'cfs_file_count_sync_graph.png',
+                            'cfs_file_count_close_graph.png',
+                            'cfs_file_count_unlink_graph.png'])
+    report.create_tar()
+
 
 if args.TS == 'fs_mark_size':
     '''    
@@ -226,7 +248,7 @@ if args.TS == 'fs_mark_size':
     if args.CONFIG:
         run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
                            end_burder=END_BORDER_FOR_DATA,
-                           step=STEP_FOR_BORDER)
+                           step=STEP_FOR_DATA)
     else:
         run_test = TestSet(start_burder=1024,  # размер в байтах
                            end_burder=10240,
@@ -238,4 +260,26 @@ if args.TS == 'fs_mark_size':
     finally:
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
+
+    report = Report()
+    report.create_beauty_table()
+    report.create_cfs_fc_sp_graph()
+    report.create_cfs_fc_app_overhead_graph()
+    report.create_cfs_fc_create_graph()
+    report.create_cfs_fc_write_graph()
+    report.create_cfs_fc_fsync_graph()
+    report.create_cfs_fc_sync_graph()
+    report.create_cfs_fc_close_graph()
+    report.create_cfs_fc_unlink_graph()
+    report.merge(ox_lst=report.file_count_lst,
+                 table_lst=['cfs_report_table.html'],
+                 graph_lst=['cfs_file_count_speed_graph.png',
+                            'cfs_file_count_app_overhead_graph.png',
+                            'cfs_file_count_create_graph.png',
+                            'cfs_file_count_write_graph.png',
+                            'cfs_file_count_fsync_graph.png',
+                            'cfs_file_count_sync_graph.png',
+                            'cfs_file_count_close_graph.png',
+                            'cfs_file_count_unlink_graph.png'])
+    report.create_tar()
 

@@ -327,9 +327,6 @@ class Test:
                                   shell=True,
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE)
-            print(test.stdout)
-            print(test.stdout.decode("utf-8").splitlines())
-            print(test.returncode)
             out = linesep.join([s for s in test.stdout.decode("utf-8").splitlines() if s])
             err = linesep.join([s for s in test.stdout.decode("utf-8").splitlines() if s])
 

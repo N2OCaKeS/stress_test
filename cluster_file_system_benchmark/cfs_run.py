@@ -7,7 +7,6 @@
 
 import argparse
 import subprocess
-import concurrent.futures
 
 from os import path, mkdir
 from sys import exit
@@ -62,6 +61,12 @@ parser.add_argument('--test-set',
                              'fs_mark_size'],
                     required=True,
                     dest='TS')
+
+parser.add_argument('--data-from-config',
+                    action='store_false',
+                    required=False,
+                    help='get data from config',
+                    dest='CONFIG')
 
 parser.add_argument('--thread-variant',
                     action='store',
@@ -271,7 +276,6 @@ try:
 except FileNotFoundError:
     pass
 
-# На одной машине
 try:
     if args.VIRTUAL:  # вирт. стенд
         with Connection(host='127.0.0.1',
@@ -288,10 +292,6 @@ except Exception as exception:
     print("\033[91m Тестирование завершилось исключением.\033[0m")
     print(exception)
     exit(2)
-
-# На нескольких машинах параллельно
-# with concurrent.futures.ThreadPoolExecutor(max_workers=len(args.NODES)) as executor:
-#     executor.map(run_thread_test.format(args.VARIANT), args.NODES, range(1, len(args.NODES)+1))
 
 print("#####################")
 print("###### - END - ######")

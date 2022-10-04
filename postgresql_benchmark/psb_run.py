@@ -305,14 +305,14 @@ if args.TEST_LIST == 'base':
                                 'psb_threads_table.html',
                                 'psb_clients_table.html',
                                 'psb_max_table.html'],
-                     graph_lst=['psb_sc_la_graph.png',
-                                'psb_sc_tpsall_graph.png',
-                                'psb_tr_la_graph.png',
-                                'psb_tr_tpsall_graph.png',
-                                'psb_th_la_graph.png',
-                                'psb_th_tpsall_graph.png',
-                                'psb_cl_la_graph.png',
-                                'psb_cl_tpsall_graph.png'])
+                     graph_lst=['psb_scale_la_graph.png',
+                                'psb_scale_tpsall_graph.png',
+                                'psb_transactions_la_graph.png',
+                                'psb_transactions_tpsall_graph.png',
+                                'psb_threads_la_graph.png',
+                                'psb_threads_tpsall_graph.png',
+                                'psb_clients_la_graph.png',
+                                'psb_clients_tpsall_graph.png'])
 
 
 if args.CLEANER:

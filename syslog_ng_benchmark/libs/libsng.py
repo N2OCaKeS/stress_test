@@ -1,6 +1,12 @@
 # -*- coding: UTF-8 -*-
 
+# ;===========================================================
+# ; Author: ivelikanov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import subprocess
+
 
 def astra_version():
     version = []

@@ -1,5 +1,9 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+# ;===========================================================
+# ; Author: ivelikanov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
 
 import re
 import sys
@@ -13,6 +17,7 @@ import libs.libscanner as libscanner
 
 from os import chmod, mkdir
 from libs.libsng import astra_version
+
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -92,7 +97,7 @@ if __name__ == '__main__':
         chmod('/tmp/dirtylogger{}.py'.format(service_num), 0o0777)
 
         unit = ['[Unit]\n',
-                'Description=test service by rkuznetsov@astralinux.ru\n',
+                'Description=test service by ivelikanov@astralinux.ru\n',
                 'After=multi-user.target\n',
                 '[Service]\n',
                 'Type=simple\n',

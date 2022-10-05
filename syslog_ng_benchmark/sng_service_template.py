@@ -1,11 +1,14 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+# ;===========================================================
+# ; Author: ivelikanov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
 
 import socket
 import logging
 import logging.handlers
-from syslog import syslog
-import time
+
 
 hostname = socket.gethostname()
 ip = socket.gethostbyname(hostname)

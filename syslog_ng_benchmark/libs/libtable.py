@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 
+# ;===========================================================
+# ; Author: ivelikanov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import tarfile
 import warnings
 import numpy as np
@@ -9,6 +14,7 @@ from os import listdir, chdir
 from datetime import datetime
 from matplotlib import pyplot as plt
 from libs.libsng import astra_version
+
 
 class Report:
 

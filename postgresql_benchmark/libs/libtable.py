@@ -128,7 +128,8 @@ class Report:
 
             # build graph
             plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-            plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
+            plt.plot(x, y, 'o')
+            plt.plot(aprx_x, aprx_f(aprx_x))
             plt.title('{digit_varsion}({mode}). {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
                                                                           mode=astra_version()[1],
                                                                           xtitle=ox_param_table_name,
@@ -371,7 +372,7 @@ class Report:
             '                height:100%;\n',
             '                background:#4169E1;\n',
             '                float:left;\n',
-            '                margin: 1%;\n',
+            '                margin: auto;\n',
             '                text-align:center;\n',
             '                padding: 0.7%;\n',
             '                }\n',
@@ -379,9 +380,12 @@ class Report:
             '                width:95%;\n',
             '                height:100%;\n',
             '                background:#4169E1;\n',
-            '                margin: 1%;\n',
+            '                margin: auto;\n',
             '                text-align:center;\n',
             '                padding: 0.7%;\n',
+            '                }\n',
+            '        .dataframe {\n',
+            '                margin: auto;\n',
             '                }\n',
             '    </style>\n',
             '    <div style = "width:50%; height:1px; clear:both;"></div>\n'

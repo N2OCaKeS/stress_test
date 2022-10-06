@@ -75,6 +75,9 @@ class Report:
         self.width = 27
         self.height = 15
 
+        self.grid_factor = (END_BORDER_FOR_DATA - START_BORDER_FOR_DATA) // 10
+
+
     '''
         Создать html таблицу
     '''
@@ -123,13 +126,17 @@ class Report:
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
+        plt.plot(x, y, 'o'),
+        plt.plot(aprx_x, aprx_f(aprx_x))
         plt.title('{digit_varsion}({mode}). {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
                                                                       mode=astra_version()[1],
                                                                       xtitle=ox_param_table_name,
                                                                       ytitle=oy_param_table_name))
         plt.xlabel(ox_param_table_name)
-        plt.xticks(ox_lst, ox_lst, rotation='vertical')
+        ox_ticks = np.arange(START_BORDER_FOR_DATA,
+                             END_BORDER_FOR_DATA,
+                             self.grid_factor)
+        plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
         plt.ylabel('{}(msec)'.format(oy_param_table_name))
         plt.grid(True)
 
@@ -164,7 +171,10 @@ class Report:
                     '{} avg'.format(syscall.upper()),
                     '{} max'.format(syscall.upper())])
         plt.xlabel(ox_param_table_name)
-        plt.xticks(ox_lst, ox_lst, rotation='vertical')
+        ox_ticks = np.arange(START_BORDER_FOR_DATA,
+                             END_BORDER_FOR_DATA,
+                             self.grid_factor)
+        plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
         plt.ylabel('syscall {}(msec)'.format(syscall.upper()))
         plt.grid(True)
 

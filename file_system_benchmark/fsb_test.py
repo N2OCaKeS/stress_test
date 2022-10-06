@@ -11,7 +11,8 @@ import argparse
 from time import time
 from libs.libtests import TestSet
 from libs.libtable import Report
-from fsb_conf import LOG_PATH, \
+from os import path, mkdir
+from fsb_conf import LOG_PATH, REPORT_PATH, \
         START_BORDER_FOR_DATA, STEP_FOR_BORDER, END_BORDER_FOR_DATA, TIMEOUT, \
         TH_START_BORDER_FOR_DATA, TH_STEP_FOR_BORDER, TH_END_BORDER_FOR_DATA
 
@@ -41,6 +42,9 @@ logging.basicConfig(filename=LOG_PATH,
                     format='%(levelname)s: t:%(created)f th:%(thread)d ps:%(process)d <%(name)s> | %(message)s')
 log = logging.getLogger()
 
+# Создать /report
+if not path.exists(REPORT_PATH):
+    mkdir(REPORT_PATH, mode=0o755)
 
 if args.TS == 'base_load':
     '''

@@ -162,13 +162,6 @@ if args.VIRTUAL: # вирт. стенд
     log_file = open(LOG_FILENAME, 'w')
     log_file.close()
 
-    # Создать /report
-    try:
-        if not path.exists(REPORT_PATH):
-            mkdir(REPORT_PATH, mode=0o755)
-    except FileNotFoundError:
-        pass
-
     try:
         with Connection(host='127.0.0.1',
                         port=HOSTS[args.HOST]['port'],

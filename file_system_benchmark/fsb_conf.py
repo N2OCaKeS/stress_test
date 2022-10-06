@@ -62,9 +62,9 @@ PASSWORD = '1'
     - TIMEOUT Продолжительность временного теста в секундах
     - NUMBER_OF_TEST_FILES Количество тестовых структур
 '''
-START_BORDER_FOR_DATA = 10
+START_BORDER_FOR_DATA = 5
 STEP_FOR_BORDER = 5
-END_BORDER_FOR_DATA = 100
+END_BORDER_FOR_DATA = 1000
 TIMEOUT = 3600
 NUMBER_OF_TEST_FILES = 5000
 '''

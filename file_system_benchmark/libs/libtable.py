@@ -388,7 +388,7 @@ class Report:
                          x_lst,
                          lower_limit=START_BORDER_FOR_DATA,
                          upper_limit=END_BORDER_FOR_DATA,
-                         accuracy=10):
+                         accuracy=13):
         return round(self.get_speed_rating(x_lst, lower_limit, upper_limit) + \
                      self.get_app_overhead_rating(x_lst, lower_limit, upper_limit) + \
                      self.get_create_rating(x_lst, lower_limit, upper_limit) + \
@@ -397,7 +397,7 @@ class Report:
                      self.get_sync_rating(x_lst, lower_limit, upper_limit) + \
                      self.get_close_rating(x_lst, lower_limit, upper_limit) + \
                      self.get_unlink_rating(x_lst, lower_limit, upper_limit),
-                     accuracy) * 100000
+                     accuracy) * 10000000000
 
     ####################################################################################################################
     def merge(self, ox_lst, table_lst, graph_lst, path=REPORT_PATH):

@@ -323,10 +323,12 @@ class Report:
     def get_speed_rating(self,
                          x_lst,
                          lower_limit=START_BORDER_FOR_DATA,
-                         upper_limit=END_BORDER_FOR_DATA):
+                         upper_limit=END_BORDER_FOR_DATA,
+                         corr_coeff1=10**3,
+                         corr_coeff2=10**18):
         func_speed = self.data_aproximation(x_lst, self.speed_lst)
         i_spd, err = integrate.quad(func_speed, lower_limit, upper_limit)
-        return 1 / i_spd
+        return i_spd * (corr_coeff1) / (corr_coeff2)
 
     def get_app_overhead_rating(self,
                                 x_lst,
@@ -391,16 +393,17 @@ class Report:
                          x_lst,
                          lower_limit=START_BORDER_FOR_DATA,
                          upper_limit=END_BORDER_FOR_DATA,
-                         accuracy=10):
-        return round(self.get_speed_rating(x_lst, lower_limit, upper_limit) + \
-                     self.get_app_overhead_rating(x_lst, lower_limit, upper_limit) + \
-                     self.get_create_rating(x_lst, lower_limit, upper_limit) + \
-                     self.get_write_rating(x_lst, lower_limit, upper_limit) + \
-                     self.get_fsync_rating(x_lst, lower_limit, upper_limit) + \
-                     self.get_sync_rating(x_lst, lower_limit, upper_limit) + \
-                     self.get_close_rating(x_lst, lower_limit, upper_limit) + \
-                     self.get_unlink_rating(x_lst, lower_limit, upper_limit),
-                     accuracy) * 100000
+                         accuracy=10,
+                         multiplier=10**9):
+        return round(round(self.get_speed_rating(x_lst, lower_limit, upper_limit) + \
+                           self.get_app_overhead_rating(x_lst, lower_limit, upper_limit) + \
+                           self.get_create_rating(x_lst, lower_limit, upper_limit) + \
+                           self.get_write_rating(x_lst, lower_limit, upper_limit) + \
+                           self.get_fsync_rating(x_lst, lower_limit, upper_limit) + \
+                           self.get_sync_rating(x_lst, lower_limit, upper_limit) + \
+                           self.get_close_rating(x_lst, lower_limit, upper_limit) + \
+                           self.get_unlink_rating(x_lst, lower_limit, upper_limit),
+                           accuracy) * multiplier, 3)
 
     ####################################################################################################################
     def merge(self, ox_lst, table_lst, graph_lst, path=REPORT_PATH):

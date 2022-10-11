@@ -496,16 +496,3 @@ class Report:
                                                              t=time()), 'w') as tar:
             for file in listdir(path_to_files):
                 tar.add('{}/{}'.format(path_to_files, file))
-
-r = Report()
-print(r.get_speed_rating(r.file_count_lst))
-print(r.get_app_overhead_rating(r.file_count_lst))
-print(r.get_create_rating(r.file_count_lst))
-print(r.get_write_rating(r.file_count_lst))
-print(r.get_fsync_rating(r.file_count_lst))
-print(r.get_sync_rating(r.file_count_lst))
-print(r.get_close_rating(r.file_count_lst))
-print(r.get_unlink_rating(r.file_count_lst))
-
-print('total')
-print(r.get_total_rating(r.file_count_lst))

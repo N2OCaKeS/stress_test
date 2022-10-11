@@ -38,7 +38,8 @@ parser.add_argument('--fs',
                              'ext3',
                              'ext4',
                              'fat',
-                             'ntfs'],
+                             'ntfs',
+                             'xfs'],
                     required=True,
                     help='filesystem',
                     dest='FS')
@@ -86,7 +87,7 @@ vm_storage_create = 'VBoxManage createmedium disk --filename {dir}{fs}_storage -
 vm_storage_detache = ''
 vm_storage_remove = 'rm -rf {dir}{fs}_storage.vdi'
 vm_storage_attach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium {dir}{fs}_storage.vdi'
-vm_power_on = 'VBoxManage startvm {host}_{postfix}'
+vm_power_on = 'VBoxManage startvm {host}_{postfix} --type headless'
 vm_power_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
 
 

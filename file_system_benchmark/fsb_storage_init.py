@@ -14,7 +14,12 @@ DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
 parser.add_argument('--fs',
                     action='store',
-                    choices=['ext2', 'ext3', 'ext4', 'fat', 'ntfs'],
+                    choices=['ext2',
+                             'ext3',
+                             'ext4',
+                             'fat',
+                             'ntfs',
+                             'xfs'],
                     required=True,
                     help='filesystem',
                     dest='FS')
@@ -44,12 +49,14 @@ cmd('lsblk | grep {device}'.format(device=STORAGE_NAME))
 if args.FS == 'fat':
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary fat32 0% 100%'.format(device=STORAGE_NAME))
     cmd("mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
-    cmd("mount /dev/{device}1 {mount_dir}".format(device=STORAGE_NAME, mount_dir=STORAGE_MOUNT_DIR))
 elif args.FS == 'ntfs':
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
     cmd("mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
-    cmd("mount /dev/{device}1 {mount_dir}".format(device=STORAGE_NAME, mount_dir=STORAGE_MOUNT_DIR))
+elif args.FS == 'xfs':
+    cmd('parted -s /dev/{device} mklabel msdos mkpart primary xfs 0% 100%'.format(device=STORAGE_NAME))
+    cmd("mkfs -t {fs} /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 else:
-    cmd('parted -s /dev/{device} mklabel msdos mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
+    cmd('parted -s /dev/{device} mklabel msdos mkpart primary {fs} 0% 100%'.format(fs=args.FS ,device=STORAGE_NAME))
     cmd("mkfs -t {fs} {ic} /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME, ic=INODE_COUNT))
-    cmd("mount /dev/{device}1 {mount_dir}".format(device=STORAGE_NAME, mount_dir=STORAGE_MOUNT_DIR))
+
+cmd("mount /dev/{device}1 {mount_dir}".format(device=STORAGE_NAME, mount_dir=STORAGE_MOUNT_DIR))

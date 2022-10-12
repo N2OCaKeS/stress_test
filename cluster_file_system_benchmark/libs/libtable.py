@@ -12,7 +12,7 @@ import numpy as np
 
 from shutil import copy
 from time import time
-from os import listdir
+from os import listdir, chdir
 from scipy import integrate
 from matplotlib import pyplot as plt
 from libs.libcfs import astra_version
@@ -497,5 +497,6 @@ class Report:
                                                              v=astra_version()[0],
                                                              m=astra_version()[1],
                                                              t=time()), 'w') as tar:
+            chdir(SCRIPT_DIR)
             for file in listdir(path_to_files):
-                tar.add('{}/{}'.format(path_to_files, file))
+                tar.add('{}/{}'.format('report', file))

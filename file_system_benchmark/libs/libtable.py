@@ -321,11 +321,10 @@ class Report:
                          x_lst,
                          lower_limit=START_BORDER_FOR_DATA,
                          upper_limit=END_BORDER_FOR_DATA,
-                         corr_coeff1=10 ** 3,
-                         corr_coeff2=10 ** 20):
+                         corr_coeff1=10 ** 17):
         func_speed = self.data_aproximation(x_lst, self.speed_lst)
         i_spd, err = integrate.quad(func_speed, lower_limit, upper_limit)
-        return i_spd * (corr_coeff1) / (corr_coeff2)
+        return i_spd / corr_coeff1
 
     def get_app_overhead_rating(self,
                                 x_lst,
@@ -333,7 +332,10 @@ class Report:
                                 upper_limit=END_BORDER_FOR_DATA):
         func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
         i_ao, err = integrate.quad(func_ao, lower_limit, upper_limit)
-        return 1 / i_ao
+        try:
+            return 1 / i_ao
+        except ZeroDivisionError:
+            return 0
 
     def get_create_rating(self,
                           x_lst,
@@ -341,7 +343,10 @@ class Report:
                           upper_limit=END_BORDER_FOR_DATA):
         func_create_max = self.data_aproximation(x_lst, self.create_max_lst)
         i_create, err = integrate.quad(func_create_max, lower_limit, upper_limit)
-        return 1 / i_create
+        try:
+            return 1 / i_create
+        except ZeroDivisionError:
+            return 0
 
     def get_write_rating(self,
                          x_lst,
@@ -349,7 +354,10 @@ class Report:
                          upper_limit=END_BORDER_FOR_DATA):
         func_write_max = self.data_aproximation(x_lst, self.write_max_lst)
         i_write, err = integrate.quad(func_write_max, lower_limit, upper_limit)
-        return 1 / i_write
+        try:
+            return 1 / i_write
+        except ZeroDivisionError:
+            return 0
 
     def get_fsync_rating(self,
                          x_lst,
@@ -357,7 +365,10 @@ class Report:
                          upper_limit=END_BORDER_FOR_DATA):
         func_fsync_max = self.data_aproximation(x_lst, self.fsync_max_lst)
         i_fsync, err = integrate.quad(func_fsync_max, lower_limit, upper_limit)
-        return 1 / i_fsync
+        try:
+            return 1 / i_fsync
+        except ZeroDivisionError:
+            return 0
 
     def get_sync_rating(self,
                         x_lst,
@@ -376,7 +387,10 @@ class Report:
                          upper_limit=END_BORDER_FOR_DATA):
         func_close_max = self.data_aproximation(x_lst, self.close_max_lst)
         i_close, err = integrate.quad(func_close_max, lower_limit, upper_limit)
-        return 1 / i_close
+        try:
+            return 1 / i_close
+        except ZeroDivisionError:
+            return 0
 
     def get_unlink_rating(self,
                           x_lst,
@@ -384,7 +398,10 @@ class Report:
                           upper_limit=END_BORDER_FOR_DATA):
         func_unlink_max = self.data_aproximation(x_lst, self.unlink_max_lst)
         i_unlink, err = integrate.quad(func_unlink_max, lower_limit, upper_limit)
-        return 1 / i_unlink
+        try:
+            return 1 / i_unlink
+        except ZeroDivisionError:
+            return 0
 
     def get_total_rating(self,
                          x_lst,

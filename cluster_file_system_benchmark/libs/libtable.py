@@ -324,11 +324,10 @@ class Report:
                          x_lst,
                          lower_limit=START_BORDER_FOR_DATA,
                          upper_limit=END_BORDER_FOR_DATA,
-                         corr_coeff1=10**3,
-                         corr_coeff2=10**18):
+                         corr_coeff1=10**15):
         func_speed = self.data_aproximation(x_lst, self.speed_lst)
         i_spd, err = integrate.quad(func_speed, lower_limit, upper_limit)
-        return i_spd * (corr_coeff1) / (corr_coeff2)
+        return i_spd / corr_coeff1
 
     def get_app_overhead_rating(self,
                                 x_lst,

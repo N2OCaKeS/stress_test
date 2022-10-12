@@ -511,5 +511,6 @@ class Report:
                                                              v=astra_version()[0],
                                                              m=astra_version()[1],
                                                              t=time()), 'w') as tar:
+            os.chdir(SCRIPT_DIR)
             for file in listdir(path_to_files):
-                tar.add('{}/{}'.format(path_to_files, file))
+                tar.add('{}/{}'.format('report', file))

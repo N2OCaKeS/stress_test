@@ -7,7 +7,7 @@
 
 import re
 import sys
-import time
+from time import sleep
 import shutil
 import os.path
 import argparse
@@ -15,7 +15,7 @@ import subprocess
 import libs.libtable as libtable
 import libs.libscanner as libscanner
 
-from os import chmod, mkdir
+from os import chmod, mkdir, getcwd
 from libs.libsng import astra_version
 
 
@@ -80,6 +80,7 @@ def cmd(command):
 
 if __name__ == '__main__':
     check_exist_report_path(args.REPORT_PATH)
+    dir = getcwd()
     default_filter = r'(filter\sf_(dbg|debug|info|notice|warn|err(or)?|crit)\s\{\slevel\().+(\).*)'
     new_filter = r'\1{ll}\4'.format(ll=args.LOG_LEVEL)
 
@@ -102,9 +103,9 @@ if __name__ == '__main__':
                 '[Service]\n',
                 'Type=simple\n',
                 'Restart=always\n',
-                'WorkingDirectory=/media/sf_git/stress_test/syslog_ng_benchmark/\n',
+                'WorkingDirectory={}/\n'.format(dir),
                 'OOMScoreAdjust = -100\n', # Prohibition on the use of the out-of-memory service and the OOM trigger mechanism
-                'ExecStart=/media/sf_git/stress_test/syslog_ng_benchmark/venv/bin/python3 /tmp/dirtylogger{}.py\n'.format(service_num),
+                'ExecStart={}/venv/bin/python3 /tmp/dirtylogger{}.py\n'.format(dir, service_num),
                 'TimeoutSec=1\n',
                 '[Install]\n',
                 'WantedBy = multi - user.target\n']
@@ -112,6 +113,7 @@ if __name__ == '__main__':
         with open('/etc/systemd/system/{}'.format(service_name), 'w') as test_unit:
             test_unit.writelines(unit)
 
+        sleep(0.01)
         cmd("systemctl start {}".format(service_name))
 
     data_cpu, data_memory, data_disk, data_time = [], [], [], []
@@ -122,7 +124,7 @@ if __name__ == '__main__':
        Сбор данных с CPU, Memory, Disk 
     '''
     while time_exec > 0:
-        time.sleep(0.25)
+        sleep(0.25)
         data_cpu.append(sc.get_cpu_load())
         data_memory.append(sc.get_memory_load())
         data_disk.append(sc.get_disk_load())

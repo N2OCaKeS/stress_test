@@ -63,7 +63,7 @@ class Report:
         plt.ylabel(y_label)
         plt.grid(True)
         plt.savefig('{path}/{filename}'.format(path=self.report_path, filename=title_graph))
-        return "{path}/{filename}.png".format(path=self.report_path, filename=title_graph)
+        return "{filename}.png".format(path=self.report_path, filename=title_graph)
         
 
     def get_rating(self, x, y):

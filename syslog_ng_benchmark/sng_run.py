@@ -16,7 +16,7 @@ import libs.libtable as libtable
 import libs.libscanner as libscanner
 
 from os import chmod, mkdir, getcwd
-from libs.libsng import astra_version
+from libs.libsng import astra_version, check_is_running_status, get_memory_syslog_load
 
 
 DESCRIPTION = ""
@@ -116,28 +116,29 @@ if __name__ == '__main__':
         sleep(0.01)
         cmd("systemctl start {}".format(service_name))
 
-    data_cpu, data_memory, data_disk, data_time = [], [], [], []
+    data_cpu, data_memory, data_syslog_memory, data_disk, data_time = [], [], [], [], []
     time_exec = args.TIME_EXEC * 60
+    qty_sec_after_start = 0
     sc = libscanner.Scanner()
 
     '''
        Сбор данных с CPU, Memory, Disk 
     '''
-    while time_exec > 0:
+    while time_exec > 0 and check_is_running_status('syslog-ng') != "":
         sleep(0.25)
         data_cpu.append(sc.get_cpu_load())
         data_memory.append(sc.get_memory_load())
+        data_syslog_memory.append(get_memory_syslog_load())
         data_disk.append(sc.get_disk_load())
-        data_time.append(time_exec)
+        data_time.append(qty_sec_after_start)
         time_exec -= 1
+        qty_sec_after_start += 1
 
     '''
         Остановка сервисов
     '''
     for service_num in range(1, args.SERVICE_COUNT+1):
          cmd("systemctl stop dirtylogger{}.service".format(service_num))
-    
-    data_time.reverse()
 
     '''
         Создание отчета
@@ -145,11 +146,13 @@ if __name__ == '__main__':
     report = libtable.Report(os.path.expanduser(args.REPORT_PATH))
     rating_cpu = report.get_rating(x=data_time, y=data_cpu)
     rating_memory = report.get_rating(x=data_time, y=data_memory)
+    rating_syslog_memory = report.get_rating(x=data_time, y=data_syslog_memory)
     rating_disk = report.get_rating(x=data_time, y=data_disk)
-    total_rating = report.get_total_rating([rating_cpu, rating_memory, rating_disk])
+    total_rating = report.get_total_rating([rating_cpu, rating_memory, rating_syslog_memory, rating_disk])
 
     print("Rating CPU:", rating_cpu)
     print("Rating Memory:", rating_memory)
+    print("Rating Syslog-NG memory:", rating_syslog_memory)
     print("Rating Disk:", rating_disk)
     print("Total rating:", total_rating)
 
@@ -159,12 +162,14 @@ if __name__ == '__main__':
         report_txt.writelines('Load time execution: {} minutes\n'.format(args.TIME_EXEC))
         report_txt.writelines('Rating CPU: {}\n'.format(rating_cpu))
         report_txt.writelines('Rating memory: {}\n'.format(rating_memory))
+        report_txt.writelines('Rating Syslog-NG memory: {}\n'.format(rating_syslog_memory))
         report_txt.writelines('Rating disk: {}\n'.format(rating_disk))
         report_txt.writelines('Total rating: {}\n'.format(total_rating))
 
-    graph_load_cpu = report.create_graph(x=data_time, y=data_cpu, title_graph='Load CPU',y_label="CPU %")
-    graph_load_memory = report.create_graph(x=data_time, y=data_memory, title_graph='Load memory',y_label="Memory %")
-    graph_load_disk = report.create_graph(x=data_time, y=data_disk, title_graph='Load disk',y_label="Disk %")
+    graph_load_cpu = report.create_graph(x=data_time, y=data_cpu, title_graph='Load CPU',y_label="CPU %", x_rlim=args.TIME_EXEC * 60)
+    graph_load_memory = report.create_graph(x=data_time, y=data_memory, title_graph='Load memory',y_label="Memory %", x_rlim=args.TIME_EXEC * 60)
+    graph_load_syslog_memory = report.create_graph(x=data_time, y=data_syslog_memory, title_graph='Load syslog-ng memory', y_label="Memory %", x_rlim=args.TIME_EXEC * 60)
+    graph_load_disk = report.create_graph(x=data_time, y=data_disk, title_graph='Load disk',y_label="Disk %", x_rlim=args.TIME_EXEC * 60)
 
-    report.create_html([graph_load_cpu, graph_load_memory, graph_load_disk], total_rating, args.SERVICE_COUNT, args.TIME_EXEC)
+    report.create_html([graph_load_cpu, graph_load_memory, graph_load_syslog_memory, graph_load_disk], total_rating, args.SERVICE_COUNT, args.TIME_EXEC)
     libtable.Report.create_tar(os.path.expanduser(args.REPORT_PATH))

@@ -48,7 +48,7 @@ class Report:
                     polinom_factor -= 1
 
 
-    def create_graph(self, x, y, title_graph, x_label="Tsec", y_label=""):
+    def create_graph(self, x, y, title_graph, x_rlim, x_label="Tsec", y_label=""):
         '''
             Построить граф
         '''
@@ -56,13 +56,14 @@ class Report:
         aprx_f = self.data_aproximation(x, y)
 
         # build graph
-        plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, aprx_x, aprx_f(aprx_x))
-        plt.title(title_graph)
-        plt.xlabel(x_label)
-        plt.ylabel(y_label)
-        plt.grid(True)
-        plt.savefig('{path}/{filename}'.format(path=self.report_path, filename=title_graph))
+        fig, ax = plt.subplots(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        ax.plot(x, y, aprx_x, aprx_f(aprx_x))
+        ax.set_xlim(0, x_rlim)
+        ax.set_title(title_graph)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.grid(True)
+        fig.savefig('{path}/{filename}'.format(path=self.report_path, filename=title_graph))
         return "{filename}.png".format(path=self.report_path, filename=title_graph)
         
 
@@ -85,7 +86,7 @@ class Report:
             raise ValueError
         for item_rating in list_rating:
             total_rating += item_rating
-        return round(total_rating, accuracy) * 1000000
+        return round(round(total_rating, accuracy) * 1000000, 3)
 
 
     def create_html(self, graph_lst, total_rating, service_count, time_execution):    

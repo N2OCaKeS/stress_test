@@ -68,3 +68,25 @@ def astra_version():
     version.append(astra_kernel_version[:-1])
 
     return version
+
+def check_is_running_status(service_name):
+    status = subprocess.run("systemctl status {} | grep 'running'".format(service_name),
+                                         shell=True,
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL).stdout.decode("utf-8")
+    return status
+
+def get_memory_syslog_load():
+    qty_memory = subprocess.run("systemctl status syslog-ng | grep 'Memory'",
+                                         shell=True,
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL).stdout.decode("utf-8")
+    if qty_memory != "":
+        qty_memory = float(qty_memory.replace(" ", "")[:-2].split(":")[1]) * 1024
+        with open('/proc/meminfo', 'r') as procfile:
+            mem_total = int(procfile.readline().replace(" ", "")[:-3].split(":")[1])
+            load_syslog_memory = round(qty_memory * 100 / mem_total, 2)
+    else:
+        load_syslog_memory = 0
+
+    return load_syslog_memory

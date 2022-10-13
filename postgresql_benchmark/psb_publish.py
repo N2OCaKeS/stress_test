@@ -1,7 +1,9 @@
+argparse
 from libs.libreport import ReportToConfluence
+from libs.libpsb import astra_version
 from libs.libtable import Report
 
-r = ReportToConfluence('rkuznetsov', 'AstraFro-man')
+r = ReportToConfluence(username='', password='')
 # r.unzip_tarfile('report1.7_orel_1665647784.6084247.tar')
 # r.create_confluence_page('~rkuznetsov', 'Роман Кузнецов: личная страница.', 'test')
 # for file in os.listdir(r.report_files_path):
@@ -10,10 +12,26 @@ r = ReportToConfluence('rkuznetsov', 'AstraFro-man')
 
 with open('templates/header_table_template.html', 'r') as file:
     header_table = file.read()
+    header_table.format(av='{digit_varsion}({mode})'.format(digit_v=astra_version()[0],mode=astra_version()[1]),
+                        kernel='',
+                        package='',
+                        param_scale='',
+                        param_tr='',
+                        param_th='',
+                        param_cl='',
+                        arm_num='',
+                        arm_proc='',
+                        arm_mem='',
+                        arm_st='')
+
 with open('templates/rating_template.html', 'r') as file:
     rating = file.read()
+    with Report() as rep:
+        rating.format(rep.get_total_rating(rep.clients_lst))
+
 with open('templates/img_template.html', 'r') as file:
     img = file.read()
+
 with open('report/psb_report_table.html', 'r') as file:
     main_table = file.read()
 

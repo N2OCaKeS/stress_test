@@ -21,11 +21,12 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
     Основной лог файл в который попадают результаты тестирования
 '''
 #SCRIPT_DIR = '/media/sf_git/stress_test/file_system_benchmark'
-SCRIPT_DIR = '/home/rkuznetsov/git/stress_test/file_system_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/file_system_benchmark'
 LOG_FILENAME = 'fsb_log'
 LOG_PATH = '{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 REPORT_FILENAME = 'fsb_report.txt'
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
+TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
 
 '''
     Количество Inode
@@ -46,7 +47,7 @@ MACHINE_POSTFIX = 'osse'
 '''
     Имя снапшота для восстановления
 '''
-SNAPSHOT_NAME = '1.7.2.s'
+SNAPSHOT_NAME = '1.7.1.o'
 
 PORT = '7777'
 '''
@@ -70,6 +71,15 @@ PASSWORD = '1'
 START_BORDER_FOR_DATA = 10000
 STEP_FOR_BORDER = 10000
 END_BORDER_FOR_DATA = 1000000
+
+FILES = 10
+FILES_STEP = 10
+FILES_LIMIT = 100
+
+SIZE = 1024
+SIZE_STEP = 1024
+SIZE_LIMIT = 10240
+
 TIMEOUT = 3600
 NUMBER_OF_TEST_FILES = 5000
 '''

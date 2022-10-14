@@ -13,11 +13,12 @@ from matplotlib import pyplot as plt
 from libs.libfsb import astra_version
 from pretty_html_table import build_table
 from fsb_conf import REPORT_PATH, REPORT_FILENAME, LOG_PATH, SCRIPT_DIR, \
-    START_BORDER_FOR_DATA, STEP_FOR_BORDER, END_BORDER_FOR_DATA
+    FILES, FILES_STEP, FILES_LIMIT, \
+    SIZE, SIZE_STEP, SIZE_LIMIT
 
 
 class Report:
-    def __init__(self, report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME)):
+    def __init__(self,  ox_lo_lim, ox_up_lim, report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME)):
 
         '''
             :param report: path to report file
@@ -71,11 +72,15 @@ class Report:
                                                 'unlink_min': self.unlink_min_lst,
                                                 'unlink_avg': self.unlink_avg_lst,
                                                 'unlink_max': self.unlink_max_lst})
+
+        self.ox_lower_limit = ox_lo_lim
+        self.ox_upper_limit = ox_up_lim
+
         # graph size
         self.width = 27
         self.height = 15
 
-        self.grid_factor = (END_BORDER_FOR_DATA - START_BORDER_FOR_DATA) // 10
+        self.grid_factor = (self.ox_upper_limit - self.ox_lower_limit) // 10
 
 
     '''
@@ -121,7 +126,7 @@ class Report:
         y = self.raw_table.loc[:, [oy_param_table_name]]
 
         # build function f(x)
-        aprx_x = np.arange(START_BORDER_FOR_DATA, END_BORDER_FOR_DATA, 1)
+        aprx_x = np.arange(self.ox_lower_limit, self.ox_upper_limit, 1)
         aprx_f = self.data_aproximation(ox_lst, oy_lst)
 
         # build graph
@@ -133,8 +138,8 @@ class Report:
                                                                       xtitle=ox_param_table_name,
                                                                       ytitle=oy_param_table_name))
         plt.xlabel(ox_param_table_name)
-        ox_ticks = np.arange(START_BORDER_FOR_DATA,
-                             END_BORDER_FOR_DATA,
+        ox_ticks = np.arange(self.ox_lower_limit,
+                             self.ox_upper_limit,
                              self.grid_factor)
         plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
         plt.ylabel('{}(msec)'.format(oy_param_table_name))
@@ -171,8 +176,8 @@ class Report:
                     '{} avg'.format(syscall.upper()),
                     '{} max'.format(syscall.upper())])
         plt.xlabel(ox_param_table_name)
-        ox_ticks = np.arange(START_BORDER_FOR_DATA,
-                             END_BORDER_FOR_DATA,
+        ox_ticks = np.arange(self.ox_lower_limit,
+                             self.ox_upper_limit,
                              self.grid_factor)
         plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
         plt.ylabel('syscall {}(msec)'.format(syscall.upper()))
@@ -319,85 +324,69 @@ class Report:
     ####################################################################################################################
     def get_speed_rating(self,
                          x_lst,
-                         lower_limit=START_BORDER_FOR_DATA,
-                         upper_limit=END_BORDER_FOR_DATA,
                          corr_coeff1=10 ** 17):
         func_speed = self.data_aproximation(x_lst, self.speed_lst)
-        i_spd, err = integrate.quad(func_speed, lower_limit, upper_limit)
+        i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit)
         return i_spd / corr_coeff1
 
     def get_app_overhead_rating(self,
-                                x_lst,
-                                lower_limit=START_BORDER_FOR_DATA,
-                                upper_limit=END_BORDER_FOR_DATA):
+                                x_lst):
         func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
-        i_ao, err = integrate.quad(func_ao, lower_limit, upper_limit)
+        i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit)
         try:
             return 1 / i_ao
         except ZeroDivisionError:
             return 0
 
     def get_create_rating(self,
-                          x_lst,
-                          lower_limit=START_BORDER_FOR_DATA,
-                          upper_limit=END_BORDER_FOR_DATA):
+                          x_lst):
         func_create_max = self.data_aproximation(x_lst, self.create_max_lst)
-        i_create, err = integrate.quad(func_create_max, lower_limit, upper_limit)
+        i_create, err = integrate.quad(func_create_max, self.ox_lower_limit, self.ox_upper_limit)
         try:
             return 1 / i_create
         except ZeroDivisionError:
             return 0
 
     def get_write_rating(self,
-                         x_lst,
-                         lower_limit=START_BORDER_FOR_DATA,
-                         upper_limit=END_BORDER_FOR_DATA):
+                         x_lst):
         func_write_max = self.data_aproximation(x_lst, self.write_max_lst)
-        i_write, err = integrate.quad(func_write_max, lower_limit, upper_limit)
+        i_write, err = integrate.quad(func_write_max, self.ox_lower_limit, self.ox_upper_limit)
         try:
             return 1 / i_write
         except ZeroDivisionError:
             return 0
 
     def get_fsync_rating(self,
-                         x_lst,
-                         lower_limit=START_BORDER_FOR_DATA,
-                         upper_limit=END_BORDER_FOR_DATA):
+                         x_lst):
         func_fsync_max = self.data_aproximation(x_lst, self.fsync_max_lst)
-        i_fsync, err = integrate.quad(func_fsync_max, lower_limit, upper_limit)
+        i_fsync, err = integrate.quad(func_fsync_max, self.ox_lower_limit, self.ox_upper_limit)
         try:
             return 1 / i_fsync
         except ZeroDivisionError:
             return 0
 
     def get_sync_rating(self,
-                        x_lst,
-                        lower_limit=START_BORDER_FOR_DATA,
-                        upper_limit=END_BORDER_FOR_DATA):
+                        x_lst):
         func_sync_max = self.data_aproximation(x_lst, self.sync_max_lst)
-        i_sync, err = integrate.quad(func_sync_max, lower_limit, upper_limit)
+        i_sync, err = integrate.quad(func_sync_max, self.ox_lower_limit, self.ox_upper_limit)
         try:
             return 1 / i_sync
         except ZeroDivisionError:
             return 0
 
     def get_close_rating(self,
-                         x_lst,
-                         lower_limit=START_BORDER_FOR_DATA,
-                         upper_limit=END_BORDER_FOR_DATA):
+                         x_lst):
         func_close_max = self.data_aproximation(x_lst, self.close_max_lst)
-        i_close, err = integrate.quad(func_close_max, lower_limit, upper_limit)
+        i_close, err = integrate.quad(func_close_max, self.ox_lower_limit, self.ox_upper_limit)
         try:
             return 1 / i_close
         except ZeroDivisionError:
             return 0
 
     def get_unlink_rating(self,
-                          x_lst,
-                          lower_limit=START_BORDER_FOR_DATA,
-                          upper_limit=END_BORDER_FOR_DATA):
+                          x_lst):
         func_unlink_max = self.data_aproximation(x_lst, self.unlink_max_lst)
-        i_unlink, err = integrate.quad(func_unlink_max, lower_limit, upper_limit)
+        i_unlink, err = integrate.quad(func_unlink_max, self.ox_lower_limit, self.ox_upper_limit)
         try:
             return 1 / i_unlink
         except ZeroDivisionError:
@@ -405,18 +394,16 @@ class Report:
 
     def get_total_rating(self,
                          x_lst,
-                         lower_limit=START_BORDER_FOR_DATA,
-                         upper_limit=END_BORDER_FOR_DATA,
                          accuracy=10,
                          multiplier=10**10):
-        return round(round(self.get_speed_rating(x_lst, lower_limit, upper_limit) + \
-                           self.get_app_overhead_rating(x_lst, lower_limit, upper_limit) + \
-                           self.get_create_rating(x_lst, lower_limit, upper_limit) + \
-                           self.get_write_rating(x_lst, lower_limit, upper_limit) + \
-                           self.get_fsync_rating(x_lst, lower_limit, upper_limit) + \
-                           self.get_sync_rating(x_lst, lower_limit, upper_limit) + \
-                           self.get_close_rating(x_lst, lower_limit, upper_limit) + \
-                           self.get_unlink_rating(x_lst, lower_limit, upper_limit),
+        return round(round(self.get_speed_rating(x_lst) + \
+                           self.get_app_overhead_rating(x_lst) + \
+                           self.get_create_rating(x_lst) + \
+                           self.get_write_rating(x_lst) + \
+                           self.get_fsync_rating(x_lst) + \
+                           self.get_sync_rating(x_lst) + \
+                           self.get_close_rating(x_lst) + \
+                           self.get_unlink_rating(x_lst),
                            accuracy) * multiplier, 3)
 
     ####################################################################################################################

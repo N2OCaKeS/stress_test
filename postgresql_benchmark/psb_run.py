@@ -15,6 +15,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
     MIC_SQL_UPGRADE, MIC_SQL_TRANSACTION, \
     ACL_SQL_UPGRADE, ACL_SQL_TRANSACTION, \
+    DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
     SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
@@ -91,9 +92,9 @@ if args.TEST_LIST == 'base':
         '''
             Запуск на оптимальных настройках
         '''
-        scale_factor = 500
-        transactions = 100000
-        threads = 200
+        scale_factor = DEFAULT_SCALE_FACTOR
+        transactions = DEFAULT_TRANSACTIONS
+        threads = DEFAULT_THREADS
         clients = CLIENTS
         clients_step = CLIENTS_STEP
         step_ratio_by_clients = STEP_RATIO_BY_CLIENTS  # (client_step)*(step_ratio_by_clients) every iteration

@@ -2,6 +2,7 @@ SCRIPT_DIR = '/media/sf_git/stress_test/postgresql_benchmark'
 LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
+TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
 '''
    Названия скриптов из папки sql.
    *upgrade - скрипт донастройки после pgbech -i
@@ -36,18 +37,21 @@ FILLING_FACTOR = 100
     содержащие идентификаторы счетов (столбцы aid), перейдут к большим целым числам (типу bigint),
     чтобы в них могли уместиться все возможные значения идентификаторов.
 '''
+DEFAULT_SCALE_FACTOR = 500
 SCALE_FACTOR = 10  # 1000
 SCALE_FACTOR_STEP = 10  # 2000
 LIMITE_SCALE_FACTOR = 100  # 100000
 '''
     Число транзакций, которые будут выполняться каждым клиентом.
 '''
+DEFAULT_TRANSACTIONS = 100000
 TRANSACTIONS = 10  # 100000
 TRANSACTIONS_STEP = 10  # 100000
 LIMITE_TRANSACTIONS = 100  # 10000000
 '''
     Число потоков
 '''
+DEFAULT_THREADS = 200
 THREADS = 10  # 1000
 THREADS_STEP = 10  # 1000
 LIMITE_THREADS = 100  # 10000

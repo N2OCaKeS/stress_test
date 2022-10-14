@@ -1,47 +1,157 @@
-argparse
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
+import argparse
+import os
+import subprocess
 from libs.libreport import ReportToConfluence
 from libs.libpsb import astra_version
 from libs.libtable import Report
+from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH
 
-r = ReportToConfluence(username='', password='')
-# r.unzip_tarfile('report1.7_orel_1665647784.6084247.tar')
-# r.create_confluence_page('~rkuznetsov', 'Роман Кузнецов: личная страница.', 'test')
-# for file in os.listdir(r.report_files_path):
-#     r.attache_files('{}/{}'.format(r.report_files_path, file), '~rkuznetsov', 'test')
+DESCRIPTION = ""
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('-u', '--username',
+                    action='store',
+                    required=True,
+                    help='confluence user',
+                    dest='USER')
+
+parser.add_argument('-p', '--password',
+                    action='store',
+                    required=True,
+                    help='confluence password',
+                    dest='PASSWD')
+
+parser.add_argument('-cs', '--confluence-space',
+                    action='store',
+                    required=True,
+                    help='confluence space',
+                    dest='SPACE')
+
+parser.add_argument('-cpp', '--confluence-parent-page',
+                    action='store',
+                    required=True,
+                    help='confluence parent page',
+                    dest='PPAGE')
+
+parser.add_argument('-cnp', '--confluence-new-page',
+                    action='store',
+                    required=True,
+                    help='confluence new page',
+                    dest='NPAGE')
+
+parser.add_argument('-pack', '--package',
+                    action='store',
+                    required=True,
+                    help='test package',
+                    dest='PACKAGE')
+
+parser.add_argument('-rp', '--report-path',
+                    action='store',
+                    required=False,
+                    default=REPORT_PATH,
+                    help='path to report files',
+                    dest='R_PATH')
+
+parser.add_argument('-tp', '--tarfile-path',
+                    action='store',
+                    required=False,
+                    default=None,
+                    help='path to tar with report',
+                    dest='TAR_PATH')
+
+parser.add_argument('-an', '--arm-number',
+                    action='store',
+                    required=False,
+                    default='141',
+                    help='stand number',
+                    dest='ARM_NUM')
+
+parser.add_argument('-ap', '--arm-proccessor',
+                    action='store',
+                    required=False,
+                    default='Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
+                    help='processor on stand',
+                    dest='ARM_PROC')
+
+parser.add_argument('-am', '--arm-memory',
+                    action='store',
+                    required=False,
+                    default='32GB',
+                    help='RAM on stand',
+                    dest='ARM_MEM')
+
+parser.add_argument('-as', '--arm-storage',
+                    action='store',
+                    required=False,
+                    default='Samsung NVME 970 EVO 2Тб',
+                    help='system storage on stand',
+                    dest='ARM_ST')
+
+args = parser.parse_args()
+
+confluence_report = ReportToConfluence(username=args.USER, password=args.PASSWD)
+
+# если получен архив, распаковать
+if args.TAR_PATH is not None:
+    confluence_report.unzip_tarfile(args.TAR_PATH)
+
+# создать страницу confluence
+confluence_report.create_confluence_page(args.SPACE,
+                                         args.PPAGE,
+                                         args.NPAGE)
+# прикрепить файлы к странице confluence
+for file in os.listdir(args.R_PATH):
+    confluence_report.attache_files('{}/{}'.format(args.R_PATH, file),
+                                    args.SPACE,
+                                    args.NPAGE)
+
+# генерация вступительной таблицы
+with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
+    header_table_temp = file.read()
+    header_table = header_table_temp.format(av='{digit_v}({mode})'.format(digit_v=astra_version()[0],
+                                                                          mode=astra_version()[1]),
+                                            kernel=subprocess.run('uname -r',
+                                                                  shell=True,
+                                                                  stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                                            package_name=args.PACKAGE,
+                                            package_vers=subprocess.run("dpkg -l "+args.PACKAGE+" | awk '{print $3}' | tail -n1",
+                                                                        shell=True,
+                                                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                                            param_scale=str(DEFAULT_SCALE_FACTOR),
+                                            param_tr=str(DEFAULT_TRANSACTIONS),
+                                            param_th=str(DEFAULT_THREADS),
+                                            param_cl='{}-{}/{}'.format(CLIENTS, LIMITE_CLIENTS, CLIENTS_STEP),
+                                            arm_num=args.ARM_NUM,
+                                            arm_proc=args.ARM_PROC,
+                                            arm_mem=args.ARM_MEM,
+                                            arm_st=args.ARM_ST)
 
 
-with open('templates/header_table_template.html', 'r') as file:
-    header_table = file.read()
-    header_table.format(av='{digit_varsion}({mode})'.format(digit_v=astra_version()[0],mode=astra_version()[1]),
-                        kernel='',
-                        package='',
-                        param_scale='',
-                        param_tr='',
-                        param_th='',
-                        param_cl='',
-                        arm_num='',
-                        arm_proc='',
-                        arm_mem='',
-                        arm_st='')
+# создание страницы отчета
+rep = Report()
+with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
+    rating_temp = template.read()
+    rating = rating_temp.format(r=str(rep.get_total_rating()))
 
-with open('templates/rating_template.html', 'r') as file:
-    rating = file.read()
-    with Report() as rep:
-        rating.format(rep.get_total_rating(rep.clients_lst))
-
-with open('templates/img_template.html', 'r') as file:
-    img = file.read()
-
-with open('report/psb_report_table.html', 'r') as file:
+with open('{}/psb_report_table.html'.format(REPORT_PATH), 'r') as file:
     main_table = file.read()
 
-html_page = '\n'.join([header_table, rating, main_table, img])
+with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
+    images_lst = []
+    img_temp = template.read()
+    for file in os.listdir(args.R_PATH):
+        if file.endswith('png'):
+            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE), img_png=file))
+    images = '\n'.join(images_lst)
 
-r.update_confluence_page('~rkuznetsov', 'test', html_page)
+html_page = '\n'.join([header_table, rating, main_table, images])
 
-# # Добавить тестовую таблицу
-# with open('./report/psb_report_table.html', 'r') as file:
-#     table = file.read()
-#     r.update_confluence_page('~rkuznetsov', 'test', table)
-
-# '<img class="confluence-embedded-image" draggable="false" src="/download/attachments/140673955/psb_clients_la_graph.png?version=1&amp;modificationDate=1665389769281&amp;api=v2" data-image-src="/download/attachments/140673955/psb_clients_la_graph.png?version=1&amp;modificationDate=1665389769281&amp;api=v2" data-unresolved-comment-count="0" data-linked-resource-id="140673989" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="psb_clients_la_graph.png" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="140673955" data-linked-resource-container-version="6" height="400">'
+# выкладываем информацию на страницу
+confluence_report.update_confluence_page(args.SPACE, args.NPAGE, html_page)

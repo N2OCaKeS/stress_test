@@ -20,8 +20,7 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
 '''
     Основной лог файл в который попадают результаты тестирования
 '''
-#SCRIPT_DIR = '/media/sf_git/stress_test/file_system_benchmark'
-SCRIPT_DIR = '/home/u/git/stress_test/file_system_benchmark'
+SCRIPT_DIR = '/media/sf_git/stress_test/file_system_benchmark'
 LOG_FILENAME = 'fsb_log'
 LOG_PATH = '{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 REPORT_FILENAME = 'fsb_report.txt'

@@ -12,7 +12,9 @@ from time import time
 from libs.libtests import TestSet
 from libs.libtable import Report
 from cfs_conf import LOG_FILENAME, \
-    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, TIMEOUT
+    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, TIMEOUT, \
+    FILES, FILES_STEP, FILES_LIMIT, \
+    SIZE, SIZE_STEP, SIZE_LIMIT
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -199,13 +201,13 @@ if args.TS == 'fs_mark_count':
     # Изменение количества файлов
     start_time = time()
     if args.CONFIG:
-        run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
-                           end_burder=END_BORDER_FOR_DATA,
-                           step=STEP_FOR_DATA)
+        run_test = TestSet(start_burder=FILES,
+                           end_burder=FILES_LIMIT,
+                           step=FILES_STEP)
     else:
         run_test = TestSet(start_burder=10,  # количество файлов
-                           end_burder=40,
-                           step=5)
+                           end_burder=100,
+                           step=10)
 
     try:
         run_test.test_7_fs_mark33_count()
@@ -215,7 +217,10 @@ if args.TS == 'fs_mark_count':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    report = Report()
+    if args.CONFIG:
+        report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
+    else:
+        report = Report(ox_lo_lim=10, ox_up_lim=100)
     report.create_beauty_table()
     report.create_cfs_fc_sp_graph()
     report.create_cfs_fc_app_overhead_graph()
@@ -246,9 +251,9 @@ if args.TS == 'fs_mark_size':
     # Изменение размера файлов
     start_time = time()
     if args.CONFIG:
-        run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
-                           end_burder=END_BORDER_FOR_DATA,
-                           step=STEP_FOR_DATA)
+        run_test = TestSet(start_burder=SIZE,
+                           end_burder=SIZE_LIMIT,
+                           step=SIZE_STEP)
     else:
         run_test = TestSet(start_burder=1024,  # размер в байтах
                            end_burder=10240,
@@ -261,7 +266,10 @@ if args.TS == 'fs_mark_size':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    report = Report()
+    if args.CONFIG:
+        report = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
+    else:
+        report = Report(ox_lo_lim=10, ox_up_lim=100)
     report.create_beauty_table()
     report.create_cfs_fc_sp_graph()
     report.create_cfs_fc_app_overhead_graph()

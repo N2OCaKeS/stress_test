@@ -172,25 +172,29 @@ if __name__ == '__main__':
         report_txt.writelines('Total rating: {}\n'.format(total_rating))
 
     graph_load_cpu = report.create_graph(x=data_time, 
-                                         y=data_cpu, 
+                                         y=data_cpu,
+                                         filename='sng_cpu', 
                                          title_graph='Load CPU', 
                                          y_label="CPU %", 
                                          x_rlim=args.TIME_EXEC * 60)
     
     graph_load_memory = report.create_graph(x=data_time, 
-                                            y=data_memory, 
+                                            y=data_memory,
+                                            filename='sng_memory', 
                                             title_graph='Load memory', 
                                             y_label="Memory %", 
                                             x_rlim=args.TIME_EXEC * 60)
 
     graph_load_syslog_memory = report.create_graph(x=data_time, 
-                                                   y=data_syslog_memory, 
+                                                   y=data_syslog_memory,
+                                                   filename='sng_syslog_memory', 
                                                    title_graph='Load syslog-ng memory', 
                                                    y_label="Memory %", 
                                                    x_rlim=args.TIME_EXEC * 60)
 
     graph_load_disk = report.create_graph(x=data_time, 
-                                          y=data_disk, 
+                                          y=data_disk,
+                                          filename='sng_disk', 
                                           title_graph='Load disk', 
                                           y_label="Disk %", 
                                           x_rlim=args.TIME_EXEC * 60)
@@ -199,7 +203,8 @@ if __name__ == '__main__':
                                   'load_cpu': data_cpu, 
                                   'load_memory': data_memory, 
                                   'load_syslog_ng_memory': data_syslog_memory, 
-                                  'load_disk': data_disk})
+                                  'load_disk': data_disk},
+                                  filename='sng_data')
 
     report.create_html([graph_load_cpu, graph_load_memory, graph_load_syslog_memory, graph_load_disk], total_rating, args.SERVICE_COUNT, args.TIME_EXEC)
     libtable.Report.create_tar(os.path.expanduser(args.REPORT_PATH))

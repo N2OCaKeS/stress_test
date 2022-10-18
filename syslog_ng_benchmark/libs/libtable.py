@@ -53,7 +53,7 @@ class Report:
                     polinom_factor -= 1
 
 
-    def create_graph(self, x, y, title_graph, x_rlim, x_label="Tsec", y_label=""):
+    def create_graph(self, x, y, filename, title_graph, x_rlim, x_label="Tsec", y_label=""):
         '''
             Построить граф
         '''
@@ -69,8 +69,8 @@ class Report:
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         ax.grid(True)
-        fig.savefig('{path}/{filename}'.format(path=self.report_path, filename=title_graph))
-        return "{filename}.png".format(path=self.report_path, filename=title_graph)
+        fig.savefig('{path}/{file_name}'.format(path=self.report_path, file_name=filename))
+        return "{file_name}.png".format(path=self.report_path, file_name=filename)
         
 
     def get_rating(self, x, y):
@@ -176,9 +176,9 @@ class Report:
             total_html.writelines(html_template_part3)
 
 
-    def data_to_dataframe_csv(self, data):
+    def data_to_dataframe_csv(self, data, filename):
         df = pd.DataFrame(data=data)
-        df.to_csv('{path}/data.csv'.format(path=self.report_path), index=False)
+        df.to_csv('{path}/{file_name}.csv'.format(path=self.report_path, file_name=filename), index=False)
 
 
     @staticmethod
@@ -186,7 +186,7 @@ class Report:
         '''
             tar архив с результатами тестирования
         '''
-        time_mark = datetime.now().strftime("%d.%m.%Y %H:%M")
+        time_mark = datetime.now().strftime("%d.%m.%Y_%H.%M")
         chdir(path)
         with tarfile.open('report{v}_{m}_{t}.tar'.format(v=astra_version()[0],
                                                          m=astra_version()[1],

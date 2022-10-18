@@ -171,9 +171,11 @@ class Report:
             total_html.writelines(graphs_in_total_html)
             total_html.writelines(html_template_part3)
 
+
     def data_to_dataframe_csv(self, data):
-        df = pd.DataFrame(data=data, index=False)
-        df.to_csv('data.csv')
+        df = pd.DataFrame(data=data)
+        df.to_csv('{path}/data.csv'.format(path=self.report_path), index=False)
+
 
     @staticmethod
     def create_tar(path):

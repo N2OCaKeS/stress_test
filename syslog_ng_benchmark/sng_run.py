@@ -72,8 +72,6 @@ if __name__ == '__main__':
     itog_path = os.path.expanduser(args.REPORT_PATH)
     if os.path.exists(itog_path) is False:
         mkdir(itog_path)
-    else:
-        sys.exit(1)
 
     dir = getcwd()
     default_filter = r'(filter\sf_(dbg|debug|info|notice|warn|err(or)?|crit)\s\{\slevel\().+(\).*)'

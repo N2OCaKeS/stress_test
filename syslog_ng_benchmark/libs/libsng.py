@@ -69,14 +69,17 @@ def astra_version():
 
     return version
 
-def check_is_running_status(service_name):
+def check_service_status(service_name):
     status = subprocess.run("systemctl status {} | grep 'running'".format(service_name),
                                          shell=True,
                                          stdout=subprocess.PIPE,
                                          stderr=subprocess.DEVNULL).stdout.decode("utf-8")
-    return status
+    if status != "":
+        return True
+    else:
+        return False
 
-def get_memory_syslog_load():
+def get_memory_load_by_syslog():
     qty_memory = subprocess.run("systemctl status syslog-ng | grep 'Memory'",
                                          shell=True,
                                          stdout=subprocess.PIPE,

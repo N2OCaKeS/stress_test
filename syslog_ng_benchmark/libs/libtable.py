@@ -8,6 +8,7 @@
 import tarfile
 import warnings
 import numpy as np
+import pandas as pd
 
 from scipy import integrate
 from os import listdir, chdir
@@ -18,12 +19,12 @@ from libs.libsng import astra_version
 
 class Report:
 
-    def __init__(self, report_path):
+    def __init__(self, report_path, img_width=16.256, img_height=12.192):
         self.report_path = report_path
 
         # graph size
-        self.width = 16.256
-        self.height = 12.192
+        self.width = img_width
+        self.height = img_height
 
 
     @staticmethod
@@ -58,6 +59,7 @@ class Report:
         # build graph
         fig, ax = plt.subplots(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
         ax.plot(x, y, aprx_x, aprx_f(aprx_x))
+        ax.set_yscale("linear")
         ax.set_xlim(0, x_rlim)
         ax.set_title(title_graph)
         ax.set_xlabel(x_label)
@@ -73,7 +75,10 @@ class Report:
         '''
         func = self.data_aproximation(x, y)
         I, err = integrate.quad(func, x[0], x[-1])
-        return 1/I
+        try:
+            return 1/I
+        except ZeroDivisionError:
+            return 0
 
 
     def get_total_rating(self, list_rating=[], accuracy=10):
@@ -166,6 +171,9 @@ class Report:
             total_html.writelines(graphs_in_total_html)
             total_html.writelines(html_template_part3)
 
+    def data_to_dataframe_csv(self, data):
+        df = pd.DataFrame(data=data, index=False)
+        df.to_csv('data.csv')
 
     @staticmethod
     def create_tar(path):

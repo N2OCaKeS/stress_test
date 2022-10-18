@@ -16,7 +16,7 @@ import libs.libtable as libtable
 import libs.libscanner as libscanner
 
 from os import chmod, mkdir, getcwd
-from libs.libsng import astra_version, check_is_running_status, get_memory_syslog_load
+from libs.libsng import astra_version, check_service_status, get_memory_load_by_syslog
 
 
 DESCRIPTION = ""
@@ -63,23 +63,18 @@ parser.add_argument('-rp', '--report_path',
 
 args = parser.parse_args()
 
-
-def check_exist_report_path(path):
-    itog_path = os.path.expanduser(path)
-    if os.path.exists(itog_path) is False:
-        try:
-            mkdir(itog_path)
-        except PermissionError:
-            print("\033[31mНедостаточно прав на создание директории {rep_path} для отчета!\033[0m".format(path))
-            sys.exit(1)
-
 def cmd(command):
     subprocess.run(command,
                    shell=True,
                    stderr=subprocess.DEVNULL)
 
 if __name__ == '__main__':
-    check_exist_report_path(args.REPORT_PATH)
+    itog_path = os.path.expanduser(args.REPORT_PATH)
+    if os.path.exists(itog_path) is False:
+        mkdir(itog_path)
+    else:
+        sys.exit(1)
+
     dir = getcwd()
     default_filter = r'(filter\sf_(dbg|debug|info|notice|warn|err(or)?|crit)\s\{\slevel\().+(\).*)'
     new_filter = r'\1{ll}\4'.format(ll=args.LOG_LEVEL)
@@ -124,11 +119,11 @@ if __name__ == '__main__':
     '''
        Сбор данных с CPU, Memory, Disk 
     '''
-    while time_exec > 0 and check_is_running_status('syslog-ng') != "":
+    while time_exec > 0 and check_service_status('syslog-ng'):
         sleep(0.25)
         data_cpu.append(sc.get_cpu_load())
         data_memory.append(sc.get_memory_load())
-        data_syslog_memory.append(get_memory_syslog_load())
+        data_syslog_memory.append(get_memory_load_by_syslog())
         data_disk.append(sc.get_disk_load())
         data_time.append(qty_sec_after_start)
         time_exec -= 1
@@ -166,10 +161,35 @@ if __name__ == '__main__':
         report_txt.writelines('Rating disk: {}\n'.format(rating_disk))
         report_txt.writelines('Total rating: {}\n'.format(total_rating))
 
-    graph_load_cpu = report.create_graph(x=data_time, y=data_cpu, title_graph='Load CPU',y_label="CPU %", x_rlim=args.TIME_EXEC * 60)
-    graph_load_memory = report.create_graph(x=data_time, y=data_memory, title_graph='Load memory',y_label="Memory %", x_rlim=args.TIME_EXEC * 60)
-    graph_load_syslog_memory = report.create_graph(x=data_time, y=data_syslog_memory, title_graph='Load syslog-ng memory', y_label="Memory %", x_rlim=args.TIME_EXEC * 60)
-    graph_load_disk = report.create_graph(x=data_time, y=data_disk, title_graph='Load disk',y_label="Disk %", x_rlim=args.TIME_EXEC * 60)
+    graph_load_cpu = report.create_graph(x=data_time, 
+                                         y=data_cpu, 
+                                         title_graph='Load CPU', 
+                                         y_label="CPU %", 
+                                         x_rlim=args.TIME_EXEC * 60)
+    
+    graph_load_memory = report.create_graph(x=data_time, 
+                                            y=data_memory, 
+                                            title_graph='Load memory', 
+                                            y_label="Memory %", 
+                                            x_rlim=args.TIME_EXEC * 60)
+
+    graph_load_syslog_memory = report.create_graph(x=data_time, 
+                                                   y=data_syslog_memory, 
+                                                   title_graph='Load syslog-ng memory', 
+                                                   y_label="Memory %", 
+                                                   x_rlim=args.TIME_EXEC * 60)
+
+    graph_load_disk = report.create_graph(x=data_time, 
+                                          y=data_disk, 
+                                          title_graph='Load disk', 
+                                          y_label="Disk %", 
+                                          x_rlim=args.TIME_EXEC * 60)
+
+    report.data_to_dataframe_csv({'time': data_time, 
+                                  'load_cpu': data_cpu, 
+                                  'load_memory': data_memory, 
+                                  'load_syslog_ng_memory': data_syslog_memory, 
+                                  'load_disk': data_disk})
 
     report.create_html([graph_load_cpu, graph_load_memory, graph_load_syslog_memory, graph_load_disk], total_rating, args.SERVICE_COUNT, args.TIME_EXEC)
     libtable.Report.create_tar(os.path.expanduser(args.REPORT_PATH))

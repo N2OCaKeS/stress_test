@@ -61,6 +61,18 @@ parser.add_argument('-rp', '--report_path',
                     help='Absolute report path',
                     dest='REPORT_PATH')
 
+parser.add_argument('-iw', '--img_width',
+                    required=False,
+                    default=16.256,
+                    help='Image (graph) width in report',
+                    dest='IMAGE_WIDTH')
+
+parser.add_argument('-ih', '--img_height',
+                    required=False,
+                    default=12.192,
+                    help='Image (graph) height in report',
+                    dest='IMAGE_HEIGHT')
+
 args = parser.parse_args()
 
 def cmd(command):
@@ -136,7 +148,7 @@ if __name__ == '__main__':
     '''
         Создание отчета
     '''
-    report = libtable.Report(os.path.expanduser(args.REPORT_PATH))
+    report = libtable.Report(os.path.expanduser(args.REPORT_PATH), float(args.IMAGE_WIDTH), float(args.IMAGE_HEIGHT))
     rating_cpu = report.get_rating(x=data_time, y=data_cpu)
     rating_memory = report.get_rating(x=data_time, y=data_memory)
     rating_syslog_memory = report.get_rating(x=data_time, y=data_syslog_memory)

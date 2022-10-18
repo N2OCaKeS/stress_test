@@ -23,6 +23,10 @@ class Report:
         self.report_path = report_path
 
         # graph size
+        # default value 640x480
+        # img_width=16.256
+        # img_height=12.192
+
         self.width = img_width
         self.height = img_height
 

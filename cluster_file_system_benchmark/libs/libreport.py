@@ -7,6 +7,7 @@
 
 from shutil import unpack_archive
 from atlassian import Confluence
+from atlassian import Jira
 
 
 class ReportToConfluence():
@@ -38,6 +39,11 @@ class ReportToConfluence():
     def get_confluence_page_id(self, page_space, page_title):
         return self.__confluence.get_page_id(space=page_space, title=page_title)
 
+    def get_confluence_public_url(self, page_space, page_title):
+        return ('{url}/pages/viewpage.action?pageId={id}#'.format(url=self.__url,
+                                                                  id=self.__confluence.get_page_id(space=page_space,
+                                                                                                   title=page_title)))
+
     def create_confluence_page(self,
                                page_space,
                                parent_page_title,
@@ -62,3 +68,19 @@ class ReportToConfluence():
             self.__confluence.update_page(page_id=self.__confluence.get_page_id(space=page_space, title=page_title),
                                           title=page_title,
                                           body=page_body)
+
+
+class ReportToJira():
+    __url='https://jira.astralinux.ru'
+
+    def __init__(self, username, password):
+        self.__username = username
+        self.__password = password
+
+        self.__jira = Jira(url=self.__url,
+                           username=self.__username,
+                           password=self.__password)
+
+    def add_comment_to_issue(self, issue, text):
+        self.__jira.issue_add_comment(issue_key=issue,
+                                      comment=text)

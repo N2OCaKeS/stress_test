@@ -8,7 +8,7 @@
 import argparse
 import os
 import subprocess
-from libs.libreport import ReportToConfluence
+from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libpsb import astra_version
 from libs.libtable import Report
 from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
@@ -45,6 +45,12 @@ parser.add_argument('-cnp', '--confluence-new-page',
                     required=True,
                     help='confluence new page',
                     dest='NPAGE')
+
+parser.add_argument('-ji', '--jira-issue',
+                    action='store',
+                    required=False,
+                    help='jira issue',
+                    dest='JIRA_ISSUE')
 
 parser.add_argument('-pack', '--package',
                     action='store',
@@ -97,6 +103,7 @@ parser.add_argument('-as', '--arm-storage',
 args = parser.parse_args()
 
 confluence_report = ReportToConfluence(username=args.USER, password=args.PASSWD)
+jira_report = ReportToJira(username=args.USER, password=args.PASSWD)
 
 # если получен архив, распаковать
 if args.TAR_PATH is not None:
@@ -155,3 +162,10 @@ html_page = '\n'.join([header_table, rating, main_table, images])
 
 # выкладываем информацию на страницу
 confluence_report.update_confluence_page(args.SPACE, args.NPAGE, html_page)
+
+if args.JIRA_ISSUE:
+    with open('{}/issue_comment_template.txt'.format(TEMPLATE_PATH), 'r') as template:
+        comment = template.read()
+        jira_report.add_comment_to_issue(args.JIRA_ISSUE,
+                                         comment.format(url=confluence_report.get_confluence_public_url(args.SPACE,
+                                                                                                        args.NPAGE)))

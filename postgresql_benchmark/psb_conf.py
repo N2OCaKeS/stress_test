@@ -1,4 +1,4 @@
-SCRIPT_DIR = '/media/sf_git/stress_test/postgresql_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/postgresql_benchmark'
 LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
@@ -58,7 +58,7 @@ LIMITE_THREADS = 100  # 10000
 '''
     Число клиентов
 '''
-CLIENTS = 10
-CLIENTS_STEP = 10
+CLIENTS = 1
+CLIENTS_STEP = 1
 STEP_RATIO_BY_CLIENTS = 1
-LIMITE_CLIENTS = 500
+LIMITE_CLIENTS = 10

@@ -75,16 +75,10 @@ if args.DB_PREPARE:
     '''
         Настроить машину, инициализировать тестовую БД
     '''
-    if version[0] == '1.7' or version[0] == '4.7':
-        subprocess.run('sudo bash {dir}/psb_db_prep.sh {init_file}'.format(dir=SCRIPT_DIR,
-                                                                              init_file='psb_init.sql'),
-                       shell=True,
-                       stderr=subprocess.DEVNULL)
-    elif version[0] == '1.6' or version[0] == '8.1' or version[0] == '2.12':
-        subprocess.run('sudo bash {dir}/psb_db_prep_96.sh {init_file}'.format(dir=SCRIPT_DIR,
-                                                                              init_file='psb_init.sql'),
-                       shell=True,
-                       stderr=subprocess.DEVNULL)
+    subprocess.run('sudo bash {dir}/psb_db_prep.sh {init_file}'.format(dir=SCRIPT_DIR,
+                                                                       init_file='psb_init.sql'),
+                   shell=True,
+                   stderr=subprocess.DEVNULL)
 
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':

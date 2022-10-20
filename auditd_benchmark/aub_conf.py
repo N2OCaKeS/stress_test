@@ -1,11 +1,11 @@
 
 ADMIN='u'
 
-PROC_BODYS = {'open': ('cat /etc/passwd', 'cat happy_future 2> /dev/null'),
-              'create': ('touch /tmp/file1', 'touch /file1 2> /dev/null'),
-              'exec': ('/bin/true', '/bin/ls 2> /dev/null'),
-              'remove': ('rm /tmp/file1', 'rm /tmp/file1 2> /dev/null'),
-              'chmod': ('chmod 700 /tmp/file1', 'chmod 700 /tmp/file1 2> /dev/null'),
+PROC_BODYS = {'open': ('cat /etc/passwd', ''),
+              'create': ('touch /tmp/file1', ''),
+              'exec': ('/bin/true', ''),
+              'remove': ('rm /tmp/file1', ''),
+              'chmod': ('chmod 700 /tmp/file1', ''),
               'chown': ('chown :users /tmp/file1', 'chown :users /tmp/file1 2> /dev/null'),
               'mount': ('mount --bind /tmp/dir1 /mnt/', 'sudo mount dir /mnt/ 2> /dev/null'),
               'module': ('modprobe 8021q', 'insmod /home/'+ADMIN+'/superdebug.ko 2> /dev/null'),

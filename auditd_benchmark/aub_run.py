@@ -1,7 +1,10 @@
 import argparse
+import time
 
 from time import ctime, sleep, monotonic_ns
-from libs.libaub import create_ps, cmd, CheckAusearch
+from libs.libaub import create_ps, cmd, \
+    test_get_latency_auditd, \
+    Prepare
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -38,16 +41,50 @@ parser.add_argument('-af', '--audit-flag',
 args = parser.parse_args()
 
 if args.MODE == 'psaud':
-    test_ps = create_ps(args.AUDIT_FLAG)
-    cmd('psaud {pid} +{flag}:-{flag}'.format(pid=test_ps.pid, flag=args.AUDIT_FLAG))
-    start = monotonic_ns()
-    while test_ps.is_alive() and CheckAusearch.psaud(args.AUDIT_FLAG, test_ps.pid) is False:
-        end = monotonic_ns()
-    latency=(end-start)//(10**6)
-    print(latency)
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('open'))
+    Prepare.clean()
+    #
 
+    print(test_get_latency_auditd('create'))
+    Prepare.clean()
+    #
+
+    print(test_get_latency_auditd('exec'))
+
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('remove'))
+
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('chmod'))
+
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('chown'))
+    Prepare.clean()
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('mount'))
+    Prepare.clean()
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('module'))
+    Prepare.clean()
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('uid'))
+    Prepare.clean()
+    #
+    Prepare.file()
+    print(test_get_latency_auditd('gid'))
+    Prepare.clean()
+    #
 
 elif args.MODE == 'useraud':
     pass
 elif args.MODE == 'fileaud':
     pass
+

@@ -1,29 +1,30 @@
-import os
 import re
 import subprocess
-from time import sleep, ctime
+
+from os import path, mkdir, listdir
+from time import sleep, ctime, monotonic_ns
 from multiprocessing import Process
 from aub_conf import PROC_BODYS
 
 
 def cmd(command,
         err=subprocess.DEVNULL,
-        out=subprocess.DEVNULL):
+        out=subprocess.PIPE):
     '''
     :param command:
     :param err:
     :param out:
     :return:
     '''
-    subprocess.run(command, shell=True, stderr=err, stdout=out)
+    return subprocess.run(command, shell=True, stderr=err, stdout=out)
 
 
 def template_ps(syscall,
                 life_time,
                 delay,
-                proc_bodies=PROC_BODYS,
                 positive=True,
-                negative=True):
+                negative=True,
+                proc_bodies=PROC_BODYS):
     '''
     :param syscall:
     :param life_time:
@@ -54,27 +55,83 @@ def create_ps(syscall, func=template_ps):
     '''
     process = Process(name='test_process_{}'.format(syscall),
                       target=func,
-                      args=(syscall, 10, 1))
+                      args=(syscall, 1, 0.001, True, False))
     process.start()
     return process
+
+
+def test_get_latency_auditd(audit_flag):
+    Auditd.clean()
+    test_ps = create_ps(audit_flag)
+    cmd('psaud {pid} +{flag}:-{flag}'.format(pid=test_ps.pid, flag=(audit_flag)))
+    start, end = monotonic_ns(), 0
+    while test_ps.is_alive() and CheckAusearch.psaud(audit_flag, test_ps.pid) is False:
+        end = monotonic_ns()
+    test_ps.join()
+    return (end-start)//(10**6)
 
 
 class CheckAusearch():
 
     # process audit
     @staticmethod
-    def psaud(audit_flag, pid,):
-        # try:
-        #     search_time = re.search(r"[0-9]{2}:[0-9]{2}", ts)[0]
-        # except TypeError:
-        #     ts_lst = ts.split()[3].split(':')
-        #     search_time = ts_lst[0]+''+ts_lst[1]
+    def psaud(audit_flag, pid):
+
         with open('/tmp/timer', 'r') as file:
-            search_time=file.read().split()[3]
+            try:
+                search_time = file.read().split()[3]
+            except IndexError:
+                search_time = ctime().split()[3]
+
         if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl'):
-            au_return_all = os.popen('ausearch -i -ts "{}"'.format(search_time)).read()
+            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
             return re.search(str(pid), au_return_all) is not None
         else:
-            au_return_p = os.popen('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).read()
+            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
             return re.search(str(pid), au_return_p) is not None
 
+    # process audit
+    @staticmethod
+    def useraud(audit_flag, pid):
+        pass
+
+    # process audit
+    @staticmethod
+    def setfaud(audit_flag, pid):
+        pass
+
+
+class Auditd():
+
+    @staticmethod
+    def check_status():
+        return cmd('sudo systemctl status auditd').returncode == 0
+
+    @staticmethod
+    def clean():
+        cmd('service auditd rotate')
+        files = listdir('/var/log/audit')
+        for audit_file in files:
+            f = open('/var/log/audit/{}'.format(audit_file), 'w')
+            f.close()
+
+
+class Prepare():
+
+    @staticmethod
+    def file(how_many=1, where='/tmp'):
+        for num in range(1, how_many+1):
+            if path.exists('{}/file{}'.format(where, num)) is False:
+                cmd('touch {}/file{}'.format(where, num))
+
+    @staticmethod
+    def dir(how_many=1, where='/tmp'):
+        for num in range(1, how_many+1):
+            if path.exists('{}/dir{}'.format(where, num)) is False:
+                mkdir('{}/dir{}'.format(where, num))
+
+    @staticmethod
+    def clean(where='/tmp'):
+        if path.getsize(where) != 0:
+            cmd('rm -rf {}/dir*'.format(where))
+            cmd('rm -rf {}/file*'.format(where))

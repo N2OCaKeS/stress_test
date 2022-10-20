@@ -2,7 +2,7 @@ import re
 import subprocess
 
 from os import path, mkdir, listdir
-from time import sleep, ctime, monotonic_ns
+from time import sleep, ctime, time
 from multiprocessing import Process
 from aub_conf import PROC_BODYS
 
@@ -34,7 +34,7 @@ def template_ps(syscall,
     :param negative:
     :return:
     '''
-    while life_time:
+    while life_time > 0:
         sleep(delay)
         if positive:
             with open('/tmp/timer', 'w') as file:
@@ -44,7 +44,7 @@ def template_ps(syscall,
             with open('/tmp/timer', 'w') as file:
                 file.write(ctime())
             cmd(proc_bodies[syscall][1])
-        life_time -= 1
+        life_time -= delay
 
 
 def create_ps(syscall, func=template_ps):
@@ -60,15 +60,15 @@ def create_ps(syscall, func=template_ps):
     return process
 
 
-def test_get_latency_auditd(audit_flag):
+def test_get_latency_auditd(audit_flag, accurancy=3):
     Auditd.clean()
     test_ps = create_ps(audit_flag)
     cmd('psaud {pid} +{flag}:-{flag}'.format(pid=test_ps.pid, flag=(audit_flag)))
-    start, end = monotonic_ns(), 0
+    start, end = time(), time()
     while test_ps.is_alive() and CheckAusearch.psaud(audit_flag, test_ps.pid) is False:
-        end = monotonic_ns()
+        end = time()
     test_ps.join()
-    return (end-start)//(10**6)
+    return '{} {}'.format(audit_flag, round(end-start, accurancy))
 
 
 class CheckAusearch():

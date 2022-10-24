@@ -1,5 +1,5 @@
 import argparse
-
+import time
 from os import path, mkdir
 from libs.libtests import AuditdTestSet
 from aub_conf import REPORT, REPORT_DIR, \
@@ -15,28 +15,6 @@ parser.add_argument('-m', '--mode',
                     required=True,
                     help='',
                     dest='MODE')
-
-parser.add_argument('-af', '--audit-flag',
-                    action='store',
-                    choices=['open',
-                             'create',
-                             'exec',
-                             'remove',
-                             'chmod',
-                             'chown',
-                             'mount',
-                             'module',
-                             'uid',
-                             'gid',
-                             'acl',
-                             'mac',
-                             'cap',
-                             'chroot',
-                             'rename',
-                             'net'],
-                    required=True,
-                    help='',
-                    dest='AUDIT_FLAG')
 args = parser.parse_args()
 
 # Создать /report
@@ -56,8 +34,12 @@ log_file = open(REPORT, 'w')
 log_file.close()
 
 if args.MODE == 'psaud':
-    AuditdTestSet.get_latency_auditd_single('open', REPORT)
-    AuditdTestSet.get_latency_auditd_total(['open', 'create', 'exec', 'remove', 'chmod'], REPORT)
+
+    # AuditdTestSet.get_latency_auditd_single_stress('chmod', 1, REPORT)
+    # AuditdTestSet.get_latency_auditd_single_stress('chmod', 5, REPORT)
+    # AuditdTestSet.get_latency_auditd_single_stress('chmod', 10, REPORT)
+    # AuditdTestSet.get_latency_auditd_single_stress('chmod', 20, REPORT)
+    # AuditdTestSet.get_losses_auditd_single_stress('open', i, i, 0.01, REPORT)
 
 elif args.MODE == 'useraud':
     pass

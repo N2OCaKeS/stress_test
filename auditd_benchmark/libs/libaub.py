@@ -18,59 +18,6 @@ def cmd(command,
     '''
     return subprocess.run(command, shell=True, stderr=err, stdout=out)
 
-
-def template_ps(syscall,
-                life_time,
-                delay,
-                positive=True,
-                negative=True,
-                proc_bodies=PROC_BODYS):
-    '''
-    :param syscall:
-    :param life_time:
-    :param delay:
-    :param proc_bodies:
-    :param positive:
-    :param negative:
-    :return:
-    '''
-    while life_time > 0:
-        sleep(delay)
-        if positive:
-            with open('/tmp/timer', 'w') as file:
-                file.write(ctime())
-            cmd(proc_bodies[syscall][0])
-        if negative:
-            with open('/tmp/timer', 'w') as file:
-                file.write(ctime())
-            cmd(proc_bodies[syscall][1])
-        life_time -= delay
-
-
-def create_ps(syscall, func=template_ps):
-    '''
-    :param syscall:
-    :param func:
-    :return:
-    '''
-    process = Process(name='test_process_{}'.format(syscall),
-                      target=func,
-                      args=(syscall, 1, 0.001, True, False))
-    process.start()
-    return process
-
-
-def test_get_latency_auditd(audit_flag, accurancy=3):
-    Auditd.clean()
-    test_ps = create_ps(audit_flag)
-    cmd('psaud {pid} +{flag}:-{flag}'.format(pid=test_ps.pid, flag=(audit_flag)))
-    start, end = time(), time()
-    while test_ps.is_alive() and CheckAusearch.psaud(audit_flag, test_ps.pid) is False:
-        end = time()
-    test_ps.join()
-    return '{} {}'.format(audit_flag, round(end-start, accurancy))
-
-
 class CheckAusearch():
 
     # process audit
@@ -89,6 +36,16 @@ class CheckAusearch():
         else:
             au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
             return re.search(str(pid), au_return_p) is not None
+
+    @staticmethod
+    def psaud_event_count(audit_flag, search_time, pid):
+        search_time = search_time.split()[3]
+        if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl'):
+            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+            return len(re.findall(str(pid), au_return_all))
+        else:
+            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
+            return len(re.findall(str(pid), au_return_p))
 
     # process audit
     @staticmethod
@@ -135,3 +92,5 @@ class Prepare():
         if path.getsize(where) != 0:
             cmd('rm -rf {}/dir*'.format(where))
             cmd('rm -rf {}/file*'.format(where))
+            cmd('rm -rf {}/counter*'.format(where))
+            cmd('rm -rf {}/timer*'.format(where))

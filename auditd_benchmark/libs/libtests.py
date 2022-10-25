@@ -144,7 +144,7 @@ class AuditdTest(Auditd, CheckAusearch):
         :param count: количество процессов
         :param ps_lifetime: время жизни процесса
         :param event_re_initialization_delay: периодичность генерации события audit
-        :param accurancy: порядок округления результатов
+        :param accuranc1001y: порядок округления результатов
         :return:
         '''
 

@@ -24,6 +24,14 @@ PROC_BODYS = {'open': ('cat /etc/passwd', ''),
               'acl': ('setfacl -m u:{}:rx /tmp/dir1'.format(TEST_USER), ''),
               'mac': ('pdpl-file 0:63:0:ccnri /dir1', ''),
               'cap': ('usercaps -l 0x1 u', ''),
-              'chroot': ('chroot /', ''),
+              #'chroot': ('chroot /', ''),
               'rename': ('mv /tmp/file1 /tmp/file2', ''),
               'net': ('ping -c 1 localhost', '')}
+
+
+PS_LOWER_LIMIT = 1
+PS_UPPER_LIMIT = 3
+PS_STEP = 1
+
+DEFAULT_PS_LIFETIME = 10
+DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 0.01

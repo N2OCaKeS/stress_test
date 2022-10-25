@@ -1,10 +1,9 @@
+import os
 import re
 import subprocess
 
 from os import path, mkdir, listdir
 from time import sleep, ctime, time
-from multiprocessing import Process
-from aub_conf import PROC_BODYS
 
 
 def cmd(command,
@@ -18,13 +17,14 @@ def cmd(command,
     '''
     return subprocess.run(command, shell=True, stderr=err, stdout=out)
 
+
 class CheckAusearch():
 
     # process audit
     @staticmethod
-    def psaud(audit_flag, pid):
+    def psaud(audit_flag, pid, time_file='/tmp/timer'):
 
-        with open('/tmp/timer', 'r') as file:
+        with open(time_file, 'r') as file:
             try:
                 search_time = file.read().split()[3]
             except IndexError:

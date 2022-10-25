@@ -1,7 +1,4 @@
-import re
-import subprocess
-
-from os import path, mkdir, listdir
+import os
 from pathlib import Path
 from time import sleep, ctime, time
 from multiprocessing import Process
@@ -10,8 +7,12 @@ from libs.libaub import Auditd, CheckAusearch, Prepare, cmd
 
 
 class AuditdTest(Auditd, CheckAusearch):
-
-    def __init__(self, do_positive_test=True, do_negative_test=True, procs=PROC_BODYS):
+    def __init__(self, do_positive_test=True, do_negative_test=False, procs=PROC_BODYS):
+        '''
+        :param do_positive_test: Необходимость принудительной инициализации событий 'success=yes'
+        :param do_negative_test: Необходимость принудительной инициализации событий 'success=no'
+        :param procs: dict = {'event_flag': ('success_cmd', 'failure_cmd'),
+        '''
         self.__pos = do_positive_test
         self.__neg = do_negative_test
         self.__procs = procs
@@ -21,22 +22,27 @@ class AuditdTest(Auditd, CheckAusearch):
                            life_time,
                            delay,
                            number=None):
-
+        '''
+        :param syscall: наименование события audit
+        :param life_time: время жизни процесса
+        :param delay: периодичность генерации события audit
+        :param number: количество процессов
+        :return:
+        '''
         if number is None:
             timer_file = '/tmp/timer'
         else:
             timer_file = '/tmp/timer' + str(number)
-
         while life_time > 0:
             sleep(delay)
             if self.__pos:
                 with open(timer_file, 'w') as file:
                     file.write(ctime())
                 cmd(self.__procs[syscall][0])
-            # if self.__neg:
-            #     with open(timer_file, 'w') as file:
-            #         file.write(ctime())
-            #     cmd(self.__procs[syscall][1])
+            if self.__neg:
+                with open(timer_file, 'w') as file:
+                    file.write(ctime())
+                cmd(self.__procs[syscall][1])
             life_time -= delay
 
     def _template_ps_counter(self,
@@ -44,7 +50,13 @@ class AuditdTest(Auditd, CheckAusearch):
                              life_time,
                              delay,
                              number=None):
-
+        '''
+        :param syscall: наименование события audit
+        :param life_time: время жизни процесса
+        :param delay: периодичность генерации события audit
+        :param number: количество процессов
+        :return:
+        '''
         if number is None:
             counter_file = '/tmp/counter'
         else:
@@ -58,11 +70,11 @@ class AuditdTest(Auditd, CheckAusearch):
                 counter += 1
                 with open(counter_file, 'w') as file:
                     file.write(str(counter))
-            # if self.__neg:
-            #     cmd(self.__procs[syscall][1])
-            #     counter += 1
-            #     with open(counter_file, 'a+') as file:
-            #         file.write(str(counter))
+            if self.__neg:
+                cmd(self.__procs[syscall][1])
+                counter += 1
+                with open(counter_file, 'a+') as file:
+                    file.write(str(counter))
             life_time -= delay
         print('сгенерировано '+ str(counter) + ' событий')
 
@@ -72,7 +84,14 @@ class AuditdTest(Auditd, CheckAusearch):
                    proc_lifetime,
                    delay,
                    count=None):
-
+        '''
+        :param syscall: наименование события audit
+        :param func: шаблон тела процесса _template_ps*
+        :param proc_lifetime: время жизни процесса
+        :param delay: периодичность генерации события audit
+        :param count: количество процессов
+        :return:
+        '''
         print('{} event / sec'.format(int(float(proc_lifetime) / float(delay) * int(count))))
 
         if count is None:
@@ -83,7 +102,7 @@ class AuditdTest(Auditd, CheckAusearch):
             return process
         else:
             processes_lst = []
-            for index in range(int(count)):
+            for index in range(count):
                 processes_lst.append(Process(name='test_process_{}_{}'.format(syscall, index),
                                              target=func,
                                              args=(syscall, proc_lifetime, delay, index)))
@@ -95,6 +114,13 @@ class AuditdTest(Auditd, CheckAusearch):
                                 ps_lifetime=1,
                                 event_re_initialization_delay=0.001,
                                 accurancy=3):
+        '''
+        :param audit_flag: наименование события audit
+        :param ps_lifetime: время жизни процесса
+        :param event_re_initialization_delay: периодичность генерации события audit
+        :param accurancy: порядок округления результатов
+        :return:
+        '''
         Auditd.clean()
         test_ps = self._create_ps(syscall=audit_flag,
                                   func=self._template_ps_timer,
@@ -113,6 +139,14 @@ class AuditdTest(Auditd, CheckAusearch):
                                            ps_lifetime=None,
                                            event_re_initialization_delay=0.001,
                                            accurancy=3):
+        '''
+        :param audit_flag: наименование события audit
+        :param count: количество процессов
+        :param ps_lifetime: время жизни процесса
+        :param event_re_initialization_delay: периодичность генерации события audit
+        :param accurancy: порядок округления результатов
+        :return:
+        '''
 
         Auditd.clean()
         if ps_lifetime is None:
@@ -121,13 +155,15 @@ class AuditdTest(Auditd, CheckAusearch):
                                       func=self._template_ps_timer,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
-                                      count=int(count))
+                                      count=count)
         for test_ps in test_ps_lst:
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
 
+        sleep(event_re_initialization_delay)
         last_test_ps = test_ps_lst[-1]
+        last_timefile = '/tmp/timer' + str(count - 1)
         start, end = time(), time()
-        while last_test_ps.is_alive() and CheckAusearch.psaud(audit_flag, last_test_ps.pid) is False:
+        while last_test_ps.is_alive() and CheckAusearch.psaud(audit_flag, last_test_ps.pid, last_timefile) is False:
             end = time()
 
         for test_ps in test_ps_lst:
@@ -140,6 +176,13 @@ class AuditdTest(Auditd, CheckAusearch):
                                       count,
                                       ps_lifetime=None,
                                       event_re_initialization_delay=0.001):
+        '''
+        :param audit_flag: наименование события audit
+        :param count: количество процессов
+        :param ps_lifetime: время жизни процесса
+        :param event_re_initialization_delay: периодичность генерации события audit
+        :return:
+        '''
         Auditd.clean()
         if ps_lifetime is None:
             ps_lifetime = count
@@ -180,7 +223,7 @@ class AuditdTest(Auditd, CheckAusearch):
             print('получено auditd '+str(r)+' событий')
             auditd_events_amount += r
 
-        # ghjwtynyj
+        #
         if auditd_events_amount / expected_event_amount > 1:
             res = 100.0
         else:
@@ -226,28 +269,35 @@ class AuditdTestSet():
             print('{} - {} sec'.format(event_flag, result))
 
     @staticmethod
-    def get_latency_auditd_single_stress(event_flag,
-                                         file_count,
-                                         report_file):
+    def get_latency_stat_psaud(event_flag,
+                               ps_count,
+                               ps_lifetime,
+                               ps_event_re_initialization_delay,
+                               report_file):
+
         __audit_test = AuditdTest()
-        result = __audit_test.test_get_latency_auditd_under_load(event_flag, int(file_count))
-        with open(report_file, 'w') as file:
-            file.write('{} - {} sec\n'.format(event_flag, result))
+        result = __audit_test.test_get_latency_auditd_under_load(event_flag,
+                                                                 ps_count,
+                                                                 ps_lifetime,
+                                                                 ps_event_re_initialization_delay)
+        with open(report_file, 'a+') as file:
+            file.write('{} {}\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))
 
     @staticmethod
-    def get_losses_auditd_single_stress(event_flag,
-                                        ps_count,
-                                        ps_lifetime,
-                                        ps_event_re_initialization_delay,
-                                        report_file):
+    def get_losses_stat_psaud(event_flag,
+                              ps_count,
+                              ps_lifetime,
+                              ps_event_re_initialization_delay,
+                              report_file):
+
         __audit_test = AuditdTest()
         result = __audit_test.test_losses_auditd_under_load(event_flag,
                                                             ps_count,
                                                             ps_lifetime,
                                                             ps_event_re_initialization_delay)
         Prepare.clean()
-        with open(report_file, 'w') as file:
+        with open(report_file, 'a+') as file:
             file.write('{f} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
                                                                                     exp_ev_am=result[1],
                                                                                     aud_ev_am=result[2],

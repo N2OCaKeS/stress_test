@@ -6,8 +6,6 @@
 # ;===========================================================
 
 import re
-import sys
-from time import sleep
 import shutil
 import os.path
 import argparse
@@ -15,9 +13,13 @@ import subprocess
 import libs.libtable as libtable
 import libs.libscanner as libscanner
 
+from time import sleep
+from datetime import datetime
 from os import chmod, mkdir, getcwd
+from find_err_in_logs import collecting_logs
 from libs.libsng import astra_version, check_service_status, get_memory_load_by_syslog
 
+TIME_START_SCRIPT = datetime.now()
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -209,4 +211,10 @@ if __name__ == '__main__':
                                   filename='sng_data')
 
     report.create_html([graph_load_cpu, graph_load_memory, graph_load_syslog_memory, graph_load_disk], total_rating, args.SERVICE_COUNT, args.TIME_EXEC)
+
+    print("\nСбор логов...\n")
+    collecting_logs(os.path.expanduser(args.REPORT_PATH), TIME_START_SCRIPT)
+
+    print("Создание архива с отчетом...")
     libtable.Report.create_tar(os.path.expanduser(args.REPORT_PATH))
+    print("Готово.")

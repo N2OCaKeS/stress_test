@@ -161,15 +161,17 @@ if __name__ == '__main__':
     print("Rating Disk:", rating_disk)
     print("Total rating:", total_rating)
 
-    with open('{}/report.txt'.format(os.path.expanduser(args.REPORT_PATH)), 'w') as report_txt:
-        report_txt.writelines('Astra version: {}-{}\n'.format(astra_version()[2], astra_version()[3]))
-        report_txt.writelines('Service count: {}\n'.format(args.SERVICE_COUNT))
-        report_txt.writelines('Load time execution: {} minutes\n'.format(args.TIME_EXEC))
-        report_txt.writelines('Rating CPU: {}\n'.format(rating_cpu))
-        report_txt.writelines('Rating memory: {}\n'.format(rating_memory))
-        report_txt.writelines('Rating Syslog-NG memory: {}\n'.format(rating_syslog_memory))
-        report_txt.writelines('Rating disk: {}\n'.format(rating_disk))
-        report_txt.writelines('Total rating: {}\n'.format(total_rating))
+    with open('{}/sng_report.txt'.format(os.path.expanduser(args.REPORT_PATH)), 'w') as report_txt:
+        report_txt.writelines('Astra_version: {}\n'.format(astra_version()[2]))
+        report_txt.writelines('Astra_mode: {}\n'.format(astra_version()[1]))
+        report_txt.writelines('Kernel: {}\n'.format(astra_version()[3]))
+        report_txt.writelines('Service_count: {}\n'.format(args.SERVICE_COUNT))
+        report_txt.writelines('Load_time_execution: {} minutes\n'.format(args.TIME_EXEC))
+        report_txt.writelines('Rating_CPU: {}\n'.format(rating_cpu))
+        report_txt.writelines('Rating_memory: {}\n'.format(rating_memory))
+        report_txt.writelines('Rating_Syslog-NG memory: {}\n'.format(rating_syslog_memory))
+        report_txt.writelines('Rating_disk: {}\n'.format(rating_disk))
+        report_txt.writelines('Total_rating: {}\n'.format(total_rating))
 
     graph_load_cpu = report.create_graph(x=data_time, 
                                          y=data_cpu,

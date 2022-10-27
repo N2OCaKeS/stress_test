@@ -22,8 +22,8 @@ class Report:
                  losses_report=LOSSES_REPORT):
 
         self.__event_names = event_names
-        self.__events_per_second_lower_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_LOWER_LIMIT),
-        self.__events_per_second_upper_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_UPPER_LIMIT),
+        self.__events_per_second_lower_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_LOWER_LIMIT)
+        self.__events_per_second_upper_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_UPPER_LIMIT) - self.__events_per_second_lower_limit
 
         # graph size
         self.width = 27
@@ -47,7 +47,7 @@ class Report:
                 raw_data = report_file.read().split()
 
             self.__event_name_lst = [str(i) for i in raw_data[0::6]]
-            self.__events_per_second_lst = [str(i) for i in raw_data[1::6]]
+            self.__events_per_second_lst = [int(i) for i in raw_data[1::6]]
             self.__expected_event_quantity_lst = [int(i) for i in raw_data[2::6]]
             self.__real_event_quantity_lst = [int(i) for i in raw_data[3::6]]
             self.__result_in_percent_lst = [float(i) for i in raw_data[4::6]]
@@ -67,7 +67,7 @@ class Report:
                 self.__main_raw_tables[event] = pandas.concat([self.__losses_raw_tables[event],
                                                                self.__latency_raw_tables[event]['latency']], axis=1)
                 self.__main_raw_tables[event].reset_index()
-                self.__main_raw_tables[event].drop(columns=['index'], axis=1)
+                print(self.__main_raw_tables[event])
 
     @staticmethod
     def _cm_to_inch(value):
@@ -116,18 +116,26 @@ class Report:
                 tar.add('{}/{}'.format('report', file))
 
     def _template_aproximated_graph(self,
-                                    raw_table,
+                                    event=None,
+                                    raw_table=None,
                                     ox_param_table_name=None,
-                                    ox_lst=None,
+                                    oy_param_table_name=None,
                                     ox_lower_limit=None,
                                     ox_upper_limit=None,
-                                    oy_param_table_name=None,
-                                    oy_lst=None,
-                                    path=REPORT_DIR):
+                                    path=None):
+
+        if raw_table is None:
+            raw_table = self.__main_raw_tables[event]
+        elif event is None:
+            event = raw_table['audit_event'].values.tolist()[0]
 
         # точки
         x = raw_table.loc[:, [ox_param_table_name]]
         y = raw_table.loc[:, [oy_param_table_name]]
+
+        event_name=raw_table[oy_param_table_name].values.tolist()
+        ox_lst = raw_table[ox_param_table_name].values.tolist()
+        oy_lst = raw_table[oy_param_table_name].values.tolist()
 
         # построить аппроксимирующую f(x)
         aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 1)
@@ -148,25 +156,28 @@ class Report:
                          oy_lst[0:last_passed_test],
                          color='palegreen')
 
-        plt.savefig('{p}/aub_{ox}_{oy}_graph'.format(p=path,
-                                                     ox=ox_param_table_name,
-                                                     oy=oy_param_table_name))
+        plt.savefig('{p}/aub_{ev}_{ox}_{oy}_graph'.format(p=path,
+                                                          ev=event,
+                                                          ox=ox_param_table_name,
+                                                          oy=oy_param_table_name))
 
-    def create_aub_latency_eps(self):
-        self._template_aproximated_graph(ox_param_table_name='eps',
-                                         ox_lst=self.__events_per_second_lst,
-                                         ox_lower_limit=self.__events_per_second_lower_limit,
-                                         ox_upper_limit=self.__events_per_second_upper_limit,
-                                         oy_param_table_name='latency',
-                                         oy_lst=self.__latency_lst)
+    def create_aub_latency_eps_graph(self, path=REPORT_DIR):
+        for event in self.__event_names:
+            self._template_aproximated_graph(event=event,
+                                             ox_param_table_name='eps',
+                                             oy_param_table_name='latency',
+                                             ox_lower_limit=self.__events_per_second_lower_limit,
+                                             ox_upper_limit=self.__events_per_second_upper_limit,
+                                             path=path)
 
-    def create_aub_losses_eps(self):
-        self._template_aproximated_graph(ox_param_table_name='eps',
-                                         ox_lst=self.__events_per_second_lst,
-                                         ox_lower_limit=self.__events_per_second_lower_limit,
-                                         ox_upper_limit=self.__events_per_second_upper_limit,
-                                         oy_param_table_name='completed',
-                                         oy_lst=self.__result_in_percent_lst)
+    def create_aub_losses_eps_graph(self, path=REPORT_DIR):
+        for event in self.__event_names:
+            self._template_aproximated_graph(event=event,
+                                             ox_param_table_name='eps',
+                                             oy_param_table_name='completed',
+                                             ox_lower_limit=self.__events_per_second_lower_limit,
+                                             ox_upper_limit=self.__events_per_second_upper_limit,
+                                             path=path)
 
     def get_event_latecy_rating(self, raw_table):
         func_latency = self._data_aproximation(raw_table.loc[:, ['eps']],
@@ -205,3 +216,9 @@ class Report:
     def get_total_auditd_rating(self, accuracy=3):
         return round(self.get_event_latecy_rating() + self.get_event_losses_rating(), accuracy)
 
+
+# r = Report(latency_report='/home/${USER}/git/stress_test/auditd_benchmark/report/aub_report_latency.txt',
+#            losses_report='/home/${USER}/git/stress_test/auditd_benchmark/report/aub_report_losses.txt',)
+# r.create_beauty_table(path='/home/${USER}/git/stress_test/auditd_benchmark/report/')
+# r.create_aub_latency_eps_graph('/home/${USER}/git/stress_test/auditd_benchmark/report/')
+# r.create_aub_losses_eps_graph('/home/${USER}/git/stress_test/auditd_benchmark/report/')

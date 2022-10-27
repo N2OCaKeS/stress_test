@@ -1,5 +1,4 @@
 SCRIPT_DIR = '/media/sf_git/stress_test/auditd_benchmark'
-#SCRIPT_DIR = '/home/rkuznetsov/git/stress_test/auditd_benchmark'
 
 LOG_FILENAME = 'aub_log'
 REPORT_FILENAME = 'aub_report.txt'
@@ -33,7 +32,7 @@ PROC_BODYS = {'open': ('cat /etc/passwd', ''),
 
 
 PS_LOWER_LIMIT = 1
-PS_UPPER_LIMIT = 10
+PS_UPPER_LIMIT = 5
 PS_STEP = 1
 
 DEFAULT_PS_LIFETIME = 10

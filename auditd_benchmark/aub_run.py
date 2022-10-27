@@ -50,16 +50,16 @@ log_file.close()
 if args.TEST_LIST == 'psaud':
     if args.MODE == 'default':
         # # Очистить отчет
-        # log_file = open(LATENCY_REPORT, 'w')
-        # log_file.close()
-        #
-        # for event in PROC_BODYS.keys():
-        #     for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
-        #         AuditdTestSet.get_latency_stat_psaud(event,
-        #                                              quantity,
-        #                                              DEFAULT_PS_LIFETIME,
-        #                                              DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
-        #                                              LATENCY_REPORT)
+        log_file = open(LATENCY_REPORT, 'w')
+        log_file.close()
+
+        for event in PROC_BODYS.keys():
+            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+                AuditdTestSet.get_latency_stat_psaud(event,
+                                                     quantity,
+                                                     DEFAULT_PS_LIFETIME,
+                                                     DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+                                                     LATENCY_REPORT)
         # Очистить отчет
         log_file = open(LOSSES_REPORT, 'w')
         log_file.close()
@@ -72,8 +72,8 @@ if args.TEST_LIST == 'psaud':
                                                     DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                                     LOSSES_REPORT)
 
-        #создать отчет
-        report = Report()
+        # создать отчет
+        # report = Report()
 
     elif args.MODE == 'extended':
         pass

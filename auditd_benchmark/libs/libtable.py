@@ -4,19 +4,30 @@ import warnings
 import numpy as np
 
 from time import time
+from scipy import integrate
 from os import listdir, chdir
 from matplotlib import pyplot as plt
 from libs.libaub import astra_version, astra_kernel_version
 from pretty_html_table import build_table
 from aub_conf import PROC_BODYS, SCRIPT_DIR, \
     LOG_DIR, REPORT_DIR, \
-    LATENCY_REPORT, LOSSES_REPORT
+    LATENCY_REPORT, LOSSES_REPORT, \
+    DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY, PS_LOWER_LIMIT, PS_UPPER_LIMIT
 
 
 class Report:
     def __init__(self,
+                 event_names=PROC_BODYS.keys(),
                  latency_report=LATENCY_REPORT,
                  losses_report=LOSSES_REPORT):
+
+        self.__event_names = event_names
+        self.__events_per_second_lower_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_LOWER_LIMIT),
+        self.__events_per_second_upper_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_UPPER_LIMIT),
+
+        # graph size
+        self.width = 27
+        self.height = 15
 
         if latency_report:
             with open(latency_report, 'r') as report_file:
@@ -28,18 +39,18 @@ class Report:
                                                  'latency': self.__latency_lst})
 
             self.__latency_raw_tables = {}
-            for event in PROC_BODYS.keys():
+            for event in self.__event_names:
                 self.__latency_raw_tables[event] = self.__raw_table[self.__raw_table.audit_event == event]
 
         if losses_report:
             with open(losses_report, 'r') as report_file:
                 raw_data = report_file.read().split()
 
-            self.__event_name_lst = [str(i) for i in raw_data[0::5]]
-            self.__events_per_second_lst = [str(i) for i in raw_data[1::5]]
-            self.__expected_event_quantity_lst = [int(i) for i in raw_data[2::5]]
-            self.__real_event_quantity_lst = [int(i) for i in raw_data[3::5]]
-            self.__result_in_percent_lst = [float(i) for i in raw_data[4::5]]
+            self.__event_name_lst = [str(i) for i in raw_data[0::6]]
+            self.__events_per_second_lst = [str(i) for i in raw_data[1::6]]
+            self.__expected_event_quantity_lst = [int(i) for i in raw_data[2::6]]
+            self.__real_event_quantity_lst = [int(i) for i in raw_data[3::6]]
+            self.__result_in_percent_lst = [float(i) for i in raw_data[4::6]]
             self.__raw_table = pandas.DataFrame({'audit_event': self.__event_name_lst,
                                                  'eps': self.__events_per_second_lst,
                                                  'exp_ev': self.__expected_event_quantity_lst,
@@ -47,20 +58,16 @@ class Report:
                                                  'completed': self.__result_in_percent_lst})
 
             self.__losses_raw_tables = {}
-            for event in PROC_BODYS.keys():
+            for event in self.__event_names:
                 self.__losses_raw_tables[event] = self.__raw_table[self.__raw_table.audit_event == event]
 
         if losses_report and latency_report:
             self.__main_raw_tables = {}
-            for event in PROC_BODYS.keys():
+            for event in self.__event_names:
                 self.__main_raw_tables[event] = pandas.concat([self.__losses_raw_tables[event],
                                                                self.__latency_raw_tables[event]['latency']], axis=1)
                 self.__main_raw_tables[event].reset_index()
                 self.__main_raw_tables[event].drop(columns=['index'], axis=1)
-
-        # graph size
-        self.width = 27
-        self.height = 15
 
     @staticmethod
     def _cm_to_inch(value):
@@ -89,7 +96,7 @@ class Report:
                     polinom_factor -= 1
 
     def create_beauty_table(self, path=REPORT_DIR, table_name='aub_{name}_table.html'):
-        for event in PROC_BODYS.keys():
+        for event in self.__event_names:
             beauty_table = build_table(self.__main_raw_tables[event], 'blue_light')
             with open('{}/{}'.format(path, table_name.format(name=event)), 'w') as beauty_html_table:
                 beauty_html_table.write(beauty_table)
@@ -123,7 +130,7 @@ class Report:
         y = raw_table.loc[:, [oy_param_table_name]]
 
         # построить аппроксимирующую f(x)
-        aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 0.1)
+        aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 1)
         aprx_f = self._data_aproximation(ox_lst, oy_lst)
 
         # build graph
@@ -148,15 +155,53 @@ class Report:
     def create_aub_latency_eps(self):
         self._template_aproximated_graph(ox_param_table_name='eps',
                                          ox_lst=self.__events_per_second_lst,
-                                         ox_lower_limit=self.__events_per_second_lst[0],
-                                         ox_upper_limit=self.__events_per_second_lst[1],
+                                         ox_lower_limit=self.__events_per_second_lower_limit,
+                                         ox_upper_limit=self.__events_per_second_upper_limit,
                                          oy_param_table_name='latency',
                                          oy_lst=self.__latency_lst)
 
     def create_aub_losses_eps(self):
         self._template_aproximated_graph(ox_param_table_name='eps',
                                          ox_lst=self.__events_per_second_lst,
-                                         ox_lower_limit=self.__events_per_second_lst[0],
-                                         ox_upper_limit=self.__events_per_second_lst[1],
+                                         ox_lower_limit=self.__events_per_second_lower_limit,
+                                         ox_upper_limit=self.__events_per_second_upper_limit,
                                          oy_param_table_name='completed',
                                          oy_lst=self.__result_in_percent_lst)
+
+    def get_event_latecy_rating(self, raw_table):
+        func_latency = self._data_aproximation(raw_table.loc[:, ['eps']],
+                                               raw_table.loc[:, ['latecy']])
+        i_latency, err = integrate.quad(func_latency,
+                                        self.__events_per_second_lower_limit,
+                                        self.__events_per_second_upper_limit,)
+        try:
+            return 1 / i_latency
+        except ZeroDivisionError:
+            return 0
+
+    def get_event_losses_rating(self, raw_table):
+        func_completed = self._data_aproximation(raw_table.loc[:, ['eps']],
+                                                 raw_table.loc[:, ['completed']])
+        i_completed, err = integrate.quad(func_completed,
+                                          self.__events_per_second_lower_limit,
+                                          self.__events_per_second_upper_limit,)
+        try:
+            return 1 / i_completed
+        except ZeroDivisionError:
+            return 0
+
+    def get_total_latency_rating(self):
+        total_latency_rating = 0
+        for event in self.__event_names:
+            total_latency_rating += self.get_event_latecy_rating(self.__main_raw_tables[event])
+        return total_latency_rating
+
+    def get_total_losses_rating(self):
+        total_losses_rating = 0
+        for event in self.__event_names:
+            total_losses_rating += self.get_event_losses_rating(self.__main_raw_tables[event])
+        return total_losses_rating
+
+    def get_total_auditd_rating(self, accuracy=3):
+        return round(self.get_event_latecy_rating() + self.get_event_losses_rating(), accuracy)
+

@@ -17,6 +17,34 @@ class AuditdTest(Auditd, CheckAusearch):
         self.__neg = do_negative_test
         self.__procs = procs
 
+    def _pos_files_prep(self, event_flag):
+        if event_flag in ['open', 'remove', 'chmod', 'chown', 'rename']:
+            Prepare.file()
+            return None
+        if event_flag in ['acl', 'mount']:
+            Prepare.dir()
+            return None
+        if event_flag in ['mac']:
+            Prepare.dir(where='/')
+            return None
+
+    def _pos_clean(self, event_flag):
+        if event_flag == 'mount':
+            cmd('umount /mnt &> /dev/null')
+            return None
+        if event_flag == 'module':
+            cmd(PROC_BODYS[event_flag][0] + ' -r')
+            return None
+        if event_flag in ['open', 'chmod', 'chown', 'acl', 'mac', 'mount', 'cap', 'rename']:
+            Prepare.clean()
+            return None
+
+    def _neg_files_prep(self, event_flag):
+        pass
+
+    def _neg_clean(self, event_flag):
+        pass
+
     def _template_ps_timer(self,
                            syscall,
                            life_time,
@@ -38,7 +66,9 @@ class AuditdTest(Auditd, CheckAusearch):
             if self.__pos:
                 with open(timer_file, 'w') as file:
                     file.write(ctime())
+                self._pos_files_prep(syscall)
                 cmd(self.__procs[syscall][0])
+                self._pos_clean(syscall)
             if self.__neg:
                 with open(timer_file, 'w') as file:
                     file.write(ctime())
@@ -66,17 +96,18 @@ class AuditdTest(Auditd, CheckAusearch):
         while life_time > 0:
             sleep(delay)
             if self.__pos:
+                self._pos_files_prep(syscall)
                 cmd(self.__procs[syscall][0])
+                self._pos_clean(syscall)
                 counter += 1
                 with open(counter_file, 'w') as file:
                     file.write(str(counter))
             if self.__neg:
                 cmd(self.__procs[syscall][1])
                 counter += 1
-                with open(counter_file, 'a+') as file:
+                with open(counter_file, 'w') as file:
                     file.write(str(counter))
             life_time -= delay
-        print('сгенерировано '+ str(counter) + ' событий')
 
     @staticmethod
     def _create_ps(syscall,
@@ -106,7 +137,7 @@ class AuditdTest(Auditd, CheckAusearch):
                 processes_lst.append(Process(name='test_process_{}_{}'.format(syscall, index),
                                              target=func,
                                              args=(syscall, proc_lifetime, delay, index)))
-                processes_lst[index].start()
+                # processes_lst[index].start()
             return processes_lst
 
     def test_get_latency_auditd(self,
@@ -126,6 +157,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                   func=self._template_ps_timer,
                                   proc_lifetime=ps_lifetime,
                                   delay=event_re_initialization_delay)
+        test_ps.start()
         cmd('psaud {pid} +{flag}:-{flag}'.format(pid=test_ps.pid, flag=(audit_flag)))
         start, end = time(), time()
         while test_ps.is_alive() and CheckAusearch.psaud(audit_flag, test_ps.pid) is False:
@@ -157,9 +189,9 @@ class AuditdTest(Auditd, CheckAusearch):
                                       delay=event_re_initialization_delay,
                                       count=count)
         for test_ps in test_ps_lst:
+            test_ps.start()
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
 
-        sleep(event_re_initialization_delay)
         last_test_ps = test_ps_lst[-1]
         last_timefile = '/tmp/timer' + str(count - 1)
         start, end = time(), time()
@@ -199,7 +231,9 @@ class AuditdTest(Auditd, CheckAusearch):
 
         # навешиваем аудит
         for test_ps in test_ps_lst:
+            test_ps.start()
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
+            # print('запустить процесс ' + str(test_ps.pid))
 
         # ждем смерть последнего процесса
         last_test_ps = test_ps_lst[-1]
@@ -215,19 +249,20 @@ class AuditdTest(Auditd, CheckAusearch):
         for file in Path('/tmp').glob('counter*'):
             with open(file, 'r') as f:
                 expected_event_amount += int(f.read())
+                os.remove(file)
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
         for test_ps in test_ps_lst:
-            r = CheckAusearch.psaud_event_count(audit_flag, start, test_ps.pid)
-            print('получено auditd '+str(r)+' событий')
-            auditd_events_amount += r
+            # r = CheckAusearch.psaud_event_count(audit_flag, test_ps.pid, start)
+            # print('получено auditd '+str(r)+' событий')
+            auditd_events_amount += CheckAusearch.psaud_event_count(audit_flag, test_ps.pid, start)
 
         #
         if auditd_events_amount / expected_event_amount > 1:
             res = 100.0
         else:
-            res = round(auditd_events_amount / expected_event_amount, 2) * 100
+            res = round(round(auditd_events_amount / expected_event_amount, 2) * 100, 2)
 
         return [expected_event_amount <= auditd_events_amount,
                 expected_event_amount,
@@ -236,6 +271,16 @@ class AuditdTest(Auditd, CheckAusearch):
 
 
 class AuditdTestSet():
+
+    @staticmethod
+    def clean(event_flag):
+        if event_flag == 'mount':
+            cmd('umount /mnt &> /dev/null')
+        if event_flag == 'module':
+            cmd(PROC_BODYS[event_flag][0] + ' -r')
+        if event_flag in ['open', 'remove', 'chmod', 'chown', 'acl', 'mac', 'mount', 'cap', 'rename']:
+            Prepare.clean()
+        Auditd.clean()
 
     @staticmethod
     def get_latency_auditd_single(event_flag, report_file):
@@ -250,19 +295,8 @@ class AuditdTestSet():
         __audit_test = AuditdTest()
         for event_flag in event_flag_lst:
 
-            if event_flag in ['open', 'remove', 'chmod', 'chown', 'cap', 'rename']:
-                Prepare.file()
-            elif event_flag in ['acl', 'mac', 'mount']:
-                Prepare.dir()
-            else:
-                pass
-
             result = __audit_test.test_get_latency_auditd(event_flag)
-
-            if event_flag in ['open', 'remove', 'chmod', 'chown', 'acl', 'mac', 'mount', 'cap', 'rename']:
-                Prepare.clean()
-            else:
-                pass
+            AuditdTestSet.clean(event_flag)
 
             with open(report_file, 'a+') as file:
                 file.write('{} - {} sec\n'.format(event_flag, result))
@@ -280,6 +314,7 @@ class AuditdTestSet():
                                                                  ps_count,
                                                                  ps_lifetime,
                                                                  ps_event_re_initialization_delay)
+        AuditdTestSet.clean(event_flag)
         with open(report_file, 'a+') as file:
             file.write('{} {}\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))
@@ -296,15 +331,17 @@ class AuditdTestSet():
                                                             ps_count,
                                                             ps_lifetime,
                                                             ps_event_re_initialization_delay)
-        Prepare.clean()
+        AuditdTestSet.clean(event_flag)
         with open(report_file, 'a+') as file:
-            file.write('{f} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                    exp_ev_am=result[1],
-                                                                                    aud_ev_am=result[2],
-                                                                                    prct_res=result[3],
-                                                                                    bool_res=result[0]))
-        print('{f} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                    exp_ev_am=result[1],
-                                                                                    aud_ev_am=result[2],
-                                                                                    prct_res=result[3],
-                                                                                    bool_res=result[0]))
+            file.write('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
+                                                                                          eps=int(float(ps_lifetime) / float(ps_event_re_initialization_delay) * int(ps_count)),
+                                                                                          exp_ev_am=result[1],
+                                                                                          aud_ev_am=result[2],
+                                                                                          prct_res=result[3],
+                                                                                          bool_res=result[0]))
+        print('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
+                                                                                 eps=int(float(ps_lifetime) / float(ps_event_re_initialization_delay) * int(ps_count)),
+                                                                                 exp_ev_am=result[1],
+                                                                                 aud_ev_am=result[2],
+                                                                                 prct_res=result[3],
+                                                                                 bool_res=result[0]))

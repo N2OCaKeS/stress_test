@@ -3,7 +3,8 @@ import os
 
 from os import path, mkdir
 from libs.libtests import AuditdTestSet
-from aub_conf import REPORT, REPORT_DIR, \
+from libs.libtable import Report
+from aub_conf import REPORT, REPORT_DIR, LATENCY_REPORT, LOSSES_REPORT, \
     LOG, LOG_DIR, PROC_BODYS, \
     PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP, \
     DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY
@@ -48,20 +49,32 @@ log_file.close()
 
 if args.TEST_LIST == 'psaud':
     if args.MODE == 'default':
-        for event in PROC_BODYS.keys():
-            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
-                AuditdTestSet.get_latency_stat_psaud(event,
-                                                     quantity,
-                                                     DEFAULT_PS_LIFETIME,
-                                                     DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
-                                                    '{}/aub_report_latency.txt'.format(REPORT_DIR))
+        # # Очистить отчет
+        # log_file = open(LATENCY_REPORT, 'w')
+        # log_file.close()
+        #
+        # for event in PROC_BODYS.keys():
+        #     for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+        #         AuditdTestSet.get_latency_stat_psaud(event,
+        #                                              quantity,
+        #                                              DEFAULT_PS_LIFETIME,
+        #                                              DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+        #                                              LATENCY_REPORT)
+        # Очистить отчет
+        log_file = open(LOSSES_REPORT, 'w')
+        log_file.close()
+
         for event in PROC_BODYS.keys():
             for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
                 AuditdTestSet.get_losses_stat_psaud(event,
                                                     quantity,
                                                     DEFAULT_PS_LIFETIME,
                                                     DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
-                                                    '{}/aub_report_losses.txt'.format(REPORT_DIR))
+                                                    LOSSES_REPORT)
+
+        #создать отчет
+        report = Report()
+
     elif args.MODE == 'extended':
         pass
     else:

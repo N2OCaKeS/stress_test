@@ -49,7 +49,8 @@ log_file.close()
 
 if args.TEST_LIST == 'psaud':
     if args.MODE == 'default':
-        # # Очистить отчет
+
+        # Очистить отчет
         log_file = open(LATENCY_REPORT, 'w')
         log_file.close()
 
@@ -73,7 +74,12 @@ if args.TEST_LIST == 'psaud':
                                                     LOSSES_REPORT)
 
         # создать отчет
-        # report = Report()
+        r = Report()
+        r.create_beauty_table()
+        r.create_aub_latency_eps_graph()
+        r.create_aub_losses_eps_graph()
+        r.get_total_auditd_rating()
+        r.create_tar()
 
     elif args.MODE == 'extended':
         pass

@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from libs.libaub import astra_version, astra_kernel_version
 from pretty_html_table import build_table
 from aub_conf import PROC_BODYS, SCRIPT_DIR, \
-    LOG_DIR, REPORT_DIR, \
+    LOG_DIR, REPORT_DIR, REPORT, \
     LATENCY_REPORT, LOSSES_REPORT, \
     DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY, PS_LOWER_LIMIT, PS_UPPER_LIMIT
 
@@ -133,7 +133,6 @@ class Report:
         x = raw_table.loc[:, [ox_param_table_name]]
         y = raw_table.loc[:, [oy_param_table_name]]
 
-        event_name=raw_table[oy_param_table_name].values.tolist()
         ox_lst = raw_table[ox_param_table_name].values.tolist()
         oy_lst = raw_table[oy_param_table_name].values.tolist()
 
@@ -179,46 +178,63 @@ class Report:
                                              ox_upper_limit=self.__events_per_second_upper_limit,
                                              path=path)
 
-    def get_event_latecy_rating(self, raw_table):
-        func_latency = self._data_aproximation(raw_table.loc[:, ['eps']],
-                                               raw_table.loc[:, ['latecy']])
+    def get_event_latecy_rating(self, raw_table, multiplier=10**3, accuracy=3):
+
+        ox_lst = raw_table['eps'].values.tolist()
+        oy_lst = raw_table['latency'].values.tolist()
+
+        func_latency = self._data_aproximation(ox_lst, oy_lst)
         i_latency, err = integrate.quad(func_latency,
                                         self.__events_per_second_lower_limit,
                                         self.__events_per_second_upper_limit,)
         try:
-            return 1 / i_latency
+            return round(1 / i_latency * multiplier, accuracy)
         except ZeroDivisionError:
             return 0
 
-    def get_event_losses_rating(self, raw_table):
-        func_completed = self._data_aproximation(raw_table.loc[:, ['eps']],
-                                                 raw_table.loc[:, ['completed']])
+    def get_event_losses_rating(self, raw_table, multiplier=10**(-4), accuracy=3):
+
+        ox_lst = raw_table['eps'].values.tolist()
+        oy_lst = raw_table['completed'].values.tolist()
+
+        func_completed = self._data_aproximation(ox_lst, oy_lst)
         i_completed, err = integrate.quad(func_completed,
                                           self.__events_per_second_lower_limit,
                                           self.__events_per_second_upper_limit,)
         try:
-            return 1 / i_completed
+            return round(i_completed * multiplier, accuracy)
         except ZeroDivisionError:
             return 0
 
-    def get_total_latency_rating(self):
+    def get_total_latency_rating(self, path=REPORT, accuracy=3):
         total_latency_rating = 0
         for event in self.__event_names:
-            total_latency_rating += self.get_event_latecy_rating(self.__main_raw_tables[event])
-        return total_latency_rating
+            event_rating = self.get_event_latecy_rating(self.__main_raw_tables[event])
+            with open(path, 'a+') as report:
+                report.write('{} latency rating: {}\n'.format(event, event_rating))
+            total_latency_rating += event_rating
 
-    def get_total_losses_rating(self):
+        with open(path, 'a+') as report:
+            report.write('total latency rating: {}\n'.format(round(total_latency_rating, accuracy)))
+        return round(total_latency_rating, accuracy)
+
+    def get_total_losses_rating(self, path=REPORT, accuracy=3):
         total_losses_rating = 0
         for event in self.__event_names:
-            total_losses_rating += self.get_event_losses_rating(self.__main_raw_tables[event])
-        return total_losses_rating
+            event_rating = self.get_event_losses_rating(self.__main_raw_tables[event])
+            with open(path, 'a+') as report:
+                report.write('{} losses rating: {}\n'.format(event, event_rating))
+            total_losses_rating += event_rating
 
-    def get_total_auditd_rating(self, accuracy=3):
-        return round(self.get_event_latecy_rating() + self.get_event_losses_rating(), accuracy)
+        with open(path, 'a+') as report:
+            report.write('total losses rating: {}\n'.format(round(total_losses_rating, accuracy)))
+        return round(total_losses_rating, accuracy)
 
+    def get_total_auditd_rating(self, path=REPORT, accuracy=3):
+        total_auditd_rating = round(self.get_total_latency_rating(path=path) + \
+                                    self.get_total_losses_rating(path=path),
+                                    accuracy)
+        with open(path, 'a+') as report:
+            report.write('total auditd rating: {}\n'.format(total_auditd_rating))
+        return total_auditd_rating
 
-# r = Report(latency_report='/home/${USER}/git/stress_test/auditd_benchmark/report/aub_report_latency.txt',
-#            losses_report='/home/${USER}/git/stress_test/auditd_benchmark/report/aub_report_losses.txt',)
-# r.create_beauty_table(path='/home/${USER}/git/stress_test/auditd_benchmark/report/')
-# r.create_aub_latency_eps_graph('/home/${USER}/git/stress_test/auditd_benchmark/report/')
-# r.create_aub_losses_eps_graph('/home/${USER}/git/stress_test/auditd_benchmark/report/')

@@ -20,6 +20,11 @@ class Report:
                  event_names=PROC_BODYS.keys(),
                  latency_report=LATENCY_REPORT,
                  losses_report=LOSSES_REPORT):
+        '''
+        :param event_names: наименование события audit
+        :param latency_report: файл с отчетом по тесту get_latency_stat_psaud
+        :param losses_report: файл с отчетом по тесту get_losses_stat_psaud
+        '''
 
         self.__event_names = event_names
         self.__events_per_second_lower_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_LOWER_LIMIT)
@@ -30,6 +35,7 @@ class Report:
         self.height = 15
 
         if latency_report:
+            '''Организовать датафрейм по результатам теста get_latency_stat_psaud'''
             with open(latency_report, 'r') as report_file:
                 raw_data = report_file.read().split()
 
@@ -43,6 +49,7 @@ class Report:
                 self.__latency_raw_tables[event] = self.__raw_table[self.__raw_table.audit_event == event]
 
         if losses_report:
+            '''Организовать датафрейм по результатам теста get_losses_stat_psaud'''
             with open(losses_report, 'r') as report_file:
                 raw_data = report_file.read().split()
 
@@ -62,6 +69,7 @@ class Report:
                 self.__losses_raw_tables[event] = self.__raw_table[self.__raw_table.audit_event == event]
 
         if losses_report and latency_report:
+            '''Организовать датафреймы по результатам тестов get_latency_stat_psaud, get_losses_stat_psaud'''
             self.__main_raw_tables = {}
             for event in self.__event_names:
                 self.__main_raw_tables[event] = pandas.concat([self.__losses_raw_tables[event],
@@ -71,10 +79,20 @@ class Report:
 
     @staticmethod
     def _cm_to_inch(value):
+        '''
+        :param value: сантиметры
+        :return: дюймы
+        '''
         return value / 2.54
 
     @staticmethod
     def _last_passed(lst1, lst2):
+        '''
+        Найти последний пройденный тест
+        :param lst1: первый список (>=)
+        :param lst2: второй список
+        :return: индекс
+        '''
         for index in range(len(lst1)):
             if lst1[index] >= lst2[index]:
                 return index
@@ -96,6 +114,11 @@ class Report:
                     polinom_factor -= 1
 
     def create_beauty_table(self, path=REPORT_DIR, table_name='aub_{name}_table.html'):
+        '''
+        :param path: директория с файлами отчета
+        :param table_name: имя файла html для сохранения таблицы
+        :return:
+        '''
         for event in self.__event_names:
             beauty_table = build_table(self.__main_raw_tables[event], 'blue_light')
             with open('{}/{}'.format(path, table_name.format(name=event)), 'w') as beauty_html_table:
@@ -103,6 +126,10 @@ class Report:
 
     @staticmethod
     def create_tar():
+        '''
+        Создать архив
+        :return:
+        '''
         time_mark = time()
         with tarfile.open('aub_{v}_{m}_{k}_{t}.tar'.format(v=astra_version()[0],
                                                            m=astra_version()[1],
@@ -123,7 +150,16 @@ class Report:
                                     ox_lower_limit=None,
                                     ox_upper_limit=None,
                                     path=None):
-
+        '''
+        :param event: наименование события audit
+        :param raw_table: датафрейм
+        :param ox_param_table_name: имя столбца в таблице (OX)
+        :param oy_param_table_name: имя столбца в таблице (OY)
+        :param ox_lower_limit: нижняя граница значений
+        :param ox_upper_limit: верхняя граница значений
+        :param path: путь для сохранения результата
+        :return:
+        '''
         if raw_table is None:
             raw_table = self.__main_raw_tables[event]
         elif event is None:
@@ -144,10 +180,11 @@ class Report:
         plt.figure(figsize=(self._cm_to_inch(self.width), self._cm_to_inch(self.height)))
         plt.plot(x, y, 'o')
         plt.plot(aprx_x, aprx_f(aprx_x))
-        plt.title('{digit_varsion}({mode}). {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
-                                                                      mode=astra_version()[1],
-                                                                      xtitle=ox_param_table_name,
-                                                                      ytitle=oy_param_table_name))
+        plt.title('{digit_varsion}({mode}). {event} {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
+                                                                              event=event,
+                                                                              mode=astra_version()[1],
+                                                                              xtitle=ox_param_table_name,
+                                                                              ytitle=oy_param_table_name))
 
         # colorized 100% zone
         last_passed_test = self._last_passed(self.__expected_event_quantity_lst, self.__real_event_quantity_lst)
@@ -237,4 +274,3 @@ class Report:
         with open(path, 'a+') as report:
             report.write('total auditd rating: {}\n'.format(total_auditd_rating))
         return total_auditd_rating
-

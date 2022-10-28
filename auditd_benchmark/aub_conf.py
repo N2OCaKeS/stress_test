@@ -31,6 +31,8 @@ PROC_BODYS = {'open': ('cat /etc/passwd', ''),
               'net': ('ping -c 1 localhost', '')}
 
 
+
+
 PS_LOWER_LIMIT = 1
 PS_UPPER_LIMIT = 5
 PS_STEP = 1

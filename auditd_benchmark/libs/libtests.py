@@ -123,15 +123,14 @@ class AuditdTest(Auditd, CheckAusearch):
         :param count: количество процессов
         :return:
         '''
-        print('{} event / sec'.format(int(float(proc_lifetime) / float(delay) * int(count))))
 
         if count is None:
             process = Process(name='test_process_{}'.format(syscall),
                               target=func,
                               args=(syscall, proc_lifetime, delay))
-            process.start()
             return process
         else:
+            print('{} event / sec'.format(int(float(proc_lifetime) / float(delay) * int(count))))
             processes_lst = []
             for index in range(count):
                 processes_lst.append(Process(name='test_process_{}_{}'.format(syscall, index),
@@ -143,7 +142,7 @@ class AuditdTest(Auditd, CheckAusearch):
     def test_get_latency_auditd(self,
                                 audit_flag,
                                 ps_lifetime=1,
-                                event_re_initialization_delay=0.001,
+                                event_re_initialization_delay=0.0001,
                                 accurancy=3):
         '''
         :param audit_flag: наименование события audit

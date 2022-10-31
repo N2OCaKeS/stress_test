@@ -59,8 +59,9 @@ parser.add_argument('-t', '--time_execution',
                     dest='TIME_EXEC')
 
 parser.add_argument('-rp', '--report_path',
-                    required=True,
+                    required=False,
                     help='Absolute report path',
+                    default='/home/u/git/stress_test/syslog_ng_benchmark/report',
                     dest='REPORT_PATH')
 
 parser.add_argument('-iw', '--img_width',

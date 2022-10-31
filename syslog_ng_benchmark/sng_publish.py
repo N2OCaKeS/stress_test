@@ -103,20 +103,25 @@ if args.TAR_PATH is not None:
     confluence_report.unzip_tarfile(args.TAR_PATH)
 
 with open('{}/{}'.format(args.R_PATH, 'sng_report.txt')) as report_txt:
-    for line in report_txt.readline():
-        if line in "Load_time_execution":
+    for line in report_txt:
+        if "Load_time_execution" in line:
             TIME_EXEC = line.split(" ")[1]
-        if line in "Service_count":
+        if "Service_count" in line:
             SERVICE_COUNT = line.split(" ")[1]
-        if line in "Total_rating":
+        if "Total_rating" in line:
             TOTAL_RATING = line.split(" ")[1]
 
 
 if "templates" in os.listdir(os.getcwd()):
-    TEMPLATE_PATH = os.getcwd() + 'templates/'
+    TEMPLATE_PATH = str(os.getcwd()) + '/templates/'
 else:
     print("Перейдите в директорию syslog_ng_benchmark!")
     sys.exit()
+
+# создать страницу confluence
+confluence_report.create_confluence_page(args.SPACE,
+                                         args.PPAGE,
+                                         args.NPAGE)
 
 # прикрепить файлы к странице confluence
 for file in os.listdir(args.R_PATH):

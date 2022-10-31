@@ -2,12 +2,12 @@ import os
 from pathlib import Path
 from time import sleep, ctime, time
 from multiprocessing import Process
-from aub_conf import PROC_BODYS
+from aub_conf import PSAUD_PROC_BODYS
 from libs.libaub import Auditd, CheckAusearch, Prepare, cmd
 
 
 class AuditdTest(Auditd, CheckAusearch):
-    def __init__(self, do_positive_test=True, do_negative_test=False, procs=PROC_BODYS):
+    def __init__(self, do_positive_test=True, do_negative_test=False, procs=PSAUD_PROC_BODYS):
         '''
         :param do_positive_test: Необходимость принудительной инициализации событий 'success=yes'
         :param do_negative_test: Необходимость принудительной инициализации событий 'success=no'
@@ -33,7 +33,7 @@ class AuditdTest(Auditd, CheckAusearch):
             cmd('umount /mnt &> /dev/null')
             return None
         if event_flag == 'module':
-            cmd(PROC_BODYS[event_flag][0] + ' -r')
+            cmd(PSAUD_PROC_BODYS[event_flag][0] + ' -r')
             return None
         if event_flag in ['open', 'chmod', 'chown', 'acl', 'mac', 'mount', 'cap', 'rename']:
             Prepare.clean()
@@ -276,7 +276,7 @@ class AuditdTestSet():
         if event_flag == 'mount':
             cmd('umount /mnt &> /dev/null')
         if event_flag == 'module':
-            cmd(PROC_BODYS[event_flag][0] + ' -r')
+            cmd(PSAUD_PROC_BODYS[event_flag][0] + ' -r')
         if event_flag in ['open', 'remove', 'chmod', 'chown', 'acl', 'mac', 'mount', 'cap', 'rename']:
             Prepare.clean()
         Auditd.clean()

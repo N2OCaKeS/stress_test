@@ -9,7 +9,7 @@ from os import listdir, chdir
 from matplotlib import pyplot as plt
 from libs.libaub import astra_version, astra_kernel_version
 from pretty_html_table import build_table
-from aub_conf import PROC_BODYS, SCRIPT_DIR, \
+from aub_conf import PSAUD_PROC_BODYS, SCRIPT_DIR, \
     LOG_DIR, REPORT_DIR, REPORT, \
     LATENCY_REPORT, LOSSES_REPORT, \
     DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY, PS_LOWER_LIMIT, PS_UPPER_LIMIT
@@ -17,7 +17,7 @@ from aub_conf import PROC_BODYS, SCRIPT_DIR, \
 
 class Report:
     def __init__(self,
-                 event_names=PROC_BODYS.keys(),
+                 event_names=PSAUD_PROC_BODYS.keys(),
                  latency_report=LATENCY_REPORT,
                  losses_report=LOSSES_REPORT):
         '''
@@ -180,11 +180,21 @@ class Report:
         plt.figure(figsize=(self._cm_to_inch(self.width), self._cm_to_inch(self.height)))
         plt.plot(x, y, 'o')
         plt.plot(aprx_x, aprx_f(aprx_x))
-        plt.title('{digit_varsion}({mode}). {event} {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
-                                                                              event=event,
-                                                                              mode=astra_version()[1],
-                                                                              xtitle=ox_param_table_name,
-                                                                              ytitle=oy_param_table_name))
+        if oy_param_table_name == 'completed':
+            plt_title = '{digit_varsion}{mode}. {event} {ytitle}(%)/{xtitle}'
+        elif oy_param_table_name == 'latency':
+            plt_title = '{digit_varsion}{mode}. {event} {ytitle}(sec)/{xtitle}'
+        else:
+            plt_title = '{digit_varsion}{mode}. {event} {ytitle}/{xtitle}'
+        plt.title(plt_title.format(digit_varsion=astra_version()[0],
+                                   event=event.upper(),
+                                   mode=astra_version()[1],
+                                   xtitle=ox_param_table_name,
+                                   ytitle=oy_param_table_name))
+
+        plt.xlabel(ox_param_table_name)
+        plt.ylabel(oy_param_table_name)
+        plt.grid()
 
         # colorized 100% zone
         last_passed_test = self._last_passed(self.__expected_event_quantity_lst, self.__real_event_quantity_lst)

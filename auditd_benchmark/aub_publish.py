@@ -75,8 +75,9 @@ parser.add_argument('-tp', '--tarfile-path',
 
 parser.add_argument('-ts', '--test-set',
                     action='store',
-                    choices=['fs_mark_count',
-                             'fs_mark_size'],
+                    choices=['psaud',
+                             'useraud',
+                             'fileaud'],
                     required=True,
                     dest='TS')
 

@@ -1,9 +1,11 @@
 import os
+import pwd
+from sys import exit
 from pathlib import Path
 from time import sleep, ctime, time
 from multiprocessing import Process
-from aub_conf import PSAUD_PROC_BODYS
-from libs.libaub import Auditd, CheckAusearch, Prepare, cmd
+from aub_conf import PSAUD_PROC_BODYS, TEST_USER
+from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
 
 
 class AuditdTest(Auditd, CheckAusearch):
@@ -16,6 +18,15 @@ class AuditdTest(Auditd, CheckAusearch):
         self.__pos = do_positive_test
         self.__neg = do_negative_test
         self.__procs = procs
+
+    @staticmethod
+    def _as_another_user(uid, gid=None):  # optional group
+        def wrapper(func):
+            def wrapped(*args, **kwargs):
+                with UnixUser(uid, gid):
+                    return func(*args, **kwargs)  # execute the function
+            return wrapped
+        return wrapper
 
     def _pos_files_prep(self, event_flag):
         if event_flag in ['open', 'remove', 'chmod', 'chown', 'rename']:
@@ -139,11 +150,11 @@ class AuditdTest(Auditd, CheckAusearch):
                 # processes_lst[index].start()
             return processes_lst
 
-    def test_get_latency_auditd(self,
-                                audit_flag,
-                                ps_lifetime=1,
-                                event_re_initialization_delay=0.0001,
-                                accurancy=3):
+    def test_get_latency_auditd_psaud(self,
+                                      audit_flag,
+                                      ps_lifetime=1,
+                                      event_re_initialization_delay=0.0001,
+                                      accurancy=3):
         '''
         :param audit_flag: наименование события audit
         :param ps_lifetime: время жизни процесса
@@ -164,7 +175,38 @@ class AuditdTest(Auditd, CheckAusearch):
         test_ps.join()
         return round(end - start, accurancy)
 
-    def test_get_latency_auditd_under_load(self,
+    def test_get_latency_auditd_useraud(self,
+                                        audit_flag,
+                                        ps_lifetime=1,
+                                        event_re_initialization_delay=0.0001,
+                                        accurancy=3,
+                                        user=TEST_USER):
+        '''
+        :param audit_flag: наименование события audit
+        :param ps_lifetime: время жизни процесса
+        :param event_re_initialization_delay: периодичность генерации события audit
+        :param accurancy: порядок округления результатов
+        :return:
+        '''
+        Auditd.clean()
+        User.add(user)
+        with UnixUser(uid=pwd.getpwnam(user).pw_uid):
+            test_ps = self._create_ps(syscall=audit_flag,
+                                      func=self._template_ps_timer,
+                                      proc_lifetime=ps_lifetime,
+                                      delay=event_re_initialization_delay)
+            test_ps.start()
+
+        cmd('useraud -m {u} +{flag}:-{flag}'.format(u=user, flag=(audit_flag)))
+        start, end = time(), time()
+        while test_ps.is_alive() and CheckAusearch.useraud(audit_flag, test_ps.pid) is False:
+            end = time()
+
+        test_ps.join()
+        User.rm(user)
+        return round(end - start, accurancy)
+
+    def test_get_latency_auditd_psaud_under_load(self,
                                            audit_flag,
                                            count,
                                            ps_lifetime=None,
@@ -253,8 +295,6 @@ class AuditdTest(Auditd, CheckAusearch):
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
         for test_ps in test_ps_lst:
-            # r = CheckAusearch.psaud_event_count(audit_flag, test_ps.pid, start)
-            # print('получено auditd '+str(r)+' событий')
             auditd_events_amount += CheckAusearch.psaud_event_count(audit_flag, test_ps.pid, start)
 
         #
@@ -282,19 +322,30 @@ class AuditdTestSet():
         Auditd.clean()
 
     @staticmethod
-    def get_latency_auditd_single(event_flag, report_file):
+    def get_latency_psaud_single(event_flag, report_file):
         __audit_test = AuditdTest()
-        result = __audit_test.test_get_latency_auditd(event_flag)
+        result = __audit_test.test_get_latency_auditd_psaud(event_flag)
         with open(report_file, 'w') as file:
             file.write('{} - {} sec\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))
+
+    @staticmethod
+    def get_latency_useraud_single(event_flag, report_file):
+        __audit_test = AuditdTest()
+
+        result = __audit_test.test_get_latency_auditd_useraud(audit_flag=event_flag,
+                                                              user=TEST_USER)
+        with open(report_file, 'w') as file:
+            file.write('{} - {} sec\n'.format(event_flag, result))
+        print('{} - {} sec'.format(event_flag, result))
+
 
     @staticmethod
     def get_latency_auditd_total(event_flag_lst, report_file):
         __audit_test = AuditdTest()
         for event_flag in event_flag_lst:
 
-            result = __audit_test.test_get_latency_auditd(event_flag)
+            result = __audit_test.test_get_latency_auditd_psaud(event_flag)
             AuditdTestSet.clean(event_flag)
 
             with open(report_file, 'a+') as file:
@@ -309,7 +360,7 @@ class AuditdTestSet():
                                report_file):
 
         __audit_test = AuditdTest()
-        result = __audit_test.test_get_latency_auditd_under_load(event_flag,
+        result = __audit_test.test_get_latency_auditd_psaud_under_load(event_flag,
                                                                  ps_count,
                                                                  ps_lifetime,
                                                                  ps_event_re_initialization_delay)

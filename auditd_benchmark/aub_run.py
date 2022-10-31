@@ -5,7 +5,7 @@ from os import path, mkdir
 from libs.libtests import AuditdTestSet
 from libs.libtable import Report
 from aub_conf import REPORT, REPORT_DIR, LATENCY_REPORT, LOSSES_REPORT, \
-    LOG, LOG_DIR, PROC_BODYS, \
+    LOG, LOG_DIR, PSAUD_PROC_BODYS, \
     PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP, \
     DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY
 
@@ -44,34 +44,34 @@ if not path.exists(REPORT_DIR):
     mkdir(REPORT_DIR, mode=0o755)
 
 # Очистить отчет
-log_file = open(REPORT, 'w')
-log_file.close()
+report_file = open(REPORT, 'w')
+report_file.close()
 
 if args.TEST_LIST == 'psaud':
     if args.MODE == 'default':
-
-        # Очистить отчет
-        log_file = open(LATENCY_REPORT, 'w')
-        log_file.close()
-
-        for event in PROC_BODYS.keys():
-            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
-                AuditdTestSet.get_latency_stat_psaud(event,
-                                                     quantity,
-                                                     DEFAULT_PS_LIFETIME,
-                                                     DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
-                                                     LATENCY_REPORT)
-        # Очистить отчет
-        log_file = open(LOSSES_REPORT, 'w')
-        log_file.close()
-
-        for event in PROC_BODYS.keys():
-            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
-                AuditdTestSet.get_losses_stat_psaud(event,
-                                                    quantity,
-                                                    DEFAULT_PS_LIFETIME,
-                                                    DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
-                                                    LOSSES_REPORT)
+        #
+        # # Очистить отчет
+        # report_file = open(LATENCY_REPORT, 'w')
+        # report_file.close()
+        #
+        # for event in PSAUD_PROC_BODYS.keys():
+        #     for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+        #         AuditdTestSet.get_latency_stat_psaud(event,
+        #                                              quantity,
+        #                                              DEFAULT_PS_LIFETIME,
+        #                                              DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+        #                                              LATENCY_REPORT)
+        # # Очистить отчет
+        # report_file = open(LOSSES_REPORT, 'w')
+        # report_file.close()
+        #
+        # for event in PSAUD_PROC_BODYS.keys():
+        #     for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+        #         AuditdTestSet.get_losses_stat_psaud(event,
+        #                                             quantity,
+        #                                             DEFAULT_PS_LIFETIME,
+        #                                             DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+        #                                             LOSSES_REPORT)
 
         # создать отчет
         r = Report()
@@ -79,7 +79,7 @@ if args.TEST_LIST == 'psaud':
         r.create_aub_latency_eps_graph()
         r.create_aub_losses_eps_graph()
         r.get_total_auditd_rating()
-        r.create_tar()
+        # r.create_tar()
 
     elif args.MODE == 'extended':
         pass
@@ -87,7 +87,9 @@ if args.TEST_LIST == 'psaud':
         pass
 elif args.TEST_LIST == 'useraud':
     if args.MODE == 'default':
-        pass
+        AuditdTestSet.get_latency_useraud_single('open',
+                                                 REPORT)
+
     elif args.MODE == 'extended':
         pass
     else:

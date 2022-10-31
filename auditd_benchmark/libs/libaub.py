@@ -1,5 +1,6 @@
 import os
 import re
+import crypt
 import subprocess
 
 from os import path, mkdir, listdir
@@ -69,7 +70,6 @@ class CheckAusearch():
     # process audit
     @staticmethod
     def psaud(audit_flag, pid, time_file='/tmp/timer'):
-
         try:
             with open(time_file, 'r') as file:
                 search_time = file.read().split()[3]
@@ -93,10 +93,32 @@ class CheckAusearch():
             au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
             return len(re.findall(str(pid), au_return_p))
 
-    # process audit
+    # user audit
     @staticmethod
-    def useraud(audit_flag, pid):
-        pass
+    def useraud(audit_flag, pid, time_file='/tmp/timer'):
+        try:
+            with open(time_file, 'r') as file:
+                search_time = file.read().split()[3]
+        except (IndexError, FileNotFoundError):
+            search_time = ctime().split()[3]
+
+        if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl') or (audit_flag == 'audit'):
+            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+            return re.search(str(pid), au_return_all) is not None
+        else:
+            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
+            print(re.search(str(pid), au_return_p))
+            return re.search(str(pid), au_return_p) is not None
+
+    @staticmethod
+    def useraud_event_count(audit_flag, pid, search_time):
+        search_time = search_time.split()[3]
+        if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl') or (audit_flag == 'audit'):
+            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+            return len(re.findall(str(pid), au_return_all))
+        else:
+            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
+            return len(re.findall(str(pid), au_return_p))
 
     # process audit
     @staticmethod
@@ -138,3 +160,36 @@ class Prepare():
         if path.getsize(where) != 0:
             cmd('rm -rf {}/dir*'.format(where))
             cmd('rm -rf {}/file*'.format(where))
+
+
+class User:
+    @staticmethod
+    def add(name, password='1'):
+        if os.path.exists('/home/'+name):
+            cmd('rm -rf /home/'+name+' &> /dev/null')
+        encode_passwd = crypt.crypt(password, '22')
+        cmd('useradd -p {ep} -d /home/{n} -s /bin/bash -m {n} &> /dev/null'.format(ep=encode_passwd, n=name))
+        cmd('echo {}:{} | chpasswd  &> /dev/null'.format(name, password))
+
+    @staticmethod
+    def rm(name):
+        cmd('userdel -r '+name)
+        cmd('rm -rf /home/'+name+' &> /dev/null')
+
+
+class UnixUser(object):
+
+    def __init__(self, uid, gid=None):
+        self.uid = uid
+        self.gid = gid
+
+    def __enter__(self):
+        self.cache = os.getuid(), os.getgid()  # cache the current UID and GID
+        if self.gid is not None:  # GID change requested as well
+            os.setgid(self.gid)
+        os.setuid(self.uid)  # set the UID for the code within the `with` block
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # optionally, deal with the exception
+        os.setuid(self.cache[0])  # revert back to the original UID
+        os.setgid(self.cache[1])  # revert back to the original GID

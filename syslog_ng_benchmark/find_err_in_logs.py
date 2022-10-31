@@ -37,7 +37,10 @@ def sort_by_datetime(time_start_test, line_with_error):
 
         # Первый вариант для Oct 24 15:01:12
         try:
-            time_object1 = datetime.strptime("{} {} {}".format(line_temp[0], line_temp[1], line_temp[2]), "%b %d %H:%M:%S")
+            if line_temp[1] == '':
+                time_object1 = datetime.strptime("{} {} {}".format(line_temp[0], line_temp[2], line_temp[3]), "%b %d %H:%M:%S")
+            else:
+                time_object1 = datetime.strptime("{} {} {}".format(line_temp[0], line_temp[1], line_temp[2]), "%b %d %H:%M:%S")
         except:
             time_object1 = None
 

@@ -18,7 +18,7 @@ cd syslog_ng_benchmark && bash sng_prep.sh
 ### Запуск
 Запуск теста производить от суперпользователя (root):  
 cd syslog_ng_benchmark  
-venv/bin/python sng_run.py -sc 4800 -t 1440 -rp /home/u/stress_test_syslog_ng  
+venv/bin/python sng_run.py -sc 4800 -t 1440 
 - -sc - В случае необходимости изменения количества "грязных" логеров
 - -t  - В случае необходимости изменения времени выполнения в минутах
 - -rp - В случае необходимости изменения директории для отчета
@@ -29,7 +29,7 @@ venv/bin/python sng_run.py -sc 4800 -t 1440 -rp /home/u/stress_test_syslog_ng
 Во время проведения тестирования в терминал ничего не выводится.
 
 ### Обработка результатов
-После прохождения теста в текущей папке /home/u/stress_test_syslog_ng создается .tar с результатами тестирования в виде графиков. Общий отчет собран в файле main_report.html
+После прохождения теста в папке /home/u/git/stress_test/syslog_ng_benchmark/report создается .tar с результатами тестирования в виде графиков. Общий отчет собран в файле main_report.html
 
 ### Поддерживаемые версии ОС
 - 1.7.2

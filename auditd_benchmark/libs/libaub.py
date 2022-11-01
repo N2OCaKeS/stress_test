@@ -2,6 +2,8 @@ import os
 import re
 import crypt
 import subprocess
+import pexpect
+import pdb
 
 from os import path, mkdir, listdir
 from time import sleep, ctime, time
@@ -65,7 +67,7 @@ def astra_version():
     return version
 
 
-class CheckAusearch():
+class CheckAusearch:
 
     # process audit
     @staticmethod
@@ -95,30 +97,21 @@ class CheckAusearch():
 
     # user audit
     @staticmethod
-    def useraud(audit_flag, pid, time_file='/tmp/timer'):
+    def useraud(user, time_file='/tmp/timer'):
         try:
             with open(time_file, 'r') as file:
                 search_time = file.read().split()[3]
         except (IndexError, FileNotFoundError):
             search_time = ctime().split()[3]
 
-        if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl') or (audit_flag == 'audit'):
-            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-            return re.search(str(pid), au_return_all) is not None
-        else:
-            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
-            print(re.search(str(pid), au_return_p))
-            return re.search(str(pid), au_return_p) is not None
+        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        return re.search(str(user), au_return) is not None
 
     @staticmethod
-    def useraud_event_count(audit_flag, pid, search_time):
+    def useraud_event_count(user, search_time):
         search_time = search_time.split()[3]
-        if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl') or (audit_flag == 'audit'):
-            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-            return len(re.findall(str(pid), au_return_all))
-        else:
-            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
-            return len(re.findall(str(pid), au_return_p))
+        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        return len(re.findall(str(user), au_return))
 
     # process audit
     @staticmethod
@@ -126,7 +119,7 @@ class CheckAusearch():
         pass
 
 
-class Auditd():
+class Auditd:
 
     @staticmethod
     def check_status():
@@ -141,7 +134,7 @@ class Auditd():
         cmd('service auditd restart')
 
 
-class Prepare():
+class Prepare:
 
     @staticmethod
     def file(how_many=1, where='/tmp'):
@@ -163,13 +156,30 @@ class Prepare():
 
 
 class User:
+
     @staticmethod
     def add(name, password='1'):
         if os.path.exists('/home/'+name):
-            cmd('rm -rf /home/'+name+' &> /dev/null')
+            User.rm(name)
         encode_passwd = crypt.crypt(password, '22')
         cmd('useradd -p {ep} -d /home/{n} -s /bin/bash -m {n} &> /dev/null'.format(ep=encode_passwd, n=name))
         cmd('echo {}:{} | chpasswd  &> /dev/null'.format(name, password))
+
+    @staticmethod
+    def add_priv(name, priv):
+        cmd('usercaps -l +{} {}'.format(priv, name))
+        child_term = pexpect.spawn('su ' + name)
+        child_term.sendline('usercaps ' + name)
+        child_term.sendline('exit')
+        child_term.interact()
+
+    @staticmethod
+    def rm_priv(name):
+        cmd('usercaps -d ' + name)
+        child_term = pexpect.spawn('su ' + name)
+        child_term.sendline('usercaps ' + name)
+        child_term.sendline('exit')
+        child_term.interact()
 
     @staticmethod
     def rm(name):
@@ -184,12 +194,11 @@ class UnixUser(object):
         self.gid = gid
 
     def __enter__(self):
-        self.cache = os.getuid(), os.getgid()  # cache the current UID and GID
-        if self.gid is not None:  # GID change requested as well
+        self.cache = os.getuid(), os.getgid()
+        if self.gid is not None:
             os.setgid(self.gid)
-        os.setuid(self.uid)  # set the UID for the code within the `with` block
+        os.setuid(self.uid)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # optionally, deal with the exception
-        os.setuid(self.cache[0])  # revert back to the original UID
-        os.setgid(self.cache[1])  # revert back to the original GID
+        os.setuid(self.cache[0])
+        os.setgid(self.cache[1])

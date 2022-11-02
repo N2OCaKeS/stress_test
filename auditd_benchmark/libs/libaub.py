@@ -5,7 +5,7 @@ import subprocess
 import pexpect
 import pdb
 
-from os import path, mkdir, listdir
+from os import path, mkdir, listdir, chmod
 from time import sleep, ctime, time
 
 
@@ -97,7 +97,7 @@ class CheckAusearch:
 
     # user audit
     @staticmethod
-    def useraud(user, time_file='/tmp/timer'):
+    def useraud(pid, user, time_file='/tmp/timer'):
         try:
             with open(time_file, 'r') as file:
                 search_time = file.read().split()[3]
@@ -105,18 +105,25 @@ class CheckAusearch:
             search_time = ctime().split()[3]
 
         au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-        return re.search(str(user), au_return) is not None
+        return re.search(str(pid), au_return) is not None
 
     @staticmethod
-    def useraud_event_count(user, search_time):
+    def useraud_event_count(pid, search_time):
         search_time = search_time.split()[3]
         au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-        return len(re.findall(str(user), au_return))
+        return len(re.findall(str(pid), au_return))
 
-    # process audit
+    # file audit
     @staticmethod
-    def setfaud(audit_flag, pid):
-        pass
+    def fileaud(target_file, time_file='/tmp/timer'):
+        try:
+            with open(time_file, 'r') as file:
+                search_time = file.read().split()[3]
+        except (IndexError, FileNotFoundError):
+            search_time = ctime().split()[3]
+
+        au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        return re.search(target_file, au_return_all) is not None
 
 
 class Auditd:
@@ -141,12 +148,14 @@ class Prepare:
         for num in range(1, how_many+1):
             if path.exists('{}/file{}'.format(where, num)) is False:
                 cmd('touch {}/file{}'.format(where, num))
+                chmod('{}/file{}'.format(where, num), 0o777)
 
     @staticmethod
     def dir(how_many=1, where='/tmp'):
         for num in range(1, how_many+1):
             if path.exists('{}/dir{}'.format(where, num)) is False:
                 mkdir('{}/dir{}'.format(where, num))
+                chmod('{}/dir{}'.format(where, num), 0o777)
 
     @staticmethod
     def clean(where='/tmp'):
@@ -195,10 +204,11 @@ class UnixUser(object):
 
     def __enter__(self):
         self.cache = os.getuid(), os.getgid()
+        os.setuid(self.uid)
         if self.gid is not None:
             os.setgid(self.gid)
-        os.setuid(self.uid)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         os.setuid(self.cache[0])
-        os.setgid(self.cache[1])
+        if self.gid is not None:
+            os.setgid(self.cache[1])

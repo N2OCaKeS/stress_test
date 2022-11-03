@@ -9,17 +9,16 @@ from os import listdir, chdir
 from matplotlib import pyplot as plt
 from libs.libaub import astra_version, astra_kernel_version
 from pretty_html_table import build_table
-from aub_conf import PSAUD_PROC_BODYS, SCRIPT_DIR, \
+from aub_conf import SCRIPT_DIR, \
     LOG_DIR, REPORT_DIR, REPORT, \
-    LATENCY_REPORT, LOSSES_REPORT, \
     DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY, PS_LOWER_LIMIT, PS_UPPER_LIMIT
 
 
 class Report:
     def __init__(self,
-                 event_names=PSAUD_PROC_BODYS.keys(),
-                 latency_report=LATENCY_REPORT,
-                 losses_report=LOSSES_REPORT):
+                 event_names,
+                 latency_report,
+                 losses_report):
         '''
         :param event_names: наименование события audit
         :param latency_report: файл с отчетом по тесту get_latency_stat_psaud

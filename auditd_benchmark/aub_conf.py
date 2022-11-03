@@ -9,8 +9,14 @@ TEMPLATE_DIR = '{}/templates'.format(SCRIPT_DIR)
 
 LOG = '{}/{}'.format(LOG_DIR, LOG_FILENAME)
 REPORT = '{}/{}'.format(REPORT_DIR, REPORT_FILENAME)
-LATENCY_REPORT = '{}/aub_report_latency.txt'.format(REPORT_DIR)
-LOSSES_REPORT = '{}/aub_report_losses.txt'.format(REPORT_DIR)
+
+LATENCY_REPORT_PSAUD = '{}/aub_ps_report_latency.txt'.format(REPORT_DIR)
+LATENCY_REPORT_USAUD = '{}/aub_us_report_latency.txt'.format(REPORT_DIR)
+LATENCY_REPORT_FLAUD = '{}/aub_fl_report_latency.txt'.format(REPORT_DIR)
+
+LOSSES_REPORT_PSAUD = '{}/aub_ps_report_losses.txt'.format(REPORT_DIR)
+LOSSES_REPORT_USAUD = '{}/aub_us_report_losses.txt'.format(REPORT_DIR)
+LOSSES_REPORT_FLAUD = '{}/aub_fl_report_losses.txt'.format(REPORT_DIR)
 
 MAIN_USER='u'
 TEST_USER='tester'
@@ -51,21 +57,21 @@ USERAUD_PROC_BODYS = { 'open': ('cat /etc/passwd',''),
                        'rename': ('mv /tmp/file1 /tmp/file2',''),
                        'net': ('ping -c 1 localhost','')}
 
-FILEAUD_PROC_BODYS = { 'open': ('cat /tmp/file_open', ''),
-                       'create': ('touch /tmp/file_create', ''),
-                       'exec': ('/tmp/file_exec', ''),
-                       'delete': ('rm -f /tmp/file_delete', ''),
-                       'chmod': ('chmod 777 /tmp/file_chmod', ''),
-                       'chown': ('chown {u}:{u} /tmp/file_chown'.format(u=MAIN_USER), ''),
-                       'audit': ('getfaud /tmp/file_audit', ''),
-                       'acl': ('setfacl -m u:{}:rw /tmp/file_acl'.format(MAIN_USER), ''),
-                       'mac': ('pdpl-file 2:0:0 /tmp/file_mac'.format(MAIN_USER), ''),
-                       'modify': ("echo '1' >> /tmp/file_modify", '')}
+FILEAUD_PROC_BODYS = { 'open': ('cat ', ''),
+                       'create': ('touch ', ''),
+                       'exec': ('bash ', ''),
+                       'delete': ('rm -f ', ''),
+                       'chmod': ('chmod 777 ', ''),
+                       'chown': ('chown u:u ', ''),
+                       'audit': ('getfaud ', ''),
+                       'acl': ('setfacl -m u:u:rw ', ''),
+                       'mac': ('pdpl-file 2:0:0 ', ''),
+                       'modify': ("echo '1' >> ", '')}
 
 
-PS_LOWER_LIMIT = 1
-PS_UPPER_LIMIT = 5
-PS_STEP = 1
+PS_LOWER_LIMIT = 10
+PS_UPPER_LIMIT = 100
+PS_STEP = 10
 
-DEFAULT_PS_LIFETIME = 1
-DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 0.01
+DEFAULT_PS_LIFETIME = 10
+DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 0.1

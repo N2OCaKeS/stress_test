@@ -122,8 +122,14 @@ class CheckAusearch:
         except (IndexError, FileNotFoundError):
             search_time = ctime().split()[3]
 
-        au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-        return re.search(target_file, au_return_all) is not None
+        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        return re.search(target_file, au_return) is not None
+
+    @staticmethod
+    def fileaud_event_count(target_file, search_time):
+        search_time = search_time.split()[3]
+        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        return len(re.findall(str(target_file), au_return))
 
 
 class Auditd:
@@ -180,7 +186,6 @@ class User:
         child_term = pexpect.spawn('su ' + name)
         child_term.sendline('usercaps ' + name)
         child_term.sendline('exit')
-        child_term.interact()
 
     @staticmethod
     def rm_priv(name):
@@ -188,7 +193,6 @@ class User:
         child_term = pexpect.spawn('su ' + name)
         child_term.sendline('usercaps ' + name)
         child_term.sendline('exit')
-        child_term.interact()
 
     @staticmethod
     def rm(name):

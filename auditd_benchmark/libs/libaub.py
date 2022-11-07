@@ -129,6 +129,9 @@ class CheckAusearch:
     def fileaud_event_count(target_file, search_time):
         search_time = search_time.split()[3]
         au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        # with open('debug.txt', 'w') as f:
+        #     f.write(au_return)
+        # print(re.findall(str(target_file), au_return))
         return len(re.findall(str(target_file), au_return))
 
 
@@ -151,14 +154,14 @@ class Prepare:
 
     @staticmethod
     def file(how_many=1, where='/tmp'):
-        for num in range(1, how_many+1):
+        for num in range(how_many):
             if path.exists('{}/file{}'.format(where, num)) is False:
                 cmd('touch {}/file{}'.format(where, num))
                 chmod('{}/file{}'.format(where, num), 0o777)
 
     @staticmethod
     def dir(how_many=1, where='/tmp'):
-        for num in range(1, how_many+1):
+        for num in range(how_many):
             if path.exists('{}/dir{}'.format(where, num)) is False:
                 mkdir('{}/dir{}'.format(where, num))
                 chmod('{}/dir{}'.format(where, num), 0o777)
@@ -168,6 +171,7 @@ class Prepare:
         if path.getsize(where) != 0:
             cmd('rm -rf {}/dir*'.format(where))
             cmd('rm -rf {}/file*'.format(where))
+            cmd('rm -rf {}/counter*'.format(where))
 
 
 class User:

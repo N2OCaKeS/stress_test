@@ -88,11 +88,28 @@ if args.TEST_LIST == 'psaud':
     elif args.MODE == 'extended':
         pass
     elif args.MODE == 'test':
-        AuditdTestSet.get_latency_psaud_single('chmod',
-                                               REPORT)
+        # # Очистить отчет
+        # report_file = open(LATENCY_REPORT_PSAUD, 'w')
+        # report_file.close()
+        #
+        # for event in PSAUD_PROC_BODYS.keys():
+        #     for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+        #         AuditdTestSet.get_latency_stat_psaud(event,
+        #                                              quantity,
+        #                                              DEFAULT_PS_LIFETIME,
+        #                                              DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+        #                                              LATENCY_REPORT_PSAUD)
+        # Очистить отчет
+        report_file = open(LOSSES_REPORT_PSAUD, 'w')
+        report_file.close()
 
-        AuditdTestSet.get_latency_psaud_total(PSAUD_PROC_BODYS.keys(),
-                                              REPORT)
+        for event in PSAUD_PROC_BODYS.keys():
+            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+                AuditdTestSet.get_losses_stat_psaud(event,
+                                                    quantity,
+                                                    DEFAULT_PS_LIFETIME,
+                                                    DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+                                                    LOSSES_REPORT_PSAUD)
     else:
         exit(2)
 
@@ -137,20 +154,13 @@ elif args.TEST_LIST == 'useraud':
         AuditdTestSet.get_latency_useraud_single('open',
                                                  REPORT)
 
-        AuditdTestSet.get_latency_useraud_total(PSAUD_PROC_BODYS.keys(),
+        AuditdTestSet.get_latency_useraud_total(USERAUD_PROC_BODYS.keys(),
                                                 REPORT)
     else:
         exit(2)
 
 elif args.TEST_LIST == 'fileaud':
     if args.MODE == 'default':
-
-        AuditdTestSet.get_latency_useraud_single('open',
-                                                 REPORT)
-
-        AuditdTestSet.get_latency_fileaud_total(FILEAUD_PROC_BODYS.keys(),
-                                                REPORT)
-
         # Очистить отчет
         report_file = open(LATENCY_REPORT_FLAUD, 'w')
         report_file.close()
@@ -185,35 +195,7 @@ elif args.TEST_LIST == 'fileaud':
     elif args.MODE == 'extended':
         pass
     elif args.MODE == 'test':
-        AuditdTestSet.get_latency_useraud_single('open',
-                                                 REPORT)
-
-        AuditdTestSet.get_latency_fileaud_total(FILEAUD_PROC_BODYS.keys(),
-                                                REPORT)
-
-        # report_file = open(LATENCY_REPORT_FLAUD, 'w')
-        # report_file.close()
-        #
-        # for event in FILEAUD_PROC_BODYS.keys():
-        #     for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
-        #         AuditdTestSet.get_latency_stat_fileaud(event,
-        #                                                quantity,
-        #                                                DEFAULT_PS_LIFETIME,
-        #                                                DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
-        #                                                LATENCY_REPORT_FLAUD)
-
-        # Очистить отчет
-        report_file = open(LOSSES_REPORT_FLAUD, 'w')
-        report_file.close()
-
-        for event in FILEAUD_PROC_BODYS.keys():
-            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
-                AuditdTestSet.get_losses_stat_fileaud(event,
-                                                      quantity,
-                                                      DEFAULT_PS_LIFETIME,
-                                                      DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
-                                                      LOSSES_REPORT_FLAUD)
-
+        pass
     else:
         exit(2)
 

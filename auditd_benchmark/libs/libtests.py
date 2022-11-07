@@ -35,30 +35,36 @@ class AuditdTest(Auditd, CheckAusearch):
     def _pos_files_prep(event_flag):
         if event_flag in ['open', 'remove', 'chmod', 'chown', 'rename']:
             Prepare.file()
-            return None
         if event_flag in ['acl', 'mount']:
             Prepare.dir()
-            return None
         if event_flag in ['mac']:
             Prepare.dir(where='/')
-            return None
 
     @staticmethod
     def _pos_clean(event_flag):
+        if event_flag == 'remove':
+            f = open('/tmp/file0', 'w')
+            f.close()
+
         if event_flag == 'mount':
             cmd('umount /mnt &> /dev/null')
-            return None
         if event_flag == 'module':
             cmd(PSAUD_PROC_BODYS[event_flag][0] + ' -r')
-            return None
         if event_flag in ['open', 'chmod', 'chown', 'acl', 'mac', 'mount', 'cap', 'rename']:
             Prepare.clean()
-            return None
 
     def _neg_files_prep(self, event_flag):
         pass
 
     def _neg_clean(self, event_flag):
+        pass
+
+    @staticmethod
+    def _pos_fileaud_prep(syscall, number):
+        pass
+
+    @staticmethod
+    def _pos_fileaud_clean(syscall, number):
         pass
 
     def _template_ps_psaud_timer(self,
@@ -114,11 +120,13 @@ class AuditdTest(Auditd, CheckAusearch):
             sleep(delay)
             if self.__pos:
                 self._pos_files_prep(syscall)
-                cmd(self.__procs[syscall][0])
+                completed_cmd = cmd(self.__procs[syscall][0])
+                print(completed_cmd)
                 self._pos_clean(syscall)
-                counter += 1
-                with open(counter_file, 'w') as file:
-                    file.write(str(counter))
+                if completed_cmd.returncode == 0:  # обрабатываем результат
+                    counter += 1
+                    with open(counter_file, 'w') as file:
+                        file.write(str(counter))
             if self.__neg:
                 pass
             life_time -= delay
@@ -242,6 +250,7 @@ class AuditdTest(Auditd, CheckAusearch):
         :param number: количество процессов
         :return:
         '''
+
         if number is None:
             counter_file = '/tmp/counter'
             target_file = '/tmp/file_' + syscall
@@ -256,18 +265,35 @@ class AuditdTest(Auditd, CheckAusearch):
         if syscall == 'exec':
             with open(target_file, 'w') as file:
                 file.writelines(['#!/bin/bash\n',
-                                 'echo true &> /dev/null\n'])
+                                 'echo true\n'])
             cmd('chmod +x '+ target_file)
+            cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
         else:
             cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
+
         counter = 0
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                cmd(self.__procs[syscall][0] + target_file)
-                counter += 1
-                with open(counter_file, 'w') as file:
-                    file.write(str(counter))
+                if syscall == 'delete':  # delete приходится создавать здесь и каждый раз :(
+                    file = open(target_file, 'w')
+                    file.close()
+                    cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
+                if syscall == 'acl':
+                    cmd('setfacl -b '+ target_file)
+
+                # генерируем событие
+                completed_cmd = cmd(self.__procs[syscall][0] + target_file)
+                if completed_cmd.returncode == 0: # обрабатываем результат
+                    counter += 1
+                    with open(counter_file, 'w') as file:
+                        file.write(str(counter))
+                else:
+                    try:
+                        print(completed_cmd.stderr.decode('utf-8'))
+                    except AttributeError:
+                        pass
+
             if self.__neg:
                 pass
             life_time -= delay
@@ -304,8 +330,8 @@ class AuditdTest(Auditd, CheckAusearch):
 
     def test_get_latency_psaud(self,
                                audit_flag,
-                               ps_lifetime=1,
-                               event_re_initialization_delay=0.0001,
+                               ps_lifetime=None,
+                               event_re_initialization_delay=None,
                                accuracy=3):
         '''
         :param audit_flag: наименование события audit
@@ -334,7 +360,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                           audit_flag,
                                           count,
                                           ps_lifetime=None,
-                                          event_re_initialization_delay=0.001,
+                                          event_re_initialization_delay=None,
                                           accuracy=3):
         '''
         :param audit_flag: наименование события audit
@@ -374,7 +400,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                      audit_flag,
                                      count,
                                      ps_lifetime=None,
-                                     event_re_initialization_delay=0.001):
+                                     event_re_initialization_delay=None):
         '''
         :param audit_flag: наименование события audit
         :param count: количество процессов
@@ -417,6 +443,8 @@ class AuditdTest(Auditd, CheckAusearch):
             with open(file, 'r') as f:
                 expected_event_amount += int(f.read())
                 os.remove(file)
+        if expected_event_amount == 0:
+            return [False, False, False, False]
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
@@ -651,6 +679,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                            event_re_initialization_delay=None,
                                            accuracy=3):
         Auditd.clean()
+        Prepare.clean()
 
         if ps_lifetime is None:
             ps_lifetime = count
@@ -683,15 +712,14 @@ class AuditdTest(Auditd, CheckAusearch):
         for file in Path('/tmp').glob('counter*'):
             with open(file, 'r') as f:
                 expected_event_amount += int(f.read())
-                os.remove(file)
+        if expected_event_amount == 0:
+            return [False, False, False, False]
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
         for index in range(count):
-            target_file = 'file_' + audit_flag + str(index)
-            auditd_events_amount = CheckAusearch.fileaud_event_count(target_file, start)
+            auditd_events_amount += CheckAusearch.fileaud_event_count('file_' + audit_flag + str(index), start)
 
-        #
         if auditd_events_amount / expected_event_amount > 1:
             res = 100.0
         else:
@@ -720,7 +748,7 @@ class AuditdTestSet():
 
     @staticmethod
     def get_latency_psaud_single(event_flag, report_file):
-        __audit_test = AuditdTest()
+        __audit_test = AuditdTest(PSAUD_PROC_BODYS)
         result = __audit_test.test_get_latency_psaud(event_flag)
         with open(report_file, 'w') as file:
             file.write('{} - {} sec\n'.format(event_flag, result))
@@ -729,7 +757,7 @@ class AuditdTestSet():
 
     @staticmethod
     def get_latency_psaud_total(event_flag_lst, report_file):
-        __audit_test = AuditdTest()
+        __audit_test = AuditdTest(PSAUD_PROC_BODYS)
         for event_flag in event_flag_lst:
 
             result = __audit_test.test_get_latency_psaud(event_flag)
@@ -746,7 +774,7 @@ class AuditdTestSet():
                                ps_event_re_initialization_delay,
                                report_file):
 
-        __audit_test = AuditdTest()
+        __audit_test = AuditdTest(PSAUD_PROC_BODYS)
         result = __audit_test.test_get_latency_psaud_under_load(event_flag,
                                                                 ps_count,
                                                                 ps_lifetime,
@@ -763,7 +791,7 @@ class AuditdTestSet():
                               ps_event_re_initialization_delay,
                               report_file):
 
-        __audit_test = AuditdTest()
+        __audit_test = AuditdTest(PSAUD_PROC_BODYS)
         result = __audit_test.test_losses_psaud_under_load(event_flag,
                                                            ps_count,
                                                            ps_lifetime,
@@ -856,7 +884,7 @@ class AuditdTestSet():
                                                                                  bool_res=result[0]))
 
 ########################################################################################################################
-    @staticmethod
+    @staticmethod # ОТЛАЖЕНО
     def get_latency_fileaud_single(event_flag, report_file):
         __audit_test = AuditdTest(FILEAUD_PROC_BODYS)
         result = __audit_test.test_get_latency_fileaud(event_flag)
@@ -864,7 +892,7 @@ class AuditdTestSet():
             file.write('{} - {} sec\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))
 
-    @staticmethod
+    @staticmethod  # ОТЛАЖЕНО
     def get_latency_fileaud_total(event_flag_lst, report_file):
         __audit_test = AuditdTest(FILEAUD_PROC_BODYS)
         for event_flag in event_flag_lst:
@@ -873,7 +901,7 @@ class AuditdTestSet():
                 file.write('{} - {} sec\n'.format(event_flag, result))
             print('{} - {} sec'.format(event_flag, result))
 
-    @staticmethod
+    @staticmethod  # ОТЛАЖЕНО
     def get_latency_stat_fileaud(event_flag,
                                  ps_count,
                                  ps_lifetime,
@@ -890,14 +918,14 @@ class AuditdTestSet():
             file.write('{} {}\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))
 
-    @staticmethod
+    @staticmethod  # ОТЛАЖЕНО
     def get_losses_stat_fileaud(event_flag,
                                 ps_count,
                                 ps_lifetime,
                                 ps_event_re_initialization_delay,
                                 report_file,):
-
-        __audit_test = AuditdTest(USERAUD_PROC_BODYS)
+        """TODO: mac нужна отладка на смоленске"""
+        __audit_test = AuditdTest(FILEAUD_PROC_BODYS)
         result = __audit_test.test_get_losses_fileaud_under_load(event_flag,
                                                                  ps_count,
                                                                  ps_lifetime,

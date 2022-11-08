@@ -78,34 +78,50 @@ class CheckAusearch:
         except (IndexError, FileNotFoundError):
             search_time = ctime().split()[3]
 
+        if audit_flag == 'chroot':
+            pid = 'ppid=1'
         if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl'):
-            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-            return re.search(str(pid), au_return_all) is not None
+            ausearch_cmd = 'ausearch -i -ts "{}"'
         else:
-            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
-            return re.search(str(pid), au_return_p) is not None
+            ausearch_cmd = 'ausearch -i -ts "{}" -k parsec-p'
+
+        au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
+        return re.search(str(pid), au_return) is not None
+
 
     @staticmethod
     def psaud_event_count(audit_flag, pid, search_time):
         search_time = search_time.split()[3]
+
+        if audit_flag == 'chroot':
+            pid = 'ppid=1'
         if (audit_flag == 'mac') or (audit_flag == 'cap') or (audit_flag == 'acl'):
-            au_return_all = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-            return len(re.findall(str(pid), au_return_all))
+            ausearch_cmd = 'ausearch -i -ts "{}"'
         else:
-            au_return_p = cmd('ausearch -i -ts "{}" -k parsec-p'.format(search_time)).stdout.decode('utf-8')
-            return len(re.findall(str(pid), au_return_p))
+            ausearch_cmd = 'ausearch -i -ts "{}" -k parsec-p'
+
+        au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
+        return len(re.findall(str(pid), au_return))
+
 
     # user audit
     @staticmethod
-    def useraud(pid, user, time_file='/tmp/timer'):
+    def useraud(user_cmd, time_file='/tmp/timer'):
         try:
             with open(time_file, 'r') as file:
                 search_time = file.read().split()[3]
         except (IndexError, FileNotFoundError):
             search_time = ctime().split()[3]
 
+        # if (test_name == 'mac' or test_name == 'cap' or test_name == 'acl' or test_name == 'audit'):
+        #     ausearch_cmd = 'ausearch -i -ts "{}"'
+        # else:
+        #     ausearch_cmd = 'ausearch -i -ts "{}" -k parsec-p'
+
         au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-        return re.search(str(pid), au_return) is not None
+        # with open('debug.txt', 'w') as f:
+        #     f.write(au_return)
+        return re.search(str(user_cmd), au_return) is not None
 
     @staticmethod
     def useraud_event_count(pid, search_time):
@@ -129,9 +145,6 @@ class CheckAusearch:
     def fileaud_event_count(target_file, search_time):
         search_time = search_time.split()[3]
         au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-        # with open('debug.txt', 'w') as f:
-        #     f.write(au_return)
-        # print(re.findall(str(target_file), au_return))
         return len(re.findall(str(target_file), au_return))
 
 
@@ -156,7 +169,8 @@ class Prepare:
     def file(how_many=1, where='/tmp'):
         for num in range(how_many):
             if path.exists('{}/file{}'.format(where, num)) is False:
-                cmd('touch {}/file{}'.format(where, num))
+                file = open('{}/file{}'.format(where, num), 'w')
+                file.close()
                 chmod('{}/file{}'.format(where, num), 0o777)
 
     @staticmethod
@@ -183,6 +197,7 @@ class User:
         encode_passwd = crypt.crypt(password, '22')
         cmd('useradd -p {ep} -d /home/{n} -s /bin/bash -m {n} &> /dev/null'.format(ep=encode_passwd, n=name))
         cmd('echo {}:{} | chpasswd  &> /dev/null'.format(name, password))
+
 
     @staticmethod
     def add_priv(name, priv):

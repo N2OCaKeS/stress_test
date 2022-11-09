@@ -85,7 +85,10 @@ class CheckAusearch:
         else:
             ausearch_cmd = 'ausearch -i -ts "{}" -k parsec-p'
 
-        au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
+        try:
+            au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
+        except UnicodeDecodeError:
+            au_return = ''
         return re.search(str(pid), au_return) is not None
 
 
@@ -99,8 +102,10 @@ class CheckAusearch:
             ausearch_cmd = 'ausearch -i -ts "{}"'
         else:
             ausearch_cmd = 'ausearch -i -ts "{}" -k parsec-p'
-
-        au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
+        try:
+            au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
+        except UnicodeDecodeError:
+            au_return = ''
         return len(re.findall(str(pid), au_return))
 
 
@@ -113,20 +118,19 @@ class CheckAusearch:
         except (IndexError, FileNotFoundError):
             search_time = ctime().split()[3]
 
-        # if (test_name == 'mac' or test_name == 'cap' or test_name == 'acl' or test_name == 'audit'):
-        #     ausearch_cmd = 'ausearch -i -ts "{}"'
-        # else:
-        #     ausearch_cmd = 'ausearch -i -ts "{}" -k parsec-p'
-
-        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
-        # with open('debug.txt', 'w') as f:
-        #     f.write(au_return)
+        try:
+            au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        except UnicodeDecodeError:
+            au_return = ''
         return re.search(str(user_cmd), au_return) is not None
 
     @staticmethod
     def useraud_event_count(pid, search_time):
         search_time = search_time.split()[3]
-        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        try:
+            au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        except UnicodeDecodeError:
+            au_return = ''
         return len(re.findall(str(pid), au_return))
 
     # file audit
@@ -137,14 +141,19 @@ class CheckAusearch:
                 search_time = file.read().split()[3]
         except (IndexError, FileNotFoundError):
             search_time = ctime().split()[3]
-
-        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        try:
+            au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        except UnicodeDecodeError:
+            au_return = ''
         return re.search(target_file, au_return) is not None
 
     @staticmethod
     def fileaud_event_count(target_file, search_time):
         search_time = search_time.split()[3]
-        au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        try:
+            au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
+        except UnicodeDecodeError:
+            au_return = ''
         return len(re.findall(str(target_file), au_return))
 
 
@@ -177,15 +186,25 @@ class Prepare:
     def dir(how_many=1, where='/tmp'):
         for num in range(how_many):
             if path.exists('{}/dir{}'.format(where, num)) is False:
-                mkdir('{}/dir{}'.format(where, num))
+                try:
+                    mkdir('{}/dir{}'.format(where, num))
+                except FileExistsError:
+                    sleep(0.1)
+                    mkdir('{}/dir{}'.format(where, num))
                 chmod('{}/dir{}'.format(where, num), 0o777)
 
     @staticmethod
     def clean(where='/tmp'):
         if path.getsize(where) != 0:
-            cmd('rm -rf {}/dir*'.format(where))
-            cmd('rm -rf {}/file*'.format(where))
-            cmd('rm -rf {}/counter*'.format(where))
+            try:
+                cmd('rm -rf {}/dir*'.format(where))
+                cmd('rm -rf {}/file*'.format(where))
+                cmd('rm -rf {}/counter*'.format(where))
+            except FileExistsError:
+                sleep(0.1)
+                cmd('rm -rf {}/dir*'.format(where))
+                cmd('rm -rf {}/file*'.format(where))
+                cmd('rm -rf {}/counter*'.format(where))
 
 
 class User:
@@ -207,6 +226,13 @@ class User:
         child_term.sendline('exit')
 
     @staticmethod
+    def add_to_group(name, group):
+        cmd('gpasswd -a {} {}'.format(name, group))
+        child_term = pexpect.spawn('su ' + name)
+        child_term.sendline('id ' + name)
+        child_term.sendline('exit')
+
+    @staticmethod
     def rm_priv(name):
         cmd('usercaps -d ' + name)
         child_term = pexpect.spawn('su ' + name)
@@ -215,8 +241,7 @@ class User:
 
     @staticmethod
     def rm(name):
-        cmd('userdel -r '+name)
-        cmd('rm -rf /home/'+name+' &> /dev/null')
+        cmd('userdel -r -Z'+name)
 
 
 class UnixUser(object):

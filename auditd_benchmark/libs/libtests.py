@@ -22,6 +22,8 @@ class AuditdTest(Auditd, CheckAusearch):
         self.__neg = do_negative_test
         self.__procs = procs
 
+        self.useraud_search_pattern = ''
+
     @staticmethod
     def _as_another_user(uid, gid=None):  # optional group
         def wrapper(func):
@@ -32,7 +34,7 @@ class AuditdTest(Auditd, CheckAusearch):
         return wrapper
 
     @staticmethod
-    def _pos_files_prep(event_flag):
+    def _pos_psaud_files_prep(event_flag):
         if event_flag in ['open', 'delete', 'chmod', 'chown', 'rename']:
             Prepare.file()
         if event_flag in ['acl', 'mount']:
@@ -41,11 +43,10 @@ class AuditdTest(Auditd, CheckAusearch):
             Prepare.dir(where='/')
 
     @staticmethod
-    def _pos_clean(event_flag):
+    def _pos_psaud_clean(event_flag):
         if event_flag == 'remove':
             f = open('/tmp/file0', 'w')
             f.close()
-
         if event_flag == 'mount':
             cmd('umount /mnt &> /dev/null')
         if event_flag == 'module':
@@ -57,14 +58,6 @@ class AuditdTest(Auditd, CheckAusearch):
         pass
 
     def _neg_clean(self, event_flag):
-        pass
-
-    @staticmethod
-    def _pos_fileaud_prep(syscall, number):
-        pass
-
-    @staticmethod
-    def _pos_fileaud_clean(syscall, number):
         pass
 
     def _template_ps_psaud_timer(self,
@@ -90,9 +83,9 @@ class AuditdTest(Auditd, CheckAusearch):
             if self.__pos:
                 with open(timer_file, 'w') as file:
                     file.write(ctime())
-                self._pos_files_prep(syscall)
+                self._pos_psaud_files_prep(syscall)
                 cmd(self.__procs[syscall][0])
-                self._pos_clean(syscall)
+                self._pos_psaud_clean(syscall)
             if self.__neg:
                 pass
             life_time -= delay
@@ -119,9 +112,9 @@ class AuditdTest(Auditd, CheckAusearch):
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                self._pos_files_prep(syscall)
+                self._pos_psaud_files_prep(syscall)
                 completed_cmd = cmd(self.__procs[syscall][0])
-                self._pos_clean(syscall)
+                self._pos_psaud_clean(syscall)
                 if completed_cmd.returncode == 0:  # обрабатываем результат
                     counter += 1
                     with open(counter_file, 'w') as file:
@@ -137,18 +130,65 @@ class AuditdTest(Auditd, CheckAusearch):
                                    number=None,
                                    user=None):
         if number is None:
-            timer_file = '/tmp/timer'
-        else:
-            timer_file = '/tmp/timer' + str(number)
+            number = 0
+        timer_file = '/tmp/timer' + str(number)
+        target = '/tmp/file' + str(number)
+        target_dir = '/tmp/dir' + str(number)
+        target_cmd = '/tmp/cmd' + str(number)
+        uid = pwd.getpwnam(user).pw_uid
+        gid = pwd.getpwnam(user).pw_gid
 
         while life_time > 0:
             sleep(delay)
             if self.__pos:
                 with open(timer_file, 'w') as file:
                     file.write(ctime())
-                self._pos_files_prep(syscall)
-                cmd('su {} -c "{}"'.format(user, self.__procs[syscall][0]))
-                self._pos_clean(syscall)
+
+                # self._pos_useraud_files_prep(syscall)
+                if syscall in ['open', 'delete', 'chmod', 'chown']:
+                    file = open(target, 'w')
+                    file.close()
+                    os.chmod(target, 0o777)
+                if syscall in ['audit', 'acl']:
+                    os.mkdir(target_dir, 0o777)
+                    target = target_dir
+                if syscall == 'mount':
+                    os.mkdir(target_dir, 0o777)
+                    os.mkdir(target_dir + 'mount', 0o777)
+                    target = '{dir} {dir}mount'.format(dir=target_dir)
+                if syscall in ['exec', 'module', 'cap', 'net', 'uid', 'gid']:
+                    target = ''
+                if syscall == 'mac':
+                    target = '/file' + str(number)
+                    file = open(target, 'w')
+                    file.close()
+                if syscall == 'rename':
+                    file = open(target, 'w')
+                    file.close()
+                    os.chmod(target, 0o777)
+                    target = ''
+
+                with open(target_cmd, 'w') as cmd_file:
+                    cmd_file.write(self.__procs[syscall][0] + ' ' + target)
+
+                cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
+                # completed_cmd = cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
+                # if completed_cmd.returncode != 0:
+                #     print(cmd('ls /tmp/'))
+                #     print(completed_cmd)
+                #     exit(2)
+
+                # self._pos_useraud_clean(syscall)
+                if syscall in ['uid', 'gid']:
+                    cmd('usermod -u {} -g {} {}'.format(uid, gid, user))
+                if syscall == 'mount':
+                    cmd('umount {}mount &> /dev/null'.format(target_dir))
+                if syscall == 'module':
+                    cmd(USERAUD_PROC_BODYS[syscall][0] + ' -r')
+                if syscall in ['open', 'chmod', 'chown', 'audit', 'acl', 'mac', 'mount', 'cap', 'rename']:
+                    cmd('rm -rf /tmp/dir*')
+                    cmd('rm -rf /tmp/file*')
+
             if self.__neg:
                 pass
             life_time -= delay
@@ -167,31 +207,63 @@ class AuditdTest(Auditd, CheckAusearch):
         :return:
         '''
         if number is None:
-            counter_file = '/tmp/counter'
-        else:
-            counter_file = '/tmp/counter' + str(number)
+            number = 0
+        counter_file = '/tmp/counter' + str(number)
+        target = '/tmp/file' + str(number)
+        target_dir = '/tmp/dir' + str(number)
+        target_cmd = '/tmp/cmd' + str(number)
+        uid = pwd.getpwnam(user).pw_uid
+        gid = pwd.getpwnam(user).pw_gid
 
         counter = 0
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                self._pos_files_prep(syscall)
-                if user is None:
-                    cmd(self.__procs[syscall][0])
-                else:
-                    cmd('su -c "bash -c {}" {}'.format(self.__procs[syscall][0], user))
-                self._pos_clean(syscall)
-                counter += 1
-                with open(counter_file, 'w') as file:
-                    file.write(str(counter))
+                # self._pos_useraud_files_prep(syscall)
+                if syscall in ['open', 'delete', 'chmod', 'chown']:
+                    file = open(target, 'w')
+                    file.close()
+                    os.chmod(target, 0o777)
+                if syscall in ['audit', 'acl']:
+                    os.mkdir(target_dir, 0o777)
+                    target = target_dir
+                if syscall == 'mount':
+                    os.mkdir(target_dir, 0o777)
+                    os.mkdir(target_dir + 'mount', 0o777)
+                    target = '{dir} {dir}mount'.format(dir=target_dir)
+                if syscall in ['exec', 'module', 'cap', 'net', 'uid', 'gid']:
+                    target = ''
+                if syscall == 'mac':
+                    target = '/file' + str(number)
+                    file = open(target, 'w')
+                    file.close()
+                if syscall == 'rename':
+                    file = open(target, 'w')
+                    file.close()
+                    os.chmod(target, 0o777)
+                    target = ''
+
+                completed_cmd = cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
+                if completed_cmd.returncode == 0:  # обрабатываем результат
+                    counter += 1
+                    with open(counter_file, 'w') as file:
+                        file.write(str(counter))
+                    with open(target_cmd, 'w') as cmd_file:
+                        cmd_file.write(self.__procs[syscall][0] + ' ' + target)
+
+                # self._pos_useraud_clean(syscall)
+                if syscall in ['uid', 'gid']:
+                    cmd('usermod -u {} -g {} {}'.format(uid, gid, user))
+                if syscall == 'mount':
+                    cmd('umount {}mount &> /dev/null'.format(target_dir))
+                if syscall == 'module':
+                    cmd(USERAUD_PROC_BODYS[syscall][0] + ' -r')
+                if syscall in ['open', 'chmod', 'chown', 'audit', 'acl', 'mac', 'mount', 'cap', 'rename']:
+                    cmd('rm -rf /tmp/dir*')
+                    cmd('rm -rf /tmp/file*')
+
             if self.__neg:
-                if user is None:
-                    cmd(self.__procs[syscall][0])
-                else:
-                    cmd('su -c "bash -c {}" {}'.format(self.__procs[syscall][0], user))
-                counter += 1
-                with open(counter_file, 'w') as file:
-                    file.write(str(counter))
+                pass
             life_time -= delay
 
     def _template_ps_fileaud_timer(self,
@@ -517,6 +589,23 @@ class AuditdTest(Auditd, CheckAusearch):
 
         Auditd.clean()
         User.add(user)
+        if audit_flag == 'chown':
+            User.add_to_group(user, 'users')
+        if audit_flag == 'module':
+            User.add_priv(user, '+16')
+        if audit_flag == 'uid':
+            User.add_priv(user, '+7')
+        if audit_flag == 'gid':
+            User.add_priv(user, '+6')
+        if audit_flag == 'audit':
+            User.add_priv(user, '+1')
+        if audit_flag == 'mac':
+            User.add_priv(user, '+3')
+        if audit_flag == 'cap':
+            User.add_priv(user, '+10')
+        if audit_flag == 'chroot':
+            User.add_priv(user, '+18')
+
         cmd('useraud -m {u} +{flag}'.format(u=user, flag=(audit_flag)))
 
         if ps_lifetime is None:
@@ -527,20 +616,33 @@ class AuditdTest(Auditd, CheckAusearch):
                                       delay=event_re_initialization_delay,
                                       count=count,
                                       user=user)
-        for test_ps in test_ps_lst:
-            test_ps.start()
 
         last_test_ps = test_ps_lst[-1]
         last_timefile = '/tmp/timer' + str(count - 1)
-        start, end = time(), time()
-        while CheckAusearch.useraud(USERAUD_PROC_BODYS[audit_flag][0], last_timefile) is False:
+        last_cmdfile = '/tmp/cmd' + str(count - 1)
+
+        # запускаем процессы-генераторы
+        for test_ps in test_ps_lst:
+            test_ps.start()
+
+        # ждем появления команды от последнего процесса
+        while os.path.exists(last_cmdfile) is False:
+            sleep(event_re_initialization_delay)
+        # забираем эту команду
+        with open('/tmp/cmd' + str(count - 1), 'r') as file:
+            last_cmd = file.read()
+
+        start, end = time(), time() # засекаем время
+        while CheckAusearch.useraud(last_cmd, last_timefile) is False:  # ищем команду в auditlog
             end = time()
-            if not last_test_ps.is_alive():
+            if not last_test_ps.is_alive():  # если процесс сдох раньше - всё пропало(
                 return False
 
+        # убить все
         for test_ps in test_ps_lst:
             test_ps.terminate()
 
+        User.rm_priv(user)
         User.rm(user)
         return round(end - start, accuracy)
 
@@ -559,7 +661,24 @@ class AuditdTest(Auditd, CheckAusearch):
         '''
         Auditd.clean()
         User.add(user)
-        cmd('useraud -m {u} +{flag}:-{flag}'.format(u=user, flag=(audit_flag)))
+        if audit_flag == 'chown':
+            User.add_to_group(user, 'users')
+        if audit_flag == 'module':
+            User.add_priv(user, '+16')
+        if audit_flag == 'uid':
+            User.add_priv(user, '+7')
+        if audit_flag == 'gid':
+            User.add_priv(user, '+6')
+        if audit_flag == 'audit':
+            User.add_priv(user, '+1')
+        if audit_flag == 'mac':
+            User.add_priv(user, '+3')
+        if audit_flag == 'cap':
+            User.add_priv(user, '+10')
+        if audit_flag == 'chroot':
+            User.add_priv(user, '+18')
+
+        cmd('useraud -m {u} +{flag}'.format(u=user, flag=(audit_flag)))
 
         if ps_lifetime is None:
             ps_lifetime = count
@@ -594,9 +713,16 @@ class AuditdTest(Auditd, CheckAusearch):
             with open(file, 'r') as f:
                 expected_event_amount += int(f.read())
                 os.remove(file)
+        if expected_event_amount == 0:
+            return [False, False, False, False]
 
         # считаем суммарное количество событий замеченных auditd
-        auditd_events_amount = CheckAusearch.useraud_event_count(user, start)
+        # забираем команду
+        with open('/tmp/cmd' + str(count - 1), 'r') as file:
+            last_cmd = file.read()
+        auditd_events_amount = 0
+        for index in range(count):
+            auditd_events_amount += CheckAusearch.useraud_event_count(last_cmd, start)
 
         #
         if auditd_events_amount / expected_event_amount > 1:

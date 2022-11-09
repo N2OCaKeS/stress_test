@@ -41,23 +41,43 @@ PSAUD_PROC_BODYS = {
 }
 
 
+# USERAUD_PROC_BODYS = {
+#     'open': ('/tmp/file0', ''),
+#     'create': ('touch /tmp/file0',''),
+#     'exec': ('/bin/true',''),
+#     'delete': ('rm /tmp/file0',''),
+#     'chmod': ('chmod 700 /tmp/file0', ''),
+#     'chown': ('chown :users /tmp/file0',''),
+#     'mount': ('mount --bind /tmp/dir0 /mnt/',''),
+#     'module': ('/sbin/modprobe evbug',''),
+#     # 'uid': ('',''),
+#     # 'gid': ('',''),
+#     'audit': ('/usr/sbin/setfaud -m o:o:o /root',''),
+#     'acl': ('setfacl -m u:{}:rx /tmp/dir0'.format(TEST_USER), ''),
+#     'mac': ('/usr/sbin/pdpl-file 2:0:0 /home/{}/test_mac'.format(TEST_USER),''),
+#     'cap': ('pscaps 0 0x1',''),
+#     'chroot': ('(chroot /) &',''),
+#     'rename': ('mv /tmp/file0 /tmp/file1',''),
+#     'net': ('ping -c 1 localhost','')
+# }
+
 USERAUD_PROC_BODYS = {
-    'open': ('/tmp/file0', ''),
-    'create': ('touch /tmp/file0',''),
+    'open': ('cat', ''),
+    'create': ('touch',''),
     'exec': ('/bin/true',''),
-    'delete': ('rm /tmp/file0',''),
-    'chmod': ('chmod 700 /tmp/file0', ''),
-    'chown': ('chown :users /tmp/file0',''),
-    'mount': ('mount --bind /tmp/dir0 /mnt/',''),
+    'delete': ('rm',''),
+    'chmod': ('chmod 700', ''),
+    'chown': ('chown :users',''),
+    'mount': ('mount --bind',''),
     'module': ('/sbin/modprobe evbug',''),
-    # 'uid': ('',''),
-    # 'gid': ('',''),
-    'audit': ('/usr/sbin/setfaud -m o:o:o /root',''),
-    'acl': ('setfacl -m u:{}:rx /tmp/dir0'.format(TEST_USER), ''),
-    'mac': ('/usr/sbin/pdpl-file 2:0:0 /home/{}/test_mac'.format(TEST_USER),''),
+    'uid': ('usermod -u 2005 {}'.format(TEST_USER), ''),
+    'gid': ('usermod -g 2006 {}'.format(TEST_USER), ''),
+    'audit': ('/usr/sbin/setfaud -m o:o:o',''),
+    'acl': ('setfacl -m u:{}:rx'.format(TEST_USER), ''),
+    'mac': ('/usr/sbin/pdpl-file 2:0:0',''),
     'cap': ('pscaps 0 0x1',''),
     'chroot': ('(chroot /) &',''),
-    'rename': ('mv /tmp/file0 /tmp/file1',''),
+    'rename': ('mv',''),
     'net': ('ping -c 1 localhost','')
 }
 
@@ -75,7 +95,7 @@ FILEAUD_PROC_BODYS = { 'open': ('cat ', ''),  # +
 
 
 PS_LOWER_LIMIT = 1
-PS_UPPER_LIMIT = 6
+PS_UPPER_LIMIT = 3
 PS_STEP = 1
 
 DEFAULT_PS_LIFETIME = 10

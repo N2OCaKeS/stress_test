@@ -21,25 +21,6 @@ LOSSES_REPORT_FLAUD = '{}/aub_fl_report_losses.txt'.format(REPORT_DIR)
 MAIN_USER='u'
 TEST_USER='tester'
 
-# PSAUD_PROC_BODYS = {
-#     'open': ('cat /etc/passwd', ''),
-#     'create': ('touch /tmp/file0', ''),
-#     'exec': ('/bin/true', ''),
-#     'delete': ('rm /tmp/file0', ''),
-#     'chmod': ('chmod 700 /tmp/file0', ''),
-#     'chown': ('chown :users /tmp/file0', ''),
-#     'mount': ('mount --bind /tmp/dir0 /mnt/', ''),
-#     'module': ('modprobe 8021q', ''),
-#     'uid': ('sudo -u {} /bin/true'.format(MAIN_USER), ''),
-#     'gid': ('sudo -u {} /bin/true'.format(MAIN_USER), ''),
-#     'acl': ('setfacl -m u:{}:rx /tmp/dir0'.format(MAIN_USER), ''),
-#     'mac': ('pdpl-file 0:63:0:ccnri /dir0', ''),
-#     'cap': ('usercaps -l 0x1 u', ''),
-#     'chroot': ('(chroot /) &', ''),
-#     'rename': ('mv /tmp/file0 /tmp/file1', ''),
-#     'net': ('ping -c 1 localhost', '')
-# }
-
 PSAUD_PROC_BODYS = {
     'open': ('cat', ''),
     'create': ('touch',''),
@@ -58,27 +39,6 @@ PSAUD_PROC_BODYS = {
     'rename': ('mv',''),
     'net': ('ping -c 1 localhost','')
 }
-
-
-# USERAUD_PROC_BODYS = {
-#     'open': ('/tmp/file0', ''),
-#     'create': ('touch /tmp/file0',''),
-#     'exec': ('/bin/true',''),
-#     'delete': ('rm /tmp/file0',''),
-#     'chmod': ('chmod 700 /tmp/file0', ''),
-#     'chown': ('chown :users /tmp/file0',''),
-#     'mount': ('mount --bind /tmp/dir0 /mnt/',''),
-#     'module': ('/sbin/modprobe evbug',''),
-#     # 'uid': ('',''),
-#     # 'gid': ('',''),
-#     'audit': ('/usr/sbin/setfaud -m o:o:o /root',''),
-#     'acl': ('setfacl -m u:{}:rx /tmp/dir0'.format(TEST_USER), ''),
-#     'mac': ('/usr/sbin/pdpl-file 2:0:0 /home/{}/test_mac'.format(TEST_USER),''),
-#     'cap': ('pscaps 0 0x1',''),
-#     'chroot': ('(chroot /) &',''),
-#     'rename': ('mv /tmp/file0 /tmp/file1',''),
-#     'net': ('ping -c 1 localhost','')
-# }
 
 USERAUD_PROC_BODYS = {
     'open': ('cat', ''),
@@ -100,17 +60,18 @@ USERAUD_PROC_BODYS = {
     'net': ('ping -c 1 localhost','')
 }
 
-FILEAUD_PROC_BODYS = { 'open': ('cat ', ''),  # +
-                       'create': ('touch ', ''),  # +
-                       'exec': ('', ''),  # + только при запуске черезу шебанг :(
-                       'delete': ('rm -f ', ''),  # +
-                       'chmod': ('chmod 777 ', ''),  # +
-                       'chown': ('chown u:u ', ''),  # +
-                       'audit': ('setfaud -m u:0:+exec ', ''),  # +
-                       'acl': ('setfacl -m u:u:rw ', ''),  # +
-                       'mac': ('/usr/sbin/pdpl-file 2:0:0 ', ''),
-                       'modify': ("echo '1' >> ", '')  # +
-                        }
+FILEAUD_PROC_BODYS = {
+    'open': ('cat ', ''),
+    'create': ('touch ', ''),
+    'exec': ('', ''),
+    'delete': ('rm -f ', ''),
+    'chmod': ('chmod 777 ', ''),
+    'chown': ('chown u:u ', ''),
+    'audit': ('setfaud -m u:0:+exec ', ''),
+    'acl': ('setfacl -m u:u:rw ', ''),
+    'mac': ('/usr/sbin/pdpl-file 2:0:0 ', ''),
+    'modify': ("echo '1' >> ", '')
+}
 
 
 PS_LOWER_LIMIT = 1

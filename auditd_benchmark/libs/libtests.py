@@ -64,27 +64,30 @@ class AuditdTest(Auditd, CheckAusearch):
                 with open(timer_file, 'w') as file:
                     file.write(ctime())
 
-                if syscall in ('open', 'delete', 'chmod', 'chown'):
-                    file = open(target, 'w')
-                    file.close()
-                    os.chmod(target, 0o777)
-                if syscall in ('audit', 'acl'):
-                    os.mkdir(target_dir, 0o777)
-                    target = target_dir
-                if syscall == 'mount':
-                    os.mkdir(target_dir, 0o777)
-                    os.mkdir(target_dir + 'mount', 0o777)
-                    target = '{dir} {dir}mount'.format(dir=target_dir)
-                if syscall in ('exec', 'module', 'cap', 'net', 'uid', 'gid'):
-                    target = ''
-                if syscall == 'mac':
-                    os.mkdir(target_dir, 0o777)
-                    target = target_dir
-                if syscall == 'rename':
-                    file = open(target, 'w')
-                    file.close()
-                    os.chmod(target, 0o777)
-                    target = target+' '+target+str(number)
+                try:
+                    if syscall in ('open', 'delete', 'chmod', 'chown'):
+                        file = open(target, 'w')
+                        file.close()
+                        os.chmod(target, 0o777)
+                    if syscall in ('audit', 'acl'):
+                        os.mkdir(target_dir, 0o777)
+                        target = target_dir
+                    if syscall == 'mount':
+                        os.mkdir(target_dir, 0o777)
+                        os.mkdir(target_dir + 'mount', 0o777)
+                        target = '{dir} {dir}mount'.format(dir=target_dir)
+                    if syscall in ('exec', 'module', 'cap', 'net', 'uid', 'gid'):
+                        target = ''
+                    if syscall == 'mac':
+                        os.mkdir(target_dir, 0o777)
+                        target = target_dir
+                    if syscall == 'rename':
+                        file = open(target, 'w')
+                        file.close()
+                        os.chmod(target, 0o777)
+                        target = target+' '+target+str(number)
+                except (FileNotFoundError, FileExistsError):
+                    pass
 
                 cmd(self.__procs[syscall][0] + ' ' + target)
 

@@ -54,7 +54,7 @@ elif args.FS == 'ntfs':
     cmd("mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 elif args.FS == 'xfs':
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary xfs 0% 100%'.format(device=STORAGE_NAME))
-    cmd("mkfs -t {fs} /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
+    cmd("mkfs -t {fs} -f /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 else:
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary {fs} 0% 100%'.format(fs=args.FS ,device=STORAGE_NAME))
     cmd("mkfs -t {fs} {ic} /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME, ic=INODE_COUNT))

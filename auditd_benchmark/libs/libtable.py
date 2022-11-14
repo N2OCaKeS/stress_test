@@ -17,8 +17,8 @@ from aub_conf import SCRIPT_DIR, \
 class Report:
     def __init__(self,
                  event_names,
-                 latency_report,
-                 losses_report):
+                 latency_report=None,
+                 losses_report=None):
         '''
         :param event_names: наименование события audit
         :param latency_report: файл с отчетом по тесту get_latency_stat_psaud

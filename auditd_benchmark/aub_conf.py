@@ -1,4 +1,5 @@
-SCRIPT_DIR = '/media/sf_git/stress_test/auditd_benchmark'
+#SCRIPT_DIR = '/media/sf_git/stress_test/auditd_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/auditd_benchmark'
 
 LOG_FILENAME = 'aub_log'
 REPORT_FILENAME = 'aub_report.txt'
@@ -35,7 +36,7 @@ PSAUD_PROC_BODYS = {
     'acl': ('setfacl -m u:{}:rx'.format(MAIN_USER), ''),
     'mac': ('pdpl-file 0:63:0:ccnri', ''),
     'cap': ('usercaps -l 0x1 u', ''),
-    'chroot': ('(chroot /) &',''),
+#    'chroot': ('(chroot /) &',''),
     'rename': ('mv',''),
     'net': ('ping -c 1 localhost','')
 }
@@ -55,7 +56,7 @@ USERAUD_PROC_BODYS = {
     'acl': ('setfacl -m u:{}:rx'.format(TEST_USER), ''),
     'mac': ('/usr/sbin/pdpl-file 2:0:0',''),
     'cap': ('pscaps 0 0x1',''),
-    'chroot': ('(chroot /) &',''),
+#    'chroot': ('(chroot /) &',''),
     'rename': ('mv',''),
     'net': ('ping -c 1 localhost','')
 }
@@ -74,9 +75,9 @@ FILEAUD_PROC_BODYS = {
 }
 
 
-PS_LOWER_LIMIT = 1
-PS_UPPER_LIMIT = 3
-PS_STEP = 1
+PS_LOWER_LIMIT = 10
+PS_UPPER_LIMIT = 100
+PS_STEP = 10
 
-DEFAULT_PS_LIFETIME = 10
+DEFAULT_PS_LIFETIME = 100
 DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 1

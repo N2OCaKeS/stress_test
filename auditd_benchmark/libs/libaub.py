@@ -122,9 +122,6 @@ class CheckAusearch:
             au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
         except UnicodeDecodeError:
             au_return = ''
-        # print(user_cmd)
-        # with open('debug.txt', 'w') as f:
-        #     f.write(au_return)
         return re.search(str(user_cmd), au_return) is not None
 
     @staticmethod

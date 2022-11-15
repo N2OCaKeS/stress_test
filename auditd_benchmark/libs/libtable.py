@@ -181,25 +181,40 @@ class Report:
         plt.plot(aprx_x, aprx_f(aprx_x))
         if oy_param_table_name == 'completed':
             plt_title = '{digit_varsion}{mode}. {event} {ytitle}(%)/{xtitle}'
+
+            plt.plot(ox_lst, [100] * len(ox_lst), color='g')
+            plt.plot(ox_lst, [50] * len(ox_lst), color='r')
+            plt.ylim(0, 105)
+
+            green_lst = [True if res <= 100.0 else False for res in oy_lst]
+            yellow_lst = [True if (res < 100.0) and (res > 50.0) else False for res in oy_lst]
+            red_lst = [True if res <= 50.0 else False for res in oy_lst]
+
+            # colorized zone
+            plt.fill_between(ox_lst[0:], oy_lst[0:], where=green_lst, facecolor='palegreen', interpolate=True, alpha=0.7)
+            plt.fill_between(ox_lst[0:], oy_lst[0:], where=yellow_lst, facecolor='yellow', interpolate=True, alpha=0.7)
+            plt.fill_between(ox_lst[0:], oy_lst[0:], where=red_lst, facecolor='red', interpolate=True, alpha=0.7)
+
         elif oy_param_table_name == 'latency':
             plt_title = '{digit_varsion}{mode}. {event} {ytitle}(sec)/{xtitle}'
+
+            green_lst = [True if res >= 0.0 else False for res in oy_lst]
+            red_lst = [True if res <= 0.0 else False for res in oy_lst]
+
+            # colorized zone
+            plt.fill_between(ox_lst[0:], oy_lst[0:], where=green_lst, facecolor='palegreen', interpolate=True, alpha=0.7)
+            plt.fill_between(ox_lst[0:], oy_lst[0:], where=red_lst, facecolor='red', interpolate=True, alpha=0.7)
         else:
             plt_title = '{digit_varsion}{mode}. {event} {ytitle}/{xtitle}'
+
         plt.title(plt_title.format(digit_varsion=astra_version()[0],
                                    event=event.upper(),
                                    mode=astra_version()[1],
                                    xtitle=ox_param_table_name,
                                    ytitle=oy_param_table_name))
-
         plt.xlabel(ox_param_table_name)
         plt.ylabel(oy_param_table_name)
         plt.grid()
-
-        # colorized 100% zone
-        last_passed_test = self._last_passed(self.__expected_event_quantity_lst, self.__real_event_quantity_lst)
-        plt.fill_between(ox_lst[0:last_passed_test],
-                         oy_lst[0:last_passed_test],
-                         color='palegreen')
 
         plt.savefig('{p}/aub_{ev}_{ox}_{oy}_graph'.format(p=path,
                                                           ev=event,

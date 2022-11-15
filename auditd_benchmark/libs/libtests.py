@@ -224,13 +224,7 @@ class AuditdTest(Auditd, CheckAusearch):
                     cmd_file.write(self.__procs[syscall][0] + ' ' + target)
 
                 cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
-                # completed_cmd = cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
-                # if completed_cmd.returncode != 0:
-                #     print(cmd('ls /tmp/'))
-                #     print(completed_cmd)
-                #     exit(2)
 
-                # self._pos_useraud_clean(syscall)
                 if syscall in ('uid', 'gid'):
                     cmd('usermod -u {} -g {} {}'.format(uid, gid, user))
                 if syscall == 'mount':
@@ -655,6 +649,8 @@ class AuditdTest(Auditd, CheckAusearch):
         last_cmdfile = '/tmp/cmd0'
 
         # забираем эту команду
+        while not os.path.exists(last_cmdfile):
+            sleep(0.001)
         with open(last_cmdfile, 'r') as file:
             last_cmd = file.read()
 
@@ -946,7 +942,10 @@ class AuditdTest(Auditd, CheckAusearch):
         expected_event_amount = 0
         for file in Path('/tmp').glob('counter*'):
             with open(file, 'r') as f:
-                expected_event_amount += int(f.read())
+                try:
+                    expected_event_amount += int(f.read())
+                except ValueError:
+                    pass
         # if expected_event_amount == 0:
         #     return [False, False, False, False]
 

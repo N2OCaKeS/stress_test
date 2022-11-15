@@ -211,7 +211,6 @@ elif args.TEST_LIST == 'useraud':
                                                       DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                                       LOSSES_REPORT_USAUD,
                                                       TEST_USER)
-
     elif args.MODE == 'test':
         AuditdTestSet.get_latency_useraud_total(USERAUD_PROC_BODYS.keys(), REPORT)
 

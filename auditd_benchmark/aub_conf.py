@@ -1,5 +1,5 @@
 #SCRIPT_DIR = '/media/sf_git/stress_test/auditd_benchmark'
-SCRIPT_DIR = '/home/u/git/stress_test/auditd_benchmark'
+SCRIPT_DIR = '/home/rkuznetsov/git/stress_test/auditd_benchmark'
 
 LOG_FILENAME = 'aub_log'
 REPORT_FILENAME = 'aub_report.txt'

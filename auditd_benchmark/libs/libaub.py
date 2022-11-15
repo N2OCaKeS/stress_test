@@ -111,13 +111,14 @@ class CheckAusearch:
 
     # user audit
     @staticmethod
-    def useraud(user_cmd, time_file='/tmp/timer0'):
-        try:
-            with open(time_file, 'r') as file:
-                search_time = file.read().split()[3]
-        except (IndexError, FileNotFoundError):
-            search_time = ctime().split()[3]
+    def useraud(user_cmd, time, time_file='/tmp/timer0'):
+        # try:
+        #     with open(time_file, 'r') as file:
+        #         search_time = file.read().split()[3]
+        # except (IndexError, FileNotFoundError):
+        #     search_time = ctime().split()[3]
 
+        search_time = time.split()[3]
         try:
             au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
         except UnicodeDecodeError:
@@ -216,7 +217,6 @@ class User:
         encode_passwd = crypt.crypt(password, '22')
         cmd('useradd -p {ep} -d /home/{n} -s /bin/bash -m {n} &> /dev/null'.format(ep=encode_passwd, n=name))
         cmd('echo {}:{} | chpasswd  &> /dev/null'.format(name, password))
-
 
     @staticmethod
     def add_priv(name, priv):

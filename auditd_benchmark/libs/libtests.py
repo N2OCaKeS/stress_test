@@ -1,17 +1,19 @@
 import os
 import pwd
+import ctypes
 import pexpect
 import pdb
 
 from sys import exit
 from pathlib import Path
 from time import sleep, ctime, time
-from multiprocessing import Process
+from multiprocessing import Process, Array, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
 from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
 
 
 class AuditdTest(Auditd, CheckAusearch):
+
     def __init__(self, procs, do_positive_test=True, do_negative_test=False):
         '''
         :param do_positive_test: Необходимость принудительной инициализации событий 'success=yes'
@@ -22,7 +24,8 @@ class AuditdTest(Auditd, CheckAusearch):
         self.__neg = do_negative_test
         self.__procs = procs
 
-        self.useraud_search_pattern = ''
+        self.counters = Array(ctypes.c_wchar_p, 1)
+        self.cmds = Array(ctypes.c_wchar_p, 1)
 
     @staticmethod
     def _as_another_user(uid, gid=None):  # optional group
@@ -178,9 +181,15 @@ class AuditdTest(Auditd, CheckAusearch):
                                    life_time,
                                    delay,
                                    number=None,
-                                   user=None):
+                                   user=None,
+                                   timers=None,
+                                   cmds=None):
+
         if number is None:
             number = 0
+        else:
+            user = user + str(number)
+
         timer_file = '/tmp/timer' + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
@@ -191,8 +200,9 @@ class AuditdTest(Auditd, CheckAusearch):
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                with open(timer_file, 'w') as file:
-                    file.write(ctime())
+                # with open(timer_file, 'w') as file:
+                #     file.write(ctime())
+                timers[number] = ctime()
 
                 try:
                     if syscall in ('open', 'delete', 'chmod', 'chown'):
@@ -220,9 +230,10 @@ class AuditdTest(Auditd, CheckAusearch):
                 except (FileNotFoundError, FileExistsError):
                     pass
 
-                with open(target_cmd, 'w') as cmd_file:
-                    cmd_file.write(self.__procs[syscall][0] + ' ' + target)
+                # with open(target_cmd, 'w') as cmd_file:
+                #     cmd_file.write(self.__procs[syscall][0] + ' ' + target)
 
+                cmds[number] = self.__procs[syscall][0] + ' ' + target
                 cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
 
                 if syscall in ('uid', 'gid'):
@@ -245,7 +256,10 @@ class AuditdTest(Auditd, CheckAusearch):
                                      life_time,
                                      delay,
                                      number=None,
-                                     user=None):
+                                     user=None,
+                                     timers=None,
+                                     cmds=None,
+                                     counters=None):
         '''
         :param syscall: наименование события audit
         :param life_time: время жизни процесса
@@ -255,6 +269,7 @@ class AuditdTest(Auditd, CheckAusearch):
         '''
         if number is None:
             number = 0
+        user = user + str(number)
         counter_file = '/tmp/counter' + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
@@ -296,10 +311,12 @@ class AuditdTest(Auditd, CheckAusearch):
                 completed_cmd = cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
                 if completed_cmd.returncode != 2:  # обрабатываем результат
                     counter += 1
-                    with open(counter_file, 'w') as file:
-                        file.write(str(counter))
-                    with open(target_cmd, 'w') as cmd_file:
-                        cmd_file.write(self.__procs[syscall][0] + ' ' + target)
+                    counters[number] = counter
+                    # with open(counter_file, 'w') as file:
+                    #     file.write(str(counter))
+                    # with open(target_cmd, 'w') as cmd_file:
+                    #     cmd_file.write(self.__procs[syscall][0] + ' ' + target)
+                    cmds[number] = self.__procs[syscall][0] + ' ' + target
 
                 # self._pos_useraud_clean(syscall)
                 if syscall in ('uid', 'gid'):
@@ -428,7 +445,10 @@ class AuditdTest(Auditd, CheckAusearch):
                    proc_lifetime,
                    delay,
                    count=None,
-                   user=None):
+                   user=None,
+                   timer_lst=None,
+                   cmd_lst=None,
+                   counters_lst=None):
         '''
         :param syscall: наименование события audit
         :param func: шаблон тела процесса _template_ps*
@@ -441,15 +461,15 @@ class AuditdTest(Auditd, CheckAusearch):
         if count is None:
             process = Process(name='test_process_{}'.format(syscall),
                               target=func,
-                              args=(syscall, proc_lifetime, delay, count, user))
+                              args=(syscall, proc_lifetime, delay, count, user, timer_lst, cmd_lst, counters_lst))
             return process
         else:
-            print('{} event / sec'.format(int(float(proc_lifetime) / float(delay) * int(count))))
+            print('{} event / sec'.format(int(count) / float(delay)))
             processes_lst = []
             for index in range(count):
                 processes_lst.append(Process(name='test_process_{}_{}'.format(syscall, index),
                                              target=func,
-                                             args=(syscall, proc_lifetime, delay, index, user)))
+                                             args=(syscall, proc_lifetime, delay, index, user, timer_lst, cmd_lst, counters_lst)))
             return processes_lst
 
     def test_get_latency_psaud(self,
@@ -618,6 +638,8 @@ class AuditdTest(Auditd, CheckAusearch):
         :param accuracy: порядок округления результатов
         :return:
         '''
+
+        user = user+'0'
         Auditd.clean()
         User.add(user)
         if audit_flag == 'chown':
@@ -639,28 +661,44 @@ class AuditdTest(Auditd, CheckAusearch):
 
         cmd('useraud -m {u} +{flag}'.format(u=user, flag=(audit_flag)))
 
+        manager = Manager()
+        timers = manager.list([None])
+        cmds = manager.list([None])
+
         test_ps = self._create_ps(syscall=audit_flag,
                                   func=self._template_ps_useraud_timer,
                                   proc_lifetime=ps_lifetime,
                                   delay=event_re_initialization_delay,
-                                  user=user)
+                                  user=user,
+                                  timer_lst=timers,
+                                  cmd_lst=cmds)
         test_ps.start()
-        last_timefile = '/tmp/timer0'
-        last_cmdfile = '/tmp/cmd0'
 
-        # забираем эту команду
-        while not os.path.exists(last_cmdfile):
-            sleep(0.001)
-        with open(last_cmdfile, 'r') as file:
-            last_cmd = file.read()
-
+        # last_timefile = '/tmp/timer0'
+        # last_cmdfile = '/tmp/cmd0'
+        #
+        # # забираем эту команду
+        # while not os.path.exists(last_cmdfile):
+        #     sleep(0.001)
+        # with open(last_cmdfile, 'r') as file:
+        #     last_cmd = file.read()
+        #
         start, end = time(), time()  # засекаем время
-        while CheckAusearch.useraud(last_cmd, last_timefile) is False:
+        # while CheckAusearch.useraud(last_cmd, last_timefile) is False:
+        #     end = time()
+        #     if not test_ps.is_alive():
+        #         return -1
+        while timers[0] is None and cmds[0] is None:
+            pass
+        while CheckAusearch.useraud(cmds[0], timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
                 return -1
 
+
         test_ps.terminate()
+
+        User.rm_priv(user)
         User.rm(user)
 
         return round(end - start, accuracy)
@@ -684,62 +722,88 @@ class AuditdTest(Auditd, CheckAusearch):
         Auditd.clean()
         Prepare.clean()
 
-        User.add(user)
-        if audit_flag == 'chown':
-            User.add_to_group(user, 'users')
-        if audit_flag == 'module':
-            User.add_priv(user, '+16')
-        if audit_flag == 'uid':
-            User.add_priv(user, '+7')
-        if audit_flag == 'gid':
-            User.add_priv(user, '+6')
-        if audit_flag == 'audit':
-            User.add_priv(user, '+1')
-        if audit_flag == 'mac':
-            User.add_priv(user, '+3')
-        if audit_flag == 'cap':
-            User.add_priv(user, '+10')
-        if audit_flag == 'chroot':
-            User.add_priv(user, '+18')
+        for index in range(count):
+            name = user + str(index)
+            User.add(name)
+            if audit_flag == 'chown':
+                User.add_to_group(name, 'users')
+            if audit_flag == 'module':
+                User.add_priv(name, '+16')
+            if audit_flag == 'uid':
+                User.add_priv(name, '+7')
+            if audit_flag == 'gid':
+                User.add_priv(name, '+6')
+            if audit_flag == 'audit':
+                User.add_priv(name, '+1')
+            if audit_flag == 'mac':
+                User.add_priv(name, '+3')
+            if audit_flag == 'cap':
+                User.add_priv(name, '+10')
+            if audit_flag == 'chroot':
+                User.add_priv(name, '+18')
 
-        cmd('useraud -m {u} +{flag}'.format(u=user, flag=(audit_flag)))
+            cmd('useraud -m {u} +{flag}'.format(u=name, flag=(audit_flag)))
 
         if ps_lifetime is None:
             ps_lifetime = count
+
+        manager = Manager()
+        timers = manager.list([None]*count)
+        cmds = manager.list([None]*count)
+
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_useraud_timer,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
                                       count=count,
-                                      user=user)
+                                      user=user,
+                                      timer_lst=timers,
+                                      cmd_lst=cmds)
 
-        last_test_ps = test_ps_lst[-1]
-        last_timefile = '/tmp/timer' + str(count - 1)
-        last_cmdfile = '/tmp/cmd' + str(count - 1)
+        # last_test_ps = test_ps_lst[-1]
+        last_num = count - 1
+        # last_timefile = '/tmp/timer' + str(count - 1)
+        # last_cmdfile = '/tmp/cmd' + str(count - 1)
 
         # запускаем процессы-генераторы
         for test_ps in test_ps_lst:
             test_ps.start()
 
-        # ждем появления команды от последнего процесса
-        while os.path.exists(last_cmdfile) is False:
-            sleep(event_re_initialization_delay)
-        # забираем эту команду
-        with open('/tmp/cmd' + str(count - 1), 'r') as file:
-            last_cmd = file.read()
+        # # ждем появления команды от последнего процесса
+        # while os.path.exists(last_cmdfile) is False:
+        #     sleep(event_re_initialization_delay)
+        # # забираем эту команду
+        # with open('/tmp/cmd' + str(count - 1), 'r') as file:
+        #     last_cmd = file.read()
+        #
+        # start, end = time(), time()  #  засекаем время
+        # while CheckAusearch.useraud(last_cmd, last_timefile) is False:
+        #     end = time()
+        #     if not last_test_ps.is_alive():
+        #         return -1
 
-        start, end = time(), time() #  засекаем время
-        while CheckAusearch.useraud(last_cmd, last_timefile) is False:
+        start, end = time(), time()  # засекаем время
+        while True:
+            try:
+                if timers[last_num] and cmds[last_num]:
+                    break
+            except Exception:
+                pass
+
+        while CheckAusearch.useraud(cmds[last_num], timers[last_num]) is False:
             end = time()
-            if not last_test_ps.is_alive():
+            if not test_ps.is_alive():
                 return -1
 
         # убить все
         for test_ps in test_ps_lst:
             test_ps.terminate()
 
-        User.rm_priv(user)
-        User.rm(user)
+        for index in range(count):
+            name = user + str(index)
+            User.rm_priv(name)
+            User.rm(name)
+
         return round(end - start, accuracy)
 
     def test_losses_useraud_under_load(self,
@@ -757,29 +821,34 @@ class AuditdTest(Auditd, CheckAusearch):
         '''
         Auditd.clean()
         Prepare.clean()
-        User.add(user)
-        if audit_flag == 'chown':
-            User.add_to_group(user, 'users')
-        if audit_flag == 'module':
-            User.add_priv(user, '+16')
-        if audit_flag == 'uid':
-            User.add_priv(user, '+7')
-        if audit_flag == 'gid':
-            User.add_priv(user, '+6')
-        if audit_flag == 'audit':
-            User.add_priv(user, '+1')
-        if audit_flag == 'mac':
-            User.add_priv(user, '+3')
-        if audit_flag == 'cap':
-            User.add_priv(user, '+10')
-        if audit_flag == 'chroot':
-            User.add_priv(user, '+18')
 
-        # навешиваем аудит
-        cmd('useraud -m {u} +{flag}'.format(u=user, flag=(audit_flag)))
+        for index in range(count):
+            name = user + str(index)
+            User.add(name)
+            if audit_flag == 'chown':
+                User.add_to_group(name, 'users')
+            if audit_flag == 'module':
+                User.add_priv(name, '+16')
+            if audit_flag == 'uid':
+                User.add_priv(name, '+7')
+            if audit_flag == 'gid':
+                User.add_priv(name, '+6')
+            if audit_flag == 'audit':
+                User.add_priv(name, '+1')
+            if audit_flag == 'mac':
+                User.add_priv(name, '+3')
+            if audit_flag == 'cap':
+                User.add_priv(name, '+10')
+            if audit_flag == 'chroot':
+                User.add_priv(name, '+18')
+            cmd('useraud -m {u} +{flag}'.format(u=name, flag=(audit_flag)))
 
         if ps_lifetime is None:
             ps_lifetime = count
+
+        manager = Manager()
+        counters = manager.list([None]*count)
+        cmds = manager.list([None]*count)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
@@ -787,7 +856,9 @@ class AuditdTest(Auditd, CheckAusearch):
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
                                       count=count,
-                                      user=user)
+                                      user=user,
+                                      cmd_lst=cmds,
+                                      counters_lst=counters)
 
         # точка остчета времени
         start = ctime()
@@ -806,22 +877,20 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.terminate()
 
         # считаем предполагаемое количество событий
-        expected_event_amount = 0
-        for file in Path('/tmp').glob('counter*'):
-            with open(file, 'r') as f:
-                expected_event_amount += int(f.read())
-                # os.remove(file)
-        # if expected_event_amount == 0:
-        #     return [False, False, False, False]
+        # expected_event_amount = 0
+        # for file in Path('/tmp').glob('counter*'):
+        #     with open(file, 'r') as f:
+        #         expected_event_amount += int(f.read())
+        expected_event_amount = sum(counters)
 
         # забираем команду
-        with open('/tmp/cmd' + str(count - 1), 'r') as file:
-            last_cmd = file.read()
+        # with open('/tmp/cmd' + str(count - 1), 'r') as file:
+        #     last_cmd = file.read()
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
         for index in range(count):
-            auditd_events_amount += CheckAusearch.useraud_event_count(last_cmd, start)
+            auditd_events_amount += CheckAusearch.useraud_event_count(cmds[-1], start)
 
         try:
             if auditd_events_amount / expected_event_amount > 1:
@@ -834,8 +903,10 @@ class AuditdTest(Auditd, CheckAusearch):
                     auditd_events_amount,
                     0.0)
 
-        User.rm_priv(user)
-        User.rm(user)
+        for index in range(count):
+            name = user + str(index)
+            User.rm_priv(name)
+            User.rm(name)
 
         return (expected_event_amount <= auditd_events_amount,
                 expected_event_amount,

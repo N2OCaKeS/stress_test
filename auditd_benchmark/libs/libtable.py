@@ -26,8 +26,8 @@ class Report:
         '''
 
         self.__event_names = event_names
-        self.__events_per_second_lower_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_LOWER_LIMIT)
-        self.__events_per_second_upper_limit = float(DEFAULT_PS_LIFETIME) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY) * int(PS_UPPER_LIMIT) - self.__events_per_second_lower_limit
+        self.__events_per_second_lower_limit = int(PS_LOWER_LIMIT) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
+        self.__events_per_second_upper_limit = (int(PS_UPPER_LIMIT) - self.__events_per_second_lower_limit) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
 
         # graph size
         self.width = 27

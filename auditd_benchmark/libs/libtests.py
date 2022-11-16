@@ -24,9 +24,6 @@ class AuditdTest(Auditd, CheckAusearch):
         self.__neg = do_negative_test
         self.__procs = procs
 
-        # self.counters = Array(ctypes.c_wchar_p, 1)
-        # self.cmds = Array(ctypes.c_wchar_p, 1)
-
     @staticmethod
     def _as_another_user(uid, gid=None):  # optional group
         def wrapper(func):
@@ -60,15 +57,12 @@ class AuditdTest(Auditd, CheckAusearch):
         '''
         if number is None:
             number = 0
-        timer_file = '/tmp/timer' + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
 
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                # with open(timer_file, 'w') as file:
-                #     file.write(ctime())
                 try:
                     timers[number] = ctime()
                 except BrokenPipeError:
@@ -132,10 +126,8 @@ class AuditdTest(Auditd, CheckAusearch):
         '''
         if number is None:
             number = 0
-        counter_file = '/tmp/counter' + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
-        target_cmd = '/tmp/cmd' + str(number)
 
         counter = 0
         while life_time > 0:
@@ -169,9 +161,6 @@ class AuditdTest(Auditd, CheckAusearch):
 
                 completed_cmd = cmd(self.__procs[syscall][0] + ' ' + target)
                 if completed_cmd.returncode != 2:  # обрабатываем результат
-                    # counter += 1
-                    # with open(counter_file, 'w') as file:
-                    #     file.write(str(counter))
                     counter += 1
                     counters[number] = counter
 
@@ -202,19 +191,14 @@ class AuditdTest(Auditd, CheckAusearch):
             number = 0
         else:
             user = user + str(number)
-
-        timer_file = '/tmp/timer' + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
-        target_cmd = '/tmp/cmd' + str(number)
         uid = pwd.getpwnam(user).pw_uid
         gid = pwd.getpwnam(user).pw_gid
 
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                # with open(timer_file, 'w') as file:
-                #     file.write(ctime())
                 try:
                     timers[number] = ctime()
                 except BrokenPipeError:
@@ -245,9 +229,6 @@ class AuditdTest(Auditd, CheckAusearch):
                         target = target+' '+target+str(number)
                 except (FileNotFoundError, FileExistsError):
                     pass
-
-                # with open(target_cmd, 'w') as cmd_file:
-                #     cmd_file.write(self.__procs[syscall][0] + ' ' + target)
 
                 cmds[number] = self.__procs[syscall][0] + ' ' + target
                 cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
@@ -286,10 +267,8 @@ class AuditdTest(Auditd, CheckAusearch):
         if number is None:
             number = 0
         user = user + str(number)
-        counter_file = '/tmp/counter' + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
-        target_cmd = '/tmp/cmd' + str(number)
         uid = pwd.getpwnam(user).pw_uid
         gid = pwd.getpwnam(user).pw_gid
 
@@ -328,10 +307,6 @@ class AuditdTest(Auditd, CheckAusearch):
                 if completed_cmd.returncode != 2:  # обрабатываем результат
                     counter += 1
                     counters[number] = counter
-                    # with open(counter_file, 'w') as file:
-                    #     file.write(str(counter))
-                    # with open(target_cmd, 'w') as cmd_file:
-                    #     cmd_file.write(self.__procs[syscall][0] + ' ' + target)
                     cmds[number] = self.__procs[syscall][0] + ' ' + target
 
                 # self._pos_useraud_clean(syscall)
@@ -367,13 +342,9 @@ class AuditdTest(Auditd, CheckAusearch):
         :return:
         '''
         if number is None:
-            # timer_file = '/tmp/timer'
-            # target_file = '/tmp/file_' + syscall
-            timer_file = '/tmp/timer'
             number = 0
             target_file = '/tmp/file_' + syscall + str(number)
         else:
-            timer_file = '/tmp/timer' + str(number)
             target_file = '/tmp/file_' + syscall + str(number)
 
         file = open(target_file, 'w')
@@ -395,8 +366,6 @@ class AuditdTest(Auditd, CheckAusearch):
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                # with open(timer_file, 'w') as file:
-                #     file.write(ctime())
                 if syscall == 'delete':  # delete приходится создавать здесь и каждый раз :(
                     file = open(target_file, 'w')
                     file.close()
@@ -435,11 +404,9 @@ class AuditdTest(Auditd, CheckAusearch):
         '''
 
         if number is None:
-            counter_file = '/tmp/counter'
             number = 0
             target_file = '/tmp/file_' + syscall + str(number)
         else:
-            counter_file = '/tmp/counter' + str(number)
             target_file = '/tmp/file_' + syscall + str(number)
 
         file = open(target_file, 'w')
@@ -474,17 +441,9 @@ class AuditdTest(Auditd, CheckAusearch):
 
                 # генерируем событие
                 completed_cmd = cmd(self.__procs[syscall][0] + target_file)
-                if completed_cmd.returncode == 0: # обрабатываем результат
-                    # counter += 1
-                    # with open(counter_file, 'w') as file:
-                    #     file.write(str(counter))
+                if completed_cmd.returncode != 2: # обрабатываем результат
                     counter += 1
                     counters[number] = counter
-                else:
-                    try:
-                        print(completed_cmd.stderr.decode('utf-8'))
-                    except AttributeError:
-                        pass
 
             if self.__neg:
                 pass
@@ -559,10 +518,6 @@ class AuditdTest(Auditd, CheckAusearch):
         while timers[0] is None:
             pass
         # ищем событие
-        # while CheckAusearch.psaud(audit_flag, test_ps.pid) is False:
-        #     end = time()
-        #     if not test_ps.is_alive():
-        #         return -1
         while CheckAusearch.psaud(audit_flag, test_ps.pid, timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
@@ -606,13 +561,6 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.start()
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
 
-        # last_test_ps = test_ps_lst[-1]
-        # last_timefile = '/tmp/timer' + str(count - 1)
-        # start, end = time(), time()
-        # while CheckAusearch.psaud(audit_flag, last_test_ps.pid, last_timefile) is False:
-        #     end = time()
-        #     if not last_test_ps.is_alive():
-        #         return -1
         last_num = count - 1
         last_test_ps = test_ps_lst[-1]
         start, end = time(), time()  # засекаем время
@@ -679,12 +627,7 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.terminate()
 
         # считаем предполагаемое количество событий
-        # expected_event_amount = 0
-        # for file in Path('/tmp').glob('counter*'):
-        #     with open(file, 'r') as f:
-        #         expected_event_amount += int(f.read())
         expected_event_amount = sum(counters)
-
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
@@ -756,20 +699,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                   cmd_lst=cmds)
         test_ps.start()
 
-        # last_timefile = '/tmp/timer0'
-        # last_cmdfile = '/tmp/cmd0'
-        #
-        # # забираем эту команду
-        # while not os.path.exists(last_cmdfile):
-        #     sleep(0.001)
-        # with open(last_cmdfile, 'r') as file:
-        #     last_cmd = file.read()
-        #
         start, end = time(), time()  # засекаем время
-        # while CheckAusearch.useraud(last_cmd, last_timefile) is False:
-        #     end = time()
-        #     if not test_ps.is_alive():
-        #         return -1
         while timers[0] is None and cmds[0] is None:
             pass
         while CheckAusearch.useraud(cmds[0], timers[0]) is False:
@@ -842,27 +772,12 @@ class AuditdTest(Auditd, CheckAusearch):
                                       timer_lst=timers,
                                       cmd_lst=cmds)
 
-        # last_test_ps = test_ps_lst[-1]
+        last_test_ps = test_ps_lst[-1]
         last_num = count - 1
-        # last_timefile = '/tmp/timer' + str(count - 1)
-        # last_cmdfile = '/tmp/cmd' + str(count - 1)
 
         # запускаем процессы-генераторы
         for test_ps in test_ps_lst:
             test_ps.start()
-
-        # # ждем появления команды от последнего процесса
-        # while os.path.exists(last_cmdfile) is False:
-        #     sleep(event_re_initialization_delay)
-        # # забираем эту команду
-        # with open('/tmp/cmd' + str(count - 1), 'r') as file:
-        #     last_cmd = file.read()
-        #
-        # start, end = time(), time()  #  засекаем время
-        # while CheckAusearch.useraud(last_cmd, last_timefile) is False:
-        #     end = time()
-        #     if not last_test_ps.is_alive():
-        #         return -1
 
         start, end = time(), time()  # засекаем время
         while True:
@@ -871,10 +786,10 @@ class AuditdTest(Auditd, CheckAusearch):
                     break
             except Exception:
                 pass
-
+        # ждем появления команды от последнего процесса
         while CheckAusearch.useraud(cmds[last_num], timers[last_num]) is False:
             end = time()
-            if not test_ps.is_alive():
+            if not last_test_ps.is_alive():
                 return -1
 
         # убить все
@@ -959,15 +874,7 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.terminate()
 
         # считаем предполагаемое количество событий
-        # expected_event_amount = 0
-        # for file in Path('/tmp').glob('counter*'):
-        #     with open(file, 'r') as f:
-        #         expected_event_amount += int(f.read())
         expected_event_amount = sum(counters)
-
-        # забираем команду
-        # with open('/tmp/cmd' + str(count - 1), 'r') as file:
-        #     last_cmd = file.read()
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
@@ -1053,15 +960,6 @@ class AuditdTest(Auditd, CheckAusearch):
         for test_ps in test_ps_lst:
             test_ps.start()
 
-        # last_test_ps = test_ps_lst[-1]
-        # last_timefile = '/tmp/timer' + str(count - 1)
-        # target_file = 'file_' + audit_flag + str(count - 1)
-        #
-        # start, end = time(), time()
-        # while CheckAusearch.fileaud(target_file, last_timefile) is False:
-        #     end = time()
-        #     if not last_test_ps.is_alive():
-        #         return -1
         last_num = count - 1
         last_test_ps = test_ps_lst[-1]
         target_file = 'file_' + audit_flag + str(count - 1)
@@ -1123,13 +1021,6 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.terminate()
 
         # считаем предполагаемое количество событий
-        # expected_event_amount = 0
-        # for file in Path('/tmp').glob('counter*'):
-        #     with open(file, 'r') as f:
-        #         try:
-        #             expected_event_amount += int(f.read())
-        #         except ValueError:
-        #             pass
         expected_event_amount = sum(counters)
 
         # считаем суммарное количество событий замеченных auditd

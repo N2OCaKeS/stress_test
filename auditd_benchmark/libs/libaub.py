@@ -72,12 +72,6 @@ class CheckAusearch:
     # process audit
     @staticmethod
     def psaud(audit_flag, pid, search_time, time_file='/tmp/timer0'):
-        # try:
-        #     with open(time_file, 'r') as file:
-        #         search_time = file.read().split()[3]
-        # except (IndexError, FileNotFoundError):
-        #     search_time = ctime().split()[3]
-
         search_time = search_time.split()[3]
 
         if audit_flag == 'chroot':
@@ -91,6 +85,7 @@ class CheckAusearch:
             au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
         except UnicodeDecodeError:
             au_return = ''
+
         return re.search(str(pid), au_return) is not None
 
 
@@ -104,22 +99,18 @@ class CheckAusearch:
             ausearch_cmd = 'ausearch -i -ts "{}"'
         else:
             ausearch_cmd = 'ausearch -i -ts "{}" -k parsec-p'
+
         try:
             au_return = cmd(ausearch_cmd.format(search_time)).stdout.decode('utf-8')
         except UnicodeDecodeError:
             au_return = ''
+
         return len(re.findall(str(pid), au_return))
 
 
     # user audit
     @staticmethod
     def useraud(user_cmd, search_time, time_file='/tmp/timer0'):
-        # try:
-        #     with open(time_file, 'r') as file:
-        #         search_time = file.read().split()[3]
-        # except (IndexError, FileNotFoundError):
-        #     search_time = ctime().split()[3]
-
         search_time = search_time.split()[3]
         try:
             au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
@@ -139,11 +130,6 @@ class CheckAusearch:
     # file audit
     @staticmethod
     def fileaud(target_file, search_time, time_file='/tmp/timer0'):
-        # try:
-        #     with open(time_file, 'r') as file:
-        #         search_time = file.read().split()[3]
-        # except (IndexError, FileNotFoundError):
-        #     search_time = ctime().split()[3]
         search_time = search_time.split()[3]
         try:
             au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')

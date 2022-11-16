@@ -71,12 +71,14 @@ class CheckAusearch:
 
     # process audit
     @staticmethod
-    def psaud(audit_flag, pid, time_file='/tmp/timer0'):
-        try:
-            with open(time_file, 'r') as file:
-                search_time = file.read().split()[3]
-        except (IndexError, FileNotFoundError):
-            search_time = ctime().split()[3]
+    def psaud(audit_flag, pid, search_time, time_file='/tmp/timer0'):
+        # try:
+        #     with open(time_file, 'r') as file:
+        #         search_time = file.read().split()[3]
+        # except (IndexError, FileNotFoundError):
+        #     search_time = ctime().split()[3]
+
+        search_time = search_time.split()[3]
 
         if audit_flag == 'chroot':
             pid = 'ppid=1'
@@ -111,14 +113,14 @@ class CheckAusearch:
 
     # user audit
     @staticmethod
-    def useraud(user_cmd, time, time_file='/tmp/timer0'):
+    def useraud(user_cmd, search_time, time_file='/tmp/timer0'):
         # try:
         #     with open(time_file, 'r') as file:
         #         search_time = file.read().split()[3]
         # except (IndexError, FileNotFoundError):
         #     search_time = ctime().split()[3]
 
-        search_time = time.split()[3]
+        search_time = search_time.split()[3]
         try:
             au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
         except UnicodeDecodeError:
@@ -136,12 +138,13 @@ class CheckAusearch:
 
     # file audit
     @staticmethod
-    def fileaud(target_file, time_file='/tmp/timer0'):
-        try:
-            with open(time_file, 'r') as file:
-                search_time = file.read().split()[3]
-        except (IndexError, FileNotFoundError):
-            search_time = ctime().split()[3]
+    def fileaud(target_file, search_time, time_file='/tmp/timer0'):
+        # try:
+        #     with open(time_file, 'r') as file:
+        #         search_time = file.read().split()[3]
+        # except (IndexError, FileNotFoundError):
+        #     search_time = ctime().split()[3]
+        search_time = search_time.split()[3]
         try:
             au_return = cmd('ausearch -i -ts "{}"'.format(search_time)).stdout.decode('utf-8')
         except UnicodeDecodeError:

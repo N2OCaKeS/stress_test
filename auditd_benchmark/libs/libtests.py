@@ -24,8 +24,8 @@ class AuditdTest(Auditd, CheckAusearch):
         self.__neg = do_negative_test
         self.__procs = procs
 
-        self.counters = Array(ctypes.c_wchar_p, 1)
-        self.cmds = Array(ctypes.c_wchar_p, 1)
+        # self.counters = Array(ctypes.c_wchar_p, 1)
+        # self.cmds = Array(ctypes.c_wchar_p, 1)
 
     @staticmethod
     def _as_another_user(uid, gid=None):  # optional group
@@ -47,7 +47,10 @@ class AuditdTest(Auditd, CheckAusearch):
                                  life_time,
                                  delay,
                                  number=None,
-                                 user=None):
+                                 user=None,
+                                 timers=None,
+                                 cmds=None,
+                                 counters=None):
         '''
         :param syscall: наименование события audit
         :param life_time: время жизни процесса
@@ -64,8 +67,12 @@ class AuditdTest(Auditd, CheckAusearch):
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                with open(timer_file, 'w') as file:
-                    file.write(ctime())
+                # with open(timer_file, 'w') as file:
+                #     file.write(ctime())
+                try:
+                    timers[number] = ctime()
+                except BrokenPipeError:
+                    pass
 
                 try:
                     if syscall in ('open', 'delete', 'chmod', 'chown'):
@@ -112,7 +119,10 @@ class AuditdTest(Auditd, CheckAusearch):
                                    life_time,
                                    delay,
                                    number=None,
-                                   user=None):
+                                   user=None,
+                                   timers=None,
+                                   cmds=None,
+                                   counters=None):
         '''
         :param syscall: наименование события audit
         :param life_time: время жизни процесса
@@ -159,9 +169,11 @@ class AuditdTest(Auditd, CheckAusearch):
 
                 completed_cmd = cmd(self.__procs[syscall][0] + ' ' + target)
                 if completed_cmd.returncode != 2:  # обрабатываем результат
+                    # counter += 1
+                    # with open(counter_file, 'w') as file:
+                    #     file.write(str(counter))
                     counter += 1
-                    with open(counter_file, 'w') as file:
-                        file.write(str(counter))
+                    counters[number] = counter
 
                 if syscall == 'mount':
                     cmd('umount {}mount &> /dev/null'.format(target_dir))
@@ -183,7 +195,8 @@ class AuditdTest(Auditd, CheckAusearch):
                                    number=None,
                                    user=None,
                                    timers=None,
-                                   cmds=None):
+                                   cmds=None,
+                                   counters=None):
 
         if number is None:
             number = 0
@@ -202,7 +215,10 @@ class AuditdTest(Auditd, CheckAusearch):
             if self.__pos:
                 # with open(timer_file, 'w') as file:
                 #     file.write(ctime())
-                timers[number] = ctime()
+                try:
+                    timers[number] = ctime()
+                except BrokenPipeError:
+                    pass
 
                 try:
                     if syscall in ('open', 'delete', 'chmod', 'chown'):
@@ -339,7 +355,10 @@ class AuditdTest(Auditd, CheckAusearch):
                                    life_time,
                                    delay,
                                    number=None,
-                                   user=None):
+                                   user=None,
+                                   timers=None,
+                                   cmds=None,
+                                   counters=None):
         '''
         :param syscall: наименование события audit
         :param life_time: время жизни процесса
@@ -348,8 +367,11 @@ class AuditdTest(Auditd, CheckAusearch):
         :return:
         '''
         if number is None:
+            # timer_file = '/tmp/timer'
+            # target_file = '/tmp/file_' + syscall
             timer_file = '/tmp/timer'
-            target_file = '/tmp/file_' + syscall
+            number = 0
+            target_file = '/tmp/file_' + syscall + str(number)
         else:
             timer_file = '/tmp/timer' + str(number)
             target_file = '/tmp/file_' + syscall + str(number)
@@ -363,14 +385,31 @@ class AuditdTest(Auditd, CheckAusearch):
                 file.writelines(['#!/bin/bash\n',
                                  'echo true &> /dev/null\n'])
             cmd('chmod +x '+ target_file)
+        if syscall == 'mac':
+            target_file = '/file_' + syscall + str(number)
+            file = open(target_file, 'w')
+            file.close()
         else:
             cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
 
         while life_time > 0:
             sleep(delay)
             if self.__pos:
-                with open(timer_file, 'w') as file:
-                    file.write(ctime())
+                # with open(timer_file, 'w') as file:
+                #     file.write(ctime())
+                if syscall == 'delete':  # delete приходится создавать здесь и каждый раз :(
+                    file = open(target_file, 'w')
+                    file.close()
+                    cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
+                if syscall == 'acl':
+                    cmd('setfacl -b ' + target_file)
+                if syscall == 'mac':
+                    cmd('/usr/sbin/pdpl-file 0:0:0 ' + target_file)
+
+                try:
+                    timers[number] = ctime()
+                except BrokenPipeError:
+                    pass
                 cmd(self.__procs[syscall][0] + target_file)
             if self.__neg:
                 pass
@@ -383,7 +422,10 @@ class AuditdTest(Auditd, CheckAusearch):
                                      life_time,
                                      delay,
                                      number=None,
-                                     user=None):
+                                     user=None,
+                                     timers=None,
+                                     cmds=None,
+                                     counters=None):
         '''
         :param syscall: наименование события audit
         :param life_time: время жизни процесса
@@ -394,7 +436,8 @@ class AuditdTest(Auditd, CheckAusearch):
 
         if number is None:
             counter_file = '/tmp/counter'
-            target_file = '/tmp/file_' + syscall
+            number = 0
+            target_file = '/tmp/file_' + syscall + str(number)
         else:
             counter_file = '/tmp/counter' + str(number)
             target_file = '/tmp/file_' + syscall + str(number)
@@ -409,6 +452,10 @@ class AuditdTest(Auditd, CheckAusearch):
                                  'echo true\n'])
             cmd('chmod +x '+ target_file)
             cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
+        if syscall == 'mac':
+            target_file = '/file_' + syscall + str(number)
+            file = open(target_file, 'w')
+            file.close()
         else:
             cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
 
@@ -421,14 +468,18 @@ class AuditdTest(Auditd, CheckAusearch):
                     file.close()
                     cmd('setfaud -m u:0:+{ef}:+{ef} {tf}'.format(ef=syscall, tf=target_file))
                 if syscall == 'acl':
-                    cmd('setfacl -b '+ target_file)
+                    cmd('setfacl -b ' + target_file)
+                if syscall == 'mac':
+                    cmd('/usr/sbin/pdpl-file 0:0:0 ' + target_file)
 
                 # генерируем событие
                 completed_cmd = cmd(self.__procs[syscall][0] + target_file)
                 if completed_cmd.returncode == 0: # обрабатываем результат
+                    # counter += 1
+                    # with open(counter_file, 'w') as file:
+                    #     file.write(str(counter))
                     counter += 1
-                    with open(counter_file, 'w') as file:
-                        file.write(str(counter))
+                    counters[number] = counter
                 else:
                     try:
                         print(completed_cmd.stderr.decode('utf-8'))
@@ -487,10 +538,14 @@ class AuditdTest(Auditd, CheckAusearch):
         Auditd.clean()
         Prepare.clean()
 
+        manager = Manager()
+        timers = manager.list([None])
+
         test_ps = self._create_ps(syscall=audit_flag,
                                   func=self._template_ps_psaud_timer,
                                   proc_lifetime=ps_lifetime,
-                                  delay=event_re_initialization_delay)
+                                  delay=event_re_initialization_delay,
+                                  timer_lst=timers)
 
         # запускаем процесс генератор
         test_ps.start()
@@ -501,8 +556,14 @@ class AuditdTest(Auditd, CheckAusearch):
         # отсчет времени
         start, end = time(), time()
 
+        while timers[0] is None:
+            pass
         # ищем событие
-        while CheckAusearch.psaud(audit_flag, test_ps.pid) is False:
+        # while CheckAusearch.psaud(audit_flag, test_ps.pid) is False:
+        #     end = time()
+        #     if not test_ps.is_alive():
+        #         return -1
+        while CheckAusearch.psaud(audit_flag, test_ps.pid, timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
                 return -1
@@ -531,19 +592,37 @@ class AuditdTest(Auditd, CheckAusearch):
 
         if ps_lifetime is None:
             ps_lifetime = count
+
+        manager = Manager()
+        timers = manager.list([None]*count)
+
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_timer,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
-                                      count=count)
+                                      count=count,
+                                      timer_lst=timers)
         for test_ps in test_ps_lst:
             test_ps.start()
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
 
+        # last_test_ps = test_ps_lst[-1]
+        # last_timefile = '/tmp/timer' + str(count - 1)
+        # start, end = time(), time()
+        # while CheckAusearch.psaud(audit_flag, last_test_ps.pid, last_timefile) is False:
+        #     end = time()
+        #     if not last_test_ps.is_alive():
+        #         return -1
+        last_num = count - 1
         last_test_ps = test_ps_lst[-1]
-        last_timefile = '/tmp/timer' + str(count - 1)
-        start, end = time(), time()
-        while CheckAusearch.psaud(audit_flag, last_test_ps.pid, last_timefile) is False:
+        start, end = time(), time()  # засекаем время
+        while True:
+            try:
+                if timers[last_num]:
+                    break
+            except Exception:
+                pass
+        while CheckAusearch.psaud(audit_flag, last_test_ps.pid, timers[last_num]) is False:
             end = time()
             if not last_test_ps.is_alive():
                 return -1
@@ -571,12 +650,16 @@ class AuditdTest(Auditd, CheckAusearch):
         if ps_lifetime is None:
             ps_lifetime = count
 
+        manager = Manager()
+        counters = manager.list([None]*count)
+
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_counter,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
-                                      count=count)
+                                      count=count,
+                                      counters_lst=counters)
 
         # точка остчета времени
         start = ctime()
@@ -596,13 +679,12 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.terminate()
 
         # считаем предполагаемое количество событий
-        expected_event_amount = 0
-        for file in Path('/tmp').glob('counter*'):
-            with open(file, 'r') as f:
-                expected_event_amount += int(f.read())
-        #         os.remove(file)
-        # if expected_event_amount == 0:
-        #     return [False, False, False, False]
+        # expected_event_amount = 0
+        # for file in Path('/tmp').glob('counter*'):
+        #     with open(file, 'r') as f:
+        #         expected_event_amount += int(f.read())
+        expected_event_amount = sum(counters)
+
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
@@ -920,16 +1002,23 @@ class AuditdTest(Auditd, CheckAusearch):
                                  accuracy=3):
 
         Auditd.clean()
+        Prepare.clean()
+
+        manager = Manager()
+        timers = manager.list([None])
 
         test_ps = self._create_ps(syscall=audit_flag,
                                   func=self._template_ps_fileaud_timer,
                                   proc_lifetime=ps_lifetime,
-                                  delay=event_re_initialization_delay)
+                                  delay=event_re_initialization_delay,
+                                  timer_lst=timers)
         test_ps.start()
 
-        target_file = 'file_'+audit_flag
+        target_file = 'file_' + audit_flag + '0'
         start, end = time(), time()
-        while CheckAusearch.fileaud(target_file) is False:
+        while timers[0] is None:
+            pass
+        while CheckAusearch.fileaud(target_file, timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
                 return -1
@@ -947,23 +1036,43 @@ class AuditdTest(Auditd, CheckAusearch):
                                             accuracy=3):
 
         Auditd.clean()
+        Prepare.clean()
 
         if ps_lifetime is None:
             ps_lifetime = count
+
+        manager = Manager()
+        timers = manager.list([None] * count)
+
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_fileaud_timer,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
-                                      count=count)
+                                      count=count,
+                                      timer_lst=timers)
         for test_ps in test_ps_lst:
             test_ps.start()
 
+        # last_test_ps = test_ps_lst[-1]
+        # last_timefile = '/tmp/timer' + str(count - 1)
+        # target_file = 'file_' + audit_flag + str(count - 1)
+        #
+        # start, end = time(), time()
+        # while CheckAusearch.fileaud(target_file, last_timefile) is False:
+        #     end = time()
+        #     if not last_test_ps.is_alive():
+        #         return -1
+        last_num = count - 1
         last_test_ps = test_ps_lst[-1]
-        last_timefile = '/tmp/timer' + str(count - 1)
         target_file = 'file_' + audit_flag + str(count - 1)
-
-        start, end = time(), time()
-        while CheckAusearch.fileaud(target_file, last_timefile) is False:
+        start, end = time(), time()  # засекаем время
+        while True:
+            try:
+                if timers[last_num]:
+                    break
+            except Exception:
+                pass
+        while CheckAusearch.fileaud(target_file, timers[last_num]) is False:
             end = time()
             if not last_test_ps.is_alive():
                 return -1
@@ -986,12 +1095,16 @@ class AuditdTest(Auditd, CheckAusearch):
         if ps_lifetime is None:
             ps_lifetime = count
 
+        manager = Manager()
+        counters = manager.list([None]*count)
+
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_fileaud_counter,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
-                                      count=count)
+                                      count=count,
+                                      counters_lst=counters)
 
         # точка остчета времени
         start = ctime()
@@ -1010,15 +1123,14 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.terminate()
 
         # считаем предполагаемое количество событий
-        expected_event_amount = 0
-        for file in Path('/tmp').glob('counter*'):
-            with open(file, 'r') as f:
-                try:
-                    expected_event_amount += int(f.read())
-                except ValueError:
-                    pass
-        # if expected_event_amount == 0:
-        #     return [False, False, False, False]
+        # expected_event_amount = 0
+        # for file in Path('/tmp').glob('counter*'):
+        #     with open(file, 'r') as f:
+        #         try:
+        #             expected_event_amount += int(f.read())
+        #         except ValueError:
+        #             pass
+        expected_event_amount = sum(counters)
 
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
@@ -1097,13 +1209,13 @@ class AuditdTestSet():
                                                            ps_event_re_initialization_delay)
         with open(report_file, 'a+') as file:
             file.write('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                          eps=int(float(ps_lifetime) / float(ps_event_re_initialization_delay) * int(ps_count)),
+                                                                                          eps=int(int(ps_count) / float(ps_event_re_initialization_delay)),
                                                                                           exp_ev_am=result[1],
                                                                                           aud_ev_am=result[2],
                                                                                           prct_res=result[3],
                                                                                           bool_res=result[0]))
         print('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                 eps=int(float(ps_lifetime) / float(ps_event_re_initialization_delay) * int(ps_count)),
+                                                                                 eps=int(int(ps_count) / float(ps_event_re_initialization_delay)),
                                                                                  exp_ev_am=result[1],
                                                                                  aud_ev_am=result[2],
                                                                                  prct_res=result[3],
@@ -1165,13 +1277,13 @@ class AuditdTestSet():
                                                              user)
         with open(report_file, 'a+') as file:
             file.write('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                          eps=int(float(ps_lifetime) / float(ps_event_re_initialization_delay) * int(ps_count)),
+                                                                                          eps=int(int(ps_count) / float(ps_event_re_initialization_delay)),
                                                                                           exp_ev_am=result[1],
                                                                                           aud_ev_am=result[2],
                                                                                           prct_res=result[3],
                                                                                           bool_res=result[0]))
         print('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                 eps=int(float(ps_lifetime) / float(ps_event_re_initialization_delay) * int(ps_count)),
+                                                                                 eps=int(int(ps_count) / float(ps_event_re_initialization_delay)),
                                                                                  exp_ev_am=result[1],
                                                                                  aud_ev_am=result[2],
                                                                                  prct_res=result[3],
@@ -1224,18 +1336,13 @@ class AuditdTestSet():
                                                                  ps_event_re_initialization_delay)
         with open(report_file, 'a+') as file:
             file.write('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                          eps=int(float(
-                                                                                              ps_lifetime) / float(
-                                                                                              ps_event_re_initialization_delay) * int(
-                                                                                              ps_count)),
+                                                                                          eps=int(int(ps_count) / float(ps_event_re_initialization_delay)),
                                                                                           exp_ev_am=result[1],
                                                                                           aud_ev_am=result[2],
                                                                                           prct_res=result[3],
                                                                                           bool_res=result[0]))
         print('{f} {eps} {exp_ev_am} {aud_ev_am} {prct_res} {bool_res}\n'.format(f=event_flag,
-                                                                                 eps=int(float(ps_lifetime) / float(
-                                                                                     ps_event_re_initialization_delay) * int(
-                                                                                     ps_count)),
+                                                                                 eps=int(int(ps_count) / float(ps_event_re_initialization_delay)),
                                                                                  exp_ev_am=result[1],
                                                                                  aud_ev_am=result[2],
                                                                                  prct_res=result[3],

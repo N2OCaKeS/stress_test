@@ -269,8 +269,8 @@ elif args.TEST_LIST == 'fileaud':
     elif args.MODE == 'extended':
         pass
     elif args.MODE == 'test':
-        AuditdTestSet.get_latency_fileaud_total(FILEAUD_PROC_BODYS.keys(), REPORT)
-
+        # AuditdTestSet.get_latency_fileaud_total(FILEAUD_PROC_BODYS.keys(), REPORT)
+        #
         for event in FILEAUD_PROC_BODYS.keys():
             for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
                 AuditdTestSet.get_latency_stat_fileaud(event,

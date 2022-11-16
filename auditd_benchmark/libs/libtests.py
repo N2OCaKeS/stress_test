@@ -162,7 +162,10 @@ class AuditdTest(Auditd, CheckAusearch):
                 completed_cmd = cmd(self.__procs[syscall][0] + ' ' + target)
                 if completed_cmd.returncode != 2:  # обрабатываем результат
                     counter += 1
-                    counters[number] = counter
+                    try:
+                        counters[number] = counter
+                    except BrokenPipeError:
+                        pass
 
                 if syscall == 'mount':
                     cmd('umount {}mount &> /dev/null'.format(target_dir))
@@ -230,7 +233,11 @@ class AuditdTest(Auditd, CheckAusearch):
                 except (FileNotFoundError, FileExistsError):
                     pass
 
-                cmds[number] = self.__procs[syscall][0] + ' ' + target
+                try:
+                    cmds[number] = self.__procs[syscall][0] + ' ' + target
+                except BrokenPipeError:
+                    pass
+
                 cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
 
                 if syscall in ('uid', 'gid'):
@@ -306,8 +313,11 @@ class AuditdTest(Auditd, CheckAusearch):
                 completed_cmd = cmd('su {} -c "{} {}"'.format(user, self.__procs[syscall][0], target))
                 if completed_cmd.returncode != 2:  # обрабатываем результат
                     counter += 1
-                    counters[number] = counter
-                    cmds[number] = self.__procs[syscall][0] + ' ' + target
+                    try:
+                        counters[number] = counter
+                        cmds[number] = self.__procs[syscall][0] + ' ' + target
+                    except BrokenPipeError:
+                        pass
 
                 # self._pos_useraud_clean(syscall)
                 if syscall in ('uid', 'gid'):
@@ -443,7 +453,10 @@ class AuditdTest(Auditd, CheckAusearch):
                 completed_cmd = cmd(self.__procs[syscall][0] + target_file)
                 if completed_cmd.returncode != 2: # обрабатываем результат
                     counter += 1
-                    counters[number] = counter
+                    try:
+                        counters[number] = counter
+                    except BrokenPipeError:
+                        pass
 
             if self.__neg:
                 pass

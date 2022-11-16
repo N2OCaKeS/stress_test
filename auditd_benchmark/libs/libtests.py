@@ -612,7 +612,7 @@ class AuditdTest(Auditd, CheckAusearch):
             ps_lifetime = count
 
         manager = Manager()
-        counters = manager.list([None]*count)
+        counters = manager.list([0]*count)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
@@ -857,7 +857,7 @@ class AuditdTest(Auditd, CheckAusearch):
             ps_lifetime = count
 
         manager = Manager()
-        counters = manager.list([None]*count)
+        counters = manager.list([0]*count)
         cmds = manager.list([None]*count)
 
         # инициализируем процессы
@@ -1007,7 +1007,7 @@ class AuditdTest(Auditd, CheckAusearch):
             ps_lifetime = count
 
         manager = Manager()
-        counters = manager.list([None]*count)
+        counters = manager.list([0]*count)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,

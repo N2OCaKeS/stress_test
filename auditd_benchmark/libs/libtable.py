@@ -1,3 +1,10 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import tarfile
 import pandas
 import warnings

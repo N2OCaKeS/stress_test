@@ -12,7 +12,6 @@ import subprocess
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libaub import astra_version
-from libs.libtable import Report
 from aub_conf import REPORT_DIR, TEMPLATE_DIR, \
     PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP, DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY
 
@@ -159,9 +158,9 @@ with open('{}/rating_template.html'.format(TEMPLATE_DIR), 'r') as template:
 with open('{}/aub_report.txt'.format(args.R_PATH), 'r') as report:
     report_temp = report.read()
     rating = rating_temp.format(type=args.TS,
-                                total_latency_rating=re.search('total latency rating: (-?\d+.\d+)', report_temp).group(1),
-                                total_losses_rating=re.search('total losses rating: (-?\d+.\d+)', report_temp).group(1),
-                                total_auditd_rating=re.search('total auditd rating: (-?\d+.\d+)', report_temp).group(1))
+                                total_latency_rating=re.search(r'total latency rating: (-?\d+.\d+)', report_temp).group(1),
+                                total_losses_rating=re.search(r'total losses rating: (-?\d+.\d+)', report_temp).group(1),
+                                total_auditd_rating=re.search(r'total auditd rating: (-?\d+.\d+)', report_temp).group(1))
 
 tables = ''
 for file in Path(REPORT_DIR).glob('aub_*_table.html'):

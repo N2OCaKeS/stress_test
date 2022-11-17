@@ -1,13 +1,15 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import os
 import pwd
-import ctypes
-import pexpect
-import pdb
 
-from sys import exit
-from pathlib import Path
 from time import sleep, ctime, time
-from multiprocessing import Process, Array, Manager
+from multiprocessing import Process, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
 from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
 
@@ -32,12 +34,6 @@ class AuditdTest(Auditd, CheckAusearch):
                     return func(*args, **kwargs)  # execute the function
             return wrapped
         return wrapper
-
-    def _neg_files_prep(self, event_flag):
-        pass
-
-    def _neg_clean(self, event_flag):
-        pass
 
     def _template_ps_psaud_timer(self,
                                  syscall,
@@ -1060,7 +1056,6 @@ class AuditdTest(Auditd, CheckAusearch):
 
 
 class AuditdTestSet():
-
 ########################################################################################################################
 
     @staticmethod # ОТЛАЖЕНО
@@ -1070,7 +1065,6 @@ class AuditdTestSet():
         with open(report_file, 'w') as file:
             file.write('{} - {} sec\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))
-
 
     @staticmethod # ОТЛАЖЕНО
     def get_latency_psaud_total(event_flag_lst, report_file):

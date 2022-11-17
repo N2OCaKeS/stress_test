@@ -1,14 +1,20 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import argparse
-import os
 
 from os import path, mkdir
-from libs.libtests import AuditdTestSet
+from libs.libtest import AuditdTestSet
 from libs.libtable import Report
 from aub_conf import \
     REPORT, REPORT_DIR, \
+    LOG, LOG_DIR, \
     LATENCY_REPORT_PSAUD, LATENCY_REPORT_USAUD, LATENCY_REPORT_FLAUD, \
     LOSSES_REPORT_PSAUD, LOSSES_REPORT_USAUD, LOSSES_REPORT_FLAUD, \
-    LOG, LOG_DIR, \
     PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, \
     PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP, \
     TEST_USER, \
@@ -111,11 +117,12 @@ if args.TEST_LIST == 'psaud':
         r.create_tar()
 
     elif args.MODE == 'extended':
-        # Очистить отчет
-        report_file = open(LATENCY_REPORT_USAUD, 'w')
-        report_file.close()
 
         if args.EVENT in USERAUD_PROC_BODYS.keys():
+            # Очистить отчет
+            report_file = open(LATENCY_REPORT_USAUD, 'w')
+            report_file.close()
+
             for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
                 AuditdTestSet.get_latency_stat_psaud(args.EVENT,
                                                      quantity,
@@ -188,11 +195,12 @@ elif args.TEST_LIST == 'useraud':
         r.create_tar()
 
     elif args.MODE == 'extended':
-        # Очистить отчет
-        report_file = open(LATENCY_REPORT_USAUD, 'w')
-        report_file.close()
 
         if args.EVENT in USERAUD_PROC_BODYS.keys():
+            # Очистить отчет
+            report_file = open(LATENCY_REPORT_USAUD, 'w')
+            report_file.close()
+
             for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
                 AuditdTestSet.get_latency_stat_useraud(args.EVENT,
                                                        quantity,
@@ -267,10 +275,32 @@ elif args.TEST_LIST == 'fileaud':
         r.create_tar()
 
     elif args.MODE == 'extended':
-        pass
+
+        if args.EVENT in USERAUD_PROC_BODYS.keys():
+            # Очистить отчет
+            report_file = open(LATENCY_REPORT_FLAUD, 'w')
+            report_file.close()
+
+            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+                AuditdTestSet.get_latency_stat_fileaud(args.EVENT,
+                                                       quantity,
+                                                       DEFAULT_PS_LIFETIME,
+                                                       DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+                                                       LATENCY_REPORT_FLAUD)
+            # Очистить отчет
+            report_file = open(LOSSES_REPORT_FLAUD, 'w')
+            report_file.close()
+
+            for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
+                AuditdTestSet.get_losses_stat_fileaud(args.EVENT,
+                                                      quantity,
+                                                      DEFAULT_PS_LIFETIME,
+                                                      DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
+                                                      LOSSES_REPORT_FLAUD)
+
     elif args.MODE == 'test':
-        # AuditdTestSet.get_latency_fileaud_total(FILEAUD_PROC_BODYS.keys(), REPORT)
-        #
+        AuditdTestSet.get_latency_fileaud_total(FILEAUD_PROC_BODYS.keys(), REPORT)
+
         for event in FILEAUD_PROC_BODYS.keys():
             for quantity in range(PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP):
                 AuditdTestSet.get_latency_stat_fileaud(event,

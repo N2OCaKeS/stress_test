@@ -1,9 +1,15 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import os
 import re
 import crypt
 import subprocess
 import pexpect
-import pdb
 
 from os import path, mkdir, listdir, chmod
 from time import sleep, ctime, time

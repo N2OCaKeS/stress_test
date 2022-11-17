@@ -104,9 +104,9 @@ if args.TEST_LIST == 'psaud':
 
         # Cоздать отчет
         r = Report(PSAUD_PROC_BODYS.keys(), LATENCY_REPORT_PSAUD, LOSSES_REPORT_PSAUD)
-        r.create_beauty_table()
-        r.create_aub_latency_eps_graph()
-        r.create_aub_losses_eps_graph()
+        r.create_beauty_table(type='ps')
+        r.create_total_latency_eps_graph(type='ps')
+        r.create_total_losses_eps_graph(type='ps')
         r.get_total_auditd_rating()
         r.create_tar()
 
@@ -181,9 +181,9 @@ elif args.TEST_LIST == 'useraud':
 
         # Cоздать отчет
         r = Report(USERAUD_PROC_BODYS.keys(), LATENCY_REPORT_USAUD, LOSSES_REPORT_USAUD)
-        r.create_beauty_table()
-        r.create_aub_latency_eps_graph()
-        r.create_aub_losses_eps_graph()
+        r.create_beauty_table(type='us')
+        r.create_total_latency_eps_graph(type='us')
+        r.create_total_losses_eps_graph(type='us')
         r.get_total_auditd_rating()
         r.create_tar()
 
@@ -260,9 +260,9 @@ elif args.TEST_LIST == 'fileaud':
 
         # Cоздать отчет
         r = Report(FILEAUD_PROC_BODYS.keys(), LATENCY_REPORT_FLAUD, LOSSES_REPORT_FLAUD)
-        r.create_beauty_table()
-        r.create_aub_latency_eps_graph()
-        r.create_aub_losses_eps_graph()
+        r.create_beauty_table(type='fl')
+        r.create_total_latency_eps_graph(type='fl')
+        r.create_total_losses_eps_graph(type='fl')
         r.get_total_auditd_rating()
         r.create_tar()
 

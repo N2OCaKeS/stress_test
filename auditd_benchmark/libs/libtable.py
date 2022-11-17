@@ -27,7 +27,7 @@ class Report:
 
         self.__event_names = event_names
         self.__events_per_second_lower_limit = int(PS_LOWER_LIMIT) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
-        self.__events_per_second_upper_limit = (int(PS_UPPER_LIMIT) - self.__events_per_second_lower_limit) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
+        self.__events_per_second_upper_limit = int(PS_UPPER_LIMIT) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
 
         # graph size
         self.width = 27
@@ -112,7 +112,7 @@ class Report:
                 except np.RankWarning:
                     polinom_factor -= 1
 
-    def create_beauty_table(self, path=REPORT_DIR, table_name='aub_{name}_table.html'):
+    def create_beauty_table(self, type, path=REPORT_DIR, table_name='aub_{t}_{e}_table.html'):
         '''
         :param path: директория с файлами отчета
         :param table_name: имя файла html для сохранения таблицы
@@ -120,7 +120,7 @@ class Report:
         '''
         for event in self.__event_names:
             beauty_table = build_table(self.__main_raw_tables[event], 'blue_light')
-            with open('{}/{}'.format(path, table_name.format(name=event)), 'w') as beauty_html_table:
+            with open('{}/{}'.format(path, table_name.format(t=type, e=event)), 'w') as beauty_html_table:
                 beauty_html_table.write(beauty_table)
 
     @staticmethod
@@ -148,6 +148,7 @@ class Report:
                                     oy_param_table_name=None,
                                     ox_lower_limit=None,
                                     ox_upper_limit=None,
+                                    type=None,
                                     path=None):
         '''
         :param event: наименование события audit
@@ -172,19 +173,24 @@ class Report:
         oy_lst = raw_table[oy_param_table_name].values.tolist()
 
         # построить аппроксимирующую f(x)
-        aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 1)
+        aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 0.01)
         aprx_f = self._data_aproximation(ox_lst, oy_lst)
 
         # build graph
-        plt.figure(figsize=(self._cm_to_inch(self.width), self._cm_to_inch(self.height)))
+        figure = plt.figure(figsize=(self._cm_to_inch(self.width), self._cm_to_inch(self.height)))
         plt.plot(x, y, 'o')
-        plt.plot(aprx_x, aprx_f(aprx_x))
+
+        if max(oy_lst) != min(oy_lst):
+            plt.plot(aprx_x, aprx_f(aprx_x))
+            pass
+
         if oy_param_table_name == 'completed':
             plt_title = '{digit_varsion}{mode}. {event} {ytitle}(%)/{xtitle}'
+            plt.ylabel('completed(%)')
 
             plt.plot(ox_lst, [100] * len(ox_lst), color='g')
             plt.plot(ox_lst, [50] * len(ox_lst), color='r')
-            plt.ylim(0, 105)
+            plt.ylim(bottom=0, top=105)
 
             green_lst = [True if res <= 100.0 else False for res in oy_lst]
             yellow_lst = [True if (res < 100.0) and (res > 50.0) else False for res in oy_lst]
@@ -197,6 +203,8 @@ class Report:
 
         elif oy_param_table_name == 'latency':
             plt_title = '{digit_varsion}{mode}. {event} {ytitle}(sec)/{xtitle}'
+            plt.ylabel('latency(sec)')
+            plt.ylim(bottom=-0.1*DEFAULT_PS_LIFETIME, top=2*DEFAULT_PS_LIFETIME)
 
             green_lst = [True if res >= 0.0 else False for res in oy_lst]
             red_lst = [True if res <= 0.0 else False for res in oy_lst]
@@ -213,33 +221,94 @@ class Report:
                                    xtitle=ox_param_table_name,
                                    ytitle=oy_param_table_name))
         plt.xlabel(ox_param_table_name)
-        plt.ylabel(oy_param_table_name)
         plt.grid()
 
-        plt.savefig('{p}/aub_{ev}_{ox}_{oy}_graph'.format(p=path,
-                                                          ev=event,
-                                                          ox=ox_param_table_name,
-                                                          oy=oy_param_table_name))
+        plt.savefig('{p}/aub_{t}_{ev}_{ox}_{oy}_graph'.format(p=path,
+                                                              t=type,
+                                                              ev=event,
+                                                              ox=ox_param_table_name,
+                                                              oy=oy_param_table_name))
 
-    def create_aub_latency_eps_graph(self, path=REPORT_DIR):
+    def _template_comparative_aproximated_graph(self,
+                                                ox_param_table_name=None,
+                                                oy_param_table_name=None,
+                                                type=None,
+                                                path=None):
+
+        ox_lst = []
+        figure = plt.figure(figsize=(self._cm_to_inch(self.width), self._cm_to_inch(self.height)))
+        for event in self.__event_names:
+            raw_table = self.__main_raw_tables[event]
+
+            # точки
+            x = raw_table.loc[:, [ox_param_table_name]]
+            y = raw_table.loc[:, [oy_param_table_name]]
+
+            ox_lst = raw_table[ox_param_table_name].values.tolist()
+
+            # build graph
+            plt.plot(x, y, label=event, linewidth=2)
+
+        if oy_param_table_name == 'completed':
+            plt_title = '{digit_varsion}{mode}. All events {ytitle}/{xtitle}'
+            plt.ylabel('completed(%)')
+            plt.plot(ox_lst, [100] * len(ox_lst), color='g', linestyle='dotted', linewidth=5)
+            plt.plot(ox_lst, [50] * len(ox_lst), color='r', linestyle='dotted', linewidth=5)
+            plt.ylim(bottom=0, top=105)
+        elif oy_param_table_name == 'latency':
+            plt_title = '{digit_varsion}{mode}. All events {ytitle}/{xtitle}'
+            plt.ylabel('latency(sec)')
+            plt.ylim(bottom=-0.1 * DEFAULT_PS_LIFETIME, top=2 * DEFAULT_PS_LIFETIME)
+        else:
+            plt_title = '{digit_varsion}{mode}. All events {ytitle}/{xtitle}'
+
+        plt.title(plt_title.format(digit_varsion=astra_version()[0],
+                                   mode=astra_version()[1],
+                                   xtitle=ox_param_table_name,
+                                   ytitle=oy_param_table_name))
+
+        plt.xlabel(ox_param_table_name)
+        plt.grid(True)
+        plt.legend(loc='upper left')
+
+        plt.savefig('{p}/aub_{t}_total_{ox}_{oy}_graph'.format(p=path,
+                                                               t=type,
+                                                               ox=ox_param_table_name,
+                                                               oy=oy_param_table_name))
+
+    def create_aub_latency_eps_graph(self, type, path=REPORT_DIR):
         for event in self.__event_names:
             self._template_aproximated_graph(event=event,
                                              ox_param_table_name='eps',
                                              oy_param_table_name='latency',
                                              ox_lower_limit=self.__events_per_second_lower_limit,
                                              ox_upper_limit=self.__events_per_second_upper_limit,
+                                             type=type,
                                              path=path)
 
-    def create_aub_losses_eps_graph(self, path=REPORT_DIR):
+    def create_total_latency_eps_graph(self, type, path=REPORT_DIR):
+        self._template_comparative_aproximated_graph(ox_param_table_name='eps',
+                                                     oy_param_table_name='latency',
+                                                     type=type,
+                                                     path=path)
+
+    def create_aub_losses_eps_graph(self, type, path=REPORT_DIR):
         for event in self.__event_names:
             self._template_aproximated_graph(event=event,
                                              ox_param_table_name='eps',
                                              oy_param_table_name='completed',
                                              ox_lower_limit=self.__events_per_second_lower_limit,
                                              ox_upper_limit=self.__events_per_second_upper_limit,
+                                             type=type,
                                              path=path)
 
-    def get_event_latecy_rating(self, raw_table, multiplier=10**3, accuracy=3):
+    def create_total_losses_eps_graph(self, type, path=REPORT_DIR):
+        self._template_comparative_aproximated_graph(ox_param_table_name='eps',
+                                                     oy_param_table_name='completed',
+                                                     type=type,
+                                                     path=path)
+
+    def get_event_latecy_rating(self, raw_table, multiplier=1, accuracy=3):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['latency'].values.tolist()

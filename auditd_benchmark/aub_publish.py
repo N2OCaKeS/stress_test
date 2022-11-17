@@ -7,6 +7,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
@@ -155,11 +156,12 @@ with open('{}/header_table_template.html'.format(TEMPLATE_DIR), 'r') as file:
 # создание страницы отчета
 with open('{}/rating_template.html'.format(TEMPLATE_DIR), 'r') as template:
     rating_temp = template.read()
-    if args.TS == 'psaud':
-        rep = Report()
-        rating = rating_temp.format(total_latency_rating=str(rep.get_total_latency_rating()),
-                                    total_losses_rating=str(rep.get_total_losses_rating()),
-                                    total_auditd_rating=str(rep.get_total_auditd_rating()))
+with open('{}/aub_report.txt'.format(args.R_PATH), 'r') as report:
+    report_temp = report.read()
+    rating = rating_temp.format(type=args.TS,
+                                total_latency_rating=re.search('total latency rating: (-?\d+.\d+)', report_temp).group(1),
+                                total_losses_rating=re.search('total losses rating: (-?\d+.\d+)', report_temp).group(1),
+                                total_auditd_rating=re.search('total auditd rating: (-?\d+.\d+)', report_temp).group(1))
 
 tables = ''
 for file in Path(REPORT_DIR).glob('aub_*_table.html'):

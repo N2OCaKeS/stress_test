@@ -1,5 +1,5 @@
 #SCRIPT_DIR = '/media/sf_git/stress_test/auditd_benchmark'
-SCRIPT_DIR = '/home/rkuznetsov/git/stress_test/auditd_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/auditd_benchmark'
 
 LOG_FILENAME = 'aub_log'
 REPORT_FILENAME = 'aub_report.txt'
@@ -75,9 +75,9 @@ FILEAUD_PROC_BODYS = {
 }
 
 
-PS_LOWER_LIMIT = 10
-PS_UPPER_LIMIT = 100
-PS_STEP = 10
+PS_LOWER_LIMIT = 10  #10
+PS_UPPER_LIMIT = 155  #100
+PS_STEP = 5  #10
 
-DEFAULT_PS_LIFETIME = 100
+DEFAULT_PS_LIFETIME = 100 #100
 DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 1

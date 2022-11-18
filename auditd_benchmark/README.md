@@ -22,7 +22,7 @@
 
 3. Далее необходимо создать виртуальное окружение.
 
-`cd postgresql_benchmark && ./psb_prep.sh`
+`cd auditd_benchmark && ./aub_prep.sh`
 
 ### **Запуск**
 На данный момент реализовано **3** набора тестов.
@@ -45,7 +45,7 @@
 
 `cd auditd_benchmark`
 
-`venv/bin/python3 psb_run.py`
+`venv/bin/python aub_run.py`
 
 - _**--testlist**_  - обязательный выбор набора тестов
 - _**--mode**_  - необязательный выбор режима (по умолчанию _default_)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -vx
-export PG_VERSION=11
+export PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION =' | awk '{print $3}')
 
 export PG_MAIN_CLUSTER=main
 export PG_SETEST_CLUSTER=setest_cl
@@ -12,7 +12,7 @@ export PG_SETEST_PORT=6000
 #export PG_SEFOREIGN_PORT=6001
 #export PG_FILES_PORT=6002
 
-export MAIN_DIR=/media/sf_git/stress_test/postgresql_benchmark
+export MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}' | tr -d "'")
 
 # Проверка прав суперпользователя
 if ["$UID" -ne "0"]; then

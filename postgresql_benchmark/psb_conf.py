@@ -19,7 +19,7 @@ ACL_SQL_TRANSACTION = ''
 '''
 PG_VERSION = 11
 DATABASE_NAME = 'mtest'
-TABLESPACE_DEFAULT_PATH = '/var/lib/postgresql/11/pg_default'
+TABLESPACE_DEFAULT_PATH = '/var/lib/postgresql/'+ str(PG_VERSION) +'/pg_default'
 TABLESPACE_DEFAULT = 'pg_default'
 TABLESPACE_MAC_PATH = '/pg_default_mac'
 TABLESPACE_MAC = 'pg_default_mac'
@@ -62,3 +62,7 @@ CLIENTS = 1
 CLIENTS_STEP = 1
 STEP_RATIO_BY_CLIENTS = 1
 LIMITE_CLIENTS = 10
+'''
+    Расширенный репозиторий
+'''
+EXTREP = 'deb ftp://10.177.5.111/astra/testing/extended-1.7-testing 1.7_x86-64 main contrib non-free astra-ce'

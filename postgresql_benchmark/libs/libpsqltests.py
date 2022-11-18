@@ -73,7 +73,10 @@ class Test:
             completed_transactions = re.search(r'(\d+)/', out).group(1)
             expected_transactions = re.search(r'/(\d+)', out).group(1)
             tps_including_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[0]
-            tps_excluding_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[1]
+            try:
+                tps_excluding_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[1]
+            except IndexError:
+                tps_excluding_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[0]
 
             result += '{la} {tps1}|{tps2} '.format(la=latency_average+' ms',
                                                    tps1=tps_including_connections_establishing,

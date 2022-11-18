@@ -8,6 +8,8 @@
 import argparse
 import os
 import subprocess
+import runpy
+import time
 
 from sys import exit
 from os import getuid, path
@@ -19,7 +21,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, \
     SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
-    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION
 from libs.libpsqltests import Test
 from libs.libpsb import astra_version
 from libs.libtable import Report
@@ -79,6 +81,10 @@ if args.DB_PREPARE:
                                                                        init_file='psb_init.sql'),
                    shell=True,
                    stderr=subprocess.DEVNULL)
+    if PG_VERSION == 14:
+        runpy.run_module(mod_name='psb14_config-trust')
+        os.system("sudo service postgresql restart")
+        time.sleep(3)
 
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':

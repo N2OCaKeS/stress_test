@@ -35,6 +35,25 @@ class AuditdTest(Auditd, CheckAusearch):
             return wrapped
         return wrapper
 
+    @staticmethod
+    def _add_priv_prep(audit_flag, user):
+        if audit_flag == 'chown':
+            User.add_to_group(user, 'users')
+        if audit_flag == 'module':
+            User.add_priv(user, '+16')
+        if audit_flag == 'uid':
+            User.add_priv(user, '+7')
+        if audit_flag == 'gid':
+            User.add_priv(user, '+6')
+        if audit_flag == 'audit':
+            User.add_priv(user, '+1')
+        if audit_flag == 'mac':
+            User.add_priv(user, '+3')
+        if audit_flag == 'cap':
+            User.add_priv(user, '+10')
+        if audit_flag == 'chroot':
+            User.add_priv(user, '+18')
+
     def _template_ps_psaud_timer(self,
                                  syscall,
                                  life_time,
@@ -676,23 +695,7 @@ class AuditdTest(Auditd, CheckAusearch):
         user = user+'0'
         Auditd.clean()
         User.add(user)
-        if audit_flag == 'chown':
-            User.add_to_group(user, 'users')
-        if audit_flag == 'module':
-            User.add_priv(user, '+16')
-        if audit_flag == 'uid':
-            User.add_priv(user, '+7')
-        if audit_flag == 'gid':
-            User.add_priv(user, '+6')
-        if audit_flag == 'audit':
-            User.add_priv(user, '+1')
-        if audit_flag == 'mac':
-            User.add_priv(user, '+3')
-        if audit_flag == 'cap':
-            User.add_priv(user, '+10')
-        if audit_flag == 'chroot':
-            User.add_priv(user, '+18')
-
+        self._add_priv_prep(audit_flag, user)
         cmd('useraud -m {u} +{flag}'.format(u=user, flag=(audit_flag)))
 
         manager = Manager()
@@ -746,23 +749,7 @@ class AuditdTest(Auditd, CheckAusearch):
         for index in range(count):
             name = user + str(index)
             User.add(name)
-            if audit_flag == 'chown':
-                User.add_to_group(name, 'users')
-            if audit_flag == 'module':
-                User.add_priv(name, '+16')
-            if audit_flag == 'uid':
-                User.add_priv(name, '+7')
-            if audit_flag == 'gid':
-                User.add_priv(name, '+6')
-            if audit_flag == 'audit':
-                User.add_priv(name, '+1')
-            if audit_flag == 'mac':
-                User.add_priv(name, '+3')
-            if audit_flag == 'cap':
-                User.add_priv(name, '+10')
-            if audit_flag == 'chroot':
-                User.add_priv(name, '+18')
-
+            self._add_priv_prep(audit_flag, user)
             cmd('useraud -m {u} +{flag}'.format(u=name, flag=(audit_flag)))
 
         if ps_lifetime is None:
@@ -831,22 +818,7 @@ class AuditdTest(Auditd, CheckAusearch):
         for index in range(count):
             name = user + str(index)
             User.add(name)
-            if audit_flag == 'chown':
-                User.add_to_group(name, 'users')
-            if audit_flag == 'module':
-                User.add_priv(name, '+16')
-            if audit_flag == 'uid':
-                User.add_priv(name, '+7')
-            if audit_flag == 'gid':
-                User.add_priv(name, '+6')
-            if audit_flag == 'audit':
-                User.add_priv(name, '+1')
-            if audit_flag == 'mac':
-                User.add_priv(name, '+3')
-            if audit_flag == 'cap':
-                User.add_priv(name, '+10')
-            if audit_flag == 'chroot':
-                User.add_priv(name, '+18')
+            self._add_priv_prep(audit_flag, user)
             cmd('useraud -m {u} +{flag}'.format(u=name, flag=(audit_flag)))
 
         if ps_lifetime is None:

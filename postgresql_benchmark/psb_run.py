@@ -8,8 +8,6 @@
 import argparse
 import os
 import subprocess
-import runpy
-import time
 
 from sys import exit
 from os import getuid, path
@@ -81,10 +79,6 @@ if args.DB_PREPARE:
                                                                        init_file='psb_init.sql'),
                    shell=True,
                    stderr=subprocess.DEVNULL)
-    if PG_VERSION == 14:
-        runpy.run_module(mod_name='psb14_config-trust')
-        os.system("sudo service postgresql restart")
-        time.sleep(3)
 
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':

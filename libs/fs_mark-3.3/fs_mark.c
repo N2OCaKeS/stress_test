@@ -705,32 +705,14 @@ void do_run(pid_t my_pid)
 		sprintf(file_target_name, "%s/%s", names[file_index].target_dir,
 			names[file_index].f_name);
 
-//		/*
-//		 * Add mac label
-//		 */
-//		if (add_mac_label) {
-//
-//            fprintf(stdout, "%s\n", names[file_index].write_dir);
-//		    r = pdpl_file("3:63:-1:ccnr", names[file_index].write_dir);
-//		    if (r)
-//		        fprintf(stderr, "Error %d\n", r);
-//		    else
-//		        fprintf(stderr, "Ok\n");
-//		    fprintf(stdout, "%s\n", file_write_name);
-//		    r = pdpl_file("0:63:0", file_write_name);
-//		    if (r)
-//		        fprintf(stderr, "Error %d\n", r);
-//		    else
-//		        fprintf(stderr, "Ok\n");
-//
-//            fprintf(stdout, "%s\n", file_target_name);
-//		    r = pdpl_file("0:63:0", file_target_name);
-//		    if (r)
-//		        fprintf(stderr, "Error %d errbo %d\n", r, errno);
-//		    else
-//                fprintf(stderr, "Ok\n");
-//
-//        }
+		/*
+		 * Add mac label
+		 */
+		if (add_mac_label) {
+		    r = pdpl_file("3:63:-1:ccnr", names[file_index].write_dir);
+		    if (r)
+		        fprintf(stderr, "Error %d\n", r);
+        }
 
 		start(0);
 		if ((fd =
@@ -745,11 +727,11 @@ void do_run(pid_t my_pid)
 		 * Add mac label
 		 */
 		 if (add_mac_label) {
-		    r = pdpl_file("0:63:0", file_write_name);
+		    r = pdpl_file("3:63:-1", file_write_name);
 		    if (r)
 		        fprintf(stderr, "Error %d\n", r);
-		    else
-		        fprintf(stderr, "Ok\n");
+//		    else
+//		        fprintf(stderr, "Ok\n");
 		 }
 
 		delta = stop(0, 0);
@@ -844,11 +826,11 @@ void do_run(pid_t my_pid)
              * Add mac label
              */
             if (add_mac_label) {
-                r = pdpl_file("0:63:0", file_target_name);
+                r = pdpl_file("3:63:-1", file_target_name);
                 if (r)
                     fprintf(stderr, "Error %d\n", r);
-                else
-                    fprintf(stderr, "Ok\n");
+//                else
+//                    fprintf(stderr, "Ok\n");
             }
 
 			if (fsync(fd) == -1) {
@@ -893,11 +875,11 @@ void do_run(pid_t my_pid)
              * Add mac label
              */
             if (add_mac_label) {
-                r = pdpl_file("0:63:0", file_target_name);
+                r = pdpl_file("3:63:-1", file_target_name);
                 if (r)
                     fprintf(stderr, "Error %d\n", r);
-                else
-                    fprintf(stderr, "Ok\n");
+//                else
+//                    fprintf(stderr, "Ok\n");
             }
 
 			if (fsync(fd) == -1) {
@@ -940,11 +922,11 @@ void do_run(pid_t my_pid)
          * Add mac label
          */
         if (add_mac_label) {
-            r = pdpl_file("0:63:0", file_target_name);
+            r = pdpl_file("3:63:-1", file_target_name);
             if (r)
                 fprintf(stderr, "Error %d\n", r);
-            else
-                fprintf(stderr, "Ok\n");
+//            else
+//                fprintf(stderr, "Ok\n");
         }
 
 		if (fsync(fd) == -1) {

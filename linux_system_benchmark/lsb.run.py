@@ -20,11 +20,15 @@ parser.add_argument('-m', '--mode',
                     dest='MODE')
 
 def test_run():
+    
+    #Список тестов
     tests_list = ['dhry2reg', 'whetstone-double', 'syscall', 'pipe', 'context1', 'spawn', 'execl', 'fstime-w', 'fstime-r', 'fstime', 
-            'fsbuffer-w', 'fsbuffer-r', 'fsbuffer', 'fsdisk-w ', 'fsdisk-r', 'fsdisk', 'shell1', 'shell8', 'shell16']
-
-    runs_number = 2
-    tests_number = len(tests_list) - 1
+            'fsbuffer-w', 'fsbuffer-r', 'fsbuffer', 'fsdisk-w ', 'fsdisk-r', 'fsdisk', 'shell1', 'shell8']  
+    
+    #Количество прогонов тестов
+    runs_number = 12    
+    #Количество тестов
+    tests_number = len(tests_list) - 1  
     test_name = tests_list[tests_number]
     cycles = runs_number
 
@@ -32,7 +36,7 @@ def test_run():
 
         while cycles > 0:
 
-            subprocess.run(['cd byte-unixbench/UnixBench && ./Run -c 1 -i 1 %s' %(test_name)], shell=True)
+            subprocess.run(['cd byte-unixbench/UnixBench && ./Run -c 6 -i 1 %s' %(test_name)], shell=True)
             cycles = cycles - 1
         
         tests_number = tests_number - 1
@@ -47,4 +51,4 @@ if args.MODE == 'default':
  
 elif args.MODE == 'extended':
 
-    print("pass")
+    print("In developing")

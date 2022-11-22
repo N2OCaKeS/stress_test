@@ -560,7 +560,7 @@ void write_file(int fd,
 	int ret = 0;
 	int sz_left;
 	int write_size, write_calls;
-	unsigned long long local_write_usec, delta;
+	unsigned long long local_write_usec, delta, mac_delta;
 
 	write_calls = 0;
 	write_size = io_buffer_size;
@@ -647,7 +647,7 @@ void do_run(pid_t my_pid)
 {
 	int file_index, fd, r;
 	float files_per_sec;
-	unsigned long long total_file_ops, delta, loop_usecs;
+	unsigned long long total_file_ops, delta, mac_delta, loop_usecs;
 	unsigned long long creat_usec, max_creat_usec, min_creat_usec;
 	unsigned long long avg_write_usec, max_write_usec, min_write_usec,
 	    total_write_usec;
@@ -711,7 +711,7 @@ void do_run(pid_t my_pid)
 		if (add_mac_label) {
 		    r = pdpl_file("3:63:-1:ccnr", names[file_index].write_dir);
 		    if (r)
-		        fprintf(stderr, "Error %d\n", r);
+		        fprintf(stderr, "Error MAC %d\n", r);
         }
 
 		start(0);
@@ -729,9 +729,9 @@ void do_run(pid_t my_pid)
 		 if (add_mac_label) {
 		    r = pdpl_file("3:63:-1", file_write_name);
 		    if (r)
-		        fprintf(stderr, "Error %d\n", r);
-//		    else
-//		        fprintf(stderr, "Ok\n");
+		        fprintf(stderr, "Error MAC %d\n", r);
+		    mac_delta = stop(0, 0);
+		    creat_usec -= mac_delta;
 		 }
 
 		delta = stop(0, 0);
@@ -828,9 +828,9 @@ void do_run(pid_t my_pid)
             if (add_mac_label) {
                 r = pdpl_file("3:63:-1", file_target_name);
                 if (r)
-                    fprintf(stderr, "Error %d\n", r);
-//                else
-//                    fprintf(stderr, "Ok\n");
+                    fprintf(stderr, "Error MAC %d\n", r);
+                mac_delta = stop(0, 0);
+                fsync_usec -= mac_delta;
             }
 
 			if (fsync(fd) == -1) {
@@ -877,9 +877,9 @@ void do_run(pid_t my_pid)
             if (add_mac_label) {
                 r = pdpl_file("3:63:-1", file_target_name);
                 if (r)
-                    fprintf(stderr, "Error %d\n", r);
-//                else
-//                    fprintf(stderr, "Ok\n");
+                    fprintf(stderr, "Error MAC %d\n", r);
+                mac_delta = stop(0, 0);
+                fsync_usec -= mac_delta;
             }
 
 			if (fsync(fd) == -1) {
@@ -925,8 +925,8 @@ void do_run(pid_t my_pid)
             r = pdpl_file("3:63:-1", file_target_name);
             if (r)
                 fprintf(stderr, "Error %d\n", r);
-//            else
-//                fprintf(stderr, "Ok\n");
+            mac_delta = stop(0, 0);
+            fsync_usec -= mac_delta;
         }
 
 		if (fsync(fd) == -1) {

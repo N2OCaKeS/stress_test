@@ -48,6 +48,7 @@ char *fs_mark_version = "3.3";
 
 #include <stdio.h>
 #include <parsec/pdp.h>
+#include <errno.h>
 
 #include "fs_mark.h"
 
@@ -704,33 +705,32 @@ void do_run(pid_t my_pid)
 		sprintf(file_target_name, "%s/%s", names[file_index].target_dir,
 			names[file_index].f_name);
 
-		/*
-		 * Add mac label
-		 */
-		if (add_mac_label) {
-
-            fprintf(stdout, "%s\n", names[file_index].write_dir);
-		    r = pdpl_file("3:63:-1:ccnr", names[file_index].write_dir);
-		    if (r)
-		        fprintf(stderr, "Error %d\n", r);
-		    else
-		        fprintf(stderr, "Ok\n");
-
-		    fprintf(stdout, "%s\n", file_write_name);
-		    r = pdpl_file("0:63:0", file_write_name);
-		    if (r)
-		        fprintf(stderr, "Error %d\n", r);
-		    else
-		        fprintf(stderr, "Ok\n");
-
-            fprintf(stdout, "%s\n", file_target_name);
-		    r = pdpl_file("0:63:0", file_target_name);
-		    if (r)
-		        fprintf(stderr, "Error %d\n", r);
-		    else
-                fprintf(stderr, "Ok\n");
-
-        }
+//		/*
+//		 * Add mac label
+//		 */
+//		if (add_mac_label) {
+//
+//            fprintf(stdout, "%s\n", names[file_index].write_dir);
+//		    r = pdpl_file("3:63:-1:ccnr", names[file_index].write_dir);
+//		    if (r)
+//		        fprintf(stderr, "Error %d\n", r);
+//		    else
+//		        fprintf(stderr, "Ok\n");
+//		    fprintf(stdout, "%s\n", file_write_name);
+//		    r = pdpl_file("0:63:0", file_write_name);
+//		    if (r)
+//		        fprintf(stderr, "Error %d\n", r);
+//		    else
+//		        fprintf(stderr, "Ok\n");
+//
+//            fprintf(stdout, "%s\n", file_target_name);
+//		    r = pdpl_file("0:63:0", file_target_name);
+//		    if (r)
+//		        fprintf(stderr, "Error %d errbo %d\n", r, errno);
+//		    else
+//                fprintf(stderr, "Ok\n");
+//
+//        }
 
 		start(0);
 		if ((fd =
@@ -740,6 +740,18 @@ void do_run(pid_t my_pid)
 				strerror(errno));
 			cleanup_exit();
 		}
+
+		/*
+		 * Add mac label
+		 */
+		 if (add_mac_label) {
+		    r = pdpl_file("0:63:0", file_write_name);
+		    if (r)
+		        fprintf(stderr, "Error %d\n", r);
+		    else
+		        fprintf(stderr, "Ok\n");
+		 }
+
 		delta = stop(0, 0);
 		creat_usec += delta;
 
@@ -828,6 +840,17 @@ void do_run(pid_t my_pid)
 				cleanup_exit();
 			}
 
+            /*
+             * Add mac label
+             */
+            if (add_mac_label) {
+                r = pdpl_file("0:63:0", file_target_name);
+                if (r)
+                    fprintf(stderr, "Error %d\n", r);
+                else
+                    fprintf(stderr, "Ok\n");
+            }
+
 			if (fsync(fd) == -1) {
 				fprintf(stderr, "fs_mark: fsync failed %s\n",
 					strerror(errno));
@@ -866,6 +889,17 @@ void do_run(pid_t my_pid)
 				cleanup_exit();
 			}
 
+			/*
+             * Add mac label
+             */
+            if (add_mac_label) {
+                r = pdpl_file("0:63:0", file_target_name);
+                if (r)
+                    fprintf(stderr, "Error %d\n", r);
+                else
+                    fprintf(stderr, "Ok\n");
+            }
+
 			if (fsync(fd) == -1) {
 				fprintf(stderr, "fs_mark: fsync failed %s\n",
 					strerror(errno));
@@ -901,6 +935,17 @@ void do_run(pid_t my_pid)
 				file_target_name, strerror(errno));
 			cleanup_exit();
 		}
+
+        /*
+         * Add mac label
+         */
+        if (add_mac_label) {
+            r = pdpl_file("0:63:0", file_target_name);
+            if (r)
+                fprintf(stderr, "Error %d\n", r);
+            else
+                fprintf(stderr, "Ok\n");
+        }
 
 		if (fsync(fd) == -1) {
 			fprintf(stderr, "fs_mark: fsync failed %s\n",

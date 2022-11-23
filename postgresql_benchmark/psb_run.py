@@ -9,6 +9,7 @@ import argparse
 import os
 import subprocess
 
+from time import time
 from sys import exit
 from os import getuid, path
 from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, \
@@ -56,6 +57,9 @@ parser.add_argument('-c', '--cleaner',
                     dest='CLEANER')
 
 args = parser.parse_args()
+
+#
+start_time = time()
 
 # is root?
 if getuid() != 0:
@@ -317,3 +321,5 @@ if args.CLEANER:
     subprocess.run('bash {dir}/psb_db_del.sh {v}'.format(dir=SCRIPT_DIR, v=version[0]),
                    shell=True,
                    stderr=subprocess.DEVNULL)
+
+print('lead time: {t} sec'.format(t=time() - start_time))

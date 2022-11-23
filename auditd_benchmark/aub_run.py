@@ -7,6 +7,7 @@
 
 import argparse
 
+from time import time
 from os import path, mkdir
 from libs.libtest import AuditdTestSet
 from libs.libtable import Report
@@ -66,6 +67,9 @@ parser.add_argument('-e', '--event',
                     dest='EVENT')
 
 args = parser.parse_args()
+
+# Засечь время выполнения скрипта
+start_time = time()
 
 # Создать /log
 if not path.exists(LOG_DIR):
@@ -318,3 +322,5 @@ elif args.TEST_LIST == 'fileaud':
     else:
         exit(2)
 
+# Вернуть время выполнения в секундах
+print('lead time: {t} sec'.format(t=time() - start_time))

@@ -11,7 +11,7 @@ import subprocess
 from os import path, mkdir
 from sys import exit
 from fabric import Connection
-from time import sleep
+from time import sleep, time
 from cfs_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
     HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_PATH
 
@@ -160,6 +160,8 @@ def cmd(command):
                    stderr=subprocess.DEVNULL)
 
 
+start_time = time()
+
 if args.VIRTUAL: # вирт. стенд
     # Восстановить последний актуальные снимки SNAPSHOT_NAME
     for host in all_hosts:
@@ -298,4 +300,5 @@ print("###### - END - ######")
 print("#####################")
 
 # Выключаем все машины
-#shutdown_all_hosts()
+print('lead time: {t} sec'.format(t=time() - start_time))
+shutdown_all_hosts()

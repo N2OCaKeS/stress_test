@@ -10,7 +10,7 @@ import subprocess
 
 
 from sys import exit
-from time import sleep
+from time import sleep, time
 from os import getuid, path, mkdir
 from fabric import Connection
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
@@ -111,6 +111,8 @@ def host_is_available(node):
     except Exception:
         return False
 
+
+start_time = time()
 
 if args.VIRTUAL: # вирт. стенд
     '''
@@ -214,3 +216,5 @@ else: # физ. стенд
         exit(2)
 
     cmd('umount {}'.format(STORAGE_MOUNT_DIR))
+
+print('lead time: {t} sec'.format(t=time() - start_time))

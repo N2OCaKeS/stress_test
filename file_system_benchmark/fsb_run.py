@@ -32,7 +32,7 @@ parser.add_argument('--disk-size',
                     help='size of vdi disk',
                     dest='DISK_SIZE')
 
-parser.add_argument('--fs',
+parser.add_argument('--file-system',
                     action='store',
                     choices=['ext2',
                              'ext3',
@@ -46,7 +46,7 @@ parser.add_argument('--fs',
 
 parser.add_argument('--host',
                     action='store',
-                    choices=['sudcm',
+                    choices=['fidcm',
                              'stand1',
                              'stand2'],
                     required=False,
@@ -64,19 +64,19 @@ parser.add_argument('--test-set',
                     required=True,
                     dest='TS')
 
-parser.add_argument('--data-from-config',
-                    action='store_false',
+parser.add_argument('--parsec',
+                    action='store_true',
                     required=False,
-                    help='get data from config',
-                    dest='CONFIG')
+                    help='',
+                    dest='PARSEC')
 
 args = parser.parse_args()
 '''
     main
 '''
-script_dir = SCRIPT_DIR
 run_storage_init = 'sudo {dir}/venv/bin/python {dir}/fsb_storage_init.py --fs {fs}'
 run_test = 'sudo {dir}/venv/bin/python {dir}/fsb_test.py --test-set {ts}'
+run_test_parsec = 'sudo {dir}/venv/bin/python {dir}/fsb_test.py --test-set {ts} --parsec'
 
 '''
     VirtualBox
@@ -152,7 +152,7 @@ if args.VIRTUAL: # вирт. стенд
                         port=HOSTS[args.HOST]['port'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
-            storage_host_client.run(run_storage_init.format(dir=script_dir,
+            storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
                                                             fs=args.FS))
     except Exception as exception:
         print("\033[91mНе удалось настроить стенд.\033[0m")
@@ -172,8 +172,12 @@ if args.VIRTUAL: # вирт. стенд
                         port=HOSTS[args.HOST]['port'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as node_client:
-            node_client.run(run_test.format(dir=script_dir,
-                                            ts=args.TS))
+            if args.PARSEC:
+                node_client.run(run_test_parsec.format(dir=SCRIPT_DIR,
+                                                       ts=args.TS))
+            else:
+                node_client.run(run_test.format(dir=SCRIPT_DIR,
+                                                ts=args.TS))
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
         print(exception)
@@ -188,7 +192,7 @@ else: # физ. стенд
         Запустить скрипт настройки тестовой машины.
     '''
     try:
-        cmd(run_storage_init.format(dir=script_dir,
+        cmd(run_storage_init.format(dir=SCRIPT_DIR,
                                     fs=args.FS,
                                     host=args.HOST))
     except Exception as exception:
@@ -208,8 +212,12 @@ else: # физ. стенд
         mkdir(REPORT_PATH, mode=0o755)
 
     try:
-        cmd(run_test.format(dir=script_dir,
-                            ts=args.TS))
+        if args.PARSEC:
+            cmd(run_test_parsec.format(dir=SCRIPT_DIR,
+                                       ts=args.TS))
+        else:
+            cmd(run_test.format(dir=SCRIPT_DIR,
+                                ts=args.TS))
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
         print(exception)

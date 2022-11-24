@@ -45,6 +45,7 @@ def cmd(command,
 
 # Проверка наличия диска
 cmd('lsblk | grep {device}'.format(device=STORAGE_NAME))
+cmd('apt install -y libpdp-dev')
 
 if args.FS == 'fat':
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary fat32 0% 100%'.format(device=STORAGE_NAME))

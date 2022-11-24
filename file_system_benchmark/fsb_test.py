@@ -9,7 +9,7 @@ import logging
 import argparse
 
 from time import time
-from libs.libtests import TestSet
+from libs.libtest import TestSet
 from libs.libtable import Report
 from os import path, mkdir
 from fsb_conf import LOG_PATH, REPORT_PATH, \
@@ -31,11 +31,12 @@ parser.add_argument('--test-set',
                     required=True,
                     dest='TS')
 
-parser.add_argument('--data-from-config',
-                    action='store_false',
+parser.add_argument('--parsec',
+                    action='store_true',
                     required=False,
-                    help='get data from config',
-                    dest='CONFIG')
+                    help='',
+                    dest='PARSEC')
+
 args = parser.parse_args()
 
 logging.basicConfig(filename=LOG_PATH,
@@ -111,10 +112,7 @@ if args.TS == 'timeout':
         Время загрузки                                 7200 (2 часа)
     '''
     start_time = time()
-    if args.CONFIG:
-        run_test = TestSet(test_timeout=TIMEOUT)
-    else:
-        run_test = TestSet(test_timeout=7200)
+    run_test = TestSet(test_timeout=TIMEOUT)
 
     try:
         run_test.test_2_timeout()
@@ -134,14 +132,10 @@ if args.TS == 'multithreaded':
         Верхняя граница загрузки:                      20%
         Шаг загрузки:                                  2%
     '''
-    if args.CONFIG:
-        run_test = TestSet(start_burder=TH_START_BORDER_FOR_DATA,
-                           end_burder=TH_END_BORDER_FOR_DATA,
-                           step=TH_STEP_FOR_BORDER)
-    else:
-        run_test = TestSet(start_burder=10,  # загрузка свободного места в процентах на один поток
-                           end_burder=20,
-                           step=2)
+    run_test = TestSet(start_burder=TH_START_BORDER_FOR_DATA,
+                       end_burder=TH_END_BORDER_FOR_DATA,
+                       step=TH_STEP_FOR_BORDER)
+
     start_time = time()
     # 3 потока. 3 типа файлов
     try:
@@ -181,14 +175,10 @@ if args.TS == 'big_files':
         Шаг загрузки:                                  5%
     '''
     start_time = time()
-    if args.CONFIG:
-        run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
-                           end_burder=END_BORDER_FOR_DATA,
-                           step=STEP_FOR_BORDER)
-    else:
-        run_test = TestSet(start_burder=10,  # загрузка свободного места в процентах
-                           end_burder=40,
-                           step=5)
+    run_test = TestSet(start_burder=START_BORDER_FOR_DATA,
+                       end_burder=END_BORDER_FOR_DATA,
+                       step=STEP_FOR_BORDER)
+
     try:
         run_test.test_6_big_files()
     except Exception as exeption:
@@ -204,27 +194,18 @@ if args.TS == 'fs_mark_count':
     '''
     # Изменение количества файлов
     start_time = time()
-    if args.CONFIG:
-        run_test = TestSet(start_burder=FILES,
-                           end_burder=FILES_LIMIT,
-                           step=FILES_STEP)
-    else:
-        run_test = TestSet(start_burder=10,  # количество файлов
-                           end_burder=100,
-                           step=10)
-
+    run_test = TestSet(start_burder=FILES,
+                       end_burder=FILES_LIMIT,
+                       step=FILES_STEP)
     try:
-        run_test.test_7_fs_mark33_count()
+        run_test.test_7_fs_mark33_count(parsec=args.PARSEC)
     except Exception as exeption:
         log.info(exeption)
     finally:
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    if args.CONFIG:
-        report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
-    else:
-        report = Report(ox_lo_lim=10, ox_up_lim=100)
+    report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
     report.create_beauty_table()
     report.create_fsb_fc_sp_graph()
     report.create_fsb_fc_app_overhead_graph()
@@ -253,26 +234,18 @@ if args.TS == 'fs_mark_size':
     '''
     # Изменение размера файлов
     start_time = time()
-    if args.CONFIG:
-        run_test = TestSet(start_burder=SIZE,
-                           end_burder=SIZE_LIMIT,
-                           step=SIZE_STEP)
-    else:
-        run_test = TestSet(start_burder=1024,  # размер в байтах
-                           end_burder=10240,
-                           step=1024)
+    run_test = TestSet(start_burder=SIZE,
+                       end_burder=SIZE_LIMIT,
+                       step=SIZE_STEP)
     try:
-        run_test.test_8_fs_mark33_size()
+        run_test.test_8_fs_mark33_size(parsec=args.PARSEC)
     except Exception as exeption:
         log.info(exeption)
     finally:
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    if args.CONFIG:
-        report = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
-    else:
-        report = Report(ox_lo_lim=10, ox_up_lim=100)
+    report = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
     report.create_beauty_table()
     report.create_fsb_sz_sp_graph()
     report.create_fsb_sz_app_overhead_graph()

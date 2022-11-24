@@ -46,7 +46,13 @@ char *fs_mark_version = "3.3";
 #include <linux/limits.h>
 #include <linux/unistd.h>
 
+#include <stdio.h>
+#include <parsec/pdp.h>
+#include <errno.h>
+
 #include "fs_mark.h"
+
+int add_mac_label = 0;
 
 void cleanup_exit(void)
 {
@@ -61,13 +67,14 @@ void cleanup_exit(void)
 void usage(void)
 {
 	fprintf(stderr,
-		"Usage: fs_mark\n%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
+		"Usage: fs_mark\n%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s ",
 		"\t-h <print usage and exit>\n",
 		"\t-k <keep files after each iteration>\n",
 		"\t-F <run until FS full>\n",
 		"\t-S Sync Method (0:No Sync, 1:fsyncBeforeClose, "
 		"2:sync/1_fsync, 3:PostReverseFsync, "
 		"4:syncPostReverseFsync, 5:PostFsync, 6:syncPostFsync)\n",
+		"\t-M <add maclabel on file>\n",
 		"\t[-D number (of subdirectories)]\n",
 		"\t[-N number (of files in each subdirectory in Round Robin mode)]\n",
 		"\t[-d dir1 ... -d dirN]\n", "\t[-l log_file_name]\n",
@@ -94,11 +101,17 @@ void process_args(int argc, char **argv, char **envp)
 	 * Parse all of the options that the user specified.
 	 */
 	while ((ret =
-		getopt(argc, argv, "vhkFr:S:N:D:d:l:L:n:p:s:t:w:")) != EOF) {
+		getopt(argc, argv, "vMhkFr:S:N:D:d:l:L:n:p:s:t:w:")) != EOF) {
 		switch (ret) {
 		case 'v':	/* verbose stats */
 			verbose_stats = 1;
 			break;
+
+		case 'M': /* test with mac label on file */
+		    add_mac_label = 1;
+		    if (add_mac_label)
+		        fprintf(stdout, "M = %d. MAC is enable\n", add_mac_label);
+		    break;
 
 		case 'D':	/* Use Multiple directories */
 			num_subdirs = atoi(optarg);
@@ -547,7 +560,7 @@ void write_file(int fd,
 	int ret = 0;
 	int sz_left;
 	int write_size, write_calls;
-	unsigned long long local_write_usec, delta;
+	unsigned long long local_write_usec, delta, mac_delta;
 
 	write_calls = 0;
 	write_size = io_buffer_size;
@@ -611,6 +624,18 @@ static void check_space(pid_t my_pid)
 	return;
 }
 
+int pdpl_file(char *label, char *path)
+{
+    PDPL_T* l;
+    int r;
+
+    l = pdpl_get_from_text(label);
+    if (!l) return 1;
+    r = pdp_set_path(path, l);
+    pdpl_put(l);
+    return r;
+}
+
 /*
  * Main loop in program - creates, writes and removes "num_files" files of each size. 
  * Each of the subcomponents is measured separately so we can track how specific aspects 
@@ -620,9 +645,9 @@ static struct timeval loop_start_tv, loop_stop_tv;
 
 void do_run(pid_t my_pid)
 {
-	int file_index, fd;
+	int file_index, fd, r;
 	float files_per_sec;
-	unsigned long long total_file_ops, delta, loop_usecs;
+	unsigned long long total_file_ops, delta, mac_delta, loop_usecs;
 	unsigned long long creat_usec, max_creat_usec, min_creat_usec;
 	unsigned long long avg_write_usec, max_write_usec, min_write_usec,
 	    total_write_usec;
@@ -669,6 +694,7 @@ void do_run(pid_t my_pid)
 		 * Note: the file name is a full path, so it specifies both the directory and 
 		 * filename with the directory.
 		 */
+
 		setup_file_name(file_index, my_pid);
 
 		/*
@@ -679,6 +705,15 @@ void do_run(pid_t my_pid)
 		sprintf(file_target_name, "%s/%s", names[file_index].target_dir,
 			names[file_index].f_name);
 
+		/*
+		 * Add mac label
+		 */
+		if (add_mac_label) {
+		    r = pdpl_file("3:63:-1:ccnr", names[file_index].write_dir);
+		    if (r)
+		        fprintf(stderr, "Error MAC %d\n", r);
+        }
+
 		start(0);
 		if ((fd =
 		     open(file_write_name, O_CREAT | O_RDWR | O_TRUNC,
@@ -687,6 +722,18 @@ void do_run(pid_t my_pid)
 				strerror(errno));
 			cleanup_exit();
 		}
+
+		/*
+		 * Add mac label
+		 */
+		 if (add_mac_label) {
+		    r = pdpl_file("3:63:-1", file_write_name);
+		    if (r)
+		        fprintf(stderr, "Error MAC %d\n", r);
+		    mac_delta = stop(0, 0);
+		    creat_usec -= mac_delta;
+		 }
+
 		delta = stop(0, 0);
 		creat_usec += delta;
 
@@ -775,6 +822,17 @@ void do_run(pid_t my_pid)
 				cleanup_exit();
 			}
 
+            /*
+             * Add mac label
+             */
+            if (add_mac_label) {
+                r = pdpl_file("3:63:-1", file_target_name);
+                if (r)
+                    fprintf(stderr, "Error MAC %d\n", r);
+                mac_delta = stop(0, 0);
+                fsync_usec -= mac_delta;
+            }
+
 			if (fsync(fd) == -1) {
 				fprintf(stderr, "fs_mark: fsync failed %s\n",
 					strerror(errno));
@@ -813,6 +871,17 @@ void do_run(pid_t my_pid)
 				cleanup_exit();
 			}
 
+			/*
+             * Add mac label
+             */
+            if (add_mac_label) {
+                r = pdpl_file("3:63:-1", file_target_name);
+                if (r)
+                    fprintf(stderr, "Error MAC %d\n", r);
+                mac_delta = stop(0, 0);
+                fsync_usec -= mac_delta;
+            }
+
 			if (fsync(fd) == -1) {
 				fprintf(stderr, "fs_mark: fsync failed %s\n",
 					strerror(errno));
@@ -848,6 +917,17 @@ void do_run(pid_t my_pid)
 				file_target_name, strerror(errno));
 			cleanup_exit();
 		}
+
+        /*
+         * Add mac label
+         */
+        if (add_mac_label) {
+            r = pdpl_file("3:63:-1", file_target_name);
+            if (r)
+                fprintf(stderr, "Error %d\n", r);
+            mac_delta = stop(0, 0);
+            fsync_usec -= mac_delta;
+        }
 
 		if (fsync(fd) == -1) {
 			fprintf(stderr, "fs_mark: fsync failed %s\n",

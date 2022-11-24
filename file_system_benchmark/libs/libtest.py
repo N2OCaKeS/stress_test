@@ -309,13 +309,16 @@ class Test:
         return True
 
     @staticmethod
-    def fs_mark33_count(start=10, end=100, step=5, size=1024, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
+    def fs_mark33_count(start=10, end=100, step=5, size=1024, parsec=False, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_count.__name__))
 
         report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
         report_file.close()
 
-        run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
+        if parsec:
+            run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v -M'
+        else:
+            run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
         print('FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')
         for count in range(start, end, step):
             test = subprocess.run(run_fs_mark.format(script_dir=scr_dir,
@@ -342,13 +345,15 @@ class Test:
         return True
 
     @staticmethod
-    def fs_mark33_size(start=1024, end=10240, step=1024, count=1000, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
+    def fs_mark33_size(start=1024, end=10240, step=1024, count=1000, parsec=False, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_size.__name__))
 
         report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
         report_file.close()
-
-        run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
+        if parsec:
+            run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v -M'
+        else:
+            run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
         print('FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')
         for size in range(start, end, step):
             test = subprocess.run(run_fs_mark.format(script_dir=scr_dir,
@@ -489,14 +494,14 @@ class TestSet(Test):
         Базовый тест 7.
         Бенчмарк FS_mark-3.3 
     '''
-    def test_7_fs_mark33_count(self):
+    def test_7_fs_mark33_count(self, parsec=False):
         # print("### - TEST - ### <{}>:".format(TestSet.test_7.__name__))
         log.info(TestSet.test_7_fs_mark33_count.__name__)
 
-        Test.fs_mark33_count(start=self.sb, end=self.eb, step=self.s)
+        Test.fs_mark33_count(start=self.sb, end=self.eb, step=self.s, parsec=parsec)
 
-    def test_8_fs_mark33_size(self):
+    def test_8_fs_mark33_size(self, parsec=False):
         # print("### - TEST - ### <{}>:".format(TestSet.test_7.__name__))
         log.info(TestSet.test_8_fs_mark33_size.__name__)
 
-        Test.fs_mark33_size(start=self.sb, end=self.eb, step=self.s, count=self.fc)
+        Test.fs_mark33_size(start=self.sb, end=self.eb, step=self.s, count=self.fc, parsec=parsec)

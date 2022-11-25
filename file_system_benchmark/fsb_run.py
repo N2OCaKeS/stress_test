@@ -114,6 +114,10 @@ def host_is_available(node):
 
 start_time = time()
 
+if args.PARSEC and 'ext' not in args.FS:
+    print('"--parsec" is only ext* file systems')
+    exit(2)
+
 if args.VIRTUAL: # вирт. стенд
     '''
         Создать тестовый диск заданного размера. 

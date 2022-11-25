@@ -10,7 +10,7 @@ import argparse
 
 from time import time
 from libs.libtest import TestSet
-from libs.libtable import Report
+# from libs.libtable import Report
 from os import path, mkdir
 from fsb_conf import LOG_PATH, REPORT_PATH, \
         START_BORDER_FOR_DATA, STEP_FOR_BORDER, END_BORDER_FOR_DATA, TIMEOUT, \
@@ -205,27 +205,27 @@ if args.TS == 'fs_mark_count':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
-    report.create_beauty_table()
-    report.create_fsb_fc_sp_graph()
-    report.create_fsb_fc_app_overhead_graph()
-    report.create_fsb_fc_create_graph()
-    report.create_fsb_fc_write_graph()
-    report.create_fsb_fc_fsync_graph()
-    report.create_fsb_fc_sync_graph()
-    report.create_fsb_fc_close_graph()
-    report.create_fsb_fc_unlink_graph()
-    report.merge(ox_lst=report.file_count_lst,
-                 table_lst=['fsb_report_table.html'],
-                 graph_lst=['fsb_file_count_speed_graph.png',
-                            'fsb_file_count_app_overhead_graph.png',
-                            'fsb_file_count_create_graph.png',
-                            'fsb_file_count_write_graph.png',
-                            'fsb_file_count_fsync_graph.png',
-                            'fsb_file_count_sync_graph.png',
-                            'fsb_file_count_close_graph.png',
-                            'fsb_file_count_unlink_graph.png'])
-    report.create_tar()
+    # report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
+    # report.create_beauty_table()
+    # report.create_fsb_fc_sp_graph()
+    # report.create_fsb_fc_app_overhead_graph()
+    # report.create_fsb_fc_create_graph()
+    # report.create_fsb_fc_write_graph()
+    # report.create_fsb_fc_fsync_graph()
+    # report.create_fsb_fc_sync_graph()
+    # report.create_fsb_fc_close_graph()
+    # report.create_fsb_fc_unlink_graph()
+    # report.merge(ox_lst=report.file_count_lst,
+    #              table_lst=['fsb_report_table.html'],
+    #              graph_lst=['fsb_file_count_speed_graph.png',
+    #                         'fsb_file_count_app_overhead_graph.png',
+    #                         'fsb_file_count_create_graph.png',
+    #                         'fsb_file_count_write_graph.png',
+    #                         'fsb_file_count_fsync_graph.png',
+    #                         'fsb_file_count_sync_graph.png',
+    #                         'fsb_file_count_close_graph.png',
+    #                         'fsb_file_count_unlink_graph.png'])
+    # report.create_tar()
 
 if args.TS == 'fs_mark_size':
     '''    
@@ -245,24 +245,24 @@ if args.TS == 'fs_mark_size':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    report = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
-    report.create_beauty_table()
-    report.create_fsb_sz_sp_graph()
-    report.create_fsb_sz_app_overhead_graph()
-    report.create_fsb_sz_create_graph()
-    report.create_fsb_sz_write_graph()
-    report.create_fsb_sz_fsync_graph()
-    report.create_fsb_sz_sync_graph()
-    report.create_fsb_sz_close_graph()
-    report.create_fsb_sz_unlink_graph()
-    report.merge(ox_lst=report.file_size_lst,
-                 table_lst=['fsb_report_table.html'],
-                 graph_lst=['fsb_file_size_speed_graph.png',
-                            'fsb_file_size_app_overhead_graph.png',
-                            'fsb_file_size_create_graph.png',
-                            'fsb_file_size_write_graph.png',
-                            'fsb_file_size_fsync_graph.png',
-                            'fsb_file_size_sync_graph.png',
-                            'fsb_file_size_close_graph.png',
-                            'fsb_file_size_unlink_graph.png'])
-    report.create_tar()
+    # report = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
+    # report.create_beauty_table()
+    # report.create_fsb_sz_sp_graph()
+    # report.create_fsb_sz_app_overhead_graph()
+    # report.create_fsb_sz_create_graph()
+    # report.create_fsb_sz_write_graph()
+    # report.create_fsb_sz_fsync_graph()
+    # report.create_fsb_sz_sync_graph()
+    # report.create_fsb_sz_close_graph()
+    # report.create_fsb_sz_unlink_graph()
+    # report.merge(ox_lst=report.file_size_lst,
+    #              table_lst=['fsb_report_table.html'],
+    #              graph_lst=['fsb_file_size_speed_graph.png',
+    #                         'fsb_file_size_app_overhead_graph.png',
+    #                         'fsb_file_size_create_graph.png',
+    #                         'fsb_file_size_write_graph.png',
+    #                         'fsb_file_size_fsync_graph.png',
+    #                         'fsb_file_size_sync_graph.png',
+    #                         'fsb_file_size_close_graph.png',
+    #                         'fsb_file_size_unlink_graph.png'])
+    # report.create_tar()

@@ -7,6 +7,11 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
                      'short_name': 'sudcm',
                      'port': 2021
                      },
+          'fidcm': {'ip': '10.0.20.20',
+                    'full_name': 'sudcm.rtfm.rbt',
+                    'short_name': 'sudcm',
+                    'port': 2026
+                    },
           'stand1': {'ip': '10.177.5.159',
                      'full_name': 'stand1.stress.rbt',
                      'short_name':'stand1',
@@ -46,7 +51,7 @@ MACHINE_POSTFIX = 'osse'
 '''
     Имя снапшота для восстановления
 '''
-SNAPSHOT_NAME = '1.7.1.o'
+SNAPSHOT_NAME = '1.7.2.s'
 
 PORT = '7777'
 '''
@@ -71,9 +76,9 @@ START_BORDER_FOR_DATA = 10000
 STEP_FOR_BORDER = 10000
 END_BORDER_FOR_DATA = 1000000
 
-FILES = 10
-FILES_STEP = 10
-FILES_LIMIT = 100
+FILES = 100
+FILES_STEP = 100
+FILES_LIMIT = 10000
 
 SIZE = 1024
 SIZE_STEP = 1024

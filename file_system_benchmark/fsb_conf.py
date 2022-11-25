@@ -25,7 +25,8 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
 '''
     Основной лог файл в который попадают результаты тестирования
 '''
-SCRIPT_DIR = '/media/sf_git/stress_test/file_system_benchmark'
+#SCRIPT_DIR = '/media/sf_git/stress_test/file_system_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/file_system_benchmark'
 LOG_FILENAME = 'fsb_log'
 LOG_PATH = '{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 REPORT_FILENAME = 'fsb_report.txt'
@@ -76,9 +77,9 @@ START_BORDER_FOR_DATA = 10000
 STEP_FOR_BORDER = 10000
 END_BORDER_FOR_DATA = 1000000
 
-FILES = 100
-FILES_STEP = 100
-FILES_LIMIT = 10000
+FILES = 10000
+FILES_STEP = 10000
+FILES_LIMIT = 1000000
 
 SIZE = 1024
 SIZE_STEP = 1024

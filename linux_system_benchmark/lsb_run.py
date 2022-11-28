@@ -21,7 +21,6 @@ parser.add_argument('-m', '--mode',
                     dest='MODE')
 args = parser.parse_args()
 if args.MODE == 'default':
-    testset = TestSet()
-    testset.test()
+    TestSet.test_set1()
 elif args.MODE == 'extended':
     print("In developing")

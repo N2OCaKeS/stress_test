@@ -112,6 +112,8 @@ if args.TEST_LIST == 'psaud':
                                                     DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                                     LOSSES_REPORT_PSAUD)
 
+        print('lead time: {t} sec'.format(t=time() - start_time))
+
         # Cоздать отчет
         r = Report(PSAUD_PROC_BODYS.keys(), LATENCY_REPORT_PSAUD, LOSSES_REPORT_PSAUD)
         r.create_beauty_table(type='ps')
@@ -189,6 +191,8 @@ elif args.TEST_LIST == 'useraud':
                                                       DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                                       LOSSES_REPORT_USAUD,
                                                       TEST_USER)
+
+        print('lead time: {t} sec'.format(t=time() - start_time))
 
         # Cоздать отчет
         r = Report(USERAUD_PROC_BODYS.keys(), LATENCY_REPORT_USAUD, LOSSES_REPORT_USAUD)
@@ -270,6 +274,8 @@ elif args.TEST_LIST == 'fileaud':
                                                       DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                                       LOSSES_REPORT_FLAUD)
 
+        print('lead time: {t} sec'.format(t=time() - start_time))
+
         # Cоздать отчет
         r = Report(FILEAUD_PROC_BODYS.keys(), LATENCY_REPORT_FLAUD, LOSSES_REPORT_FLAUD)
         r.create_beauty_table(type='fl')
@@ -321,6 +327,3 @@ elif args.TEST_LIST == 'fileaud':
                                                       LOSSES_REPORT_FLAUD)
     else:
         exit(2)
-
-# Вернуть время выполнения в секундах
-print('lead time: {t} sec'.format(t=time() - start_time))

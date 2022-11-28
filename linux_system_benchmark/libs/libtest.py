@@ -14,7 +14,6 @@ class TestSet:
                                stderr=subprocess.DEVNULL,
                                stdout=subprocess.PIPE,
                                shell=True)
-                print(cmd_result)
                 number_of_cycles = number_of_cycles - 1
 
             number_of_cycles = NUMBER_OF_CYCLES

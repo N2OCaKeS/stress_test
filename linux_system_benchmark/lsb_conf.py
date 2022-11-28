@@ -20,3 +20,7 @@ TESTS_LIST = [
     ]
   
 NUMBER_OF_CYCLES = 12
+
+REGULAR_LIST = [
+    'In developing'
+    ]

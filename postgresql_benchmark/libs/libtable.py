@@ -316,26 +316,32 @@ class Report:
                                         ox_upper_limit=LIMITE_CLIENTS,
                                         double_tps_graph=True)
 
-    def get_la_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS, multiplier=10**-10):
+    def get_la_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
         func_la = self.data_aproximation(self.param_lst, self.la_lst)
         Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
-        return 1 / (Ila * multiplier)
+        return Ila
 
-    def get_tps1_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS, multiplier=1):
+    def get_tps1_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
         func_tps1 = self.data_aproximation(self.param_lst, self.tps1_lst)
         Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
-        return (Itps1 * multiplier)
+        return Itps1
 
-    def get_tps2_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS, multiplier=1):
+    def get_tps2_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
         func_tps2 = self.data_aproximation(self.param_lst, self.tps2_lst)
         Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
-        return (Itps2 * multiplier)
+        return Itps2
 
     def get_total_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS, multiplier=10**-5, accuracy=3):
-        return round(((self.get_la_rating(lower_limit, upper_limit)
-                       + self.get_tps1_rating(lower_limit, upper_limit)
-                       + self.get_tps2_rating(lower_limit, upper_limit))
-                      * multiplier), accuracy)
+        # weight coefficients
+        c_la = 1 / 3
+        c_tps1 = 2.5 / 3
+        c_tps2 = 2.5 / 3
+
+        return abs(round((c_la * self.get_la_rating(lower_limit, upper_limit))**(-1)
+                         * (c_tps1 * self.get_tps1_rating(lower_limit, upper_limit))
+                         * (c_tps2 * self.get_tps2_rating(lower_limit, upper_limit))
+                         * multiplier,
+                         accuracy))
 
     def merge(self, table_lst, graph_lst, path=REPORT_PATH):
         '''

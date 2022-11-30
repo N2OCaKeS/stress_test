@@ -162,7 +162,7 @@ class Report:
                 tar.add('{}/{}'.format('report', file))
 
             for file in listdir(LOG_DIR):
-                tar.add('{}/{}'.format('report', file))
+                tar.add('{}/{}'.format('log', file))
 
     def _template_aproximated_graph(self,
                                     event=None,

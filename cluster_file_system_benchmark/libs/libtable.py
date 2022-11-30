@@ -75,7 +75,9 @@ class Report:
                                                 'close_max': self.close_max_lst,
                                                 'unlink_min': self.unlink_min_lst,
                                                 'unlink_avg': self.unlink_avg_lst,
-                                                'unlink_max': self.unlink_max_lst})
+                                                'unlink_max': self.unlink_max_lst}).sort_values(by=['file_count', 'file_size'])
+
+        print(self.raw_table)
 
         self.ox_lower_limit = ox_lo_lim
         self.ox_upper_limit = ox_up_lim
@@ -167,9 +169,9 @@ class Report:
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y1, 'g')
-        plt.plot(x, y2, 'y')
-        plt.plot(x, y3, 'r')
+        plt.plot(x, y1, 'o-', 'g')
+        plt.plot(x, y2, 'o-', 'y')
+        plt.plot(x, y3, 'o-', 'r')
         plt.title('{digit_varsion}({mode}). {title1}/{title2}'.format(digit_varsion=astra_version()[0],
                                                                       mode=astra_version()[1],
                                                                       title1=ox_param_table_name,

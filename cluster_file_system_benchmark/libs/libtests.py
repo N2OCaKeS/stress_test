@@ -11,6 +11,7 @@ import concurrent.futures
 
 from time import time
 from pathlib import Path
+from threading import Lock
 from os import listdir, linesep
 from cfs_conf import STORAGE_MOUNT_DIR, LOG_PATH, SCRIPT_DIR, REPORT_PATH, REPORT_FILENAME
 from libs.libactions import create_file, del_file, \
@@ -314,8 +315,8 @@ class Test:
     def fs_mark33_count(start=10, end=100, step=5, size=1024, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_count.__name__))
 
-        report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
-        report_file.close()
+        # report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
+        # report_file.close()
 
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
         print('FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')

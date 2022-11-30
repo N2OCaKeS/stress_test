@@ -39,6 +39,22 @@ class Report:
         # graph size
         self.width = 27
         self.height = 15
+        self.linecolors = ['black',
+                           'dimgrey',
+                           'red',
+                           'orange',
+                           'yellow',
+                           'greenyellow',
+                           'green',
+                           'turquoise',
+                           'skyblue',
+                           'blue',
+                           'blueviolet',
+                           'fuchsia',
+                           'pink',
+                           'teal',
+                           'silver',
+                           ]
 
         if latency_report:
             '''Организовать датафрейм по результатам теста get_latency_stat_psaud'''
@@ -244,8 +260,9 @@ class Report:
 
         ox_lst = []
         figure = plt.figure(figsize=(self._cm_to_inch(self.width), self._cm_to_inch(self.height)))
-        for event in self.__event_names:
-            raw_table = self.__main_raw_tables[event]
+
+        for event in enumerate(self.__event_names):
+            raw_table = self.__main_raw_tables[event[1]]
 
             # точки
             x = raw_table.loc[:, [ox_param_table_name]]
@@ -254,7 +271,7 @@ class Report:
             ox_lst = raw_table[ox_param_table_name].values.tolist()
 
             # build graph
-            plt.plot(x, y, label=event, linewidth=2)
+            plt.plot(x, y, label=event[1], linewidth=2, color=self.linecolors[event[0]])
 
         if oy_param_table_name == 'completed':
             plt_title = '{digit_varsion}{mode}. All events {ytitle}/{xtitle}'

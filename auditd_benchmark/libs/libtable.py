@@ -346,7 +346,7 @@ class Report:
         except ZeroDivisionError:
             return 0
 
-    def get_event_losses_rating(self, raw_table, multiplier=10**(1), accuracy=3):
+    def get_event_losses_rating(self, raw_table, multiplier=10**(0), accuracy=3):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['completed'].values.tolist()

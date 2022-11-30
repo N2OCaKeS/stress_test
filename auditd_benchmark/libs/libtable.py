@@ -332,7 +332,7 @@ class Report:
                                                      type=type,
                                                      path=path)
 
-    def get_event_latecy_rating(self, raw_table, multiplier=1, accuracy=3):
+    def get_event_latecy_rating(self, raw_table, multiplier=10**(0), accuracy=3):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['latency'].values.tolist()
@@ -342,11 +342,11 @@ class Report:
                                         self.__events_per_second_lower_limit,
                                         self.__events_per_second_upper_limit,)
         try:
-            return round(1 / i_latency * multiplier, accuracy)
+            return round(i_latency * multiplier, accuracy)
         except ZeroDivisionError:
             return 0
 
-    def get_event_losses_rating(self, raw_table, multiplier=10**(-4), accuracy=3):
+    def get_event_losses_rating(self, raw_table, multiplier=10**(1), accuracy=3):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['completed'].values.tolist()
@@ -385,9 +385,13 @@ class Report:
         return round(total_losses_rating, accuracy)
 
     def get_total_auditd_rating(self, path=REPORT, accuracy=3):
-        total_auditd_rating = round(self.get_total_latency_rating(path=path) + \
-                                    self.get_total_losses_rating(path=path),
-                                    accuracy)
+        # weight coefficients
+        clat = 0.5
+        clos = 1
+
+        total_auditd_rating = abs(round((clat * self.get_total_latency_rating(path=path))**(-1) * \
+                                        (clos * self.get_total_losses_rating(path=path)),
+                                        accuracy))
         with open(path, 'a+') as report:
             report.write('total auditd rating: {}\n'.format(total_auditd_rating))
         return total_auditd_rating

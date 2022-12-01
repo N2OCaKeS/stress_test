@@ -323,85 +323,48 @@ class Report:
 
     ####################################################################################################################
     def get_speed_rating(self,
-                         x_lst):
+                         x_lst,
+                         accuracy=3,
+                         multiplier=10**(0)):
         func_speed = self.data_aproximation(x_lst, self.speed_lst)
         i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit)
-        return i_spd
+
+        if i_spd == 0:
+            return 1
+        else:
+            return round(np.log(i_spd * multiplier), accuracy)
 
     def get_app_overhead_rating(self,
-                                x_lst):
+                                x_lst,
+                                accuracy=3,
+                                multiplier=10**(0)): # -14
+
         func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
         i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit)
 
         if i_ao == 0:
             return 1
         else:
-            return i_ao
+            return round(np.log(i_ao * multiplier), accuracy)
 
-    def get_create_rating(self,
-                          x_lst):
-        func_create_max = self.data_aproximation(x_lst, self.create_max_lst)
-        i_create, err = integrate.quad(func_create_max, self.ox_lower_limit, self.ox_upper_limit)
+    def get_syscall_rating(self,
+                           x_lst,
+                           y_lst,
+                           accuracy=3,
+                           multiplier=10**(0)): #-10
 
-        if i_create == 0:
+        func = self.data_aproximation(x_lst, y_lst)
+        i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit)
+
+        if i == 0:
             return 1
         else:
-            return i_create
-
-    def get_write_rating(self,
-                         x_lst):
-        func_write_max = self.data_aproximation(x_lst, self.write_max_lst)
-        i_write, err = integrate.quad(func_write_max, self.ox_lower_limit, self.ox_upper_limit)
-
-        if i_write == 0:
-            return 1
-        else:
-            return i_write
-
-    def get_fsync_rating(self,
-                         x_lst):
-        func_fsync_max = self.data_aproximation(x_lst, self.fsync_max_lst)
-        i_fsync, err = integrate.quad(func_fsync_max, self.ox_lower_limit, self.ox_upper_limit)
-
-        if i_fsync == 0:
-            return 1
-        else:
-            return i_fsync
-
-    def get_sync_rating(self,
-                        x_lst):
-        func_sync_max = self.data_aproximation(x_lst, self.sync_max_lst)
-        i_sync, err = integrate.quad(func_sync_max, self.ox_lower_limit, self.ox_upper_limit)
-
-        if i_sync == 0:
-            return 1
-        else:
-            return i_sync
-
-    def get_close_rating(self,
-                         x_lst):
-        func_close_max = self.data_aproximation(x_lst, self.close_max_lst)
-        i_close, err = integrate.quad(func_close_max, self.ox_lower_limit, self.ox_upper_limit)
-
-        if i_close == 0:
-            return 1
-        else:
-            return i_close
-
-    def get_unlink_rating(self,
-                          x_lst):
-        func_unlink_max = self.data_aproximation(x_lst, self.unlink_max_lst)
-        i_unlink, err = integrate.quad(func_unlink_max, self.ox_lower_limit, self.ox_upper_limit)
-
-        if i_unlink == 0:
-            return 1
-        else:
-            return i_unlink
+            return round(np.log(i * multiplier), accuracy)
 
     def get_total_rating(self,
                          x_lst,
                          accuracy=3,
-                         multiplier=10**(53)):
+                         multiplier=10**(7)): #-20
 
         # weight coefficients
         c_app_overhead_rating = 0.125
@@ -414,15 +377,15 @@ class Report:
         c_speed_rating = 1
 
         return abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
-                         (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
-                         (c_create_rating * self.get_create_rating(x_lst))**(-1) * \
-                         (c_write_rating * self.get_write_rating(x_lst))**(-1) * \
-                         (c_fsync_rating * self.get_fsync_rating(x_lst))**(-1) * \
-                         (c_sync_rating * self.get_sync_rating(x_lst))**(-1) * \
-                         (c_close_rating * self.get_close_rating(x_lst))**(-1) * \
-                         (c_unlink_rating * self.get_unlink_rating(x_lst))**(-1) * \
-                         multiplier,
-                         accuracy))
+                 (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
+                 (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
+                 (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
+                 (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
+                 (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
+                 (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
+                 (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
+                 multiplier,
+                 accuracy))
 
     ####################################################################################################################
     def merge(self, ox_lst, table_lst, graph_lst, path=REPORT_PATH):

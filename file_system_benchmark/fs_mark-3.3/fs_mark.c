@@ -731,7 +731,7 @@ void do_run(pid_t my_pid)
 		    if (r)
 		        fprintf(stderr, "Error MAC %d\n", r);
 		    mac_delta = stop(0, 0);
-		    creat_usec -= mac_delta;
+//		    creat_usec -= mac_delta;
 		 }
 
 		delta = stop(0, 0);

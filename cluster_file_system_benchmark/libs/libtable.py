@@ -22,7 +22,11 @@ from cfs_conf import REPORT_PATH, REPORT_FILENAME, LOG_PATH, SCRIPT_DIR, \
 
 
 class Report:
-    def __init__(self,  ox_lo_lim, ox_up_lim, report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME)):
+    def __init__(self,
+                 ox_lo_lim,
+                 ox_up_lim,
+                 report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME),
+                 mtreading=False):
 
         '''
             :param report: path to report file
@@ -76,6 +80,33 @@ class Report:
                                                 'unlink_min': self.unlink_min_lst,
                                                 'unlink_avg': self.unlink_avg_lst,
                                                 'unlink_max': self.unlink_max_lst}).sort_values(by=['file_count', 'file_size'])
+
+        if mtreading:
+            self.summary_raw_table = self.raw_table.groupby(by='file_count').mean().reset_index()
+            self.summary_fs_use_lst = self.summary_raw_table.loc[:, ['fs_use']]
+            self.summary_speed_lst = self.summary_raw_table.loc[:, ['speed']]
+            self.summary_app_overhead_lst = self.summary_raw_table.loc[:, ['app_overhead']]
+            self.summary_create_avg_lst = self.summary_raw_table.loc[:, ['create_avg']]
+            self.summary_write_avg_lst = self.summary_raw_table.loc[:, ['write_avg']]
+            self.summary_fsync_avg_lst = self.summary_raw_table.loc[:, ['fsync_avg']]
+            self.summary_sync_avg_lst = self.summary_raw_table.loc[:, ['sync_avg']]
+            self.summary_close_avg_lst = self.summary_raw_table.loc[:, ['close_avg']]
+            self.summary_unlink_avg_lst = self.summary_raw_table.loc[:, ['unlink_avg']]
+
+            # TODO: сделать расчет рейтинга на этих значениях!
+            print(self.summary_raw_table)
+            print(self.summary_fs_use_lst)
+            print(self.summary_speed_lst)
+            print(self.summary_app_overhead_lst)
+            print(self.summary_create_avg_lst)
+            print(self.summary_write_avg_lst)
+            print(self.summary_fsync_avg_lst)
+            print(self.summary_sync_avg_lst)
+            print(self.summary_close_avg_lst)
+            print(self.summary_unlink_avg_lst)
+
+
+
 
         self.ox_lower_limit = ox_lo_lim
         self.ox_upper_limit = ox_up_lim

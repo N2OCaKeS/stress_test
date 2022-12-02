@@ -316,22 +316,39 @@ class Report:
                                         ox_upper_limit=LIMITE_CLIENTS,
                                         double_tps_graph=True)
 
-    def get_la_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
+    def get_la_rating(self,
+                      lower_limit=CLIENTS,
+                      upper_limit=LIMITE_CLIENTS,
+                      multiplier=10**(0),
+                      accuracy=3):
         func_la = self.data_aproximation(self.param_lst, self.la_lst)
         Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
-        return Ila
+        return round((Ila * multiplier), accuracy)
 
-    def get_tps1_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
+    def get_tps1_rating(self,
+                        lower_limit=CLIENTS,
+                        upper_limit=LIMITE_CLIENTS,
+                        multiplier=10**(0),
+                        accuracy=3):
         func_tps1 = self.data_aproximation(self.param_lst, self.tps1_lst)
         Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
-        return Itps1
+        return round((Itps1 * multiplier), accuracy)
 
-    def get_tps2_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS):
+    def get_tps2_rating(self,
+                        lower_limit=CLIENTS,
+                        upper_limit=LIMITE_CLIENTS,
+                        multiplier=10**(0),
+                        accuracy=3):
         func_tps2 = self.data_aproximation(self.param_lst, self.tps2_lst)
         Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
-        return Itps2
+        return round((Itps2 * multiplier), accuracy)
 
-    def get_total_rating(self, lower_limit=CLIENTS, upper_limit=LIMITE_CLIENTS, multiplier=10**-5, accuracy=3):
+    def get_total_rating(self,
+                         lower_limit=CLIENTS,
+                         upper_limit=LIMITE_CLIENTS,
+                         multiplier=10**(-7),
+                         accuracy=3):
+
         # weight coefficients
         c_la = 1 / 3
         c_tps1 = 2.5 / 3

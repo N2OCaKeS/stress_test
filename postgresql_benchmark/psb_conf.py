@@ -58,10 +58,10 @@ LIMITE_THREADS = 100  # 10000
 '''
     Число клиентов
 '''
-CLIENTS = 1
-CLIENTS_STEP = 1
+CLIENTS = 10
+CLIENTS_STEP = 10
 STEP_RATIO_BY_CLIENTS = 1
-LIMITE_CLIENTS = 10
+LIMITE_CLIENTS = 500
 '''
     Расширенный репозиторий
 '''

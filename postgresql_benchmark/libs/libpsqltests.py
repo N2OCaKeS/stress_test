@@ -72,7 +72,7 @@ class Test:
             if PG_VERSION == 14:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]
             else:
-                latency_average = re.search(r'(\d+\.\d+)', out).group(1)
+                latency_average = re.search(r'(\d+\.\d+)', out).group(1) 
             
             completed_transactions = re.search(r'(\d+)/', out).group(1)
             expected_transactions = re.search(r'/(\d+)', out).group(1)

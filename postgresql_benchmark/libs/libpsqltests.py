@@ -12,7 +12,7 @@ import logging
 
 from psb_conf import LOG_FILENAME, DATABASE_NAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
-    TABLESPACE_DEFAULT, REPORT_FILENAME, PG_SETEST_PORT
+    TABLESPACE_DEFAULT, REPORT_FILENAME, PG_SETEST_PORT, PG_VERSION
 from libs.libpsb import init_test_tables, upgrade_test_table, pgbench, pgbench_custom
 
 
@@ -69,7 +69,11 @@ class Test:
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])
             self.logger.error(err)
 
-            latency_average = re.search(r'(\d+\.\d+)', out).group(1)
+            if PG_VERSION == 14:
+                latency_average = re.findall(r'(\d+\.\d+)', out)[2]
+            else:
+                latency_average = re.search(r'(\d+\.\d+)', out).group(1)
+            
             completed_transactions = re.search(r'(\d+)/', out).group(1)
             expected_transactions = re.search(r'/(\d+)', out).group(1)
             tps_including_connections_establishing = re.findall(r'tps\s=\s(\d+\.\d+)', out)[0]

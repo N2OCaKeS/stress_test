@@ -1,8 +1,5 @@
 #!/usr/bin/python3
 
-### stand1 - ansible-playbook playbooks/stand1/main.yml --extra-var "HOST=stand1"
-### stand2 - ansible-playbook playbooks/stand2/main.yml --extra-var "HOST=stand2 SNAPSHOT=2_smolensk_with_git_clone"
-
 import subprocess
 import sys
 import getpass

@@ -1,0 +1,9 @@
+- name: ASTRA-MODESWITCH GET
+  become: true
+  shell:
+    cmd: astra-modeswitch get
+  register: sec_mode
+
+- name: sec mode digit before changed
+  debug:
+    var: sec_mode.stdout

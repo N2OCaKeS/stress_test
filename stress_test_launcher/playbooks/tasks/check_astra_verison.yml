@@ -1,0 +1,14 @@
+- name: Check astra version
+  shell:
+    cmd: cat /etc/astra_version
+  register: astra_version
+
+- shell:
+    cmd: av | grep -e "Smolensk\|Orel\|Voronezh"
+  register: astra_version_letters
+
+- debug:
+    var: astra_version.stdout
+  failed_when: astra_version.stdout != ASTRA_VERSION
+
+

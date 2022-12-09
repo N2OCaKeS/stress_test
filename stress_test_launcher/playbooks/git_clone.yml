@@ -1,0 +1,9 @@
+- name: Git
+  hosts: "{{ HOST }}"
+
+  tasks:
+  - name: Git clone stress test
+    git:
+      repo: ssh://git@git.astralinux.ru:7999/qa/stress_test.git
+      dest: /home/u/git/stress_test
+  

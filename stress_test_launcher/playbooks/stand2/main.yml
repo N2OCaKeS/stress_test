@@ -1,0 +1,11 @@
+---
+- name: Main playbook STAND2
+  hosts: "{{ HOST }}"
+  vars:
+    ASTRA_VERSION:  "1.7.2"
+
+  tasks:   
+
+  - include: ../tasks/check_astra_verison.yml
+
+- include: ./syslog-ng/syslog-ng.yml

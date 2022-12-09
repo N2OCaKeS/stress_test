@@ -1,0 +1,24 @@
+---
+- name: Rollback snapshot
+  hosts: "{{ HOST }}"
+  become: yes
+
+  tasks:
+
+  - name: AGBACKUP RESTORE {{ HOST }}
+    shell:
+      cmd: "sleep 3 && yes | agbackup restore {{ SNAPSHOT }}"
+    async: 1
+    poll: 0
+
+  - name: Wait reconnect {{ HOST }}
+    wait_for_connection:
+      # host: "{{ HOST }}"
+      # state: started
+      delay: 10
+      timeout: 300
+    # delegate_to: localhost
+
+  - name: Test Task after reconnection to {{ HOST }}
+    debug:
+      msg: It's okay

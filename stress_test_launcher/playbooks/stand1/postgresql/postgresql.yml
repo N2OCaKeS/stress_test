@@ -1,0 +1,70 @@
+- name: PostgreSQL
+  hosts: "{{ HOST }}"
+  become: yes
+  
+  vars:
+    KERNEL_VERSION: "5.15"
+    SCRIPT_DIR: /home/u/git/stress_test/postgresql_benchmark/
+    CONFLUENCE_PARENT_PAGE: test
+    security_mode: "2"
+
+  tasks:
+
+  - include: ../../tasks/check_kernel_version.yml
+
+  - include: ../../tasks/astra-modeswitch-get.yml
+
+  - include: ../../tasks/astra-modeswitch-set.yml
+
+  - name: Git checkout postgresql
+    shell:
+      cmd: "cd /home/u/git/stress_test && git checkout postgresql"
+
+  - name: Copy config localhost to "{{ HOST }}" postgresql
+    copy:
+      src: psb_conf.py
+      dest: "{{ SCRIPT_DIR }}"
+      owner: u
+      group: u
+      mode: '0644'
+
+  - name: Prepare settings postgresql
+    shell:
+      cmd: "bash psb_prep.sh"
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Run stress test postgresql
+    shell:
+      cmd: "venv/bin/python psb_run.py --testlist base --mode default --dbprep --cleaner"
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Download script upload report to ftp
+    get_url:
+      url: ftp://10.177.5.111/upload/ivelikanov/ftp_upload_report.py 
+      dest: "{{ SCRIPT_DIR }}"
+    
+  - name: Upload report to 111 postgresql
+    shell:
+      cmd: python3 ftp_upload_report.py -rp "{{ SCRIPT_DIR }}"
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - shell:
+      cmd: cat psb_conf.py | grep 'PG_VERSION = ' | awk '{print $3}'
+    register: PG_VERSION
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Publish in life postgresql
+    shell:
+      cmd: venv/bin/python psb_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp psb_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack postgresql-{{ PG_VERSION.stdout }}
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Git reset postgresql
+    shell:
+      cmd: git reset --hard
+    args:
+      chdir: "{{ SCRIPT_DIR }}"

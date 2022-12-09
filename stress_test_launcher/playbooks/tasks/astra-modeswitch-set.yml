@@ -1,0 +1,51 @@
+# Checking the required security mode with the current
+- block: 
+  - name: ASTRA-MODESWITCH SET
+    become: true
+    shell:
+      cmd: astra-modeswitch set "{{ security_mode }}"
+
+  - name: Reboot after astra-modeswitch set
+    become: true
+    shell:
+      cmd: sleep 3 && reboot
+    async: 1
+    poll: 0
+
+  - name: Wait after reboot
+    wait_for_connection:
+      # host: "{{ HOST }}"
+      # state: started
+      delay: 10
+      timeout: 180
+    # delegate_to: localhost
+
+  - block:
+    - name: Enable MAC and MIC for smolensk
+      become: true
+      shell:
+        cmd: astra-mac-control enable && astra-mic-control enable 
+      when: security_mode == "2"
+
+    - name: Enable MIC for voronezh
+      become: true
+      shell:
+        cmd: astra-mic-control enable
+      when: security_mode == "1"
+
+    - name: Reboot after enable MAC and(or) MIC
+      become: true
+      shell:
+        cmd: sleep 3 && reboot
+      async: 1
+      poll: 0
+
+    - name: Wait after enable MAR and(or) MIC
+      wait_for_connection:
+        # host: "{{ HOST }}"
+        # state: started
+        delay: 10
+        timeout: 180
+      # delegate_to: localhost
+    when: security_mode != "0"
+  when: security_mode != sec_mode.stdout

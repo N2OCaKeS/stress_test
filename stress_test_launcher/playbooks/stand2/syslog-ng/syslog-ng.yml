@@ -1,0 +1,54 @@
+- include: ../../rollback_snapshot.yml
+
+- name: Syslog-NG
+  hosts: "{{ HOST }}"
+  become: yes
+  
+  vars:
+    KERNEL_VERSION: "5.15"
+    SCRIPT_DIR: /home/u/git/stress_test/syslog_ng_benchmark/
+    CONFLUENCE_PARENT_PAGE: test
+    security_mode: "2"
+
+  tasks:
+
+  - include: ../../tasks/check_kernel_version.yml
+
+  - include: ../../tasks/astra-modeswitch-get.yml
+
+  - include: ../../tasks/astra-modeswitch-set.yml
+
+  - name: Git checkout syslog-ng
+    shell:
+      cmd: "cd /home/u/git/stress_test && git checkout syslog-ng"
+
+  - name: Prepare settings syslog-ng
+    shell:
+      cmd: "bash sng_prep.sh"
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Run stress test syslog-ng
+    shell:
+      cmd: "venv/bin/python sng_run.py -sc 100 -t 1"
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Download script upload report to ftp
+    get_url:
+      url: ftp://10.177.5.111/upload/ivelikanov/ftp_upload_report.py
+      dest: "{{ SCRIPT_DIR }}"
+    
+  - name: Upload report to 111 syslog-ng
+    shell:
+      cmd: python3 ftp_upload_report.py
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+    
+  - name: Publish in life syslog-ng
+    shell:
+      cmd: venv/bin/python sng_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp "sng_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }}" -rp "{{ SCRIPT_DIR }}report" -pack syslog-ng
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+- include: ../../rollback_snapshot.yml

@@ -54,6 +54,8 @@ class Report:
                            'pink',
                            'teal',
                            'silver',
+                           'darkturquoise',
+                           'indigo'
                            ]
 
         if latency_report:

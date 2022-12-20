@@ -6,6 +6,6 @@
 
 - name: Publish in life auditd
   shell:
-    cmd: venv/bin/python aub_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp aub_{{ item }}_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack auditd
+    cmd: venv/bin/python aub_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp aub_{{ item }}_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack auditd -ts {{ item }}
   args:
     chdir: "{{ SCRIPT_DIR }}"

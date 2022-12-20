@@ -10,14 +10,18 @@ import shutil
 import os.path
 import argparse
 import subprocess
+import numpy as np
+import pandas as pd
 import libs.libtable as libtable
 import libs.libscanner as libscanner
 
 from time import sleep
 from datetime import datetime
+from sklearn import preprocessing
 from os import chmod, mkdir, getcwd
 from find_err_in_logs import collecting_logs
 from libs.libsng import astra_version, check_service_status, get_memory_load_by_syslog
+
 
 TIME_START_SCRIPT = datetime.now()
 
@@ -151,11 +155,19 @@ if __name__ == '__main__':
     '''
         Создание отчета
     '''
+
+    sng_data = pd.DataFrame(data=[data_cpu, data_memory, data_syslog_memory, data_disk], index=data_time, columns=['load_cpu', 'load_memory', 'load_syslog_ng_memory', 'load_disk'])
+    scaler = preprocessing.MinMaxScaler()
+    # Нормализуем данные
+    d = scaler.fit_transform(sng_data)
+    # Строим новый dataframe с нормированными данными
+    scaled_sng_data = pd.DataFrame(d, columns=sng_data.columns)
+    
     report = libtable.Report(os.path.expanduser(args.REPORT_PATH), float(args.IMAGE_WIDTH), float(args.IMAGE_HEIGHT))
-    rating_cpu = report.get_rating(x=data_time, y=data_cpu)
-    rating_memory = report.get_rating(x=data_time, y=data_memory)
-    rating_syslog_memory = report.get_rating(x=data_time, y=data_syslog_memory)
-    rating_disk = report.get_rating(x=data_time, y=data_disk)
+    rating_cpu = report.get_rating(x=data_time, y=scaled_sng_data['load_cpu'])
+    rating_memory = report.get_rating(x=data_time, y=scaled_sng_data['load_memory'])
+    rating_syslog_memory = report.get_rating(x=data_time, y=scaled_sng_data['load_syslog_ng_memory'])
+    rating_disk = report.get_rating(x=data_time, y=scaled_sng_data['load_disk'])
     total_rating = report.get_total_rating([rating_cpu, rating_memory, rating_syslog_memory, rating_disk])
 
     print("Rating CPU:", rating_cpu)
@@ -172,7 +184,7 @@ if __name__ == '__main__':
         report_txt.writelines('Load_time_execution: {} minutes\n'.format(args.TIME_EXEC))
         report_txt.writelines('Rating_CPU: {}\n'.format(rating_cpu))
         report_txt.writelines('Rating_memory: {}\n'.format(rating_memory))
-        report_txt.writelines('Rating_Syslog-NG memory: {}\n'.format(rating_syslog_memory))
+        report_txt.writelines('Rating_Syslog-NG_memory: {}\n'.format(rating_syslog_memory))
         report_txt.writelines('Rating_disk: {}\n'.format(rating_disk))
         report_txt.writelines('Total_rating: {}\n'.format(total_rating))
 

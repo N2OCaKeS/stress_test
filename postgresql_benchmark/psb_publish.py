@@ -24,9 +24,17 @@ parser.add_argument('-u', '--username',
 
 parser.add_argument('-p', '--password',
                     action='store',
-                    required=True,
+                    required=False,
+                    default=None,
                     help='confluence password',
                     dest='PASSWD')
+
+parser.add_argument('-t', '--token',
+                    action='store',
+                    required=False,
+                    default=None,
+                    help='confluence access token',
+                    dest='TOKEN')
 
 parser.add_argument('-cs', '--confluence-space',
                     action='store',
@@ -102,8 +110,8 @@ parser.add_argument('-as', '--arm-storage',
 
 args = parser.parse_args()
 
-confluence_report = ReportToConfluence(username=args.USER, password=args.PASSWD)
-jira_report = ReportToJira(username=args.USER, password=args.PASSWD)
+confluence_report = ReportToConfluence(username=args.USER, password=args.PASSWD, token=args.TOKEN)
+jira_report = ReportToJira(username=args.USER, password=args.PASSWD, token=args.TOKEN)
 
 # если получен архив, распаковать
 if args.TAR_PATH is not None:

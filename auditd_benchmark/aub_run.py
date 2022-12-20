@@ -8,7 +8,7 @@
 import argparse
 
 from time import time
-from os import path, mkdir
+from os import path, mkdir, listdir, remove
 from libs.libtest import AuditdTestSet
 from libs.libtable import Report
 from aub_conf import \
@@ -66,6 +66,12 @@ parser.add_argument('-e', '--event',
                     help='audit event',
                     dest='EVENT')
 
+parser.add_argument('-r', '--report',
+                    action='store_true',
+                    required=False,
+                    help='create beauty report',
+                    dest='REPORT')
+
 args = parser.parse_args()
 
 # Засечь время выполнения скрипта
@@ -82,6 +88,9 @@ log_file.close()
 # Создать /report
 if not path.exists(REPORT_DIR):
     mkdir(REPORT_DIR, mode=0o755)
+else:
+    for file in listdir(REPORT_DIR):
+        remove(path.join(REPORT_DIR, file))
 
 # Очистить отчет
 report_file = open(REPORT, 'w')
@@ -115,12 +124,13 @@ if args.TEST_LIST == 'psaud':
         print('lead time: {t} sec'.format(t=time() - start_time))
 
         # Cоздать отчет
-        r = Report(PSAUD_PROC_BODYS.keys(), LATENCY_REPORT_PSAUD, LOSSES_REPORT_PSAUD)
-        r.create_beauty_table(type='ps')
-        r.create_total_latency_eps_graph(type='ps')
-        r.create_total_losses_eps_graph(type='ps')
-        r.get_total_auditd_rating()
-        r.create_tar()
+        if args.REPORT:
+            r = Report(PSAUD_PROC_BODYS.keys(), LATENCY_REPORT_PSAUD, LOSSES_REPORT_PSAUD)
+            r.create_beauty_table(type='ps')
+            r.create_total_latency_eps_graph(type='ps')
+            r.create_total_losses_eps_graph(type='ps')
+            r.get_total_auditd_rating()
+            r.create_tar()
 
     elif args.MODE == 'extended':
 
@@ -195,12 +205,13 @@ elif args.TEST_LIST == 'useraud':
         print('lead time: {t} sec'.format(t=time() - start_time))
 
         # Cоздать отчет
-        r = Report(USERAUD_PROC_BODYS.keys(), LATENCY_REPORT_USAUD, LOSSES_REPORT_USAUD)
-        r.create_beauty_table(type='us')
-        r.create_total_latency_eps_graph(type='us')
-        r.create_total_losses_eps_graph(type='us')
-        r.get_total_auditd_rating()
-        r.create_tar()
+        if args.REPORT:
+            r = Report(USERAUD_PROC_BODYS.keys(), LATENCY_REPORT_USAUD, LOSSES_REPORT_USAUD)
+            r.create_beauty_table(type='us')
+            r.create_total_latency_eps_graph(type='us')
+            r.create_total_losses_eps_graph(type='us')
+            r.get_total_auditd_rating()
+            r.create_tar()
 
     elif args.MODE == 'extended':
 
@@ -277,12 +288,13 @@ elif args.TEST_LIST == 'fileaud':
         print('lead time: {t} sec'.format(t=time() - start_time))
 
         # Cоздать отчет
-        r = Report(FILEAUD_PROC_BODYS.keys(), LATENCY_REPORT_FLAUD, LOSSES_REPORT_FLAUD)
-        r.create_beauty_table(type='fl')
-        r.create_total_latency_eps_graph(type='fl')
-        r.create_total_losses_eps_graph(type='fl')
-        r.get_total_auditd_rating()
-        r.create_tar()
+        if args.REPORT:
+            r = Report(FILEAUD_PROC_BODYS.keys(), LATENCY_REPORT_FLAUD, LOSSES_REPORT_FLAUD)
+            r.create_beauty_table(type='fl')
+            r.create_total_latency_eps_graph(type='fl')
+            r.create_total_losses_eps_graph(type='fl')
+            r.get_total_auditd_rating()
+            r.create_tar()
 
     elif args.MODE == 'extended':
 

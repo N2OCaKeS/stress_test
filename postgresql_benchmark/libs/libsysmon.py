@@ -1,5 +1,6 @@
 from psb_conf import DATA_SYSMON_FILENAME, REPORT_SYSMON_FILENAME
 
+
 def create_avgsysmon_filereport():
     def find_avg(array):
         sort_array = list(zip(*array))

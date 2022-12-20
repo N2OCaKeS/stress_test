@@ -127,9 +127,10 @@ if args.TEST_LIST == 'base':
                         ths=threads,
                         cls=clients)
             print(test.run_test())
-            file_sysmon = open(f'{DATA_SYSMON_FILENAME}', 'a+')
-            file_sysmon.write("-----\n")
-            file_sysmon.close()
+            if args.SYSMON:
+                file_sysmon = open(f'{DATA_SYSMON_FILENAME}', 'a+')
+                file_sysmon.write("-----\n")
+                file_sysmon.close()
             clients += clients_step
             clients_step *= step_ratio_by_clients
 
@@ -138,46 +139,38 @@ if args.TEST_LIST == 'base':
             create_avgsysmon_filereport()
             data, x = sorted_data_from_sysmonfile()
             report = Report(param_name='clients', sysmon=True)
-            report.create_sysmon_graph(x=x, 
-                                y=data[0], 
-                                filename='psb_load_cpu', 
-                                title_graph='Load CPU', 
-                                y_label="CPU %",
-                                x_rlim=x[-1])
+            report.create_beauty_table()
+            report.create_psb_cl_la_graph()
+            report.create_psb_cl_tps1_graph()
+            report.create_psb_cl_tps2_graph()
+            report.create_psb_cl_tpsall_graph()
+            report.create_sysmon_graph(x=x,
+                                       y=data[0],
+                                       filename='psb_load_cpu',
+                                       title_graph='Load CPU',
+                                       y_label="CPU %",
+                                       x_rlim=x[-1])
 
             report.create_sysmon_graph(x=x,
-                                y=data[1],
-                                filename='psb_load_memory',
-                                title_graph='Load memory',
-                                y_label='Memory %',
-                                x_rlim=x[-1])
+                                       y=data[1],
+                                       filename='psb_load_memory',
+                                       title_graph='Load memory',
+                                       y_label='Memory %',
+                                       x_rlim=x[-1])
 
             report.create_sysmon_graph(x=x,
-                                y=data[2],
-                                filename='psb_load_psqlmemory',
-                                title_graph='Load PSQL memory',
-                                y_label='Memory %',
-                                x_rlim=x[-1])
+                                       y=data[2],
+                                       filename='psb_load_psqlmemory',
+                                       title_graph='Load PSQL memory',
+                                       y_label='Memory %',
+                                       x_rlim=x[-1])
 
             report.create_sysmon_graph(x=x,
-                                y=data[3],
-                                filename='psb_load_disk',
-                                title_graph='Load disk',
-                                y_label='Disk %',
-                                x_rlim=x[-1])
-
-             
-        else:
-        # create report
-            report = Report(param_name='clients')
-
-        report.create_beauty_table()
-        report.create_psb_cl_la_graph()
-        report.create_psb_cl_tps1_graph()
-        report.create_psb_cl_tps2_graph()
-        report.create_psb_cl_tpsall_graph()
-
-        if args.SYSMON:
+                                       y=data[3],
+                                       filename='psb_load_disk',
+                                       title_graph='Load disk',
+                                       y_label='Disk %',
+                                       x_rlim=x[-1])
             report.merge(table_lst=['psb_report_table.html'],
                          graph_lst=['psb_clients_la_graph.png',
                                     'psb_clients_tps1_graph.png',
@@ -187,13 +180,21 @@ if args.TEST_LIST == 'base':
                                     'psb_load_memory.png',
                                     'psb_load_psqlmemory.png',
                                     'psb_load_disk.png'])
-        else:
+            report.create_tar()
+             
+        else: # create report
+            report = Report(param_name='clients')
+            report.create_beauty_table()
+            report.create_psb_cl_la_graph()
+            report.create_psb_cl_tps1_graph()
+            report.create_psb_cl_tps2_graph()
+            report.create_psb_cl_tpsall_graph()
             report.merge(table_lst=['psb_report_table.html'],
                          graph_lst=['psb_clients_la_graph.png',
                                     'psb_clients_tps1_graph.png',
                                     'psb_clients_tps2_graph.png',
                                     'psb_clients_tpsall_graph.png'])
-        report.create_tar()
+            report.create_tar()
 
     if args.MODE == 'extended':
         '''

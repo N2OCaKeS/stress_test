@@ -191,6 +191,34 @@ class Report:
             plt.savefig('{p}/psb_{ox}_tpsall_graph'.format(p=path,
                                                            ox=ox_param_table_name))
 
+    def create_sysmon_graph(self,
+                            x,
+                            y,
+                            filename,
+                            title_graph,
+                            x_rlim,
+                            x_label="Tsec",
+                            y_label=""):
+        '''
+            Построить граф для данных системного мониторинга
+        '''
+        aprx_x = np.arange(x[0], x[-1], 0.1)
+        aprx_f = self.data_aproximation(x, y)
+
+        # build graph
+        fig, ax = plt.subplots(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        ax.plot(x, y, aprx_x, aprx_f(aprx_x))
+        ax.set_yscale("linear")
+        ax.set_xlim(0, x_rlim)
+        ax.set_title(title_graph)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.grid(True)
+
+        # fig.savefig(f'{filename}.png')
+        fig.savefig('{path}/{file_name}.png'.format(path=REPORT_PATH, file_name=filename))
+        # return "{file_name}.png".format(file_name=filename)
+
     '''
         Графики для теста: 'Нахождение предельного коэффициента масштаба' 
     '''
@@ -465,25 +493,3 @@ class Report:
                                                          t=time_mark), 'w') as tar:
             for file in listdir(path):
                 tar.add('{}/{}'.format('report', file))
-
-
-    def create_sysmon_graph(self, x, y, filename, title_graph, x_rlim, x_label="Tsec", y_label=""):
-        '''
-            Построить граф для данных системного мониторинга
-        '''
-        aprx_x = np.arange(x[0], x[-1], 0.1)
-        aprx_f = self.data_aproximation(x, y)
-
-        # build graph
-        fig, ax = plt.subplots(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        ax.plot(x, y, aprx_x, aprx_f(aprx_x))
-        ax.set_yscale("linear")
-        ax.set_xlim(0, x_rlim)
-        ax.set_title(title_graph)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        ax.grid(True)
-        
-        # fig.savefig(f'{filename}.png')
-        fig.savefig('{path}/{file_name}.png'.format(path=REPORT_PATH, file_name=filename))
-        # return "{file_name}.png".format(file_name=filename)

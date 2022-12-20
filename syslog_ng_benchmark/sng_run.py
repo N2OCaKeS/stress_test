@@ -156,7 +156,7 @@ if __name__ == '__main__':
         Создание отчета
     '''
 
-    sng_data = pd.DataFrame(data=[data_cpu, data_memory, data_syslog_memory, data_disk], index=data_time, columns=['load_cpu', 'load_memory', 'load_syslog_ng_memory', 'load_disk'])
+    sng_data = pd.DataFrame(data={'load_cpu': data_cpu, 'load_memory': data_memory, 'load_syslog_ng_memory': data_syslog_memory, 'load_disk': data_disk}, index=data_time)
     scaler = preprocessing.MinMaxScaler()
     # Нормализуем данные
     d = scaler.fit_transform(sng_data)

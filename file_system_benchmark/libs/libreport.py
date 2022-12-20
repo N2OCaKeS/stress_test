@@ -13,13 +13,19 @@ from atlassian import Jira
 class ReportToConfluence():
     __url='https://life.astralinux.ru'
 
-    def __init__(self, username, password):
+    def __init__(self, username, password=None, token=None):
         self.__username = username
         self.__password = password
+        self.__access_token = token
 
-        self.__confluence = Confluence(url=self.__url,
-                                       username=self.__username,
-                                       password=self.__password)
+        if self.__password is not None:
+            self.__confluence = Confluence(url=self.__url,
+                                           username=self.__username,
+                                           password=self.__password)
+        elif self.__access_token is not None:
+            self.__confluence = Confluence(url=self.__url,
+                                           username=self.__username,
+                                           token=self.__access_token)
         self.report_files_path = '.'
 
     def unzip_tarfile(self, tar_name, extract_path='.'):
@@ -70,13 +76,19 @@ class ReportToConfluence():
 class ReportToJira():
     __url='https://jira.astralinux.ru'
 
-    def __init__(self, username, password):
+    def __init__(self, username, password=None, token=None):
         self.__username = username
         self.__password = password
+        self.__access_token = token
 
-        self.__jira = Jira(url=self.__url,
-                           username=self.__username,
-                           password=self.__password)
+        if self.__password is not None:
+            self.__confluence = Confluence(url=self.__url,
+                                           username=self.__username,
+                                           password=self.__password)
+        elif self.__access_token is not None:
+            self.__confluence = Confluence(url=self.__url,
+                                           username=self.__username,
+                                           token=self.__access_token)
 
     def add_comment_to_issue(self, issue, text):
         self.__jira.issue_add_comment(issue_key=issue,

@@ -2,6 +2,8 @@ SCRIPT_DIR = '/home/u/git/stress_test/postgresql_benchmark'
 LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
+REPORT_SYSMON_FILENAME = '{}/psb_sysmon_report.txt'.format(REPORT_PATH)
+DATA_SYSMON_FILENAME = '{}/psb_data_sysmon.txt'.format(REPORT_PATH)
 TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
 '''
    Названия скриптов из папки sql.

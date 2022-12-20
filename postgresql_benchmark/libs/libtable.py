@@ -14,12 +14,12 @@ from psb_conf import SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, \
-    REPORT_FILENAME, REPORT_PATH, LOG_FILENAME
+    REPORT_FILENAME, REPORT_PATH, LOG_FILENAME, REPORT_SYSMON_FILENAME
 
 
 class Report:
 
-    def __init__(self, param_name='clients', report_file=REPORT_FILENAME, all_params=False):
+    def __init__(self, param_name='clients', report_file=REPORT_FILENAME, all_params=False, sysmon=False):
         with open(report_file, 'r') as report_file:
             raw_data = report_file.read().split()
         if all_params:
@@ -54,6 +54,18 @@ class Report:
                                                'tps2': self.tps2_lst,
                                                'com_tr': self.com_tr_lst,
                                                'exp_tr': self.exp_tr_lst})
+        if sysmon:
+            with open(f'{REPORT_SYSMON_FILENAME}', 'r') as report_sysmon_file:
+                raw_sysmon_data = report_sysmon_file.read().split()
+            self.avg_cpu = [int(float(avg_c)) for avg_c in raw_sysmon_data[0::4]]
+            self.avg_mem = [int(float(avg_m)) for avg_m in raw_sysmon_data[1::4]]
+            self.avg_pmem = [float(avg_pm) for avg_pm in raw_sysmon_data[2::4]]
+            self.avg_disk = [int(float(avg_d)) for avg_d in raw_sysmon_data[3::4]]
+            self.raw_sysmon_table = pandas.DataFrame({'avg_cpu %': self.avg_cpu,
+                                                      'avg_mem %': self.avg_mem,
+                                                      'avg_psql_mem %': self.avg_pmem,
+                                                      'avg_disk %': self.avg_disk})
+            self.raw_table = pandas.concat([self.raw_table, self.raw_sysmon_table], axis=1)
 
         # added column with result (% completed transactions)
         self.raw_table['result (%)'] = round(self.raw_table['com_tr'] / self.raw_table['exp_tr'] * 100, 2)
@@ -453,3 +465,25 @@ class Report:
                                                          t=time_mark), 'w') as tar:
             for file in listdir(path):
                 tar.add('{}/{}'.format('report', file))
+
+
+    def create_sysmon_graph(self, x, y, filename, title_graph, x_rlim, x_label="Tsec", y_label=""):
+        '''
+            Построить граф для данных системного мониторинга
+        '''
+        aprx_x = np.arange(x[0], x[-1], 0.1)
+        aprx_f = self.data_aproximation(x, y)
+
+        # build graph
+        fig, ax = plt.subplots(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
+        ax.plot(x, y, aprx_x, aprx_f(aprx_x))
+        ax.set_yscale("linear")
+        ax.set_xlim(0, x_rlim)
+        ax.set_title(title_graph)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.grid(True)
+        
+        # fig.savefig(f'{filename}.png')
+        fig.savefig('{path}/{file_name}.png'.format(path=REPORT_PATH, file_name=filename))
+        # return "{file_name}.png".format(file_name=filename)

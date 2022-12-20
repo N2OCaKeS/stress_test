@@ -126,3 +126,19 @@ def pgbench_custom(sql_script, start_cmd):
                           stderr=subprocess.PIPE)
     remove('/tmp/{}'.format(sql_script))
     return [test.stdout.decode("utf-8"), test.stderr.decode("utf-8")]
+
+
+def get_memory_load_by_psql():
+    qty_memory = subprocess.run("ps -FC postgres  | awk {'print $6'} | awk 'NR!=1' | awk '{ sum += $1 } END { print sum }'",
+                                         shell=True,
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL).stdout.decode("utf-8") # в байтах
+    if qty_memory != "":
+        qty_memory = float(qty_memory)
+        with open('/proc/meminfo', 'r') as procfile:
+            mem_total = int(procfile.readline().replace(" ", "")[:-3].split(":")[1]) * 1024
+            load_psql_memory = round(qty_memory * 100 / mem_total, 2)
+    else:
+        load_psql_memory = 0
+
+    return load_psql_memory

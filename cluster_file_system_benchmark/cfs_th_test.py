@@ -13,7 +13,8 @@ from libs.libtests import Test, TestSet
 from libs.libtable import Report
 from cfs_conf import START_BORDER_FOR_DATA, STEP_FOR_DATA, \
     END_BORDER_FOR_DATA, TIMEOUT, NUMBER_OF_TEST_FILES, LOG_FILENAME, \
-    FILES, FILES_STEP, FILES_LIMIT
+    FILES, FILES_STEP, FILES_LIMIT, \
+    SIZE, SIZE_STEP, SIZE_LIMIT
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -27,17 +28,6 @@ parser.add_argument('--test-set',
                              'fs_mark_size'],
                     required=True,
                     dest='TS')
-
-parser.add_argument('-v',
-                    action='store',
-                    choices=['files',
-                             'symlinks',
-                             'hardlinks',
-                             'archs',
-                             'isos'],
-                    required=False,
-                    help='variant',
-                    dest='VARIANT')
 
 args = parser.parse_args()
 
@@ -61,7 +51,9 @@ if args.TS == 'fs_mark_count':
     except Exception as exeption:
         log.info(exeption)
 
-    report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
+    report = Report(ox_lo_lim=FILES,
+                    ox_up_lim=FILES_LIMIT,
+                    mtreading=True)
     report.create_beauty_table()
     report.create_cfs_fc_sp_graph()
     report.create_cfs_fc_app_overhead_graph()
@@ -71,55 +63,32 @@ if args.TS == 'fs_mark_count':
     report.create_cfs_fc_sync_graph()
     report.create_cfs_fc_close_graph()
     report.create_cfs_fc_unlink_graph()
+    report.create_tar()
 
-# excute_time = 0
-#
-# if args.VARIANT == 'files':
-#     while excute_time < TIMEOUT:
-#         start_time = time.time()
-#         assert Test.file_filling(count=NUMBER_OF_TEST_FILES,
-#                                  start=START_BORDER_FOR_DATA,
-#                                  end=END_BORDER_FOR_DATA,
-#                                  step=STEP_FOR_DATA) is True
-#         end_time = time.time()
-#         excute_time += end_time - start_time
-#
-# if args.VARIANT == 'symlinks':
-#     while excute_time < TIMEOUT:
-#         start_time = time.time()
-#         assert Test.symlink_filling(count=NUMBER_OF_TEST_FILES,
-#                                     start=START_BORDER_FOR_DATA,
-#                                     end=END_BORDER_FOR_DATA,
-#                                     step=STEP_FOR_DATA) is True
-#         end_time = time.time()
-#         excute_time += end_time - start_time
-#
-# if args.VARIANT == 'hardlinks':
-#     while excute_time < TIMEOUT:
-#         start_time = time.time()
-#         assert Test.hardlink_filling(count=NUMBER_OF_TEST_FILES,
-#                                      start=START_BORDER_FOR_DATA,
-#                                      end=END_BORDER_FOR_DATA,
-#                                      step=STEP_FOR_DATA) is True
-#         end_time = time.time()
-#         excute_time += end_time - start_time
-#
-# if args.VARIANT == 'archs':
-#     while excute_time < TIMEOUT:
-#         start_time = time.time()
-#         assert Test.arch_filling(count=NUMBER_OF_TEST_FILES,
-#                                  start=START_BORDER_FOR_DATA,
-#                                  end=END_BORDER_FOR_DATA,
-#                                  step=STEP_FOR_DATA) is True
-#         end_time = time.time()
-#         excute_time += end_time - start_time
-#
-# if args.VARIANT == 'isos':
-#     while excute_time < TIMEOUT:
-#         start_time = time.time()
-#         assert Test.iso_filling(count=NUMBER_OF_TEST_FILES,
-#                                 start=START_BORDER_FOR_DATA,
-#                                 end=END_BORDER_FOR_DATA,
-#                                 step=STEP_FOR_DATA) is True
-#         end_time = time.time()
-#         excute_time += end_time - start_time
+if args.TS == 'fs_mark_size':
+    '''    
+        Прогон 6.
+        fs_mark
+    '''
+    # Изменение размера файлов
+    run_test = TestSet(start_burder=SIZE,
+                       end_burder=SIZE_LIMIT,
+                       step=SIZE_STEP)
+    try:
+        run_test.test_8_fs_mark33_size()
+    except Exception as exeption:
+        log.info(exeption)
+
+    report = Report(ox_lo_lim=SIZE,
+                    ox_up_lim=SIZE_LIMIT,
+                    mtreading=True)
+    report.create_beauty_table()
+    report.create_cfs_fc_sp_graph()
+    report.create_cfs_fc_app_overhead_graph()
+    report.create_cfs_fc_create_graph()
+    report.create_cfs_fc_write_graph()
+    report.create_cfs_fc_fsync_graph()
+    report.create_cfs_fc_sync_graph()
+    report.create_cfs_fc_close_graph()
+    report.create_cfs_fc_unlink_graph()
+    report.create_tar()

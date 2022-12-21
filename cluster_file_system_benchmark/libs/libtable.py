@@ -10,20 +10,24 @@ import tarfile
 import warnings
 import numpy as np
 
+
 from shutil import copy
 from time import time
 from os import listdir, chdir
 from scipy import integrate
+from sklearn import preprocessing
 from matplotlib import pyplot as plt
 from libs.libcfs import astra_version
 from pretty_html_table import build_table
 from cfs_conf import REPORT_PATH, REPORT_FILENAME, LOG_PATH, SCRIPT_DIR, \
-    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA
+    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
+    FILES_LIMIT, FILES_STEP, FILES
 
 
 class Report:
     def __init__(self,
                  ox_lo_lim,
+                 ox_step,
                  ox_up_lim,
                  report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME),
                  mtreading=False):
@@ -83,39 +87,31 @@ class Report:
 
         if mtreading:
             self.summary_raw_table = self.raw_table.groupby(by='file_count').mean().reset_index()
-            self.summary_fs_use_lst = self.summary_raw_table.loc[:, ['fs_use']]
-            self.summary_speed_lst = self.summary_raw_table.loc[:, ['speed']]
-            self.summary_app_overhead_lst = self.summary_raw_table.loc[:, ['app_overhead']]
-            self.summary_create_avg_lst = self.summary_raw_table.loc[:, ['create_avg']]
-            self.summary_write_avg_lst = self.summary_raw_table.loc[:, ['write_avg']]
-            self.summary_fsync_avg_lst = self.summary_raw_table.loc[:, ['fsync_avg']]
-            self.summary_sync_avg_lst = self.summary_raw_table.loc[:, ['sync_avg']]
-            self.summary_close_avg_lst = self.summary_raw_table.loc[:, ['close_avg']]
-            self.summary_unlink_avg_lst = self.summary_raw_table.loc[:, ['unlink_avg']]
+            self.summary_file_count_lst = self.summary_raw_table['file_count'].values.tolist()
+            self.summary_fs_use_lst = self.summary_raw_table['fs_use'].values.tolist()
+            self.summary_speed_lst = self.summary_raw_table["speed"].values.tolist()
+            self.summary_app_overhead_lst = self.summary_raw_table['app_overhead'].values.tolist()
+            self.summary_create_avg_lst = self.summary_raw_table['create_avg'].values.tolist()
+            self.summary_write_avg_lst = self.summary_raw_table['write_avg'].values.tolist()
+            self.summary_fsync_avg_lst = self.summary_raw_table['fsync_avg'].values.tolist()
+            self.summary_sync_avg_lst = self.summary_raw_table['sync_avg'].values.tolist()
+            self.summary_close_avg_lst = self.summary_raw_table['close_avg'].values.tolist()
+            self.summary_unlink_avg_lst = self.summary_raw_table['unlink_avg'].values.tolist()
 
-            # TODO: сделать расчет рейтинга на этих значениях!
+            print(self.raw_table)
             print(self.summary_raw_table)
-            print(self.summary_fs_use_lst)
-            print(self.summary_speed_lst)
-            print(self.summary_app_overhead_lst)
-            print(self.summary_create_avg_lst)
-            print(self.summary_write_avg_lst)
-            print(self.summary_fsync_avg_lst)
-            print(self.summary_sync_avg_lst)
-            print(self.summary_close_avg_lst)
-            print(self.summary_unlink_avg_lst)
-
-
-
 
         self.ox_lower_limit = ox_lo_lim
+        self.ox_step = ox_step
         self.ox_upper_limit = ox_up_lim
+        self.mtreading = mtreading
 
         # graph size
         self.width = 27
         self.height = 15
 
-        self.grid_factor = (END_BORDER_FOR_DATA - START_BORDER_FOR_DATA) // 10
+        self.grid_factor = END_BORDER_FOR_DATA // 10
+        # self.grid_factor = FILES_STEP
 
     '''
         Создать html таблицу
@@ -160,21 +156,30 @@ class Report:
         y = self.raw_table.loc[:, [oy_param_table_name]]
 
         # build function f(x)
-        aprx_x = np.arange(self.ox_lower_limit, self.ox_upper_limit, 1)
+        aprx_x = np.arange(self.ox_lower_limit, self.ox_upper_limit-self.ox_step, 1)
         aprx_f = self.data_aproximation(ox_lst, oy_lst)
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y, 'o', aprx_x, aprx_f(aprx_x))
+        plt.plot(x, y, 'o')
+        plt.plot(aprx_x, aprx_f(aprx_x))
         plt.title('{digit_varsion}({mode}). {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
                                                                       mode=astra_version()[1],
                                                                       xtitle=ox_param_table_name,
                                                                       ytitle=oy_param_table_name))
         plt.xlabel(ox_param_table_name)
+        # ox шкала
         ox_ticks = np.arange(self.ox_lower_limit,
                              self.ox_upper_limit,
                              self.grid_factor)
         plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
+        # oy шкала
+        print(y)
+        oy_upper_limit = max(y[oy_param_table_name].values.tolist())
+        if self.mtreading:
+            oy_ticks = np.arange(0, oy_upper_limit, oy_upper_limit // 10)
+            plt.yticks(oy_ticks, oy_ticks)
+
         plt.ylabel('{}(msec)'.format(oy_param_table_name))
         plt.grid(True)
 
@@ -198,9 +203,9 @@ class Report:
 
         # build graph
         plt.figure(figsize=(self.cm_to_inch(self.width), self.cm_to_inch(self.height)))
-        plt.plot(x, y1, 'o-', 'g')
-        plt.plot(x, y2, 'o-', 'y')
-        plt.plot(x, y3, 'o-', 'r')
+        plt.plot(x, y1, 'o-', color='g',)
+        plt.plot(x, y2, 'o-',  color='y',)
+        plt.plot(x, y3, 'o-',  color='r',)
         plt.title('{digit_varsion}({mode}). {title1}/{title2}'.format(digit_varsion=astra_version()[0],
                                                                       mode=astra_version()[1],
                                                                       title1=ox_param_table_name,
@@ -209,10 +214,21 @@ class Report:
                     '{} avg'.format(syscall.upper()),
                     '{} max'.format(syscall.upper())])
         plt.xlabel(ox_param_table_name)
+
+        # ox шкала
         ox_ticks = np.arange(self.ox_lower_limit,
                              self.ox_upper_limit,
                              self.grid_factor)
         plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
+        # oy шкала
+        oy_upper_limit = max(self.raw_table['{}_max'.format(syscall)].values.tolist())
+        if self.mtreading:
+            try:
+                oy_ticks = np.arange(0, oy_upper_limit, oy_upper_limit // 10)
+            except ZeroDivisionError:
+                oy_ticks = np.arange(10)
+            plt.yticks(oy_ticks, oy_ticks)
+
         plt.ylabel('syscall {}(msec)'.format(syscall.upper()))
         plt.grid(True)
 
@@ -357,47 +373,86 @@ class Report:
     ####################################################################################################################
     def get_speed_rating(self,
                          x_lst,
+                         y_lst,
                          accuracy=3,
-                         multiplier=10**(0)):
-        func_speed = self.data_aproximation(x_lst, self.speed_lst)
-        i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit)
+                         multiplier=10**(0),
+                         auto_normalize=True):
 
-        if i_spd == 0:
-            return 1
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(y_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+
+            func_speed = self.data_aproximation(x_lst, normalized_data_list)
+            i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            if i_spd == 0:
+                return 1
+            else:
+                return round((i_spd * multiplier), accuracy)
         else:
-            return round(np.log(i_spd * multiplier), accuracy)
+            func_speed = self.data_aproximation(x_lst, self.speed_lst)
+            i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit)
+            if i_spd == 0:
+                return 1
+            else:
+                return round(np.log(i_spd * multiplier), accuracy)
 
     def get_app_overhead_rating(self,
                                 x_lst,
+                                y_lst,
                                 accuracy=3,
-                                multiplier=10**(0)): # -14
+                                multiplier=10**(0),
+                                auto_normalize=True): # -14
 
-        func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
-        i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit)
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(y_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
 
-        if i_ao == 0:
-            return 1
+            func_ao = self.data_aproximation(x_lst, normalized_data_list)
+            i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            if i_ao == 0:
+                return 1
+            else:
+                return round((i_ao * multiplier), accuracy)
         else:
-            return round(np.log(i_ao * multiplier), accuracy)
+            func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
+            i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit)
+            if i_ao == 0:
+                return 1
+            else:
+                return round(np.log(i_ao * multiplier), accuracy)
 
     def get_syscall_rating(self,
                            x_lst,
                            y_lst,
                            accuracy=3,
-                           multiplier=10**(0)): #-10
+                           multiplier=10**(0),
+                           auto_normalize=True): #-10
 
-        func = self.data_aproximation(x_lst, y_lst)
-        i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit)
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(y_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
 
-        if i == 0:
-            return 1
+            func = self.data_aproximation(x_lst, normalized_data_list)
+            i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            if i == 0:
+                return 1
+            else:
+                return round((i * multiplier), accuracy)
         else:
-            return round(np.log(i * multiplier), accuracy)
+            func = self.data_aproximation(x_lst, y_lst)
+            i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit)
+            if i == 0:
+                return 1
+            else:
+                return round(np.log(i * multiplier), accuracy)
 
     def get_total_rating(self,
                          x_lst,
                          accuracy=3,
-                         multiplier=10**(6)): #-20
+                         multiplier=10**(12)): #6
 
         # weight coefficients
         c_app_overhead_rating = 0.125
@@ -409,16 +464,29 @@ class Report:
         c_unlink_rating = 0.5625
         c_speed_rating = 1
 
-        return abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
-                 (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
-                 (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
-                 (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
-                 (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
-                 (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
-                 (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
-                 (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
-                 multiplier,
-                 accuracy))
+        if self.mtreading:
+            return abs(round((c_speed_rating * self.get_speed_rating(x_lst, self.summary_speed_lst)) * \
+                             (c_app_overhead_rating * self.get_app_overhead_rating(x_lst, self.summary_app_overhead_lst))**(-1) * \
+                             (c_create_rating * self.get_syscall_rating(x_lst, self.summary_create_avg_lst))**(-1) * \
+                             (c_write_rating * self.get_syscall_rating(x_lst, self.summary_write_avg_lst))**(-1) * \
+                             (c_fsync_rating * self.get_syscall_rating(x_lst, self.summary_fsync_avg_lst))**(-1) * \
+                             (c_sync_rating * self.get_syscall_rating(x_lst, self.summary_sync_avg_lst))**(-1) * \
+                             (c_close_rating * self.get_syscall_rating(x_lst, self.summary_close_avg_lst))**(-1) * \
+                             (c_unlink_rating * self.get_syscall_rating(x_lst, self.summary_unlink_avg_lst))**(-1) * \
+                             multiplier,
+                             accuracy))
+        else:
+            return abs(round((c_speed_rating * self.get_speed_rating(x_lst, self.speed_lst)) * \
+                             (c_app_overhead_rating * self.get_app_overhead_rating(x_lst, self.app_overhead_lst))**(-1) * \
+                             (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
+                             (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
+                             (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
+                             (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
+                             (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
+                             (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
+                             multiplier,
+                             accuracy))
+
     ####################################################################################################################
     def merge(self, ox_lst, table_lst, graph_lst, path=REPORT_PATH):
         '''
@@ -502,7 +570,7 @@ class Report:
             total_html.writelines(html_template_part3)
 
     @staticmethod
-    def create_tar(path_to_tar=REPORT_PATH, path_to_files=REPORT_PATH):
+    def create_tar(path_to_tar=SCRIPT_DIR, path_to_files=REPORT_PATH):
         '''
             tar архив с результатами тестирования
         '''

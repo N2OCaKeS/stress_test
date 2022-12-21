@@ -63,28 +63,11 @@ parser.add_argument('--test-set',
                     required=True,
                     dest='TS')
 
-# parser.add_argument('--data-from-config',
-#                     action='store_false',
-#                     required=False,
-#                     help='get data from config',
-#                     dest='CONFIG')
-
 parser.add_argument('--multithreading',
                     action='store_true',
                     required=False,
                     help='get data from config',
                     dest='MULTITHREADING')
-
-parser.add_argument('--thread-variant',
-                    action='store',
-                    choices=['files',
-                             'symlinks',
-                             'hardlinks',
-                             'archs',
-                             'isos'],
-                    required=False,
-                    help='type of file for multihost threads test',
-                    dest='VARIANT')
 
 args = parser.parse_args()
 all_hosts = args.NODES + [args.STORAGE]
@@ -107,7 +90,7 @@ ssh_keygen = 'ssh-keygen -f "/home/$USER/.ssh/known_hosts" -R {ip}'
 add_nodes_in_ssh_scrt = "sed -i '3s/.*/ips=({nodes} {host})/' /home/$USER/git/stress_test/cluster_file_system_benchmark/ssh_key.sh"
 run_storage_init = 'sudo {dir}/venv/bin/python {dir}/cfs_storage_init.py --fs {fs} --host-storage {st_host} --nodes {hosts}'
 run_single_test = 'sudo {dir}/venv/bin/python {dir}/cfs_test.py --test-set {ts}'
-run_th_test = 'sudo {dir}/venv/bin/python {dir}/cfs_th_test.py --test-set {variant}'
+run_th_test = 'sudo {dir}/venv/bin/python {dir}/cfs_th_test.py --test-set {ts}'
 
 
 def host_is_available(node):
@@ -129,22 +112,22 @@ def host_is_available(node):
         return False
 
 
-def run_thread_test(node, v):
+def run_thread_test(node, test_set):
     try:
         if args.VIRTUAL:  # вирт. стенд
             with Connection(host='127.0.0.1',
                             port=HOSTS[node]['port'],
                             user=USER,
                             connect_kwargs={"password": PASSWORD}) as node_client:
-                node_client.run(run_th_test.format(dir=SCRIPT_DIR, variant=v))
+                node_client.run(run_th_test.format(dir=SCRIPT_DIR, ts=test_set))
         else:  # физ. стенд
             with Connection(host=HOSTS[node]['ip'],
                             user=USER,
                             connect_kwargs={"password": PASSWORD}) as node_client:
-                node_client.run(run_th_test.format(dir=SCRIPT_DIR, variant=v))
-    except Exception as exptn:
+                node_client.run(run_th_test.format(dir=SCRIPT_DIR, ts=test_set))
+    except Exception as exception:
        print("\033[91m Тестирование завершилось исключением.\033[0m")
-       print(exptn)
+       print(exception)
        exit(2)
 
 

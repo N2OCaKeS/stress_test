@@ -28,6 +28,13 @@ parser.add_argument('--test-set',
                              'fs_mark_size'],
                     required=True,
                     dest='TS')
+
+parser.add_argument('--parsec',
+                    action='store_true',
+                    required=False,
+                    help='',
+                    dest='PARSEC')
+
 args = parser.parse_args()
 
 logging.basicConfig(filename=LOG_FILENAME,

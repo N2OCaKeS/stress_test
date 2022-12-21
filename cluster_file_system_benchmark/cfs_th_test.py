@@ -29,6 +29,12 @@ parser.add_argument('--test-set',
                     required=True,
                     dest='TS')
 
+parser.add_argument('--parsec',
+                    action='store_true',
+                    required=False,
+                    help='',
+                    dest='PARSEC')
+
 args = parser.parse_args()
 
 logging.basicConfig(filename=LOG_FILENAME,
@@ -52,6 +58,7 @@ if args.TS == 'fs_mark_count':
         log.info(exeption)
 
     report = Report(ox_lo_lim=FILES,
+                    ox_step=FILES_STEP,
                     ox_up_lim=FILES_LIMIT,
                     mtreading=True)
     report.create_beauty_table()
@@ -80,6 +87,7 @@ if args.TS == 'fs_mark_size':
         log.info(exeption)
 
     report = Report(ox_lo_lim=SIZE,
+                    ox_step=SIZE_STEP,
                     ox_up_lim=SIZE_LIMIT,
                     mtreading=True)
     report.create_beauty_table()

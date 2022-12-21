@@ -174,7 +174,6 @@ class Report:
                              self.grid_factor)
         plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
         # oy шкала
-        print(y)
         oy_upper_limit = max(y[oy_param_table_name].values.tolist())
         if self.mtreading:
             oy_ticks = np.arange(0, oy_upper_limit, oy_upper_limit // 10)

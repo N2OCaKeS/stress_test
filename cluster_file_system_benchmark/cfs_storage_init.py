@@ -11,7 +11,7 @@ from sys import exit
 from os import popen, path, mkdir
 from time import sleep
 from fabric import Connection
-from cfs_conf import STORAGE_NAME, HOSTS, REPORT_PATH, \
+from cfs_conf import STORAGE_NAME, HOSTS, REPORT_DIR, \
     STORAGE_MOUNT_DIR, USER, PASSWORD, SCRIPT_DIR
 
 DESCRIPTION = ""

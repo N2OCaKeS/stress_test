@@ -19,7 +19,7 @@ from sklearn import preprocessing
 from matplotlib import pyplot as plt
 from libs.libcfs import astra_version
 from pretty_html_table import build_table
-from cfs_conf import REPORT_PATH, REPORT_FILENAME, LOG_PATH, SCRIPT_DIR, \
+from cfs_conf import REPORT_DIR, REPORT_FILENAME, LOG_PATH, LOG_FILENAME, SCRIPT_DIR, \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
     FILES_LIMIT, FILES_STEP, FILES
 
@@ -29,14 +29,21 @@ class Report:
                  ox_lo_lim,
                  ox_step,
                  ox_up_lim,
-                 report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME),
+                 report=REPORT_DIR,
+                 #report='{}/{}'.format(REPORT_DIR, REPORT_FILENAME),
                  mtreading=False):
+
+        self.ox_lower_limit = ox_lo_lim
+        self.ox_step = ox_step
+        self.ox_upper_limit = ox_up_lim
+        self.current_report_dir = report
+        self.mtreading = mtreading
 
         '''
             :param report: path to report file
             read and parsing data from report file
         '''
-        with open(report, 'r') as report_file:
+        with open('{}/{}'.format(self.current_report_dir, REPORT_FILENAME), 'r') as report_file:
             raw_data = report_file.read().split()
             self.fs_use_lst = [int(param) for param in raw_data[0::23]]  # percents
             self.file_count_lst = [int(param) for param in raw_data[1::23]]
@@ -101,24 +108,19 @@ class Report:
             print(self.raw_table)
             print(self.summary_raw_table)
 
-        self.ox_lower_limit = ox_lo_lim
-        self.ox_step = ox_step
-        self.ox_upper_limit = ox_up_lim
-        self.mtreading = mtreading
-
         # graph size
         self.width = 27
         self.height = 15
 
-        self.grid_factor = END_BORDER_FOR_DATA // 10
+        self.grid_factor = self.ox_upper_limit // 10
         # self.grid_factor = FILES_STEP
 
     '''
         Создать html таблицу
     '''
-    def create_beauty_table(self, path=REPORT_PATH, table_name='cfs_report_table.html'):
+    def create_beauty_table(self, table_name='cfs_report_table.html'):
         beauty_table = build_table(self.raw_table, 'blue_light')
-        with open('{}/{}'.format(path, table_name), 'w') as beauty_html_table:
+        with open('{}/{}'.format(self.current_report_dir, table_name), 'w') as beauty_html_table:
             beauty_html_table.write(beauty_table)
 
     @staticmethod
@@ -146,8 +148,7 @@ class Report:
                                    ox_param_table_name,
                                    ox_lst,
                                    oy_param_table_name,
-                                   oy_lst,
-                                   path=REPORT_PATH):
+                                   oy_lst):
         '''
             Шаблон графика с апроксимацией и точками
         '''
@@ -182,15 +183,14 @@ class Report:
         plt.ylabel('{}(msec)'.format(oy_param_table_name))
         plt.grid(True)
 
-        plt.savefig('{p}/cfs_{ox}_{oy}_graph'.format(p=path,
+        plt.savefig('{p}/cfs_{ox}_{oy}_graph'.format(p=self.current_report_dir,
                                                      ox=ox_param_table_name,
                                                      oy=oy_param_table_name))
 
     def template_syscall_graph(self,
                                ox_param_table_name,
                                ox_lst,
-                               syscall,
-                               path=REPORT_PATH):
+                               syscall):
         '''
             Шаблон графика на три кривые для системных вызовов
         '''
@@ -231,7 +231,7 @@ class Report:
         plt.ylabel('syscall {}(msec)'.format(syscall.upper()))
         plt.grid(True)
 
-        plt.savefig('{}/cfs_{}_{}_graph'.format(path,
+        plt.savefig('{}/cfs_{}_{}_graph'.format(self.current_report_dir,
                                                 ox_param_table_name,
                                                 syscall))
 
@@ -487,14 +487,14 @@ class Report:
                              accuracy))
 
     ####################################################################################################################
-    def merge(self, ox_lst, table_lst, graph_lst, path=REPORT_PATH):
+    def merge(self, ox_lst, table_lst, graph_lst):
         '''
             Создать HTML
         '''
 
         tables_in_total_html = []
         for table in table_lst:
-            with open('{}/{}'.format(path, table)) as file:
+            with open('{}/{}'.format(self.current_report_dir, table)) as file:
                 tables_in_total_html.append('<div class="table_block">{}</div>\n'.format(file.read()))
 
         graphs_in_total_html = []
@@ -561,23 +561,22 @@ class Report:
             '</html>\n'
         ]
 
-        with open('{}/main_report.html'.format(path), 'w') as total_html:
+        with open('{}/main_report.html'.format(self.current_report_dir), 'w') as total_html:
             total_html.writelines(html_template_part1)
             total_html.writelines(tables_in_total_html)
             total_html.writelines(html_template_part2)
             total_html.writelines(graphs_in_total_html)
             total_html.writelines(html_template_part3)
 
-    @staticmethod
-    def create_tar(path_to_tar=SCRIPT_DIR, path_to_files=REPORT_PATH):
+    def create_tar(self, path_to_tar=SCRIPT_DIR):
         '''
             tar архив с результатами тестирования
         '''
-        copy(LOG_PATH, '{}/main_log'.format(path_to_files))
+
         with tarfile.open('{p}/report{v}_{m}_{t}.tar'.format(p=path_to_tar,
                                                              v=astra_version()[0],
                                                              m=astra_version()[1],
                                                              t=time()), 'w') as tar:
-            chdir(SCRIPT_DIR)
-            for file in listdir(path_to_files):
+            chdir(path_to_tar)
+            for file in listdir(self.current_report_dir):
                 tar.add('{}/{}'.format('report', file))

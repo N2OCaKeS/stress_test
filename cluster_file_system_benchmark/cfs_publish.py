@@ -11,7 +11,7 @@ import subprocess
 from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libcfs import astra_version
 from libs.libtable import Report
-from cfs_conf import REPORT_PATH, TEMPLATE_PATH, \
+from cfs_conf import REPORT_DIR, TEMPLATE_PATH, \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT
 
@@ -70,7 +70,7 @@ parser.add_argument('-pack', '--package',
 parser.add_argument('-rp', '--report-path',
                     action='store',
                     required=False,
-                    default=REPORT_PATH,
+                    default=REPORT_DIR,
                     help='path to report files',
                     dest='R_PATH')
 
@@ -169,7 +169,7 @@ with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
         rep = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
 
-with open('{}/cfs_report_table.html'.format(REPORT_PATH), 'r') as file:
+with open('{}/cfs_report_table.html'.format(REPORT_DIR), 'r') as file:
     main_table = file.read()
 
 with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:

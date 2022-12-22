@@ -57,21 +57,6 @@ if args.TS == 'fs_mark_count':
     except Exception as exeption:
         log.info(exeption)
 
-    report = Report(ox_lo_lim=FILES,
-                    ox_step=FILES_STEP,
-                    ox_up_lim=FILES_LIMIT,
-                    mtreading=True)
-    report.create_beauty_table()
-    report.create_cfs_fc_sp_graph()
-    report.create_cfs_fc_app_overhead_graph()
-    report.create_cfs_fc_create_graph()
-    report.create_cfs_fc_write_graph()
-    report.create_cfs_fc_fsync_graph()
-    report.create_cfs_fc_sync_graph()
-    report.create_cfs_fc_close_graph()
-    report.create_cfs_fc_unlink_graph()
-    report.create_tar()
-
 if args.TS == 'fs_mark_size':
     '''    
         Прогон 6.
@@ -85,18 +70,3 @@ if args.TS == 'fs_mark_size':
         run_test.test_8_fs_mark33_size()
     except Exception as exeption:
         log.info(exeption)
-
-    report = Report(ox_lo_lim=SIZE,
-                    ox_step=SIZE_STEP,
-                    ox_up_lim=SIZE_LIMIT,
-                    mtreading=True)
-    report.create_beauty_table()
-    report.create_cfs_fc_sp_graph()
-    report.create_cfs_fc_app_overhead_graph()
-    report.create_cfs_fc_create_graph()
-    report.create_cfs_fc_write_graph()
-    report.create_cfs_fc_fsync_graph()
-    report.create_cfs_fc_sync_graph()
-    report.create_cfs_fc_close_graph()
-    report.create_cfs_fc_unlink_graph()
-    report.create_tar()

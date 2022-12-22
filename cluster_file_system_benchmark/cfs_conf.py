@@ -55,11 +55,14 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
 # ...
 
 SCRIPT_DIR = '/media/sf_git/stress_test/cluster_file_system_benchmark'
-#SCRIPT_DIR = '/home/rkuznetsov/git/stress_test/cluster_file_system_benchmark'
+LOCAL_SCRIPT_DIR = '/home/u/git/stress_test/cluster_file_system_benchmark'
 LOG_FILENAME = 'cfs_log'
-LOG_PATH ='{}/{}'.format(SCRIPT_DIR, LOG_FILENAME)
+LOG_PATH ='{}/log/{}'.format(SCRIPT_DIR, LOG_FILENAME)
+
 REPORT_FILENAME = 'cfs_report.txt'
-REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
+REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
+REPORT_PATH = '{}/report/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
+
 TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
 
 # Количество Inode
@@ -71,7 +74,7 @@ STORAGE_MOUNT_DIR = '/mnt'
 #
 MACHINE_POSTFIX = 'osse'
 #
-SNAPSHOT_NAME = '1.7.1.o'
+SNAPSHOT_NAME = 's'
 #
 PORT = '7777'
 #
@@ -79,15 +82,15 @@ USER = 'u'
 #
 PASSWORD = '1'
 
-START_BORDER_FOR_DATA = 1000
-STEP_FOR_DATA = 1000
-END_BORDER_FOR_DATA = 100000
+START_BORDER_FOR_DATA = 100
+STEP_FOR_DATA = 100
+END_BORDER_FOR_DATA = 1100
 TIMEOUT = 3600
 NUMBER_OF_TEST_FILES = 5000
 
 FILES = 100
 FILES_STEP = 100
-FILES_LIMIT = 1000
+FILES_LIMIT = 1100
 
 SIZE = 1024
 SIZE_STEP = 1024

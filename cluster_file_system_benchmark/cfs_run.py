@@ -13,8 +13,12 @@ from sys import exit
 from threading import Thread
 from fabric import Connection
 from time import sleep, time
+from libs.libtable import Report
 from cfs_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_PATH
+    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME, \
+    FILES, FILES_STEP, FILES_LIMIT, \
+    SIZE, SIZE_STEP, SIZE_LIMIT, \
+    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -86,6 +90,8 @@ storagecreate = 'VBoxManage createmedium disk --filename /home/$USER/VirtualBox\
 storageattach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium /home/$USER/VirtualBox\ VMs/{fs}_storage.vdi'
 startvm = 'VBoxManage startvm {host}_{postfix} --type headless'
 controlvm_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
+
+local_current_dir = path.dirname(path.realpath(__file__))
 
 # Физ. машина
 restore_snapshot_agb = ''
@@ -271,6 +277,13 @@ print("#########################")
 print("###### - TESTING - ######")
 print("#########################")
 
+# Создать /log
+try:
+    if not path.exists('log'):
+        mkdir('log', mode=0o755)
+except FileNotFoundError:
+    pass
+
 # Очистить лог
 log_file = open(LOG_FILENAME, 'w')
 log_file.close()
@@ -282,12 +295,46 @@ try:
 except FileNotFoundError:
     pass
 
+# Очистить report
+report_file = open('report/{}'.format(REPORT_FILENAME), 'w')
+report_file.close()
+
 if args.MULTITHREADING:
     threads = [Thread(target=run_test, args=(node, args.TS)) for node in args.NODES]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
+
+    if args.TS == 'fs_mark_count':
+        report = Report(ox_lo_lim=FILES,
+                        ox_step=FILES_STEP,
+                        ox_up_lim=FILES_LIMIT,
+                        report='{}/report'.format(local_current_dir),
+                        mtreading=True)
+    elif args.TS == 'fs_mark_size':
+        report = Report(ox_lo_lim=SIZE,
+                        ox_step=SIZE_STEP,
+                        ox_up_lim=SIZE_LIMIT,
+                        report='{}/report'.format(local_current_dir),
+                        mtreading=True)
+    else:
+        report = Report(ox_lo_lim=START_BORDER_FOR_DATA,
+                        ox_step=STEP_FOR_DATA,
+                        ox_up_lim=END_BORDER_FOR_DATA,
+                        report='{}/report'.format(local_current_dir),
+                        mtreading=True)
+
+    report.create_beauty_table()
+    report.create_cfs_fc_sp_graph()
+    report.create_cfs_fc_app_overhead_graph()
+    report.create_cfs_fc_create_graph()
+    report.create_cfs_fc_write_graph()
+    report.create_cfs_fc_fsync_graph()
+    report.create_cfs_fc_sync_graph()
+    report.create_cfs_fc_close_graph()
+    report.create_cfs_fc_unlink_graph()
+    report.create_tar(path_to_tar=local_current_dir)
 else:
     run_test(test_set=args.TS)
 

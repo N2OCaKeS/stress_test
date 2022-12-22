@@ -13,7 +13,7 @@ from time import time
 from pathlib import Path
 from threading import Lock
 from os import listdir, linesep
-from cfs_conf import STORAGE_MOUNT_DIR, LOG_PATH, SCRIPT_DIR, REPORT_PATH, REPORT_FILENAME
+from cfs_conf import STORAGE_MOUNT_DIR, LOG_PATH, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME
 from libs.libactions import create_file, del_file, \
     create_symlink, del_symlink, \
     create_hardlink, del_hardlink, \
@@ -315,7 +315,7 @@ class Test:
     def fs_mark33_count(start=10, end=100, step=5, size=1024, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_count.__name__))
 
-        # report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
+        # report_file = open('{}/{}'.format(REPORT_DIR, REPORT_FILENAME), 'w')
         # report_file.close()
 
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
@@ -332,7 +332,7 @@ class Test:
             err = linesep.join([s for s in test.stdout.decode("utf-8").splitlines() if s])
 
             if test.returncode == 0:
-                with open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'a+') as report_file:
+                with open('{}/{}'.format(REPORT_DIR, REPORT_FILENAME), 'a+') as report_file:
                     report_file.write(out.splitlines()[-1]+'\n')
                 print("{} | \033[92mpass\033[0m".format(out.splitlines()[-1]))
                 log.info("{} | ".format(out))
@@ -348,7 +348,7 @@ class Test:
     def fs_mark33_size(start=1024, end=10240, step=1024, count=1000, mount_dir=STORAGE_MOUNT_DIR, scr_dir=SCRIPT_DIR):
         print("# TEST # <{}>:".format(Test.fs_mark33_size.__name__))
 
-        report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
+        report_file = open('{}/{}'.format(REPORT_DIR, REPORT_FILENAME), 'w')
         report_file.close()
 
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
@@ -365,7 +365,7 @@ class Test:
             err = linesep.join([s for s in test.stdout.decode("utf-8").splitlines() if s])
 
             if test.returncode == 0:
-                with open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'a+') as report_file:
+                with open('{}/{}'.format(REPORT_DIR, REPORT_FILENAME), 'a+') as report_file:
                     report_file.write(out.splitlines()[-1]+'\n')
                 print("{} | \033[92mpass\033[0m".format(out.splitlines()[-1]))
                 log.info("{} | ".format(out))

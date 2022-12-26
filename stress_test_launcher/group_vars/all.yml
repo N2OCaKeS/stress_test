@@ -1,3 +1,4 @@
 ---
 ansible_user: u 
 ansible_password: "1"
+ansible_python_interpreter: /usr/bin/python3

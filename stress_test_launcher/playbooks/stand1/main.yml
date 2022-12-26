@@ -9,4 +9,6 @@
   - include: ../tasks/check_astra_verison.yml
 
 - include: ./postgresql/postgresql.yml
-- include: ./auditd/auditd.yml
+- include: ./auditd/psaud.yml
+- include: ./auditd/fileaud.yml
+- include: ./auditd/useraud.yml

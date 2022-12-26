@@ -7,6 +7,7 @@ from shutil import copy
 from time import time
 from os import listdir
 from scipy import integrate
+from sklearn import preprocessing
 from matplotlib import pyplot as plt
 from libs.libpsb import astra_version
 from pretty_html_table import build_table
@@ -360,33 +361,60 @@ class Report:
                       lower_limit=CLIENTS,
                       upper_limit=LIMITE_CLIENTS,
                       multiplier=10**(0),
-                      accuracy=3):
-        func_la = self.data_aproximation(self.param_lst, self.la_lst)
-        Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
+                      accuracy=3,
+                      auto_normalize=True):
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(self.la_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+
+            func_la = self.data_aproximation(self.param_lst, normalized_data_list)
+            Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
+        else:
+            func_la = self.data_aproximation(self.param_lst, self.la_lst)
+            Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
         return round((Ila * multiplier), accuracy)
 
     def get_tps1_rating(self,
                         lower_limit=CLIENTS,
                         upper_limit=LIMITE_CLIENTS,
                         multiplier=10**(0),
-                        accuracy=3):
-        func_tps1 = self.data_aproximation(self.param_lst, self.tps1_lst)
-        Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
+                        accuracy=3,
+                        auto_normalize=True):
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(self.tps1_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+
+            func_tps1 = self.data_aproximation(self.param_lst, normalized_data_list)
+            Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
+        else:
+            func_tps1 = self.data_aproximation(self.param_lst, self.tps1_lst)
+            Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
         return round((Itps1 * multiplier), accuracy)
 
     def get_tps2_rating(self,
                         lower_limit=CLIENTS,
                         upper_limit=LIMITE_CLIENTS,
                         multiplier=10**(0),
-                        accuracy=3):
-        func_tps2 = self.data_aproximation(self.param_lst, self.tps2_lst)
-        Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
+                        accuracy=3,
+                        auto_normalize=True):
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(self.tps2_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+
+            func_tps2 = self.data_aproximation(self.param_lst, normalized_data_list)
+            Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
+        else:
+            func_tps2 = self.data_aproximation(self.param_lst, self.tps2_lst)
+            Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
         return round((Itps2 * multiplier), accuracy)
 
     def get_total_rating(self,
                          lower_limit=CLIENTS,
                          upper_limit=LIMITE_CLIENTS,
-                         multiplier=10**(-7),
+                         multiplier=10**(0),
                          accuracy=3):
 
         # weight coefficients

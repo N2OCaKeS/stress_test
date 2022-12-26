@@ -12,7 +12,7 @@ from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libpsb import astra_version
 from libs.libtable import Report
 from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
-    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, GRAPH_DESCRIPTIONS
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -161,7 +161,9 @@ with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
     img_temp = template.read()
     for file in os.listdir(args.R_PATH):
         if file.endswith('png'):
-            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE), img_png=file))
+            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE),
+                                              img_png=file,
+                                              description=GRAPH_DESCRIPTIONS[file]))
     images = '\n'.join(images_lst)
 
 html_page = '\n'.join([header_table, rating, main_table, images])

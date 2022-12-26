@@ -1,7 +1,7 @@
 ---
 - name: Rollback snapshot
   hosts: "{{ HOST }}"
-  become: yes
+  become: true
 
   tasks:
 
@@ -22,3 +22,13 @@
   - name: Test Task after reconnection to {{ HOST }}
     debug:
       msg: It's okay
+  
+  - name: TEMP RM -RF 
+    become: true
+    shell:
+      cmd: cd /home/u/git/stress_test/ && rm -rf *
+  
+  - name: Git pull
+    become: false
+    shell:
+      cmd: cd /home/u/git/stress_test && git pull

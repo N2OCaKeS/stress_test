@@ -13,7 +13,7 @@ import subprocess
 from time import time
 from sys import exit
 from os import getuid, path
-from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, \
+from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INFO_FILENAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
     MIC_SQL_UPGRADE, MIC_SQL_TRANSACTION, \
     ACL_SQL_UPGRADE, ACL_SQL_TRANSACTION, \
@@ -76,6 +76,10 @@ if getuid() != 0:
 # clean log
 if path.exists(LOG_FILENAME):
     report = open(LOG_FILENAME, 'w')
+    report.close()
+
+if path.exists(INFO_FILENAME):
+    report = open(INFO_FILENAME, 'w')
     report.close()
 
 # create dir
@@ -385,4 +389,18 @@ if args.CLEANER:
                    shell=True,
                    stderr=subprocess.DEVNULL)
 
-print('lead time: {t} sec'.format(t=time() - start_time))
+lead_time = time() - start_time
+print('lead time: {t} sec'.format(t=lead_time))
+
+# собрать системную информацию
+info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+            subprocess.run('uname -r',
+                           shell=True,
+                           stdout=subprocess.PIPE).stdout.decode("utf-8"),
+            subprocess.run("dpkg -l " + args.PACKAGE + " | awk '{print $3}' | tail -n1",
+                           shell=True,
+                           stdout=subprocess.PIPE).stdout.decode("utf-8"),
+            str(lead_time)]
+
+with open(INFO_FILENAME, 'a+') as info:
+    info.writelines(info_lst)

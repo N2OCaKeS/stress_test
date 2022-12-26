@@ -12,7 +12,7 @@ from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libpsb import astra_version
 from libs.libtable import Report
 from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
-    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -128,17 +128,14 @@ for file in os.listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
+with open(INFO_FILENAME) as info:
+    info_lst = info.read().split('\n')
 with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
     header_table_temp = file.read()
-    header_table = header_table_temp.format(av='{digit_v}({mode})'.format(digit_v=astra_version()[0],
-                                                                          mode=astra_version()[1]),
-                                            kernel=subprocess.run('uname -r',
-                                                                  shell=True,
-                                                                  stdout=subprocess.PIPE).stdout.decode("utf-8"),
+    header_table = header_table_temp.format(av=info_lst[0],
+                                            kernel=info_lst[1],
                                             package_name=args.PACKAGE,
-                                            package_vers=subprocess.run("dpkg -l "+args.PACKAGE+" | awk '{print $3}' | tail -n1",
-                                                                        shell=True,
-                                                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                                            package_vers=info_lst[2],
                                             param_scale=str(DEFAULT_SCALE_FACTOR),
                                             param_tr=str(DEFAULT_TRANSACTIONS),
                                             param_th=str(DEFAULT_THREADS),
@@ -146,7 +143,8 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                                             arm_num=args.ARM_NUM,
                                             arm_proc=args.ARM_PROC,
                                             arm_mem=args.ARM_MEM,
-                                            arm_st=args.ARM_ST)
+                                            arm_st=args.ARM_ST,
+                                            lead_time=info_lst[3])
 
 
 # создание страницы отчета

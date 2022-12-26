@@ -20,7 +20,10 @@ from psb_conf import SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
 
 class Report:
 
-    def __init__(self, param_name='clients', report_file=REPORT_FILENAME, all_params=False, sysmon=False):
+    def __init__(self, param_name='clients',
+                 report_file=REPORT_FILENAME,
+                 all_params=False,
+                 sysmon=False):
         with open(report_file, 'r') as report_file:
             raw_data = report_file.read().split()
         if all_params:
@@ -373,6 +376,7 @@ class Report:
         else:
             func_la = self.data_aproximation(self.param_lst, self.la_lst)
             Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
+
         return round((Ila * multiplier), accuracy)
 
     def get_tps1_rating(self,

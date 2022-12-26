@@ -1,0 +1,65 @@
+- include: ../../rollback_snapshot.yml
+
+- name: File Systems NTFS
+  hosts: "{{ HOST }}"
+  become: yes
+  
+  vars:
+    KERNEL_VERSION: "5.15.0-33-generic"
+    SCRIPT_DIR: /home/u/git/stress_test/file_system_benchmark/
+    CONFLUENCE_PARENT_PAGE: test
+    security_mode: "0"
+
+  tasks:
+
+  - include: ../../tasks/check_kernel_version.yml
+
+  - include: ../../tasks/astra-modeswitch-get.yml
+  
+  - include: ../../tasks/astra-modeswitch-set.yml
+
+  - name: Install Parted
+    apt:
+      name: parted
+      state: present
+
+  - name: Git checkout file_systems
+    shell:
+      cmd: "cd /home/u/git/stress_test && git checkout file_systems"
+
+  - name: Copy config localhost to "{{ HOST }}" file_systems ntfs
+    copy:
+      src: fsb_conf.py
+      dest: "{{ SCRIPT_DIR }}"
+      owner: u
+      group: u
+      mode: '0644'
+  
+  - name: Download script upload report to ftp
+    get_url:
+      url: ftp://10.177.5.111/upload/ivelikanov/ftp_upload_report.py
+      dest: "{{ SCRIPT_DIR }}"
+  
+  - name: Prepare settings file_systems ntfs
+    shell:
+      cmd: "bash fsb_prep.sh"
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+  
+  - name: Run stress test file_systems ntfs
+    shell:
+      cmd: venv/bin/python fsb_run.py --file-system ntfs --test-set fs_mark_count
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Publish in life file_systems ntfs
+    shell:
+      cmd: venv/bin/python fsb_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp "fsb_ntfs_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }}" -rp "{{ SCRIPT_DIR }}report" -pack ntfs -ts fs_mark_count
+    args:
+      chdir: "{{ SCRIPT_DIR }}"
+
+  - name: Upload report to 111 file_systems ntfs
+    shell:
+      cmd: python3 ftp_upload_report.py -rp "{{ SCRIPT_DIR }}"
+    args:
+      chdir: "{{ SCRIPT_DIR }}"

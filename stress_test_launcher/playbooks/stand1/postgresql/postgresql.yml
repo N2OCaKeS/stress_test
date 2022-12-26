@@ -1,3 +1,5 @@
+- include: ../../rollback_snapshot.yml
+ 
 - name: PostgreSQL
   hosts: "{{ HOST }}"
   become: yes

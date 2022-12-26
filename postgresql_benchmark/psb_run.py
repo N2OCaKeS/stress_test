@@ -397,7 +397,7 @@ info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[0], mode=astra_ve
             subprocess.run('uname -r',
                            shell=True,
                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
-            subprocess.run("dpkg -l " + args.PACKAGE + " | awk '{print $3}' | tail -n1",
+            subprocess.run("dpkg -l postgresql | awk '{print $3}' | tail -n1",
                            shell=True,
                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
             str(lead_time)]

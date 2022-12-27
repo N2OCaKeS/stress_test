@@ -204,7 +204,7 @@ if args.TS == 'fs_mark_count':
 
     put_system_info_in_file(start_time, INFO_PATH)
 
-    report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
+    report = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT)
     report.create_beauty_table()
     report.create_cfs_fc_sp_graph()
     report.create_cfs_fc_app_overhead_graph()
@@ -248,7 +248,7 @@ if args.TS == 'fs_mark_size':
 
     put_system_info_in_file(start_time, INFO_PATH)
 
-    report = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
+    report = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT)
     report.create_beauty_table()
     report.create_cfs_fc_sp_graph()
     report.create_cfs_fc_app_overhead_graph()

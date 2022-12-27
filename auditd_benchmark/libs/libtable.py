@@ -13,12 +13,13 @@ import numpy as np
 from time import time
 from scipy import integrate
 from os import listdir, chdir
+from sklearn import preprocessing
 from matplotlib import pyplot as plt
 from libs.libaub import astra_version, astra_kernel_version
 from pretty_html_table import build_table
 from aub_conf import SCRIPT_DIR, \
     LOG_DIR, REPORT_DIR, REPORT, \
-    DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY, PS_LOWER_LIMIT, PS_UPPER_LIMIT
+    DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY, PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP
 
 
 class Report:
@@ -34,6 +35,7 @@ class Report:
 
         self.__event_names = event_names
         self.__events_per_second_lower_limit = int(PS_LOWER_LIMIT) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
+        self.__events_per_second_step = int(PS_STEP) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
         self.__events_per_second_upper_limit = int(PS_UPPER_LIMIT) / float(DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY)
 
         # graph size
@@ -334,33 +336,64 @@ class Report:
                                                      type=type,
                                                      path=path)
 
-    def get_event_latecy_rating(self, raw_table, multiplier=10**(0), accuracy=3):
+    def get_event_latecy_rating(self,
+                                raw_table,
+                                multiplier=10**(0),
+                                accuracy=3,
+                                auto_normalize=True):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['latency'].values.tolist()
 
-        func_latency = self._data_aproximation(ox_lst, oy_lst)
-        i_latency, err = integrate.quad(func_latency,
-                                        self.__events_per_second_lower_limit,
-                                        self.__events_per_second_upper_limit,)
-        try:
-            return round(i_latency * multiplier, accuracy)
-        except ZeroDivisionError:
-            return 0
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
 
-    def get_event_losses_rating(self, raw_table, multiplier=10**(0), accuracy=3):
+            func_latency = self._data_aproximation(ox_lst, normalized_data_list)
+            i_latency, err = integrate.quad(func_latency,
+                                            self.__events_per_second_lower_limit,
+                                            self.__events_per_second_upper_limit-self.__events_per_second_step)
+
+            return round(i_latency * multiplier, accuracy)
+        else:
+            func_latency = self._data_aproximation(ox_lst, oy_lst)
+            i_latency, err = integrate.quad(func_latency,
+                                            self.__events_per_second_lower_limit,
+                                            self.__events_per_second_upper_limit,)
+            try:
+                return round(i_latency * multiplier, accuracy)
+            except ZeroDivisionError:
+                return 0
+
+    def get_event_losses_rating(self,
+                                raw_table,
+                                multiplier=10**(0),
+                                accuracy=3,
+                                auto_normalize=True):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['completed'].values.tolist()
 
-        func_completed = self._data_aproximation(ox_lst, oy_lst)
-        i_completed, err = integrate.quad(func_completed,
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+
+            func_completed = self._data_aproximation(ox_lst, normalized_data_list)
+            i_completed, err = integrate.quad(func_completed,
                                           self.__events_per_second_lower_limit,
-                                          self.__events_per_second_upper_limit,)
-        try:
+                                          self.__events_per_second_upper_limit-self.__events_per_second_step)
             return round(i_completed * multiplier, accuracy)
-        except ZeroDivisionError:
-            return 0
+        else:
+            func_completed = self._data_aproximation(ox_lst, oy_lst)
+            i_completed, err = integrate.quad(func_completed,
+                                              self.__events_per_second_lower_limit,
+                                              self.__events_per_second_upper_limit,)
+            try:
+                return round(i_completed * multiplier, accuracy)
+            except ZeroDivisionError:
+                return 0
 
     def get_total_latency_rating(self, path=REPORT, accuracy=3):
         total_latency_rating = 0

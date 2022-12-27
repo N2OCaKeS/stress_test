@@ -549,11 +549,13 @@ class AuditdTest(Auditd, CheckAusearch):
         while CheckAusearch.psaud(audit_flag, test_ps.pid, timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
-                return -1
+                return 0
 
         test_ps.terminate()
-
-        return round(end - start, accuracy)
+        latency = end - start
+        if latency == 0:
+            latency = event_re_initialization_delay
+        return round(latency, accuracy)
 
     def test_get_latency_psaud_under_load(self,
                                           audit_flag,
@@ -601,12 +603,15 @@ class AuditdTest(Auditd, CheckAusearch):
         while CheckAusearch.psaud(audit_flag, last_test_ps.pid, timers[last_num]) is False:
             end = time()
             if not last_test_ps.is_alive():
-                return -1
+                return 0
 
         for test_ps in test_ps_lst:
             test_ps.terminate()
 
-        return round(end - start, accuracy)
+        latency = end - start
+        if latency == 0:
+            latency = event_re_initialization_delay
+        return round(latency, accuracy)
 
     def test_losses_psaud_under_load(self,
                                      audit_flag,
@@ -717,7 +722,7 @@ class AuditdTest(Auditd, CheckAusearch):
         while CheckAusearch.useraud(cmds[0], timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
-                return -1
+                return 0
 
 
         test_ps.terminate()
@@ -725,7 +730,10 @@ class AuditdTest(Auditd, CheckAusearch):
         User.rm_priv(user)
         User.rm(user)
 
-        return round(end - start, accuracy)
+        latency = end - start
+        if latency == 0:
+            latency = event_re_initialization_delay
+        return round(latency, accuracy)
 
     def test_get_latency_useraud_under_load(self,
                                             audit_flag,
@@ -786,7 +794,7 @@ class AuditdTest(Auditd, CheckAusearch):
         while CheckAusearch.useraud(cmds[last_num], timers[last_num]) is False:
             end = time()
             if not last_test_ps.is_alive():
-                return -1
+                return 0
 
         # убить все
         for test_ps in test_ps_lst:
@@ -797,7 +805,10 @@ class AuditdTest(Auditd, CheckAusearch):
             User.rm_priv(name)
             User.rm(name)
 
-        return round(end - start, accuracy)
+        latency = end - start
+        if latency == 0:
+            latency = event_re_initialization_delay
+        return round(latency, accuracy)
 
     def test_losses_useraud_under_load(self,
                                        audit_flag,
@@ -909,12 +920,15 @@ class AuditdTest(Auditd, CheckAusearch):
         while CheckAusearch.fileaud(target_file, timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
-                return -1
+                return 0
 
         test_ps.terminate()
         Prepare.clean()
 
-        return round(end - start, accuracy)
+        latency = end - start
+        if latency == 0:
+            latency = event_re_initialization_delay
+        return round(latency, accuracy)
 
     def test_get_latency_fileaud_under_load(self,
                                             audit_flag,
@@ -954,13 +968,17 @@ class AuditdTest(Auditd, CheckAusearch):
         while CheckAusearch.fileaud(target_file, timers[last_num]) is False:
             end = time()
             if not last_test_ps.is_alive():
-                return -1
+                return 0
 
         for test_ps in test_ps_lst:
             test_ps.terminate()
 
         Prepare.clean()
-        return round(end - start, accuracy)
+
+        latency = end - start
+        if latency == 0:
+            latency = event_re_initialization_delay
+        return round(latency, accuracy)
 
     def test_get_losses_fileaud_under_load(self,
                                            audit_flag,

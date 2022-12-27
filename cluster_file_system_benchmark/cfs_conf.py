@@ -58,6 +58,10 @@ SCRIPT_DIR = '/media/sf_git/stress_test/cluster_file_system_benchmark'
 LOCAL_SCRIPT_DIR = '/home/u/git/stress_test/cluster_file_system_benchmark'
 LOG_FILENAME = 'cfs_log'
 LOG_PATH ='{}/log/{}'.format(SCRIPT_DIR, LOG_FILENAME)
+INFO_FILENAME = 'cfs_info.txt'
+INFO_PATH = '{}/{}'.format(SCRIPT_DIR, INFO_FILENAME)
+
+PACKAGES = {'ocfs2': 'ocfs2-tools'}
 
 REPORT_FILENAME = 'cfs_report.txt'
 REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
@@ -95,3 +99,59 @@ FILES_LIMIT = 101000
 SIZE = 1024
 SIZE_STEP = 1024
 SIZE_LIMIT = 10240
+
+GRAPH_DESCRIPTIONS = {
+    'cfs_file_count_app_overhead_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                             'График зависимости времененных затрат приложения (не считая системные вызовы) от количества файлов.'
+                                             '<ul>'
+                                             '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                             '    <li><b>OY</b>: Времененные затраты приложения (мсек);</li>'
+                                             '    <li><b>Функция</b>: Аппроксимирующая функция точек;</li>'
+                                             '</ul></p>',
+
+    'cfs_file_count_speed_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                      'График зависимости скорости записи файлов на диск от количества файлов.'
+                                      '<ul>'
+                                      '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                      '    <li><b>OY</b>: скорость записи файлов на диск (мсек);</li>'
+                                      '    <li><b>Функция</b>: Аппроксимирующая функция точек;</li>'
+                                      '</ul></p>',
+
+    'cfs_file_count_create_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                       'График зависимости мининмальных/средних/максимальных времязатрат на обработку системного вызова от количества файлов. Системный вызов CREATE.'
+                                       '<ul>'
+                                       '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                       '    <li><b>OY</b>: Времязатраты на обработку системного вызова (мсек);</li>'
+                                       '</ul></p>',
+
+    'cfs_file_count_write_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                       'График зависимости мининмальных/средних/максимальных времязатрат на обработку системного вызова от количества файлов. Системный вызов WRITE.'
+                                       '<ul>'
+                                       '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                       '    <li><b>OY</b>: Времязатраты на обработку системного вызова (мсек);</li>'
+                                       '</ul></p>',
+    'cfs_file_count_fsync_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                       'График зависимости мининмальных/средних/максимальных времязатрат на обработку системного вызова от количества файлов. Системный вызов FSYNC.'
+                                       '<ul>'
+                                       '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                       '    <li><b>OY</b>: Времязатраты на обработку системного вызова (мсек);</li>'
+                                       '</ul></p>',
+    'cfs_file_count_sync_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                       'График зависимости мининмальных/средних/максимальных времязатрат на обработку системного вызова от количества файлов. Системный вызов SYNC.'
+                                       '<ul>'
+                                       '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                       '    <li><b>OY</b>: Времязатраты на обработку системного вызова (мсек);</li>'
+                                       '</ul></p>',
+    'cfs_file_count_close_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                       'График зависимости мининмальных/средних/максимальных времязатрат на обработку системного вызова от количества файлов. Системный вызов CLOSE.'
+                                       '<ul>'
+                                       '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                       '    <li><b>OY</b>: Времязатраты на обработку системного вызова (мсек);</li>'
+                                       '</ul></p>',
+    'cfs_file_count_unlink_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                       'График зависимости мининмальных/средних/максимальных времязатрат на обработку системного вызова от количества файлов. Системный вызов UNLINK.'
+                                       '<ul>'
+                                       '    <li><b>OX</b>: Количество тестовых файлов;</li>'
+                                       '    <li><b>OY</b>: Времязатраты на обработку системного вызова (мсек);</li>'
+                                       '</ul></p>',
+}

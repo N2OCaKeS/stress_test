@@ -5,6 +5,8 @@ REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
 REPORT_SYSMON_FILENAME = '{}/psb_sysmon_report.txt'.format(REPORT_PATH)
 DATA_SYSMON_FILENAME = '{}/psb_data_sysmon.txt'.format(REPORT_PATH)
 TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
+INFO_FILENAME = '{}/psb_info.txt'.format(SCRIPT_DIR)
+
 '''
    Названия скриптов из папки sql.
    *upgrade - скрипт донастройки после pgbech -i
@@ -68,3 +70,13 @@ LIMITE_CLIENTS = 500
     Расширенный репозиторий
 '''
 EXTREP = 'deb ftp://10.177.5.111/astra/testing/extended-1.7-testing 1.7_x86-64 main contrib non-free astra-ce'
+
+'''
+    Описание для графиков отчета
+'''
+GRAPH_DESCRIPTIONS = {
+    'psb_cl_la_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости средней задержки отклика приложения от количества клиентов, одновременно выполняющих транзакции.<ul><li><b>OX</b>: Количество клиентов, одновременно выполняющих транзакции;</li><li><b>OY</b>: Средняя задержка отклика приложения;</li><li><b>Функция</b>: Аппроксимирующая функция точек;</li></ul></p>',
+    'psb_cl_tps1_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости числа транзакций в секунду (с учетом установки соединения) от количества клиентов, одновременно выполняющих транзакции.<ul><li><b>OX</b>: Количество клиентов, одновременно выполняющих транзакции;</li><li><b>OY</b>: Транзакций в секунду, включая установление соединений</li><li><b>Функция</b>: Аппроксимирующая функция точек</li></ul></p>',
+    'psb_cl_tps2_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости числа транзакций в секунду (без учета установки соединения) от количества клиентов, одновременно выполняющих транзакции.<ul><li><b>OX</b>: Количество клиентов, одновременно выполняющих транзакции;</li><li><b>OY</b>: Транзакций в секунду, не включая установление соединений</li><li><b>Функция</b>: Аппроксимирующая функция точек</li></ul></p>',
+    'psb_cl_tpsall_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">Сравнительный график зависимости числа транзакций в секунду без учета установки соединения и числа транзакций в секунду с учетом установки соединения от количества клиентов, одновременно выполняющих транзакции.<ul><li><b>OX</b>: Количество клиентов, одновременно выполняющих транзакции;</li><li><b>OY</b>: Транзакций в секунду</li><li><b>Функция</b>: Аппроксимирующая функция точек</li></ul></p>',
+}

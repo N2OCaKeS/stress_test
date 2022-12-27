@@ -419,14 +419,18 @@ class Report:
             report.write('total losses rating: {}\n'.format(round(total_losses_rating, accuracy)))
         return round(total_losses_rating, accuracy)
 
-    def get_total_auditd_rating(self, path=REPORT, accuracy=3):
+    def get_total_auditd_rating(self,
+                                path=REPORT,
+                                multiplier=10**(2),
+                                accuracy=0):
         # weight coefficients
         clat = 0.5
         clos = 1
 
-        total_auditd_rating = abs(round((clat * self.get_total_latency_rating(path=path))**(-1) * \
-                                        (clos * self.get_total_losses_rating(path=path)),
-                                        accuracy))
+        total_auditd_rating = round((clat * self.get_total_latency_rating(path=path))**(-1) * \
+                                    (clos * self.get_total_losses_rating(path=path)) * \
+                                    multiplier,
+                                    accuracy)
         with open(path, 'a+') as report:
             report.write('total auditd rating: {}\n'.format(total_auditd_rating))
         return total_auditd_rating

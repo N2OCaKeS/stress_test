@@ -11,9 +11,9 @@ import subprocess
 from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libfsb import astra_version
 from libs.libtable import Report
-from fsb_conf import REPORT_PATH, TEMPLATE_PATH, \
+from fsb_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, \
     FILES, FILES_STEP, FILES_LIMIT, \
-    SIZE, SIZE_STEP, SIZE_LIMIT
+    SIZE, SIZE_STEP, SIZE_LIMIT, PACKAGES
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -61,11 +61,17 @@ parser.add_argument('-ji', '--jira-issue',
                     help='jira issue',
                     dest='JIRA_ISSUE')
 
-parser.add_argument('-pack', '--package',
+parser.add_argument('-fs', '--file-system',
                     action='store',
+                    choices=['ext2',
+                             'ext3',
+                             'ext4',
+                             'fat',
+                             'ntfs',
+                             'xfs'],
                     required=True,
-                    help='test package',
-                    dest='PACKAGE')
+                    help='filesystem',
+                    dest='FS')
 
 parser.add_argument('-rp', '--report-path',
                     action='store',
@@ -136,17 +142,14 @@ for file in os.listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
+with open(INFO_FILENAME) as info:
+    info_lst = info.read().split('\n')
 with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
     header_table_temp = file.read()
-    header_table = header_table_temp.format(av='{digit_v}({mode})'.format(digit_v=astra_version()[0],
-                                                                          mode=astra_version()[1]),
-                                            kernel=subprocess.run('uname -r',
-                                                                  shell=True,
-                                                                  stdout=subprocess.PIPE).stdout.decode("utf-8"),
-                                            package_name=args.PACKAGE,
-                                            package_vers=subprocess.run("dpkg -l "+args.PACKAGE+" | awk '{print $3}' | tail -n1",
-                                                                        shell=True,
-                                                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+    header_table = header_table_temp.format(av=info_lst[0],
+                                            kernel=info_lst[1],
+                                            package_name=PACKAGES[args.FS],
+                                            package_vers=info_lst[2],
                                             param_files='{}-{}/{}'.format(FILES,
                                                                           FILES_LIMIT,
                                                                           FILES_STEP),
@@ -156,7 +159,8 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                                             arm_num=args.ARM_NUM,
                                             arm_proc=args.ARM_PROC,
                                             arm_mem=args.ARM_MEM,
-                                            arm_st=args.ARM_ST)
+                                            arm_st=args.ARM_ST,
+                                            lead_time=info_lst[3])
 
 
 # создание страницы отчета

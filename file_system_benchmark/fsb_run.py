@@ -13,8 +13,10 @@ from sys import exit
 from time import sleep, time
 from os import getuid, path, mkdir
 from fabric import Connection
+from libs.libfsb import astra_version
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR
+    HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR, \
+    INFO_FILENAME, PACKAGES
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -229,4 +231,19 @@ else: # физ. стенд
 
     cmd('umount {}'.format(STORAGE_MOUNT_DIR))
 
-print('lead time: {t} sec'.format(t=time() - start_time))
+
+lead_time = time() - start_time
+print('lead time: {t} sec'.format(t=lead_time))
+
+# собрать системную информацию
+info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+            subprocess.run('uname -r',
+                           shell=True,
+                           stdout=subprocess.PIPE).stdout.decode("utf-8"),
+            subprocess.run("dpkg -l " + PACKAGES[args.FS] + " | awk '{print $3}' | tail -n1",
+                           shell=True,
+                           stdout=subprocess.PIPE).stdout.decode("utf-8"),
+            str(lead_time)]
+
+with open(INFO_FILENAME, 'a+') as info:
+    info.writelines(info_lst)

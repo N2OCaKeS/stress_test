@@ -213,6 +213,9 @@ else: # физ. стенд
     log_file = open(LOG_FILENAME, 'w')
     log_file.close()
 
+    log_file = open(INFO_FILENAME, 'w')
+    log_file.close()
+
     # Создать /report
     if not path.exists(REPORT_PATH):
         mkdir(REPORT_PATH, mode=0o755)

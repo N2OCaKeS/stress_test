@@ -23,7 +23,7 @@ def astra_version():
 
     with open("/etc/astra_version", "r") as file:
         astra_update_version = file.read()
-    version.append(astra_update_version)
+    version.append(astra_update_version.strip('\n'))
 
     try:
         with open("/etc/astra_license", "r") as file:

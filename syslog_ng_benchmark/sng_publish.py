@@ -6,6 +6,7 @@ import sys
 import subprocess
 from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libsng import astra_version
+from sng_conf import GRAPH_DESCRIPTIONS
 
 
 DESCRIPTION = ""
@@ -167,7 +168,9 @@ with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
     img_temp = template.read()
     for file in os.listdir(args.R_PATH):
         if file.endswith('png'):
-            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE), img_png=file))
+            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE), 
+                                              img_png=file,
+                                              description=GRAPH_DESCRIPTIONS[file]))
     images = '\n'.join(images_lst)
 
 html_page = '\n'.join([header_table, rating, images])

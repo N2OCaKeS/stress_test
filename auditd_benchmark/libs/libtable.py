@@ -200,7 +200,7 @@ class Report:
         oy_lst = raw_table[oy_param_table_name].values.tolist()
 
         # построить аппроксимирующую f(x)
-        aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 0.01)
+        aprx_x = np.arange(ox_lower_limit, ox_upper_limit, 0.1)
         aprx_f = self._data_aproximation(ox_lst, oy_lst)
 
         # build graph

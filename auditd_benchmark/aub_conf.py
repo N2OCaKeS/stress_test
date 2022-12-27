@@ -79,8 +79,8 @@ PS_LOWER_LIMIT = 10  #10
 PS_UPPER_LIMIT = 160  #100
 PS_STEP = 10  #10
 
-DEFAULT_PS_LIFETIME = 100 #100
-DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 1
+DEFAULT_PS_LIFETIME = 60 #100
+DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 0.1
 
 GRAPH_DESCRIPTIONS = {
     'aub_ps_total_eps_latency_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'

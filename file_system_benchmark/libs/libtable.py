@@ -9,6 +9,7 @@ from shutil import copy
 from time import time
 from os import listdir
 from scipy import integrate
+from sklearn import preprocessing
 from matplotlib import pyplot as plt
 from libs.libfsb import astra_version
 from pretty_html_table import build_table
@@ -18,7 +19,11 @@ from fsb_conf import REPORT_PATH, REPORT_FILENAME, LOG_PATH, SCRIPT_DIR, \
 
 
 class Report:
-    def __init__(self,  ox_lo_lim, ox_up_lim, report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME)):
+    def __init__(self,
+                 ox_lo_lim,
+                 ox_step,
+                 ox_up_lim,
+                 report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME)):
 
         '''
             :param report: path to report file
@@ -74,6 +79,7 @@ class Report:
                                                 'unlink_max': self.unlink_max_lst})
 
         self.ox_lower_limit = ox_lo_lim
+        self.ox_step = ox_step
         self.ox_upper_limit = ox_up_lim
 
         # graph size
@@ -325,41 +331,81 @@ class Report:
     def get_speed_rating(self,
                          x_lst,
                          accuracy=3,
-                         multiplier=10**(0)):
-        func_speed = self.data_aproximation(x_lst, self.speed_lst)
-        i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit)
+                         multiplier=10**(0),
+                         auto_normalize=False):
 
-        if i_spd == 0:
-            return 1
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+
+            func_speed = self.data_aproximation(x_lst, normalized_data_list)
+            i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            if i_spd == 0:
+                return 1
+            else:
+                return round((i_spd * multiplier), accuracy)
         else:
-            return round(np.log(i_spd * multiplier), accuracy)
+            func_speed = self.data_aproximation(x_lst, self.speed_lst)
+            i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit)
+
+            if i_spd == 0:
+                return 1
+            else:
+                return round(np.log(i_spd * multiplier), accuracy)
 
     def get_app_overhead_rating(self,
                                 x_lst,
                                 accuracy=3,
-                                multiplier=10**(0)): # -14
+                                multiplier=10**(0),
+                                auto_normalize=False): # -14
 
-        func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
-        i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit)
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(self.app_overhead_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
 
-        if i_ao == 0:
-            return 1
+            func_ao = self.data_aproximation(x_lst, normalized_data_list)
+            i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            if i_ao == 0:
+                return 1
+            else:
+                return round((i_ao * multiplier), accuracy)
         else:
-            return round(np.log(i_ao * multiplier), accuracy)
+            func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
+            i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit)
+
+            if i_ao == 0:
+                return 1
+            else:
+                return round(np.log(i_ao * multiplier), accuracy)
 
     def get_syscall_rating(self,
                            x_lst,
                            y_lst,
                            accuracy=3,
-                           multiplier=10**(0)): #-10
+                           multiplier=10**(0),
+                           auto_normalize=False): #-10
 
-        func = self.data_aproximation(x_lst, y_lst)
-        i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit)
+        if auto_normalize:
+            scaler = preprocessing.MinMaxScaler()
+            normalized_data_2d_array = scaler.fit_transform(np.array(y_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
 
-        if i == 0:
-            return 1
+            func = self.data_aproximation(x_lst, normalized_data_list)
+            i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            if i == 0:
+                return 1
+            else:
+                return round((i * multiplier), accuracy)
         else:
-            return round(np.log(i * multiplier), accuracy)
+            func = self.data_aproximation(x_lst, y_lst)
+            i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit)
+
+            if i == 0:
+                return 1
+            else:
+                return round(np.log(i * multiplier), accuracy)
 
     def get_total_rating(self,
                          x_lst,

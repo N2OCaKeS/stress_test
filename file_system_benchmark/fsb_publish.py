@@ -13,7 +13,7 @@ from libs.libfsb import astra_version
 from libs.libtable import Report
 from fsb_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, \
     FILES, FILES_STEP, FILES_LIMIT, \
-    SIZE, SIZE_STEP, SIZE_LIMIT, PACKAGES
+    SIZE, SIZE_STEP, SIZE_LIMIT, PACKAGES, GRAPH_DESCRIPTIONS
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -167,10 +167,10 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
 with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
     rating_temp = template.read()
     if args.TS == 'fs_mark_count':
-        rep = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
+        rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_count_lst)))
     if args.TS == 'fs_mark_size':
-        rep = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
+        rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
 
 with open('{}/fsb_report_table.html'.format(REPORT_PATH), 'r') as file:
@@ -181,7 +181,9 @@ with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
     img_temp = template.read()
     for file in os.listdir(args.R_PATH):
         if file.endswith('png'):
-            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE), img_png=file))
+            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE),
+                                              img_png=file,
+                                              description=GRAPH_DESCRIPTIONS[file]))
     images = '\n'.join(images_lst)
 
 html_page = '\n'.join([header_table, rating, main_table, images])

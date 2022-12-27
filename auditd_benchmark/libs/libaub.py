@@ -12,7 +12,7 @@ import subprocess
 import pexpect
 
 from os import path, mkdir, listdir, chmod
-from time import sleep, ctime, time
+from time import sleep, ctime, time, strftime, gmtime
 
 
 def cmd(command,
@@ -72,6 +72,23 @@ def astra_version():
 
     return version
 
+
+def put_system_info_in_file(start, file):
+    lead_time = strftime("%H:%M:%S", gmtime(time() - start))
+    print('lead time: {t}'.format(t=lead_time))
+
+    # собрать системную информацию
+    info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+                subprocess.run('uname -r',
+                               shell=True,
+                               stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                subprocess.run("dpkg -l auditd | awk '{print $3}' | tail -n1",
+                               shell=True,
+                               stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                str(lead_time)]
+
+    with open(file, 'a+') as info:
+        info.writelines(info_lst)
 
 class CheckAusearch:
 

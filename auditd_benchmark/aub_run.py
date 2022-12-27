@@ -6,14 +6,17 @@
 # ;===========================================================
 
 import argparse
+import subprocess
 
-from time import time
+from time import time, strftime, gmtime
 from os import path, mkdir, listdir, remove
+from libs.libaub import put_system_info_in_file
 from libs.libtest import AuditdTestSet
 from libs.libtable import Report
 from aub_conf import \
     REPORT, REPORT_DIR, \
     LOG, LOG_DIR, \
+    INFO_FILENAME, \
     LATENCY_REPORT_PSAUD, LATENCY_REPORT_USAUD, LATENCY_REPORT_FLAUD, \
     LOSSES_REPORT_PSAUD, LOSSES_REPORT_USAUD, LOSSES_REPORT_FLAUD, \
     PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, \
@@ -79,6 +82,9 @@ if not path.exists(LOG_DIR):
 log_file = open(LOG, 'w')
 log_file.close()
 
+log_file = open(INFO_FILENAME, 'w')
+log_file.close()
+
 # Создать /report
 if not path.exists(REPORT_DIR):
     mkdir(REPORT_DIR, mode=0o755)
@@ -115,7 +121,7 @@ if args.TEST_LIST == 'psaud':
                                                     DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                                     LOSSES_REPORT_PSAUD)
 
-        print('lead time: {t} sec'.format(t=time() - start_time))
+        put_system_info_in_file(start_time, INFO_FILENAME)
 
         # Cоздать отчет
         r = Report(PSAUD_PROC_BODYS.keys(), LATENCY_REPORT_PSAUD, LOSSES_REPORT_PSAUD)
@@ -195,7 +201,7 @@ elif args.TEST_LIST == 'useraud':
                                                       LOSSES_REPORT_USAUD,
                                                       TEST_USER)
 
-        print('lead time: {t} sec'.format(t=time() - start_time))
+        put_system_info_in_file(start_time, INFO_FILENAME)
 
         # Cоздать отчет
         r = Report(USERAUD_PROC_BODYS.keys(), LATENCY_REPORT_USAUD, LOSSES_REPORT_USAUD)
@@ -277,7 +283,7 @@ elif args.TEST_LIST == 'fileaud':
                                                       DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                                       LOSSES_REPORT_FLAUD)
 
-        print('lead time: {t} sec'.format(t=time() - start_time))
+        put_system_info_in_file(start_time, INFO_FILENAME)
 
         # Cоздать отчет
         r = Report(FILEAUD_PROC_BODYS.keys(), LATENCY_REPORT_FLAUD, LOSSES_REPORT_FLAUD)

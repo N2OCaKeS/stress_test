@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libaub import astra_version
-from aub_conf import REPORT_DIR, TEMPLATE_DIR, \
+from aub_conf import REPORT_DIR, TEMPLATE_DIR, INFO_FILENAME, GRAPH_DESCRIPTIONS, \
     PS_LOWER_LIMIT, PS_UPPER_LIMIT, PS_STEP, DEFAULT_PS_LIFETIME, DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY
 
 DESCRIPTION = ""
@@ -64,6 +64,7 @@ parser.add_argument('-ji', '--jira-issue',
 parser.add_argument('-pack', '--package',
                     action='store',
                     required=True,
+                    default='auditd',
                     help='test package',
                     dest='PACKAGE')
 
@@ -137,17 +138,14 @@ for file in os.listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
+with open(INFO_FILENAME) as info:
+    info_lst = info.read().split('\n')
 with open('{}/header_table_template.html'.format(TEMPLATE_DIR), 'r') as file:
     header_table_temp = file.read()
-    header_table = header_table_temp.format(av='{digit_v}({mode})'.format(digit_v=astra_version()[0],
-                                                                          mode=astra_version()[1]),
-                                            kernel=subprocess.run('uname -r',
-                                                                  shell=True,
-                                                                  stdout=subprocess.PIPE).stdout.decode("utf-8"),
+    header_table = header_table_temp.format(av=info_lst[0],
+                                            kernel=info_lst[1],
                                             package_name=args.PACKAGE,
-                                            package_vers=subprocess.run("dpkg -l "+args.PACKAGE+" | awk '{print $3}' | tail -n1",
-                                                                        shell=True,
-                                                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                                            package_vers=info_lst[2],
                                             param_ps_lifetime=DEFAULT_PS_LIFETIME,
                                             param_ps_delay=DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY,
                                             param_ps_quantity='{}-{}/{}'.format(PS_LOWER_LIMIT,
@@ -157,7 +155,8 @@ with open('{}/header_table_template.html'.format(TEMPLATE_DIR), 'r') as file:
                                             arm_num=args.ARM_NUM,
                                             arm_proc=args.ARM_PROC,
                                             arm_mem=args.ARM_MEM,
-                                            arm_st=args.ARM_ST)
+                                            arm_st=args.ARM_ST,
+                                            lead_time=info_lst[3])
 
 
 # создание страницы отчета
@@ -181,7 +180,9 @@ with open('{}/img_template.html'.format(TEMPLATE_DIR), 'r') as template:
     img_temp = template.read()
     for file in os.listdir(args.R_PATH):
         if file.endswith('png'):
-            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE), img_png=file))
+            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE),
+                                              img_png=file,
+                                              description=GRAPH_DESCRIPTIONS[file]))
     images = '\n'.join(images_lst)
 
 html_page = '\n'.join([header_table, rating, tables, images])

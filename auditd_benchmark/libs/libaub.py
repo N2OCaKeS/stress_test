@@ -90,6 +90,7 @@ def put_system_info_in_file(start, file):
     with open(file, 'a+') as info:
         info.writelines(info_lst)
 
+
 class CheckAusearch:
 
     # process audit
@@ -129,7 +130,6 @@ class CheckAusearch:
             au_return = ''
 
         return len(re.findall(str(pid), au_return))
-
 
     # user audit
     @staticmethod

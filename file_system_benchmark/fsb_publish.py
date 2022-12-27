@@ -94,12 +94,12 @@ parser.add_argument('-ts', '--test-set',
                     required=True,
                     dest='TS')
 
-parser.add_argument('-an', '--arm-number',
+parser.add_argument('-an', '--arm-name',
                     action='store',
                     required=False,
-                    default='129',
-                    help='stand number',
-                    dest='ARM_NUM')
+                    default='low(129)',
+                    help='stand_level(stand_number)',
+                    dest='ARM_NAME')
 
 parser.add_argument('-ap', '--arm-proccessor',
                     action='store',
@@ -156,7 +156,7 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                                             param_size='{}-{}/{}'.format(SIZE,
                                                                          SIZE_LIMIT,
                                                                          SIZE_STEP),
-                                            arm_num=args.ARM_NUM,
+                                            arm_num=args.ARM_NAME,
                                             arm_proc=args.ARM_PROC,
                                             arm_mem=args.ARM_MEM,
                                             arm_st=args.ARM_ST,

@@ -10,7 +10,7 @@ import subprocess
 
 
 from sys import exit
-from time import sleep, time
+from time import sleep, time, strftime, gmtime
 from os import getuid, path, mkdir
 from fabric import Connection
 from libs.libfsb import astra_version
@@ -235,8 +235,8 @@ else: # физ. стенд
     cmd('umount {}'.format(STORAGE_MOUNT_DIR))
 
 
-lead_time = time() - start_time
-print('lead time: {t} sec'.format(t=lead_time))
+lead_time = strftime("%H:%M:%S", gmtime(time() - start_time))
+print('lead time: {t}'.format(t=lead_time))
 
 # собрать системную информацию
 info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[0], mode=astra_version()[1]),

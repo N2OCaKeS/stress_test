@@ -11,9 +11,10 @@ import subprocess
 from libs.libreport import ReportToConfluence, ReportToJira
 from libs.libcfs import astra_version
 from libs.libtable import Report
-from cfs_conf import REPORT_DIR, TEMPLATE_PATH, \
+from cfs_conf import REPORT_DIR, TEMPLATE_PATH, INFO_FILENAME, \
     FILES, FILES_STEP, FILES_LIMIT, \
-    SIZE, SIZE_STEP, SIZE_LIMIT
+    SIZE, SIZE_STEP, SIZE_LIMIT, \
+    PACKAGES, GRAPH_DESCRIPTIONS
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -61,11 +62,12 @@ parser.add_argument('-ji', '--jira-issue',
                     help='jira issue',
                     dest='JIRA_ISSUE')
 
-parser.add_argument('-pack', '--package',
+parser.add_argument('-fs', '--file-system',
                     action='store',
+                    choices=['ocfs2'],
                     required=True,
-                    help='test package',
-                    dest='PACKAGE')
+                    help='filesystem',
+                    dest='FS')
 
 parser.add_argument('-rp', '--report-path',
                     action='store',
@@ -136,17 +138,14 @@ for file in os.listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
+with open(INFO_FILENAME) as info:
+    info_lst = info.read().split('\n')
 with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
     header_table_temp = file.read()
-    header_table = header_table_temp.format(av='{digit_v}({mode})'.format(digit_v=astra_version()[0],
-                                                                          mode=astra_version()[1]),
-                                            kernel=subprocess.run('uname -r',
-                                                                  shell=True,
-                                                                  stdout=subprocess.PIPE).stdout.decode("utf-8"),
-                                            package_name=args.PACKAGE,
-                                            package_vers=subprocess.run("dpkg -l "+args.PACKAGE+" | awk '{print $3}' | tail -n1",
-                                                                        shell=True,
-                                                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+    header_table = header_table_temp.format(av=info_lst[0],
+                                            kernel=info_lst[1],
+                                            package_name=PACKAGES[args.FS],
+                                            package_vers=info_lst[2],
                                             param_files='{}-{}/{}'.format(FILES,
                                                                           FILES_LIMIT,
                                                                           FILES_STEP),
@@ -156,17 +155,18 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                                             arm_num=args.ARM_NUM,
                                             arm_proc=args.ARM_PROC,
                                             arm_mem=args.ARM_MEM,
-                                            arm_st=args.ARM_ST)
+                                            arm_st=args.ARM_ST,
+                                            lead_time=info_lst[3])
 
 
 # создание страницы отчета
 with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
     rating_temp = template.read()
     if args.TS == 'fs_mark_count':
-        rep = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
+        rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_count_lst)))
     if args.TS == 'fs_mark_size':
-        rep = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
+        rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
 
 with open('{}/cfs_report_table.html'.format(REPORT_DIR), 'r') as file:
@@ -177,7 +177,9 @@ with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
     img_temp = template.read()
     for file in os.listdir(args.R_PATH):
         if file.endswith('png'):
-            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE), img_png=file))
+            images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(args.SPACE, args.NPAGE),
+                                              img_png=file,
+                                              description=GRAPH_DESCRIPTIONS[file]))
     images = '\n'.join(images_lst)
 
 html_page = '\n'.join([header_table, rating, main_table, images])

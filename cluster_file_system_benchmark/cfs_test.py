@@ -11,7 +11,8 @@ import argparse
 from time import time
 from libs.libtests import TestSet
 from libs.libtable import Report
-from cfs_conf import LOG_FILENAME, \
+from libs.libcfs import put_system_info_in_file
+from cfs_conf import LOG_FILENAME, INFO_PATH, \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, TIMEOUT, \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT
@@ -201,6 +202,8 @@ if args.TS == 'fs_mark_count':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
+    put_system_info_in_file(start_time, INFO_PATH)
+
     report = Report(ox_lo_lim=FILES, ox_up_lim=FILES_LIMIT)
     report.create_beauty_table()
     report.create_cfs_fc_sp_graph()
@@ -242,6 +245,8 @@ if args.TS == 'fs_mark_size':
     finally:
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
+
+    put_system_info_in_file(start_time, INFO_PATH)
 
     report = Report(ox_lo_lim=SIZE, ox_up_lim=SIZE_LIMIT)
     report.create_beauty_table()

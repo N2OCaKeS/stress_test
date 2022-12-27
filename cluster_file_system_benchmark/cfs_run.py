@@ -15,7 +15,7 @@ from fabric import Connection
 from time import sleep, time
 from libs.libtable import Report
 from cfs_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME, \
+    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME, INFO_FILENAME, \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT, \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA
@@ -287,6 +287,9 @@ except FileNotFoundError:
 # Очистить лог
 log_file = open(LOG_FILENAME, 'w')
 log_file.close()
+
+info_file = open(INFO_FILENAME, 'w')
+info_file.close()
 
 # Создать /report
 try:

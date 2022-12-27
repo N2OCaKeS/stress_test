@@ -14,6 +14,22 @@
             <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{package_name}_{package_vers}</td>
         </tr>
         <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Ranging</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
+                <a href="https://life.astralinux.ru/pages/viewpage.action?pageId=150939635"> подробнее </a>
+                <ul>
+                    <li><b>app_overhead</b> (application overhead): 0.125</li>
+                    <li><b>"create" syscall</b>: 0.5625</li>
+                    <li><b>"write" syscall</b>: 0.5625</li>
+                    <li><b>"fsync" syscall</b>: 0.5625</li>
+                    <li><b>"sync" syscall</b>: 0.5625</li>
+                    <li><b>"close" syscall</b>: 0.5625</li>
+                    <li><b>"unlink" syscall</b>: 0.5625</li>
+                    <li><b>speed</b> (file processing speed): 1</li>
+                </ul>
+            </td>
+        </tr>
+        <tr>
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Params</b></td>
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
              <ul>
@@ -25,7 +41,7 @@
         <tr>
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>ARM</b></td>
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
-              <p>{arm_num}</p>
+              <a href="https://life.astralinux.ru/pages/viewpage.action?pageId=150939635"> подробнее </a>
               <ul>
                   <li>Processor: {arm_proc}</li>
                   <li>Memory: {arm_mem}</li>
@@ -33,6 +49,50 @@
               </ul>
           </td>
         </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Lead time</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{lead_time}</td>
+        </tr>
       </tbody>
     </table>
+</p>
+<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
+    <h2>Описание</h2>
+</p>
+<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
+    Система нагрузочного тестирования кластерных ФС с использованием функционала fs_mark-3.3. Программа fs_mark предназначена для низкоуровневой обработки файлов.
+    Метод синхронизации: INBAND FSYNC fsync() для каждого файла в цикле записи. Подкаталоги не используются. Длина имени файлов 40 байт (16 начальных байтов метки времени с 24 случайными байтами в конце имени)
+    Результатом тестирования является таблица значений со следующими параметрами:
+    <ul>
+        <li><b>fs_use</b>: насколько заполнена файловая система в первом указанном каталоге в процентах;</li>
+        <li><b>file_count</b>: сколько файлов было записано на данный момент;</li>
+        <li><b>file_size</b>: размер записываемых файлов в байтах;</li>
+        <li><b>speed</b>: скорость записи файлов на диск в микросекундах;</li>
+        <li><b>app_overhead</b>: это время в микросекундах, затраченное на выполнение теста без выполнения системных вызовов, связанных с записью файла;</li>
+
+        <li><b>create_min</b>: минимальное время, потраченное на системные вызов 'create';</li>
+        <li><b>create_avg</b>: среднее время, потраченное на системные вызов 'create';</li>
+        <li><b>create_max</b>: максимальное время, потраченное на системные вызов 'create';</li>
+
+        <li><b>write_min</b>: минимальное время, потраченное на системные вызов 'write';</li>
+        <li><b>write_avg</b>: среднее время, потраченное на системные вызов 'write';</li>
+        <li><b>write_max</b>: максимальное время, потраченное на системные вызов 'write';</li>
+
+        <li><b>fsync_min</b>: минимальное время, потраченное на системные вызов 'fsync';</li>
+        <li><b>fsync_avg</b>: среднее время, потраченное на системные вызов 'fsync';</li>
+        <li><b>fsync_max</b>: максимальное время, потраченное на системные вызов 'fsync';</li>
+
+        <li><b>sync_min</b>: минимальное время, потраченное на системные вызов 'sync';</li>
+        <li><b>sync_avg</b>: среднее время, потраченное на системные вызов 'sync';</li>
+        <li><b>sync_max</b>: максимальное время, потраченное на системные вызов 'sync';</li>
+
+        <li><b>close_min</b>: минимальное время, потраченное на системные вызов 'close';</li>
+        <li><b>close_avg</b>: среднее время, потраченное на системные вызов 'close';</li>
+        <li><b>close_max</b>: максимальное время, потраченное на системные вызов 'close';</li>
+
+        <li><b>unlink_min</b>: минимальное время, потраченное на системные вызов 'unlink';</li>
+        <li><b>unlink_avg</b>: среднее время, потраченное на системные вызов 'unlink';</li>
+        <li><b>unlink_max</b>: максимальное время, потраченное на системные вызов 'unlink';</li>
+    </ul>
+    Далее все необходимые зависимости будут представлены в графическом виде.
 </p>

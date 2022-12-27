@@ -9,10 +9,9 @@
 import argparse
 import logging
 from time import time
-from libs.libtests import Test, TestSet
-from libs.libtable import Report
-from cfs_conf import START_BORDER_FOR_DATA, STEP_FOR_DATA, \
-    END_BORDER_FOR_DATA, TIMEOUT, NUMBER_OF_TEST_FILES, LOG_FILENAME, \
+from libs.libtests import TestSet
+from libs.libcfs import put_system_info_in_file
+from cfs_conf import LOG_FILENAME, INFO_PATH, \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT
 
@@ -48,6 +47,8 @@ if args.TS == 'fs_mark_count':
         Прогон 5.
         fs_mark
     '''
+    start_time = time()
+
     # Изменение количества файлов
     run_test = TestSet(start_burder=FILES,
                        end_burder=FILES_LIMIT,
@@ -57,11 +58,15 @@ if args.TS == 'fs_mark_count':
     except Exception as exeption:
         log.info(exeption)
 
+    put_system_info_in_file(start_time, INFO_PATH)
+
 if args.TS == 'fs_mark_size':
     '''    
         Прогон 6.
         fs_mark
     '''
+    start_time = time()
+
     # Изменение размера файлов
     run_test = TestSet(start_burder=SIZE,
                        end_burder=SIZE_LIMIT,
@@ -70,3 +75,5 @@ if args.TS == 'fs_mark_size':
         run_test.test_8_fs_mark33_size()
     except Exception as exeption:
         log.info(exeption)
+
+    put_system_info_in_file(start_time, INFO_PATH)

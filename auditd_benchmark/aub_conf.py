@@ -3,6 +3,7 @@ SCRIPT_DIR = '/home/u/git/stress_test/auditd_benchmark'
 
 LOG_FILENAME = 'aub_log'
 REPORT_FILENAME = 'aub_report.txt'
+INFO_FILENAME = 'aub_info.txt'
 
 LOG_DIR = '{}/log'.format(SCRIPT_DIR)
 REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
@@ -74,10 +75,50 @@ FILEAUD_PROC_BODYS = {
     'modify': ("echo '1' >> ", '')
 }
 
-
 PS_LOWER_LIMIT = 10  #10
 PS_UPPER_LIMIT = 160  #100
 PS_STEP = 10  #10
 
 DEFAULT_PS_LIFETIME = 100 #100
 DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 1
+
+GRAPH_DESCRIPTIONS = {
+    'aub_ps_total_eps_latency_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                      'Сравнительный график зависимости задержки появления сообщений в логах аудита от количества событий в секунду, поступаемых на auditd. Сравнение по конкретным событиям.'
+                                      '<ul>'
+                                      '    <li><b>OX</b>: Количества событий в секунду, поступаемых на auditd;</li>'
+                                      '    <li><b>OY</b>: Задержка от момента генерации события до момента его появления в логах (сек);</li>'
+                                      '</ul></p>',
+    'aub_ps_total_eps_completed_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                      'Сравнительный график зависимости количества отслеженных событий в процентах от количества событий в секунду, поступаемых на auditd. Сравнение по конкретным событиям.'
+                                      '<ul>'
+                                      '    <li><b>OX</b>: Количества событий в секунду, поступаемых на auditd;</li>'
+                                      '    <li><b>OY</b>: Отношение количества отслеженных событий к количеству сгенерированных (%);</li>'
+                                      '</ul></p>',
+
+    'aub_us_total_eps_latency_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                      'Сравнительный график зависимости задержки появления сообщений в логах аудита от количества событий в секунду, поступаемых на auditd. Сравнение по конкретным событиям.'
+                                      '<ul>'
+                                      '    <li><b>OX</b>: Количества событий в секунду, поступаемых на auditd;</li>'
+                                      '    <li><b>OY</b>: Задержка от момента генерации события до момента его появления в логах (сек);</li>'
+                                      '</ul></p>',
+    'aub_us_total_eps_completed_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                      'Сравнительный график зависимости количества отслеженных событий в процентах от количества событий в секунду, поступаемых на auditd. Сравнение по конкретным событиям.'
+                                      '<ul>'
+                                      '    <li><b>OX</b>: Количества событий в секунду, поступаемых на auditd;</li>'
+                                      '    <li><b>OY</b>: Отношение количества отслеженных событий к количеству сгенерированных (%);</li>'
+                                      '</ul></p>',
+
+    'aub_fl_total_eps_latency_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                      'Сравнительный график зависимости задержки появления сообщений в логах аудита от количества событий в секунду, поступаемых на auditd. Сравнение по конкретным событиям.'
+                                      '<ul>'
+                                      '    <li><b>OX</b>: Количества событий в секунду, поступаемых на auditd;</li>'
+                                      '    <li><b>OY</b>: Задержка от момента генерации события до момента его появления в логах (сек);</li>'
+                                      '</ul></p>',
+    'aub_fl_total_eps_completed_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
+                                      'Сравнительный график зависимости количества отслеженных событий в процентах от количества событий в секунду, поступаемых на auditd. Сравнение по конкретным событиям.'
+                                      '<ul>'
+                                      '    <li><b>OX</b>: Количества событий в секунду, поступаемых на auditd;</li>'
+                                      '    <li><b>OY</b>: Отношение количества отслеженных событий к количеству сгенерированных (%);</li>'
+                                      '</ul></p>',
+}

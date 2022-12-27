@@ -80,12 +80,12 @@ parser.add_argument('-tp', '--tarfile-path',
                     help='path to tar with report',
                     dest='TAR_PATH')
 
-parser.add_argument('-an', '--arm-number',
+parser.add_argument('-an', '--arm-name',
                     action='store',
                     required=False,
-                    default='141',
-                    help='stand number',
-                    dest='ARM_NUM')
+                    default='low(141)',
+                    help='stand_level(stand_number)',
+                    dest='ARM_NAME')
 
 parser.add_argument('-ap', '--arm-proccessor',
                     action='store',
@@ -140,7 +140,7 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                                             param_tr=str(DEFAULT_TRANSACTIONS),
                                             param_th=str(DEFAULT_THREADS),
                                             param_cl='{}-{}/{}'.format(CLIENTS, LIMITE_CLIENTS, CLIENTS_STEP),
-                                            arm_num=args.ARM_NUM,
+                                            arm_num=args.ARM_NAME,
                                             arm_proc=args.ARM_PROC,
                                             arm_mem=args.ARM_MEM,
                                             arm_st=args.ARM_ST,

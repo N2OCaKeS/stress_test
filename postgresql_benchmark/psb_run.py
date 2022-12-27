@@ -10,7 +10,7 @@ import os
 import subprocess
 
 
-from time import time
+from time import time, strftime, gmtime
 from sys import exit
 from os import getuid, path
 from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INFO_FILENAME, \
@@ -389,8 +389,8 @@ if args.CLEANER:
                    shell=True,
                    stderr=subprocess.DEVNULL)
 
-lead_time = time() - start_time
-print('lead time: {t} sec'.format(t=lead_time))
+lead_time = strftime("%H:%M:%S", gmtime(time() - start_time))
+print('lead time: {t}'.format(t=lead_time))
 
 # собрать системную информацию
 info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[0], mode=astra_version()[1]),

@@ -233,7 +233,7 @@ if __name__ == '__main__':
     log_file = open(f'{os.path.expanduser(args.REPORT_PATH)}/{INFO_FILENAME}', 'w')
     log_file.close()
 
-    put_system_info_in_file(TIME_START_SCRIPT, f'{os.path.expanduser(args.REPORT_PATH)}/{INFO_FILENAME}')
+    put_system_info_in_file(TIME_START_SCRIPT.timestamp(), f'{os.path.expanduser(args.REPORT_PATH)}/{INFO_FILENAME}')
 
     print("Создание архива с отчетом...")
     libtable.Report.create_tar(os.path.expanduser(args.REPORT_PATH))

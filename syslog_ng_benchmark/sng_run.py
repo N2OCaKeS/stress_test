@@ -20,7 +20,9 @@ from datetime import datetime
 from sklearn import preprocessing
 from os import chmod, mkdir, getcwd
 from find_err_in_logs import collecting_logs
-from libs.libsng import astra_version, check_service_status, get_memory_load_by_syslog
+from libs.libsng import astra_version, check_service_status, get_memory_load_by_syslog, put_system_info_in_file
+
+from sng_conf import INFO_FILENAME
 
 
 TIME_START_SCRIPT = datetime.now()
@@ -227,6 +229,11 @@ if __name__ == '__main__':
 
     print("\nСбор логов...\n")
     collecting_logs(os.path.expanduser(args.REPORT_PATH), TIME_START_SCRIPT)
+
+    log_file = open(f'{os.path.expanduser(args.REPORT_PATH)}/{INFO_FILENAME}', 'w')
+    log_file.close()
+
+    put_system_info_in_file(TIME_START_SCRIPT, f'{os.path.expanduser(args.REPORT_PATH)}/{INFO_FILENAME}')
 
     print("Создание архива с отчетом...")
     libtable.Report.create_tar(os.path.expanduser(args.REPORT_PATH))

@@ -5,8 +5,8 @@ import os
 import sys
 import subprocess
 from libs.libreport import ReportToConfluence, ReportToJira
-from libs.libsng import astra_version
-from sng_conf import GRAPH_DESCRIPTIONS
+
+from sng_conf import INFO_FILENAME, GRAPH_DESCRIPTIONS
 
 
 DESCRIPTION = ""
@@ -58,6 +58,7 @@ parser.add_argument('-ji', '--jira-issue',
 parser.add_argument('-pack', '--package',
                     action='store',
                     required=True,
+                    default='syslog-ng',
                     help='test package',
                     dest='PACKAGE')
 
@@ -74,17 +75,17 @@ parser.add_argument('-tp', '--tarfile-path',
                     help='path to tar with report',
                     dest='TAR_PATH')
 
-parser.add_argument('-an', '--arm-number',
+parser.add_argument('-an', '--arm-name',
                     action='store',
                     required=False,
-                    default='141',
-                    help='stand number',
-                    dest='ARM_NUM')
+                    default='low(129)',
+                    help='stand_level(stand_number)',
+                    dest='ARM_NAME')
 
 parser.add_argument('-ap', '--arm-proccessor',
                     action='store',
                     required=False,
-                    default='Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
+                    default='Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz',
                     help='processor on stand',
                     dest='ARM_PROC')
 
@@ -98,7 +99,7 @@ parser.add_argument('-am', '--arm-memory',
 parser.add_argument('-as', '--arm-storage',
                     action='store',
                     required=False,
-                    default='Samsung NVME 970 EVO 2Тб',
+                    default='SSD 512GB',
                     help='system storage on stand',
                     dest='ARM_ST')
 
@@ -139,23 +140,22 @@ for file in os.listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
+with open(f'{os.path.expanduser(args.R_PATH)}/{INFO_FILENAME}') as info:
+    info_lst = info.read().split('\n')
+
 with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
     header_table_temp = file.read()
-    header_table = header_table_temp.format(av='{digit_v}({mode})'.format(digit_v=astra_version()[0],
-                                                                          mode=astra_version()[1]),
-                                            kernel=subprocess.run('uname -r',
-                                                                  shell=True,
-                                                                  stdout=subprocess.PIPE).stdout.decode("utf-8"),
+    header_table = header_table_temp.format(av=info_lst[0],
+                                            kernel=info_lst[1],
                                             package_name=args.PACKAGE,
-                                            package_vers=subprocess.run("dpkg -l "+args.PACKAGE+" | awk '{print $3}' | tail -n1",
-                                                                        shell=True,
-                                                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                                            package_vers=info_lst[2],
                                             param_time_exec=TIME_EXEC,
                                             param_service_count=SERVICE_COUNT,
-                                            arm_num=args.ARM_NUM,
+                                            arm_num=args.ARM_NAME,
                                             arm_proc=args.ARM_PROC,
                                             arm_mem=args.ARM_MEM,
-                                            arm_st=args.ARM_ST)
+                                            arm_st=args.ARM_ST,
+                                            lead_time=info_lst[3])
 
 
 with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:

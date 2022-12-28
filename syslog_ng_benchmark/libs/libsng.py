@@ -6,6 +6,7 @@
 # ;===========================================================
 
 import subprocess
+from time import sleep, ctime, time, strftime, gmtime
 
 
 def astra_version():
@@ -93,3 +94,21 @@ def get_memory_load_by_syslog():
         load_syslog_memory = 0
 
     return load_syslog_memory
+
+
+def put_system_info_in_file(start, file):
+    lead_time = strftime("%H:%M:%S", gmtime(time() - start))
+    print('lead time: {t}'.format(t=lead_time))
+
+    # собрать системную информацию
+    info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[2], mode=astra_version()[1]),
+                subprocess.run('uname -r',
+                               shell=True,
+                               stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                subprocess.run("dpkg -l syslog-ng | awk '{print $3}' | tail -n1",
+                               shell=True,
+                               stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                str(lead_time)]
+
+    with open(file, 'a+') as info:
+        info.writelines(info_lst)

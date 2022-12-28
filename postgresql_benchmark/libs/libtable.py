@@ -24,8 +24,11 @@ class Report:
                  report_file=REPORT_FILENAME,
                  all_params=False,
                  sysmon=False):
-        with open(report_file, 'r') as report_file:
-            raw_data = report_file.read().split()
+
+        self._report_file = report_file
+        with open(self._report_file, 'r') as file:
+            raw_data = file.read().split()
+
         if all_params:
             self.scales_lst = [int(param) for param in raw_data[0::9]]
             self.transactions_lst = [int(param) for param in raw_data[1::9]]
@@ -226,36 +229,40 @@ class Report:
     '''
         Графики для теста: 'Нахождение предельного коэффициента масштаба' 
     '''
-    def create_psb_sc_la_graph(self):
+    def create_psb_sc_la_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='scale',
                                         ox_lst=self.scales_lst,
                                         ox_lower_limit=SCALE_FACTOR,
                                         ox_upper_limit=LIMITE_SCALE_FACTOR,
                                         oy_param_table_name='la',
-                                        oy_lst=self.la_lst)
+                                        oy_lst=self.la_lst,
+                                        path=report_dir)
 
-    def create_psb_sc_tps1_graph(self):
+    def create_psb_sc_tps1_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='scale',
                                         ox_lst=self.scales_lst,
                                         ox_lower_limit=SCALE_FACTOR,
                                         ox_upper_limit=LIMITE_SCALE_FACTOR,
                                         oy_param_table_name='tps1',
-                                        oy_lst=self.tps1_lst)
+                                        oy_lst=self.tps1_lst,
+                                        path=report_dir)
 
-    def create_psb_sc_tps2_graph(self):
+    def create_psb_sc_tps2_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='scale',
                                         ox_lst=self.scales_lst,
                                         ox_lower_limit=SCALE_FACTOR,
                                         ox_upper_limit=LIMITE_SCALE_FACTOR,
                                         oy_param_table_name='tps2',
-                                        oy_lst=self.tps2_lst)
+                                        oy_lst=self.tps2_lst,
+                                        path=report_dir)
 
-    def create_psb_sc_tpsall_graph(self):
+    def create_psb_sc_tpsall_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='scale',
                                         ox_lst=self.scales_lst,
                                         ox_lower_limit=SCALE_FACTOR,
                                         ox_upper_limit=LIMITE_SCALE_FACTOR,
-                                        double_tps_graph=True)
+                                        double_tps_graph=True,
+                                        path=report_dir)
 
     '''
         Графики для теста: 'Нахождение предельного числа транзакций' 
@@ -329,36 +336,40 @@ class Report:
     '''
         Графики для теста: 'Нахождение предельного числа клиентов' 
     '''
-    def create_psb_cl_la_graph(self):
+    def create_psb_cl_la_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='clients',
                                         ox_lst=self.param_lst,
                                         ox_lower_limit=CLIENTS,
                                         ox_upper_limit=LIMITE_CLIENTS,
                                         oy_param_table_name='la',
-                                        oy_lst=self.la_lst)
+                                        oy_lst=self.la_lst,
+                                        path=report_dir)
 
-    def create_psb_cl_tps1_graph(self):
+    def create_psb_cl_tps1_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='clients',
                                         ox_lst=self.param_lst,
                                         ox_lower_limit=CLIENTS,
                                         ox_upper_limit=LIMITE_CLIENTS,
                                         oy_param_table_name='tps1',
-                                        oy_lst=self.tps1_lst)
+                                        oy_lst=self.tps1_lst,
+                                        path=report_dir)
 
-    def create_psb_cl_tps2_graph(self):
+    def create_psb_cl_tps2_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='clients',
                                         ox_lst=self.param_lst,
                                         ox_lower_limit=CLIENTS,
                                         ox_upper_limit=LIMITE_CLIENTS,
                                         oy_param_table_name='tps2',
-                                        oy_lst=self.tps2_lst)
+                                        oy_lst=self.tps2_lst,
+                                        path=report_dir)
 
-    def create_psb_cl_tpsall_graph(self):
+    def create_psb_cl_tpsall_graph(self, report_dir=REPORT_PATH):
         self.template_aproximated_graph(ox_param_table_name='clients',
                                         ox_lst=self.param_lst,
                                         ox_lower_limit=CLIENTS,
                                         ox_upper_limit=LIMITE_CLIENTS,
-                                        double_tps_graph=True)
+                                        double_tps_graph=True,
+                                        path=report_dir)
 
     def get_la_rating(self,
                       lower_limit=CLIENTS,

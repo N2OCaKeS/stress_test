@@ -57,14 +57,15 @@ parser.add_argument('-ji', '--jira-issue',
 
 parser.add_argument('-pack', '--package',
                     action='store',
-                    required=True,
+                    required=False,
                     default='syslog-ng',
                     help='test package',
                     dest='PACKAGE')
 
 parser.add_argument('-rp', '--report-path',
                     action='store',
-                    required=True,
+                    required=False,
+                    default='report',
                     help='path to report files',
                     dest='R_PATH')
 

@@ -101,7 +101,7 @@ def put_system_info_in_file(start, file):
     print('lead time: {t}'.format(t=lead_time))
 
     # собрать системную информацию
-    info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[2], mode=astra_version()[1]),
+    info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[2], mode=astra_version()[1]),
                 subprocess.run('uname -r',
                                shell=True,
                                stdout=subprocess.PIPE).stdout.decode("utf-8"),

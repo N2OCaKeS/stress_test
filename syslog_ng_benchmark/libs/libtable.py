@@ -196,7 +196,7 @@ class Report:
         '''
         time_mark = datetime.now().strftime("%d.%m.%Y_%H.%M")
         chdir(path)
-        with tarfile.open('report{v}_{m}_{t}.tar'.format(v=astra_version()[0],
+        with tarfile.open('sng_{v}_{m}_{t}.tar'.format(v=astra_version()[2],
                                                          m=astra_version()[1],
                                                          t=time_mark), 'w') as tar:
             for file in listdir(path):

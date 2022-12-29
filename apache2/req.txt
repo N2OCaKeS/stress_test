@@ -1,3 +1,4 @@
 fabric == 2.6.0
 paramiko == 2.9.2
 invoke == 1.7.0
+atlassian-python-api == 3.28.1

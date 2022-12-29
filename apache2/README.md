@@ -24,8 +24,14 @@
 Если используются большие значения MAX_CONCURRENCY, MAX_REQUESTS, возможна нехватка оперативной памяти на клиенте
 
 ### Запуск
-Запуск теста производить от пользователя:  
+Запуск теста производить от пользователя: 
+
+```
 cd apache2
+bash apa_prep.sh
+venv/bin/python apa_run.py -r full-run-smol
+```
+
 venv/bin/python apa_run.py  
 
 ### Обработка результатов

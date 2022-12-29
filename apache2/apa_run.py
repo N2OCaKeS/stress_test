@@ -9,24 +9,22 @@ from apa_conf import TESTED_SERVER_IP, ApacheNode, ClientNode, \
         TESTED_QA_USER, TESTED_QA_USER_MAC, TESTED_QA_USER_MAC_CAT
 
 
-# DESCRIPTION = "Apache2 load tests"
-# parser = argparse.ArgumentParser(description=DESCRIPTION)
-# parser.add_argument('-r', '--run',
-#                     action='store',
-#                     choices=[
-#                         'full-run-smol', 
-#                         'full-run-orel',
-#                         'setup-tested-srv', 
-#                         'setup-client',
-#                         'run-tests-orel',
-#                         'run-tests-smol'
-#                          ],
-#                     required=True,
-#                     help='Setup servers for load testing',
-#                     dest='RUN')
-#
-# args = parser.parse_args()
-# RUN = args.RUN
+DESCRIPTION = "Apache2 load tests"
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('-r', '--run',
+                    action='store',
+                    choices=[
+                        'full-run-smol', 
+                        'setup-server', 
+                        'setup-client',
+                        'run-tests-smol'
+                         ],
+                    required=True,
+                    help='Setup servers for load testing',
+                    dest='RUN')
+
+args = parser.parse_args()
+RUN = args.RUN
 
 yanus = "10.177.5.111"
 
@@ -151,17 +149,16 @@ def create_plots():
 
 
 if __name__ == '__main__':
-    # apache_prepare()
-    # client_prepare()
-    # smol_pam_tests()
-    create_plots()
-    # if RUN == "full-run-smol":
-    #     apache_prepare()
-    #     smol_tests()
-    # elif RUN == "full-run-orel":
-    #     print("not emplemented")
-    #     exit(0)
-    # elif RUN == "setup-tested-srv":
-    #     apache_prepare()
-    # elif RUN == "run-tests-smol":
-    #     smol_tests()
+    if RUN == "full-run-smol":
+        client_prepare()
+        apache_prepare()
+        smol_pam_tests()
+        create_plots()
+    elif RUN == "setup-server":
+        apache_prepare()
+    elif RUN == "setup-client":
+        client_prepare()
+    elif RUN == "run-tests-smol":
+        smol_pam_tests()
+        create_plots()
+

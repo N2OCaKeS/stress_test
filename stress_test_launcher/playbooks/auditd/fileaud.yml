@@ -1,22 +1,22 @@
-- include: ../../rollback_snapshot.yml 
+- include: ../rollback_snapshot.yml 
 
 - name: FILEAUD
   hosts: "{{ HOST }}"
   become: yes
   
   vars:
-    KERNEL_VERSION: "5.15.0-33-generic"
+    KERNEL_VERSION: "{{ KERNEL_VERS }}"
     SCRIPT_DIR: /home/u/git/stress_test/auditd_benchmark/
     CONFLUENCE_PARENT_PAGE: test
-    security_mode: "0"
+    security_mode: "{{ SECURITY_MODE }}"
 
   tasks:
 
-  - include: ../../tasks/check_kernel_version.yml
+  - include: ../tasks/check_kernel_version.yml
 
-  - include: ../../tasks/astra-modeswitch-get.yml
+  - include: ../tasks/astra-modeswitch-get.yml
 
-  - include: ../../tasks/astra-modeswitch-set.yml
+  - include: ../tasks/astra-modeswitch-set.yml
 
   - name: Git checkout auditd
     shell:
@@ -49,7 +49,7 @@
 
   - name: Publish in life fileaud
     shell:
-      cmd: venv/bin/python aub_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp aub_fileaud_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack auditd -ts fileaud
+      cmd: venv/bin/python aub_publish.py -u "{{ USER_LIFE }}" -t "{{ TOKEN_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp aub_fileaud_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack auditd -ts fileaud
     args:
       chdir: "{{ SCRIPT_DIR }}"
 

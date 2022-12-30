@@ -1,22 +1,22 @@
-- include: ../../rollback_snapshot.yml
+- include: ../rollback_snapshot.yml
  
 - name: PostgreSQL
   hosts: "{{ HOST }}"
   become: yes
   
   vars:
-    KERNEL_VERSION: "5.15"
+    KERNEL_VERSION: "{{ KERNEL_VERS }}"
     SCRIPT_DIR: /home/u/git/stress_test/postgresql_benchmark/
     CONFLUENCE_PARENT_PAGE: test
-    security_mode: "2"
+    security_mode: "{{ SECURITY_MODE }}"
 
   tasks:
 
-  - include: ../../tasks/check_kernel_version.yml
+  - include: ../tasks/check_kernel_version.yml
 
-  - include: ../../tasks/astra-modeswitch-get.yml
+  - include: ../tasks/astra-modeswitch-get.yml
 
-  - include: ../../tasks/astra-modeswitch-set.yml
+  - include: ../tasks/astra-modeswitch-set.yml
 
   - name: Git checkout postgresql
     shell:
@@ -61,7 +61,7 @@
 
   - name: Publish in life postgresql
     shell:
-      cmd: venv/bin/python psb_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp psb_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack postgresql-{{ PG_VERSION.stdout }}
+      cmd: venv/bin/python psb_publish.py -u "{{ USER_LIFE }}" -t "{{ TOKEN_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp psb_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack postgresql-{{ PG_VERSION.stdout }}
     args:
       chdir: "{{ SCRIPT_DIR }}"
 

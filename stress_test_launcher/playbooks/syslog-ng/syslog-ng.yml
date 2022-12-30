@@ -1,26 +1,34 @@
-- include: ../../rollback_snapshot.yml
+- include: ../rollback_snapshot.yml
 
 - name: Syslog-NG
   hosts: "{{ HOST }}"
   become: yes
   
   vars:
-    KERNEL_VERSION: "5.15"
+    KERNEL_VERSION: "{{ KERNEL_VERS }}"
     SCRIPT_DIR: /home/u/git/stress_test/syslog_ng_benchmark/
     CONFLUENCE_PARENT_PAGE: test
-    security_mode: "2"
+    security_mode: "{{ SECURITY_MODE }}"
 
   tasks:
 
-  - include: ../../tasks/check_kernel_version.yml
+  - include: ../tasks/check_kernel_version.yml
 
-  - include: ../../tasks/astra-modeswitch-get.yml
+  - include: ../tasks/astra-modeswitch-get.yml
 
-  - include: ../../tasks/astra-modeswitch-set.yml
+  - include: ../tasks/astra-modeswitch-set.yml
 
   - name: Git checkout syslog-ng
     shell:
       cmd: "cd /home/u/git/stress_test && git checkout syslog-ng"
+
+  - name: Copy config localhost to "{{ HOST }}" syslog-ng
+    copy:
+      src: sng_conf.py
+      dest: "{{ SCRIPT_DIR }}"
+      owner: u
+      group: u
+      mode: '0644'
 
   - name: Prepare settings syslog-ng
     shell:
@@ -30,7 +38,7 @@
 
   - name: Run stress test syslog-ng
     shell:
-      cmd: "venv/bin/python sng_run.py -sc 100 -t 1"
+      cmd: "venv/bin/python sng_run.py -sc 4800 -t 1440  -iw 23 -ih 16"
     args:
       chdir: "{{ SCRIPT_DIR }}"
 
@@ -47,8 +55,7 @@
     
   - name: Publish in life syslog-ng
     shell:
-      cmd: venv/bin/python sng_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp "sng_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }}" -rp "{{ SCRIPT_DIR }}report" -pack syslog-ng
+      cmd: venv/bin/python sng_publish.py -u "{{ USER_LIFE }}" -t "{{ TOKEN_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp "sng_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }}" -rp "{{ SCRIPT_DIR }}report" -pack syslog-ng
     args:
       chdir: "{{ SCRIPT_DIR }}"
 
-- include: ../../rollback_snapshot.yml

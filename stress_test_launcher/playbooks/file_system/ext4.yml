@@ -1,22 +1,22 @@
-- include: ../../rollback_snapshot.yml
+- include: ../rollback_snapshot.yml
 
 - name: File Systems EXT4
   hosts: "{{ HOST }}"
   become: yes
   
   vars:
-    KERNEL_VERSION: "5.15.0-33-generic"
+    KERNEL_VERSION: "{{ KERNEL_VERS }}"
     SCRIPT_DIR: /home/u/git/stress_test/file_system_benchmark/
     CONFLUENCE_PARENT_PAGE: test
-    security_mode: "0"
+    security_mode: "{{ SECURITY_MODE }}"
 
   tasks:
 
-  - include: ../../tasks/check_kernel_version.yml
+  - include: ../tasks/check_kernel_version.yml
 
-  - include: ../../tasks/astra-modeswitch-get.yml
+  - include: ../tasks/astra-modeswitch-get.yml
 
-  - include: ../../tasks/astra-modeswitch-set.yml
+  - include: ../tasks/astra-modeswitch-set.yml
 
   - name: Install Parted
     apt:
@@ -54,7 +54,7 @@
 
   - name: Publish in life file_systems ext4
     shell:
-      cmd: venv/bin/python fsb_publish.py -u "{{ USER_LIFE }}" -p "{{ PASSWORD_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp "fsb_ext4_{{ astra_version.stdout }}_{{ kernel_version.stdout }}" -rp "{{ SCRIPT_DIR }}report" -pack e2fsprogs -ts fs_mark_count
+      cmd: venv/bin/python fsb_publish.py -u "{{ USER_LIFE }}" -t "{{ TOKEN_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp "fsb_ext4_{{ astra_version.stdout }}_{{ kernel_version.stdout }}" -rp "{{ SCRIPT_DIR }}report" -pack e2fsprogs -ts fs_mark_count
     args:
       chdir: "{{ SCRIPT_DIR }}"
 

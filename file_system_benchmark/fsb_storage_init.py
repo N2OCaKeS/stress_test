@@ -35,16 +35,22 @@ def cmd(command,
     code = subprocess.run(command, shell=True, stderr=subprocess.DEVNULL).returncode
     if code == 0:
         print('{}# +++ {}{}'.format(good_color, command, def_color))
+        return code
     elif code == 1:
         print('{}# +-+ {}{}'.format(mid_color, command, def_color))
-        # exit(1)
+        return code
     else:
         print('{}# --- {}{}'.format(bad_color, command, def_color))
+        return code
         exit(2)
 
 
 # Проверка наличия диска
-cmd('lsblk | grep {device}'.format(device=STORAGE_NAME))
+if cmd('lsblk | grep {device}'.format(device=STORAGE_NAME)) == 0:
+    if cmd('lsblk | grep {device}1'.format(device=STORAGE_NAME)) == 0:
+        cmd('umount /mnt')
+        cmd('parted -s /dev/{device} select && parted -s /dev/{device} rm 1'.format(device=STORAGE_NAME))
+
 cmd('apt install -y libpdp-dev')
 
 if args.FS == 'fat':

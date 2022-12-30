@@ -23,11 +23,6 @@
     debug:
       msg: It's okay
   
-  - name: TEMP RM -RF 
-    become: true
-    shell:
-      cmd: cd /home/u/git/stress_test/ && rm -rf *
-  
   - name: Git pull
     become: false
     shell:

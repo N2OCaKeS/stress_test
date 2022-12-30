@@ -131,9 +131,17 @@ if __name__ == '__main__':
         cmd("systemctl start {}".format(service_name))
 
     data_cpu, data_memory, data_syslog_memory, data_disk, data_time = [], [], [], [], []
-    time_exec = args.TIME_EXEC * 60
-    qty_sec_after_start = 0
     sc = libscanner.Scanner()
+
+    data_cpu.append(0)
+    data_memory.append(0)
+    data_syslog_memory.append(0)    
+    data_disk.append(sc.get_disk_load())
+    data_time.append(0)
+
+    time_exec = args.TIME_EXEC * 60
+    qty_sec_after_start = 1
+    
 
     '''
        Сбор данных с CPU, Memory, Disk 
@@ -190,33 +198,33 @@ if __name__ == '__main__':
         report_txt.writelines('Rating_disk: {}\n'.format(rating_disk))
         report_txt.writelines('Total_rating: {}\n'.format(total_rating))
 
-    graph_load_cpu = report.create_graph(x=data_time, 
-                                         y=data_cpu,
+    graph_load_cpu = report.create_graph(x=data_time[1:], 
+                                         y=data_cpu[1:],
                                          filename='sng_cpu', 
                                          title_graph='Load CPU', 
                                          y_label="CPU %", 
-                                         x_rlim=args.TIME_EXEC * 60)
+                                         x_rlim=args.TIME_EXEC * 60 - 1)
     
-    graph_load_memory = report.create_graph(x=data_time, 
-                                            y=data_memory,
+    graph_load_memory = report.create_graph(x=data_time[1:], 
+                                            y=data_memory[1:],
                                             filename='sng_memory', 
                                             title_graph='Load memory', 
                                             y_label="Memory %", 
-                                            x_rlim=args.TIME_EXEC * 60)
+                                            x_rlim=args.TIME_EXEC * 60 - 1)
 
-    graph_load_syslog_memory = report.create_graph(x=data_time, 
-                                                   y=data_syslog_memory,
+    graph_load_syslog_memory = report.create_graph(x=data_time[1:], 
+                                                   y=data_syslog_memory[1:],
                                                    filename='sng_syslog_memory', 
                                                    title_graph='Load syslog-ng memory', 
                                                    y_label="Memory %", 
-                                                   x_rlim=args.TIME_EXEC * 60)
+                                                   x_rlim=args.TIME_EXEC * 60 - 1)
 
-    graph_load_disk = report.create_graph(x=data_time, 
-                                          y=data_disk,
+    graph_load_disk = report.create_graph(x=data_time[1:], 
+                                          y=data_disk[1:],
                                           filename='sng_disk', 
                                           title_graph='Load disk', 
                                           y_label="Disk %", 
-                                          x_rlim=args.TIME_EXEC * 60)
+                                          x_rlim=args.TIME_EXEC * 60 - 1)
 
     report.data_to_dataframe_csv({'time': data_time, 
                                   'load_cpu': data_cpu, 

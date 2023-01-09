@@ -101,7 +101,7 @@ class Report:
                 self.__main_raw_tables[event] = pandas.concat([self.__losses_raw_tables[event],
                                                                self.__latency_raw_tables[event]['latency']], axis=1)
                 self.__main_raw_tables[event].reset_index()
-                print(self.__main_raw_tables[event])
+                #print(self.__main_raw_tables[event])
 
     @staticmethod
     def _cm_to_inch(value):
@@ -139,7 +139,10 @@ class Report:
                 except np.RankWarning:
                     polinom_factor -= 1
 
-    def create_beauty_table(self, type, path=REPORT_DIR, table_name='aub_{t}_{e}_table.html'):
+    def create_beauty_table(self,
+                            type,
+                            path=REPORT_DIR,
+                            table_name='aub_{t}_{e}_table.html'):
         '''
         :param path: директория с файлами отчета
         :param table_name: имя файла html для сохранения таблицы

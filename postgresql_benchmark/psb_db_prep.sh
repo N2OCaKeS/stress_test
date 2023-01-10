@@ -195,7 +195,7 @@ if [ $? -eq 0 ]; then
         parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
     fi
     parted -s /dev/${STORAGE} mklabel msdos mkpart primary ext4 0% 100%
-    mkfs -t ext4 -f/dev/${STORAGE}1
+    mkfs -t ext4 -f /dev/${STORAGE}1
     mount /dev/${STORAGE}1 /var/lib/postgresql/11/
 fi
 

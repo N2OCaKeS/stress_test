@@ -1,4 +1,4 @@
-SCRIPT_DIR = '/home/u/git/stress_test/postgresql_benchmark'
+SCRIPT_DIR = '/media/sf_git/stress_test/postgresql_benchmark'
 LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
@@ -22,6 +22,7 @@ ACL_SQL_TRANSACTION = ''
     Параметры БД
 '''
 PG_VERSION = 11
+STORAGE = 'sda'
 DATABASE_NAME = 'mtest'
 TABLESPACE_DEFAULT_PATH = '/var/lib/postgresql/'+ str(PG_VERSION) +'/pg_default'
 TABLESPACE_DEFAULT = 'pg_default'

@@ -4,6 +4,7 @@ set -vx
 export PG_MAIN_CLUSTER=main
 export PG_MAIN_PORT=5432
 PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION =' | awk '{print $3}')
+STORAGE =$(cat psb_conf.py | grep 'STORAGE =' | awk '{print $3}')
 MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}' | tr -d "'")
 PG_SETEST_CLUSTER=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}' | tr -d "'")
 PG_SETEST_PORT=$(cat psb_conf.py | grep 'PG_SETEST_PORT =' | awk '{print $3}')
@@ -184,8 +185,22 @@ pg_ctlcluster $PG_VERSION $PG_MAIN_CLUSTER stop
 pg_dropcluster $PG_VERSION $PG_MAIN_CLUSTER --stop
 rm -rf /etc/postgresql/$PG_VERSION/$PG_MAIN_CLUSTER
 
+# подключить диск
+lsblk | grep ${STORAGE}
+if [ $? -eq 0 ]; then
+    lsblk | grep ${STORAGE}1
+    if [ $? -eq 0 ]; then
+        umount /var/lib/postgresql/11/
+        parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
+    fi
+    parted -s /dev/$STORAGE mklabel msdos mkpart primary ext4 0% 100%
+    mkfs -t ext4 /dev/${STORAGE}1
+    mount /dev/${STORAGE}1 /var/lib/postgresql/11/
+fi
+
 for port in $(pg_lsclusters -h | gawk '{print $3}');
 do
+  echo $MAIN_DIR
   cp $MAIN_DIR/sql/$sql_script /tmp/$sql_script
   cd /tmp
   chmod 644 /tmp/$sql_script

@@ -1,4 +1,4 @@
-SCRIPT_DIR = '/media/sf_git/stress_test/postgresql_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/postgresql_benchmark'
 LOG_FILENAME = '{}/psb_log'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)

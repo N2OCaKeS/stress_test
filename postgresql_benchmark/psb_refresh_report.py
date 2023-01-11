@@ -11,7 +11,7 @@ start_time = time()
 
 # Пересчет рейтингов
 report_dir = '/home/rkuznetsov/stress_testing_result/postgresql'
-for v in ('1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1'):
+for v in ('1.7.2', '1.7.3', '1.7.3.UU.1'):
     if os.path.exists('{}/{}'.format(report_dir, v)):
         for k in ('5.10', '5.15', '5.15ll'):
             if os.path.exists('{}/{}/{}/'.format(report_dir, v,k)):
@@ -55,7 +55,7 @@ for v in ('1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1'):
                                 '5.15ll': '5.15.0-33-lowlatency',
                             },
                         }
-                        fullk = fullks[v]
+                        fullk = fullks[v][k]
 
                         publish_cmd_lst = [
                             '/home/rkuznetsov/git/stress_test/postgresql_benchmark/venv/bin/python psb_publish.py',

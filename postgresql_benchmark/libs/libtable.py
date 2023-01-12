@@ -55,12 +55,91 @@ class Report:
             self.tps2_lst = [float(tps2) for tps2 in raw_data[3::6]]
             self.com_tr_lst = [int(c_trs) for c_trs in raw_data[4::6]]
             self.exp_tr_lst = [int(e_trs) for e_trs in raw_data[5::6]]
+
+            # # # ---100-500/100---
+            # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
+            #     if lst == self.param_lst:
+            #         self.param_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
+            #     elif lst == self.tps1_lst:
+            #         self.tps1_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
+            #     elif lst == self.tps2_lst:
+            #         self.tps2_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
+            #     elif lst == self.la_lst:
+            #         self.la_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
+            #     elif lst == self.com_tr_lst:
+            #         self.com_tr_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
+            #     elif lst == self.exp_tr_lst:
+            #         self.exp_tr_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
+
+            # ---100-300/50--- результаты говно
+            # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
+            #     if lst == self.param_lst:
+            #         self.param_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
+            #     elif lst == self.tps1_lst:
+            #         self.tps1_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
+            #     elif lst == self.tps2_lst:
+            #         self.tps2_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
+            #     elif lst == self.la_lst:
+            #         self.la_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
+            #     elif lst == self.com_tr_lst:
+            #         self.com_tr_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
+            #     elif lst == self.exp_tr_lst:
+            #         self.exp_tr_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
+
+            # ---100-300/10--- результаты норм, но долго 11.5h
+            # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
+            #     if lst == self.param_lst:
+            #         self.param_lst = lst[9:29]
+            #     elif lst == self.tps1_lst:
+            #         self.tps1_lst = lst[9:29]
+            #     elif lst == self.tps2_lst:
+            #         self.tps2_lst = lst[9:29]
+            #     elif lst == self.la_lst:
+            #         self.la_lst = lst[9:29]
+            #     elif lst == self.com_tr_lst:
+            #         self.com_tr_lst = lst[9:29]
+            #     elif lst == self.exp_tr_lst:
+            #         self.exp_tr_lst = lst[9:29]
+
+            # ---50-250/10--- результаты заебись
+            # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
+            #     if lst == self.param_lst:
+            #         self.param_lst = lst[4:25]
+            #     elif lst == self.tps1_lst:
+            #         self.tps1_lst = lst[4:25]
+            #     elif lst == self.tps2_lst:
+            #         self.tps2_lst = lst[4:25]
+            #     elif lst == self.la_lst:
+            #         self.la_lst = lst[4:25]
+            #     elif lst == self.com_tr_lst:
+            #         self.com_tr_lst = lst[4:25]
+            #     elif lst == self.exp_tr_lst:
+            #         self.exp_tr_lst = lst[4:25]
+
+            # ---20-400/20--- результаты заебись
+            # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
+            #     if lst == self.param_lst:
+            #         self.param_lst = lst[1:40:2]
+            #     elif lst == self.tps1_lst:
+            #         self.tps1_lst = lst[1:40:2]
+            #     elif lst == self.tps2_lst:
+            #         self.tps2_lst = lst[1:40:2]
+            #     elif lst == self.la_lst:
+            #         self.la_lst = lst[1:40:2]
+            #     elif lst == self.com_tr_lst:
+            #         self.com_tr_lst = lst[1:40:2]
+            #     elif lst == self.exp_tr_lst:
+            #         self.exp_tr_lst = lst[1:40:2]
+
             self.raw_table = pandas.DataFrame({param_name: self.param_lst,
                                                'la': self.la_lst,
                                                'tps1': self.tps1_lst,
                                                'tps2': self.tps2_lst,
                                                'com_tr': self.com_tr_lst,
                                                'exp_tr': self.exp_tr_lst})
+
+            #print(self.raw_table)
+
         if sysmon:
             with open(f'{REPORT_SYSMON_FILENAME}', 'r') as report_sysmon_file:
                 raw_sysmon_data = report_sysmon_file.read().split()

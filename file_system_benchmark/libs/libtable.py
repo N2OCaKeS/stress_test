@@ -516,15 +516,14 @@ class Report:
             total_html.writelines(html_template_part3)
 
     @staticmethod
-    def create_tar(path_to_tar=REPORT_PATH, path_to_files=REPORT_PATH):
+    def create_tar(path_to_files=REPORT_PATH):
         '''
             tar архив с результатами тестирования
         '''
         copy(LOG_PATH, '{}/main_log'.format(path_to_files))
-        with tarfile.open('{p}/report{v}_{m}_{t}.tar'.format(p=path_to_tar,
-                                                             v=astra_version()[0],
-                                                             m=astra_version()[1],
-                                                             t=time()), 'w') as tar:
+        with tarfile.open('report{v}_{m}_{t}.tar'.format(v=astra_version()[0],
+                                                         m=astra_version()[1],
+                                                         t=time()), 'w') as tar:
             os.chdir(SCRIPT_DIR)
             for file in listdir(path_to_files):
                 tar.add('{}/{}'.format('report', file))

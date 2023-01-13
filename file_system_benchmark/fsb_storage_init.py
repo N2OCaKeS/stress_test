@@ -64,6 +64,6 @@ elif args.FS == 'xfs':
     cmd("mkfs -t {fs} -f /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 else:
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary {fs} 0% 100%'.format(fs=args.FS ,device=STORAGE_NAME))
-    cmd("mkfs -t {fs} {ic} /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME, ic=INODE_COUNT))
+    cmd("mkfs -t {fs} {ic} -F /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME, ic=INODE_COUNT))
 
 cmd("mount /dev/{device}1 {mount_dir}".format(device=STORAGE_NAME, mount_dir=STORAGE_MOUNT_DIR))

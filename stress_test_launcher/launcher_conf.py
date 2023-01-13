@@ -37,11 +37,4 @@ START_FILE_MAIN_PLAYBOOK = """
 ---
 - name: Main playbook "{{ HOST }}"
   hosts: "{{ HOST }}"
-  vars:
-    ASTRA_VERSION:  "{{ ASTRA_VERS }}"
-
-  tasks:
-
-  - include: ./tasks/check_astra_verison.yml
-
 """

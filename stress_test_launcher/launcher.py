@@ -84,8 +84,7 @@ for ind, num_stand in enumerate(hosts):
     if not exists('logs'):
         mkdir('logs')
     log_file = open(f"logs/{STANDS[num_stand].get('name')}.log", "w+")
-    running_stand = subprocess.Popen(f"ansible-playbook playbooks/{STANDS[num_stand].get('name')}.yml --extra-var \"HOST={STANDS[num_stand].get('name')} SNAPSHOT={snapshot} ASTRA_VERS={astra_version} KERNEL_VERS={kernel_version} SECURITY_MODE={security_mode} USER_LIFE={LIFE_USERNAME} TOKEN_LIFE={LIFE_TOKEN} CONFLUENCE_SPACE={CONFLUENCE_SPACE} \"",
+    running_stand = subprocess.Popen(f"ansible-playbook playbooks/{STANDS[num_stand].get('name')}.yml --extra-var \"HOST={STANDS[num_stand].get('name')} SNAPSHOT={snapshot} ASTRA_VERSION={astra_version} KERNEL_VERS={kernel_version} SECURITY_MODE={security_mode} USER_LIFE={LIFE_USERNAME} TOKEN_LIFE={LIFE_TOKEN} CONFLUENCE_SPACE={CONFLUENCE_SPACE} \"",
                                      shell=True, 
                                      stdout=log_file, 
                                      stderr=log_file)
-

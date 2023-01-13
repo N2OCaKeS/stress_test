@@ -5,6 +5,8 @@
 
   tasks:
 
+  # - include: ./tasks/change_to_default_kernel.yml # Функционал не протестирован. В теории должно работать
+
   - name: AGBACKUP RESTORE {{ HOST }}
     shell:
       cmd: "sleep 3 && yes | agbackup restore {{ SNAPSHOT }}"
@@ -13,15 +15,14 @@
 
   - name: Wait reconnect {{ HOST }}
     wait_for_connection:
-      # host: "{{ HOST }}"
-      # state: started
       delay: 10
       timeout: 300
-    # delegate_to: localhost
 
   - name: Test Task after reconnection to {{ HOST }}
     debug:
       msg: It's okay
+
+  - include: ./tasks/check_astra_version.yml
   
   - name: Git pull
     become: false

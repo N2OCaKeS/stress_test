@@ -239,7 +239,7 @@ lead_time = strftime("%H:%M:%S", gmtime(time() - start_time))
 print('lead time: {t}'.format(t=lead_time))
 
 # собрать системную информацию
-info_lst = ['{digit_v}({mode})'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
             subprocess.run('uname -r',
                            shell=True,
                            stdout=subprocess.PIPE).stdout.decode("utf-8"),

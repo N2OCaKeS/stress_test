@@ -56,7 +56,7 @@ class Report:
             self.com_tr_lst = [int(c_trs) for c_trs in raw_data[4::6]]
             self.exp_tr_lst = [int(e_trs) for e_trs in raw_data[5::6]]
 
-            # # # ---100-500/100---
+            # ---100-500/100---
             # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
             #     if lst == self.param_lst:
             #         self.param_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
@@ -71,7 +71,7 @@ class Report:
             #     elif lst == self.exp_tr_lst:
             #         self.exp_tr_lst = [lst[9], lst[19], lst[29], lst[39], lst[49]]
 
-            # ---100-300/50--- результаты говно
+            # ---100-300/50---
             # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
             #     if lst == self.param_lst:
             #         self.param_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
@@ -86,7 +86,7 @@ class Report:
             #     elif lst == self.exp_tr_lst:
             #         self.exp_tr_lst = [lst[9], lst[14], lst[19], lst[24], lst[29]]
 
-            # ---100-300/10--- результаты норм, но долго 11.5h
+            # ---100-300/10---
             # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
             #     if lst == self.param_lst:
             #         self.param_lst = lst[9:29]
@@ -101,7 +101,7 @@ class Report:
             #     elif lst == self.exp_tr_lst:
             #         self.exp_tr_lst = lst[9:29]
 
-            # ---50-250/10--- результаты заебись
+            # ---50-250/10---
             # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
             #     if lst == self.param_lst:
             #         self.param_lst = lst[4:25]
@@ -116,7 +116,7 @@ class Report:
             #     elif lst == self.exp_tr_lst:
             #         self.exp_tr_lst = lst[4:25]
 
-            # ---20-400/20--- результаты заебись
+            # ---20-400/20---
             # for lst in (self.param_lst, self.la_lst, self.tps1_lst, self.tps2_lst, self.com_tr_lst, self.exp_tr_lst):
             #     if lst == self.param_lst:
             #         self.param_lst = lst[1:40:2]

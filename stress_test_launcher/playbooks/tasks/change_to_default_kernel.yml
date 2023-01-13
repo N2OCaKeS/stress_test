@@ -1,0 +1,21 @@
+- name: Change kernel 5.10 default version 
+  shell:
+    cmd: sudo head -n 1 /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep 5.10 | tr -d "'"
+  register: default_kernel_version_for_grub_file
+
+- name: Sed DEFAULT 5.10 KERNEl
+  become: true
+  shell:
+    cmd: sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT={{ default_kernel_version_for_grub_file.stdout }}/' /etc/default/grub && update-grub
+
+- name: Reboot after change 5.10 default kernel version
+  become: true
+  shell:
+    cmd: sleep 3 && reboot
+  async: 1
+  poll: 0
+
+- name: Wait after reboot
+  wait_for_connection:
+    delay: 10
+    timeout: 180

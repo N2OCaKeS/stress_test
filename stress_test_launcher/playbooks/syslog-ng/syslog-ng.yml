@@ -18,6 +18,11 @@
 
   - include: ../tasks/astra-modeswitch-set.yml
 
+  - name: Install Syslog-NG
+    apt:
+      name: syslog-ng
+      state: present
+
   - name: Git checkout syslog-ng
     shell:
       cmd: "cd /home/u/git/stress_test && git checkout syslog-ng"
@@ -38,7 +43,7 @@
 
   - name: Run stress test syslog-ng
     shell:
-      cmd: "venv/bin/python sng_run.py -sc 4800 -t 1440  -iw 23 -ih 16"
+      cmd: "venv/bin/python sng_run.py -sc 4800 -t 1440 -iw 23 -ih 16"
     args:
       chdir: "{{ SCRIPT_DIR }}"
 

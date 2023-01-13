@@ -22,6 +22,7 @@ ACL_SQL_TRANSACTION = ''
     Параметры БД
 '''
 PG_VERSION = 11
+STORAGE = 'sda'
 DATABASE_NAME = 'mtest'
 TABLESPACE_DEFAULT_PATH = '/var/lib/postgresql/'+ str(PG_VERSION) +'/pg_default'
 TABLESPACE_DEFAULT = 'pg_default'
@@ -62,8 +63,8 @@ LIMITE_THREADS = 100  # 10000
 '''
     Число клиентов
 '''
-CLIENTS = 10
-CLIENTS_STEP = 10
+CLIENTS = 100
+CLIENTS_STEP = 100
 STEP_RATIO_BY_CLIENTS = 1
 LIMITE_CLIENTS = 500
 '''

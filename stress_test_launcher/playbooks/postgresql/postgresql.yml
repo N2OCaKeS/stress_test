@@ -64,9 +64,3 @@
       cmd: venv/bin/python psb_publish.py -u "{{ USER_LIFE }}" -t "{{ TOKEN_LIFE }}" -cs "{{ CONFLUENCE_SPACE }}" -cpp "{{ CONFLUENCE_PARENT_PAGE }}" -cnp psb_test_{{ astra_version.stdout }}_{{ kernel_version.stdout }} -rp "{{ SCRIPT_DIR }}report" -pack postgresql-{{ PG_VERSION.stdout }}
     args:
       chdir: "{{ SCRIPT_DIR }}"
-
-  - name: Git reset postgresql
-    shell:
-      cmd: git reset --hard
-    args:
-      chdir: "{{ SCRIPT_DIR }}"

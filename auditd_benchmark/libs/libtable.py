@@ -430,10 +430,14 @@ class Report:
         clat = 0.5
         clos = 1
 
-        total_auditd_rating = round((clat * self.get_total_latency_rating(path=path))**(-1) * \
-                                    (clos * self.get_total_losses_rating(path=path)) * \
-                                    multiplier,
-                                    accuracy)
+        try:
+            total_auditd_rating = round((clat * self.get_total_latency_rating(path=path))**(-1) * \
+                                        (clos * self.get_total_losses_rating(path=path)) * \
+                                        multiplier,
+                                        accuracy)
+        except ZeroDivisionError:
+            total_auditd_rating = round((clos * self.get_total_losses_rating(path=path)) * multiplier, accuracy)
+
         with open(path, 'a+') as report:
             report.write('total auditd rating: {}\n'.format(total_auditd_rating))
         return total_auditd_rating

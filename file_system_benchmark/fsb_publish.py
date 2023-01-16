@@ -80,7 +80,21 @@ parser.add_argument('-rp', '--report-path',
                     help='path to report files',
                     dest='R_PATH')
 
-parser.add_argument('-tp', '--tarfile-path',
+parser.add_argument('-tp', '--template-path',
+                    action='store',
+                    required=False,
+                    default=TEMPLATE_PATH,
+                    help='path to dir with template files',
+                    dest='T_PATH')
+
+parser.add_argument('-ip', '--info-path',
+                    action='store',
+                    required=False,
+                    default=INFO_FILENAME,
+                    help='path to info file',
+                    dest='I_PATH')
+
+parser.add_argument('-tarp', '--tarfile-path',
                     action='store',
                     required=False,
                     default=None,
@@ -142,9 +156,9 @@ for file in os.listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
-with open(INFO_FILENAME) as info:
+with open(args.I_PATH) as info:
     info_lst = info.read().split('\n')
-with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
+with open('{}/header_table_template.html'.format(args.T_PATH), 'r') as file:
     header_table_temp = file.read()
     header_table = header_table_temp.format(av=info_lst[0],
                                             kernel=info_lst[1],
@@ -164,7 +178,7 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
 
 
 # создание страницы отчета
-with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
+with open('{}/rating_template.html'.format(args.T_PATH), 'r') as template:
     rating_temp = template.read()
     if args.TS == 'fs_mark_count':
         rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT)
@@ -173,10 +187,10 @@ with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
         rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
 
-with open('{}/fsb_report_table.html'.format(REPORT_PATH), 'r') as file:
+with open('{}/fsb_report_table.html'.format(args.R_PATH), 'r') as file:
     main_table = file.read()
 
-with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
+with open('{}/img_template.html'.format(args.T_PATH), 'r') as template:
     images_lst = []
     img_temp = template.read()
     for file in os.listdir(args.R_PATH):
@@ -192,7 +206,7 @@ html_page = '\n'.join([header_table, rating, main_table, images])
 confluence_report.update_confluence_page(args.SPACE, args.NPAGE, html_page)
 
 if args.JIRA_ISSUE:
-    with open('{}/issue_comment_template.txt'.format(TEMPLATE_PATH), 'r') as template:
+    with open('{}/issue_comment_template.txt'.format(args.T_PATH), 'r') as template:
         comment = template.read()
         jira_report.add_comment_to_issue(args.JIRA_ISSUE,
                                          comment.format(url=confluence_report.get_confluence_public_url(args.SPACE,

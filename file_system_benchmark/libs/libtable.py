@@ -54,6 +54,61 @@ class Report:
             self.unlink_min_lst = [int(param) for param in raw_data[20::23]]
             self.unlink_avg_lst = [int(param) for param in raw_data[21::23]]
             self.unlink_max_lst = [int(param) for param in raw_data[22::23]]
+
+            for lst in [ self.fs_use_lst, self.file_count_lst, self.file_size_lst, self.speed_lst,
+                         self.app_overhead_lst, self.create_min_lst, self.create_avg_lst, self.create_max_lst,
+                         self.write_min_lst, self.write_avg_lst, self.write_max_lst, self.fsync_min_lst,
+                         self.fsync_avg_lst, self.fsync_max_lst, self.sync_min_lst, self.sync_avg_lst,
+                         self.sync_max_lst, self.close_min_lst, self.close_avg_lst, self.close_max_lst,
+                         self.unlink_min_lst, self.unlink_avg_lst, self.unlink_max_lst]:
+
+                if lst == self.fs_use_lst:
+                    self.fs_use_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.file_count_lst:
+                    self.file_count_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.file_size_lst:
+                    self.file_size_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.speed_lst:
+                    self.speed_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.app_overhead_lst:
+                    self.app_overhead_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.create_min_lst:
+                    self.create_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.create_avg_lst:
+                    self.create_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.create_max_lst:
+                    self.create_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.write_min_lst:
+                    self.write_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.write_avg_lst:
+                    self.write_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.write_max_lst:
+                    self.write_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.fsync_min_lst:
+                    self.fsync_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.fsync_avg_lst:
+                    self.fsync_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.fsync_max_lst:
+                    self.fsync_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.sync_min_lst:
+                    self.sync_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.sync_avg_lst:
+                    self.sync_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.sync_max_lst:
+                    self.sync_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.close_min_lst:
+                    self.close_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.close_avg_lst:
+                    self.close_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.close_max_lst:
+                    self.close_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.unlink_min_lst:
+                    self.unlink_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.unlink_avg_lst:
+                    self.unlink_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+                elif lst == self.unlink_max_lst:
+                    self.unlink_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+
             self.raw_table = pandas.DataFrame({ 'fs_use': self.fs_use_lst,
                                                 'file_count': self.file_count_lst,
                                                 'file_size': self.file_size_lst,
@@ -77,6 +132,8 @@ class Report:
                                                 'unlink_min': self.unlink_min_lst,
                                                 'unlink_avg': self.unlink_avg_lst,
                                                 'unlink_max': self.unlink_max_lst})
+
+            #print(self.raw_table)
 
         self.ox_lower_limit = ox_lo_lim
         self.ox_step = ox_step
@@ -193,16 +250,17 @@ class Report:
                                                 ox_param_table_name,
                                                 syscall))
 
-    def create_fsb_fc_sp_graph(self):
+    def create_fsb_fc_sp_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости работы от количества файлов
         '''
         self.template_aproximated_graph(ox_param_table_name='file_count',
                                         ox_lst=self.file_count_lst,
                                         oy_param_table_name='speed',
-                                        oy_lst=self.speed_lst)
+                                        oy_lst=self.speed_lst,
+                                        path=path)
 
-    def create_fsb_fc_app_overhead_graph(self):
+    def create_fsb_fc_app_overhead_graph(self, path=REPORT_PATH):
         '''
             График зависимости накладных расходов(мсек) от количества файлов.
             Без выполнения системных вызовов, связанных с записью файла.
@@ -210,18 +268,20 @@ class Report:
         self.template_aproximated_graph(ox_param_table_name='file_count',
                                         ox_lst=self.file_count_lst,
                                         oy_param_table_name='app_overhead',
-                                        oy_lst=self.app_overhead_lst)
+                                        oy_lst=self.app_overhead_lst,
+                                        path=path)
 
-    def create_fsb_sz_sp_graph(self):
+    def create_fsb_sz_sp_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости работы от размера файлов
         '''
         self.template_aproximated_graph(ox_param_table_name='file_size',
                                         ox_lst=self.file_size_lst,
                                         oy_param_table_name='speed',
-                                        oy_lst=self.speed_lst)
+                                        oy_lst=self.speed_lst,
+                                        path=path)
 
-    def create_fsb_sz_app_overhead_graph(self):
+    def create_fsb_sz_app_overhead_graph(self, path=REPORT_PATH):
         '''
             График зависимости накладных расходов(мсек) от размера файлов.
             Без выполнения системных вызовов, связанных с записью файла.
@@ -229,103 +289,116 @@ class Report:
         self.template_aproximated_graph(ox_param_table_name='file_size',
                                         ox_lst=self.file_size_lst,
                                         oy_param_table_name='app_overhead',
-                                        oy_lst=self.app_overhead_lst)
+                                        oy_lst=self.app_overhead_lst,
+                                        path=path)
 
-    def create_fsb_fc_create_graph(self):
+    def create_fsb_fc_create_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова CREATE(мсек) от количества файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_count',
                                     ox_lst=self.file_count_lst,
-                                    syscall='create')
+                                    syscall='create',
+                                    path=path)
 
-    def create_fsb_fc_write_graph(self):
+    def create_fsb_fc_write_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова WRITE(мсек) от количества файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_count',
                                     ox_lst=self.file_count_lst,
-                                    syscall='write')
+                                    syscall='write',
+                                    path=path)
 
-    def create_fsb_fc_fsync_graph(self):
+    def create_fsb_fc_fsync_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова FSYNC(мсек) от количества файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_count',
                                     ox_lst=self.file_count_lst,
-                                    syscall='fsync')
+                                    syscall='fsync',
+                                    path=path)
 
-    def create_fsb_fc_sync_graph(self):
+    def create_fsb_fc_sync_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова SYNC(мсек) от количества файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_count',
                                     ox_lst=self.file_count_lst,
-                                    syscall='sync')
+                                    syscall='sync',
+                                    path=path)
 
-    def create_fsb_fc_close_graph(self):
+    def create_fsb_fc_close_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова CLOSE(мсек) от количества файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_count',
                                     ox_lst=self.file_count_lst,
-                                    syscall='close')
+                                    syscall='close',
+                                    path=path)
 
-    def create_fsb_fc_unlink_graph(self):
+    def create_fsb_fc_unlink_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова UNLINK(мсек) от количества файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_count',
                                     ox_lst=self.file_count_lst,
-                                    syscall='unlink')
+                                    syscall='unlink',
+                                    path=path)
 
-    def create_fsb_sz_create_graph(self):
+    def create_fsb_sz_create_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова CREATE(мсек) от размера файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_size',
                                     ox_lst=self.file_size_lst,
-                                    syscall='create')
+                                    syscall='create',
+                                    path=path)
 
-    def create_fsb_sz_write_graph(self):
+    def create_fsb_sz_write_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова WRITE(мсек) от размера файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_size',
                                     ox_lst=self.file_size_lst,
-                                    syscall='write')
+                                    syscall='write',
+                                    path=path)
 
-    def create_fsb_sz_fsync_graph(self):
+    def create_fsb_sz_fsync_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова FSYNC(мсек) от размера файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_size',
                                     ox_lst=self.file_size_lst,
-                                    syscall='fsync')
+                                    syscall='fsync',
+                                    path=path)
 
-    def create_fsb_sz_sync_graph(self):
+    def create_fsb_sz_sync_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова SYNC(мсек) от размера файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_size',
                                     ox_lst=self.file_size_lst,
-                                    syscall='sync')
+                                    syscall='sync',
+                                    path=path)
 
-    def create_fsb_sz_close_graph(self):
+    def create_fsb_sz_close_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова CLOSE(мсек) от размера файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_size',
                                     ox_lst=self.file_size_lst,
-                                    syscall='close')
+                                    syscall='close',
+                                    path=path)
 
-    def create_fsb_sz_unlink_graph(self):
+    def create_fsb_sz_unlink_graph(self, path=REPORT_PATH):
         '''
             График зависимости скорости сис. вызова UNLINK(мсек) от размера файлов.
         '''
         self.template_syscall_graph(ox_param_table_name='file_size',
                                     ox_lst=self.file_size_lst,
-                                    syscall='unlink')
+                                    syscall='unlink',
+                                    path=path)
 
     ####################################################################################################################
     def get_speed_rating(self,

@@ -55,59 +55,59 @@ class Report:
             self.unlink_avg_lst = [int(param) for param in raw_data[21::23]]
             self.unlink_max_lst = [int(param) for param in raw_data[22::23]]
 
-            for lst in [ self.fs_use_lst, self.file_count_lst, self.file_size_lst, self.speed_lst,
-                         self.app_overhead_lst, self.create_min_lst, self.create_avg_lst, self.create_max_lst,
-                         self.write_min_lst, self.write_avg_lst, self.write_max_lst, self.fsync_min_lst,
-                         self.fsync_avg_lst, self.fsync_max_lst, self.sync_min_lst, self.sync_avg_lst,
-                         self.sync_max_lst, self.close_min_lst, self.close_avg_lst, self.close_max_lst,
-                         self.unlink_min_lst, self.unlink_avg_lst, self.unlink_max_lst]:
-
-                if lst == self.fs_use_lst:
-                    self.fs_use_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.file_count_lst:
-                    self.file_count_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.file_size_lst:
-                    self.file_size_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.speed_lst:
-                    self.speed_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.app_overhead_lst:
-                    self.app_overhead_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.create_min_lst:
-                    self.create_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.create_avg_lst:
-                    self.create_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.create_max_lst:
-                    self.create_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.write_min_lst:
-                    self.write_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.write_avg_lst:
-                    self.write_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.write_max_lst:
-                    self.write_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.fsync_min_lst:
-                    self.fsync_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.fsync_avg_lst:
-                    self.fsync_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.fsync_max_lst:
-                    self.fsync_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.sync_min_lst:
-                    self.sync_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.sync_avg_lst:
-                    self.sync_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.sync_max_lst:
-                    self.sync_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.close_min_lst:
-                    self.close_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.close_avg_lst:
-                    self.close_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.close_max_lst:
-                    self.close_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.unlink_min_lst:
-                    self.unlink_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.unlink_avg_lst:
-                    self.unlink_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
-                elif lst == self.unlink_max_lst:
-                    self.unlink_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            # for lst in [ self.fs_use_lst, self.file_count_lst, self.file_size_lst, self.speed_lst,
+            #              self.app_overhead_lst, self.create_min_lst, self.create_avg_lst, self.create_max_lst,
+            #              self.write_min_lst, self.write_avg_lst, self.write_max_lst, self.fsync_min_lst,
+            #              self.fsync_avg_lst, self.fsync_max_lst, self.sync_min_lst, self.sync_avg_lst,
+            #              self.sync_max_lst, self.close_min_lst, self.close_avg_lst, self.close_max_lst,
+            #              self.unlink_min_lst, self.unlink_avg_lst, self.unlink_max_lst]:
+            #
+            #     if lst == self.fs_use_lst:
+            #         self.fs_use_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.file_count_lst:
+            #         self.file_count_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.file_size_lst:
+            #         self.file_size_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.speed_lst:
+            #         self.speed_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.app_overhead_lst:
+            #         self.app_overhead_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.create_min_lst:
+            #         self.create_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.create_avg_lst:
+            #         self.create_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.create_max_lst:
+            #         self.create_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.write_min_lst:
+            #         self.write_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.write_avg_lst:
+            #         self.write_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.write_max_lst:
+            #         self.write_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.fsync_min_lst:
+            #         self.fsync_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.fsync_avg_lst:
+            #         self.fsync_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.fsync_max_lst:
+            #         self.fsync_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.sync_min_lst:
+            #         self.sync_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.sync_avg_lst:
+            #         self.sync_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.sync_max_lst:
+            #         self.sync_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.close_min_lst:
+            #         self.close_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.close_avg_lst:
+            #         self.close_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.close_max_lst:
+            #         self.close_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.unlink_min_lst:
+            #         self.unlink_min_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.unlink_avg_lst:
+            #         self.unlink_avg_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
+            #     elif lst == self.unlink_max_lst:
+            #         self.unlink_max_lst = [lst[9], lst[19], lst[29], lst[39], lst[49], lst[59], lst[69], lst[79], lst[89]]
 
             self.raw_table = pandas.DataFrame({ 'fs_use': self.fs_use_lst,
                                                 'file_count': self.file_count_lst,

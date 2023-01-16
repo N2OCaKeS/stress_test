@@ -45,13 +45,13 @@ def cmd(command,
         exit(2)
 
 
+cmd('apt install -y libpdp-dev parted')
+
 # Проверка наличия диска
 if cmd('lsblk | grep {device}'.format(device=STORAGE_NAME)) == 0:
     if cmd('lsblk | grep {device}1'.format(device=STORAGE_NAME)) == 0:
         cmd('umount /mnt')
         cmd('parted -s /dev/{device} select && parted -s /dev/{device} rm 1'.format(device=STORAGE_NAME))
-
-cmd('apt install -y libpdp-dev')
 
 if args.FS == 'fat':
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary fat32 0% 100%'.format(device=STORAGE_NAME))

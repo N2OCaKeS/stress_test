@@ -181,10 +181,10 @@ with open('{}/header_table_template.html'.format(args.T_PATH), 'r') as file:
 with open('{}/rating_template.html'.format(args.T_PATH), 'r') as template:
     rating_temp = template.read()
     if args.TS == 'fs_mark_count':
-        rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT)
+        rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT, report=args.R_PATH)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_count_lst)))
     if args.TS == 'fs_mark_size':
-        rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT)
+        rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT, report=args.R_PATH)
         rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
 
 with open('{}/fsb_report_table.html'.format(args.R_PATH), 'r') as file:

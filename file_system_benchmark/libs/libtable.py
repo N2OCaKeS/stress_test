@@ -23,13 +23,13 @@ class Report:
                  ox_lo_lim,
                  ox_step,
                  ox_up_lim,
-                 report='{}/{}'.format(REPORT_PATH, REPORT_FILENAME)):
+                 report=REPORT_PATH):
 
         '''
             :param report: path to report file
             read and parsing data from report file
         '''
-        with open(report, 'r') as report_file:
+        with open('{}/{}'.format(report, REPORT_FILENAME), 'r') as report_file:
             raw_data = report_file.read().split()
             self.fs_use_lst = [int(param) for param in raw_data[0::23]]  # percents
             self.file_count_lst = [int(param) for param in raw_data[1::23]]
@@ -138,6 +138,7 @@ class Report:
         self.ox_lower_limit = ox_lo_lim
         self.ox_step = ox_step
         self.ox_upper_limit = ox_up_lim
+        self._report_dir = report
 
         # graph size
         self.width = 27

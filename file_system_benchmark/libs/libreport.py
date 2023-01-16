@@ -6,8 +6,7 @@
 # ;===========================================================
 
 from shutil import unpack_archive
-from atlassian import Confluence
-from atlassian import Jira
+from atlassian import Confluence, Jira
 
 
 class ReportToConfluence():
@@ -82,13 +81,14 @@ class ReportToJira():
         self.__access_token = token
 
         if self.__password is not None:
-            self.__confluence = Confluence(url=self.__url,
-                                           username=self.__username,
-                                           password=self.__password)
+            self.__jira = Jira(url=self.__url,
+                               username=self.__username,
+                               password=self.__password)
+
         elif self.__access_token is not None:
-            self.__confluence = Confluence(url=self.__url,
-                                           username=self.__username,
-                                           token=self.__access_token)
+            self.__jira = Jira(url=self.__url,
+                               username=self.__username,
+                               token=self.__access_token)
 
     def add_comment_to_issue(self, issue, text):
         self.__jira.issue_add_comment(issue_key=issue,

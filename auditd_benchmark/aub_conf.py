@@ -1,14 +1,26 @@
+"""
+    Основная рабочая директория
+"""
 #SCRIPT_DIR = '/media/sf_git/stress_test/auditd_benchmark'
 SCRIPT_DIR = '/home/u/git/stress_test/auditd_benchmark'
 
+"""
+    Названия основных файлов
+"""
 LOG_FILENAME = 'aub_log'
 REPORT_FILENAME = 'aub_report.txt'
 INFO_FILENAME = 'aub_info.txt'
 
+"""
+    Названия директорий
+"""
 LOG_DIR = '{}/log'.format(SCRIPT_DIR)
 REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
 TEMPLATE_DIR = '{}/templates'.format(SCRIPT_DIR)
 
+"""
+    Полный путь до файлов
+"""
 LOG = '{}/{}'.format(LOG_DIR, LOG_FILENAME)
 REPORT = '{}/{}'.format(REPORT_DIR, REPORT_FILENAME)
 
@@ -20,9 +32,16 @@ LOSSES_REPORT_PSAUD = '{}/aub_ps_report_losses.txt'.format(REPORT_DIR)
 LOSSES_REPORT_USAUD = '{}/aub_us_report_losses.txt'.format(REPORT_DIR)
 LOSSES_REPORT_FLAUD = '{}/aub_fl_report_losses.txt'.format(REPORT_DIR)
 
+"""
+    Системные пользователи
+"""
 MAIN_USER='u'
 TEST_USER='tester'
 
+"""
+    Команды инициаторы событий для аудита процессов:
+        'event_name' : ('positive command', 'negative command')
+"""
 PSAUD_PROC_BODYS = {
     'open': ('cat', ''),
     'create': ('touch',''),
@@ -42,6 +61,10 @@ PSAUD_PROC_BODYS = {
     'net': ('ping -c 1 localhost','')
 }
 
+"""
+    Команды инициаторы событий для аудита пользователей:
+        'event_name' : ('positive command', 'negative command')
+"""
 USERAUD_PROC_BODYS = {
     'open': ('cat', ''),
     'create': ('touch',''),
@@ -62,6 +85,10 @@ USERAUD_PROC_BODYS = {
     'net': ('ping -c 1 localhost','')
 }
 
+"""
+    Команды инициаторы событий для аудита файлов:
+        'event_name' : ('positive command', 'negative command')
+"""
 FILEAUD_PROC_BODYS = {
     'open': ('cat ', ''),
     'create': ('touch ', ''),
@@ -75,13 +102,24 @@ FILEAUD_PROC_BODYS = {
     'modify': ("echo '1' >> ", '')
 }
 
+"""
+    Количество процессов-генераторов
+"""
 PS_LOWER_LIMIT = 10  #10
 PS_UPPER_LIMIT = 160  #100
 PS_STEP = 10  #10
-
+"""
+    Время жизни одного процессов-генераторов
+"""
 DEFAULT_PS_LIFETIME = 60 #100
+"""
+    Задержка повторной инициализации события
+"""
 DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 0.1
 
+"""
+    Описание основных графиков
+"""
 GRAPH_DESCRIPTIONS = {
     'aub_ps_total_eps_latency_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
                                       'Сравнительный график зависимости задержки появления сообщений в логах аудита от количества событий в секунду, поступаемых на auditd. Сравнение по конкретным событиям.'

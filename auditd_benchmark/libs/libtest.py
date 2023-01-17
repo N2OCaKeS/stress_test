@@ -5,9 +5,8 @@
 # ; Date: 2022
 # ;===========================================================
 
-import os
-import pwd
-
+from pwd import getpwnam
+from os import mkdir, chmod
 from time import sleep, ctime, time
 from multiprocessing import Process, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
@@ -16,7 +15,10 @@ from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
 
 class AuditdTest(Auditd, CheckAusearch):
 
-    def __init__(self, procs, do_positive_test=True, do_negative_test=False):
+    def __init__(self,
+                 procs,
+                 do_positive_test=True,
+                 do_negative_test=False):
         '''
         :param do_positive_test: Необходимость принудительной инициализации событий 'success=yes'
         :param do_negative_test: Необходимость принудительной инициализации событий 'success=no'
@@ -87,23 +89,23 @@ class AuditdTest(Auditd, CheckAusearch):
                     if syscall in ('open', 'delete', 'chmod', 'chown'):
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                     if syscall in ('audit', 'acl'):
-                        os.mkdir(target_dir, 0o777)
+                        mkdir(target_dir, 0o777)
                         target = target_dir
                     if syscall == 'mount':
-                        os.mkdir(target_dir, 0o777)
-                        os.mkdir(target_dir + 'mount', 0o777)
+                        mkdir(target_dir, 0o777)
+                        mkdir(target_dir + 'mount', 0o777)
                         target = '{dir} {dir}mount'.format(dir=target_dir)
                     if syscall in ('exec', 'module', 'cap', 'net', 'uid', 'gid'):
                         target = ''
                     if syscall == 'mac':
-                        os.mkdir(target_dir, 0o777)
+                        mkdir(target_dir, 0o777)
                         target = target_dir
                     if syscall == 'rename':
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                         target = target+' '+target+str(number)
                 except (FileNotFoundError, FileExistsError):
                     pass
@@ -153,23 +155,23 @@ class AuditdTest(Auditd, CheckAusearch):
                     if syscall in ('open', 'delete', 'chmod', 'chown'):
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                     if syscall in ('audit', 'acl'):
-                        os.mkdir(target_dir, 0o777)
+                        mkdir(target_dir, 0o777)
                         target = target_dir
                     if syscall == 'mount':
-                        os.mkdir(target_dir, 0o777)
-                        os.mkdir(target_dir + 'mount', 0o777)
+                        mkdir(target_dir, 0o777)
+                        mkdir(target_dir + 'mount', 0o777)
                         target = '{dir} {dir}mount'.format(dir=target_dir)
                     if syscall in ('exec', 'module', 'cap', 'net', 'uid', 'gid'):
                         target = ''
                     if syscall == 'mac':
-                        os.mkdir(target_dir, 0o777)
+                        mkdir(target_dir, 0o777)
                         target = target_dir
                     if syscall == 'rename':
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                         target = target+' '+target+str(number)
                 except (FileNotFoundError, FileExistsError):
                     pass
@@ -211,8 +213,8 @@ class AuditdTest(Auditd, CheckAusearch):
             user = user + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
-        uid = pwd.getpwnam(user).pw_uid
-        gid = pwd.getpwnam(user).pw_gid
+        uid = getpwnam(user).pw_uid
+        gid = getpwnam(user).pw_gid
 
         while life_time > 0:
             sleep(delay)
@@ -226,13 +228,13 @@ class AuditdTest(Auditd, CheckAusearch):
                     if syscall in ('open', 'delete', 'chmod', 'chown'):
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                     if syscall in ('audit', 'acl'):
-                        os.mkdir(target_dir, 0o777)
+                        mkdir(target_dir, 0o777)
                         target = target_dir
                     if syscall == 'mount':
-                        os.mkdir(target_dir, 0o777)
-                        os.mkdir(target_dir + 'mount', 0o777)
+                        mkdir(target_dir, 0o777)
+                        mkdir(target_dir + 'mount', 0o777)
                         target = '{dir} {dir}mount'.format(dir=target_dir)
                     if syscall in ('exec', 'module', 'cap', 'net', 'uid', 'gid'):
                         target = ''
@@ -243,7 +245,7 @@ class AuditdTest(Auditd, CheckAusearch):
                     if syscall == 'rename':
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                         target = target+' '+target+str(number)
                 except (FileNotFoundError, FileExistsError):
                     pass
@@ -291,8 +293,8 @@ class AuditdTest(Auditd, CheckAusearch):
         user = user + str(number)
         target = '/tmp/file' + str(number)
         target_dir = '/tmp/dir' + str(number)
-        uid = pwd.getpwnam(user).pw_uid
-        gid = pwd.getpwnam(user).pw_gid
+        uid = getpwnam(user).pw_uid
+        gid = getpwnam(user).pw_gid
 
         counter = 0
         while life_time > 0:
@@ -303,13 +305,13 @@ class AuditdTest(Auditd, CheckAusearch):
                     if syscall in ('open', 'delete', 'chmod', 'chown'):
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                     if syscall in ('audit', 'acl'):
-                        os.mkdir(target_dir, 0o777)
+                        mkdir(target_dir, 0o777)
                         target = target_dir
                     if syscall == 'mount':
-                        os.mkdir(target_dir, 0o777)
-                        os.mkdir(target_dir + 'mount', 0o777)
+                        mkdir(target_dir, 0o777)
+                        mkdir(target_dir + 'mount', 0o777)
                         target = '{dir} {dir}mount'.format(dir=target_dir)
                     if syscall in ('exec', 'module', 'cap', 'net', 'uid', 'gid'):
                         target = ''
@@ -320,7 +322,7 @@ class AuditdTest(Auditd, CheckAusearch):
                     if syscall == 'rename':
                         file = open(target, 'w')
                         file.close()
-                        os.chmod(target, 0o777)
+                        chmod(target, 0o777)
                         target = target + ' ' + target + str(number)
                 except (FileNotFoundError, FileExistsError):
                     pass

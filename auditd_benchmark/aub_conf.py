@@ -106,16 +106,16 @@ FILEAUD_PROC_BODYS = {
     Количество процессов-генераторов
 """
 PS_LOWER_LIMIT = 10  #10
-PS_UPPER_LIMIT = 160  #100
+PS_UPPER_LIMIT = 60  #100
 PS_STEP = 10  #10
 """
     Время жизни одного процессов-генераторов
 """
-DEFAULT_PS_LIFETIME = 60 #100
+DEFAULT_PS_LIFETIME = 10 #100
 """
     Задержка повторной инициализации события
 """
-DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 0.1
+DEFAULT_PS_EVENT_RE_INITIALIZATION_DELAY = 0.25
 
 """
     Описание основных графиков

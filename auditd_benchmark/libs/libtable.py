@@ -289,7 +289,7 @@ class Report:
         elif oy_param_table_name == 'latency':
             plt_title = '{digit_varsion}{mode}. All events {ytitle}/{xtitle}'
             plt.ylabel('latency(sec)')
-            plt.ylim(bottom=-0.1 * DEFAULT_PS_LIFETIME, top=2 * DEFAULT_PS_LIFETIME)
+            plt.ylim(bottom=-0.1 * DEFAULT_PS_LIFETIME, top=3 * DEFAULT_PS_LIFETIME)
         else:
             plt_title = '{digit_varsion}{mode}. All events {ytitle}/{xtitle}'
 
@@ -435,7 +435,7 @@ class Report:
                                         (clos * self.get_total_losses_rating(path=path)) * \
                                         multiplier,
                                         accuracy)
-        except ZeroDivisionError:
+        except Exception:
             total_auditd_rating = round((clos * self.get_total_losses_rating(path=path)) * multiplier, accuracy)
 
         with open(path, 'a+') as report:

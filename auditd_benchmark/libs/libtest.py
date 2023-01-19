@@ -547,7 +547,8 @@ class AuditdTest(Auditd, CheckAusearch):
 
         while timers[0] is None:
             pass
-        # ищем событие
+
+        # ищем событие по pid
         while CheckAusearch.psaud(audit_flag, test_ps.pid, timers[0]) is False:
             end = time()
             if not test_ps.is_alive():
@@ -555,8 +556,8 @@ class AuditdTest(Auditd, CheckAusearch):
 
         test_ps.terminate()
         latency = end - start
-        if latency == 0:
-            latency = event_re_initialization_delay
+        if latency < event_re_initialization_delay:
+            latency = 0.001
         return round(latency, accuracy)
 
     def test_get_latency_psaud_under_load(self,
@@ -611,8 +612,8 @@ class AuditdTest(Auditd, CheckAusearch):
             test_ps.terminate()
 
         latency = end - start
-        if latency == 0:
-            latency = event_re_initialization_delay
+        if latency < event_re_initialization_delay:
+            latency = 0.001
         return round(latency, accuracy)
 
     def test_losses_psaud_under_load(self,
@@ -699,16 +700,22 @@ class AuditdTest(Auditd, CheckAusearch):
         :return:
         '''
 
+        # создаем пользователя, навешиваем привилегии
         user = user+'0'
         Auditd.clean()
         User.add(user)
         self._add_priv_prep(audit_flag, user)
         cmd('useraud -m {u} +{flag}'.format(u=user, flag=(audit_flag)))
 
+        # обЪявляем списки: со счетчиками, с командами
+        # для каждого процесса n:
+        #   timers[n] - его таймер
+        #   cmds[n] - команда, которую он выполняет
         manager = Manager()
         timers = manager.list([None])
         cmds = manager.list([None])
 
+        # инициализируем процесс
         test_ps = self._create_ps(syscall=audit_flag,
                                   func=self._template_ps_useraud_timer,
                                   proc_lifetime=ps_lifetime,
@@ -726,15 +733,16 @@ class AuditdTest(Auditd, CheckAusearch):
             if not test_ps.is_alive():
                 return 0
 
-
         test_ps.terminate()
 
+        # удаляем пользователя
         User.rm_priv(user)
         User.rm(user)
 
+        # возвращаем результат
         latency = end - start
-        if latency == 0:
-            latency = event_re_initialization_delay
+        if latency < event_re_initialization_delay:
+            latency = 0.001
         return round(latency, accuracy)
 
     def test_get_latency_useraud_under_load(self,
@@ -756,6 +764,7 @@ class AuditdTest(Auditd, CheckAusearch):
         Auditd.clean()
         Prepare.clean()
 
+        # создаем пользователей, навешиваем привилегии
         for index in range(count):
             name = user + str(index)
             User.add(name)
@@ -765,10 +774,15 @@ class AuditdTest(Auditd, CheckAusearch):
         if ps_lifetime is None:
             ps_lifetime = count
 
+        # обЪявляем списки: со счетчиками, с командами
+        # для каждого процесса n:
+        #   timers[n] - его таймер
+        #   cmds[n] - команда, которую он выполняет
         manager = Manager()
         timers = manager.list([None]*count)
         cmds = manager.list([None]*count)
 
+        # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_useraud_timer,
                                       proc_lifetime=ps_lifetime,
@@ -792,24 +806,30 @@ class AuditdTest(Auditd, CheckAusearch):
                     break
             except Exception:
                 pass
+
         # ждем появления команды от последнего процесса
         while CheckAusearch.useraud(cmds[last_num], timers[last_num]) is False:
-            end = time()
+            end = time() # пока команда, не появилась копим таймер
+
+            # если последний запущенный процесс умер, а команда так и не появилась возвращаем 0
             if not last_test_ps.is_alive():
+                #print('error')
                 return 0
 
         # убить все
         for test_ps in test_ps_lst:
             test_ps.terminate()
 
+        # удаляем пользователя
         for index in range(count):
             name = user + str(index)
             User.rm_priv(name)
             User.rm(name)
 
+        # возвращаем результат
         latency = end - start
-        if latency == 0:
-            latency = event_re_initialization_delay
+        if latency < event_re_initialization_delay:
+            latency = 0.001
         return round(latency, accuracy)
 
     def test_losses_useraud_under_load(self,
@@ -818,6 +838,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                        ps_lifetime=None,
                                        event_re_initialization_delay=0.001,
                                        user=TEST_USER):
+
         '''
         :param audit_flag: наименование события audit
         :param count: количество процессов
@@ -828,6 +849,7 @@ class AuditdTest(Auditd, CheckAusearch):
         Auditd.clean()
         Prepare.clean()
 
+        # создаем пользователей, навешиваем привилегии
         for index in range(count):
             name = user + str(index)
             User.add(name)
@@ -837,6 +859,10 @@ class AuditdTest(Auditd, CheckAusearch):
         if ps_lifetime is None:
             ps_lifetime = count
 
+        # обЪявляем списки: со счетчиками, с командами
+        # для каждого процесса n:
+        #   counter[n] - его счетчик команд
+        #   cmds[n] - команда, которую он выполняет
         manager = Manager()
         counters = manager.list([0]*count)
         cmds = manager.list([None]*count)
@@ -873,8 +899,10 @@ class AuditdTest(Auditd, CheckAusearch):
         # считаем суммарное количество событий замеченных auditd
         auditd_events_amount = 0
         for index in range(count):
-            auditd_events_amount += CheckAusearch.useraud_event_count(cmds[-1], start)
+            # ищем команды, запущенные каждым процесса в логах audit
+            auditd_events_amount += CheckAusearch.useraud_event_count(cmds[index], start)
 
+        # сравниваем полученные результаты
         try:
             if auditd_events_amount / expected_event_amount > 1:
                 res = 100.0
@@ -886,11 +914,13 @@ class AuditdTest(Auditd, CheckAusearch):
                     auditd_events_amount,
                     0.0)
 
+        # удаляем пользователя
         for index in range(count):
             name = user + str(index)
             User.rm_priv(name)
             User.rm(name)
 
+        # возвращаем результат
         return (expected_event_amount <= auditd_events_amount,
                 expected_event_amount,
                 auditd_events_amount,
@@ -928,8 +958,8 @@ class AuditdTest(Auditd, CheckAusearch):
         Prepare.clean()
 
         latency = end - start
-        if latency == 0:
-            latency = event_re_initialization_delay
+        if latency < event_re_initialization_delay:
+            latency = 0.001
         return round(latency, accuracy)
 
     def test_get_latency_fileaud_under_load(self,
@@ -978,8 +1008,8 @@ class AuditdTest(Auditd, CheckAusearch):
         Prepare.clean()
 
         latency = end - start
-        if latency == 0:
-            latency = event_re_initialization_delay
+        if latency < event_re_initialization_delay:
+            latency = 0.001
         return round(latency, accuracy)
 
     def test_get_losses_fileaud_under_load(self,

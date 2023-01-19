@@ -69,6 +69,23 @@ parser.add_argument('-rp', '--report-path',
                     help='path to report files',
                     dest='R_PATH')
 
+# TODO: добавить/отладить
+'''
+parser.add_argument('-tp', '--template-path',
+                    action='store',
+                    required=False,
+                    default=TEMPLATE_PATH,
+                    help='path to dir with template files',
+                    dest='T_PATH')
+
+parser.add_argument('-ip', '--info-path',
+                    action='store',
+                    required=False,
+                    default=INFO_FILENAME,
+                    help='path to info file',
+                    dest='I_PATH')
+'''
+
 parser.add_argument('-tp', '--tarfile-path',
                     action='store',
                     required=False,

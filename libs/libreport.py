@@ -8,6 +8,7 @@
 from shutil import unpack_archive
 from atlassian import Confluence
 from atlassian import Jira
+from pprint import pprint
 
 
 class ReportToConfluence():
@@ -82,6 +83,28 @@ class ReportToJira():
         self.__access_token = token
 
         if self.__password is not None:
+            self.__jira = Jira(url=self.__url,
+                               username=self.__username,
+                               password=self.__password)
+        elif self.__access_token is not None:
+            self.__jira = Jira(url=self.__url,
+                               username=self.__username,
+                               token=self.__access_token)
+
+    def add_comment_to_issue(self, issue, text):
+        self.__jira.issue_add_comment(issue_key=issue,
+                                      comment=text)
+
+
+class ConfluencePage():
+    __url='https://life.astralinux.ru'
+
+    def __init__(self, username, password=None, token=None):
+        self.__username = username
+        self.__password = password
+        self.__access_token = token
+
+        if self.__password is not None:
             self.__confluence = Confluence(url=self.__url,
                                            username=self.__username,
                                            password=self.__password)
@@ -90,6 +113,14 @@ class ReportToJira():
                                            username=self.__username,
                                            token=self.__access_token)
 
-    def add_comment_to_issue(self, issue, text):
-        self.__jira.issue_add_comment(issue_key=issue,
-                                      comment=text)
+    def get_page_as_html(self,
+                         page_space,
+                         page_title):
+
+        if self.__confluence.page_exists(space=page_space, title=page_title):
+            html_page = self.__confluence.get_page_as_word(page_id=self.__confluence.get_page_id(space=page_space,
+                                                                                                 title=page_title))
+            return html_page
+        else:
+            return None
+

@@ -55,6 +55,8 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
 # ...
 
 SCRIPT_DIR = '/media/sf_git/stress_test/cluster_file_system_benchmark'
+#SCRIPT_DIR = '/home/u/git/stress_test/cluster_file_system_benchmark'
+
 LOCAL_SCRIPT_DIR = '/home/u/git/stress_test/cluster_file_system_benchmark'
 LOG_FILENAME = 'cfs_log'
 LOG_PATH ='{}/log/{}'.format(SCRIPT_DIR, LOG_FILENAME)
@@ -78,7 +80,7 @@ STORAGE_MOUNT_DIR = '/mnt'
 #
 MACHINE_POSTFIX = 'osse'
 #
-SNAPSHOT_NAME = '5.10'
+SNAPSHOT_NAME = '1.7.3.s.5.15'
 #
 PORT = '7777'
 #
@@ -86,14 +88,14 @@ USER = 'u'
 #
 PASSWORD = '1'
 
-START_BORDER_FOR_DATA = 1000
-STEP_FOR_DATA = 1000
+START_BORDER_FOR_DATA = 10000
+STEP_FOR_DATA = 10000
 END_BORDER_FOR_DATA = 101000
 TIMEOUT = 3600
 NUMBER_OF_TEST_FILES = 5000
 
-FILES = 1000
-FILES_STEP = 1000
+FILES = 10000
+FILES_STEP = 10000
 FILES_LIMIT = 101000
 
 SIZE = 1024

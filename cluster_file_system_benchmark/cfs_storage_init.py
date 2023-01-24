@@ -70,7 +70,7 @@ if args.FS == 'ocfs2':
     # Проброс ssh key
     cmd('sudo {}/ssh_key.sh'.format(SCRIPT_DIR))
     # Установка пакета
-    cmd('apt-get install -y targetcli-fb ocfs2-tools')
+    cmd('apt-get install -y targetcli-fb ocfs2-tools libpdp-dev')
     # Проверка наличия диска
     cmd('lsblk | grep sdb')
 
@@ -86,7 +86,7 @@ if args.FS == 'ocfs2':
     index = 0
     for node in args.NODES:  # словарь переменная_N -> значение
         index += 1
-        cmd('ssh {node_ip} sudo apt-get install -y open-iscsi bridge-utils ocfs2-tools'.format(node_ip=HOSTS[node]['ip']))
+        cmd('ssh {node_ip} sudo apt-get install -y open-iscsi bridge-utils ocfs2-tools libpdp-dev'.format(node_ip=HOSTS[node]['ip']))
         node_iqn_dict['node{}_iqn'.format(index)] = popen(
             'ssh {node_ip} sudo cat /etc/iscsi/initiatorname.iscsi | grep -v "##" | cut -d "=" -f2'.format(
                 node_ip=HOSTS[node]['ip'])).read().strip()

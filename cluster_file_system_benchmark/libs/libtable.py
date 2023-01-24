@@ -375,7 +375,7 @@ class Report:
                          y_lst,
                          accuracy=3,
                          multiplier=10**(0),
-                         auto_normalize=True):
+                         auto_normalize=False):
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
@@ -401,7 +401,7 @@ class Report:
                                 y_lst,
                                 accuracy=3,
                                 multiplier=10**(0),
-                                auto_normalize=True): # -14
+                                auto_normalize=False): # -14
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
@@ -427,7 +427,7 @@ class Report:
                            y_lst,
                            accuracy=3,
                            multiplier=10**(0),
-                           auto_normalize=True): #-10
+                           auto_normalize=False): #-10
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
@@ -451,7 +451,7 @@ class Report:
     def get_total_rating(self,
                          x_lst,
                          accuracy=3,
-                         multiplier=10**(12)): #6
+                         multiplier=10**(6)): #6
 
         # weight coefficients
         c_app_overhead_rating = 0.125
@@ -475,16 +475,16 @@ class Report:
                              multiplier,
                              accuracy))
         else:
-            return abs(round((c_speed_rating * self.get_speed_rating(x_lst, self.speed_lst)) * \
-                             (c_app_overhead_rating * self.get_app_overhead_rating(x_lst, self.app_overhead_lst))**(-1) * \
-                             (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
-                             (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
-                             (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
-                             (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
-                             (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
-                             (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
-                             multiplier,
-                             accuracy))
+            return round((c_speed_rating * self.get_speed_rating(x_lst, self.speed_lst)) * \
+                         (c_app_overhead_rating * self.get_app_overhead_rating(x_lst, self.app_overhead_lst))**(-1) * \
+                         (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
+                         (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
+                         (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
+                         (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
+                         (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
+                         (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
+                         multiplier,
+                         accuracy)
 
     ####################################################################################################################
     def merge(self, ox_lst, table_lst, graph_lst):

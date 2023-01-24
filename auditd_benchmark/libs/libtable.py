@@ -352,13 +352,16 @@ class Report:
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            if len(set(normalized_data_list)) == 1:
+                normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
+            # print(normalized_data_list)
 
             func_latency = self._data_aproximation(ox_lst, normalized_data_list)
             i_latency, err = integrate.quad(func_latency,
                                             self.__events_per_second_lower_limit,
                                             self.__events_per_second_upper_limit-self.__events_per_second_step)
 
-            return round(i_latency * multiplier, accuracy)
+            return i_latency * multiplier
         else:
             func_latency = self._data_aproximation(ox_lst, oy_lst)
             i_latency, err = integrate.quad(func_latency,
@@ -382,12 +385,15 @@ class Report:
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            if len(set(normalized_data_list)) == 1:
+                normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
+            # print(normalized_data_list)
 
             func_completed = self._data_aproximation(ox_lst, normalized_data_list)
             i_completed, err = integrate.quad(func_completed,
                                           self.__events_per_second_lower_limit,
                                           self.__events_per_second_upper_limit-self.__events_per_second_step)
-            return round(i_completed * multiplier, accuracy)
+            return i_completed * multiplier
         else:
             func_completed = self._data_aproximation(ox_lst, oy_lst)
             i_completed, err = integrate.quad(func_completed,

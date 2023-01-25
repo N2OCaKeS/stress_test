@@ -47,6 +47,15 @@ parser.add_argument('-m', '--mode',
                     help='Get default parameters (default) or parameters from config (extended)',
                     dest='MODE')
 
+parser.add_argument('-sn', '--stand-num',
+                    action='store',
+                    choices=['1',
+                             '3',
+                             '4'],
+                    required=True,
+                    help='stand num',
+                    dest='STAND')
+
 parser.add_argument('-db', '--dbprep',
                     action='store_true',
                     required=False,
@@ -91,8 +100,9 @@ if args.DB_PREPARE:
     '''
         Настроить машину, инициализировать тестовую БД
     '''
-    subprocess.run('sudo bash {dir}/psb_db_prep.sh {init_file}'.format(dir=SCRIPT_DIR,
-                                                                       init_file='psb_init.sql'),
+    subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file}'.format(dir=SCRIPT_DIR,
+                                                                                    stand=args.STAND,
+                                                                                    init_file='psb_init.sql'),
                    shell=True,
                    stderr=subprocess.DEVNULL)
 

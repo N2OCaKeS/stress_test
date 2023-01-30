@@ -1,4 +1,4 @@
-SERVICE_COUNT = 4800 # 4900
+SERVICE_COUNT = 4800 # 4800
 TIME_EXEC = 1440 # 1440
 REPORT_PATH = "/home/u/git/stress_test/syslog_ng_benchmark/report"
 TEMPLATE_PATH = "/home/u/git/stress_test/syslog_ng_benchmark/templates"

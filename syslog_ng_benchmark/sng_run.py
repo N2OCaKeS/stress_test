@@ -59,23 +59,28 @@ def cmd(command):
 
 if __name__ == '__main__':  # TODO: больше комментов!!!
 
-    itog_path = os.path.expanduser(REPORT_PATH)
-    if os.path.exists(itog_path) is False:
-        mkdir(itog_path)
+    # Если отстуствует директория для отчета, необходимо создать
+    if os.path.exists(REPORT_PATH) is False:
+        mkdir(REPORT_PATH)
 
-    dir = getcwd()
+    '''
+        Установка необходимого уровня логирования
+    '''
     default_filter = r'(filter\sf_(dbg|debug|info|notice|warn|err(or)?|crit)\s\{\slevel\().+(\).*)'
     new_filter = r'\1{ll}\4'.format(ll=args.LOG_LEVEL)
 
-    # Set the required logging level
     with open('/etc/syslog-ng/syslog-ng.conf', 'r') as main_syslog_ng_conf:
         new_config = re.sub(default_filter, new_filter, main_syslog_ng_conf.read())
     with open('/etc/syslog-ng/syslog-ng.conf', 'w') as main_syslog_ng_conf:
         main_syslog_ng_conf.write(new_config)
 
+    '''
+        Создание юнит файлов с логерами
+    '''
+    dir = getcwd()
+
     for service_num in range(1, SERVICE_COUNT+1):
 
-        # create the script and unit files
         service_name = 'dirtylogger{}.service'.format(service_num)
         shutil.copy('sng_service_template.py', '/tmp/dirtylogger{}.py'.format(service_num))
         chmod('/tmp/dirtylogger{}.py'.format(service_num), 0o0777)
@@ -102,6 +107,9 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     data_cpu, data_memory, data_syslog_memory, data_disk, data_time = [], [], [], [], []
     sc = libscanner.Scanner()
 
+    '''
+        Добавление нулевых значений для корректного подсчета рейтинга
+    '''
     data_cpu.append(0)
     data_memory.append(0)
     data_syslog_memory.append(0)    
@@ -134,7 +142,6 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     '''
         Создание отчета
     '''
-
     sng_data = pd.DataFrame(data={'load_cpu': data_cpu, 'load_memory': data_memory, 'load_syslog_ng_memory': data_syslog_memory, 'load_disk': data_disk}, index=data_time)
     scaler = preprocessing.MinMaxScaler()
     # Нормализуем данные
@@ -149,12 +156,12 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     rating_disk = report.get_rating(x=data_time, y=scaled_sng_data['load_disk'])
     total_rating = report.get_total_rating([rating_cpu, rating_memory, rating_syslog_memory, rating_disk])
 
-    print("Rating CPU:", rating_cpu)
-    print("Rating Memory:", rating_memory)
-    print("Rating Syslog-NG memory:", rating_syslog_memory)
-    print("Rating Disk:", rating_disk)
+    # Вывод данных на экран
     print("Total rating:", total_rating)
 
+    '''
+        Создание текстового файла с отчетом
+    '''
     with open('{}/sng_report.txt'.format(os.path.expanduser(REPORT_PATH)), 'w') as report_txt:
         report_txt.writelines('Astra_version: {}\n'.format(astra_version()[2]))
         report_txt.writelines('Astra_mode: {}\n'.format(astra_version()[1]))
@@ -167,6 +174,9 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
         report_txt.writelines('Rating_disk: {}\n'.format(rating_disk))
         report_txt.writelines('Total_rating: {}\n'.format(total_rating))
 
+    '''
+        Построение графиков
+    '''
     graph_load_cpu = report.create_graph(x=data_time[1:], 
                                          y=data_cpu[1:],
                                          filename='sng_cpu', 
@@ -202,16 +212,28 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
                                   'load_disk': data_disk},
                                   filename='sng_data')
 
+    '''
+        Построение HTML отчета
+    '''
     report.create_html([graph_load_cpu, graph_load_memory, graph_load_syslog_memory, graph_load_disk], total_rating, SERVICE_COUNT, TIME_EXEC)
 
+    '''
+        Сбор и фильтрация логов по времени (после запуска тестового сценария)
+    '''
     print("\nСбор логов...\n")
     collecting_logs(os.path.expanduser(REPORT_PATH), TIME_START_SCRIPT)
 
-    log_file = open(INFO_FILENAME, 'w')
-    log_file.close()
+    '''
+        Запись информации о тестовом стенде
+    '''
+    info_file = open(INFO_FILENAME, 'w')
+    info_file.close()
 
     put_system_info_in_file(TIME_START_SCRIPT.timestamp(), INFO_FILENAME)
 
+    '''
+        Архивация результатов
+    '''
     print("Создание архива с отчетом...")
     libtable.Report.create_tar(os.path.expanduser(REPORT_PATH))
     print("Готово.")

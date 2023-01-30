@@ -1,7 +1,8 @@
 SERVICE_COUNT = 4800 # 4800
 TIME_EXEC = 1440 # 1440
-REPORT_PATH = "/home/u/git/stress_test/syslog_ng_benchmark/report"
-TEMPLATE_PATH = "/home/u/git/stress_test/syslog_ng_benchmark/templates"
+SCRIPT_DIR = "/home/u/git/stress_test/syslog_ng_benchmark"
+REPORT_PATH = "{}/report".format(SCRIPT_DIR)
+TEMPLATE_PATH = "{}/templates".format(SCRIPT_DIR)
 IMAGE_WIDTH = 23 # 23
 IMAGE_HEIGHT = 16 # 16
 

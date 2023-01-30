@@ -207,7 +207,7 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     print("\nСбор логов...\n")
     collecting_logs(os.path.expanduser(REPORT_PATH), TIME_START_SCRIPT)
 
-    log_file = open(f'{os.path.expanduser(REPORT_PATH)}/{INFO_FILENAME}', 'w')
+    log_file = open(INFO_FILENAME, 'w')
     log_file.close()
 
     put_system_info_in_file(TIME_START_SCRIPT.timestamp(), INFO_FILENAME)

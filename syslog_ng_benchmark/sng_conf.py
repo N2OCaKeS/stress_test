@@ -5,7 +5,7 @@ TEMPLATE_PATH = "/home/u/git/stress_test/syslog_ng_benchmark/templates"
 IMAGE_WIDTH = 23 # 23
 IMAGE_HEIGHT = 16 # 16
 
-INFO_FILENAME = 'sng_info.txt'
+INFO_FILENAME = '{}/sng_info.txt'.format(REPORT_PATH)
 
 '''
     Описание для графиков отчета

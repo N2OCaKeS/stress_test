@@ -49,41 +49,7 @@ parser.add_argument('-ll', '--log_level',
                     help='log level for syslog-ng',
                     dest='LOG_LEVEL')
 
-# parser.add_argument('-sc', '--service_count',  # TODO: убрать в конфиг
-#                     action='store',
-#                     required=False,
-#                     type=int,
-#                     default=100,
-#                     help='count test services',
-#                     dest='SERVICE_COUNT')
-
-# parser.add_argument('-t', '--time_execution',  # TODO: убрать в конфиг
-#                     required=False,
-#                     default=15,
-#                     type=int,
-#                     help='Load execution time in minutes',
-#                     dest='TIME_EXEC')
-
-# parser.add_argument('-rp', '--report_path',  # TODO: убрать в конфиг
-#                     required=False,
-#                     help='Absolute report path',
-#                     default='/home/u/git/stress_test/syslog_ng_benchmark/report',
-#                     dest='REPORT_PATH')
-
-# parser.add_argument('-iw', '--img_width',  # TODO: убрать в конфиг
-#                     required=False,
-#                     default=16.256,
-#                     help='Image (graph) width in report',
-#                     dest='IMAGE_WIDTH')
-
-# parser.add_argument('-ih', '--img_height',  # TODO: убрать в конфиг
-#                     required=False,
-#                     default=12.192,
-#                     help='Image (graph) height in report',
-#                     dest='IMAGE_HEIGHT')
-
 args = parser.parse_args()
-
 
 def cmd(command):
     subprocess.run(command,
@@ -244,7 +210,7 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     log_file = open(f'{os.path.expanduser(REPORT_PATH)}/{INFO_FILENAME}', 'w')
     log_file.close()
 
-    put_system_info_in_file(TIME_START_SCRIPT.timestamp(), f'{os.path.expanduser(REPORT_PATH)}/{INFO_FILENAME}')
+    put_system_info_in_file(TIME_START_SCRIPT.timestamp(), INFO_FILENAME)
 
     print("Создание архива с отчетом...")
     libtable.Report.create_tar(os.path.expanduser(REPORT_PATH))

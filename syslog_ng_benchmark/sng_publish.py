@@ -83,7 +83,7 @@ parser.add_argument('-ip', '--info-path',
                     help='path to info file',
                     dest='I_PATH')
 
-parser.add_argument('-tp', '--tarfile-path',
+parser.add_argument('-tarp', '--tarfile-path',
                     action='store',
                     required=False,
                     default=None,

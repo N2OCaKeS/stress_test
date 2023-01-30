@@ -84,8 +84,8 @@ def get_statistics(statistical_sampling_lst: list,
                                        })
     if save_to_html:
         beauty_table = build_table(raw_stat_table, 'blue_light')
-        with open('table.html', 'w') as beauty_html_table:
-            beauty_html_table.write(beauty_table).decode
+        with open('{}_table.html'.format(sampling_name), 'w') as beauty_html_table:
+            beauty_html_table.write(beauty_table)
 
     if output_to_console:
         print('{} MIN: {}'.format(sampling_name, str(statistics['min'])))

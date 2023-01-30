@@ -1,3 +1,9 @@
+SERVICE_COUNT = 4800 # 4900
+TIME_EXEC = 1440 # 1440
+REPORT_PATH = "/home/u/git/stress_test/syslog_ng_benchmark/report"
+TEMPLATE_PATH = "/home/u/git/stress_test/syslog_ng_benchmark/templates"
+IMAGE_WIDTH = 23 # 23
+IMAGE_HEIGHT = 16 # 16
 
 INFO_FILENAME = 'sng_info.txt'
 

@@ -6,7 +6,7 @@ import sys
 import subprocess
 from libs.libreport import ReportToConfluence, ReportToJira
 
-from sng_conf import INFO_FILENAME, GRAPH_DESCRIPTIONS
+from sng_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS
 
 
 DESCRIPTION = ""
@@ -69,8 +69,6 @@ parser.add_argument('-rp', '--report-path',
                     help='path to report files',
                     dest='R_PATH')
 
-# TODO: добавить/отладить
-'''
 parser.add_argument('-tp', '--template-path',
                     action='store',
                     required=False,
@@ -84,7 +82,6 @@ parser.add_argument('-ip', '--info-path',
                     default=INFO_FILENAME,
                     help='path to info file',
                     dest='I_PATH')
-'''
 
 parser.add_argument('-tp', '--tarfile-path',
                     action='store',
@@ -139,13 +136,6 @@ with open('{}/{}'.format(args.R_PATH, 'sng_report.txt')) as report_txt:
         if "Total_rating" in line:
             TOTAL_RATING = line.split(" ")[1]
 
-
-if "templates" in os.listdir(os.getcwd()):
-    TEMPLATE_PATH = str(os.getcwd()) + '/templates/'
-else:
-    print("Перейдите в директорию syslog_ng_benchmark!")
-    sys.exit()
-
 # создать страницу confluence
 confluence_report.create_confluence_page(args.SPACE,
                                          args.PPAGE,
@@ -158,10 +148,10 @@ for file in os.listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
-with open(f'{os.path.expanduser(args.R_PATH)}/{INFO_FILENAME}') as info:
+with open(args.I_PATH) as info:
     info_lst = info.read().split('\n')
 
-with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
+with open('{}/header_table_template.html'.format(args.T_PATH), 'r') as file:
     header_table_temp = file.read()
     header_table = header_table_temp.format(av=info_lst[0],
                                             kernel=info_lst[1],
@@ -176,12 +166,12 @@ with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                                             lead_time=info_lst[3])
 
 
-with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
+with open('{}/rating_template.html'.format(args.T_PATH), 'r') as template:
     rating_temp = template.read()
     rating = rating_temp.format(r=TOTAL_RATING)
 
 
-with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
+with open('{}/img_template.html'.format(args.T_PATH), 'r') as template:
     images_lst = []
     img_temp = template.read()
     for file in os.listdir(args.R_PATH):
@@ -197,7 +187,7 @@ html_page = '\n'.join([header_table, rating, images])
 confluence_report.update_confluence_page(args.SPACE, args.NPAGE, html_page)
 
 if args.JIRA_ISSUE:
-    with open('{}/issue_comment_template.txt'.format(TEMPLATE_PATH), 'r') as template:
+    with open('{}/issue_comment_template.txt'.format(args.T_PATH), 'r') as template:
         comment = template.read()
         jira_report.add_comment_to_issue(args.JIRA_ISSUE,
                                          comment.format(url=confluence_report.get_confluence_public_url(args.SPACE,

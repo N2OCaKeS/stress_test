@@ -22,7 +22,7 @@ from os import chmod, mkdir, getcwd
 from find_err_in_logs import collecting_logs
 from libs.libsng import astra_version, check_service_status, get_memory_load_by_syslog, put_system_info_in_file
 
-from sng_conf import INFO_FILENAME
+from sng_conf import SERVICE_COUNT, TIME_EXEC, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME
 
 
 TIME_START_SCRIPT = datetime.now()
@@ -49,38 +49,38 @@ parser.add_argument('-ll', '--log_level',
                     help='log level for syslog-ng',
                     dest='LOG_LEVEL')
 
-parser.add_argument('-sc', '--service_count',  # TODO: убрать в конфиг
-                    action='store',
-                    required=False,
-                    type=int,
-                    default=100,
-                    help='count test services',
-                    dest='SERVICE_COUNT')
+# parser.add_argument('-sc', '--service_count',  # TODO: убрать в конфиг
+#                     action='store',
+#                     required=False,
+#                     type=int,
+#                     default=100,
+#                     help='count test services',
+#                     dest='SERVICE_COUNT')
 
-parser.add_argument('-t', '--time_execution',  # TODO: убрать в конфиг
-                    required=False,
-                    default=15,
-                    type=int,
-                    help='Load execution time in minutes',
-                    dest='TIME_EXEC')
+# parser.add_argument('-t', '--time_execution',  # TODO: убрать в конфиг
+#                     required=False,
+#                     default=15,
+#                     type=int,
+#                     help='Load execution time in minutes',
+#                     dest='TIME_EXEC')
 
-parser.add_argument('-rp', '--report_path',  # TODO: убрать в конфиг
-                    required=False,
-                    help='Absolute report path',
-                    default='/home/u/git/stress_test/syslog_ng_benchmark/report',
-                    dest='REPORT_PATH')
+# parser.add_argument('-rp', '--report_path',  # TODO: убрать в конфиг
+#                     required=False,
+#                     help='Absolute report path',
+#                     default='/home/u/git/stress_test/syslog_ng_benchmark/report',
+#                     dest='REPORT_PATH')
 
-parser.add_argument('-iw', '--img_width',  # TODO: убрать в конфиг
-                    required=False,
-                    default=16.256,
-                    help='Image (graph) width in report',
-                    dest='IMAGE_WIDTH')
+# parser.add_argument('-iw', '--img_width',  # TODO: убрать в конфиг
+#                     required=False,
+#                     default=16.256,
+#                     help='Image (graph) width in report',
+#                     dest='IMAGE_WIDTH')
 
-parser.add_argument('-ih', '--img_height',  # TODO: убрать в конфиг
-                    required=False,
-                    default=12.192,
-                    help='Image (graph) height in report',
-                    dest='IMAGE_HEIGHT')
+# parser.add_argument('-ih', '--img_height',  # TODO: убрать в конфиг
+#                     required=False,
+#                     default=12.192,
+#                     help='Image (graph) height in report',
+#                     dest='IMAGE_HEIGHT')
 
 args = parser.parse_args()
 
@@ -93,9 +93,7 @@ def cmd(command):
 
 if __name__ == '__main__':  # TODO: больше комментов!!!
 
-    # TODO: добавить установку пакета syslog-ng!!!
-
-    itog_path = os.path.expanduser(args.REPORT_PATH)
+    itog_path = os.path.expanduser(REPORT_PATH)
     if os.path.exists(itog_path) is False:
         mkdir(itog_path)
 
@@ -109,7 +107,7 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     with open('/etc/syslog-ng/syslog-ng.conf', 'w') as main_syslog_ng_conf:
         main_syslog_ng_conf.write(new_config)
 
-    for service_num in range(1, args.SERVICE_COUNT+1):
+    for service_num in range(1, SERVICE_COUNT+1):
 
         # create the script and unit files
         service_name = 'dirtylogger{}.service'.format(service_num)
@@ -144,7 +142,7 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     data_disk.append(sc.get_disk_load())
     data_time.append(0)
 
-    time_exec = args.TIME_EXEC * 60
+    time_exec = TIME_EXEC * 60
     qty_sec_after_start = 1
     
 
@@ -164,7 +162,7 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     '''
         Остановка сервисов
     '''
-    for service_num in range(1, args.SERVICE_COUNT+1):
+    for service_num in range(1, SERVICE_COUNT+1):
          cmd("systemctl stop dirtylogger{}.service".format(service_num))
 
     '''
@@ -178,7 +176,7 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     # Строим новый dataframe с нормированными данными
     scaled_sng_data = pd.DataFrame(d, columns=sng_data.columns)
     
-    report = libtable.Report(os.path.expanduser(args.REPORT_PATH), float(args.IMAGE_WIDTH), float(args.IMAGE_HEIGHT))
+    report = libtable.Report(os.path.expanduser(REPORT_PATH), float(IMAGE_WIDTH), float(IMAGE_HEIGHT))
     rating_cpu = report.get_rating(x=data_time, y=scaled_sng_data['load_cpu'])
     rating_memory = report.get_rating(x=data_time, y=scaled_sng_data['load_memory'])
     rating_syslog_memory = report.get_rating(x=data_time, y=scaled_sng_data['load_syslog_ng_memory'])
@@ -191,12 +189,12 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     print("Rating Disk:", rating_disk)
     print("Total rating:", total_rating)
 
-    with open('{}/sng_report.txt'.format(os.path.expanduser(args.REPORT_PATH)), 'w') as report_txt:
+    with open('{}/sng_report.txt'.format(os.path.expanduser(REPORT_PATH)), 'w') as report_txt:
         report_txt.writelines('Astra_version: {}\n'.format(astra_version()[2]))
         report_txt.writelines('Astra_mode: {}\n'.format(astra_version()[1]))
         report_txt.writelines('Kernel: {}\n'.format(astra_version()[3]))
-        report_txt.writelines('Service_count: {}\n'.format(args.SERVICE_COUNT))
-        report_txt.writelines('Load_time_execution: {} minutes\n'.format(args.TIME_EXEC))
+        report_txt.writelines('Service_count: {}\n'.format(SERVICE_COUNT))
+        report_txt.writelines('Load_time_execution: {} minutes\n'.format(TIME_EXEC))
         report_txt.writelines('Rating_CPU: {}\n'.format(rating_cpu))
         report_txt.writelines('Rating_memory: {}\n'.format(rating_memory))
         report_txt.writelines('Rating_Syslog-NG_memory: {}\n'.format(rating_syslog_memory))
@@ -208,28 +206,28 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
                                          filename='sng_cpu', 
                                          title_graph='Load CPU', 
                                          y_label="CPU %", 
-                                         x_rlim=args.TIME_EXEC * 60 - 1)
+                                         x_rlim=TIME_EXEC * 60 - 1)
     
     graph_load_memory = report.create_graph(x=data_time[1:], 
                                             y=data_memory[1:],
                                             filename='sng_memory', 
                                             title_graph='Load memory', 
                                             y_label="Memory %", 
-                                            x_rlim=args.TIME_EXEC * 60 - 1)
+                                            x_rlim=TIME_EXEC * 60 - 1)
 
     graph_load_syslog_memory = report.create_graph(x=data_time[1:], 
                                                    y=data_syslog_memory[1:],
                                                    filename='sng_syslog_memory', 
                                                    title_graph='Load syslog-ng memory', 
                                                    y_label="Memory %", 
-                                                   x_rlim=args.TIME_EXEC * 60 - 1)
+                                                   x_rlim=TIME_EXEC * 60 - 1)
 
     graph_load_disk = report.create_graph(x=data_time[1:], 
                                           y=data_disk[1:],
                                           filename='sng_disk', 
                                           title_graph='Load disk', 
                                           y_label="Disk %", 
-                                          x_rlim=args.TIME_EXEC * 60 - 1)
+                                          x_rlim=TIME_EXEC * 60 - 1)
 
     report.data_to_dataframe_csv({'time': data_time, 
                                   'load_cpu': data_cpu, 
@@ -238,16 +236,16 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
                                   'load_disk': data_disk},
                                   filename='sng_data')
 
-    report.create_html([graph_load_cpu, graph_load_memory, graph_load_syslog_memory, graph_load_disk], total_rating, args.SERVICE_COUNT, args.TIME_EXEC)
+    report.create_html([graph_load_cpu, graph_load_memory, graph_load_syslog_memory, graph_load_disk], total_rating, SERVICE_COUNT, TIME_EXEC)
 
     print("\nСбор логов...\n")
-    collecting_logs(os.path.expanduser(args.REPORT_PATH), TIME_START_SCRIPT)
+    collecting_logs(os.path.expanduser(REPORT_PATH), TIME_START_SCRIPT)
 
-    log_file = open(f'{os.path.expanduser(args.REPORT_PATH)}/{INFO_FILENAME}', 'w')
+    log_file = open(f'{os.path.expanduser(REPORT_PATH)}/{INFO_FILENAME}', 'w')
     log_file.close()
 
-    put_system_info_in_file(TIME_START_SCRIPT.timestamp(), f'{os.path.expanduser(args.REPORT_PATH)}/{INFO_FILENAME}')
+    put_system_info_in_file(TIME_START_SCRIPT.timestamp(), f'{os.path.expanduser(REPORT_PATH)}/{INFO_FILENAME}')
 
     print("Создание архива с отчетом...")
-    libtable.Report.create_tar(os.path.expanduser(args.REPORT_PATH))
+    libtable.Report.create_tar(os.path.expanduser(REPORT_PATH))
     print("Готово.")

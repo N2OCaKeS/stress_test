@@ -229,7 +229,7 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     info_file = open(INFO_FILENAME, 'w')
     info_file.close()
 
-    put_system_info_in_file(TIME_START_SCRIPT.timestamp(), INFO_FILENAME)
+    put_system_info_in_file(TIME_START_SCRIPT, INFO_FILENAME)
 
     '''
         Архивация результатов

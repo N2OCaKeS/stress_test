@@ -6,7 +6,7 @@
 # ;===========================================================
 
 import subprocess
-from time import sleep, ctime, time, strftime, gmtime
+from datetime import datetime
 
 
 def astra_version():
@@ -97,7 +97,13 @@ def get_memory_load_by_syslog():
 
 
 def put_system_info_in_file(start, file):
-    lead_time = strftime("%H:%M:%S", gmtime(time() - start))
+    def get_duration(duration):
+        hours = int(duration / 3600)
+        minutes = int(duration % 3600 / 60)
+        seconds = int((duration % 3600) % 60)
+        return '{:02d}:{:02d}:{:02d}'.format(hours, minutes, seconds)
+    
+    lead_time = get_duration((datetime.now() - start).total_seconds())
     print('lead time: {t}'.format(t=lead_time))
 
     # собрать системную информацию

@@ -48,6 +48,9 @@ class ReportToConfluence():
                                                                   id=self.__confluence.get_page_id(space=page_space,
                                                                                                    title=page_title)))
 
+    def page_exists(self, page_space, page_title):
+        return self.__confluence.page_exists(space=page_space, title=page_title)
+
     def create_confluence_page(self,
                                page_space,
                                parent_page_title,
@@ -112,6 +115,9 @@ class ConfluencePage():
             self.__confluence = Confluence(url=self.__url,
                                            username=self.__username,
                                            token=self.__access_token)
+
+    def page_exists(self, page_space, page_title):
+        return self.__confluence.page_exists(space=page_space, title=page_title)
 
     def get_page_as_html(self,
                          page_space,

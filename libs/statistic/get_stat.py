@@ -1,7 +1,7 @@
-import numpy as np
-import argparse
-import pandas
 import re
+import pandas
+import argparse
+import numpy as np
 
 from libreport import ConfluencePage
 from pretty_html_table import build_table
@@ -74,11 +74,18 @@ parser.add_argument('-v', '--verbose',
 args = parser.parse_args()
 
 
-def get_statistics(statistical_sampling_lst: list,
+def get_statistics(statistical_sampling_lst,
                    sampling_name='nameless',
                    save_to_html=True,
                    output_to_console=True,
                    accuracy=2) -> dict:
+    """
+        :statistical_sampling_lst: список выборки
+        :sampling_name: название выборки
+        :save_to_html: True/False сохранение в виде html
+        :output_to_console: True/False вывод на консоль
+        :return: словарь основных статистик
+    """
 
     print('\033[92m++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\033[0m')
 
@@ -130,8 +137,14 @@ def get_statistics(statistical_sampling_lst: list,
     return statistics, raw_stat_table
 
 
-def get_all_pages_as_html(pattern, space, verbose=False):
-
+def get_all_pages_as_html(pattern,
+                          space,
+                          verbose=False) -> list:
+    """
+        :pattern: начальное сло идентификатор в названии страницы
+        :space: имя пространства Confluence
+        :return: список обЪектов типа BeautifulSoup
+    """
     # список всех возможных имен страниц
     possible_page_names = ['{}_{}_{}_{}_{}_{}'.format(pattern, version, astra_mode, kernel, grid, inv_num)
                            for version in ('1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1')
@@ -153,7 +166,13 @@ def get_all_pages_as_html(pattern, space, verbose=False):
     return soups_src_htmls
 
 
-def get_ratings_from_soups(soups_src_htmls, verbose=False):
+def get_ratings_from_soups(soups_src_htmls,
+                           verbose=False) -> list:
+    """
+        :soups_src_htmls: список обЪектов типа BeautifulSoup
+        :verbose: True/False промежуточный вывод листа с рейтингами
+        :return: лист с рейтингами типа float
+    """
     ratings = []
 
     # обойти все soop найти рейтинги
@@ -184,7 +203,7 @@ if __name__ == '__main__':
         clustered_file_systems_table = tables[2]
         clustered_file_systems_stat_table = tables[3]
 
-        ####################################################################################################################
+        ################################################################################################################
         # ищем в первой таблице все значения rating
         ratings = []
         for link in non_clustered_file_systems_table.find_all(name='a'):
@@ -215,7 +234,7 @@ if __name__ == '__main__':
                                                'ext4_parsec',
                                                args.SAVE_TO_HTML,
                                                args.OUTPUT_TO_CONSOLE)
-        ####################################################################################################################
+        ################################################################################################################
         ratings = []
         for link in clustered_file_systems_table.find_all(name='a'):
             ratings.append(float(link.get_text()))
@@ -234,7 +253,7 @@ if __name__ == '__main__':
                                                'ocfs2_parsec',
                                                args.SAVE_TO_HTML,
                                                args.OUTPUT_TO_CONSOLE)
-        ####################################################################################################################
+        ################################################################################################################
     elif args.COMPONENT == 'ps':
         cp = ConfluencePage(username=args.USER, token=args.TOKEN)
         src_html = cp.get_page_as_html(args.SPACE, 'Общая статистика. PostgreSQL.')
@@ -271,7 +290,7 @@ if __name__ == '__main__':
         auditd_table = tables[2]
         auditd_stat_table = tables[3]
 
-        ####################################################################################################################
+        ################################################################################################################
         # ищем в первой таблице Syslog-NG все значения rating
         ratings = []
         for link in syslog_table.find_all(name='a'):
@@ -281,7 +300,7 @@ if __name__ == '__main__':
                                              'Syslog-NG',
                                              args.SAVE_TO_HTML,
                                              args.OUTPUT_TO_CONSOLE)
-        ####################################################################################################################
+        ################################################################################################################
         # ищем в первой таблице Auditd все значения rating
         ratings = []
         for link in auditd_table.find_all(name='a'):

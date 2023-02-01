@@ -10,7 +10,7 @@
 
 ### Запуск
 
-`venv/bin/python3 *_publish.py`
+`venv/bin/python *_publish.py`
 
 - **--username**  - имя пользователя
 - **--token**  - токен пользователя (необходимо предварительно сгенерировать)

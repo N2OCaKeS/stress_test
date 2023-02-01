@@ -77,7 +77,7 @@ USERAUD_PROC_BODYS = {
     'uid': ('usermod -u 2005 {}'.format(TEST_USER), ''),
     'gid': ('usermod -g 2006 {}'.format(TEST_USER), ''),
     'audit': ('/usr/sbin/setfaud -m o:o:o',''),
-    'acl': ('setfacl -m u:{}:rx'.format(TEST_USER), ''),
+    'acl': ('setfacl -m u:{}:rx'.format(MAIN_USER), ''),
     'mac': ('/usr/sbin/pdpl-file 2:0:0',''),
     'cap': ('pscaps 0 0x1',''),
 #    'chroot': ('(chroot /) &',''),
@@ -97,7 +97,7 @@ FILEAUD_PROC_BODYS = {
     'chmod': ('chmod 777 ', ''),
     'chown': ('chown u:u ', ''),
     'audit': ('setfaud -m u:0:+exec ', ''),
-    'acl': ('setfacl -m u:u:rw ', ''),
+    'acl': ('setfacl -m u:{}:rw '.format(MAIN_USER), ''),
     'mac': ('/usr/sbin/pdpl-file 2:0:0 ', ''),
     'modify': ("echo '1' >> ", '')
 }

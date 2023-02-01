@@ -1,6 +1,7 @@
+# *_publish.py
 ## Публикация результатов нагрузочного тестирования
 
-### После выполнения тестового сценария предусмотрена возможность автоматической публикации результатов на https://life.astralinux.ru
+После выполнения тестового сценария предусмотрена возможность автоматической публикации результатов на https://life.astralinux.ru
 
 `venv/bin/python3 *_publish.py`
 
@@ -20,7 +21,20 @@
 - **--arm-memory** - информация об оперативной памяти грейда в Гб
 - **--arm-storage** - информация о системном хранилище грейда
 
+### **Поддерживаемые версии ОС**
+  - 1.7
 
+### **Git**
+
+branch: *libs*
+
+url: *https://git.astralinux.ru/projects/QA/repos/stress_test/browse/libs/publish?at=refs%2Fheads%2Flibs*
+
+> ssh://git@git.astralinux.ru:7999/qa/stress_test.git
+
+### **Авторы**
+
+rkuznetsov@astralinux.ru
 
 
 

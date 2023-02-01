@@ -1,3 +1,10 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2022
+# ;===========================================================
+
 import re
 import pandas
 import argparse
@@ -141,7 +148,7 @@ def get_all_pages_as_html(pattern,
                           space,
                           verbose=False) -> list:
     """
-        :pattern: начальное сло идентификатор в названии страницы
+        :pattern: начальное слово идентификатор в названии страницы
         :space: имя пространства Confluence
         :return: список обЪектов типа BeautifulSoup
     """

@@ -19,7 +19,7 @@ for v in ('1.7.3', '1.7.3.UU.1'):
         pack_vs = {
             '1.7.2': '1:2.8.5-2ubuntu6+ci202206080012+astra1',
             '1.7.3': '1:2.8.5-2ubuntu6+ci202206080012+astra1+b1',
-            '1.7.3.UU.1': 'auditd_1:2.8.5-2ubuntu6+ci202206080012+astra1+b1',
+            '1.7.3.UU.1': '1:2.8.5-2ubuntu6+ci202206080012+astra1+b1',
         }
         pack_v = pack_vs[v]
 
@@ -65,11 +65,13 @@ for v in ('1.7.3', '1.7.3.UU.1'):
                                                                                   kernel=k), 'w') as info:
                             info.writelines(info_lst)
 
-                        for t in ('psaud', 'useraud', 'fileaud'):
-                            if os.path.exists('{}/{}/{}/{}/{}'.format(report_dir, v, k, m, t)):
-                                for g in ('low', 'middle', 'high'):
-                                    if os.path.exists('{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, t, g)):
-                                        full_path = '{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, t, g)
+                        # for t in ('psaud', 'useraud', 'fileaud'):
+                        for g in ('low', 'middle', 'high'):
+                            if os.path.exists('{}/{}/{}/{}/{}'.format(report_dir, v, k, m, g)):
+                                # for g in ('low', 'middle', 'high'):
+                                for t in ('psaud', 'useraud', 'fileaud'):
+                                    if os.path.exists('{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, g, t)):
+                                        full_path = '{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, g, t)
                                         if t == 'psaud':
                                             if os.path.exists(full_path + '/aub_ps_report_latency.txt')\
                                                     and os.path.exists(full_path + '/aub_ps_report_losses.txt'):

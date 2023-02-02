@@ -157,3 +157,11 @@ GRAPH_DESCRIPTIONS = {
                                        '    <li><b>OY</b>: Времязатраты на обработку системного вызова (мсек);</li>'
                                        '</ul></p>',
 }
+
+IPTABLES_COMMAND = [
+    "iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -d 224.0.0.0/24 -o eth0 -j RETURN",
+    "iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -d 255.255.255.255/32 -o eth0 -j RETURN",
+    "iptables -t nat -A POSTROUTING -s 10.0.0.0/24 ! -d 10.0.0.0/24 -o eth0 -p tcp -j MASQUERADE --to-ports 1024-65535",
+    "iptables -t nat -A POSTROUTING -s 10.0.0.0/24 ! -d 10.0.0.0/24 -o eth0 -p udp -j MASQUERADE --to-ports 1024-65535",
+    "iptables -t nat -A POSTROUTING -s 10.0.0.0/24 ! -d 10.0.0.0/24 -o eth0 -j MASQUERADE"
+]

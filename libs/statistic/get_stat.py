@@ -65,6 +65,12 @@ parser.add_argument('-sth', '--save-to-html',
                     help='save table in beauty html',
                     dest='SAVE_TO_HTML')
 
+parser.add_argument('-stc', '--save-to-csv',
+                    action='store_true',
+                    required=False,
+                    help='save table in csv',
+                    dest='SAVE_TO_CSV')
+
 parser.add_argument('-co', '--console-output',
                     action='store_true',
                     required=False,
@@ -84,6 +90,7 @@ args = parser.parse_args()
 def get_statistics(statistical_sampling_lst,
                    sampling_name='nameless',
                    save_to_html=True,
+                   save_to_csv=True,
                    output_to_console=True,
                    accuracy=2) -> dict:
     """
@@ -107,8 +114,6 @@ def get_statistics(statistical_sampling_lst,
         'smax': round(max(statistical_sampling_lst) / np.mean(statistical_sampling_lst) - 1, accuracy),
     }
 
-    # raw_stat_table = pandas.DataFrame(statistics, index=[0])
-    # print(raw_stat_table)
     raw_stat_table = pandas.DataFrame({'Оценка': ('MIN',
                                                   'MAX',
                                                   'Мат. ожидание',
@@ -130,6 +135,9 @@ def get_statistics(statistical_sampling_lst,
         beauty_table = build_table(raw_stat_table, 'blue_light')
         with open('{}_table.html'.format(sampling_name), 'w') as beauty_html_table:
             beauty_html_table.write(beauty_table)
+
+    if save_to_csv:
+        raw_stat_table.to_csv('{}_table.csv'.format(sampling_name))
 
     if output_to_console:
         print('{} MIN: {}'.format(sampling_name, str(statistics['min'])))
@@ -342,10 +350,11 @@ if __name__ == '__main__':
         ratings = get_ratings_from_soups(get_all_pages_as_html(args.PATTERN, args.SPACE, args.VERBOSE), args.VERBOSE)
 
         # получаем статистические значения
-        statistics = get_statistics(ratings,
-                                    args.PATTERN,
-                                    args.SAVE_TO_HTML,
-                                    args.OUTPUT_TO_CONSOLE)
+        statistics = get_statistics(statistical_sampling_lst=ratings,
+                                    sampling_name=args.PATTERN,
+                                    save_to_html=args.SAVE_TO_HTML,
+                                    save_to_csv=args.SAVE_TO_CSV,
+                                    output_to_console=args.OUTPUT_TO_CONSOLE)
     else:
         exit(2)
 

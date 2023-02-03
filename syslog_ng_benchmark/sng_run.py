@@ -57,7 +57,9 @@ def cmd(command):
                    stderr=subprocess.DEVNULL)
 
 
-if __name__ == '__main__':  # TODO: больше комментов!!!
+if __name__ == '__main__':
+
+    print("Дата и время запуска: ", datetime.strftime(TIME_START_SCRIPT, "%d.%m.%Y %H:%M:%S"))
 
     # Если отстуствует директория для отчета, необходимо создать
     if os.path.exists(REPORT_PATH) is False:
@@ -123,7 +125,14 @@ if __name__ == '__main__':  # TODO: больше комментов!!!
     '''
        Сбор данных с CPU, Memory, Disk 
     '''
-    while time_exec > 0 and check_service_status('syslog-ng'):
+    while time_exec > 0:
+        if not check_service_status('syslog-ng'):
+            print("Service Syslog-NG is not running!")
+            file_status_sng = open("status_syslog-ng.txt", "w+")
+            subprocess.run("systemctl status syslog-ng", shell=True, stdout=file_status_sng)
+            file_status_sng.close()
+            break
+            
         sleep(0.25)
         data_cpu.append(sc.get_cpu_load())
         data_memory.append(sc.get_memory_load())

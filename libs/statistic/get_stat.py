@@ -226,8 +226,8 @@ if __name__ == '__main__':
                                                 args.SAVE_TO_HTML,
                                                 args.OUTPUT_TO_CONSOLE)
     elif args.PATTERN:
-        # райтинги по дереву страниц согласно паттерну
-        ratings = get_ratings_from_soups(get_all_pages_as_html(args.PATTERN, args.SPACE, args.VERBOSE), args.VERBOSE)
+        # рейтинги по дереву страниц согласно паттерну
+        ratings = get_ratings_from_soups(get_all_pages_as_html(args.USER, args.TOKEN, args.PATTERN, args.SPACE), args.VERBOSE)
 
         # получаем статистические значения
         statistics = get_statistics(statistical_sampling_lst=ratings,

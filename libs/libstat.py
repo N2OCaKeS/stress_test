@@ -7,6 +7,39 @@ from pretty_html_table import build_table
 from bs4 import BeautifulSoup
 
 
+VERSIONS = ('1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1')
+ASTRA_MODES = ('orel', 'voronezh', 'smolensk')
+KERNELS = ('5.10.0-1045-generic', '5.10.0-1057-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency')
+GRIDS = ('low', 'middle', 'high')
+INVENTORY_NUMS = ('129', '141', '150', '151')
+
+
+def get_existing_reports(user,
+                         token,
+                         pattern,
+                         space,
+                         versions=VERSIONS,
+                         astra_modes=ASTRA_MODES,
+                         kernels=KERNELS,
+                         grids=GRIDS,
+                         invetory_nums=INVENTORY_NUMS) -> list:
+
+    # список всех возможных имен страниц
+    possible_page_names = ['{}_{}_{}_{}_{}_{}'.format(pattern, version, astra_mode, kernel, grid, inv_num)
+                           for version in versions
+                           for astra_mode in astra_modes
+                           for kernel in kernels
+                           for grid in grids
+                           for inv_num in invetory_nums
+                           ]
+
+    # список имен страниц, которые реально существуют
+    cp = ConfluencePage(username=user, token=token)
+    existing_names = [name for name in possible_page_names if cp.page_exists(space, name)]
+
+    return existing_names
+
+
 def get_statistics(statistical_sampling_lst,
                    sampling_name='nameless',
                    save_to_html=True,
@@ -72,31 +105,35 @@ def get_statistics(statistical_sampling_lst,
     return statistics, raw_stat_table
 
 
-def get_all_pages_as_html(pattern,
+def get_all_pages_as_html(user,
+                          token,
+                          pattern,
                           space,
-                          verbose=False) -> list:
+                          versions=VERSIONS,
+                          astra_modes=ASTRA_MODES,
+                          kernels=KERNELS,
+                          grids=GRIDS,
+                          invetory_nums=INVENTORY_NUMS) -> list:
     """
         :pattern: начальное слово идентификатор в названии страницы
         :space: имя пространства Confluence
         :return: список обЪектов типа BeautifulSoup
     """
-    # список всех возможных имен страниц
-    possible_page_names = ['{}_{}_{}_{}_{}_{}'.format(pattern, version, astra_mode, kernel, grid, inv_num)
-                           for version in ('1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1')
-                           for astra_mode in ('orel', 'voronezh', 'smolensk')
-                           for kernel in ('5.10.0-1045-generic', '5.10.0-1057-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency',)
-                           for grid in ('low', 'middle', 'high')
-                           for inv_num in ('129', '141', '150', '151')
-                           ]
 
-    # список имен страниц, которые реально существуют
-    cp = ConfluencePage(username=args.USER, token=args.TOKEN)
-    existing_names = [name for name in possible_page_names if cp.page_exists(space, name)]
-    if verbose:
-        print(existing_names)
+    existing_reports_names = get_existing_reports(user,
+                                                  token,
+                                                  pattern,
+                                                  space,
+                                                  versions,
+                                                  astra_modes,
+                                                  kernels,
+                                                  grids,
+                                                  invetory_nums)
+
+    cp = ConfluencePage(username=user, token=token)
 
     # список обЪектов soup
-    soups_src_htmls = [BeautifulSoup(cp.get_page_as_html(space, name), 'lxml') for name in existing_names]
+    soups_src_htmls = [BeautifulSoup(cp.get_page_as_html(space, name), 'lxml') for name in existing_reports_names]
 
     return soups_src_htmls
 
@@ -119,3 +156,48 @@ def get_ratings_from_soups(soups_src_htmls,
                 ratings.append(float(rating.group(1)))
     if verbose:
         print(ratings)
+
+    return ratings
+
+
+def get_ratings(user,
+                token,
+                pattern,
+                space,
+                versions=VERSIONS,
+                astra_modes=ASTRA_MODES,
+                kernels=KERNELS,
+                grids=GRIDS,
+                invetory_nums=INVENTORY_NUMS,
+                verbose=False) -> list:
+
+    existing_reports_names = get_existing_reports(user,
+                                                  token,
+                                                  pattern,
+                                                  space,
+                                                  versions,
+                                                  astra_modes,
+                                                  kernels,
+                                                  grids,
+                                                  invetory_nums)
+
+    cp = ConfluencePage(username=user, token=token)
+
+    # список обЪектов soup
+    soups = {name: BeautifulSoup(cp.get_page_as_html(space, name), 'lxml') for name in existing_reports_names}
+
+    # рейтинги с привязкой к странице
+    ratings = {}
+
+    # обойти все soop найти рейтинги
+    for page, html in soups.items():
+        tags = html.find_all(name='h2')
+        for tag in tags:  # ещем по тегам
+            rating = re.search(r'rating:\s?(\d+.\d+)', tag.text)
+            if rating is not None:
+                print('{} --- \033[92m{}\033[0m'.format(page, rating.group(1)))
+                ratings[page] = float(rating.group(1))
+
+    return ratings
+
+

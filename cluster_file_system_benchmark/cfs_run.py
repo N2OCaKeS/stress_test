@@ -97,7 +97,7 @@ if args.LIBVIRT:
     startvm = 'virsh --connect qemu:///system start {host}_{postfix}'
     controlvm_off = 'virsh --connect qemu:///system destroy {host}_{postfix}'
 else:
-    restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {shapshot}'
+    restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {snapshot}'
     storagecreate = 'VBoxManage createmedium disk --filename /home/$USER/VirtualBox\ VMs/{fs}_storage --size {size} --format VDI --variant Standard'
     storageattach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium /home/$USER/VirtualBox\ VMs/{fs}_storage.vdi'
     startvm = 'VBoxManage startvm {host}_{postfix} --type headless'

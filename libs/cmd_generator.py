@@ -22,7 +22,7 @@ parser.add_argument('-av',
 
 parser.add_argument('-ts',
                     action='store',
-                    choices=['auditd', 'postgresql'],
+                    choices=['auditd', 'postgresql', 'fs'],
                     required=True,
                     help='astra version',
                     dest='TEST_SET')
@@ -274,3 +274,58 @@ elif args.TEST_SET == 'postgresql':
                                         g='high(150)',
                                         grid='high',
                                         num='150')
+
+elif args.TEST_SET == 'fs':
+    ### low ###
+    for kernel in ('5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency'):
+        cmd = 'sudo venv/bin/python fsb_run.py --fs ext4 --test-set fs_mark_count && ' \
+              'sudo venv/bin/python fsb_publish.py ' \
+              '--username {user} ' \
+              '--token {token} ' \
+              '--confluence-space "~rkuznetsov" ' \
+              '--confluence-parent-page "{av} ⬝ Файловые системы" ' \
+              '--confluence-new-page EXT4_{av}_orel_{kern}_{grid}_{num} ' \
+              '--arm-name "{g}" ' \
+              '--arm-proccessor "{cpu}" ' \
+              '--arm-memory "{ram}" ' \
+              '--arm-storage "{disk}" ' \
+              '--file-system ext4 ' \
+              '--test-set fs_mark_count &&' \
+              'sudo venv/bin/python fsb_run.py --fs xfs --test-set fs_mark_count && ' \
+              'sudo venv/bin/python fsb_publish.py ' \
+              '--username {user} ' \
+              '--token {token} ' \
+              '--confluence-space "~rkuznetsov" ' \
+              '--confluence-parent-page "{av} ⬝ Файловые системы" ' \
+              '--confluence-new-page XFS_{av}_orel_{kern}_{grid}_{num} ' \
+              '--arm-name "{g}" ' \
+              '--arm-proccessor "{cpu}" ' \
+              '--arm-memory "{ram}" ' \
+              '--arm-storage "{disk}" ' \
+              '--file-system xfs ' \
+              '--test-set fs_mark_count' \
+              'sudo venv/bin/python fsb_run.py --fs ntfs --test-set fs_mark_count && ' \
+              'sudo venv/bin/python fsb_publish.py &&' \
+              '--username {user} ' \
+              '--token {token} ' \
+              '--confluence-space "~rkuznetsov" ' \
+              '--confluence-parent-page "{av} ⬝ Файловые системы" ' \
+              '--confluence-new-page NTFS_{av}_orel_{kern}_{grid}_{num} ' \
+              '--arm-name "{g}" ' \
+              '--arm-proccessor "{cpu}" ' \
+              '--arm-memory "{ram}" ' \
+              '--arm-storage "{disk}" ' \
+              '--file-system ntfs ' \
+              '--test-set fs_mark_count'.format(user=args.USER,
+                                                token=args.TOKEN,
+                                                av=args.ASTRA_VERSION,
+                                                kern=kernel,
+                                                cpu='Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
+                                                disk='Samsung NVME 970 EVO 2Тб',
+                                                ram='32GB',
+                                                g='low(141)',
+                                                grid='low',
+                                                num='141')
+
+        print('\033[92m++++++++++++++++++++++++++++++++++ {} ++++++++++++++++++++++++++++++++++++\033[0m'.format(kernel))
+        print(cmd)

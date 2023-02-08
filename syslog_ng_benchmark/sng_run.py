@@ -61,6 +61,12 @@ if __name__ == '__main__':
 
     print("Дата и время запуска: ", datetime.strftime(TIME_START_SCRIPT, "%d.%m.%Y %H:%M:%S"))
 
+    """
+        Повышение приоритета этого процесса
+
+    pid_main_proc = subprocess.run("ps aux | grep sng_run | awk {'print $2'} | head -1", shell=True, stdout=subprocess.PIPE).stdout.decode("UTF-8")
+    subprocess.run("renice 1 {pid}".format(pid=pid_main_proc), shell=True)
+    """
     # Если отстуствует директория для отчета, необходимо создать
     if os.path.exists(REPORT_PATH) is False:
         mkdir(REPORT_PATH)

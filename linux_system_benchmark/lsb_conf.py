@@ -14,3 +14,9 @@ STAND3_STEP = 2
 STAND4_LOWER_LIMIT = 2
 STAND4_UPPER_LIMIT = 14
 STAND4_STEP = 2
+
+SCRIPT_DIR = '/home/rkuznetsov/git/stress_test/linux_system_benchmark'
+REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
+
+REPORT_FILENAME = 'lsb_report.txt'
+INFO_FILENAME = 'lsb_info.txt'

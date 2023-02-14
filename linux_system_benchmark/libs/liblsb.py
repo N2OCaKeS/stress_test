@@ -37,6 +37,8 @@ def astra_version():
 
     return version
 
+def astra_kernel_version():
+    return check_output_command('uname -r')
 
 def put_system_info_in_file(start, file):
     lead_time = strftime("%H:%M:%S", gmtime(time() - start))

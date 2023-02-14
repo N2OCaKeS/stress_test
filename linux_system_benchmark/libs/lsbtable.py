@@ -1,57 +1,26 @@
+# -*- coding: UTF-8 -*-
+
+# ;===========================================================
+# ; Author: rkuznetsov@astralinux.ru
+# ; Date: 2023
+# ;===========================================================
+
 import re
 import pandas
+import tarfile
 import warnings
 
-from pretty_html_table import build_table
-from lsb_conf import REPORT_DIR, REPORT_FILENAME
 import numpy as np
-from sklearn import preprocessing
+from time import time
 from scipy import integrate
+from os import listdir, chdir
+from sklearn import preprocessing
 from matplotlib import pyplot as plt
-from libs.liblsb import astra_version
-
-RESULT_PARSING_REGEXP = {
-    'dhry2reg': r'Dhrystone\s2\susing\sregister\svariables\s*(\d*.\d)\slps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'whetstone-double': r'Double-Precision\sWhetstone\s*(\d*.\d)\sMWIPS\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'execl': r'Execl\sThroughput\s*(\d*.\d)\slps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'fstime': r'File\sCopy\s1024\sbufsize\s2000\smaxblocks\s*(\d*.\d)\sKBps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'fsbuffer': r'File\sCopy\s256\sbufsize\s500\smaxblocks\s*(\d*.\d)\sKBps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'fsdisk': r'File\sCopy\s4096\sbufsize\s8000\smaxblocks\s*(\d*.\d)\sKBps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'pipe': r'Pipe\sThroughput\s*(\d*.\d)\slps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'context1': r'Pipe-based\sContext\sSwitching\s*(\d*.\d)\slps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'spawn': r'Process\sCreation\s*(\d*.\d)\slps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'shell1': r'Shell\sScripts\s\(1\sconcurrent\)\s*(\d*.\d)\slpm\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'shell8': r'Shell\sScripts\s\(8\sconcurrent\)\s*(\d*.\d)\slpm\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-    'syscall': r'System\sCall\sOverhead\s*(\d*.\d)\slps\s*\((\d*.\d)\ss,\s(\d*)\ssamples',
-}
-
-TEST_MEASURE = {
-    'dhry2reg': 'lps',
-    'whetstone-double': 'MWIPS',
-    'execl': 'lps',
-    'fstime': 'KBps',
-    'fsbuffer': 'KBps',
-    'fsdisk': 'KBps',
-    'pipe': 'lps',
-    'context1': 'lps',
-    'spawn': 'lps',
-    'shell1': 'lpm',
-    'shell8': 'lpm',
-    'syscall': 'lps',
-}
-
-TEST_NAMES = ('dhry2reg',
-              'whetstone-double',
-              'execl',
-              'fstime',
-              'fsbuffer',
-              'fsdisk',
-              'pipe',
-              'context1',
-              'spawn',
-              'shell1',
-              'shell8',
-              'syscall')
+from pretty_html_table import build_table
+from lsb_conf import SCRIPT_DIR, REPORT_DIR, LOG_DIR, \
+    REPORT_FILENAME, \
+    REGEXP_PARSERS, TEST_MEASURE, TEST_NAMES
+from libs.liblsb import astra_version, astra_kernel_version
 
 
 class Report:
@@ -78,7 +47,7 @@ class Report:
 
             # объявляем новый дикт
             self.__raw_dict = {}
-            for test, regexp in RESULT_PARSING_REGEXP.items():  # ищем совпаденяи по тестам
+            for test, regexp in REGEXP_PARSERS.items():  # ищем совпаденяи по тестам
 
                 # чтоб не искать по десять раз, объявлю
                 result_tuples = re.findall(regexp, text)
@@ -89,13 +58,10 @@ class Report:
                 self.__raw_dict[test]['time'] = [float(result_tuple[1]) for result_tuple in result_tuples]
                 self.__raw_dict[test]['samples'] = [float(result_tuple[2]) for result_tuple in result_tuples]
 
-            print(self.__raw_dict)
-
         # соберем датафреймы
         self.__raw_tables = {}
         for test in TEST_NAMES:
             self.__raw_tables[test] = pandas.DataFrame(self.__raw_dict[test])
-            print(self.__raw_tables[test])
 
     @staticmethod
     def cm_to_inch(value):
@@ -116,6 +82,24 @@ class Report:
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
                 except np.RankWarning:
                     polinom_factor -= 1
+
+    @staticmethod
+    def create_tar():
+        '''
+        Создать архив
+        :return:
+        '''
+        time_mark = time()
+        with tarfile.open('lsb_{v}_{m}_{k}_{t}.tar'.format(v=astra_version()[0],
+                                                           m=astra_version()[1],
+                                                           k=astra_kernel_version(),
+                                                           t=time_mark), 'w') as tar:
+            chdir(SCRIPT_DIR)
+            for file in listdir(REPORT_DIR):
+                tar.add('{}/{}'.format('report', file))
+
+            for file in listdir(LOG_DIR):
+                tar.add('{}/{}'.format('log', file))
 
     def create_beauty_table(self,
                             test,
@@ -253,19 +237,34 @@ class Report:
                                         oy_param_table_name='value',
                                         measures=TEST_MEASURE)
 
-    def get_rating(self,
-                   x_lst,
-                   accuracy=3,
-                   multiplier=10**(0),
-                   auto_normalize=True):
+    def create_all_graphs(self):
+        for test_name in TEST_NAMES:
+            self.template_aproximated_graph(test=test_name,
+                                            ox_param_table_name='parallel_threads',
+                                            oy_param_table_name='value',
+                                            measures=TEST_MEASURE)
 
+    def get_rating(self,
+                   test,
+                   accuracy=3,
+                   multiplier=10**(2),
+                   auto_normalize=True):
+        '''
+        :param test: имя теста
+        :param accuracy: точность, получаемых значений
+        :param multiplier: множитель
+        :param auto_normalize: нормализация 0-1
+        :return: рейтинг
+        '''
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
-            normalized_data_2d_array = scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis])
+            normalized_data_2d_array = scaler.fit_transform(np.array(self.__raw_dict[test]['value'])[:, np.newaxis])
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
 
-            func_speed = self.data_aproximation(x_lst, normalized_data_list)
-            i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            func_speed = self.data_aproximation(self.__raw_dict[test]['parallel_threads'], normalized_data_list)
+            i_spd, err = integrate.quad(func_speed,
+                                        self.__ox_lower_limit,
+                                        self.__ox_upper_limit-self.__ox_step)
             if i_spd == 0:
                 return 1
             else:
@@ -273,8 +272,52 @@ class Report:
         else:
             pass
 
+    def get_dhry2reg_rating(self):
+        return self.get_rating('dhry2reg')
+
+    def get_whetstone_double_rating(self):
+        return self.get_rating('whetstone-double')
+
+    def get_execl_rating(self):
+        return self.get_rating('execl')
+
+    def get_fstime_rating(self):
+        return self.get_rating('fstime')
+
+    def get_fsbuffer_rating(self):
+        return self.get_rating('fsbuffer')
+
+    def get_fsdisk_rating(self):
+        return self.get_rating('fsdisk')
+
+    def get_pipe_rating(self):
+        return self.get_rating('pipe')
+
+    def get_context1_rating(self):
+        return self.get_rating('context1')
+
+    def get_spawn_rating(self):
+        return self.get_rating('spawn')
+
+    def get_shell1_rating(self):
+        return self.get_rating('shell1')
+
+    def get_shell8_rating(self):
+        return self.get_rating('shell8')
+
+    def get_syscall_rating(self):
+        return self.get_rating('syscall')
+
+    def get_all_ratings(self):
+        ratings = {}
+        for test_name in TEST_NAMES:
+            ratings[test_name] = self.get_rating(test_name)
+        return ratings
+
+
 r = Report(2, 14, 2)
 r.create_dhry2reg_graph()
+print(r.get_all_ratings())
 
 
 

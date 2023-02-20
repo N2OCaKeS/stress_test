@@ -12,6 +12,7 @@ from time import time
 from shutil import copy
 from os import path, chdir, listdir, remove
 from libs.liblsb import put_system_info_in_file
+from libs.lsbtable import Report
 from lsb_conf import INFO_FILENAME, \
     STAND1_LOWER_LIMIT, STAND1_UPPER_LIMIT, STAND1_STEP, \
     STAND2_LOWER_LIMIT, STAND2_UPPER_LIMIT, STAND2_STEP, \
@@ -53,8 +54,8 @@ if args.MODE == 'default':
     current_dir = path.dirname(path.realpath(__file__))
 
     # собираем проект
-    # chdir(current_dir + '/byte-unixbench-master/UnixBench/')
-    # cmd('make')
+    chdir(current_dir + '/byte-unixbench-master/UnixBench/')
+    cmd('make')
 
     # очистить файлы /results
     try:
@@ -75,6 +76,13 @@ if args.MODE == 'default':
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
 
+        # Собираем результаты
+        r = Report(STAND1_LOWER_LIMIT,
+                   STAND1_UPPER_LIMIT,
+                   STAND1_STEP)
+        r.create_all_graphs()
+        r.get_all_ratings()
+
     if args.STAND == 'stand2':  # итеративный проход stand2
         parallel_processes = ['-c ' + str(proc) for proc in range(STAND2_LOWER_LIMIT, STAND2_UPPER_LIMIT, STAND2_STEP)]
         cmd_parallel_processes = ' '.join(parallel_processes)
@@ -82,6 +90,13 @@ if args.MODE == 'default':
         # запустить тест
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
+
+        # Собираем результаты
+        r = Report(STAND2_LOWER_LIMIT,
+                   STAND2_UPPER_LIMIT,
+                   STAND2_STEP)
+        r.create_all_graphs()
+        r.get_all_ratings()
 
     if args.STAND == 'stand3':  # итеративный проход stand3
         parallel_processes = ['-c ' + str(proc) for proc in range(STAND3_LOWER_LIMIT, STAND3_UPPER_LIMIT, STAND3_STEP)]
@@ -91,6 +106,13 @@ if args.MODE == 'default':
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
 
+        # Собираем результаты
+        r = Report(STAND3_LOWER_LIMIT,
+                   STAND3_UPPER_LIMIT,
+                   STAND3_STEP)
+        r.create_all_graphs()
+        r.get_all_ratings()
+
     if args.STAND == 'stand4':  # итеративный проход stand4
         parallel_processes = ['-c ' + str(proc) for proc in range(STAND4_LOWER_LIMIT, STAND4_UPPER_LIMIT, STAND4_STEP)]
         cmd_parallel_processes = ' '.join(parallel_processes)
@@ -98,6 +120,13 @@ if args.MODE == 'default':
         # запустить тест
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
+
+        # Собираем результаты
+        r = Report(STAND4_LOWER_LIMIT,
+                   STAND4_UPPER_LIMIT,
+                   STAND4_STEP)
+        r.create_all_graphs()
+        r.get_all_ratings()
 
     put_system_info_in_file(start_time, current_dir+'/report/'+INFO_FILENAME)
 

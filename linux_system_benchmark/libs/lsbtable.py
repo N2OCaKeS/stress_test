@@ -18,7 +18,7 @@ from sklearn import preprocessing
 from matplotlib import pyplot as plt
 from pretty_html_table import build_table
 from lsb_conf import SCRIPT_DIR, REPORT_DIR, LOG_DIR, \
-    REPORT_FILENAME, \
+    REPORT_FILENAME, RATING_FILENAME, \
     REGEXP_PARSERS, TEST_MEASURE, TEST_NAMES
 from libs.liblsb import astra_version, astra_kernel_version
 
@@ -141,11 +141,11 @@ class Report:
         ox_lst = self.__raw_dict[test][ox_param_table_name]
         oy_lst = self.__raw_dict[test][oy_param_table_name]
 
-        # build function f(x)
+        # построить f(x)
         aprx_x = np.arange(self.__ox_lower_limit, self.__ox_upper_limit-self.__ox_step, 0.1)
         aprx_f = self.data_aproximation(ox_lst, oy_lst)
 
-        # build graph
+        # построить график
         plt.figure(figsize=(self.cm_to_inch(self.__width), self.cm_to_inch(self.__height)))
         plt.plot(x, y, 'o'),
         plt.plot(aprx_x, aprx_f(aprx_x))
@@ -153,6 +153,7 @@ class Report:
                                                                       mode=astra_version()[1],
                                                                       xtitle=ox_param_table_name,
                                                                       ytitle=oy_param_table_name))
+        # оформить график
         plt.xlabel(ox_param_table_name)
         ox_ticks = np.arange(self.__ox_lower_limit,
                              self.__ox_upper_limit,
@@ -161,9 +162,11 @@ class Report:
         plt.ylabel('{}({})'.format(oy_param_table_name, measures[test]))
         plt.grid(True)
 
-        plt.savefig('{p}/fsb_{ox}_{oy}_graph'.format(p=self.__report_dir,
-                                                     ox=ox_param_table_name,
-                                                     oy=oy_param_table_name))
+        # создать график в png
+        plt.savefig('{p}/lsb_{t}_{ox}_{oy}_graph'.format(p=self.__report_dir,
+                                                         t=test,
+                                                         ox=ox_param_table_name,
+                                                         oy=oy_param_table_name))
 
     def create_dhry2reg_graph(self):
         self.template_aproximated_graph(test='dhry2reg',
@@ -310,14 +313,25 @@ class Report:
 
     def get_all_ratings(self):
         ratings = {}
+        rating_file = '{}/lsb_rating.txt'.format(self.__report_dir, )
+
+        # очистить отчет
+        f = open(rating_file, 'w')
+        f.close()
+
+        # вычисляем рейтинги и складываем в лист и в файл
         for test_name in TEST_NAMES:
-            ratings[test_name] = self.get_rating(test_name)
+            rating = self.get_rating(test_name)
+            ratings[test_name] = rating
+            with open(rating_file, 'a+') as target_file:
+                target_file.write('{}: {}\n'.format(test_name, rating))
+
         return ratings
 
 
-r = Report(2, 14, 2)
-r.create_dhry2reg_graph()
-print(r.get_all_ratings())
+# r = Report(2, 14, 2)
+# r.create_all_graphs()
+# print(r.get_all_ratings())
 
 
 

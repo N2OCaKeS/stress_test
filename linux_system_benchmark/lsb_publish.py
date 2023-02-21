@@ -11,7 +11,9 @@ from os import listdir
 from re import search
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
-from lsb_conf import REPORT_DIR, TEMPLATE_DIR, INFO_FILENAME, GRAPH_DESCRIPTIONS, \
+from lsb_conf import REPORT_DIR, TEMPLATE_DIR, INFO_DIR, \
+    INFO_FILENAME, RATING_FILENAME, \
+    GRAPH_DESCRIPTIONS, \
     STAND1_LOWER_LIMIT, STAND1_UPPER_LIMIT, STAND1_STEP, \
     STAND2_LOWER_LIMIT, STAND2_UPPER_LIMIT, STAND2_STEP, \
     STAND3_LOWER_LIMIT, STAND3_UPPER_LIMIT, STAND3_STEP, \
@@ -63,6 +65,12 @@ parser.add_argument('-ji', '--jira-issue',
                     help='jira issue',
                     dest='JIRA_ISSUE')
 
+parser.add_argument('-pack', '--package',
+                    action='store',
+                    required=True,
+                    help='test package',
+                    dest='PACKAGE')
+
 parser.add_argument('-rp', '--report-path',
                     action='store',
                     required=False,
@@ -80,7 +88,7 @@ parser.add_argument('-tp', '--template-path',
 parser.add_argument('-ip', '--info-path',
                     action='store',
                     required=False,
-                    default=INFO_FILENAME,
+                    default=INFO_DIR,
                     help='path to info file',
                     dest='I_PATH')
 
@@ -158,7 +166,7 @@ for file in listdir(args.R_PATH):
                                     args.NPAGE)
 
 # генерация вступительной таблицы
-with open(args.I_PATH) as info:
+with open('{}/{}'.format(args.I_PATH, INFO_FILENAME)) as info:
     info_lst = info.read().split('\n')
 with open('{}/header_table_template.html'.format(args.T_PATH), 'r') as file:
     header_table_temp = file.read()
@@ -180,10 +188,9 @@ with open('{}/header_table_template.html'.format(args.T_PATH), 'r') as file:
 # создание страницы отчета
 with open('{}/rating_template.html'.format(args.T_PATH), 'r') as template:
     rating_temp = template.read()
-with open('{}/aub_report.txt'.format(args.R_PATH), 'r') as report:
+with open('{}/{}'.format(args.R_PATH, RATING_FILENAME), 'r') as report:
     report_temp = report.read()
-    rating = rating_temp.format(type=args.TS,
-                                dhry2reg_rating=search(r'dhry2reg: (-?\d+.\d+)', report_temp).group(1),
+    rating = rating_temp.format(dhry2reg_rating=search(r'dhry2reg: (-?\d+.\d+)', report_temp).group(1),
                                 whetstone_double_rating=search(r'whetstone-double: (-?\d+.\d+)', report_temp).group(1),
                                 execl_rating=search(r'execl: (-?\d+.\d+)', report_temp).group(1),
                                 fstime_rating=search(r'fstime: (-?\d+.\d+)', report_temp).group(1),

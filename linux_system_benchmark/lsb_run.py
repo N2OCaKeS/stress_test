@@ -32,12 +32,12 @@ parser.add_argument('-m', '--mode',
 
 parser.add_argument('-sn', '--stand-name',
                     action='store',
-                    required=False,
+                    required=True,
                     choices=['stand1',
                              'stand2',
                              'stand3',
                              'stand4',],
-                    help='',
+                    help='stand name',
                     dest='STAND')
 
 args = parser.parse_args()

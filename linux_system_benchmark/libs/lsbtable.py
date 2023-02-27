@@ -328,9 +328,4 @@ class Report:
         return ratings
 
 
-r = Report(2, 14, 2)
-r.create_all_graphs()
-# print(r.get_all_ratings())
-
-
 

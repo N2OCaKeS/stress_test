@@ -149,24 +149,23 @@ class Report:
         plt.figure(figsize=(self.cm_to_inch(self.__width), self.cm_to_inch(self.__height)))
         plt.plot(x, y, 'o'),
         plt.plot(aprx_x, aprx_f(aprx_x))
-        plt.title('{digit_varsion}({mode}). {ytitle}/{xtitle}'.format(digit_varsion=astra_version()[0],
-                                                                      mode=astra_version()[1],
-                                                                      xtitle=ox_param_table_name,
-                                                                      ytitle=oy_param_table_name))
+        plt.title('{digit_varsion}({mode}). {ytitle} benchmark value/{xtitle}'.format(digit_varsion=astra_version()[0],
+                                                                                      mode=astra_version()[1],
+                                                                                      xtitle=ox_param_table_name,
+                                                                                      ytitle=test))
         # оформить график
         plt.xlabel(ox_param_table_name)
         ox_ticks = np.arange(self.__ox_lower_limit,
                              self.__ox_upper_limit,
                              self.__grid_factor)
         plt.xticks(ox_ticks, ox_ticks, rotation='vertical')
-        plt.ylabel('{}({})'.format(oy_param_table_name, measures[test]))
+        plt.ylabel('{} bench value ({})'.format(test, measures[test]))
         plt.grid(True)
 
         # создать график в png
-        plt.savefig('{p}/lsb_{t}_{ox}_{oy}_graph'.format(p=self.__report_dir,
-                                                         t=test,
-                                                         ox=ox_param_table_name,
-                                                         oy=oy_param_table_name))
+        plt.savefig('{p}/lsb_{t}_{ox}_bench_value_graph'.format(p=self.__report_dir,
+                                                                t=test,
+                                                                ox=ox_param_table_name))
 
     def create_dhry2reg_graph(self):
         self.template_aproximated_graph(test='dhry2reg',
@@ -329,8 +328,8 @@ class Report:
         return ratings
 
 
-# r = Report(2, 14, 2)
-# r.create_all_graphs()
+r = Report(2, 14, 2)
+r.create_all_graphs()
 # print(r.get_all_ratings())
 
 

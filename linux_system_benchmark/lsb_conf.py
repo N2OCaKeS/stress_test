@@ -1,7 +1,7 @@
 """
     Основная рабочая директория
 """
-SCRIPT_DIR = '/media/sf_git/stress_test/linux_system_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/linux_system_benchmark'
 
 """
     Названия директорий

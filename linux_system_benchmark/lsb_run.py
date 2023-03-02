@@ -68,6 +68,9 @@ if args.MODE == 'default':
     # Засечь время выполнения скрипта
     start_time = time()
 
+    '''
+        stand1
+    '''
     if args.STAND == 'stand1':  # итеративный проход stand1
         parallel_processes = ['-c ' + str(proc) for proc in range(STAND1_LOWER_LIMIT, STAND1_UPPER_LIMIT, STAND1_STEP)]
         cmd_parallel_processes = ' '.join(parallel_processes)
@@ -82,7 +85,11 @@ if args.MODE == 'default':
                    STAND1_STEP)
         r.create_all_graphs()
         r.get_all_ratings()
+        r.create_tar()
 
+    '''
+        stand2
+    '''
     if args.STAND == 'stand2':  # итеративный проход stand2
         parallel_processes = ['-c ' + str(proc) for proc in range(STAND2_LOWER_LIMIT, STAND2_UPPER_LIMIT, STAND2_STEP)]
         cmd_parallel_processes = ' '.join(parallel_processes)
@@ -97,7 +104,11 @@ if args.MODE == 'default':
                    STAND2_STEP)
         r.create_all_graphs()
         r.get_all_ratings()
+        r.create_tar()
 
+    '''
+        stand3
+    '''
     if args.STAND == 'stand3':  # итеративный проход stand3
         parallel_processes = ['-c ' + str(proc) for proc in range(STAND3_LOWER_LIMIT, STAND3_UPPER_LIMIT, STAND3_STEP)]
         cmd_parallel_processes = ' '.join(parallel_processes)
@@ -112,7 +123,11 @@ if args.MODE == 'default':
                    STAND3_STEP)
         r.create_all_graphs()
         r.get_all_ratings()
+        r.create_tar()
 
+    '''
+        stand4
+    '''
     if args.STAND == 'stand4':  # итеративный проход stand4
         parallel_processes = ['-c ' + str(proc) for proc in range(STAND4_LOWER_LIMIT, STAND4_UPPER_LIMIT, STAND4_STEP)]
         cmd_parallel_processes = ' '.join(parallel_processes)
@@ -127,6 +142,7 @@ if args.MODE == 'default':
                    STAND4_STEP)
         r.create_all_graphs()
         r.get_all_ratings()
+        r.create_tar()
 
     put_system_info_in_file(start_time, current_dir+'/report/'+INFO_FILENAME)
 

@@ -1,16 +1,18 @@
+from os import linesep
 from time import strftime, gmtime, time
-from subprocess import run, PIPE
+from subprocess import run, PIPE, Popen
+
 
 def check_output_command(command):
-    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              universal_newlines=True)
+    result = Popen([command], shell=True, stdout=PIPE, stderr=PIPE, universal_newlines=True)
     output, errors = result.communicate()
-    output = os.linesep.join([s for s in output.splitlines() if s])
-    errors = os.linesep.join([s for s in errors.splitlines() if s])
+    output = linesep.join([s for s in output.splitlines() if s])
+    errors = linesep.join([s for s in errors.splitlines() if s])
     if errors == "":
         return output
     else:
         return errors
+
 
 def astra_version():
     version = []

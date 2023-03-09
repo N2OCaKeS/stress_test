@@ -312,7 +312,7 @@ class Report:
 
     def get_all_ratings(self):
         ratings = {}
-        rating_file = '{}/lsb_rating.txt'.format(self.__report_dir, )
+        rating_file = '{}/{}'.format(self.__report_dir, RATING_FILENAME)
 
         # очистить отчет
         f = open(rating_file, 'w')

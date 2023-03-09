@@ -1,6 +1,16 @@
 from time import strftime, gmtime, time
 from subprocess import run, PIPE
 
+def check_output_command(command):
+    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True)
+    output, errors = result.communicate()
+    output = os.linesep.join([s for s in output.splitlines() if s])
+    errors = os.linesep.join([s for s in errors.splitlines() if s])
+    if errors == "":
+        return output
+    else:
+        return errors
 
 def astra_version():
     version = []
@@ -37,8 +47,10 @@ def astra_version():
 
     return version
 
+
 def astra_kernel_version():
     return check_output_command('uname -r')
+
 
 def put_system_info_in_file(start, file):
     lead_time = strftime("%H:%M:%S", gmtime(time() - start))

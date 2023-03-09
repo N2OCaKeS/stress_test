@@ -49,6 +49,31 @@ def cmd(command):
                    stderr=subprocess.DEVNULL)
 
 
+def upload_result(dir):
+
+    main_report_html = dir + '/report/lsb_main_report.html'
+    report_txt = dir + '/report/lsb_report.txt'
+    log = dir + '/log/lsb_log.log'
+
+    # очистить
+    file = open(main_report_html, 'w')
+    file.close()
+    file = open(report_txt, 'w')
+    file.close()
+    file = open(log, 'w')
+    file.close()
+
+    # скопировать результаты
+    result_dir = dir + '/byte-unixbench-master/UnixBench/results/'
+    for file in listdir(result_dir):
+        if file.endswith('.html'):
+            copy(result_dir + file, main_report_html)
+        elif file.endswith('.log'):
+            copy(result_dir + file, log)
+        else:
+            copy(result_dir + file, report_txt)
+
+
 if args.MODE == 'default':
     # определить текущую директрию
     current_dir = path.dirname(path.realpath(__file__))
@@ -79,6 +104,9 @@ if args.MODE == 'default':
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
 
+        # выгрузить результаты
+        upload_result(current_dir)
+
         # Собираем результаты
         r = Report(STAND1_LOWER_LIMIT,
                    STAND1_UPPER_LIMIT,
@@ -97,6 +125,9 @@ if args.MODE == 'default':
         # запустить тест
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
+
+        # выгрузить результаты
+        upload_result(current_dir)
 
         # Собираем результаты
         r = Report(STAND2_LOWER_LIMIT,
@@ -117,6 +148,9 @@ if args.MODE == 'default':
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
 
+        # выгрузить результаты
+        upload_result(current_dir)
+
         # Собираем результаты
         r = Report(STAND3_LOWER_LIMIT,
                    STAND3_UPPER_LIMIT,
@@ -136,6 +170,9 @@ if args.MODE == 'default':
         chdir(current_dir + '/byte-unixbench-master/UnixBench/')
         cmd('./Run ' + cmd_parallel_processes)
 
+        # выгрузить результаты
+        upload_result(current_dir)
+
         # Собираем результаты
         r = Report(STAND4_LOWER_LIMIT,
                    STAND4_UPPER_LIMIT,
@@ -145,16 +182,6 @@ if args.MODE == 'default':
         r.create_tar()
 
     put_system_info_in_file(start_time, current_dir+'/report/'+INFO_FILENAME)
-
-    result_dir = current_dir + '/byte-unixbench-master/UnixBench/results/'
-    for file in listdir(result_dir):
-        if file.endswith('.html'):
-            copy(result_dir + file, current_dir + '/report/lsb_main_report.html')
-        elif file.endswith('.log'):
-            copy(result_dir + file, current_dir + '/log/lsb_log.log')
-        else:
-            copy(result_dir + file, current_dir + '/report/lsb_report.txt')
-
 
 elif args.MODE == 'extended':
     print("In developing")

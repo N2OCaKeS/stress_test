@@ -1,6 +1,7 @@
-from os import linesep
+from shutil import copy
+from os import linesep, listdir
 from time import strftime, gmtime, time
-from subprocess import run, PIPE, Popen
+from subprocess import run, PIPE, DEVNULL, Popen
 
 
 def check_output_command(command):
@@ -70,3 +71,32 @@ def put_system_info_in_file(start, file):
 
     with open(file, 'a+') as info:
         info.writelines(info_lst)
+
+
+def cmd(command):
+    run(command, shell=True, stderr=DEVNULL)
+
+
+def upload_result(dir):
+
+    main_report_html = dir + '/report/lsb_main_report.html'
+    report_txt = dir + '/report/lsb_report.txt'
+    log = dir + '/log/lsb_log.log'
+
+    # очистить
+    file = open(main_report_html, 'w')
+    file.close()
+    file = open(report_txt, 'w')
+    file.close()
+    file = open(log, 'w')
+    file.close()
+
+    # скопировать результаты
+    result_dir = dir + '/byte-unixbench-master/UnixBench/results/'
+    for file in listdir(result_dir):
+        if file.endswith('.html'):
+            copy(result_dir + file, main_report_html)
+        elif file.endswith('.log'):
+            copy(result_dir + file, log)
+        else:
+            copy(result_dir + file, report_txt)

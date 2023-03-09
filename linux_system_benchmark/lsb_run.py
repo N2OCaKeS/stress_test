@@ -11,7 +11,7 @@ import subprocess
 from time import time
 from shutil import copy
 from os import path, chdir, listdir, remove, mkdir
-from libs.liblsb import put_system_info_in_file
+from libs.liblsb import cmd, put_system_info_in_file, upload_result
 from libs.lsbtable import Report
 from lsb_conf import INFO_FILENAME, \
     LOG_DIR, REPORT_DIR, \
@@ -43,38 +43,6 @@ parser.add_argument('-sn', '--stand-name',
 
 args = parser.parse_args()
 
-
-def cmd(command):
-    subprocess.run(command,
-                   shell=True,
-                   stderr=subprocess.DEVNULL)
-
-
-def upload_result(dir):
-
-    main_report_html = dir + '/report/lsb_main_report.html'
-    report_txt = dir + '/report/lsb_report.txt'
-    log = dir + '/log/lsb_log.log'
-
-    # очистить
-    file = open(main_report_html, 'w')
-    file.close()
-    file = open(report_txt, 'w')
-    file.close()
-    file = open(log, 'w')
-    file.close()
-
-    # скопировать результаты
-    result_dir = dir + '/byte-unixbench-master/UnixBench/results/'
-    for file in listdir(result_dir):
-        if file.endswith('.html'):
-            copy(result_dir + file, main_report_html)
-        elif file.endswith('.log'):
-            copy(result_dir + file, log)
-        else:
-            copy(result_dir + file, report_txt)
-
-
 if args.MODE == 'default':
     # определить текущую директрию
     current_dir = path.dirname(path.realpath(__file__))
@@ -86,7 +54,6 @@ if args.MODE == 'default':
     # Создать /log
     if not path.exists(LOG_DIR):
         mkdir(LOG_DIR, mode=0o755)
-
 
     # собираем проект
     chdir(current_dir + '/byte-unixbench-master/UnixBench/')

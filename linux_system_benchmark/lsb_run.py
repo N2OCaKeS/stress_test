@@ -10,10 +10,11 @@ import subprocess
 
 from time import time
 from shutil import copy
-from os import path, chdir, listdir, remove
+from os import path, chdir, listdir, remove, mkdir
 from libs.liblsb import put_system_info_in_file
 from libs.lsbtable import Report
 from lsb_conf import INFO_FILENAME, \
+    LOG_DIR, REPORT_DIR, \
     STAND1_LOWER_LIMIT, STAND1_UPPER_LIMIT, STAND1_STEP, \
     STAND2_LOWER_LIMIT, STAND2_UPPER_LIMIT, STAND2_STEP, \
     STAND3_LOWER_LIMIT, STAND3_UPPER_LIMIT, STAND3_STEP, \
@@ -77,6 +78,15 @@ def upload_result(dir):
 if args.MODE == 'default':
     # определить текущую директрию
     current_dir = path.dirname(path.realpath(__file__))
+
+    # Создать /report
+    if not path.exists(REPORT_DIR):
+        mkdir(REPORT_DIR, mode=0o755)
+
+    # Создать /log
+    if not path.exists(LOG_DIR):
+        mkdir(LOG_DIR, mode=0o755)
+
 
     # собираем проект
     chdir(current_dir + '/byte-unixbench-master/UnixBench/')

@@ -1,6 +1,10 @@
-from libs.libipa import cmd
+import subprocess
+# from libs.libipa import cmd
 from ipa_conf import DOGTAG, DOMAIN, DC_PASSWORD
 
+def cmd(command):
+    ret_code = subprocess.run(command, shell=True).returncode
+    return ret_code
 
 def initialization_freeipa_server():
     """

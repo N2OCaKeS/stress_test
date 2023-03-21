@@ -1,12 +1,20 @@
 #### Инициализация реплики
 
-from libs.libipa import cmd
-from ipa_conf import DOGTAG, DC_PASSWORD
+import subprocess
+
+# from libs.libipa import cmd
+from time import sleep
+from ipa_conf import DOGTAG, DC_PASSWORD, HOSTS, DOMAIN
+
+
+def cmd(command):
+    ret_code = subprocess.run(command, shell=True).returncode
+    return ret_code
 
 def initialization_freeipa_replica():
-    # 1 Установить astra-freeipa-client astra-freeipa-server -y
-    cmd("apt install astra-freeipa-client astra-freeipa-server -y")
-    # 2 Добавить extended репу и установить dogtag-pki
+    
+    cmd("apt install resolvconf astra-freeipa-client astra-freeipa-server -y")
+    
     if DOGTAG:
         """
             Добавление расширенного репозитория
@@ -28,11 +36,42 @@ def initialization_freeipa_replica():
         if inst_dogtag is not 0:
             cmd("aptitude install dogtag-pki -y")
     
-        # 3 Ввод клиента в домен astra-freeipa-client -y -p {kd_pass}
+        """
+            Настройка DNS
+        """
+        # Удаление старых параметров из /etc/network/interfaces
+        file_network = open("/etc/network/interfaces", "r")
+        network_settings = file_network.readlines()
+        file_network.close()
+
+        for line in network_settings[::]:
+            if "dns-nameservers" in line:
+                network_settings.remove(line)
+            if "dns-domain" in line:
+                network_settings.remove(line)
+        
+        # Запись в /etc/network/interfaces новые параметры dns
+        network_settings.append(f"dns-nameservers {HOSTS['server']['ip']}\n")
+        network_settings.append(f"dns-domain {DOMAIN}\n")
+        
+        file_network = open("/etc/network/interfaces", "w")
+        file_network.writelines(network_settings)
+        file_network.close()
+        
+        # Перезапуск сервиса networking
+        cmd("systemctl restart networking.service")
+
+        """
+            Ввод клиента в домен
+        """
         cmd(f"astra-freeipa-client -y -p {DC_PASSWORD}")
-        # 4 astra-freeipa-replica --dogtag -y -p {kd_pass}
-        cmd(f"astra-freeipa-replica --dogtag -y -p {DC_PASSWORD}")
-        print()
+        sleep(10)
+        
+        """
+            Инициализация реплики
+        """
+        cmd(f"echo -e yes | astra-freeipa-replica --dogtag -y -p {DC_PASSWORD}")
+        
     else:
         pass
     

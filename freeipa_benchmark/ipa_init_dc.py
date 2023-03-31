@@ -1,6 +1,6 @@
 import subprocess
 # from libs.libipa import cmd
-from ipa_conf import DOGTAG, DOMAIN, DC_PASSWORD
+from ipa_conf import DOGTAG, DOMAIN, DC_PASSWORD, EXT_REPO
 
 def cmd(command):
     ret_code = subprocess.run(command, shell=True).returncode
@@ -10,30 +10,31 @@ def initialization_freeipa_server():
     """
         Удаление домена перед его инициализацией
     """
-    cmd("astra-freeipa-server -U")
+    # cmd("astra-freeipa-server -U")
     
     """
         Установка контроллера домена
     """
-    cmd("apt install astra-freeipa-server -y")
-    
     if DOGTAG:
         """
             Добавление расширенного репозитория
         """
-        with open("/etc/apt/sources.list", "r+") as file_sl:
-            for line in file_sl:
-                if "base" in line:
-                    template_repo = line.replace('base', 'extended')
-                    file_sl.write(template_repo)
+        with open("/etc/apt/sources.list", "a") as file_sl:
+            file_sl.write(f'{EXT_REPO} \n')
+            # for line in file_sl:
+                # if "base" in line:
+                #     template_repo = line.replace('base', 'extended')
+                #     file_sl.write(template_repo)
         """
             Обновление списка пакетов
         """    
-        cmd("apt update")
+        cmd("apt update -y")
         
+        cmd("apt install astra-freeipa-server -y")
+
         """
             Установка пакета dogtag-pki
-        """    
+        # """    
         inst_dogtag = cmd("apt install dogtag-pki -y")
         if inst_dogtag is not 0:
             cmd("aptitude install dogtag-pki -y")

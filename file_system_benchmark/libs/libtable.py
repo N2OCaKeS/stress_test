@@ -364,6 +364,7 @@ class Report:
             if i_spd == 0:
                 return 1
             else:
+                print('*=====* get_speed_rating', round((i_spd * multiplier), accuracy))
                 return round((i_spd * multiplier), accuracy)
         else:
             func_speed = self.data_aproximation(x_lst, self.speed_lst)
@@ -372,6 +373,7 @@ class Report:
             if i_spd == 0:
                 return 1
             else:
+                print('*=====* get_speed_rating', round(np.log(i_spd * multiplier), accuracy))
                 return round(np.log(i_spd * multiplier), accuracy)
 
     def get_app_overhead_rating(self,
@@ -390,6 +392,7 @@ class Report:
             if i_ao == 0:
                 return 1
             else:
+                print('*=====* get_app_overhead_rating', round((i_ao * multiplier), accuracy))
                 return round((i_ao * multiplier), accuracy)
         else:
             func_ao = self.data_aproximation(x_lst, self.app_overhead_lst)
@@ -398,6 +401,7 @@ class Report:
             if i_ao == 0:
                 return 1
             else:
+                print('*=====* get_app_overhead_rating', round(np.log(i_ao * multiplier), accuracy))
                 return round(np.log(i_ao * multiplier), accuracy)
 
     def get_syscall_rating(self,
@@ -417,6 +421,7 @@ class Report:
             if i == 0:
                 return 1
             else:
+                print('*=====* get_syscall_rating', round((i * multiplier), accuracy))
                 return round((i * multiplier), accuracy)
         else:
             func = self.data_aproximation(x_lst, y_lst)
@@ -425,6 +430,7 @@ class Report:
             if i == 0:
                 return 1
             else:
+                print('*=====* get_syscall_rating', round(np.log(i * multiplier), accuracy))
                 return round(np.log(i * multiplier), accuracy)
 
     def get_total_rating(self,
@@ -441,6 +447,17 @@ class Report:
         c_close_rating = 0.5625
         c_unlink_rating = 0.5625
         c_speed_rating = 1
+
+        print('*=====* get_total_rating', abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
+                 (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
+                 (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
+                 (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
+                 (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
+                 (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
+                 (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
+                 (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
+                 multiplier,
+                 accuracy)))
 
         return abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
                  (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \

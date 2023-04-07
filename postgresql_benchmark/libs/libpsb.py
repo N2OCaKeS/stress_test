@@ -11,7 +11,7 @@ import subprocess
 from sys import exit
 from os import chmod, remove, chdir
 from shutil import copy2
-from psb_conf import SCRIPT_DIR, DATABASE_NAME
+from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH
 
 
 def cmd(command, err=subprocess.DEVNULL, out=subprocess.DEVNULL):
@@ -147,8 +147,8 @@ def get_memory_load_by_psql():
 def perf():
     subprocess.run('perf script > out.perf1', shell=True, check=True)
     subprocess.run('perl libstackcollapse-perf.pl out.perf1 > out.folded1', shell=True, check=True)
-    subprocess.run('perl libflamegraph.pl out.folded1 > result_flamegraph.svg', shell=True, check=True)
+    subprocess.run(f'perl libflamegraph.pl out.folded1 > {REPORT_PATH}/result_flamegraph.svg', shell=True, check=True)
 
 
 def dump():
-    subprocess.run(f'pg_dump -d {DATABASE_NAME} -F tar -f .tar', shell=True, check=True)
+    subprocess.run(f'pg_dump -d {DATABASE_NAME} -F tar -f {REPORT_PATH}/dump_db.tar', shell=True, check=True)

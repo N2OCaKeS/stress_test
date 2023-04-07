@@ -23,7 +23,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
 from libs.libpsqltests import Test
-from libs.libpsb import astra_version, perf, dump
+from libs.libpsb import astra_version
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
 
@@ -390,11 +390,6 @@ if args.TEST_LIST == 'base':
                                 'psb_clients_la_graph.png',
                                 'psb_clients_tpsall_graph.png'])
 
-
-print('# INFO # --- flamegraph')
-perf()
-print('# INFO # --- создаем dump БД')
-dump()
 
 if args.CLEANER:
     '''

@@ -146,8 +146,8 @@ def get_memory_load_by_psql():
 
 def perf():
     subprocess.run('perf script > out.perf1', shell=True, check=True)
-    subprocess.run('perl libstackcollapse-perf.pl out.perf1 > out.folded1', shell=True, check=True)
-    subprocess.run(f'perl libflamegraph.pl out.folded1 > {REPORT_PATH}/result_flamegraph.svg', shell=True, check=True)
+    subprocess.run('perl libs/libstackcollapse-perf.pl out.perf1 > out.folded1', shell=True, check=True)
+    subprocess.run(f'perl libs/libflamegraph.pl out.folded1 > {REPORT_PATH}/result_flamegraph.svg', shell=True, check=True)
 
 
 def dump():

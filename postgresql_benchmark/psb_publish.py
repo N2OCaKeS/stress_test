@@ -130,8 +130,6 @@ jira_report = ReportToJira(username=args.USER, password=args.PASSWD, token=args.
 #создать flamegraph
 print('# INFO # --- flamegraph')
 perf()
-print('# INFO # --- создаем dump БД')
-dump()
 
 # если получен архив, распаковать
 if args.TAR_PATH is not None:

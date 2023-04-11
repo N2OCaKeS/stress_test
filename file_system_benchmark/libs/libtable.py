@@ -357,23 +357,40 @@ class Report:
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis])
+            print('normalized_data_2d_array --', scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis]))
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            print('normalized_data_list --', [float(list(item)[0]) for item in list(normalized_data_2d_array)])
 
             func_speed = self.data_aproximation(x_lst, normalized_data_list)
+            print('func_speed --', self.data_aproximation(x_lst, normalized_data_list))
             i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
+            print('ox_lower_limit --', self.ox_lower_limit)
+            print('ox_upper_limit --', self.ox_upper_limit)
+            print('ox_step --', self.ox_step)
+            print('i_spd --', i_spd)
+            print('err --', err)
             if i_spd == 0:
                 return 1
             else:
                 print('*=====* get_speed_rating', round((i_spd * multiplier), accuracy))
+                print('multiplier --', multiplier)
+                print('accuracy --', accuracy)
                 return round((i_spd * multiplier), accuracy)
         else:
             func_speed = self.data_aproximation(x_lst, self.speed_lst)
+            print('func_speed --', self.data_aproximation(x_lst, self.speed_lst))
             i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit)
+            print('ox_lower_limit --', self.ox_lower_limit)
+            print('ox_upper_limit --', self.ox_upper_limit)
+            print('i_spd --', i_spd)
+            print('err --', err)
 
             if i_spd == 0:
                 return 1
             else:
                 print('*=====* get_speed_rating', round(np.log(i_spd * multiplier), accuracy))
+                print('multiplier --', multiplier)
+                print('accuracy --', accuracy)
                 return round(np.log(i_spd * multiplier), accuracy)
 
     def get_app_overhead_rating(self,

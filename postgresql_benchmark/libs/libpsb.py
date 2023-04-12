@@ -151,4 +151,4 @@ def perf():
 
 
 def dump():
-    subprocess.run(f'pg_dump -d {DATABASE_NAME} -F tar -f {REPORT_PATH}/dump_db.tar', shell=True, check=True)
+    subprocess.run(f'pg_dump -U postgres -d postgres -F tar -f {REPORT_PATH}/dump_db.tar', shell=True, check=True)

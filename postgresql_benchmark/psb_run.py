@@ -80,7 +80,7 @@ parser.add_argument('-u', '--username',
                     help='confluence user',
                     dest='USER')
 
-parser.add_argument('-t', '--token',
+parser.add_argument('-tk', '--token',
                     action='store',
                     required=False,
                     default=None,

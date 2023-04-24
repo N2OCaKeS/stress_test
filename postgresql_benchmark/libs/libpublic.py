@@ -1,7 +1,7 @@
 import os
-from libreport import ReportToConfluence
-from libpsb import perf
-from libtable import Report
+from libs.libreport import ReportToConfluence
+from libs.libpsb import perf
+from libs.libtable import Report
 from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, GRAPH_DESCRIPTIONS
 

@@ -26,6 +26,7 @@ from libs.libpsqltests import Test
 from libs.libpsb import astra_version, dump
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
+from libs.libpublic import Public
 
 
 DESCRIPTION = ""
@@ -72,6 +73,43 @@ parser.add_argument('-sm', '--system-monitor',
                     action='store_true',
                     required=False,
                     dest='SYSMON')
+
+parser.add_argument('-u', '--username',
+                    action='store',
+                    required=True,
+                    help='confluence user',
+                    dest='USER')
+
+parser.add_argument('-t', '--token',
+                    action='store',
+                    required=False,
+                    default=None,
+                    help='confluence access token',
+                    dest='TOKEN')
+
+parser.add_argument('-cs', '--confluence-space',
+                    action='store',
+                    required=True,
+                    help='confluence space',
+                    dest='SPACE')
+
+parser.add_argument('-cpp', '--confluence-parent-page',
+                    action='store',
+                    required=True,
+                    help='confluence parent page',
+                    dest='PPAGE')
+
+parser.add_argument('-cnp', '--confluence-new-page',
+                    action='store',
+                    required=True,
+                    help='confluence new page',
+                    dest='NPAGE')
+
+parser.add_argument('-pack', '--package',
+                    action='store',
+                    required=True,
+                    help='test package',
+                    dest='PACKAGE')
 
 args = parser.parse_args()
 
@@ -416,3 +454,13 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
+
+public = Public(username=args.USER,
+                token=args.TOKEN,
+                conf_space=args.SPACE,
+                conf_parent_page=args.PPAGE,
+                conf_new_page_name=args.NPAGE,
+                grade_stand=args.STAND,
+                package=args.PACKAGE)
+
+public.run_publish()

@@ -29,16 +29,36 @@ def initialization_freeipa_server():
             Обновление списка пакетов
         """    
         cmd("apt update -y")
-        
-        cmd("apt install astra-freeipa-server -y")
 
         """
-            Установка пакета dogtag-pki
+            Установка пакетов dogtag-pki astra-freeipa-client
         # """    
         inst_dogtag = cmd("apt install dogtag-pki -y")
         if inst_dogtag is not 0:
             cmd("aptitude install dogtag-pki -y")
+
+        cmd("apt install astra-freeipa-server -y")
     
+        """
+            Перевод hostname в нижний регистр
+        """
+        hostname_file = open("/etc/hostname", "r")
+        hostname = hostname_file.readline()
+        hostname_file.close()
+        hostname_file = open("/etc/hostname", "w")
+        hostname_file.write(hostname.lower())
+        hostname_file.close()
+        file_hosts = open("/etc/hosts", "r")
+        temp = file_hosts.readlines()
+        for ind, line in enumerate(temp[::]):
+            if hostname in line:
+                new_line = line.replace(hostname, hostname.lower())
+                temp.remove(line)
+                temp.insert(ind, new_line)
+        file_hosts.close()
+        file_hosts = open("/etc/hosts", "w")
+        file_hosts.writelines(temp)
+        file_hosts.close()
         """
             Инициализация домена
         """    

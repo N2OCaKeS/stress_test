@@ -8,7 +8,7 @@
 import argparse
 import os
 import subprocess
-
+import json
 
 from time import time, strftime, gmtime
 from sys import exit
@@ -455,12 +455,24 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
 
-public = Public(username=args.USER,
-                token=args.TOKEN,
-                conf_space=args.SPACE,
-                conf_parent_page=args.PPAGE,
-                conf_new_page_name=args.NPAGE,
-                grade_stand=args.STAND,
-                package=args.PACKAGE)
+# public = Public(username=args.USER,
+#                 token=args.TOKEN,
+#                 conf_space=args.SPACE,
+#                 conf_parent_page=args.PPAGE,
+#                 conf_new_page_name=args.NPAGE,
+#                 grade_stand=args.STAND,
+#                 package=args.PACKAGE)
 
-public.run_publish()
+# public.run_publish()
+
+public_args = {
+    'username':args.USER,
+    'token':args.TOKEN,
+    'conf_space':args.SPACE,
+    'conf_parent_page':args.PPAGE,
+    'conf_new_page_name':args.NPAGE,
+    'grade_stand':args.STAND,
+    'package':args.PACKAGE
+}
+with open('psb_public_args.json', 'w') as w:
+    json.dump(public_args, w)

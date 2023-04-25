@@ -14,6 +14,7 @@ from time import sleep, time, strftime, gmtime
 from os import getuid, path, mkdir
 from fabric import Connection
 from libs.libfsb import astra_version
+from libs.libpublic import Public
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
     HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR, \
     INFO_FILENAME, PACKAGES
@@ -34,7 +35,7 @@ parser.add_argument('--disk-size',
                     help='size of vdi disk',
                     dest='DISK_SIZE')
 
-parser.add_argument('--file-system',
+parser.add_argument('-fs', '--file-system',
                     action='store',
                     choices=['ext2',
                              'ext3',
@@ -55,7 +56,7 @@ parser.add_argument('--host',
                     help='hostname where the storage is located',
                     dest='HOST')
 
-parser.add_argument('--test-set',
+parser.add_argument('-ts', '--test-set',
                     action='store',
                     choices=['base_load',
                              'timeout',
@@ -71,6 +72,46 @@ parser.add_argument('--parsec',
                     required=False,
                     help='',
                     dest='PARSEC')
+
+parser.add_argument('-u', '--username',
+                    action='store',
+                    required=True,
+                    help='confluence user',
+                    dest='USER')
+
+parser.add_argument('-t', '--token',
+                    action='store',
+                    required=False,
+                    default=None,
+                    help='confluence access token',
+                    dest='TOKEN')
+
+parser.add_argument('-cs', '--confluence-space',
+                    action='store',
+                    required=True,
+                    help='confluence space',
+                    dest='SPACE')
+
+parser.add_argument('-cpp', '--confluence-parent-page',
+                    action='store',
+                    required=True,
+                    help='confluence parent page',
+                    dest='PPAGE')
+
+parser.add_argument('-cnp', '--confluence-new-page',
+                    action='store',
+                    required=True,
+                    help='confluence new page',
+                    dest='NPAGE')
+
+parser.add_argument('-sn', '--stand-num',
+                    action='store',
+                    choices=['1',
+                             '3',
+                             '4'],
+                    required=True,
+                    help='stand num',
+                    dest='STAND')
 
 args = parser.parse_args()
 '''
@@ -250,3 +291,14 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
+
+public = Public(username=args.USER,
+                token=args.TOKEN,
+                conf_space=args.SPACE,
+                conf_parent_page=args.PPAGE,
+                conf_new_page_name=args.NPAGE,
+                grade_stand=args.STAND,
+                file_system=args.FS,
+                test_set=args.TS)
+
+public.run_publish()

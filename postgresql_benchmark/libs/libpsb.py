@@ -7,11 +7,20 @@
 # ;===========================================================
 
 import subprocess
-
+import logging
 from sys import exit
 from os import chmod, remove, chdir
 from shutil import copy2
-from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH
+from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FUNC
+
+
+logging.basicConfig(
+        filename=LOG_FUNC, 
+        level=logging.INFO,
+        filemode='a',
+        format='%(asctime)s - %(levelname)s - %(name)s - %(funcName)s: %(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+)
 
 
 def cmd(command, err=subprocess.DEVNULL, out=subprocess.DEVNULL):
@@ -152,3 +161,10 @@ def perf():
 
 def dump():
     subprocess.run(f'pg_dump -U postgres -d postgres -F tar -f {REPORT_PATH}/dump_db.tar', shell=True, check=True)
+
+
+def log_in(name, message):
+    logging.info(name)
+    logging.info(message)
+    logging.info('-----' * 20)
+

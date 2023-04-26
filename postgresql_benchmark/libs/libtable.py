@@ -6,6 +6,7 @@ import numpy as np
 from shutil import copy
 from time import time
 from os import listdir
+from libpsb import log_in
 from scipy import integrate
 from sklearn import preprocessing
 from matplotlib import pyplot as plt
@@ -164,6 +165,13 @@ class Report:
     def data_from_file(report_file=REPORT_FILENAME):
         with open(report_file, 'r') as file:
             raw_data = file.read().split()
+        log_in('data_from_file', 
+               ([int(param) for param in raw_data[0::6]],
+                [float(la) for la in raw_data[1::6]],  # latency average data
+                [float(tps1) for tps1 in raw_data[2::6]],  # tps including connections establishing data
+                [float(tps2) for tps2 in raw_data[3::6]],  # tps excluding connections establishing data
+                [float(c_trs) for c_trs in raw_data[4::6]],  # completed transactions
+                [float(e_trs) for e_trs in raw_data[5::6]]))
         return ([int(param) for param in raw_data[0::6]],
                 [float(la) for la in raw_data[1::6]],  # latency average data
                 [float(tps1) for tps1 in raw_data[2::6]],  # tps including connections establishing data
@@ -183,6 +191,7 @@ class Report:
             with warnings.catch_warnings():
                 warnings.filterwarnings('error')
                 try:
+                    log_in('data_aproximation', np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor)))
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
                 except np.RankWarning:
                     polinom_factor -= 1
@@ -467,6 +476,7 @@ class Report:
             func_la = self.data_aproximation(self.param_lst, self.la_lst)
             Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
 
+        log_in('get_la_rating', round((Ila * multiplier), accuracy))
         return round((Ila * multiplier), accuracy)
 
     def get_tps1_rating(self,
@@ -485,6 +495,7 @@ class Report:
         else:
             func_tps1 = self.data_aproximation(self.param_lst, self.tps1_lst)
             Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
+        log_in('get_tps1_rating', round((Itps1 * multiplier), accuracy))
         return round((Itps1 * multiplier), accuracy)
 
     def get_tps2_rating(self,
@@ -503,6 +514,7 @@ class Report:
         else:
             func_tps2 = self.data_aproximation(self.param_lst, self.tps2_lst)
             Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)
+        log_in('get_tps2_rating', round((Itps2 * multiplier), accuracy))
         return round((Itps2 * multiplier), accuracy)
 
     def get_total_rating(self,
@@ -516,6 +528,12 @@ class Report:
         c_tps1 = 2.5 / 3
         c_tps2 = 2.5 / 3
 
+        log_in('get_total_rating', 
+               abs(round((c_la * self.get_la_rating(lower_limit, upper_limit))**(-1)
+                         * (c_tps1 * self.get_tps1_rating(lower_limit, upper_limit))
+                         * (c_tps2 * self.get_tps2_rating(lower_limit, upper_limit))
+                         * multiplier,
+                         accuracy)))
         return abs(round((c_la * self.get_la_rating(lower_limit, upper_limit))**(-1)
                          * (c_tps1 * self.get_tps1_rating(lower_limit, upper_limit))
                          * (c_tps2 * self.get_tps2_rating(lower_limit, upper_limit))

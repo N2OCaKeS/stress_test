@@ -9,10 +9,13 @@
 import subprocess
 import logging
 from sys import exit
-from os import chmod, remove, chdir
+from os import chmod, remove, chdir, path, mkdir
 from shutil import copy2
 from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FUNC
 
+
+if not path.isdir(REPORT_PATH):
+    mkdir(REPORT_PATH)
 
 logging.basicConfig(
         filename=LOG_FUNC, 

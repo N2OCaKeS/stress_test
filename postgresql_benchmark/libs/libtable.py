@@ -6,7 +6,7 @@ import numpy as np
 from shutil import copy
 from time import time
 from os import listdir
-from libpsb import log_in
+from libs.libpsb import log_in
 from scipy import integrate
 from sklearn import preprocessing
 from matplotlib import pyplot as plt

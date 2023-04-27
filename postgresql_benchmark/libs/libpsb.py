@@ -11,14 +11,14 @@ import logging
 from sys import exit
 from os import chmod, remove, chdir, path, mkdir
 from shutil import copy2
-from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FUNC
+from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME
 
 
 if not path.isdir(REPORT_PATH):
     mkdir(REPORT_PATH)
 
 logging.basicConfig(
-        filename=LOG_FUNC, 
+        filename=LOG_FILENAME, 
         level=logging.INFO,
         filemode='a',
         format='%(asctime)s - %(levelname)s - %(name)s - %(funcName)s: %(lineno)d - %(message)s',

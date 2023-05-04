@@ -117,6 +117,10 @@ sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 8/g' /etc/postgresql/$
 sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
+#sed -i "s/ac_audit_mode.*/ac_audit_mode = 'none'/g" /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+
+#cp $setest_old_cfg /home/u/
+
 # ### Настройка конфигурации внешнего сервера ###
 # old_cfg=/etc/postgresql/$PG_VERSION/$PG_SEFOREIGN_CLUSTER/postgresql.conf
 # new_cfg=/etc/postgresql/$PG_VERSION/$PG_SEFOREIGN_CLUSTER/postgresql.conf.new

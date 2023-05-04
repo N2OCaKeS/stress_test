@@ -152,6 +152,11 @@ zefir = Zefir_status_API(folder_tree_id=args.FTI,
                          test_case_name=args.TCAS,
                          basic_auth=args.BA)
 zefir.upload_status(90)
+zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
+                                 token=args.TOKEN,
+                                 basic_auth=args.BA,
+                                 username=args.USER)
+zefir_table
 
 '''
     main
@@ -341,6 +346,12 @@ public = Public(username=args.USER,
                 test_set=args.TS)
 
 public.run_publish()
+
+zefir = Zefir_status_API(folder_tree_id=args.FTI,
+                         test_cycle_name=args.TCYC,
+                         test_case_name=args.TCAS,
+                         basic_auth=args.BA)
+zefir.upload_status(91)
 
 zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
                                  token=args.TOKEN,

@@ -14,6 +14,7 @@ from time import sleep, time, strftime, gmtime
 from os import getuid, path, mkdir
 from fabric import Connection
 from libs.libfsb import astra_version
+from libs.zefir import Zefir_status_API, Zefir_result_table
 from libs.libpublic import Public
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
     HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR, \
@@ -113,7 +114,45 @@ parser.add_argument('-sn', '--stand-num',
                     help='stand num',
                     dest='STAND')
 
+parser.add_argument('-fti', '--folder-tree-id',
+                    action='store',
+                    required=True,
+                    help='folder-tree-id',
+                    dest='FTI')
+
+parser.add_argument('-tcyc', '--test-cycle-name',
+                    action='store',
+                    required=True,
+                    help='test-cycle-name',
+                    dest='TCYC')
+
+parser.add_argument('-tcas', '--test-case-name',
+                    action='store',
+                    required=True,
+                    help='test-case-name',
+                    dest='TCAS')
+
+parser.add_argument('-ba', '--basic-auth',
+                    action='store',
+                    required=True,
+                    help='basic-auth',
+                    dest='BA')
+
+parser.add_argument('-tcv', '--test-cycle-version',
+                    action='store',
+                    required=True,
+                    help='test-cycle-version',
+                    dest='TCV')
+
 args = parser.parse_args()
+
+
+zefir = Zefir_status_API(folder_tree_id=args.FTI,
+                         test_cycle_name=args.TCYC,
+                         test_case_name=args.TCAS,
+                         basic_auth=args.BA)
+zefir.upload_status(90)
+
 '''
     main
 '''
@@ -302,3 +341,9 @@ public = Public(username=args.USER,
                 test_set=args.TS)
 
 public.run_publish()
+
+zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
+                                 token=args.TOKEN,
+                                 basic_auth=args.BA,
+                                 username=args.USER)
+zefir_table

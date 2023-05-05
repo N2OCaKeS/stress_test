@@ -23,6 +23,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
 from libs.libpsqltests import Test
+from libs.zefir import Zefir_status_API, Zefir_result_table
 from libs.libpsb import astra_version, dump
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
@@ -111,7 +112,49 @@ parser.add_argument('-pack', '--package',
                     help='test package',
                     dest='PACKAGE')
 
+parser.add_argument('-fti', '--folder-tree-id',
+                    action='store',
+                    required=True,
+                    help='folder-tree-id',
+                    dest='FTI')
+
+parser.add_argument('-tcyc', '--test-cycle-name',
+                    action='store',
+                    required=True,
+                    help='test-cycle-name',
+                    dest='TCYC')
+
+parser.add_argument('-tcas', '--test-case-name',
+                    action='store',
+                    required=True,
+                    help='test-case-name',
+                    dest='TCAS')
+
+parser.add_argument('-ba', '--basic-auth',
+                    action='store',
+                    required=True,
+                    help='basic-auth',
+                    dest='BA')
+
+parser.add_argument('-tcv', '--test-cycle-version',
+                    action='store',
+                    required=True,
+                    help='test-cycle-version',
+                    dest='TCV')
+
 args = parser.parse_args()
+
+
+zefir = Zefir_status_API(folder_tree_id=args.FTI,
+                         test_cycle_name=args.TCYC,
+                         test_case_name=args.TCAS,
+                         basic_auth=args.BA)
+zefir.upload_status(90)
+zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
+                                 token=args.TOKEN,
+                                 basic_auth=args.BA,
+                                 username=args.USER)
+zefir_table
 
 #
 start_time = time()
@@ -472,7 +515,12 @@ public_args = {
     'conf_parent_page':args.PPAGE,
     'conf_new_page_name':args.NPAGE,
     'grade_stand':args.STAND,
-    'package':args.PACKAGE
+    'package':args.PACKAGE,
+    'folder_tree_id':args.FTI,
+    'test_cycle_name':args.TCYC,
+    'test_case_name':args.TCAS,
+    'basic_auth':args.BA,
+    'test_cycle_version':args.TCV
 }
 with open('psb_public_args.json', 'w') as w:
     json.dump(public_args, w)

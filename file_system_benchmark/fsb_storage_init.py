@@ -7,6 +7,7 @@
 
 import argparse
 import subprocess
+import os
 
 from fsb_conf import STORAGE_NAME, STORAGE_MOUNT_DIR, INODE_COUNT
 
@@ -44,6 +45,24 @@ def cmd(command,
         return code
         exit(2)
 
+def check_output_command(command, out=None):
+    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    output, errors = result.communicate()
+    output = os.linesep.join([s for s in output.splitlines() if s])
+    errors = os.linesep.join([s for s in errors.splitlines() if s])
+    if errors == "":
+        return output
+    elif out != None:
+        return errors + output
+    else:
+        return errors
+
+fact_storage_name = check_output_command("lsblk | awk 'NR==2' | awk '{print $1;}'")
+if STORAGE_NAME != fact_storage_name:
+    STORAGE_NAME = fact_storage_name
+    print(f'Actual storage name - {fact_storage_name}')
+    print(f'Used storage changed to - {STORAGE_NAME}')
+else: print(f'Used storage - {STORAGE_NAME}')
 
 cmd('apt install -y libpdp-dev parted')
 

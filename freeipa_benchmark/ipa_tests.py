@@ -24,10 +24,15 @@ class EnrollementTest():
         # presettings_on_hosts_for_ipa_clients()
 
     def run_test(self):
-        for clients in range(LOWER_LIMITE_CLIENTS, UPPER_LIMITE_CLIENTS + STEP_CLIENTS, STEP_CLIENTS):
-        # for clients in [10, 25, 50, 100]:
+        # for clients in range(LOWER_LIMITE_CLIENTS, UPPER_LIMITE_CLIENTS + STEP_CLIENTS, STEP_CLIENTS):
+        # for clients in [10, 25, 50, 100, 200, 300, 400, 500, 1000]:
+        # for clients in [3, 6, 9]:
+        # for clients in [9, 24, 48, 99, 198, 300, 399, 498, 999]:
+        # for clients in [99, 198, 300, 399, 498, 600, 699]:
+        # for clients in [100, 200, 298, 400, 498, 600, 698, 800, 898, 1000]:
+        for clients in [600, 700, 800, 900, 1000]:
             create_centos_cont(clients)
-            sleep(30)
+            sleep(600)
             time_start = time()
             init_ipa_client(clients)
             time_end = time()
@@ -38,6 +43,7 @@ class EnrollementTest():
             enrollement_report.close()
             delete_clients_from_dc(clients)
             delete_docker_cont(clients)
+            sleep(300)
 
 
 class AutentificationTest():

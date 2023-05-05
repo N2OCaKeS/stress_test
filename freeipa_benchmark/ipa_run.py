@@ -20,40 +20,40 @@ if __name__ == "__main__":
     """
         Ининциализация КД
     """
-    if host_is_available("server") == False:
-        sleep(30)
-        if host_is_available('server') == False:
-            print("\031[92mКД не доступен по ssh!\033[0m")
-            exit()
+    # if host_is_available("server") == False:
+    #     sleep(30)
+    #     if host_is_available('server') == False:
+    #         print("\033[91mКД не доступен по ssh!\033[0m")
+    #         exit()
 
-    out = remote_cmd("ip a", HOSTS['server']['ip'])
-    print(out)
-    sleep(15)
-    remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
-    remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_init_dc.py', "ipa_init_dc.py")
-    remote_exec("sudo python3 ipa_init_dc.py", 'server')
+    # out = remote_cmd("ip a", HOSTS['server']['ip'])
+    # print(out)
+    # sleep(15)
+    # remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
+    # remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_init_dc.py', "ipa_init_dc.py")
+    # remote_exec("sudo python3 ipa_init_dc.py", 'server')
     """
         Инициализация реплики
     """
     # Ждем пока КД перезагрузится
-    while host_is_available("server") == False:
-        print("\031[92mКД пока не доступен по ssh!\033[0m")
-        sleep(1)
+    # while host_is_available("server") == False:
+    #     print("\031[92mКД пока не доступен по ssh!\033[0m")
+    #     sleep(1)
 
-    if DOGTAG:
-        if host_is_available("replica") == False:
-            sleep(30)
-            if host_is_available('replica') == False:
-                print("\031[92mРеплика не доступна по ssh!\033[0m")
-                exit()
+    # if DOGTAG:
+    #     if host_is_available("replica") == False:
+    #         sleep(30)
+    #         if host_is_available('replica') == False:
+    #             print("\033[91mРеплика не доступна по ssh!\033[0m")
+    #             exit()
 
-        out_rep = remote_cmd("ip a", HOSTS['replica']['ip'])
-        print(out_rep)
-        sleep(15)
-        # Копируем инициализирующие скрипты по sftp и запускаем
-        remote_put_file(HOSTS['replica']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
-        remote_put_file(HOSTS['replica']['ip'], f'/home/{USER}/ipa_init_replica.py', "ipa_init_replica.py")
-        remote_exec("sudo python3 ipa_init_replica.py", 'replica')
+    #     out_rep = remote_cmd("ip a", HOSTS['replica']['ip'])
+    #     print(out_rep)
+    #     sleep(15)
+    #     # Копируем инициализирующие скрипты по sftp и запускаем
+    #     remote_put_file(HOSTS['replica']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
+    #     remote_put_file(HOSTS['replica']['ip'], f'/home/{USER}/ipa_init_replica.py', "ipa_init_replica.py")
+    #     remote_exec("sudo python3 ipa_init_replica.py", 'replica')
     
     """
         Ввод клиентов в домен
@@ -61,9 +61,11 @@ if __name__ == "__main__":
 
 
     #####--------Enrollement TEST------------
-
-    # enroll_test = EnrollementTest([])
-    # enroll_test.run_test()
+    # remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/libscanner.py', "libs/libscanner.py")
+    # remote_exec("sudo python3 libscanner.py", 'server')
+    
+    enroll_test = EnrollementTest([])
+    enroll_test.run_test()
 
     #####--------Enrollement TEST------------
 

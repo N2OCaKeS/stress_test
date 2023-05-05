@@ -45,9 +45,11 @@ def initialization_freeipa_server():
         hostname_file = open("/etc/hostname", "r")
         hostname = hostname_file.readline()
         hostname_file.close()
-        hostname_file = open("/etc/hostname", "w")
-        hostname_file.write(hostname.lower())
-        hostname_file.close()
+        # hostname_file = open("/etc/hostname", "w")
+        cmd(f"hostnamectl set-hostname {hostname.lower()}")
+        # hostname_file.write(hostname.lower())
+        # hostname_file.close()
+
         file_hosts = open("/etc/hosts", "r")
         temp = file_hosts.readlines()
         for ind, line in enumerate(temp[::]):

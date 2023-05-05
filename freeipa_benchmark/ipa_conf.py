@@ -15,13 +15,13 @@ PASSWORD_DOCKER_CONT = 'docker'
 
 HOSTS = {
     'server': {
-                'ip': '10.177.5.171'
+                'ip': '10.177.102.203'
               },
     'replica': {
                 'ip': '10.177.102.202'
               },
     'hosts-with-clients': {
-                'ip': ['10.177.102.201', '10.177.102.202']
+                'ip': ['10.177.5.184', '10.177.5.104']
               }
 }
 
@@ -39,7 +39,7 @@ EXT_REPO = 'deb ftp://qa111.devos.astralinux.ru/astra/stable/1.7/extended-reposi
 
 DOCKER_IMAGE_FOR_IPA_CLIENT = 'vanyawrestling/presetting-for-freeipa-client:centos7'
 
-COMMAND_RUN_DOCKER_CONT = 'sudo docker run -tid --name {name} -h {hostname} --dns {dns_server} --dns-search {dns_domain} -v /sys/fs/cgroup:/sys/fs/cgroup:ro -v /tmp/$(mktemp -d):/run -p {out_port}:22 {docker_image_for_ipa_client}'
+COMMAND_RUN_DOCKER_CONT = 'docker run -tid --name {name} -h {hostname} --privileged=true --dns {dns_server} --dns-search {dns_domain} -v /sys/fs/cgroup:/sys/fs/cgroup:ro -v /tmp/$(mktemp -d):/run -p {out_port}:22 {docker_image_for_ipa_client}'
 
 COMMAND_IPA_CLIENT_INSTALL = f"sudo ipa-client-install -w {DC_PASSWORD} -p admin --unattended"
 

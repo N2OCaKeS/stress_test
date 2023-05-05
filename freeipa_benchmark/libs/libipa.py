@@ -2,6 +2,7 @@ import os
 import subprocess
 import paramiko
 
+from paramiko.ssh_exception import NoValidConnectionsError
 from time import sleep
 from fabric import Connection
 from ipa_conf import USER, PASSWORD, PASSWORD_DOCKER_CONT, HOSTS
@@ -54,15 +55,21 @@ def remote_put_file(host, remote_path, local_path, port=22, user=USER, passwd=PA
 
 
 def get_cmd_start(cmd, host, ssh_username, ssh_pass, port=22):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(host, username=ssh_username, password=ssh_pass, port=port)
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(host, username=ssh_username, password=ssh_pass, port=port)
+    except NoValidConnectionsError:
+        return ssh, ["", "Была ошибка NoValidConnectionsError", ""]
     # print(id_client, ": get_cmd_start")
     return ssh, ssh.exec_command(cmd)
 
 def get_cmd_out(ssh, stdin, stdout, strerr):
-    result =stdout.read()
-    out = result.decode('UTF-8')
+    try:
+        result = stdout.read()
+        out = result.decode('UTF-8')
+    except AttributeError:
+        out = stdout
     ssh.close()
     # print(id_client, ": get_cmd_out")
     return out

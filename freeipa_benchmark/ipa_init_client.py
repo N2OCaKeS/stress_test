@@ -3,7 +3,7 @@
 from math import ceil
 
 from libs.libipa import cmd, remote_cmd, remote_exec, get_cmd_start, get_cmd_out
-from ipa_conf import DC_PASSWORD, DOMAIN, USER, HOSTS, PASSWORD_DOCKER_CONT, DOCKER_IMAGE_FOR_IPA_CLIENT, COMMAND_RUN_DOCKER_CONT, COMMAND_IPA_CLIENT_INSTALL, UPPER_LIMITE_CLIENTS
+from ipa_conf import DC_PASSWORD, DOMAIN, USER, PASSWORD, HOSTS, PASSWORD_DOCKER_CONT, DOCKER_IMAGE_FOR_IPA_CLIENT, COMMAND_RUN_DOCKER_CONT, COMMAND_IPA_CLIENT_INSTALL, UPPER_LIMITE_CLIENTS
 
 def presettings_on_hosts_for_ipa_clients():
     for ip_client_host in HOSTS['hosts-with-clients']['ip']:
@@ -87,7 +87,7 @@ def init_ipa_client(qty_clients):
         for _ in range(ceil(qty_clients / len(hosts_with_clients))):
             ssh, pipes = get_cmd_start(cmd=COMMAND_IPA_CLIENT_INSTALL, host=ip_client_host, ssh_username=USER, ssh_pass=PASSWORD_DOCKER_CONT, port=10000+number_ipa_client)
             connections.append([ssh, *pipes])
-            
+            print(f"cmd_start: {number_ipa_client}")
             number_ipa_client += 1
             if number_ipa_client > qty_clients:
                 break
@@ -97,8 +97,12 @@ def init_ipa_client(qty_clients):
     #     ssh, pipes = get_cmd_start(cmd=COMMAND_IPA_CLIENT_INSTALL, host=HOSTS['client']['ip'], ssh_username=USER, ssh_pass=PASSWORD_DOCKER_CONT, port=10000+id_client)
     #     connections.append([ssh, *pipes])
     
-    for con in connections:
+    for ind, con in enumerate(connections):
         out = get_cmd_out(*con)
+        # print(f"cmd_out: {ind + 1}")
+        # file = open(f"clients/{ind + 1}.txt", "w")
+        # file.write(out)
+        # file.close()
         # print(out)
 
 
@@ -132,26 +136,38 @@ def delete_clients_from_hosts(qty_clients):
             if number_ipa_client > qty_clients:
                 break
     
-    for con in connections:
+    for ind, con in enumerate(connections):
         out = get_cmd_out(*con)
         # print(out)
+
 
 
 def delete_docker_cont(qty_clients):
     """
         Остановка докер контейнеров и их удаление
     """
+    connections = []
+
     hosts_with_clients = HOSTS['hosts-with-clients']['ip'].copy()
     number_ipa_client = 1
     for ip_client_host in hosts_with_clients:
         if qty_clients < len(hosts_with_clients):
             hosts_with_clients.pop(-1)
         for _ in range(ceil(qty_clients / len(hosts_with_clients))):
-            remote_cmd(command=f"sudo docker stop client_{number_ipa_client}", host=ip_client_host)
+            
+            # out = remote_cmd(command=f"docker stop client_{number_ipa_client}", host=ip_client_host)
+            # print(number_ipa_client, out, ip_client_host)
+            
+            ssh, pipes = get_cmd_start(cmd=f"docker stop client_{number_ipa_client}", host=ip_client_host, ssh_username=USER, ssh_pass=PASSWORD)
+            connections.append([ssh, *pipes])
+
             number_ipa_client += 1
             if number_ipa_client > qty_clients:
                 break
     
+    for con in connections:
+        get_cmd_out(*con)
+
     
     # # TODO Переделать в одну команду
     # for id_client in range(id_start, id_start+qty_clients):
@@ -160,7 +176,7 @@ def delete_docker_cont(qty_clients):
     number_ipa_client = 1
     for ip_client_host in HOSTS['hosts-with-clients']['ip']:
         for _ in range(ceil(qty_clients / len(HOSTS['hosts-with-clients']['ip']))):
-            remote_cmd(command=f"sudo docker rm client_{number_ipa_client}", host=ip_client_host)
+            remote_cmd(command=f"docker rm client_{number_ipa_client}", host=ip_client_host)
             number_ipa_client += 1
             if number_ipa_client > qty_clients:
                 break

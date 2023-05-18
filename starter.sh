@@ -5,6 +5,7 @@
 #
 
 echo git bench = $1
+echo git bench = $2
 set -vx
 
 git_directory="stress_test"
@@ -22,5 +23,6 @@ git checkout $1
 #Настраиваем окружение и запускаем тест
 cd $1
 ./prepare.sh
-./run.py
+./run.py -n $2
+
 

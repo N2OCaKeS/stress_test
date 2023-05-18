@@ -90,7 +90,7 @@ port = 22
 clonezilla_command = cz_comm[args.STAND][args.RELEASE]
 branch = args.BRANCH
 parent_page = '1.7.4'
-dates_name = f'dates_{args.STAND}'
+dates_name = f'dates_{args.STAND}.conf'
 
 dates = f'''--username {username} 
            --token {token} 
@@ -107,7 +107,7 @@ dates = f'''--username {username}
            -tcv {args.RELEASE}
 '''
 
-with open(f'/home/u/git/stress_test/{dates_name}.conf', 'w') as w:
+with open(f'/home/u/git/stress_test/{dates_name}', 'w') as w:
     w.write(dates)
 
 home_dir = os.path.expanduser('~')
@@ -261,7 +261,7 @@ if read_status() == success:
     write_status(success)
 
 #dates.conf
-create_remote_file(f'/home/u/git/stress_test/{dates_name}.conf', f'/home/u/{dates_name}.conf')
+create_remote_file(f'/home/u/git/stress_test/{dates_name}', f'/home/u/{dates_name}')
 #starter
 create_remote_file('/home/u/git/stress_test/starter.sh', '/home/u/starter.sh')
 

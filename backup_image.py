@@ -111,14 +111,14 @@ username = f'--username {username}'
 token = f'--token {token}'
 confluence_space = "--confluence-space 'DD'"
 confluence_parent_page = f'--confluence-parent-page "1.7 ⬝ {parent_page}"'
-confluence_new_page = f'-confluence-new-page 17.05_{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}'
+confluence_new_page = f'--confluence-new-page 17.05_{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}'
 fs = f'-fs {args.TEST.lower()}'
 ts = '-ts fs_mark_count'
 sn = f'-sn {args.ST}'
 fti = f'-fti {args.CTI}'
 tcyc = f'-tcyc {args.TCYCLE}'
-tcas = f'-tcas {args.TCASE}'
-ba = f'-ba {ba}'
+tcas = f'-tcas "{args.TCASE}"'
+ba = f'-ba "{ba}"'
 tcv = f'-tcv {args.RELEASE}'
 
 dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} {fs} {ts} {sn} {fti} \

@@ -7,7 +7,7 @@ import logging
 from tempfile import mkstemp
 import socket
 import paramiko
-from backup_image_com import cz_comm
+from backup_image_command import cz_comm
 import argparse
 from backup_image_conf import *
 

@@ -111,15 +111,15 @@ with open(f'/home/u/git/stress_test/{dates_name}', 'w') as w:
     w.write(dates)
 
 home_dir = os.path.expanduser('~')
-if not os.path.isdir(home_dir + '/status'):
-    os.mkdir(home_dir + '/status')
-status_dir = home_dir + '/status'
+if not os.path.isdir(f'/home/u/git/stress_test/status_{args.STAND}'):
+    os.mkdir(f'/home/u/git/stress_test/status_{args.STAND}')
+status_dir = f'/home/u/git/stress_test/status_{args.STAND}'
 except_num = 1
-if os.path.isfile(home_dir + '/backup_image.log'):
-    os.remove(home_dir + '/backup_image.log')
+if os.path.isfile(f'/home/u/git/stress_test/backup_image_{args.STAND}.log'):
+    os.remove(f'/home/u/git/stress_test/backup_image_{args.STAND}.log')
 
 logging.basicConfig(
-        filename=home_dir + '/backup_image.log', 
+        filename=f'/home/u/git/stress_test/backup_image_{args.STAND}.log', 
         level=logging.DEBUG, 
         filemode='a',
         format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',

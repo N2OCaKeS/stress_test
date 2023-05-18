@@ -65,7 +65,8 @@ parser.add_argument('-ts', '--test-set',
                              'big_files',
                              'fs_mark_count',
                              'fs_mark_size'],
-                    required=True,
+                    default='fs_mark_count',
+                    required=False,
                     dest='TS')
 
 parser.add_argument('--parsec',

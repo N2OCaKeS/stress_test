@@ -235,7 +235,8 @@ else: write_status(fail)
 
 if read_status() == success:
     write_status(in_prog)
-    comm_and_log('sshpass -v -p 1 ssh u@' + stand_ip + ' sudo reboot')
+    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
+                 -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
     sleep(3)
     holder = 0
     while holder == 0:
@@ -246,12 +247,14 @@ if read_status() == success:
         except Exception as e:
             logging.error(e)
             sleep(60)
-    comm_and_log('sshpass -v -p 1 ssh u@' + stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
+    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                 u@' + stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
     write_status(success)
 
 if read_status() == success:
     write_status(in_prog)
-    comm_and_log('sshpass -v -p 1 ssh u@' + stand_ip + ' sudo reboot')
+    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                 u@' + stand_ip + ' sudo reboot')
     sleep(3)
     while socket_available() != 0:
         sleep(30)
@@ -264,7 +267,8 @@ create_remote_file('/home/u/git/stress_test/starter.sh', '/home/u/starter.sh')
 
 if read_status() == success:
     write_status(in_prog)
-    comm_and_log('sshpass -v -p 1 ssh u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
+    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                 u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
     write_status('done')
 
 

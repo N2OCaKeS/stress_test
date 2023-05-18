@@ -1,10 +1,5 @@
 
 
-username = 'dtimonin'
-token = 'MjEyOTcxNzIwOTY3OrXcjTH2BpyzcE8+4avH2EkN8U29'
-ba = 'Basic aXZlbGlrYW5vdjpWQkJvcmVjMTIxNQ=='
-
-
 stands_ip = {
     'stand1':'10.177.103.201',
     'stand2':'10.177.103.202',
@@ -22,3 +17,25 @@ paren_page = {
     'XFS':'Файловые системы',
     'NTFS':'Файловые системы'
 }
+
+branches = {
+    'file system benchmark. EXT4':'file_systems',
+    'file system benchmark. XFS':'file_systems',
+    'postgresql benchmark':'postgresql',
+    'file system benchmark. OCFS2':'file_systems',
+    'file system benchmark. NTFS':'file_systems',
+    'file system benchmark. EXT3':'file_systems',
+    'file system benchmark. EXT2':'file_systems',
+    'file system benchmark. Fat32':'file_systems',
+    'file system benchmark. EXT4 parsec':'file_systems',
+    'file system benchmark. OCFS2 parsec':'file_systems'
+}
+
+
+cycle_tree_index = {
+    '1.7.4':'2773',
+    '1.7.3':'2774',
+    '1.7.3.UU.1':'2745',
+    '1.7.3.UU.2':'2808'
+}
+

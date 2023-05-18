@@ -2,6 +2,7 @@
 
 import subprocess
 import os
+import json
 from time import sleep
 import logging
 from tempfile import mkstemp
@@ -80,6 +81,12 @@ parser.add_argument('-cti',
 
 args = parser.parse_args()
 
+
+with open('/home/u/tokens.json', 'r') as r:
+    tokens = json.load(r)
+__conf_token = tokens['conf_token']
+__username = tokens['username']
+__jira_token = tokens['jira_token']
 success = f'Success {args.STAND} {args.TEST}'
 in_prog = f'In progress {args.STAND} {args.TEST}'
 fail = f'Fail {args.STAND} {args.TEST}'
@@ -90,10 +97,10 @@ password = '1'
 port = 22
 clonezilla_command = cz_comm[args.STAND][args.RELEASE]
 branch = args.BRANCH
-parent_page = '1.7.4'
+parent_page = '1.7.3.UU2 ⬝ 1.7.3.UU.2'
 dates_name = f'dates_{args.STAND}.conf'
-username = f'--username {username}'
-token = f'--token {token}'
+username = f'--username {__username}'
+token = f'--token {__conf_token}'
 confluence_space = "--confluence-space 'DD'"
 confluence_parent_page = f'--confluence-parent-page "1.7 ⬝ {parent_page}"'
 confluence_new_page = f'--confluence-new-page 17.05_{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}'
@@ -103,7 +110,7 @@ sn = f'-sn {args.ST}'
 fti = f'-fti {args.CTI}'
 tcyc = f'-tcyc {args.TCYCLE}'
 tcas = f'-tcas "{args.TCASE}"'
-ba = f'-ba "{ba}"'
+ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
 dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} {fs} {sn} {fti} \
     {tcyc} {tcas} {ba} {tcv}'

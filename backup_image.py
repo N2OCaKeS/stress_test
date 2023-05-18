@@ -80,9 +80,10 @@ parser.add_argument('-cti',
 
 args = parser.parse_args()
 
-success = 'success'
-in_prog = 'in progress'
-fail = 'fail'
+success = f'Success {args.STAND} {args.TEST}'
+in_prog = f'In progress {args.STAND} {args.TEST}'
+fail = f'Fail {args.STAND} {args.TEST}'
+done = f'Done {args.STAND} {args.TEST}'
 stand_ip = stands_ip[args.STAND]
 user = 'u'
 password = '1'
@@ -91,36 +92,20 @@ clonezilla_command = cz_comm[args.STAND][args.RELEASE]
 branch = args.BRANCH
 parent_page = '1.7.4'
 dates_name = f'dates_{args.STAND}.conf'
-
-# dates = f'''--username {username} 
-#            --token {token} 
-#            --confluence-space 'DD' 
-#            --confluence-parent-page "1.7 ⬝ {parent_page}" 
-#            --confluence-new-page 17.05_{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND} 
-#            -fs {args.TEST.lower()} 
-#            -ts fs_mark_count 
-#            -sn {args.ST} 
-#            -fti {args.CTI} 
-#            -tcyc {args.TCYCLE} 
-#            -tcas {args.TCASE} 
-#            -ba {ba} 
-#            -tcv {args.RELEASE}
-# '''
-
 username = f'--username {username}'
 token = f'--token {token}'
 confluence_space = "--confluence-space 'DD'"
 confluence_parent_page = f'--confluence-parent-page "1.7 ⬝ {parent_page}"'
 confluence_new_page = f'--confluence-new-page 17.05_{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}'
 fs = f'-fs {args.TEST.lower()}'
-ts = '-ts fs_mark_count'
+#ts = '-ts fs_mark_count'
 sn = f'-sn {args.ST}'
 fti = f'-fti {args.CTI}'
 tcyc = f'-tcyc {args.TCYCLE}'
 tcas = f'-tcas "{args.TCASE}"'
 ba = f'-ba "{ba}"'
 tcv = f'-tcv {args.RELEASE}'
-dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} {fs} {ts} {sn} {fti} \
+dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} {fs} {sn} {fti} \
     {tcyc} {tcas} {ba} {tcv}'
 
 with open(f'/home/u/git/stress_test/{dates_name}', 'w') as w:
@@ -285,6 +270,6 @@ if read_status() == success:
     write_status(in_prog)
     comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                  u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
-    write_status('done')
+    write_status(done)
 
 

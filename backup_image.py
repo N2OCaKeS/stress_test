@@ -120,7 +120,6 @@ tcyc = f'-tcyc {args.TCYCLE}'
 tcas = f'-tcas "{args.TCASE}"'
 ba = f'-ba "{ba}"'
 tcv = f'-tcv {args.RELEASE}'
-
 dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} {fs} {ts} {sn} {fti} \
     {tcyc} {tcas} {ba} {tcv}'
 

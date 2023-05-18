@@ -11,7 +11,7 @@ parser.add_argument('-n',
                     dest='NAME')
 args = parser.parse_args()
 
-with open(f'/home/u/{args.NAME}.conf', 'r') as r:
+with open(f'/home/u/{args.NAME}', 'r') as r:
     dates = r.read()
 
 subprocess.run(f'sudo venv/bin/python3 fsb_run.py {dates}', shell=True)

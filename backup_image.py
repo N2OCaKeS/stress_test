@@ -107,7 +107,7 @@ dates = f'''--username {username}
            -tcv {args.RELEASE}
 '''
 
-with open(f'/home/u/bendiks/{dates_name}', 'w') as w:
+with open(f'/home/u/git/stress_test/{dates_name}', 'w') as w:
     w.write(dates)
 
 home_dir = os.path.expanduser('~')
@@ -256,16 +256,11 @@ if read_status() == success:
     while socket_available() != 0:
         sleep(30)
     write_status(success)
-'''
-TODO
-Сделать ветку в git - bendiks
-Перенести изменения starter и run в гит ветки
-'''
-#dates.conf
-create_remote_file(f'/home/u/bendiks/{dates_name}', f'/home/u/{dates_name}')
-#starter
-create_remote_file('/home/u/bendiks/starter.sh', '/home/u/starter.sh')
 
+#dates.conf
+create_remote_file(f'/home/u/git/stress_test/{dates_name}', f'/home/u/{dates_name}')
+#starter
+create_remote_file('/home/u/git/stress_test/starter.sh', '/home/u/starter.sh')
 
 if read_status() == success:
     write_status(in_prog)

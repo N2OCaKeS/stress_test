@@ -1,7 +1,7 @@
 #!/bin/python3
 
 import subprocess
-from backup_image_conf import branches, cycle_tree_index
+from backup_image_conf import branches, cycle_tree_index, tests
 import requests
 import json
 
@@ -52,11 +52,11 @@ dates_list = sorted([dates_list_raw[x:x+3] for x in range(0, len(dates_list_raw)
 
 for i in range(0, len(dates_list)):
 
-    #print('_'.join(dates_list[i][0]))
+    print(tests[dates_list[i][1]])
 
     sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
     rs = f'-rs {dates_list[i][0][0]}'
-    test = '-test XFS' 
+    test = f'-test {tests[dates_list[i][1]]}' 
     mode = f'-mode {dates_list[i][0][1]}'
     kn = f'-kn {dates_list[i][0][2]}' 
     stand = f'-stand {dates_list[i][0][3]}'

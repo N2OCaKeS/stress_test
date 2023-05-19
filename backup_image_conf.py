@@ -39,3 +39,16 @@ cycle_tree_index = {
     '1.7.3.UU.2':'2808'
 }
 
+tests = {
+    'file system benchmark. EXT4':'EXT4',
+    'file system benchmark. XFS':'XFS',
+    'postgresql benchmark':'postgresql',
+    'file system benchmark. OCFS2':'OCFS2',
+    'file system benchmark. NTFS':'NTFS',
+    'file system benchmark. EXT3':'EXT3',
+    'file system benchmark. EXT2':'EXT2',
+    'file system benchmark. Fat32':'Fat32',
+    'file system benchmark. EXT4 parsec':'EXT4 parsec',
+    'file system benchmark. OCFS2 parsec':'OCFS2 parsec'
+}
+

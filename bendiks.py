@@ -4,14 +4,32 @@ import subprocess
 from backup_image_conf import branches, cycle_tree_index, tests, parent_page_list
 import requests
 import json
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-rs', '--release',
+                    action='store',
+                    required=True,
+                    help='release num',
+                    dest='RELEASE')
+
+parser.add_argument('-st',
+                    action='store',
+                    required=True,
+                    help='stand',
+                    dest='STAND')
+
+args = parser.parse_args()
 
 with open('/home/timonin/tokens.json', 'r') as r:
     tokens = json.load(r)
 __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
-__pt_version = '1.7.4'
-__stand = 'stand1'
+#__pt_version = '1.7.4'
+__pt_version = args.RELEASE
+#__stand = 'stand1'
+__stand = args.STAND
 __test_list = ['XFS', 'EXT4', 'NTFS']
 
 #Делаем get запрос в jira

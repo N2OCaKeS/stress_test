@@ -13,9 +13,12 @@ modes = {
     'smolensk':'2'
 }
 
-paren_page = {
-    'XFS':'Файловые системы',
-    'NTFS':'Файловые системы'
+parent_page_list = {
+    '1.7.4':{'postgresql':'PostgreSQL',
+             'XFS':'Файловые системы',
+             'NTFS':'Файловые системы',
+             'EXT4':'Файловые системы'
+             }
 }
 
 branches = {

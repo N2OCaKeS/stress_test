@@ -79,6 +79,12 @@ parser.add_argument('-cti',
                     help='cycle tree index',
                     dest='CTI')
 
+parser.add_argument('-pp',
+                    action='store',
+                    required=True,
+                    help='parent page in conf',
+                    dest='PARP')
+
 args = parser.parse_args()
 
 
@@ -97,13 +103,13 @@ password = '1'
 port = 22
 clonezilla_command = cz_comm[args.STAND][args.RELEASE]
 branch = args.BRANCH
-parent_page = '1.7.3.UU2 ⬝ 1.7.3.UU.2'
+parent_page = args.PARP
 dates_name = f'dates_{args.STAND}.conf'
 username = f'--username {__username}'
 token = f'--token {__conf_token}'
 confluence_space = "--confluence-space 'DD'"
 confluence_parent_page = f'--confluence-parent-page "{parent_page}"'
-confluence_new_page = f'--confluence-new-page 19.05_{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}'
+confluence_new_page = f'--confluence-new-page {args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}'
 fs = f'-fs {args.TEST.lower()}'
 #ts = '-ts fs_mark_count'
 sn = f'-sn {args.ST}'

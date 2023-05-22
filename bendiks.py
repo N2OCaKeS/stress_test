@@ -1,7 +1,7 @@
 #!/bin/python3
 
 import subprocess
-from backup_image_conf import branches, cycle_tree_index, tests
+from backup_image_conf import branches, cycle_tree_index, tests, parent_page_list
 import requests
 import json
 
@@ -10,7 +10,9 @@ with open('/home/timonin/tokens.json', 'r') as r:
 __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
-__pt_version = '1.7.3.UU.2'
+__pt_version = '1.7.4'
+__stand = 'stand1'
+__test_list = ['XFS', 'EXT4', 'NTFS']
 
 #Делаем get запрос в jira
 matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
@@ -50,21 +52,41 @@ dates_list = sorted([dates_list_raw[x:x+3] for x in range(0, len(dates_list_raw)
 
 #dates_list = [[['1.7.4', 'orel', '5.10.176-1-generic', 'stand1'], 'postgresql benchmark', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'file system benchmark. EXT4', 'NOT_EXECUTED'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'file system benchmark. XFS', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'postgresql benchmark', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-lowlatency', 'stand1'], 'postgresql benchmark', 'PASS']]
 
-for i in range(0, len(dates_list)):
+print(f'''
+ ----------------------------------------------------------------------------------------------------
+ ----------------------------------------------------------------------------------------------------
+| \033[43mПараметры запуска:\033[0m
+| \033[93mВыбран релиз: {__pt_version} \033[0m 
+| \033[93mВыбран стенд: {__stand} \033[0m                                                                           
+| \033[93mВыбраны тесты: {__test_list} \033[0m                                                                     
+ ----------------------------------------------------------------------------------------------------
+ ----------------------------------------------------------------------------------------------------
+''')
+for i in range(0, len(dates_list)):    
+    print('-----' * 20)
+    print('Итерация №', i + 1)
+    if dates_list[i][0][3] == __stand:
+        print(f'Cтенд: \033[92m{dates_list[i][0][3]}\033[0m')
+        if tests[dates_list[i][1]] in __test_list:
+            print(f'Ядро: {dates_list[i][0][2]}')
+            print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
 
-    print(tests[dates_list[i][1]])
+            sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
+            rs = f'-rs {dates_list[i][0][0]}'
+            test = f'-test {tests[dates_list[i][1]]}' 
+            mode = f'-mode {dates_list[i][0][1]}'
+            kn = f'-kn {dates_list[i][0][2]}' 
+            stand = f'-stand {dates_list[i][0][3]}'
+            tcyc = f'-tcyc {"_".join(dates_list[i][0])}' 
+            tcas = f'-tcas "{dates_list[i][1]}"' 
+            branch = f'-branch {branches[dates_list[i][1]]}' 
+            cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
+            pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
 
-    sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
-    rs = f'-rs {dates_list[i][0][0]}'
-    test = f'-test {tests[dates_list[i][1]]}' 
-    mode = f'-mode {dates_list[i][0][1]}'
-    kn = f'-kn {dates_list[i][0][2]}' 
-    stand = f'-stand {dates_list[i][0][3]}'
-    tcyc = f'-tcyc {"_".join(dates_list[i][0])}' 
-    tcas = f'-tcas "{dates_list[i][1]}"' 
-    branch = f'-branch {branches[dates_list[i][1]]}' 
-    cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
-
-    #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti}')
-    subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti}', shell=True)
-
+            print('Выполняется...')
+            #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
+            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}', shell=True)
+            print('Выполнен')
+        else: print(f'Тест: \033[91m{tests[dates_list[i][1]]}\033[0m игнорируется')
+    else: print('Cтенд:', dates_list[i][0][3], 'игнорируется')
+print('\n\033[95mTest cycle done\033[0m\n')

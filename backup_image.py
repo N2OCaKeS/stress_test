@@ -85,6 +85,12 @@ parser.add_argument('-pp',
                     help='parent page in conf',
                     dest='PARP')
 
+parser.add_argument('-ps',
+                    action='store',
+                    required=False,
+                    help='test psql',
+                    dest='PSQL')
+
 args = parser.parse_args()
 
 
@@ -118,8 +124,12 @@ tcyc = f'-tcyc {args.TCYCLE}'
 tcas = f'-tcas "{args.TCASE}"'
 ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
-dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} {fs} {sn} {fti} \
-    {tcyc} {tcas} {ba} {tcv}'
+psql = '-ps psql'
+if args.PSQL:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+        {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} {psql}'
+else: dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+    {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 
 with open(f'/home/u/git/stress_test/{dates_name}', 'w') as w:
     w.write(dates)

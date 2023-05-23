@@ -103,14 +103,15 @@ for i in range(0, len(dates_list)):
             branch = f'-branch {branches[dates_list[i][1]]}' 
             cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
             pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
-            psql = '-ps psql'
+            #psql = '-ps psql'
 
             print('Выполняется...')
             #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
-            if tests[dates_list[i][1]] == 'postgresql':
-                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                               {tcas} {branch} {cti} {pp} {psql}', shell=True)
-            else: subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+            #if tests[dates_list[i][1]] == 'postgresql':
+            #    subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+            #                   {tcas} {branch} {cti} {pp} {psql}', shell=True)
+            #else: 
+            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                  {tcas} {branch} {cti} {pp}', shell=True)
             end_time = datetime.datetime.now().replace(microsecond=0)
             print('Выполнен')

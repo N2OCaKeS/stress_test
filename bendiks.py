@@ -5,6 +5,7 @@ from backup_image_conf import branches, cycle_tree_index, tests, parent_page_lis
 import requests
 import json
 import argparse
+import datetime
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-rs', '--release',
@@ -80,9 +81,11 @@ print(f'''
  ----------------------------------------------------------------------------------------------------
  ----------------------------------------------------------------------------------------------------
 ''')
-for i in range(0, len(dates_list)):    
+for i in range(0, len(dates_list)):  
+    start_time = datetime.datetime.now().replace(microsecond=0)  
     print('-----' * 20)
     print('Итерация №', i + 1)
+    print('Время запуска:', start_time)
     if dates_list[i][0][3] == __stand:
         print(f'Cтенд: \033[92m{dates_list[i][0][3]}\033[0m')
         if tests[dates_list[i][1]] in __test_list:
@@ -104,6 +107,9 @@ for i in range(0, len(dates_list)):
             print('Выполняется...')
             #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}', shell=True)
+            end_time = datetime.datetime.now().replace(microsecond=0)
+            print('Время завершения:', end_time)
+            print('Затрачено времени:', end_time - start_time)
             print('Выполнен')
         else: print(f'Тест: \033[91m{tests[dates_list[i][1]]}\033[0m игнорируется')
     else: print('Cтенд:', dates_list[i][0][3], 'игнорируется')

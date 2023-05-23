@@ -76,8 +76,8 @@ if args.FS == 'fat':
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary fat32 0% 100%'.format(device=STORAGE_NAME))
     cmd("mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 elif args.FS == 'ntfs':
-    cmd('parted -s /dev/{device} mklabel msdos mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
-    cmd("mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
+    cmd('strace -o strace_ntfs_parted.log parted -s /dev/{device} mklabel msdos mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
+    cmd("strace -o strace_ntfs_mkfs.log mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 elif args.FS == 'xfs':
     cmd('parted -s /dev/{device} mklabel msdos mkpart primary xfs 0% 100%'.format(device=STORAGE_NAME))
     cmd("mkfs -t {fs} -f /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))

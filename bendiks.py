@@ -20,6 +20,12 @@ parser.add_argument('-st',
                     help='stand',
                     dest='STAND')
 
+parser.add_argument('-kn',
+                    action='store',
+                    required=False,
+                    help='kernel',
+                    dest='KERNEL')
+
 args = parser.parse_args()
 
 with open('/home/timonin/tokens.json', 'r') as r:
@@ -89,14 +95,19 @@ for i in range(0, len(dates_list)):
     if dates_list[i][0][3] == __stand:
         print(f'Cтенд: \033[92m{dates_list[i][0][3]}\033[0m')
         if tests[dates_list[i][1]] in __test_list:
-            print(f'Ядро: {dates_list[i][0][2]}')
+            if args.KERNEL:
+                print(f'Ядро: {args.KERNEL}')
+                kn = f'-kn {args.KERNEL}'
+            else:
+                print(f'Ядро: {dates_list[i][0][2]}')
+                kn = f'-kn {dates_list[i][0][2]}'
             print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
 
             sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
             rs = f'-rs {dates_list[i][0][0]}'
             test = f'-test {tests[dates_list[i][1]]}' 
             mode = f'-mode {dates_list[i][0][1]}'
-            kn = f'-kn {dates_list[i][0][2]}' 
+            #kn = f'-kn {dates_list[i][0][2]}' 
             stand = f'-stand {dates_list[i][0][3]}'
             tcyc = f'-tcyc {"_".join(dates_list[i][0])}' 
             tcas = f'-tcas "{dates_list[i][1]}"' 

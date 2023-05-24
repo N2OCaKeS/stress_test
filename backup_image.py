@@ -115,8 +115,11 @@ username = f'--username {__username}'
 token = f'--token {__conf_token}'
 confluence_space = "--confluence-space 'DD'"
 confluence_parent_page = f'--confluence-parent-page "{parent_page}"'
-confluence_new_page = f'--confluence-new-page {args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}'
-fs = f'-fs {args.TEST.lower()}'
+confluence_new_page = f'--confluence-new-page "{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}"'
+if args.TEST == 'EXT4 parsec':
+    fs = f'-fs {args.TEST.split()[0]}'
+else:
+    fs = f'-fs {args.TEST.lower()}'
 #ts = '-ts fs_mark_count'
 sn = f'-sn {args.ST}'
 fti = f'-fti {args.CTI}'
@@ -128,6 +131,9 @@ pack_sql = '--package postgresql-11'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
         -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
+elif args.TEST == 'EXT4 parsec':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+        {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} --parsec'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
         {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

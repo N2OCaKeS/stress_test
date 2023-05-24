@@ -77,7 +77,20 @@ dates_list = sorted([dates_list_raw[x:x+3] for x in range(0, len(dates_list_raw)
 
 #dates_list = [[['1.7.4', 'orel', '5.10.176-1-generic', 'stand1'], 'postgresql benchmark', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'file system benchmark. EXT4', 'NOT_EXECUTED'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'file system benchmark. XFS', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'postgresql benchmark', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-lowlatency', 'stand1'], 'postgresql benchmark', 'PASS']]
 
-print(f'''
+if args.KERNEL:
+    print(f'''
+ ----------------------------------------------------------------------------------------------------
+ ----------------------------------------------------------------------------------------------------
+| \033[43mПараметры запуска:\033[0m
+| \033[93mВыбран релиз: {__pt_version} \033[0m 
+| \033[93mВыбран стенд: {__stand} \033[0m
+| \033[93mВыбрано ядро: {args.KERNEL} \033[0m                                                                           
+| \033[93mВыбраны тесты: {__test_list} \033[0m                                                                    
+ ----------------------------------------------------------------------------------------------------
+ ----------------------------------------------------------------------------------------------------
+''')
+else:
+    print(f'''
  ----------------------------------------------------------------------------------------------------
  ----------------------------------------------------------------------------------------------------
 | \033[43mПараметры запуска:\033[0m
@@ -87,6 +100,7 @@ print(f'''
  ----------------------------------------------------------------------------------------------------
  ----------------------------------------------------------------------------------------------------
 ''')
+          
 for i in range(0, len(dates_list)):  
     start_time = datetime.datetime.now().replace(microsecond=0)  
     print('-----' * 20)
@@ -96,40 +110,61 @@ for i in range(0, len(dates_list)):
         print(f'Cтенд: \033[92m{dates_list[i][0][3]}\033[0m')
         if tests[dates_list[i][1]] in __test_list:
             if args.KERNEL:
-                print(f'Ядро: {args.KERNEL}')
-                kn = f'-kn {args.KERNEL}'
-                tcyc = f'{dates_list[i][0][0]}_{dates_list[i][0][1]}_{args.KERNEL}_{dates_list[i][0][3]}'
+                if dates_list[i][0][2] == args.KERNEL:
+                    print(f'Ядро: {args.KERNEL}')
+                    print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
+                    kn = f'-kn {args.KERNEL}'
+                    tcyc = f'-tcyc {dates_list[i][0][0]}_{dates_list[i][0][1]}_{args.KERNEL}_{dates_list[i][0][3]}'
+                    sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
+                    rs = f'-rs {dates_list[i][0][0]}'
+                    test = f'-test "{tests[dates_list[i][1]]}"' 
+                    mode = f'-mode {dates_list[i][0][1]}'
+                    stand = f'-stand {dates_list[i][0][3]}'
+                    tcas = f'-tcas "{dates_list[i][1]}"' 
+                    branch = f'-branch {branches[dates_list[i][1]]}' 
+                    cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
+                    pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
+                    psql = '-ps psql'
+                    print('Выполняется...')
+                    #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
+                    if tests[dates_list[i][1]] == 'postgresql':
+                        subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                    {tcas} {branch} {cti} {pp} {psql}', shell=True)
+                    else: 
+                        subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp}', shell=True)
+                    end_time = datetime.datetime.now().replace(microsecond=0)
+                    print('Выполнен')
+                    print('Время завершения:', end_time)
+                    print('Затрачено времени:', end_time - start_time)
+                else: print(f'Ядро: {dates_list[i][0][2]}', 'игнорируется')
             else:
                 print(f'Ядро: {dates_list[i][0][2]}')
+                print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
                 kn = f'-kn {dates_list[i][0][2]}'
                 tcyc = f'-tcyc {"_".join(dates_list[i][0])}'
-            print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
-
-            sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
-            rs = f'-rs {dates_list[i][0][0]}'
-            test = f'-test {tests[dates_list[i][1]]}' 
-            mode = f'-mode {dates_list[i][0][1]}'
-            #kn = f'-kn {dates_list[i][0][2]}' 
-            stand = f'-stand {dates_list[i][0][3]}'
-            #tcyc = f'-tcyc {"_".join(dates_list[i][0])}' 
-            tcas = f'-tcas "{dates_list[i][1]}"' 
-            branch = f'-branch {branches[dates_list[i][1]]}' 
-            cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
-            pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
-            psql = '-ps psql'
-
-            print('Выполняется...')
-            #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
-            if tests[dates_list[i][1]] == 'postgresql':
-                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                               {tcas} {branch} {cti} {pp} {psql}', shell=True)
-            else: 
-                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                 {tcas} {branch} {cti} {pp}', shell=True)
-            end_time = datetime.datetime.now().replace(microsecond=0)
-            print('Выполнен')
-            print('Время завершения:', end_time)
-            print('Затрачено времени:', end_time - start_time)
+                sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
+                rs = f'-rs {dates_list[i][0][0]}'
+                test = f'-test "{tests[dates_list[i][1]]}"' 
+                mode = f'-mode {dates_list[i][0][1]}'
+                stand = f'-stand {dates_list[i][0][3]}' 
+                tcas = f'-tcas "{dates_list[i][1]}"' 
+                branch = f'-branch {branches[dates_list[i][1]]}' 
+                cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
+                pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
+                psql = '-ps psql'
+                print('Выполняется...')
+                #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
+                if tests[dates_list[i][1]] == 'postgresql':
+                    subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                {tcas} {branch} {cti} {pp} {psql}', shell=True)
+                else: 
+                    subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                    {tcas} {branch} {cti} {pp}', shell=True)
+                end_time = datetime.datetime.now().replace(microsecond=0)
+                print('Выполнен')
+                print('Время завершения:', end_time)
+                print('Затрачено времени:', end_time - start_time)
         else: print(f'Тест: \033[91m{tests[dates_list[i][1]]}\033[0m игнорируется')
     else: print('Cтенд:', dates_list[i][0][3], 'игнорируется')
 print('\n\033[95mTest cycle done\033[0m\n')

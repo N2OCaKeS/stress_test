@@ -22,6 +22,7 @@ parent_page_list = {
     '1.7.3.UU.2':{'XFS':'1.7.3.UU.2 ⬝ Файловые системы',
                   'NTFS':'1.7.3.UU.2 ⬝ Файловые системы',
                   'EXT4':'1.7.3.UU.2 ⬝ Файловые системы',
+                  'EXT4 parsec':'1.7.3.UU.2 ⬝ Файловые системы',
                   'postgresql':'1.7.3.UU.2 ⬝ PostgreSQL'
                  },
     '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',

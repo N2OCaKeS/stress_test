@@ -98,9 +98,11 @@ for i in range(0, len(dates_list)):
             if args.KERNEL:
                 print(f'Ядро: {args.KERNEL}')
                 kn = f'-kn {args.KERNEL}'
+                tcyc = f'{dates_list[i][0][0]}_{dates_list[i][0][1]}_{args.KERNEL}_{dates_list[i][0][3]}'
             else:
                 print(f'Ядро: {dates_list[i][0][2]}')
                 kn = f'-kn {dates_list[i][0][2]}'
+                tcyc = f'-tcyc {"_".join(dates_list[i][0])}'
             print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
 
             sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
@@ -109,7 +111,7 @@ for i in range(0, len(dates_list)):
             mode = f'-mode {dates_list[i][0][1]}'
             #kn = f'-kn {dates_list[i][0][2]}' 
             stand = f'-stand {dates_list[i][0][3]}'
-            tcyc = f'-tcyc {"_".join(dates_list[i][0])}' 
+            #tcyc = f'-tcyc {"_".join(dates_list[i][0])}' 
             tcas = f'-tcas "{dates_list[i][1]}"' 
             branch = f'-branch {branches[dates_list[i][1]]}' 
             cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'

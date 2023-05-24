@@ -9,7 +9,7 @@
 import subprocess
 import logging
 from sys import exit
-from os import chmod, remove, chdir, path, mkdir
+from os import chmod, remove, chdir, path, mkdir, linesep
 from shutil import copy2
 from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME
 
@@ -25,6 +25,18 @@ logging.basicConfig(
         datefmt='%Y-%m-%d %H:%M:%S',
 )
 
+
+def check_output_command(command, out=None):
+    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    output, errors = result.communicate()
+    output = linesep.join([s for s in output.splitlines() if s])
+    errors = linesep.join([s for s in errors.splitlines() if s])
+    if errors == "":
+        return output
+    elif out != None:
+        return errors + output
+    else:
+        return errors
 
 def cmd(command, err=subprocess.DEVNULL, out=subprocess.DEVNULL):
     subprocess.run(command, shell=True, stderr=err, stdout=out)
@@ -157,13 +169,13 @@ def get_memory_load_by_psql():
 
 
 def perf():
-    subprocess.run('perf script > out.perf1', shell=True, check=True)
-    subprocess.run('perl libs/libstackcollapse-perf.pl out.perf1 > out.folded1', shell=True, check=True)
-    subprocess.run(f'perl libs/libflamegraph.pl out.folded1 > {REPORT_PATH}/result_flamegraph.svg', shell=True, check=True)
+    logging.info(check_output_command('perf script > out.perf1', shell=True, check=True))
+    logging.info(check_output_command('perl libs/libstackcollapse-perf.pl out.perf1 > out.folded1', shell=True, check=True))
+    logging.info(check_output_command(f'perl libs/libflamegraph.pl out.folded1 > {REPORT_PATH}/result_flamegraph.svg', shell=True, check=True))
 
 
 def dump():
-    subprocess.run(f'pg_dump -U postgres -d postgres -F tar -f {REPORT_PATH}/dump_db.tar', shell=True, check=True)
+    logging.info(check_output_command(f'pg_dump -U postgres -d postgres -F tar -f {REPORT_PATH}/dump_db.tar', shell=True, check=True))
 
 
 def log_in(name, message):

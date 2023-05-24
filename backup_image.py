@@ -117,7 +117,7 @@ confluence_space = "--confluence-space 'DD'"
 confluence_parent_page = f'--confluence-parent-page "{parent_page}"'
 confluence_new_page = f'--confluence-new-page "{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}"'
 if args.TEST == 'EXT4 parsec':
-    fs = f'-fs {args.TEST.split()[0]}'
+    fs = f'-fs {args.TEST.split()[0].lower()}'
 else:
     fs = f'-fs {args.TEST.lower()}'
 #ts = '-ts fs_mark_count'

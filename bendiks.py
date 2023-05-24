@@ -111,7 +111,7 @@ for i in range(0, len(dates_list)):
         if tests[dates_list[i][1]] in __test_list:
             if args.KERNEL:
                 if dates_list[i][0][2] == args.KERNEL:
-                    print(f'Ядро: {args.KERNEL}')
+                    print(f'Ядро: \033[92m{args.KERNEL}\033[0m')
                     print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
                     kn = f'-kn {args.KERNEL}'
                     tcyc = f'-tcyc {dates_list[i][0][0]}_{dates_list[i][0][1]}_{args.KERNEL}_{dates_list[i][0][3]}'

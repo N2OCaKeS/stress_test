@@ -28,7 +28,7 @@ parser.add_argument('-kn',
 
 args = parser.parse_args()
 
-with open('/home/timonin/tokens.json', 'r') as r:
+with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
 __conf_token = tokens['conf_token']
 __username = tokens['username']
@@ -37,7 +37,7 @@ __jira_token = tokens['jira_token']
 __pt_version = args.RELEASE
 #__stand = 'stand1'
 __stand = args.STAND
-__test_list = ['XFS', 'EXT4', 'NTFS']
+__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql']
 
 #Делаем get запрос в jira
 matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&

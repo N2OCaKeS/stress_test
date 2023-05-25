@@ -2,6 +2,7 @@ SCRIPT_DIR = '/home/u/git/stress_test/postgresql'
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 #LOG_FILENAME = f'{SCRIPT_DIR}/psb_log'
 LOG_FILENAME = f'{REPORT_PATH}/psb.log'
+RUN_LOG = f'{REPORT_PATH}/run_psb.log'
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
 REPORT_SYSMON_FILENAME = '{}/psb_sysmon_report.txt'.format(REPORT_PATH)
 DATA_SYSMON_FILENAME = '{}/psb_data_sysmon.txt'.format(REPORT_PATH)

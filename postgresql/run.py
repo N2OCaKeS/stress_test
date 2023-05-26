@@ -42,7 +42,7 @@ with open(f'/home/u/{args.NAME}', 'r') as r:
 
 subprocess.run('sudo bash psb_db_del.sh', shell=True)
 
-subprocess.run(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}', shell=True)
-sleep(3)
+#subprocess.run(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}', shell=True)
+subprocess.run(f'sudo venv/bin/python3 psb_run.py {dates}', shell=True)
 holder_transaction('sudo venv/bin/python3 psb_public.py')
 

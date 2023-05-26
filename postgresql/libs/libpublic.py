@@ -51,8 +51,8 @@ class Public:
         confluence_report = ReportToConfluence(username=self.username, password=None, token=self.token)
 
         #создать flamegraph
-        print('# INFO # --- flamegraph')
-        perf()
+        #print('# INFO # --- flamegraph')
+        #perf()
 
         #создать страницу confluence
         confluence_report.create_confluence_page(self.c_space,

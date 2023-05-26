@@ -32,7 +32,8 @@ def holder_transaction(command):
     holder = 0
     while holder < 30:
         try:
-            subprocess.run(command, shell=True)
+            subprocess.run(command, shell=True, check=True)
+            break
         except Exception as e:
             holder += 1
             logging.error('-----' * 30)

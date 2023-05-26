@@ -384,6 +384,8 @@ class Zefir_result_table:
             html_table = r.readlines()
         with open('./templates/stand.html', 'r') as r:
             stand = r.read()
+        with open('./templates/times.html', 'r') as r:
+            times = r.read()
         def write_html(string):
             with open('result.html', 'a') as w:
                 w.write(string)
@@ -404,7 +406,7 @@ class Zefir_result_table:
                 write_html(string.replace(string, '      <td style="background-color:#ffe8e8;">smolensk</td>\n'))
             else: write_html(string)
         write_html(stand)
-
+        write_html(times)
 
         #Выкладываем на лайф
         confluence = Confluence(url='https://life.astralinux.ru',

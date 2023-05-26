@@ -44,14 +44,14 @@ FILLING_FACTOR = 100
     содержащие идентификаторы счетов (столбцы aid), перейдут к большим целым числам (типу bigint),
     чтобы в них могли уместиться все возможные значения идентификаторов.
 '''
-DEFAULT_SCALE_FACTOR = 500
+DEFAULT_SCALE_FACTOR = 5#500***********************
 SCALE_FACTOR = 10  # 1000
 SCALE_FACTOR_STEP = 10  # 2000
 LIMITE_SCALE_FACTOR = 100  # 100000
 '''
     Число транзакций, которые будут выполняться каждым клиентом.
 '''
-DEFAULT_TRANSACTIONS = 100000
+DEFAULT_TRANSACTIONS = 10#100000***********************
 TRANSACTIONS = 10  # 100000
 TRANSACTIONS_STEP = 10  # 100000
 LIMITE_TRANSACTIONS = 100  # 10000000
@@ -65,10 +65,10 @@ LIMITE_THREADS = 100  # 10000
 '''
     Число клиентов
 '''
-CLIENTS = 1#100
-CLIENTS_STEP = 1#100
+CLIENTS = 1#100***********
+CLIENTS_STEP = 1#100**************
 STEP_RATIO_BY_CLIENTS = 1
-LIMITE_CLIENTS = 2#500
+LIMITE_CLIENTS = 2#500**********
 '''
     Расширенный репозиторий
 '''

@@ -50,6 +50,7 @@ with open(f'/home/u/{args.NAME}', 'r') as r:
 
 logging.info(check_output_command('sudo bash psb_db_del.sh', out=True))
 
-holder_transaction(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}')
+logging.info(check_output_command(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}', out=True))
+sleep(3)
 holder_transaction('sudo venv/bin/python3 psb_public.py')
 

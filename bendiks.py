@@ -137,7 +137,7 @@ for i in range(0, len(dates_list)):
                     print('Выполнен')
                     print('Время завершения:', end_time)
                     print('Затрачено времени:', end_time - start_time)
-                else: print(f'Ядро: {dates_list[i][0][2]}', 'игнорируется')
+                else: print(f'Ядро: \033[91m{dates_list[i][0][2]}\033[0m', 'игнорируется')
             else:
                 print(f'Ядро: {dates_list[i][0][2]}')
                 print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')

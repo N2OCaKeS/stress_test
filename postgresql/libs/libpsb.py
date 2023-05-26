@@ -169,14 +169,14 @@ def get_memory_load_by_psql():
 
 
 def perf():
-    logging.info(check_output_command('ls -lh'))
-    logging.info(check_output_command('sudo perf script -i perf.data > out.perf1'))
-    logging.info(check_output_command('sudo perl libs/libstackcollapse-perf.pl out.perf1 > out.folded1'))
-    logging.info(check_output_command(f'sudo perl libs/libflamegraph.pl out.folded1 > {REPORT_PATH}/result_flamegraph.svg'))
+    logging.info(subprocess.run('ls -lh', shell=True))
+    logging.info(subprocess.run('sudo perf script -i perf.data > out.perf1', shell=True))
+    logging.info(subprocess.run('sudo perl libs/libstackcollapse-perf.pl out.perf1 > out.folded1', shell=True))
+    logging.info(subprocess.run(f'sudo perl libs/libflamegraph.pl out.folded1 > {REPORT_PATH}/result_flamegraph.svg', shell=True))
 
 
 def dump():
-    logging.info(check_output_command(f'pg_dump -U postgres -d postgres -F tar -f {REPORT_PATH}/dump_db.tar'))
+    logging.info(subprocess.run(f'pg_dump -U postgres -d postgres -F tar -f {REPORT_PATH}/dump_db.tar', shell=True))
 
 
 def log_in(name, message):

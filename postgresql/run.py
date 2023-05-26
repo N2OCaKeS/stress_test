@@ -40,9 +40,9 @@ def holder_transaction(command):
 with open(f'/home/u/{args.NAME}', 'r') as r:
     dates = r.read()
 
-logging.info(check_output_command('sudo bash psb_db_del.sh'))
+logging.info(subprocess.run('sudo bash psb_db_del.sh', shell=True))
 
-logging.info(check_output_command(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}'))
+logging.info(subprocess.run(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}', shell=True))
 sleep(3)
 holder_transaction('sudo venv/bin/python3 psb_public.py')
 

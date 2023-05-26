@@ -30,7 +30,7 @@ logging.basicConfig(
 
 def holder_transaction(command):
     holder = 0
-    while holder < 30:
+    while holder < 2:
         try:
             subprocess.run(command, shell=True, check=True)
             break
@@ -41,8 +41,8 @@ def holder_transaction(command):
             logging.error(e)
             logging.error('-----' * 30)
             sleep(60)
-            if holder == 30:
-                logging.error('Скрипт остановлен так как истек период ожидания:', holder, 'минут')
+            if holder == 2:
+                logging.error('Скрипт остановлен так как истек период ожидания:', holder, 'попытки')
                 exit(2)
 
 with open(f'/home/u/{args.NAME}', 'r') as r:

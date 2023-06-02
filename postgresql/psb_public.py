@@ -1,7 +1,7 @@
 import json
 from libs.libpublic import Public
 from libs.zefir import Zefir_status_API, Zefir_result_table
-
+from libs.libstatistics import PSQLStatistics
 
 with open('psb_public_args.json', 'r') as r:
     public_args = json.load(r)
@@ -27,3 +27,7 @@ zefir_table = Zefir_result_table(test_cycle_version=public_args['test_cycle_vers
                                  basic_auth=public_args['basic_auth'],
                                  username=public_args['username'])
 zefir_table
+
+statistics = PSQLStatistics(username=public_args['username'], 
+                            token=public_args['token'])
+statistics.update_statistics()

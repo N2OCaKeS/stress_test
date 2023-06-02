@@ -16,6 +16,7 @@ from fabric import Connection
 from libs.libfsb import astra_version
 from libs.zefir import Zefir_status_API, Zefir_result_table
 from libs.libpublic import Public
+from libs.libstatistics import FileSystemStatistics
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
     HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR, \
     INFO_FILENAME, PACKAGES
@@ -359,3 +360,7 @@ zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
                                  basic_auth=args.BA,
                                  username=args.USER)
 zefir_table
+
+statisctics = FileSystemStatistics(username=args.USER, 
+                                   token=args.TOKEN)
+statisctics.update_statistics()

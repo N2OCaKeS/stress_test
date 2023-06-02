@@ -269,7 +269,7 @@ class FileSystemStatistics:
                 src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
                 data = src_html.get("body").get("view").get("value")
                 soup = BeautifulSoup(data, 'lxml')
-                temp_data = title.split("_")
+                temp_data = title.replace(" ", "_").split("_")
             
                 if temp_data[1] == "parsec":
                     type_fs, parsec, astra_version, sec_mode, kernel, stand = temp_data[0], temp_data[1], temp_data[2], temp_data[3], temp_data[4], temp_data[5]

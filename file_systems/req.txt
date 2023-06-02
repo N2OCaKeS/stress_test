@@ -6,3 +6,5 @@ scipy == 1.7.3
 pretty-html-table == 0.9.16
 atlassian-python-api == 3.28.1
 scikit-learn == 1.0.2
+beautifulsoup4==4.12.2
+lxml==4.9.2

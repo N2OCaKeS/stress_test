@@ -142,7 +142,7 @@ class PSQLStatistics:
                 """
                     Получаем информацию о странице
                 """
-                page = CP.get_page_as_html(id=page_id)
+                page = self.CP.get_page_as_html(id=page_id)
                 """
                     Проверяем есть ли в заголовке PostreSQL и имеются ли дочерние страницы
                 """
@@ -313,7 +313,7 @@ class PSQLStatistics:
     """
     def upload_statistics(self, type_stat='PostgreSQL'):
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="~ivelikanov", page_title=f"Статистика {type_stat}", parent_page_title="")
+        confluence_stat.create_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
 
         ### TODO изменить пространство и parent_page_title
 
@@ -335,8 +335,8 @@ class PSQLStatistics:
         for file in sorted(os.listdir("statistics")):
             
             if file.endswith("png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="~ivelikanov", page_title=f"Статистика {type_stat}")
-                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("~ivelikanov", f"Статистика {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file))
             if file.endswith("1.html"):
                 file_table = open(f'statistics/{file}', 'r')
@@ -359,7 +359,7 @@ class PSQLStatistics:
         
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="~ivelikanov", page_title=f"Статистика {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
 
     
     def update_statistics(self):

@@ -205,8 +205,10 @@ class FileSystemStatistics:
             
             for temp in rating_fg:
                 #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
-                if temp < np.mean(rating_fg - 1 * np.std(rating_fg)):
+                if temp < np.mean(rating_fg) - 1 * np.std(rating_fg):
                     colors.append("#ffb5b5")
+                elif temp > np.mean(rating_fg) + 1 * np.std(rating_fg):
+                    colors.append("#ffd966")
                 else:
                     colors.append("#88c1f2")
             shcala = [x for x in range(1, len(rating_fg) + 1, 1)]
@@ -214,7 +216,7 @@ class FileSystemStatistics:
 
             ax.barh(shcala, rating_fg, color=colors, height=0.8)
             ax.set_yticks(shcala)
-            ax.grid(True)
+            ax.grid(False)
             ax.set_ylabel("Порядковый номер теста")
             ax.set_xlabel("Значение рейтинга")
             ax.set_title(f"{fs_type}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {stand}")
@@ -381,4 +383,3 @@ class FileSystemStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages)
         self.upload_statistics(type_stat="Файловые системы")
-

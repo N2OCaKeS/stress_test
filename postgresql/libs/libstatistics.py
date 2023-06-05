@@ -294,6 +294,8 @@ class PSQLStatistics:
                 #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
                 if temp < np.mean(data_ratings.get('rating')) - 1 * np.std(data_ratings.get('rating')):
                     colors.append("#ffb5b5")
+                elif temp > np.mean(data_ratings.get('rating')) + 1 * np.std(data_ratings.get('rating')):
+                    colors.append("#ffd966")
                 else:
                     colors.append("#88c1f2")
             

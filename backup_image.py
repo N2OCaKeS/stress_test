@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-sn', '--stand-num',
                     action='store',
                     choices=['1',
+                             '2',
                              '3',
                              '4'],
                     required=True,

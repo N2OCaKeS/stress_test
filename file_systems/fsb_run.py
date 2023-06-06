@@ -168,8 +168,11 @@ while start_status == 0:
         start_status += 1
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
-            err.write('start:\n', time(), e)
-            err.write('---------' * 25, '\n\n')
+            err.write('start:\n')
+            err.write(time())
+            err.write(e)
+            err.write('---------' * 25)
+            err.write('\n\n')
         sleep(30)
 
 '''
@@ -385,6 +388,9 @@ while end_status == 0:
         end_status += 1
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
-            err.write('end:\n', time(), e)
-            err.write('---------' * 25, '\n\n')
+            err.write('end:\n')
+            err.write(time())
+            err.write(e)
+            err.write('---------' * 25)
+            err.write('\n\n')
         sleep(30)

@@ -10,7 +10,7 @@ import subprocess
 
 
 from sys import exit
-from time import sleep, time, strftime, gmtime
+from time import sleep, time, strftime, gmtime, ctime
 from os import getuid, path, mkdir
 from fabric import Connection
 from libs.libfsb import astra_version
@@ -169,7 +169,7 @@ while start_status == 0:
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
             err.write('start:\n')
-            err.write(time())
+            err.write(ctime())
             err.write(e)
             err.write('---------' * 25)
             err.write('\n\n')
@@ -389,7 +389,7 @@ while end_status == 0:
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
             err.write('end:\n')
-            err.write(time())
+            err.write(ctime())
             err.write(e)
             err.write('---------' * 25)
             err.write('\n\n')

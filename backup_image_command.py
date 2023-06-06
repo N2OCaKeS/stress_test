@@ -17,7 +17,7 @@ cz_comm = {
         '1.7.3.UU.2':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.203" \
                 -l ru_RU.UTF-8 startdisk restore stand-3-qa-team-13-173UU2 sdb',
         '1.7.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.203" \
-                -l ru_RU.UTF-8 startdisk restore stand-3-qa-team-13-174-TEST sda sdb'
+                -l ru_RU.UTF-8 startdisk restore stand-3-qa-team-13-174-new nvme0n1'
         },
     'stand2':{
         '1.7.3.UU.2':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.202" \

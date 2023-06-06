@@ -149,17 +149,28 @@ parser.add_argument('-tcv', '--test-cycle-version',
 
 args = parser.parse_args()
 
+def test_cycle_status_start():
+    zefir = Zefir_status_API(folder_tree_id=args.FTI,
+                            test_cycle_name=args.TCYC,
+                            test_case_name=args.TCAS,
+                            basic_auth=args.BA)
+    zefir.upload_status(90)
+    zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
+                                    token=args.TOKEN,
+                                    basic_auth=args.BA,
+                                    username=args.USER)
+    zefir_table
 
-zefir = Zefir_status_API(folder_tree_id=args.FTI,
-                         test_cycle_name=args.TCYC,
-                         test_case_name=args.TCAS,
-                         basic_auth=args.BA)
-zefir.upload_status(90)
-zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
-                                 token=args.TOKEN,
-                                 basic_auth=args.BA,
-                                 username=args.USER)
-zefir_table
+start_status = 0
+while start_status == 0:
+    try:
+        test_cycle_status_start()
+        start_status += 1
+    except Exception as e:
+        with open('JIRA_ERROR.log', 'a') as err:
+            err.write('start:\n', time(), e)
+            err.write('---------' * 25, '\n\n')
+        sleep(30)
 
 '''
     main
@@ -339,29 +350,41 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
 
-public = Public(username=args.USER,
-                token=args.TOKEN,
-                conf_space=args.SPACE,
-                conf_parent_page=args.PPAGE,
-                conf_new_page_name=args.NPAGE,
-                grade_stand=args.STAND,
-                file_system=args.FS,
-                test_set=args.TS)
+def upload_result_status():
+    public = Public(username=args.USER,
+                    token=args.TOKEN,
+                    conf_space=args.SPACE,
+                    conf_parent_page=args.PPAGE,
+                    conf_new_page_name=args.NPAGE,
+                    grade_stand=args.STAND,
+                    file_system=args.FS,
+                    test_set=args.TS)
 
-public.run_publish()
+    public.run_publish()
 
-zefir = Zefir_status_API(folder_tree_id=args.FTI,
-                         test_cycle_name=args.TCYC,
-                         test_case_name=args.TCAS,
-                         basic_auth=args.BA)
-zefir.upload_status(91)
+    zefir = Zefir_status_API(folder_tree_id=args.FTI,
+                            test_cycle_name=args.TCYC,
+                            test_case_name=args.TCAS,
+                            basic_auth=args.BA)
+    zefir.upload_status(91)
 
-zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
-                                 token=args.TOKEN,
-                                 basic_auth=args.BA,
-                                 username=args.USER)
-zefir_table
+    zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
+                                    token=args.TOKEN,
+                                    basic_auth=args.BA,
+                                    username=args.USER)
+    zefir_table
 
-statisctics = FileSystemStatistics(username=args.USER, 
-                                   token=args.TOKEN)
-statisctics.update_statistics()
+    statisctics = FileSystemStatistics(username=args.USER, 
+                                    token=args.TOKEN)
+    statisctics.update_statistics()
+
+end_status = 0
+while end_status == 0:
+    try:
+        upload_result_status()
+        end_status += 1
+    except Exception as e:
+        with open('JIRA_ERROR.log', 'a') as err:
+            err.write('end:\n', time(), e)
+            err.write('---------' * 25, '\n\n')
+        sleep(30)

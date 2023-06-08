@@ -306,6 +306,7 @@ class PSQLStatistics:
             fig, ax = plt.subplots(figsize=(16, 9))
             ax.bar(shcala, data_ratings.get('rating'), color=colors)
             ax.set_xticks(shcala)
+            ax.set_ylim([0, max(data_ratings.get('rating')) + max(data_ratings.get('rating')) * 0.15])
             plt.gca().set_xticklabels(shcala_text, rotation=20, horizontalalignment= 'right')
             # ax.set_xlabel("Порядковый номер теста")
             ax.set_ylabel("Значение рейтинга")
@@ -317,9 +318,9 @@ class PSQLStatistics:
                     pass
                 plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину превышающую стандартное отклонение')
-            green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвуют доверительному интервалу')
+            green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
             yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
-            ax.legend(handles=[red_patch, green_patch, yellow_patch], loc='lower left')
+            ax.legend(handles=[red_patch, green_patch, yellow_patch])
             fig.savefig(f"statistics/postresql_statistics_{key}.png")
             # plt.show()
             

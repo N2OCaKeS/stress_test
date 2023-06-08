@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from bs4 import BeautifulSoup
 from atlassian import Confluence
@@ -161,12 +162,13 @@ class FileSystemStatistics:
             panda_series = df['Рейтинг2']
             df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])
             df = df.drop('Рейтинг2', axis=1)
-
+            
             table = df.to_html(escape=False, index=False)
             f_ext4 = open(f"statistics/fs_{fs_type}_{stand}_1.html", 'w')
             f_ext4.writelines(f"<h1>Сводная таблица результатов тестирования {fs_type} {stand}</h1> {table}")
             f_ext4.close()
-            return panda_series.tolist()
+            
+            return panda_series.tolist(), df['Релиз'] + '_' + df['Ядро']
         
         def build_mat_stat_dataframe(fs_type, data_fs, stand):
             min_znach = min(data_fs)
@@ -200,26 +202,40 @@ class FileSystemStatistics:
             new_file_html.write(f'<h1>Таблица основных статистических параметров {fs_type} {stand}</h1> {mat_stat_table_html}')
             new_file_html.close()
 
-        def build_graph(fs_type, stand, rating_fg):
+        def build_graph(fs_type, stand, rating_fg, shcala_txt):
             colors = []
             
             for temp in rating_fg:
                 #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
                 if temp < np.mean(rating_fg) - 1 * np.std(rating_fg):
-                    colors.append("#ffb5b5")
+                    colors.append("#ea5c76")
                 elif temp > np.mean(rating_fg) + 1 * np.std(rating_fg):
-                    colors.append("#ffd966")
+                    colors.append("#ffc322")
                 else:
-                    colors.append("#88c1f2")
-            shcala = [x for x in range(1, len(rating_fg) + 1, 1)]
-            fig, ax = plt.subplots(figsize=(15, 6))
+                    colors.append("#c7d84c")
+            shcala_x = [x for x in range(1, len(rating_fg) + 1, 1)]
+            fig, ax = plt.subplots(figsize=(16, 9))
 
-            ax.barh(shcala, rating_fg, color=colors, height=0.8)
-            ax.set_yticks(shcala)
+            ax.bar(shcala_x, rating_fg, color=colors)
+            ax.set_xticks(shcala_x)
+            # ax.set_xticklabels(shcala_txt)
+            # plt.xticks(shcala_txt)
+            # fig.autofmt_xdate(rotation=25)
+            plt.gca().set_xticklabels(shcala_txt, rotation=20, horizontalalignment= 'right')
             ax.grid(False)
-            ax.set_ylabel("Порядковый номер теста")
-            ax.set_xlabel("Значение рейтинга")
+            # ax.set_xlabel("Порядковый номер теста")
+            ax.set_ylabel("Значение рейтинга")
             ax.set_title(f"{fs_type}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {stand}")
+            for i, val in enumerate(rating_fg):
+                try:
+                    val = int(val)
+                except ValueError:
+                    pass
+                plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+            red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину превышающую стандартное отклонение')
+            green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвуют доверительному интервалу')
+            yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
+            ax.legend(handles=[red_patch, green_patch, yellow_patch])
             fig.savefig(f"statistics/fs_{fs_type}_{stand}.png")
 
         file_system_data = {
@@ -300,29 +316,29 @@ class FileSystemStatistics:
         for key, data in file_system_data['data'].items():
             # print(key, data)
             if data.get("EXT4"):
-                rating_for_graph = build_main_dataframe("EXT4", data.get("EXT4"), key)
+                rating_for_graph, shcl = build_main_dataframe("EXT4", data.get("EXT4"), key)
                 build_mat_stat_dataframe("EXT4", rating_for_graph, key)
-                build_graph(fs_type="EXT4", stand=key, rating_fg=rating_for_graph)
+                build_graph(fs_type="EXT4", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
             if data.get("EXT4_parsec"):
-                rating_for_graph = build_main_dataframe("EXT4_parsec", data.get("EXT4_parsec"), key)
+                rating_for_graph, shcl = build_main_dataframe("EXT4_parsec", data.get("EXT4_parsec"), key)
                 build_mat_stat_dataframe("EXT4_parsec", rating_for_graph, key)
-                build_graph(fs_type="EXT4_parsec", stand=key, rating_fg=rating_for_graph)
+                build_graph(fs_type="EXT4_parsec", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
             if data.get("NTFS"):
-                rating_for_graph = build_main_dataframe("NTFS", data.get("NTFS"), key)
+                rating_for_graph, shcl = build_main_dataframe("NTFS", data.get("NTFS"), key)
                 build_mat_stat_dataframe("NTFS", rating_for_graph, key)
-                build_graph(fs_type="NTFS", stand=key, rating_fg=rating_for_graph)
+                build_graph(fs_type="NTFS", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
             if data.get("NTFS_parsec"):
-                rating_for_graph = build_main_dataframe("NTFS_parsec", data.get("NTFS_parsec"), key)
+                rating_for_graph, shcl = build_main_dataframe("NTFS_parsec", data.get("NTFS_parsec"), key)
                 build_mat_stat_dataframe("NTFS_parsec", rating_for_graph, key)
-                build_graph(fs_type="NTFS_parsec", stand=key, rating_fg=rating_for_graph)
+                build_graph(fs_type="NTFS_parsec", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
             if data.get("XFS"):
-                rating_for_graph = build_main_dataframe("XFS", data.get("XFS"), key)
+                rating_for_graph, shcl = build_main_dataframe("XFS", data.get("XFS"), key)
                 build_mat_stat_dataframe("XFS", rating_for_graph, key)
-                build_graph(fs_type="XFS", stand=key, rating_fg=rating_for_graph)
+                build_graph(fs_type="XFS", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
             if data.get("XFS_parsec"):
-                rating_for_graph = build_main_dataframe("XFS_parsec", data.get("XFS_parsec"), key)
+                rating_for_graph, shcl = build_main_dataframe("XFS_parsec", data.get("XFS_parsec"), key)
                 build_mat_stat_dataframe("XFS_parsec", rating_for_graph, key)
-                build_graph(fs_type="XFS_parsec", stand=key, rating_fg=rating_for_graph)
+                build_graph(fs_type="XFS_parsec", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
 
     """
         Создаем итоговую html страницу для life
@@ -340,7 +356,7 @@ class FileSystemStatistics:
             <hr/>
             <br/>
             <span class="confluence-embedded-file-wrapper confluence-embedded-manual-size">
-                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6" height="400"></img>
+                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6" ></img>
             </span>
         """
         image_list = []

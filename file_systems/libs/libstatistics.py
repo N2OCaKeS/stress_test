@@ -400,7 +400,3 @@ class FileSystemStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages)
         self.upload_statistics(type_stat="Файловые системы")
-
-if __name__ == "__main__":
-    stat = FileSystemStatistics(username='~ivelikanov', token="MjA2NjM1MDczNDU5OiB/n9PuSq6xskVmfiPHjYIXUst4")
-    stat.update_statistics()

@@ -13,13 +13,13 @@ from sys import exit
 from time import sleep, time, strftime, gmtime, ctime
 from os import getuid, path, mkdir
 from fabric import Connection
-from libs.libfsb import astra_version
+from libs.libfsb import astra_version, upload_results_to_ftp
 from libs.zefir import Zefir_status_API, Zefir_result_table
 from libs.libpublic import Public
 from libs.libstatistics import FileSystemStatistics
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
     HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR, \
-    INFO_FILENAME, PACKAGES
+    INFO_FILENAME, PACKAGES, REPORT_FILENAME
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -352,6 +352,8 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
+
+upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'{args.TCYC}_{REPORT_FILENAME}')
 
 def upload_result_status():
     public = Public(username=args.USER,

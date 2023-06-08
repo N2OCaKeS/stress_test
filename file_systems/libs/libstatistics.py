@@ -235,7 +235,7 @@ class FileSystemStatistics:
             red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину превышающую стандартное отклонение')
             green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвуют доверительному интервалу')
             yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
-            ax.legend(handles=[red_patch, green_patch, yellow_patch])
+            ax.legend(handles=[red_patch, green_patch, yellow_patch], loc='lower left')
             fig.savefig(f"statistics/fs_{fs_type}_{stand}.png")
 
         file_system_data = {

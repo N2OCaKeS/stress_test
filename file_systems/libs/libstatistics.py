@@ -218,10 +218,11 @@ class FileSystemStatistics:
 
             ax.bar(shcala_x, rating_fg, color=colors)
             ax.set_xticks(shcala_x)
+            ax.set_ylim([0, max(rating_fg) + max(rating_fg) * 0.15])
             # ax.set_xticklabels(shcala_txt)
             # plt.xticks(shcala_txt)
             # fig.autofmt_xdate(rotation=25)
-            plt.gca().set_xticklabels(shcala_txt, rotation=20, horizontalalignment= 'right')
+            plt.gca().set_xticklabels(shcala_txt, rotation=20, horizontalalignment='right')
             ax.grid(False)
             # ax.set_xlabel("Порядковый номер теста")
             ax.set_ylabel("Значение рейтинга")
@@ -233,9 +234,9 @@ class FileSystemStatistics:
                     pass
                 plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину превышающую стандартное отклонение')
-            green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвуют доверительному интервалу')
+            green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
             yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
-            ax.legend(handles=[red_patch, green_patch, yellow_patch], loc='lower left')
+            ax.legend(handles=[red_patch, green_patch, yellow_patch])
             fig.savefig(f"statistics/fs_{fs_type}_{stand}.png")
 
         file_system_data = {
@@ -399,3 +400,7 @@ class FileSystemStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages)
         self.upload_statistics(type_stat="Файловые системы")
+
+if __name__ == "__main__":
+    stat = FileSystemStatistics(username='~ivelikanov', token="MjA2NjM1MDczNDU5OiB/n9PuSq6xskVmfiPHjYIXUst4")
+    stat.update_statistics()

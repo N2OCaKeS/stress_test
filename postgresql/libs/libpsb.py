@@ -11,6 +11,7 @@ import logging
 from sys import exit
 from os import chmod, remove, chdir, path, mkdir, linesep
 from shutil import copy2
+import ftplib
 from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME
 
 
@@ -184,3 +185,16 @@ def log_in(name, message):
     logging.info(message)
     logging.info('-----' * 20)
 
+def upload_results_to_ftp(rc_name, path_to_file, file_name):
+    ftp = ftplib.FTP('10.177.103.10')
+    ftp.login()
+    ftp.cwd('stress_test')
+    try:
+        ftp.mkd(rc_name)
+    except ftplib.error_perm:
+        pass
+    #ftp.sendcmd('SITE CHMOD 777 ' + rc_name)
+    ftp.cwd(rc_name)
+    with open(path_to_file, 'rb') as rf:
+        ftp.storbinary('STOR ' + file_name, rf)
+    ftp.quit()

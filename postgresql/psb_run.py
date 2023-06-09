@@ -24,7 +24,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
 from libs.libpsqltests import Test
 from libs.zefir import Zefir_status_API, Zefir_result_table
-from libs.libpsb import astra_version, dump
+from libs.libpsb import astra_version, dump, upload_results_to_ftp
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
 from libs.libpublic import Public
@@ -497,6 +497,8 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
+
+upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'{args.TCYC}_{REPORT_FILENAME}')
 
 # public = Public(username=args.USER,
 #                 token=args.TOKEN,

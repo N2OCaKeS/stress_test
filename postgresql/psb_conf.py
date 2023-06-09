@@ -4,6 +4,7 @@ REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 LOG_FILENAME = f'{REPORT_PATH}/psb.log'
 RUN_LOG = f'{REPORT_PATH}/run_psb.log'
 REPORT_FILENAME = '{}/psb_report.txt'.format(REPORT_PATH)
+REP_FILENAME = 'psb_report.txt'
 REPORT_SYSMON_FILENAME = '{}/psb_sysmon_report.txt'.format(REPORT_PATH)
 DATA_SYSMON_FILENAME = '{}/psb_data_sysmon.txt'.format(REPORT_PATH)
 TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)

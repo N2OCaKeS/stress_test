@@ -13,7 +13,7 @@ import json
 from time import time, strftime, gmtime
 from sys import exit
 from os import getuid, path
-from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INFO_FILENAME, \
+from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INFO_FILENAME, REP_FILENAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
     MIC_SQL_UPGRADE, MIC_SQL_TRANSACTION, \
     ACL_SQL_UPGRADE, ACL_SQL_TRANSACTION, \
@@ -498,7 +498,7 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
 
-upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'{args.TCYC}_{REPORT_FILENAME}')
+upload_results_to_ftp(args.TCV, f'{REPORT_FILENAME}', f'{args.TCYC}_{REP_FILENAME}')
 
 # public = Public(username=args.USER,
 #                 token=args.TOKEN,

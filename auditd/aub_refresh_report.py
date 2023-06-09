@@ -11,7 +11,7 @@ import subprocess
 start_time = time()
 
 # Пересчет рейтингов
-report_dir = '/home/rkuznetsov/stress_testing_result/auditd'
+report_dir = '/home/u/stress_testing_result/auditd'
 for v in ('1.7.3', '1.7.3.UU.1'):
     if os.path.exists('{}/{}'.format(report_dir, v)):
 
@@ -19,7 +19,7 @@ for v in ('1.7.3', '1.7.3.UU.1'):
         pack_vs = {
             '1.7.2': '1:2.8.5-2ubuntu6+ci202206080012+astra1',
             '1.7.3': '1:2.8.5-2ubuntu6+ci202206080012+astra1+b1',
-            '1.7.3.UU.1': 'auditd_1:2.8.5-2ubuntu6+ci202206080012+astra1+b1',
+            '1.7.3.UU.1': '1:2.8.5-2ubuntu6+ci202206080012+astra1+b1',
         }
         pack_v = pack_vs[v]
 
@@ -65,11 +65,13 @@ for v in ('1.7.3', '1.7.3.UU.1'):
                                                                                   kernel=k), 'w') as info:
                             info.writelines(info_lst)
 
-                        for t in ('psaud', 'useraud', 'fileaud'):
-                            if os.path.exists('{}/{}/{}/{}/{}'.format(report_dir, v, k, m, t)):
-                                for g in ('low', 'middle', 'high'):
-                                    if os.path.exists('{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, t, g)):
-                                        full_path = '{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, t, g)
+                        # for t in ('psaud', 'useraud', 'fileaud'):
+                        for g in ('low', 'middle', 'high'):
+                            if os.path.exists('{}/{}/{}/{}/{}'.format(report_dir, v, k, m, g)):
+                                # for g in ('low', 'middle', 'high'):
+                                for t in ('psaud', 'useraud', 'fileaud'):
+                                    if os.path.exists('{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, g, t)):
+                                        full_path = '{}/{}/{}/{}/{}/{}'.format(report_dir, v, k, m, g, t)
                                         if t == 'psaud':
                                             if os.path.exists(full_path + '/aub_ps_report_latency.txt')\
                                                     and os.path.exists(full_path + '/aub_ps_report_losses.txt'):
@@ -108,49 +110,49 @@ for v in ('1.7.3', '1.7.3.UU.1'):
                                                 rating = r.get_total_auditd_rating(path=full_path + '/aub_report.txt')
                                         print('{} {} {} {} {} {}'.format(v, k, m, t, g, rating))
 
-                                        # # Создать и выложить отчет
-                                        #
-                                        # # инв. данные
-                                        # arms = {
-                                        #     'low': ('141', 'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz', '32GB', '-'),
-                                        #     'middle': ('151', 'Intel(R) Xeon(R)  CPU E5-2620 v3 @ 2.40GHz ', '31GB', '-'),
-                                        #     'high': ('150', 'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz', '125GB', '-'),
-                                        # }
-                                        #
-                                        # publish_cmd_lst = [
-                                        #     '/home/rkuznetsov/git/stress_test/auditd_benchmark/venv/bin/python aub_publish.py',
-                                        #     ' --username rkuznetsov',
-                                        #     ' --token MjY3NzUwMzczNzE2OjR9Xi2vp513jB3y8+dp1imy/IIc',
-                                        #     ' --confluence-space "~rkuznetsov"',
-                                        #     ' --confluence-parent-page "{av} ⬝ Auditd"'.format(av=v),
-                                        #     ' --confluence-new-page {test}_{av}_{mode}_{kernel}_{greid}_{num}'.format(test=t,
-                                        #                                                                               av=v,
-                                        #                                                                               mode=fullm,
-                                        #                                                                               greid=g,
-                                        #                                                                               num=arms[g][0],
-                                        #                                                                               kernel=fullk),
-                                        #     ' --package auditd',
-                                        #     ' --test-set {}'.format(t),
-                                        #     ' --info-path {rd}/{av}/{kernel}/{mode}/aub_info.txt'.format(rd=report_dir,
-                                        #                                                                  av=v,
-                                        #                                                                  mode=m,
-                                        #                                                                  kernel=k),
-                                        #     ' --template-path /home/rkuznetsov/git/stress_test/auditd_benchmark/templates',
-                                        #     ' --report-path {rd}/{av}/{kernel}/{mode}/{test}/{greid}'.format(rd=report_dir,
-                                        #                                                                      av=v,
-                                        #                                                                      mode=m,
-                                        #                                                                      test=t,
-                                        #                                                                      greid=g,
-                                        #                                                                      kernel=k),
-                                        #     ' --arm-proccessor "{}"'.format(arms[g][1]),
-                                        #     ' --arm-memory "{}"'.format(arms[g][2]),
-                                        #     ' --arm-storage "{}"'.format(arms[g][3]),
-                                        #     ]
-                                        #
-                                        # publish_cmd = ''.join(publish_cmd_lst)
-                                        # print(publish_cmd)
-                                        # if subprocess.run(publish_cmd,
-                                        #                   shell=True).returncode == 0:
-                                        #     print('report is published')
+                                        # Создать и выложить отчет
+
+                                        # инв. данные
+                                        arms = {
+                                            'low': ('141', 'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz', '32GB', '-'),
+                                            'middle': ('151', 'Intel(R) Xeon(R)  CPU E5-2620 v3 @ 2.40GHz ', '31GB', '-'),
+                                            'high': ('150', 'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz', '125GB', '-'),
+                                        }
+
+                                        publish_cmd_lst = [
+                                            '/home/rkuznetsov/git/stress_test/auditd_benchmark/venv/bin/python aub_publish.py',
+                                            ' --username rkuznetsov',
+                                            ' --token MjY3NzUwMzczNzE2OjR9Xi2vp513jB3y8+dp1imy/IIc',
+                                            ' --confluence-space "~rkuznetsov"',
+                                            ' --confluence-parent-page "{av} ⬝ Auditd"'.format(av=v),
+                                            ' --confluence-new-page {test}_{av}_{mode}_{kernel}_{greid}_{num}'.format(test=t.upper(),
+                                                                                                                      av=v,
+                                                                                                                      mode=fullm,
+                                                                                                                      greid=g,
+                                                                                                                      num=arms[g][0],
+                                                                                                                      kernel=fullk),
+                                            ' --package auditd',
+                                            ' --test-set {}'.format(t),
+                                            ' --info-path {rd}/{av}/{kernel}/{mode}/aub_info.txt'.format(rd=report_dir,
+                                                                                                         av=v,
+                                                                                                         mode=m,
+                                                                                                         kernel=k),
+                                            ' --template-path /home/rkuznetsov/git/stress_test/auditd_benchmark/templates',
+                                            ' --report-path {rd}/{av}/{kernel}/{mode}/{greid}/{test}'.format(rd=report_dir,
+                                                                                                             av=v,
+                                                                                                             mode=m,
+                                                                                                             test=t,
+                                                                                                             greid=g,
+                                                                                                             kernel=k),
+                                            ' --arm-proccessor "{}"'.format(arms[g][1]),
+                                            ' --arm-memory "{}"'.format(arms[g][2]),
+                                            ' --arm-storage "{}"'.format(arms[g][3]),
+                                            ]
+
+                                        publish_cmd = ''.join(publish_cmd_lst)
+                                        print(publish_cmd)
+                                        if subprocess.run(publish_cmd,
+                                                          shell=True).returncode == 0:
+                                            print('report is published')
                                     else:
                                         pass

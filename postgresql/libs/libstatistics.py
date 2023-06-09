@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from bs4 import BeautifulSoup
 from atlassian import Confluence
 
@@ -227,6 +228,7 @@ class PSQLStatistics:
         """
             Строим таблицу №1
         """
+        temp_data_for_graph = {}
         for key, data in data_for_df.items():
             if len(data.get("data")) == 0:
                 continue
@@ -238,13 +240,17 @@ class PSQLStatistics:
             df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])
 
             df = df.drop('rating_2', axis=1)
+            # print(type(df['Релиз'] + "_" + df['Ядро']))
+            # print(df['Релиз'] + "_" + df['Ядро'])
+            temp_data_for_graph[key] = (df['Релиз'] + "_" + df['Ядро'])
 
             """
                 Строим HTML
             """
             statistics_table_html = df.to_html(escape=False, index=False)
             file_html = open(f"statistics/{name_html}_{key}_1.html", "w")
-            file_html.write(statistics_table_html)
+            file_html.writelines(f"<h1>Сводная таблица результатов тестирования {key}</h1> {statistics_table_html}")
+            # file_html.write(statistics_table_html)
             file_html.close()
 
             data_rat = data.get('rating')
@@ -287,23 +293,35 @@ class PSQLStatistics:
         for key, data_ratings in data_for_df.items():
             if len(data_ratings.get("rating")) == 0:
                 continue
-            
             colors = []
-            
             for temp in data_ratings.get('rating'):
                 #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
                 if temp < np.mean(data_ratings.get('rating')) - 1 * np.std(data_ratings.get('rating')):
-                    colors.append("#ffb5b5")
+                    colors.append("#ea5c76")
+                elif temp > np.mean(data_ratings.get('rating')) + 1 * np.std(data_ratings.get('rating')):
+                    colors.append("#ffc322")
                 else:
-                    colors.append("#88c1f2")
-            
+                    colors.append("#c7d84c")
+            shcala_text = temp_data_for_graph[key]
             shcala = [x for x in range(1, len(data_ratings.get('rating')) + 1, 1)]
-            fig, ax = plt.subplots(figsize=(15, 6))
-            ax.barh(shcala, data_ratings.get('rating'), color=colors, height=0.8)
-            ax.set_yticks(shcala)
-            ax.set_ylabel("Порядковый номер теста")
-            ax.set_xlabel("Значение рейтинга")
+            fig, ax = plt.subplots(figsize=(16, 9))
+            ax.bar(shcala, data_ratings.get('rating'), color=colors)
+            ax.set_xticks(shcala)
+            ax.set_ylim([0, max(data_ratings.get('rating')) + max(data_ratings.get('rating')) * 0.15])
+            plt.gca().set_xticklabels(shcala_text, rotation=20, horizontalalignment= 'right')
+            # ax.set_xlabel("Порядковый номер теста")
+            ax.set_ylabel("Значение рейтинга")
             ax.set_title(f"PostgreSQL. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {key}")
+            for i, val in enumerate(data_ratings.get("rating")):
+                try:
+                    val = int(val)
+                except ValueError:
+                    pass
+                plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+            red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину превышающую стандартное отклонение')
+            green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
+            yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
+            ax.legend(handles=[red_patch, green_patch, yellow_patch])
             fig.savefig(f"statistics/postresql_statistics_{key}.png")
             # plt.show()
             
@@ -322,11 +340,12 @@ class PSQLStatistics:
                 <br/>
             </p>
             <hr/>
-            <h1>Сводная таблица результатов тестирования.</h1>
             <br/>
             <span class="confluence-embedded-file-wrapper confluence-embedded-manual-size">
-                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6" height="400"></img>
+                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
             </span>
+            <br/>
+            <h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>
         """
         image_list = []
         table_with_data_list = []

@@ -44,7 +44,10 @@ branches = {
     'file system benchmark. EXT2':'file_systems',
     'file system benchmark. Fat32':'file_systems',
     'file system benchmark. EXT4 parsec':'file_systems',
-    'file system benchmark. OCFS2 parsec':'file_systems'
+    'file system benchmark. OCFS2 parsec':'file_systems',
+    'auditd benchmark. psaud':'auditd',
+    'auditd benchmark. fileaud':'auditd',
+    'auditd benchmark. useraud':'auditd'
 }
 
 

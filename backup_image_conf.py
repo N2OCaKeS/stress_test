@@ -65,6 +65,9 @@ tests = {
     'file system benchmark. EXT2':'EXT2',
     'file system benchmark. Fat32':'Fat32',
     'file system benchmark. EXT4 parsec':'EXT4 parsec',
-    'file system benchmark. OCFS2 parsec':'OCFS2 parsec'
+    'file system benchmark. OCFS2 parsec':'OCFS2 parsec',
+    'auditd benchmark. psaud':'auditd_p',
+    'auditd benchmark. fileaud':'auditd_f',
+    'auditd benchmark. useraud':'auditd_u'
 }
 

@@ -8,13 +8,16 @@
 import argparse
 import subprocess
 
-from time import time, strftime, gmtime
+from time import time, strftime, gmtime, sleep, ctime
 from os import path, mkdir, listdir, remove
-from libs.libaub import put_system_info_in_file
+from libs.libaub import put_system_info_in_file, upload_results_to_ftp
 from libs.libtest import AuditdTestSet
 from libs.libtable import Report
+from libs.zefir import ZefirStatusAPI, ZefirResultTable
+from libs.libstatistics import FileSystemStatistics
+from libs.libpublic import Public
 from aub_conf import \
-    REPORT, REPORT_DIR, \
+    REPORT, REPORT_DIR, REPORT_FILENAME, \
     LOG, LOG_DIR, \
     INFO_FILENAME, \
     LATENCY_REPORT_PSAUD, LATENCY_REPORT_USAUD, LATENCY_REPORT_FLAUD, \
@@ -69,7 +72,103 @@ parser.add_argument('-e', '--event',
                     help='audit event',
                     dest='EVENT')
 
+parser.add_argument('-u', '--username',
+                    action='store',
+                    required=True,
+                    help='confluence user',
+                    dest='USER')
+
+parser.add_argument('-t', '--token',
+                    action='store',
+                    required=False,
+                    default=None,
+                    help='confluence access token',
+                    dest='TOKEN')
+
+parser.add_argument('-cs', '--confluence-space',
+                    action='store',
+                    required=True,
+                    help='confluence space',
+                    dest='SPACE')
+
+parser.add_argument('-cpp', '--confluence-parent-page',
+                    action='store',
+                    required=True,
+                    help='confluence parent page',
+                    dest='PPAGE')
+
+parser.add_argument('-cnp', '--confluence-new-page',
+                    action='store',
+                    required=True,
+                    help='confluence new page',
+                    dest='NPAGE')
+
+parser.add_argument('-sn', '--stand-num',
+                    action='store',
+                    choices=['1',
+                             '2',
+                             '3',
+                             '4'],
+                    required=True,
+                    help='stand num',
+                    dest='STAND')
+
+parser.add_argument('-fti', '--folder-tree-id',
+                    action='store',
+                    required=True,
+                    help='folder-tree-id',
+                    dest='FTI')
+
+parser.add_argument('-tcyc', '--test-cycle-name',
+                    action='store',
+                    required=True,
+                    help='test-cycle-name',
+                    dest='TCYC')
+
+parser.add_argument('-tcas', '--test-case-name',
+                    action='store',
+                    required=True,
+                    help='test-case-name',
+                    dest='TCAS')
+
+parser.add_argument('-ba', '--basic-auth',
+                    action='store',
+                    required=True,
+                    help='basic-auth',
+                    dest='BA')
+
+parser.add_argument('-tcv', '--test-cycle-version',
+                    action='store',
+                    required=True,
+                    help='test-cycle-version',
+                    dest='TCV')
 args = parser.parse_args()
+
+def test_cycle_status_start():
+    zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
+                            test_cycle_name=args.TCYC,
+                            test_case_name=args.TCAS,
+                            basic_auth=args.BA)
+    zefir.upload_status(90)
+    zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
+                                    token=args.TOKEN,
+                                    basic_auth=args.BA,
+                                    username=args.USER)
+    zefir_table
+
+start_status = 0
+while start_status == 0:
+    try:
+        test_cycle_status_start()
+        start_status += 1
+    except Exception as e:
+        with open('JIRA_ERROR.log', 'a') as err:
+            err.write('start:\n')
+            err.write(ctime())
+            err.write(e)
+            err.write('---------' * 25)
+            err.write('\n\n')
+        sleep(30)
 
 # Засечь время выполнения скрипта
 start_time = time()
@@ -336,3 +435,46 @@ elif args.TEST_LIST == 'fileaud':
                                                       LOSSES_REPORT_FLAUD)
     else:
         exit(2)
+
+upload_results_to_ftp(args.TCV, f'{REPORT_DIR}/{REPORT_FILENAME}', f'{args.TCYC}_{REPORT_FILENAME}')
+
+def upload_result_status():
+    public = Public(username=args.USER,
+                    token=args.TOKEN,
+                    conf_space=args.SPACE,
+                    conf_parent_page=args.PPAGE,
+                    conf_new_page_name=args.NPAGE,
+                    grade_stand=args.STAND,
+                    test_set=args.TEST_LIST)
+
+    public.run_publish()
+
+    zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
+                            test_cycle_name=args.TCYC,
+                            test_case_name=args.TCAS,
+                            basic_auth=args.BA)
+    zefir.upload_status(91)
+
+    zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
+                                    token=args.TOKEN,
+                                    basic_auth=args.BA,
+                                    username=args.USER)
+    zefir_table
+
+    statisctics = FileSystemStatistics(username=args.USER, 
+                                    token=args.TOKEN)
+    statisctics.update_statistics()
+
+end_status = 0
+while end_status == 0:
+    try:
+        upload_result_status()
+        end_status += 1
+    except Exception as e:
+        with open('JIRA_ERROR.log', 'a') as err:
+            err.write('end:\n')
+            err.write(ctime())
+            err.write(e)
+            err.write('---------' * 25)
+            err.write('\n\n')
+        sleep(30)

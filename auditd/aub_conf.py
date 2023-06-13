@@ -2,7 +2,7 @@
     Основная рабочая директория
 """
 #SCRIPT_DIR = '/media/sf_git/stress_test/auditd_benchmark'
-SCRIPT_DIR = '/home/u/git/stress_test/auditd_benchmark'
+SCRIPT_DIR = '/home/u/git/stress_test/auditd'
 
 """
     Названия основных файлов
@@ -105,13 +105,13 @@ FILEAUD_PROC_BODYS = {
 """
     Количество процессов-генераторов
 """
-PS_LOWER_LIMIT = 10  #10
-PS_UPPER_LIMIT = 60  #100
-PS_STEP = 10  #10
+PS_LOWER_LIMIT = 1 #10  
+PS_UPPER_LIMIT = 6 #60  
+PS_STEP = 1 #10  
 """
     Время жизни одного процессов-генераторов
 """
-DEFAULT_PS_LIFETIME = 10 #100
+DEFAULT_PS_LIFETIME = 2 #10 
 """
     Задержка повторной инициализации события
 """

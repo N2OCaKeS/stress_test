@@ -10,6 +10,7 @@ import re
 import crypt
 import subprocess
 import pexpect
+import ftplib
 
 from os import path, mkdir, listdir, chmod
 from time import sleep, ctime, time, strftime, gmtime
@@ -31,6 +32,21 @@ def check_output_command(command):
         return output
     else:
         return errors
+    
+
+def upload_results_to_ftp(rc_name, path_to_file, file_name):
+    ftp = ftplib.FTP('10.177.103.10')
+    ftp.login()
+    ftp.cwd('stress_test')
+    try:
+        ftp.mkd(rc_name)
+    except ftplib.error_perm:
+        pass
+    #ftp.sendcmd('SITE CHMOD 777 ' + rc_name)
+    ftp.cwd(rc_name)
+    with open(path_to_file, 'rb') as rf:
+        ftp.storbinary('STOR ' + file_name, rf)
+    ftp.quit()
 
 
 def astra_kernel_version():

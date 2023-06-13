@@ -37,7 +37,7 @@ __jira_token = tokens['jira_token']
 __pt_version = args.RELEASE
 #__stand = 'stand1'
 __stand = args.STAND
-__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql']
+__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'auditd_p']
 
 #Делаем get запрос в jira
 matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
@@ -125,11 +125,20 @@ for i in range(0, len(dates_list)):
                     cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
                     pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
                     psql = '-ps psql'
+                    if tests[dates_list[i][1]] == 'auditd_p':
+                        testlist = f'-aud psaud'
+                    elif tests[dates_list[i][1]] == 'auditd_f':
+                        testlist = f'-aud fileaud'
+                    elif tests[dates_list[i][1]] == 'auditd_u':
+                        testlist = f'-aud useraud'
                     print('Выполняется...')
                     #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                     if tests[dates_list[i][1]] == 'postgresql':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {psql}', shell=True)
+                    elif tests[dates_list[i][1]].startswith('auditd'):
+                        subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
+                                       {stand} {tcyc} {tcas} {branch} {cti} {pp}', shell=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp}', shell=True)
@@ -153,11 +162,20 @@ for i in range(0, len(dates_list)):
                 cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
                 pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
                 psql = '-ps psql'
+                if tests[dates_list[i][1]] == 'auditd_p':
+                    testlist = f'-aud psaud'
+                elif tests[dates_list[i][1]] == 'auditd_f':
+                    testlist = f'-aud fileaud'
+                elif tests[dates_list[i][1]] == 'auditd_u':
+                    testlist = f'-aud useraud'
                 print('Выполняется...')
                 #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                 if tests[dates_list[i][1]] == 'postgresql':
                     subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                 {tcas} {branch} {cti} {pp} {psql}', shell=True)
+                elif tests[dates_list[i][1]].startswith('auditd'):
+                    subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
+                                       {stand} {tcyc} {tcas} {branch} {cti} {pp}', shell=True)
                 else: 
                     subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp}', shell=True)

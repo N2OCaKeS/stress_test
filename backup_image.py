@@ -92,6 +92,12 @@ parser.add_argument('-ps',
                     help='test psql',
                     dest='PSQL')
 
+parser.add_argument('-aud',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='AUDIT')
+
 args = parser.parse_args()
 
 
@@ -129,9 +135,13 @@ tcas = f'-tcas "{args.TCASE}"'
 ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
 pack_sql = '--package postgresql-11'
+testlist = f'--testlist {args.AUDIT}'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
         -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
+elif args.AUDIT:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+        {sn} {testlist} {fti} {tcyc} {tcas} {ba} {tcv}'
 elif args.TEST == 'EXT4 parsec':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
         {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} --parsec'

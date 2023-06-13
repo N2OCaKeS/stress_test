@@ -461,9 +461,9 @@ def upload_result_status():
                                     username=args.USER)
     zefir_table
 
-    statisctics = FileSystemStatistics(username=args.USER, 
-                                    token=args.TOKEN)
-    statisctics.update_statistics()
+    #statisctics = FileSystemStatistics(username=args.USER, 
+    #                                token=args.TOKEN)
+    #statisctics.update_statistics()
 
 end_status = 0
 while end_status == 0:

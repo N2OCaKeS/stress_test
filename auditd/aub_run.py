@@ -29,7 +29,7 @@ from aub_conf import \
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
-parser.add_argument('-t', '--testlist',
+parser.add_argument('--testlist',
                     action='store',
                     choices=['psaud',
                              'useraud',

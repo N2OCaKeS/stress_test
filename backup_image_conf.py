@@ -24,7 +24,10 @@ parent_page_list = {
                   'NTFS':'1.7.3.UU.2 ⬝ Файловые системы',
                   'EXT4':'1.7.3.UU.2 ⬝ Файловые системы',
                   'EXT4 parsec':'1.7.3.UU.2 ⬝ Файловые системы',
-                  'postgresql':'1.7.3.UU.2 ⬝ PostgreSQL'
+                  'postgresql':'1.7.3.UU.2 ⬝ PostgreSQL',
+                  'auditd_p':'1.7.3.UU.2 ⬝ Системные службы',
+                  'auditd_f':'1.7.3.UU.2 ⬝ Системные службы',
+                  'auditd_u':'1.7.3.UU.2 ⬝ Системные службы'
                  },
     '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',
                   'XFS':'1.7.3 UU1 ⬝ Файловые системы',

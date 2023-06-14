@@ -585,6 +585,24 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None]*count)
 
+        print('**************under_load before')
+        def check_output_command(command):
+            result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    universal_newlines=True)
+            output, errors = result.communicate()
+            output = linesep.join([s for s in output.splitlines() if s])
+            errors = linesep.join([s for s in errors.splitlines() if s])
+            if errors == "":
+                return output
+            else:
+                return errors
+        try:
+            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+                                      sed -n 1p | awk '{print $2}'", shell=True)
+            subprocess.run(f'sudo kill -9 {ps}')
+        except Exception:
+            pass
+
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_timer,
                                       proc_lifetime=ps_lifetime,
@@ -593,6 +611,8 @@ class AuditdTest(Auditd, CheckAusearch):
                                       timer_lst=timers)
         for test_ps in test_ps_lst:
             test_ps.start()
+            print('********************test_ps start')
+            
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
 
         last_num = count - 1

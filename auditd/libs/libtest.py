@@ -11,7 +11,7 @@ import subprocess
 from time import sleep, ctime, time
 from multiprocessing import Process, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
-from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
+from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd, check_output_command
 
 
 class AuditdTest(Auditd, CheckAusearch):
@@ -585,36 +585,23 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None]*count)
 
-        print('**************under_load before')
-        def check_output_command(command):
-            result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    universal_newlines=True)
-            output, errors = result.communicate()
-            output = linesep.join([s for s in output.splitlines() if s])
-            errors = linesep.join([s for s in errors.splitlines() if s])
-            if errors == "":
-                return output
-            else:
-                return errors
+        #убить процесс мешающий бендиксу
         try:
             ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
                                       sed -n 1p | awk '{print $2}'")
             print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
-        except Exception:
-            pass
-        print('***************** 1111')
+        except Exception as e:
+            print(e)
+
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_timer,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
                                       count=count,
                                       timer_lst=timers)
-        print('******************* 222222')
         print(test_ps_lst)
         for test_ps in test_ps_lst:
-            print(test_ps.start())
-            print('********************test_ps start')
-            
+            test_ps.start()
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
 
         last_num = count - 1
@@ -787,6 +774,14 @@ class AuditdTest(Auditd, CheckAusearch):
 
         Auditd.clean()
         Prepare.clean()
+
+        #убить процесс мешающий бендиксу
+        try:
+            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+                                      sed -n 1p | awk '{print $2}'")
+            print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
+        except Exception as e:
+            print(e)
 
         # создаем пользователей, навешиваем привилегии
         for index in range(count):
@@ -1002,6 +997,14 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None] * count)
 
+        #убить процесс мешающий бендиксу
+        try:
+            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+                                      sed -n 1p | awk '{print $2}'")
+            print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
+        except Exception as e:
+            print(e)
+
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_fileaud_timer,
                                       proc_lifetime=ps_lifetime,
@@ -1129,32 +1132,12 @@ class AuditdTestSet():
                                ps_lifetime,
                                ps_event_re_initialization_delay,
                                report_file):
-        print('***************************get_latency_stat_psaud')
-        def check_output_command(command):
-            result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    universal_newlines=True)
-            output, errors = result.communicate()
-            output = linesep.join([s for s in output.splitlines() if s])
-            errors = linesep.join([s for s in errors.splitlines() if s])
-            if errors == "":
-                return output
-            else:
-                return errors
-
-        try:
-            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
-                                      sed -n 1p | awk '{print $2}'", shell=True)
-            subprocess.run(f'sudo kill -9 {ps}')
-        except Exception:
-            pass
-        print('****************************__audit_test')
+        
         __audit_test = AuditdTest(PSAUD_PROC_BODYS)
-        print('***********************result before')
         result = __audit_test.test_get_latency_psaud_under_load(event_flag,
                                                                 ps_count,
                                                                 ps_lifetime,
                                                                 ps_event_re_initialization_delay)
-        print('*****************************result after')
         with open(report_file, 'a+') as file:
             file.write('{} {}\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))

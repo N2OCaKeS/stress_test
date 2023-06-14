@@ -598,7 +598,7 @@ class AuditdTest(Auditd, CheckAusearch):
                 return errors
         try:
             ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
-                                      sed -n 1p | awk '{print $2}'", shell=True)
+                                      sed -n 1p | awk '{print $2}'")
             print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
         except Exception:
             pass

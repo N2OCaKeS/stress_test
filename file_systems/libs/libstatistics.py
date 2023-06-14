@@ -237,7 +237,69 @@ class FileSystemStatistics:
             green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
             yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
             ax.legend(handles=[red_patch, green_patch, yellow_patch])
-            fig.savefig(f"statistics/fs_{fs_type}_{stand}.png")
+            fig.savefig(f"statistics/fs_{fs_type}_{stand}_1.png")
+        
+        def build_summary_graph(stand, rating1, rating2, shcala_txt):
+            shcala_x = [x for x in range(1, len(shcala_txt) + 1, 1)]
+            fig, ax = plt.subplots(figsize=(16, 9))
+
+            ax.bar(shcala_x, rating1, color='#88c1f2')
+            ax.bar(shcala_x, rating2, color='#ea5c76', alpha=0.9, width=0.7)
+            if max(rating1) > max(rating2):
+                ax.set_ylim([0, max(rating1) + max(rating1) * 0.15])
+            else:
+                ax.set_ylim([0, max(rating2) + max(rating2) * 0.15])
+            ax.set_xticks(shcala_x)
+            ax.set_title(f"EXT4 и EXT4 с PARSEC.\nСравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {stand}")
+            ax.set_ylabel("Значение рейтинга")
+            plt.gca().set_xticklabels(shcala_txt, rotation=20, horizontalalignment='right')
+            for i, val in enumerate(rating1):
+                try:
+                    val = int(val)
+                except ValueError:
+                    pass
+                if val != 0:
+                    plt.text(i + 1, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+            for i, val in enumerate(rating2):
+                try:
+                    val = int(val)
+                except ValueError:
+                    pass
+                if val != 0:
+                    plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+            ax.legend(['EXT4', 'EXT4 with parsec'])
+            fig.savefig(f"statistics/fs_EXT4_and_EXT4_with_parsec_{stand}_a.png")
+
+
+        def create_summary_table(fs_data=[], stand=None):
+            columns = [
+                    ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг_ext4', 'Рейтинг2_ext4'], 
+                    ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг_ext4_parsec', 'Рейтинг2_ext4_parsec']
+                ]
+
+            dataframes = []
+            for ind, item in enumerate(fs_data):
+                df = pd.DataFrame(data=item, columns=columns[ind])
+                df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                df = df.drop("Режим защищенности", axis=1)
+                dataframes.append(df)
+
+            df_merge = pd.merge(dataframes[0], dataframes[1], how='outer', left_on=["Релиз", "Ядро", "Стенд"], right_on=["Релиз", "Ядро", "Стенд"])
+            df_merge['Рейтинг2_ext4'] = df_merge['Рейтинг2_ext4'].fillna(0)
+            df_merge['Рейтинг2_ext4_parsec'] = df_merge['Рейтинг2_ext4_parsec'].fillna(0)
+            df_merge['Рейтинг_ext4'] = df_merge['Рейтинг_ext4'].fillna("-")
+            df_merge['Рейтинг_ext4_parsec'] = df_merge['Рейтинг_ext4_parsec'].fillna("-")
+            rating, rating_parsec = df_merge['Рейтинг2_ext4'], df_merge['Рейтинг2_ext4_parsec']
+            df_merge.insert(0, "№", [x for x in range(1, len(rating.tolist()) + 1, 1)])
+            df_merge= df_merge.drop(['Рейтинг2_ext4', "Рейтинг2_ext4_parsec"], axis=1)
+
+            table = df_merge.to_html(escape=False, index=False)
+            file = open(f"statistics/fs_EXT4_and_EXT4_with_parsec_{stand}_a.html", 'w')
+            file.writelines(f"<h1>Сводная таблица результатов тестирования EXT4 и EXT4 с parsec {stand}</h1> {table}")
+            file.close()
+            return rating.to_list(), rating_parsec.to_list(), df_merge['Релиз'] + '_' + df_merge['Ядро']
+
+            
 
         file_system_data = {
             'data': {
@@ -340,6 +402,11 @@ class FileSystemStatistics:
                 rating_for_graph, shcl = build_main_dataframe("XFS_parsec", data.get("XFS_parsec"), key)
                 build_mat_stat_dataframe("XFS_parsec", rating_for_graph, key)
                 build_graph(fs_type="XFS_parsec", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
+            if data.get("EXT4") and data.get("EXT4_parsec"):
+                rat, rat_parsec, shcl = create_summary_table(fs_data=[data.get("EXT4"), data.get("EXT4_parsec")], stand=key)
+                build_summary_graph(stand=key, rating1=rat, rating2=rat_parsec, shcala_txt=shcl)
+        
+        
 
     """
         Создаем итоговую html страницу для life
@@ -360,18 +427,24 @@ class FileSystemStatistics:
                 <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6" ></img>
             </span>
             <br/>
-            <h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>
         """
         image_list = []
         table_with_data_list = []
         table_with_mat_stat_list = []
+        ext4_and_ext4_parsec_comparison_list = []
+        image_list_ext4_comparison = []
         
         for file in sorted(os.listdir("statistics")):
             # print(file)
         
-            if file.endswith("png"):
+            if file.endswith("1.png"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                                                    img_png=file))
+                
+            if file.endswith("a.png"):
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file))
             if file.endswith("1.html"):
                 file_table = open(f'statistics/{file}', 'r')
@@ -383,16 +456,27 @@ class FileSystemStatistics:
                 mat_stat_table = new_file_table.read()
                 new_file_table.close()
                 table_with_mat_stat_list.append(mat_stat_table)
+            if file.endswith("a.html"):
+                file_sys_with_parsec_table = open(f'statistics/{file}', "r")
+                g_table = file_sys_with_parsec_table.read()
+                file_sys_with_parsec_table.close()
+                ext4_and_ext4_parsec_comparison_list.append(g_table)
+
         
 
         html_list = []
 
         for ind, item in enumerate(table_with_data_list):
             html_list.append(image_list[ind])
-            # html_list.append("<hr>")
+            html_list.append('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
             html_list.append(item)
             html_list.append("<br/>" + table_with_mat_stat_list[ind])
         
+        for ind, item in enumerate(ext4_and_ext4_parsec_comparison_list):
+            html_list.append(image_list_ext4_comparison[ind])
+            html_list.append('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+            html_list.append(item)
+
         html_page = "".join(html_list)
 
         confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
@@ -402,3 +486,7 @@ class FileSystemStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages)
         self.upload_statistics(type_stat="Файловые системы")
+
+if __name__ == "__main__":
+    stat = FileSystemStatistics(username='~ivelikanov', token="MjA2NjM1MDczNDU5OiB/n9PuSq6xskVmfiPHjYIXUst4")
+    stat.update_statistics()

@@ -1107,7 +1107,7 @@ class AuditdTestSet():
                                ps_lifetime,
                                ps_event_re_initialization_delay,
                                report_file):
-
+        print('***************************get_latency_stat_psaud')
         def check_output_command(command):
             result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     universal_newlines=True)
@@ -1125,12 +1125,14 @@ class AuditdTestSet():
             subprocess.run(f'sudo kill -9 {ps}')
         except Exception:
             pass
-
+        print('****************************__audit_test')
         __audit_test = AuditdTest(PSAUD_PROC_BODYS)
+        print('***********************result before')
         result = __audit_test.test_get_latency_psaud_under_load(event_flag,
                                                                 ps_count,
                                                                 ps_lifetime,
                                                                 ps_event_re_initialization_delay)
+        print('*****************************result after')
         with open(report_file, 'a+') as file:
             file.write('{} {}\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))

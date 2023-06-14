@@ -599,7 +599,7 @@ class AuditdTest(Auditd, CheckAusearch):
         try:
             ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
                                       sed -n 1p | awk '{print $2}'", shell=True)
-            subprocess.run(f'sudo kill -9 {ps}')
+            print(subprocess.run(f'sudo kill -9 {ps}'))
         except Exception:
             pass
         print('***************** 1111')
@@ -610,6 +610,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                       count=count,
                                       timer_lst=timers)
         print('******************* 222222')
+        print(test_ps_lst)
         for test_ps in test_ps_lst:
             print(test_ps.start())
             print('********************test_ps start')

@@ -12,7 +12,7 @@ import os
 from time import time, strftime, gmtime, sleep, ctime
 from os import path, mkdir, listdir, remove
 from libs.libaub import put_system_info_in_file, upload_results_to_ftp
-from libs.libtest import AuditdTestSet
+
 from libs.libtable import Report
 from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.libstatistics import FileSystemStatistics
@@ -145,6 +145,9 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     dest='TCV')
 args = parser.parse_args()
 
+stand_number = args.STAND
+from libs.libtest import AuditdTestSet
+
 def check_output_command(command):
     result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               universal_newlines=True)
@@ -195,8 +198,6 @@ log_file.close()
 
 log_file = open(INFO_FILENAME, 'w')
 log_file.close()
-
-stand_number = args.STAND
 
 # Создать /report
 if not path.exists(REPORT_DIR):

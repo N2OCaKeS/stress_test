@@ -11,7 +11,8 @@ import subprocess
 from time import sleep, ctime, time
 from multiprocessing import Process, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
-from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd, check_output_command
+from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd, killer_ps
+from aub_run import stand_number
 
 
 class AuditdTest(Auditd, CheckAusearch):
@@ -585,13 +586,7 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None]*count)
 
-        #убить процесс мешающий бендиксу
-        try:
-            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
-                                      sed -n 1p | awk '{print $2}'")
-            print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
-        except Exception as e:
-            print(e)
+        killer_ps(stand_number)
 
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_timer,
@@ -793,13 +788,7 @@ class AuditdTest(Auditd, CheckAusearch):
         timers = manager.list([None]*count)
         cmds = manager.list([None]*count)
 
-        #убить процесс мешающий бендиксу
-        try:
-            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
-                                      sed -n 1p | awk '{print $2}'")
-            print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
-        except Exception as e:
-            print(e)
+        killer_ps(stand_number)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
@@ -997,13 +986,7 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None] * count)
 
-        #убить процесс мешающий бендиксу
-        try:
-            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
-                                      sed -n 1p | awk '{print $2}'")
-            print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
-        except Exception as e:
-            print(e)
+        killer_ps(stand_number)
 
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_fileaud_timer,

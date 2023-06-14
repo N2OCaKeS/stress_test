@@ -196,6 +196,8 @@ log_file.close()
 log_file = open(INFO_FILENAME, 'w')
 log_file.close()
 
+stand_number = args.STAND
+
 # Создать /report
 if not path.exists(REPORT_DIR):
     mkdir(REPORT_DIR, mode=0o755)

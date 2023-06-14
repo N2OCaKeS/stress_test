@@ -587,7 +587,7 @@ class AuditdTest(Auditd, CheckAusearch):
 
         #убить процесс мешающий бендиксу
         try:
-            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
                                       sed -n 1p | awk '{print $2}'")
             print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
         except Exception as e:
@@ -777,7 +777,7 @@ class AuditdTest(Auditd, CheckAusearch):
 
         #убить процесс мешающий бендиксу
         try:
-            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
                                       sed -n 1p | awk '{print $2}'")
             print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
         except Exception as e:
@@ -999,7 +999,7 @@ class AuditdTest(Auditd, CheckAusearch):
 
         #убить процесс мешающий бендиксу
         try:
-            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
                                       sed -n 1p | awk '{print $2}'")
             print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
         except Exception as e:

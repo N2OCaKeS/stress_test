@@ -611,7 +611,7 @@ class AuditdTest(Auditd, CheckAusearch):
                                       timer_lst=timers)
         print('******************* 222222')
         for test_ps in test_ps_lst:
-            test_ps.start()
+            print(test_ps.start())
             print('********************test_ps start')
             
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))

@@ -207,12 +207,13 @@ else:
 report_file = open(REPORT, 'w')
 report_file.close()
 
-#ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
-#                          sed -n 1p | awk '{print $2}'", shell=True)
-#subprocess.run(f'sudo kill -9 {ps}')
+
 
 if args.TEST_LIST == 'psaud':
     if args.MODE == 'default':
+        ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+                          sed -n 1p | awk '{print $2}'", shell=True)
+        subprocess.run(f'sudo kill -9 {ps}')
         # Очистить отчет
         report_file = open(LATENCY_REPORT_PSAUD, 'w')
         report_file.close()

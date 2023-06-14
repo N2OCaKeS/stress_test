@@ -775,14 +775,6 @@ class AuditdTest(Auditd, CheckAusearch):
         Auditd.clean()
         Prepare.clean()
 
-        #убить процесс мешающий бендиксу
-        try:
-            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
-                                      sed -n 1p | awk '{print $2}'")
-            print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
-        except Exception as e:
-            print(e)
-
         # создаем пользователей, навешиваем привилегии
         for index in range(count):
             name = user + str(index)
@@ -800,6 +792,14 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None]*count)
         cmds = manager.list([None]*count)
+
+        #убить процесс мешающий бендиксу
+        try:
+            ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand1.conf' | \
+                                      sed -n 1p | awk '{print $2}'")
+            print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
+        except Exception as e:
+            print(e)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,

@@ -599,24 +599,6 @@ class AuditdTest(Auditd, CheckAusearch):
         last_test_ps = test_ps_lst[-1]
         start, end = time(), time()  # засекаем время
 
-        def check_output_command(command):
-            result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    universal_newlines=True)
-            output, errors = result.communicate()
-            output = linesep.join([s for s in output.splitlines() if s])
-            errors = linesep.join([s for s in errors.splitlines() if s])
-            if errors == "":
-                return output
-            else:
-                return errors
-
-        try:
-            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
-                                      sed -n 1p | awk '{print $2}'", shell=True)
-            subprocess.run(f'sudo kill -9 {ps}')
-        except Exception:
-            pass
-
         while True:
             try:
                 if timers[last_num]:
@@ -1125,6 +1107,24 @@ class AuditdTestSet():
                                ps_lifetime,
                                ps_event_re_initialization_delay,
                                report_file):
+
+        def check_output_command(command):
+            result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    universal_newlines=True)
+            output, errors = result.communicate()
+            output = linesep.join([s for s in output.splitlines() if s])
+            errors = linesep.join([s for s in errors.splitlines() if s])
+            if errors == "":
+                return output
+            else:
+                return errors
+
+        try:
+            ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
+                                      sed -n 1p | awk '{print $2}'", shell=True)
+            subprocess.run(f'sudo kill -9 {ps}')
+        except Exception:
+            pass
 
         __audit_test = AuditdTest(PSAUD_PROC_BODYS)
         result = __audit_test.test_get_latency_psaud_under_load(event_flag,

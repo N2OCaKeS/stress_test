@@ -602,13 +602,14 @@ class AuditdTest(Auditd, CheckAusearch):
             subprocess.run(f'sudo kill -9 {ps}')
         except Exception:
             pass
-
+        print('***************** 1111')
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_timer,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
                                       count=count,
                                       timer_lst=timers)
+        print('******************* 222222')
         for test_ps in test_ps_lst:
             test_ps.start()
             print('********************test_ps start')

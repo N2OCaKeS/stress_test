@@ -38,6 +38,8 @@ def killer_ps(stand_number):
     try:
         ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand{sn}.conf' | \
                                     sed -n 1p | awk '{{print $2}}'".format(sn=stand_number))
+        print("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand{sn}.conf' | \
+                                    sed -n 1p | awk '{{print $2}}'".format(sn=stand_number))
         print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
     except Exception as e:
         print(e)

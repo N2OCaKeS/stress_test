@@ -105,13 +105,13 @@ FILEAUD_PROC_BODYS = {
 """
     Количество процессов-генераторов
 """
-PS_LOWER_LIMIT = 1 #10  
-PS_UPPER_LIMIT = 6 #60  
-PS_STEP = 1 #10  
+PS_LOWER_LIMIT = 3 #10  
+PS_UPPER_LIMIT = 18 #60  
+PS_STEP = 3 #10  
 """
     Время жизни одного процессов-генераторов
 """
-DEFAULT_PS_LIFETIME = 2 #10 
+DEFAULT_PS_LIFETIME = 4 #10 
 """
     Задержка повторной инициализации события
 """

@@ -466,7 +466,7 @@ class Report:
                       accuracy=3,
                       auto_normalize=True):
         if auto_normalize:
-            temp_lst = [0] + self.la_lst + [7000]
+            temp_lst = [0] + self.la_lst + [700]
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]

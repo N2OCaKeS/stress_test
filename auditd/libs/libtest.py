@@ -14,7 +14,7 @@ from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, T
 from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
 from libs.libaub import killer_ps
 
-with open('git/stress_test/auditd/libs/stand_number.txt', 'r') as r:
+with open('libs/stand_number.txt', 'r') as r:
     stand_number = r.read()
 
 

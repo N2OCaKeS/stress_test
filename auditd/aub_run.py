@@ -12,7 +12,7 @@ import os
 from time import time, strftime, gmtime, sleep, ctime
 from os import path, mkdir, listdir, remove
 from libs.libaub import put_system_info_in_file, upload_results_to_ftp
-
+from libs.libtest import AuditdTestSet
 from libs.libtable import Report
 from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.libstatistics import FileSystemStatistics
@@ -147,7 +147,7 @@ args = parser.parse_args()
 
 with open('libs/stand_number.txt', 'w') as wr:
     wr.write(args.STAND)
-from libs.libtest import AuditdTestSet
+
 
 def test_cycle_status_start():
     zefir = ZefirStatusAPI(folder_tree_id=args.FTI,

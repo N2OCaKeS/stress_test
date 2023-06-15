@@ -306,6 +306,10 @@ if read_status() == success:
 create_remote_file(f'/home/u/git/stress_test/{dates_name}', f'/home/u/{dates_name}')
 #starter
 create_remote_file('/home/u/git/stress_test/starter.sh', '/home/u/starter.sh')
+#stand_number
+with open('/home/u/git/stress_test/stand_number.conf', 'w') as wr:
+    wr.write(args.ST)
+create_remote_file('/home/u/git/stress_test/stand_number.conf', '/home/u/stand_number.conf')
 
 if read_status() == success:
     write_status(in_prog)

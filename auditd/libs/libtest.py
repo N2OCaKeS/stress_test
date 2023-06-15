@@ -12,7 +12,7 @@ from time import sleep, ctime, time
 from multiprocessing import Process, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
 from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
-from libs.libaub import killer_ps
+#from libs.libaub import killer_ps
 
 with open('/home/u/stand_number.conf', 'r') as r:
     stand_number = r.read()

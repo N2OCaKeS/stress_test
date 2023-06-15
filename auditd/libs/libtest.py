@@ -795,7 +795,7 @@ class AuditdTest(Auditd, CheckAusearch):
         timers = manager.list([None]*count)
         cmds = manager.list([None]*count)
 
-        killer_ps(stand_number)
+        #killer_ps(stand_number)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
@@ -993,7 +993,7 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None] * count)
 
-        killer_ps(stand_number)
+        #killer_ps(stand_number)
 
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_fileaud_timer,

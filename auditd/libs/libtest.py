@@ -12,8 +12,13 @@ from time import sleep, ctime, time
 from multiprocessing import Process, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
 from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
-from aub_run import killer_ps
+from libs.libaub import killer_ps
 
+try:
+    with open('stand_number.txt', 'r') as r:
+        stand_number = r.read()
+except Exception as e:
+    print('stand_number_error: ', e)
 
 class AuditdTest(Auditd, CheckAusearch):
 
@@ -586,7 +591,7 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None]*count)
 
-        killer_ps()
+        killer_ps(stand_number)
 
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_timer,
@@ -788,7 +793,7 @@ class AuditdTest(Auditd, CheckAusearch):
         timers = manager.list([None]*count)
         cmds = manager.list([None]*count)
 
-        killer_ps()
+        killer_ps(stand_number)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
@@ -986,7 +991,7 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None] * count)
 
-        killer_ps()
+        killer_ps(stand_number)
 
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_fileaud_timer,

@@ -534,6 +534,7 @@ class AuditdTest(Auditd, CheckAusearch):
 
         manager = Manager()
         timers = manager.list([None])
+        print(timers)
 
         test_ps = self._create_ps(syscall=audit_flag,
                                   func=self._template_ps_psaud_timer,
@@ -549,6 +550,8 @@ class AuditdTest(Auditd, CheckAusearch):
 
         # отсчет времени
         start, end = time(), time()
+        print(start)
+        print(end)
 
         while timers[0] is None:
             pass
@@ -556,6 +559,7 @@ class AuditdTest(Auditd, CheckAusearch):
         # ищем событие по pid
         while CheckAusearch.psaud(audit_flag, test_ps.pid, timers[0]) is False:
             end = time()
+            print(end)
             if not test_ps.is_alive():
                 return 0
 

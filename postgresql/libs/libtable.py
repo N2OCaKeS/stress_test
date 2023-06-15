@@ -466,9 +466,10 @@ class Report:
                       accuracy=3,
                       auto_normalize=True):
         if auto_normalize:
+            temp_lst = [0] + self.la_lst + [7000]
             scaler = preprocessing.MinMaxScaler()
-            normalized_data_2d_array = scaler.fit_transform(np.array(self.la_lst)[:, np.newaxis])
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
 
             func_la = self.data_aproximation(self.param_lst, normalized_data_list)
             Ila, err = integrate.quad(func_la, lower_limit, upper_limit)
@@ -486,9 +487,10 @@ class Report:
                         accuracy=3,
                         auto_normalize=True):
         if auto_normalize:
+            temp_lst = [0] + self.tps1_lst + [150000]
             scaler = preprocessing.MinMaxScaler()
-            normalized_data_2d_array = scaler.fit_transform(np.array(self.tps1_lst)[:, np.newaxis])
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
 
             func_tps1 = self.data_aproximation(self.param_lst, normalized_data_list)
             Itps1, err = integrate.quad(func_tps1, lower_limit, upper_limit)
@@ -505,9 +507,10 @@ class Report:
                         accuracy=3,
                         auto_normalize=True):
         if auto_normalize:
+            temp_lst = [0] + self.tps1_lst + [150000]
             scaler = preprocessing.MinMaxScaler()
-            normalized_data_2d_array = scaler.fit_transform(np.array(self.tps2_lst)[:, np.newaxis])
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
 
             func_tps2 = self.data_aproximation(self.param_lst, normalized_data_list)
             Itps2, err = integrate.quad(func_tps2, lower_limit, upper_limit)

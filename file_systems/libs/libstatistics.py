@@ -165,9 +165,9 @@ class FileSystemStatistics:
             
             table = df.to_html(escape=False, index=False)
             f_ext4 = open(f"statistics/fs_{fs_type}_{stand}_1.html", 'w')
-            f_ext4.writelines(f"<h1>Сводная таблица результатов тестирования {fs_type} {stand}</h1> {table}")
+            f_ext4.writelines(f"<h2>Сводная таблица результатов тестирования {fs_type} {stand}</h2> {table}")
             f_ext4.close()
-            
+
             return panda_series.tolist(), df['Релиз'] + '_' + df['Ядро']
         
         def build_mat_stat_dataframe(fs_type, data_fs, stand):
@@ -199,7 +199,7 @@ class FileSystemStatistics:
             """
             mat_stat_table_html = df_mat_stat.to_html(index=False)
             new_file_html = open(f"statistics/fs_{fs_type}_{stand}_2.html", 'w')
-            new_file_html.write(f'<h1>Таблица основных статистических параметров {fs_type} {stand}</h1> {mat_stat_table_html}')
+            new_file_html.write(f'<h2>Таблица основных статистических параметров {fs_type} {stand}</h2> {mat_stat_table_html}')
             new_file_html.close()
 
         def build_graph(fs_type, stand, rating_fg, shcala_txt):
@@ -295,7 +295,7 @@ class FileSystemStatistics:
 
             table = df_merge.to_html(escape=False, index=False)
             file = open(f"statistics/fs_EXT4_and_EXT4_with_parsec_{stand}_a.html", 'w')
-            file.writelines(f"<h1>Сводная таблица результатов тестирования EXT4 и EXT4 с parsec {stand}</h1> {table}")
+            file.writelines(f"<h2>Сводная таблица результатов тестирования EXT4 и EXT4 с parsec {stand}</h2> {table}")
             file.close()
             return rating.to_list(), rating_parsec.to_list(), df_merge['Релиз'] + '_' + df_merge['Ядро']
 
@@ -418,11 +418,6 @@ class FileSystemStatistics:
          ### TODO изменить пространство и parent_page_title
 
         template_img = """ 
-            <p>
-                <br/>
-            </p>
-            <hr/>
-            <br/>
             <span class="confluence-embedded-file-wrapper confluence-embedded-manual-size">
                 <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6" ></img>
             </span>
@@ -433,19 +428,32 @@ class FileSystemStatistics:
         table_with_mat_stat_list = []
         ext4_and_ext4_parsec_comparison_list = []
         image_list_ext4_comparison = []
+        headers, headers2 = [], []
+        headers_for_content, headers_for_content2 = [], []
+
         
         for file in sorted(os.listdir("statistics")):
-            # print(file)
-        
             if file.endswith("1.png"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file))
+                part_header = file.split("_")
+                if part_header[2] == "parsec":
+                    headers.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}</b></h1>")
+                    headers_for_content.append(f"{part_header[1]}_{part_header[2]}_{part_header[3]}")
+                else:
+                    headers.append(f"<h1 id='{part_header[1]}_{part_header[2]}'><b>{part_header[1]}_{part_header[2]}</b></h1>")
+                    headers_for_content.append(f"{part_header[1]}_{part_header[2]}")
                 
             if file.endswith("a.png"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file))
+                
+                part_header = file.split("_")
+                headers2.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[5]}_{part_header[6]}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[5]}_{part_header[6]}</b></h1>")
+                headers_for_content2.append(f"{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[5]}_{part_header[6]}")
+
             if file.endswith("1.html"):
                 file_table = open(f'statistics/{file}', 'r')
                 table = file_table.read()
@@ -466,16 +474,37 @@ class FileSystemStatistics:
 
         html_list = []
 
+        nav_start = """
+            <nav>
+            <h1>Содержание:</h1>
+            <ul>
+        """
+        nav_end = """
+            </ul>
+            </nav>
+        """
+        nav_lst = []
+
         for ind, item in enumerate(table_with_data_list):
+            nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content[ind]}">{headers_for_content[ind]}</a></li>')
+            html_list.append("<br/><hr/>")
+            html_list.append(headers[ind])
             html_list.append(image_list[ind])
-            html_list.append('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+            html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(item)
             html_list.append("<br/>" + table_with_mat_stat_list[ind])
         
         for ind, item in enumerate(ext4_and_ext4_parsec_comparison_list):
+            nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content2[ind]}">{headers_for_content2[ind]}</a></li>')
+            html_list.append("<br/><hr/>")
+            html_list.append(headers2[ind])
             html_list.append(image_list_ext4_comparison[ind])
-            html_list.append('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+            html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(item)
+
+        nav_tmp = "".join(nav_lst)
+        nav = nav_start + nav_tmp + nav_end
+        html_list.insert(0, nav)
 
         html_page = "".join(html_list)
 
@@ -486,7 +515,3 @@ class FileSystemStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages)
         self.upload_statistics(type_stat="Файловые системы")
-
-if __name__ == "__main__":
-    stat = FileSystemStatistics(username='~ivelikanov', token="MjA2NjM1MDczNDU5OiB/n9PuSq6xskVmfiPHjYIXUst4")
-    stat.update_statistics()

@@ -145,9 +145,6 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     dest='TCV')
 args = parser.parse_args()
 
-with open('libs/stand_number.txt', 'w') as wr:
-    wr.write(args.STAND)
-
 
 def test_cycle_status_start():
     zefir = ZefirStatusAPI(folder_tree_id=args.FTI,

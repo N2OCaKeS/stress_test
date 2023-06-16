@@ -76,6 +76,7 @@ tests = {
     'file system benchmark. OCFS2 parsec':'OCFS2 parsec',
     'auditd benchmark. psaud':'auditd_p',
     'auditd benchmark. fileaud':'auditd_f',
-    'auditd benchmark. useraud':'auditd_u'
+    'auditd benchmark. useraud':'auditd_u',
+    'syslog-ng benchmark':'syslog-ng'
 }
 

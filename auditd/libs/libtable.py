@@ -362,6 +362,7 @@ class Report:
             print('**************normalized_data_list', normalized_data_list)
 
             func_latency = self._data_aproximation(ox_lst, normalized_data_list)
+            print('*******************func_latency', func_latency)
             i_latency, err = integrate.quad(func_latency,
                                             self.__events_per_second_lower_limit,
                                             self.__events_per_second_upper_limit-self.__events_per_second_step)

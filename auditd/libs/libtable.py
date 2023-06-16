@@ -64,6 +64,7 @@ class Report:
             '''Организовать датафрейм по результатам теста get_latency_stat_psaud'''
             with open(latency_report, 'r') as report_file:
                 raw_data = report_file.read().split()
+                print('*************rawdat', raw_data)
 
             self.__event_name_lst = [str(i) for i in raw_data[0::2]]
             self.__latency_lst = [float(i) for i in raw_data[1::2]]

@@ -6,16 +6,11 @@
 # ;===========================================================
 
 from pwd import getpwnam
-from os import mkdir, chmod, linesep
-import subprocess
+from os import mkdir, chmod
 from time import sleep, ctime, time
 from multiprocessing import Process, Manager
 from aub_conf import PSAUD_PROC_BODYS, USERAUD_PROC_BODYS, FILEAUD_PROC_BODYS, TEST_USER
 from libs.libaub import Auditd, CheckAusearch, Prepare, User, UnixUser, cmd
-#from libs.libaub import killer_ps
-
-#with open('/home/u/stand_number.conf', 'r') as r:
-#    stand_number = r.read()
 
 
 class AuditdTest(Auditd, CheckAusearch):
@@ -534,7 +529,6 @@ class AuditdTest(Auditd, CheckAusearch):
 
         manager = Manager()
         timers = manager.list([None])
-        print(timers)
 
         test_ps = self._create_ps(syscall=audit_flag,
                                   func=self._template_ps_psaud_timer,
@@ -550,8 +544,6 @@ class AuditdTest(Auditd, CheckAusearch):
 
         # отсчет времени
         start, end = time(), time()
-        print(start)
-        print(end)
 
         while timers[0] is None:
             pass
@@ -559,7 +551,6 @@ class AuditdTest(Auditd, CheckAusearch):
         # ищем событие по pid
         while CheckAusearch.psaud(audit_flag, test_ps.pid, timers[0]) is False:
             end = time()
-            print(end)
             if not test_ps.is_alive():
                 return 0
 
@@ -593,15 +584,12 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None]*count)
 
-        #killer_ps(stand_number)
-
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_psaud_timer,
                                       proc_lifetime=ps_lifetime,
                                       delay=event_re_initialization_delay,
                                       count=count,
                                       timer_lst=timers)
-        print(test_ps_lst)
         for test_ps in test_ps_lst:
             test_ps.start()
             cmd('psaud {pid} +{flag}:-{flag}'.format(pid=str(test_ps.pid), flag=(audit_flag)))
@@ -609,7 +597,6 @@ class AuditdTest(Auditd, CheckAusearch):
         last_num = count - 1
         last_test_ps = test_ps_lst[-1]
         start, end = time(), time()  # засекаем время
-
         while True:
             try:
                 if timers[last_num]:
@@ -754,9 +741,6 @@ class AuditdTest(Auditd, CheckAusearch):
 
         # возвращаем результат
         latency = end - start
-        print('****************************************end', end)
-        print('******************************************start', start)
-        print('*******************************event_delay', event_re_initialization_delay)
         if latency < event_re_initialization_delay:
             latency = 0.001
         return round(latency, accuracy)
@@ -797,8 +781,6 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None]*count)
         cmds = manager.list([None]*count)
-
-        #killer_ps(stand_number)
 
         # инициализируем процессы
         test_ps_lst = self._create_ps(syscall=audit_flag,
@@ -846,9 +828,6 @@ class AuditdTest(Auditd, CheckAusearch):
 
         # возвращаем результат
         latency = end - start
-        print('****************************latency', latency)
-        print('****************************************end', end)
-        print('******************************************start', start)
         if latency < event_re_initialization_delay:
             latency = 0.001
         return round(latency, accuracy)
@@ -999,8 +978,6 @@ class AuditdTest(Auditd, CheckAusearch):
         manager = Manager()
         timers = manager.list([None] * count)
 
-        #killer_ps(stand_number)
-
         test_ps_lst = self._create_ps(syscall=audit_flag,
                                       func=self._template_ps_fileaud_timer,
                                       proc_lifetime=ps_lifetime,
@@ -1128,7 +1105,7 @@ class AuditdTestSet():
                                ps_lifetime,
                                ps_event_re_initialization_delay,
                                report_file):
-        
+
         __audit_test = AuditdTest(PSAUD_PROC_BODYS)
         result = __audit_test.test_get_latency_psaud_under_load(event_flag,
                                                                 ps_count,
@@ -1200,7 +1177,6 @@ class AuditdTestSet():
                                                                   ps_lifetime,
                                                                   ps_event_re_initialization_delay,
                                                                   user)
-        print('*************************result', result)
         with open(report_file, 'a+') as file:
             file.write('{} {}\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))

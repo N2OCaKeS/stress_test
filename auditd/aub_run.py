@@ -8,7 +8,6 @@
 import argparse
 import subprocess
 
-import os
 from time import time, strftime, gmtime, sleep, ctime
 from os import path, mkdir, listdir, remove
 from libs.libaub import put_system_info_in_file, upload_results_to_ftp
@@ -145,7 +144,6 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     dest='TCV')
 args = parser.parse_args()
 
-
 def test_cycle_status_start():
     zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
                             test_cycle_name=args.TCYC,
@@ -199,9 +197,6 @@ report_file.close()
 
 if args.TEST_LIST == 'psaud':
     if args.MODE == 'default':
-        #ps = check_output_command("sudo ps aux | grep 'sudo /home/u/starter.sh auditd dates_stand1.conf' | \
-        #                  sed -n 1p | awk '{print $2}'", shell=True)
-        #subprocess.run(f'sudo kill -9 {ps}')
         # Очистить отчет
         report_file = open(LATENCY_REPORT_PSAUD, 'w')
         report_file.close()

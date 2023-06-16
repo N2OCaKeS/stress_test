@@ -64,7 +64,6 @@ class Report:
             '''Организовать датафрейм по результатам теста get_latency_stat_psaud'''
             with open(latency_report, 'r') as report_file:
                 raw_data = report_file.read().split()
-                print('*************rawdat', raw_data)
 
             self.__event_name_lst = [str(i) for i in raw_data[0::2]]
             self.__latency_lst = [float(i) for i in raw_data[1::2]]
@@ -344,31 +343,24 @@ class Report:
                                 raw_table,
                                 multiplier=10**(0),
                                 accuracy=3,
-                                auto_normalize=False):
+                                auto_normalize=True):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['latency'].values.tolist()
-        print('*********************ox_lst', ox_lst)
-        print('**********************oy_lst', oy_lst)
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
-            print('***************************normalized_data_2d_array', normalized_data_2d_array)
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
-            print('*************************normalized_data_list_1', normalized_data_list)
             if len(set(normalized_data_list)) == 1:
-                #normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
-                normalized_data_list = [0] + [1.0 for _ in list(normalized_data_2d_array[:-1])] 
-            print('**************normalized_data_list', normalized_data_list)
+                normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
+            # print(normalized_data_list)
 
             func_latency = self._data_aproximation(ox_lst, normalized_data_list)
-            print('*******************func_latency', func_latency)
             i_latency, err = integrate.quad(func_latency,
                                             self.__events_per_second_lower_limit,
                                             self.__events_per_second_upper_limit-self.__events_per_second_step)
-            
-            print('*******************i_latency', i_latency)
+
             return i_latency * multiplier
         else:
             func_latency = self._data_aproximation(ox_lst, oy_lst)
@@ -384,7 +376,7 @@ class Report:
                                 raw_table,
                                 multiplier=10**(0),
                                 accuracy=3,
-                                auto_normalize=False):
+                                auto_normalize=True):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['completed'].values.tolist()
@@ -415,12 +407,9 @@ class Report:
     def get_total_latency_rating(self, path=REPORT, accuracy=3):
         total_latency_rating = 0
         for event in self.__event_names:
-            print('******************__main_raw_tables[event]', self.__main_raw_tables[event])
             event_rating = self.get_event_latecy_rating(self.__main_raw_tables[event])
             with open(path, 'a+') as report:
                 report.write('{} latency rating: {}\n'.format(event, event_rating))
-                print('***************event', event)
-                print('***************eventrating', event_rating)
             total_latency_rating += event_rating
 
         with open(path, 'a+') as report:

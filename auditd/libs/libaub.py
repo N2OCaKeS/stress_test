@@ -33,17 +33,6 @@ def check_output_command(command):
     else:
         return errors
     
-def killer_ps(stand_number):
-    #убить процесс мешающий бендиксу
-    try:
-        ps = check_output_command("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand{sn}.conf' | \
-                                    sed -n 1p | awk '{{print $2}}'".format(sn=stand_number))
-        print("sudo ps aux | grep 'sudo bash /home/u/starter.sh auditd dates_stand{sn}.conf' | \
-                                    sed -n 1p | awk '{{print $2}}'".format(sn=stand_number))
-        print(subprocess.run(f'sudo kill -9 {ps}', shell=True))
-    except Exception as e:
-        print(e)
-
 
 def upload_results_to_ftp(rc_name, path_to_file, file_name):
     ftp = ftplib.FTP('10.177.103.10')

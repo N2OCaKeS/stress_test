@@ -462,7 +462,7 @@ class Report:
     def get_la_rating(self,
                       lower_limit=CLIENTS,
                       upper_limit=LIMITE_CLIENTS,
-                      multiplier=10**(0),
+                      multiplier=10**(1),
                       accuracy=3,
                       auto_normalize=True):
         if auto_normalize:
@@ -483,11 +483,11 @@ class Report:
     def get_tps1_rating(self,
                         lower_limit=CLIENTS,
                         upper_limit=LIMITE_CLIENTS,
-                        multiplier=10**(0),
+                        multiplier=10**(1),
                         accuracy=3,
                         auto_normalize=True):
         if auto_normalize:
-            temp_lst = [0] + self.tps1_lst + [150000]
+            temp_lst = [0] + self.tps1_lst + [140000]
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
@@ -503,11 +503,11 @@ class Report:
     def get_tps2_rating(self,
                         lower_limit=CLIENTS,
                         upper_limit=LIMITE_CLIENTS,
-                        multiplier=10**(0),
+                        multiplier=10**(1),
                         accuracy=3,
                         auto_normalize=True):
         if auto_normalize:
-            temp_lst = [0] + self.tps1_lst + [150000]
+            temp_lst = [0] + self.tps1_lst + [140000]
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
@@ -533,13 +533,13 @@ class Report:
 
         log_in('get_total_rating', 
                abs(round((c_la * self.get_la_rating(lower_limit, upper_limit))**(-1)
-                         * (c_tps1 * self.get_tps1_rating(lower_limit, upper_limit))
-                         * (c_tps2 * self.get_tps2_rating(lower_limit, upper_limit))
+                         + (c_tps1 * self.get_tps1_rating(lower_limit, upper_limit))
+                         + (c_tps2 * self.get_tps2_rating(lower_limit, upper_limit))
                          * multiplier,
                          accuracy)))
         return abs(round((c_la * self.get_la_rating(lower_limit, upper_limit))**(-1)
-                         * (c_tps1 * self.get_tps1_rating(lower_limit, upper_limit))
-                         * (c_tps2 * self.get_tps2_rating(lower_limit, upper_limit))
+                         + (c_tps1 * self.get_tps1_rating(lower_limit, upper_limit))
+                         + (c_tps2 * self.get_tps2_rating(lower_limit, upper_limit))
                          * multiplier,
                          accuracy))
 

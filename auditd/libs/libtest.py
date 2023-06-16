@@ -754,6 +754,9 @@ class AuditdTest(Auditd, CheckAusearch):
 
         # возвращаем результат
         latency = end - start
+        print('****************************************end', end)
+        print('******************************************start', start)
+        print('*******************************event_delay', event_re_initialization_delay)
         if latency < event_re_initialization_delay:
             latency = 0.001
         return round(latency, accuracy)

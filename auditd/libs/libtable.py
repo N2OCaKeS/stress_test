@@ -358,7 +358,8 @@ class Report:
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
             print('*************************normalized_data_list_1', normalized_data_list)
             if len(set(normalized_data_list)) == 1:
-                normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
+                #normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
+                normalized_data_list = [0] + [1.0 for _ in list(normalized_data_2d_array[:-1])] 
             print('**************normalized_data_list', normalized_data_list)
 
             func_latency = self._data_aproximation(ox_lst, normalized_data_list)

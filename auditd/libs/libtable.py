@@ -363,7 +363,8 @@ class Report:
             i_latency, err = integrate.quad(func_latency,
                                             self.__events_per_second_lower_limit,
                                             self.__events_per_second_upper_limit-self.__events_per_second_step)
-
+            
+            print('*******************i_latency', i_latency)
             return i_latency * multiplier
         else:
             func_latency = self._data_aproximation(ox_lst, oy_lst)

@@ -269,6 +269,22 @@ def create_remote_file(local_file_path, remote_file_path):
     ftp.close()
     client.close()
 
+def send_remote_command(command):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
+    chanel = ssh.get_transport().open_session()
+    chanel.get_pty()
+    chanel.exec_command(command)
+    output = chanel.makefile().read().decode('utf-8')
+    err_output = chanel.makefile_stderr().read().decode('utf-8')
+    #stdin, stdout, stderr = ssh.exec_command(command)
+    #output = stdout.read().decode('utf-8')
+    #err_output = stderr.read().decode('utf-8')
+    logging.debug(output)
+    logging.error(err_output)
+    ssh.close()
+
 
 write_status(in_prog)
 if comm_and_log(clonezilla_command) == 0:
@@ -307,14 +323,15 @@ create_remote_file(f'/home/u/git/stress_test/{dates_name}', f'/home/u/{dates_nam
 #starter
 create_remote_file('/home/u/git/stress_test/starter.sh', '/home/u/starter.sh')
 #stand_number
-with open('/home/u/git/stress_test/stand_number.conf', 'w') as wr:
-    wr.write(args.ST)
-create_remote_file('/home/u/git/stress_test/stand_number.conf', '/home/u/stand_number.conf')
+#with open('/home/u/git/stress_test/stand_number.conf', 'w') as wr:
+#    wr.write(args.ST)
+#create_remote_file('/home/u/git/stress_test/stand_number.conf', '/home/u/stand_number.conf')
 
 if read_status() == success:
     write_status(in_prog)
-    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                 u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
+    #comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    #             u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
+    send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
     write_status(done)
 
 

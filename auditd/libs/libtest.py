@@ -1200,6 +1200,7 @@ class AuditdTestSet():
                                                                   ps_lifetime,
                                                                   ps_event_re_initialization_delay,
                                                                   user)
+        print('*************************result', result)
         with open(report_file, 'a+') as file:
             file.write('{} {}\n'.format(event_flag, result))
         print('{} - {} sec'.format(event_flag, result))

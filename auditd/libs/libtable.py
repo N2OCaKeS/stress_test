@@ -354,7 +354,9 @@ class Report:
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
+            print('***************************normalized_data_2d_array', normalized_data_2d_array)
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            print('*************************normalized_data_list_1', normalized_data_list)
             if len(set(normalized_data_list)) == 1:
                 normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
             print('**************normalized_data_list', normalized_data_list)

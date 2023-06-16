@@ -344,7 +344,7 @@ class Report:
                                 raw_table,
                                 multiplier=10**(0),
                                 accuracy=3,
-                                auto_normalize=True):
+                                auto_normalize=False):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['latency'].values.tolist()
@@ -384,7 +384,7 @@ class Report:
                                 raw_table,
                                 multiplier=10**(0),
                                 accuracy=3,
-                                auto_normalize=True):
+                                auto_normalize=False):
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['completed'].values.tolist()

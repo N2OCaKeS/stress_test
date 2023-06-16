@@ -408,6 +408,7 @@ class Report:
     def get_total_latency_rating(self, path=REPORT, accuracy=3):
         total_latency_rating = 0
         for event in self.__event_names:
+            print('******************__main_raw_tables[event]', self.__main_raw_tables[event])
             event_rating = self.get_event_latecy_rating(self.__main_raw_tables[event])
             with open(path, 'a+') as report:
                 report.write('{} latency rating: {}\n'.format(event, event_rating))

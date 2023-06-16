@@ -348,6 +348,8 @@ class Report:
 
         ox_lst = raw_table['eps'].values.tolist()
         oy_lst = raw_table['latency'].values.tolist()
+        print('*********************ox_lst', ox_lst)
+        print('**********************oy_lst', oy_lst)
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
@@ -355,7 +357,7 @@ class Report:
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
             if len(set(normalized_data_list)) == 1:
                 normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
-            # print(normalized_data_list)
+            print('**************normalized_data_list', normalized_data_list)
 
             func_latency = self._data_aproximation(ox_lst, normalized_data_list)
             i_latency, err = integrate.quad(func_latency,

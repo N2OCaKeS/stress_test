@@ -465,25 +465,25 @@ class Report:
         c_unlink_rating = 0.5625
         c_speed_rating = 1
 
-        print('*=====* get_total_rating', abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
-                 (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
-                 (c_create_rating * self.get_syscall_rating(x_lst, [0] + self.create_avg_lst + [1300]))**(-1) * \
-                 (c_write_rating * self.get_syscall_rating(x_lst, [0] + self.write_avg_lst + [270]))**(-1) * \
-                 (c_fsync_rating * self.get_syscall_rating(x_lst, [0] + self.fsync_avg_lst + [98000]))**(-1) * \
-                 (c_sync_rating * self.get_syscall_rating(x_lst, [0] + self.sync_avg_lst + [10]))**(-1) * \
-                 (c_close_rating * self.get_syscall_rating(x_lst, [0] + self.close_avg_lst + [100]))**(-1) * \
-                 (c_unlink_rating * self.get_syscall_rating(x_lst, [0] + self.unlink_avg_lst + [100]))**(-1) * \
+        print('*=====* get_total_rating', abs(round((c_speed_rating * self.get_speed_rating(x_lst)) + \
+                 (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) + \
+                 (c_create_rating * self.get_syscall_rating(x_lst, [0] + self.create_avg_lst + [1300]))**(-1) + \
+                 (c_write_rating * self.get_syscall_rating(x_lst, [0] + self.write_avg_lst + [270]))**(-1) + \
+                 (c_fsync_rating * self.get_syscall_rating(x_lst, [0] + self.fsync_avg_lst + [98000]))**(-1) + \
+                 (c_sync_rating * self.get_syscall_rating(x_lst, [0] + self.sync_avg_lst + [10]))**(-1) + \
+                 (c_close_rating * self.get_syscall_rating(x_lst, [0] + self.close_avg_lst + [100]))**(-1) + \
+                 (c_unlink_rating * self.get_syscall_rating(x_lst, [0] + self.unlink_avg_lst + [100]))**(-1) + \
                  multiplier,
                  accuracy)))
 
-        return abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
-                 (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
-                 (c_create_rating * self.get_syscall_rating(x_lst, [0] + self.create_avg_lst + [1300]))**(-1) * \
-                 (c_write_rating * self.get_syscall_rating(x_lst, [0] + self.write_avg_lst + [270]))**(-1) * \
-                 (c_fsync_rating * self.get_syscall_rating(x_lst, [0] + self.fsync_avg_lst + [98000]))**(-1) * \
-                 (c_sync_rating * self.get_syscall_rating(x_lst, [0] + self.sync_avg_lst + [10]))**(-1) * \
-                 (c_close_rating * self.get_syscall_rating(x_lst, [0] + self.close_avg_lst + [100]))**(-1) * \
-                 (c_unlink_rating * self.get_syscall_rating(x_lst, [0] + self.unlink_avg_lst + [100]))**(-1) * \
+        return abs(round((c_speed_rating * self.get_speed_rating(x_lst)) + \
+                 (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) + \
+                 (c_create_rating * self.get_syscall_rating(x_lst, [0] + self.create_avg_lst + [1300]))**(-1) + \
+                 (c_write_rating * self.get_syscall_rating(x_lst, [0] + self.write_avg_lst + [270]))**(-1) + \
+                 (c_fsync_rating * self.get_syscall_rating(x_lst, [0] + self.fsync_avg_lst + [98000]))**(-1) + \
+                 (c_sync_rating * self.get_syscall_rating(x_lst, [0] + self.sync_avg_lst + [10]))**(-1) + \
+                 (c_close_rating * self.get_syscall_rating(x_lst, [0] + self.close_avg_lst + [100]))**(-1) + \
+                 (c_unlink_rating * self.get_syscall_rating(x_lst, [0] + self.unlink_avg_lst + [100]))**(-1) + \
                  multiplier,
                  accuracy))
 

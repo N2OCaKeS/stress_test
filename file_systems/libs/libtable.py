@@ -352,23 +352,23 @@ class Report:
                          x_lst,
                          accuracy=3,
                          multiplier=10**(0),
-                         auto_normalize=False):
+                         auto_normalize=True):
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
-            normalized_data_2d_array = scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis])
-            print('normalized_data_2d_array --', scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis]))
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
-            print('normalized_data_list --', [float(list(item)[0]) for item in list(normalized_data_2d_array)])
+            normalized_data_2d_array = scaler.fit_transform(np.array([0]+ self.speed_lst + [4600])[:, np.newaxis])
+            # print('normalized_data_2d_array --', scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis]))
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
+            # print('normalized_data_list --', [float(list(item)[0]) for item in list(normalized_data_2d_array)])
 
             func_speed = self.data_aproximation(x_lst, normalized_data_list)
-            print('func_speed --', self.data_aproximation(x_lst, normalized_data_list))
+            # print('func_speed --', self.data_aproximation(x_lst, normalized_data_list))
             i_spd, err = integrate.quad(func_speed, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
-            print('ox_lower_limit --', self.ox_lower_limit)
-            print('ox_upper_limit --', self.ox_upper_limit)
-            print('ox_step --', self.ox_step)
-            print('i_spd --', i_spd)
-            print('err --', err)
+            # print('ox_lower_limit --', self.ox_lower_limit)
+            # print('ox_upper_limit --', self.ox_upper_limit)
+            # print('ox_step --', self.ox_step)
+            # print('i_spd --', i_spd)
+            # print('err --', err)
             if i_spd == 0:
                 return 1
             else:
@@ -397,12 +397,12 @@ class Report:
                                 x_lst,
                                 accuracy=3,
                                 multiplier=10**(0),
-                                auto_normalize=False): # -14
+                                auto_normalize=True): # -14
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
-            normalized_data_2d_array = scaler.fit_transform(np.array(self.app_overhead_lst)[:, np.newaxis])
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            normalized_data_2d_array = scaler.fit_transform(np.array([0] + self.app_overhead_lst + [72600000])[:, np.newaxis])
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
 
             func_ao = self.data_aproximation(x_lst, normalized_data_list)
             i_ao, err = integrate.quad(func_ao, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
@@ -426,7 +426,7 @@ class Report:
                            y_lst,
                            accuracy=3,
                            multiplier=10**(0),
-                           auto_normalize=False): #-10
+                           auto_normalize=True): #-10
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
@@ -467,23 +467,23 @@ class Report:
 
         print('*=====* get_total_rating', abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
                  (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
-                 (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
-                 (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
-                 (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
-                 (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
-                 (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
-                 (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
+                 (c_create_rating * self.get_syscall_rating(x_lst, [0] + self.create_avg_lst + [1300]))**(-1) * \
+                 (c_write_rating * self.get_syscall_rating(x_lst, [0] + self.write_avg_lst + [270]))**(-1) * \
+                 (c_fsync_rating * self.get_syscall_rating(x_lst, [0] + self.fsync_avg_lst + [98000]))**(-1) * \
+                 (c_sync_rating * self.get_syscall_rating(x_lst, [0] + self.sync_avg_lst + [10]))**(-1) * \
+                 (c_close_rating * self.get_syscall_rating(x_lst, [0] + self.close_avg_lst + [100]))**(-1) * \
+                 (c_unlink_rating * self.get_syscall_rating(x_lst, [0] + self.unlink_avg_lst + [100]))**(-1) * \
                  multiplier,
                  accuracy)))
 
         return abs(round((c_speed_rating * self.get_speed_rating(x_lst)) * \
                  (c_app_overhead_rating * self.get_app_overhead_rating(x_lst))**(-1) * \
-                 (c_create_rating * self.get_syscall_rating(x_lst, self.create_avg_lst))**(-1) * \
-                 (c_write_rating * self.get_syscall_rating(x_lst, self.write_avg_lst))**(-1) * \
-                 (c_fsync_rating * self.get_syscall_rating(x_lst, self.fsync_avg_lst))**(-1) * \
-                 (c_sync_rating * self.get_syscall_rating(x_lst, self.sync_avg_lst))**(-1) * \
-                 (c_close_rating * self.get_syscall_rating(x_lst, self.close_avg_lst))**(-1) * \
-                 (c_unlink_rating * self.get_syscall_rating(x_lst, self.unlink_avg_lst))**(-1) * \
+                 (c_create_rating * self.get_syscall_rating(x_lst, [0] + self.create_avg_lst + [1300]))**(-1) * \
+                 (c_write_rating * self.get_syscall_rating(x_lst, [0] + self.write_avg_lst + [270]))**(-1) * \
+                 (c_fsync_rating * self.get_syscall_rating(x_lst, [0] + self.fsync_avg_lst + [98000]))**(-1) * \
+                 (c_sync_rating * self.get_syscall_rating(x_lst, [0] + self.sync_avg_lst + [10]))**(-1) * \
+                 (c_close_rating * self.get_syscall_rating(x_lst, [0] + self.close_avg_lst + [100]))**(-1) * \
+                 (c_unlink_rating * self.get_syscall_rating(x_lst, [0] + self.unlink_avg_lst + [100]))**(-1) * \
                  multiplier,
                  accuracy))
 

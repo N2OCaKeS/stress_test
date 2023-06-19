@@ -67,6 +67,7 @@ tests = {
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
+    'postgresql benchmark smol':'postgresql_sm',
     'file system benchmark. OCFS2':'OCFS2',
     'file system benchmark. NTFS':'NTFS',
     'file system benchmark. EXT3':'EXT3',

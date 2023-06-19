@@ -37,7 +37,7 @@ __jira_token = tokens['jira_token']
 __pt_version = args.RELEASE
 #__stand = 'stand1'
 __stand = args.STAND
-__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'auditd_p', 'auditd_u', 'auditd_f']
+__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql_sm', 'auditd_p', 'auditd_u', 'auditd_f']
 
 #Делаем get запрос в jira
 matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
@@ -191,7 +191,7 @@ for i in range(0, len(dates_list)):
                     testlist = f'-aud useraud'
                 print('Выполняется...')
                 #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
-                if tests[dates_list[i][1]] == 'postgresql':
+                if tests[dates_list[i][1]] == 'postgresql' or 'postgresql_sm':
                     subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                 {tcas} {branch} {cti} {pp} {psql}', shell=True)
                 elif tests[dates_list[i][1]].startswith('auditd'):

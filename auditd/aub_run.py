@@ -155,12 +155,14 @@ def test_cycle_status_start():
                                     basic_auth=args.BA,
                                     username=args.USER)
     zefir_table
+    return 'completed'
 
 start_status = 0
 while start_status == 0:
     try:
-        test_cycle_status_start()
-        start_status += 1
+        if test_cycle_status_start() is 'completed':
+            start_status += 1
+        else: sleep(60)
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
             err.write('start:\n')
@@ -168,7 +170,6 @@ while start_status == 0:
             err.write(e)
             err.write('---------' * 25)
             err.write('\n\n')
-        sleep(30)
 
 # Засечь время выполнения скрипта
 start_time = time()
@@ -464,12 +465,14 @@ def upload_result_status():
     #statisctics = FileSystemStatistics(username=args.USER, 
     #                                token=args.TOKEN)
     #statisctics.update_statistics()
+    return 'completed'
 
 end_status = 0
 while end_status == 0:
     try:
-        upload_result_status()
-        end_status += 1
+        if upload_result_status() is 'completed':
+            end_status += 1
+        else: sleep(60)
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
             err.write('end:\n')
@@ -477,4 +480,3 @@ while end_status == 0:
             err.write(e)
             err.write('---------' * 25)
             err.write('\n\n')
-        sleep(30)

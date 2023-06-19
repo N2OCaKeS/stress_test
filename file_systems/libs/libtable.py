@@ -431,7 +431,7 @@ class Report:
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(y_lst)[:, np.newaxis])
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
 
             func = self.data_aproximation(x_lst, normalized_data_list)
             i, err = integrate.quad(func, self.ox_lower_limit, self.ox_upper_limit-self.ox_step)
@@ -453,7 +453,7 @@ class Report:
     def get_total_rating(self,
                          x_lst,
                          accuracy=3,
-                         multiplier=10**(7)): #-20
+                         multiplier=10**(0)): #-20
 
         # weight coefficients
         c_app_overhead_rating = 0.125

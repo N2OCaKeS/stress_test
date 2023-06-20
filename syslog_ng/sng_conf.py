@@ -2,6 +2,7 @@ SERVICE_COUNT = 4800 # 4800
 TIME_EXEC = 20 #1440 # 1440
 SCRIPT_DIR = "/home/u/git/stress_test/syslog_ng"
 REPORT_PATH = "{}/report".format(SCRIPT_DIR)
+REPORT_FILENAME = 'main_report.html'
 TEMPLATE_PATH = "{}/templates".format(SCRIPT_DIR)
 IMAGE_WIDTH = 23 # 23
 IMAGE_HEIGHT = 16 # 16

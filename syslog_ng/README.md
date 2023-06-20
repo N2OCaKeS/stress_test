@@ -32,7 +32,7 @@ venv/bin/python sng_run.py -sc 4800 -t 1440
 После прохождения теста в папке /home/u/git/stress_test/syslog_ng_benchmark/report создается .tar с результатами тестирования в виде графиков. Общий отчет собран в файле main_report.html
 
 ### Поддерживаемые версии ОС
-- 1.7.2
+- 1.7.2 
 
 ### Git
 branch: syslog-ng

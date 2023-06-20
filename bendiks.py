@@ -154,7 +154,7 @@ for i in range(0, len(dates_list)):
                         testlist = f'-aud useraud'
                     print('Выполняется...')
                     #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
-                    if tests[dates_list[i][1]] == 'postgresql':
+                    if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql_sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {psql}', shell=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
@@ -191,7 +191,7 @@ for i in range(0, len(dates_list)):
                     testlist = f'-aud useraud'
                 print('Выполняется...')
                 #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
-                if tests[dates_list[i][1]] == 'postgresql' or 'postgresql_sm':
+                if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql_sm':
                     subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                 {tcas} {branch} {cti} {pp} {psql}', shell=True)
                 elif tests[dates_list[i][1]].startswith('auditd'):

@@ -138,16 +138,19 @@ pack_sql = '--package postgresql-11'
 testlist = f'--testlist {args.AUDIT}'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-        -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
+              -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
 elif args.AUDIT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-        {sn} {testlist} {fti} {tcyc} {tcas} {ba} {tcv}'
+              {sn} {testlist} {fti} {tcyc} {tcas} {ba} {tcv}'
 elif args.TEST == 'EXT4 parsec':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-        {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} --parsec'
+              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} --parsec'
+elif args.TEST == 'syslog-ng':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-        {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
+              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 
 with open(f'/home/u/git/stress_test/{dates_name}', 'w') as w:
     w.write(dates)

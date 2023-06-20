@@ -8,6 +8,7 @@
 import subprocess
 from datetime import datetime
 import ftplib
+import requests
 
 
 def astra_version():
@@ -133,3 +134,6 @@ def upload_results_to_ftp(rc_name, path_to_file, file_name):
     with open(path_to_file, 'rb') as rf:
         ftp.storbinary('STOR ' + file_name, rf)
     ftp.quit()
+
+def response():
+    return requests.get('https://jira.astralinux.ru').status_code

@@ -24,7 +24,8 @@ from libs.libsng import (astra_version,
                          check_service_status, 
                          get_memory_load_by_syslog, 
                          put_system_info_in_file, 
-                         upload_results_to_ftp)
+                         upload_results_to_ftp,
+                         response)
 from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.libpublic import Public
 from sng_conf import SERVICE_COUNT, TIME_EXEC, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME
@@ -145,12 +146,12 @@ if __name__ == '__main__':
                                         basic_auth=args.BA,
                                         username=args.USER)
         zefir_table
-        return 'completed'
 
     start_status = 0
     while start_status == 0:
         try:
-            if test_cycle_status_start() is 'completed':
+            if response == 200:
+                test_cycle_status_start()
                 start_status += 1
             else: sleep(60)
         except Exception as e:
@@ -383,12 +384,12 @@ if __name__ == '__main__':
         #statisctics = FileSystemStatistics(username=args.USER, 
         #                                token=args.TOKEN)
         #statisctics.update_statistics()
-        return 'completed'
 
     end_status = 0
     while end_status == 0:
         try:
-            if upload_result_status() is 'completed':
+            if response == 200:
+                upload_result_status()
                 end_status += 1
             else: sleep(60)
         except Exception as e:

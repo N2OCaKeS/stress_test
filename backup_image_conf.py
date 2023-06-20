@@ -83,6 +83,6 @@ tests = {
     'auditd benchmark. psaud':'auditd_p',
     'auditd benchmark. fileaud':'auditd_f',
     'auditd benchmark. useraud':'auditd_u',
-    'syslog-ng benchmark':'syslog-ng'
+    'syslog-ng benchmark':'syslog_ng'
 }
 

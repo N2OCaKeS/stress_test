@@ -29,7 +29,8 @@ parent_page_list = {
                   'postgresql':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'auditd_p':'1.7.3.UU.2 ⬝ Системные службы',
                   'auditd_f':'1.7.3.UU.2 ⬝ Системные службы',
-                  'auditd_u':'1.7.3.UU.2 ⬝ Системные службы'
+                  'auditd_u':'1.7.3.UU.2 ⬝ Системные службы',
+                  'syslog_ng':'1.7.3.UU.2 ⬝ Системные службы'
                  },
     '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',
                   'XFS':'1.7.3 UU1 ⬝ Файловые системы',
@@ -52,7 +53,8 @@ branches = {
     'file system benchmark. OCFS2 parsec':'file_systems',
     'auditd benchmark. psaud':'auditd',
     'auditd benchmark. fileaud':'auditd',
-    'auditd benchmark. useraud':'auditd'
+    'auditd benchmark. useraud':'auditd',
+    'syslog-ng benchmark':'syslog_ng'
 }
 
 

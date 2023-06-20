@@ -37,7 +37,7 @@ __jira_token = tokens['jira_token']
 __pt_version = args.RELEASE
 #__stand = 'stand1'
 __stand = args.STAND
-__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql_sm', 'auditd_p', 'auditd_u', 'auditd_f']
+__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql_sm', 'auditd_p', 'auditd_u', 'auditd_f', 'syslog_ng']
 
 #Делаем get запрос в jira
 matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&

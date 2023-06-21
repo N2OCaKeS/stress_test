@@ -23,7 +23,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
 from libs.libpsqltests import Test
-from libs.zefir import Zefir_status_API, Zefir_result_table
+from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.libpsb import astra_version, dump, upload_results_to_ftp, response
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
@@ -146,12 +146,12 @@ args = parser.parse_args()
 
 
 def test_cycle_status_start():
-    zefir = Zefir_status_API(folder_tree_id=args.FTI,
+    zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
                             test_cycle_name=args.TCYC,
                             test_case_name=args.TCAS,
                             basic_auth=args.BA)
     zefir.upload_status(90)
-    zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
+    zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
                                     token=args.TOKEN,
                                     basic_auth=args.BA,
                                     username=args.USER)

@@ -1,6 +1,6 @@
 import json
 from libs.libpublic import Public
-from libs.zefir import Zefir_status_API, Zefir_result_table
+from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.libstatistics import PSQLStatistics
 from time import ctime, sleep
 from libs.libpsb import response
@@ -19,13 +19,13 @@ def upload_result_status():
 
     public.run_publish()
 
-    zefir = Zefir_status_API(folder_tree_id=public_args['folder_tree_id'],
+    zefir = ZefirStatusAPI(folder_tree_id=public_args['folder_tree_id'],
                             test_cycle_name=public_args['test_cycle_name'],
                             test_case_name=public_args['test_case_name'],
                             basic_auth=public_args['basic_auth'])
     zefir.upload_status(91)
 
-    zefir_table = Zefir_result_table(test_cycle_version=public_args['test_cycle_version'],
+    zefir_table = ZefirResultTable(test_cycle_version=public_args['test_cycle_version'],
                                     token=public_args['token'],
                                     basic_auth=public_args['basic_auth'],
                                     username=public_args['username'])

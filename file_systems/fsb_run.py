@@ -13,7 +13,7 @@ from sys import exit
 from time import sleep, time, strftime, gmtime, ctime
 from os import getuid, path, mkdir
 from fabric import Connection
-from libs.libfsb import astra_version, upload_results_to_ftp
+from libs.libfsb import astra_version, upload_results_to_ftp, response
 from libs.zefir import Zefir_status_API, Zefir_result_table
 from libs.libpublic import Public
 from libs.libstatistics import FileSystemStatistics
@@ -160,21 +160,30 @@ def test_cycle_status_start():
                                     basic_auth=args.BA,
                                     username=args.USER)
     zefir_table
-    return 'completed'
 
 start_status = 0
 while start_status == 0:
+    jira_start, life_start = response()
     try:
-        if test_cycle_status_start() is 'completed':
+        if jira_start == 200 and life_start == 200:
+            test_cycle_status_start()
             start_status += 1
-        else: sleep(60)
+        else: 
+            with open('JIRA_ERROR.log', 'a') as err:
+                err.write('start:\n')
+                err.write(ctime())
+                err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
+                err.write('---------' * 25)
+                err.write('\n\n')
+            sleep(60)
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
             err.write('start:\n')
             err.write(ctime())
-            err.write(e)
+            err.write(str(e))
             err.write('---------' * 25)
             err.write('\n\n')
+            start_status += 1
 
 '''
     main
@@ -383,18 +392,27 @@ def upload_result_status():
     statisctics = FileSystemStatistics(username=args.USER, 
                                     token=args.TOKEN)
     statisctics.update_statistics()
-    return 'completed'
 
 end_status = 0
 while end_status == 0:
+    jira_end, life_end = response()
     try:
-        if upload_result_status() is 'completed':
+        if jira_end == 200 and life_end == 200:
+            upload_result_status()
             end_status += 1
-        else: sleep(60)
+        else: 
+            with open('JIRA_ERROR.log', 'a') as err:
+                err.write('end:\n')
+                err.write(ctime())
+                err.write(f'jira_status = {jira_end}\nlife_status = {life_end}')
+                err.write('---------' * 25)
+                err.write('\n\n')
+            sleep(60)
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
             err.write('end:\n')
             err.write(ctime())
-            err.write(e)
+            err.write(str(e))
             err.write('---------' * 25)
             err.write('\n\n')
+            end_status += 1

@@ -11,6 +11,7 @@ import crypt
 import subprocess
 import pexpect
 import ftplib
+import requests
 
 from os import path, mkdir, listdir, chmod
 from time import sleep, ctime, time, strftime, gmtime
@@ -105,6 +106,13 @@ def put_system_info_in_file(start, file):
 
     with open(file, 'a+') as info:
         info.writelines(info_lst)
+
+
+def response():
+    jira = requests.get('https://jira.astralinux.ru').status_code
+    life = requests.get('https://life.astralinux.ru').status_code
+    return jira, life
+
 
 
 class CheckAusearch:

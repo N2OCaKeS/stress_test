@@ -1,5 +1,5 @@
 SERVICE_COUNT = 4800 # 4800
-TIME_EXEC = 20 #1440 # 1440
+TIME_EXEC = 90 # 1440
 SCRIPT_DIR = "/home/u/git/stress_test/syslog_ng"
 REPORT_PATH = "{}/report".format(SCRIPT_DIR)
 REPORT_FILENAME = 'main_report.html'

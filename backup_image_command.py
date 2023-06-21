@@ -20,6 +20,8 @@ cz_comm = {
                 -l ru_RU.UTF-8 startdisk restore stand-4-qa-team-13-173UU2 nvme0n1',
         '1.7.3.UU.1':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.204" \
                         -l ru_RU.UTF-8 startdisk restore stand-4-qa-team-13-173UU1 nvme0n1',
+        '1.7.3':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.204" \
+                -l ru_RU.UTF-8 startdisk restore stand-4-qa-team-13-173 nvme0n1',
         '1.7.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.204" \
                 -l ru_RU.UTF-8 startdisk restore stand-4-qa-team-13-1747 nvme0n1',
         '1.7.2':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.204" \
@@ -30,6 +32,8 @@ cz_comm = {
                 -l ru_RU.UTF-8 startdisk restore stand-3-qa-team-13-173UU2-new nvme0n1',
         '1.7.3.UU.1':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.203" \
                 -l ru_RU.UTF-8 startdisk restore stand-3-qa-team-13-173UU1-new nvme0n1',
+        '1.7.3':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.203" \
+                -l ru_RU.UTF-8 startdisk restore stand-3-qa-team-13-173-new nvme0n1',
         '1.7.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.203" \
                 -l ru_RU.UTF-8 startdisk restore stand-3-qa-team-13-174-new nvme0n1',
         '1.7.2':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.203" \

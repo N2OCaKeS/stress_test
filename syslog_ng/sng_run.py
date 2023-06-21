@@ -166,7 +166,7 @@ if __name__ == '__main__':
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('start:\n')
                 err.write(ctime())
-                err.write(e)
+                err.write(str(e))
                 err.write('---------' * 25)
                 err.write('\n\n')
 
@@ -412,6 +412,6 @@ if __name__ == '__main__':
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('end:\n')
                 err.write(ctime())
-                err.write(e)
+                err.write(str(e))
                 err.write('---------' * 25)
                 err.write('\n\n')

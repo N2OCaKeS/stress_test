@@ -148,12 +148,20 @@ if __name__ == '__main__':
         zefir_table
 
     start_status = 0
+    jira_start, life_start = response()
     while start_status == 0:
         try:
-            if response == 200:
+            if jira_start == 200 and life_start == 200:
                 test_cycle_status_start()
                 start_status += 1
-            else: sleep(60)
+            else: 
+                with open('JIRA_ERROR.log', 'a') as err:
+                    err.write('start:\n')
+                    err.write(ctime())
+                    err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
+                    err.write('---------' * 25)
+                    err.write('\n\n')
+                sleep(60)
         except Exception as e:
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('start:\n')
@@ -386,12 +394,20 @@ if __name__ == '__main__':
         #statisctics.update_statistics()
 
     end_status = 0
+    jira_end, life_end = response()
     while end_status == 0:
         try:
-            if response == 200:
+            if jira_end == 200 and life_end == 200:
                 upload_result_status()
                 end_status += 1
-            else: sleep(60)
+            else: 
+                with open('JIRA_ERROR.log', 'a') as err:
+                    err.write('end:\n')
+                    err.write(ctime())
+                    err.write(f'jira_status = {jira_end}\nlife_status = {life_end}')
+                    err.write('---------' * 25)
+                    err.write('\n\n')
+                sleep(60)
         except Exception as e:
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('end:\n')

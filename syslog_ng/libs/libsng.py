@@ -136,4 +136,6 @@ def upload_results_to_ftp(rc_name, path_to_file, file_name):
     ftp.quit()
 
 def response():
-    return requests.get('https://jira.astralinux.ru').status_code
+    jira = requests.get('https://jira.astralinux.ru').status_code
+    life = requests.get('https://life.astralinux.ru').status_code
+    return jira, life

@@ -157,8 +157,8 @@ def test_cycle_status_start():
     zefir_table
 
 start_status = 0
-jira_start, life_start = response()
 while start_status == 0:
+    jira_start, life_start = response()
     try:
         if jira_start == 200 and life_start == 200:
             test_cycle_status_start()
@@ -476,8 +476,8 @@ def upload_result_status():
     #statisctics.update_statistics()
 
 end_status = 0
-jira_end, life_end = response()
 while end_status == 0:
+    jira_end, life_end = response()
     try:
         if jira_end == 200 and life_end == 200:
             upload_result_status()

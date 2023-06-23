@@ -446,7 +446,7 @@ elif args.TEST_LIST == 'fileaud':
     else:
         exit(2)
 
-upload_results_to_ftp(args.TCV, f'{REPORT_DIR}/{REPORT_FILENAME}', f'{args.TCYC}_{REPORT_FILENAME}')
+upload_results_to_ftp(args.TCV, f'{REPORT_DIR}/{REPORT_FILENAME}', f'{args.TEST_LIST}_{args.TCYC}_{REPORT_FILENAME}')
 
 def upload_result_status():
     public = Public(username=args.USER,

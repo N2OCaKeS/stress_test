@@ -366,7 +366,7 @@ if __name__ == '__main__':
     libtable.Report.create_tar(os.path.expanduser(REPORT_PATH))
     print("Готово.")
 
-    upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'{args.TCYC}_{REPORT_FILENAME}')
+    upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'syslog-ng_{args.TCYC}_{REPORT_FILENAME}')
 
     def upload_result_status():
         public = Public(username=args.USER,

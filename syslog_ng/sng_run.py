@@ -28,6 +28,7 @@ from libs.libsng import (astra_version,
                          response)
 from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.libpublic import Public
+from libs.libstatistics import FileSystemStatistics
 from sng_conf import SERVICE_COUNT, TIME_EXEC, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME
 
 
@@ -390,9 +391,9 @@ if __name__ == '__main__':
                                         username=args.USER)
         zefir_table
 
-        #statisctics = FileSystemStatistics(username=args.USER, 
-        #                                token=args.TOKEN)
-        #statisctics.update_statistics()
+        statisctics = FileSystemStatistics(username=args.USER, 
+                                        token=args.TOKEN)
+        statisctics.update_statistics()
 
     end_status = 0
     while end_status == 0:

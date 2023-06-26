@@ -12,6 +12,7 @@ from sys import exit
 from os import chmod, remove, chdir, path, mkdir, linesep
 from shutil import copy2
 import ftplib
+import requests
 from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME
 
 
@@ -198,3 +199,9 @@ def upload_results_to_ftp(rc_name, path_to_file, file_name):
     with open(path_to_file, 'rb') as rf:
         ftp.storbinary('STOR ' + file_name, rf)
     ftp.quit()
+
+def response():
+    jira = requests.get('https://jira.astralinux.ru').status_code
+    life = requests.get('https://life.astralinux.ru').status_code
+    return jira, life
+

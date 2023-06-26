@@ -14,7 +14,7 @@ from os import remove, path
 
 
 
-class Zefir_status_API:
+class ZefirStatusAPI:
 
     def __init__(self,
                  folder_tree_id=None,
@@ -247,7 +247,7 @@ class Zefir_status_API:
 
 
 
-class Zefir_result_table:
+class ZefirResultTable:
 
     def __init__(self,
                  token=None,

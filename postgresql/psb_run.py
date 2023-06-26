@@ -10,7 +10,7 @@ import os
 import subprocess
 import json
 
-from time import time, strftime, gmtime
+from time import time, strftime, gmtime, sleep, ctime
 from sys import exit
 from os import getuid, path
 from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INFO_FILENAME, REP_FILENAME, \
@@ -23,8 +23,8 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
 from libs.libpsqltests import Test
-from libs.zefir import Zefir_status_API, Zefir_result_table
-from libs.libpsb import astra_version, dump, upload_results_to_ftp
+from libs.zefir import ZefirStatusAPI, ZefirResultTable
+from libs.libpsb import astra_version, dump, upload_results_to_ftp, response
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
 from libs.libpublic import Public
@@ -145,16 +145,42 @@ parser.add_argument('-tcv', '--test-cycle-version',
 args = parser.parse_args()
 
 
-zefir = Zefir_status_API(folder_tree_id=args.FTI,
-                         test_cycle_name=args.TCYC,
-                         test_case_name=args.TCAS,
-                         basic_auth=args.BA)
-zefir.upload_status(90)
-zefir_table = Zefir_result_table(test_cycle_version=args.TCV,
-                                 token=args.TOKEN,
-                                 basic_auth=args.BA,
-                                 username=args.USER)
-zefir_table
+def test_cycle_status_start():
+    zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
+                            test_cycle_name=args.TCYC,
+                            test_case_name=args.TCAS,
+                            basic_auth=args.BA)
+    zefir.upload_status(90)
+    zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
+                                    token=args.TOKEN,
+                                    basic_auth=args.BA,
+                                    username=args.USER)
+    zefir_table
+
+start_status = 0
+while start_status == 0:
+    jira_start, life_start = response()
+    try:
+        if jira_start == 200 and life_start == 200:
+            test_cycle_status_start()
+            start_status += 1
+        else: 
+            with open('JIRA_ERROR.log', 'a') as err:
+                err.write('start:\n')
+                err.write(ctime())
+                err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
+                err.write('---------' * 25)
+                err.write('\n\n')
+            sleep(60)
+    except Exception as e:
+        with open('JIRA_ERROR.log', 'a') as err:
+            err.write('start:\n')
+            err.write(ctime())
+            err.write(str(e))
+            err.write('---------' * 25)
+            err.write('\n\n')
+            start_status += 1
+
 
 #
 start_time = time()
@@ -498,7 +524,7 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
 
-upload_results_to_ftp(args.TCV, f'{REPORT_FILENAME}', f'{args.TCYC}_{REP_FILENAME}')
+upload_results_to_ftp(args.TCV, f'{REPORT_FILENAME}', f'postgresql_{args.TCYC}_{REP_FILENAME}')
 
 # public = Public(username=args.USER,
 #                 token=args.TOKEN,

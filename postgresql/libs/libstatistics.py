@@ -244,11 +244,14 @@ class PSQLStatistics:
             data_for_df[key]['rating'] = panda_series.tolist()
             
             df_5_10 = df[df["Ядро"].str.contains('5.10', case=False)]
-            temp_data_kernel['5.10'].append(df_5_10)
+            df_5_10['Ядро'] = '5.10'
+            temp_data_kernel['5.10'].append(df_5_10[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
             df_5_15_gen = df[df["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]
-            temp_data_kernel["5.15-gen"].append(df_5_15_gen)
+            df_5_15_gen['Ядро'] = '5.15-gen'
+            temp_data_kernel["5.15-gen"].append(df_5_15_gen[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
             df_5_15_ll = df[df["Ядро"].str.contains('5.15\S*low', case=False, regex=True)]
-            temp_data_kernel["5.15-ll"].append(df_5_15_ll)
+            df_5_15_ll['Ядро'] = '5.15-ll'
+            temp_data_kernel["5.15-ll"].append(df_5_15_ll[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
 
             df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])
 
@@ -356,23 +359,43 @@ class PSQLStatistics:
                 fig.savefig(f"statistics/postresql_statistics_{list(data_kernel['Стенд'])[0]}_{kernel}.jpg")
         
         # first_df = temp_data_kernel.items()[0]
-        first_passed = False
-        df_temp_merge = ""
-        for ind, (key_kernel, tdf2) in enumerate(temp_data_kernel.items()):
-            df_temp_merge = pd.merge(tdf2[ind], tdf2[ind + 1], how='outer', left_on=["Релиз", "Ядро", "Стенд"], right_on=["Релиз", "Ядро", "Стенд"])
-            break
         
-        print(df_temp_merge)
-            
-            # print(tdf2)
-            # print("________________-")
-            # for data_kernel2 in tdf2:
-            #     print(data_kernel2)
-            #     print("****************")
+        df_merged = pd.DataFrame()
+        array_merged_dataframes = []
+        for key_kernel, tdf2 in temp_data_kernel.items():
+            first_passed = False
+            for i, item in enumerate(tdf2):
+                try:
+                    if not first_passed:
+                        df_merged = pd.merge(item, tdf2[i + 1], how='outer', left_on=["Релиз", "Ядро"], right_on=["Релиз", "Ядро"])
+                        first_passed = True
+                    else:
+                        df_merged = pd.merge(df_merged, tdf2[i + 1], how='outer', left_on=["Релиз", "Ядро"], right_on=["Релиз", "Ядро"])
+                except IndexError:
+                    break
+            array_merged_dataframes.append(df_merged)
         
+        for merged_df in array_merged_dataframes:
+            ratings_for_plt_graph = merged_df.iloc[::, 3::2]
+            names_stand = merged_df.iloc[::, 2::2].mode().iloc[0].tolist()
+            title = merged_df['Ядро'].mode()[0]
+            fig, ax = plt.subplots(figsize=(12.8, 7.2))
+            ax.grid(True, alpha=.6)
+            ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по стендам.\n{title}")
+            colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
+            for index in range(ratings_for_plt_graph.shape[1]):
+                ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
+            plt.legend(names_stand)
+            # plt.show()
 
-        
-        # print(sorted(os.listdir("statistics")))
+            # Lighten borders
+            plt.gca().spines["top"].set_alpha(.0)
+            plt.gca().spines["bottom"].set_alpha(.3)
+            plt.gca().spines["right"].set_alpha(.0)
+            plt.gca().spines["left"].set_alpha(.3)
+
+            plt.savefig(f"statistics/postresql_statistics_all_stands_{title}_kernel.jpg")
+
 
     """
         Создаем итоговую html страницу для life
@@ -398,6 +421,8 @@ class PSQLStatistics:
         table_with_mat_stat_list = []
 
         kernel_image_list = [[], [], []]
+
+        lst_all_stands_stat_kernel = []
 
 
         for file in sorted(os.listdir("statistics")):
@@ -431,10 +456,17 @@ class PSQLStatistics:
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file))
+            if file.endswith("kernel.jpg"):
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                                                  img_png=file))
 
         html_list = []
 
         # print(kernel_image_list)
+
+        for item in lst_all_stands_stat_kernel:
+            html_list.append(item)
 
         for ind, item in enumerate(table_with_data_list):
             # print(ind)
@@ -456,4 +488,3 @@ class PSQLStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages, name_html="postresql")
         self.upload_statistics()
-

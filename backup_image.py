@@ -178,7 +178,8 @@ logging.basicConfig(
         format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
 )
-logging.error('\n\n\nStart logging\n\n\n')
+logging.error('\n\n\nStart logging\n')
+logging.error(f'{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}\n\n\n')
 
 
 def write_status(status):

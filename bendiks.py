@@ -126,6 +126,7 @@ for i in range(0, len(dates_list)):
     start_time = datetime.datetime.now().replace(microsecond=0)  
     print('-----' * 20)
     print('Итерация №', i + 1)
+    print(f'Прогресс выполнения - {int((i + 1) * 100 / len(dates_list))}%')
     print('Время запуска:', start_time)
     if dates_list[i][0][3] == __stand:
         print(f'Cтенд: \033[92m{dates_list[i][0][3]}\033[0m')

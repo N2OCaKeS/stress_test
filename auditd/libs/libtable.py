@@ -349,9 +349,12 @@ class Report:
         oy_lst = raw_table['latency'].values.tolist()
 
         if auto_normalize:
+
+            oy_lst = [0] + oy_lst + [100]
+
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
             if len(set(normalized_data_list)) == 1:
                 normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
             # print(normalized_data_list)
@@ -382,9 +385,12 @@ class Report:
         oy_lst = raw_table['completed'].values.tolist()
 
         if auto_normalize:
+
+            oy_lst = [0] + oy_lst + [100]
+
             scaler = preprocessing.MinMaxScaler()
             normalized_data_2d_array = scaler.fit_transform(np.array(oy_lst)[:, np.newaxis])
-            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array)]
+            normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
             if len(set(normalized_data_list)) == 1:
                 normalized_data_list = [1.0 for _ in list(normalized_data_2d_array)]
             # print(normalized_data_list)

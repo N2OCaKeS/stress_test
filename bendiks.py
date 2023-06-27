@@ -146,7 +146,7 @@ for i in range(0, len(dates_list)):
                     branch = f'-branch {branches[dates_list[i][1]]}' 
                     cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
                     pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
-                    testnum = f'-testnum {i}'
+                    testnum = f'-testnum {i + 1}'
                     psql = '-ps psql'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
@@ -184,7 +184,7 @@ for i in range(0, len(dates_list)):
                 branch = f'-branch {branches[dates_list[i][1]]}' 
                 cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
                 pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
-                testnum = f'-testnum {i}'
+                testnum = f'-testnum {i + 1}'
                 psql = '-ps psql'
                 if tests[dates_list[i][1]] == 'auditd-p':
                     testlist = f'-aud psaud'

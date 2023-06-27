@@ -146,6 +146,7 @@ for i in range(0, len(dates_list)):
                     branch = f'-branch {branches[dates_list[i][1]]}' 
                     cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
                     pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
+                    testnum = f'-testnum {i}'
                     psql = '-ps psql'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
@@ -157,13 +158,13 @@ for i in range(0, len(dates_list)):
                     #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql_sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {psql}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                       {stand} {tcyc} {tcas} {branch} {cti} {pp}', shell=True)
+                                       {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                     end_time = datetime.datetime.now().replace(microsecond=0)
                     print('Выполнен')
                     print('Время завершения:', end_time)
@@ -183,6 +184,7 @@ for i in range(0, len(dates_list)):
                 branch = f'-branch {branches[dates_list[i][1]]}' 
                 cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
                 pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
+                testnum = f'-testnum {i}'
                 psql = '-ps psql'
                 if tests[dates_list[i][1]] == 'auditd-p':
                     testlist = f'-aud psaud'
@@ -194,13 +196,13 @@ for i in range(0, len(dates_list)):
                 #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                 if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql_sm':
                     subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                {tcas} {branch} {cti} {pp} {psql}', shell=True)
+                                {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
                 elif tests[dates_list[i][1]].startswith('auditd'):
                     subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                       {stand} {tcyc} {tcas} {branch} {cti} {pp}', shell=True)
+                                       {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                 else: 
                     subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                 end_time = datetime.datetime.now().replace(microsecond=0)
                 print('Выполнен')
                 print('Время завершения:', end_time)

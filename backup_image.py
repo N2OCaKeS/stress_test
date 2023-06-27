@@ -98,6 +98,12 @@ parser.add_argument('-aud',
                     help='testlist',
                     dest='AUDIT')
 
+parser.add_argument('-testnum',
+                    action='store',
+                    required=True,
+                    help='testlist',
+                    dest='TESTNUM')
+
 args = parser.parse_args()
 
 
@@ -159,12 +165,14 @@ home_dir = os.path.expanduser('~')
 if not os.path.isdir(f'/home/u/git/stress_test/status_{args.STAND}'):
     os.mkdir(f'/home/u/git/stress_test/status_{args.STAND}')
 status_dir = f'/home/u/git/stress_test/status_{args.STAND}'
+if not os.path.isdir(f'/home/u/git/stress_test/logs'):
+    os.mkdir(f'/home/u/git/stress_test/logs')
 except_num = 1
-if os.path.isfile(f'/home/u/git/stress_test/backup_image_{args.STAND}.log'):
-    os.remove(f'/home/u/git/stress_test/backup_image_{args.STAND}.log')
+if os.path.isfile(f'/home/u/git/stress_test/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log'):
+    os.remove(f'/home/u/git/stress_test/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
 
 logging.basicConfig(
-        filename=f'/home/u/git/stress_test/backup_image_{args.STAND}.log', 
+        filename=f'/home/u/git/stress_test/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log', 
         level=logging.DEBUG, 
         filemode='a',
         format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',

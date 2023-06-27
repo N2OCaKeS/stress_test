@@ -103,7 +103,7 @@ class Report:
         # total_rating = round((c_weiht * list_rating[0]) * (c_weiht * list_rating[1]) * (c_weiht * list_rating[2]) * (c_weiht * list_rating[3]) * 10**20, 3)
         total_rating = 1
         for item_rating in list_rating:
-            total_rating *= c_weiht * item_rating
+            total_rating += c_weiht * item_rating
         return round(total_rating * 10**19, 3)
 
     def create_html(self, graph_lst, total_rating, service_count, time_execution):    

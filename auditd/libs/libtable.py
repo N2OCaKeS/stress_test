@@ -443,7 +443,7 @@ class Report:
         clos = 1
 
         try:
-            total_auditd_rating = round((clat * self.get_total_latency_rating(path=path))**(-1) * \
+            total_auditd_rating = round((clat * self.get_total_latency_rating(path=path))**(-1) + \
                                         (clos * self.get_total_losses_rating(path=path)) * \
                                         multiplier,
                                         accuracy)

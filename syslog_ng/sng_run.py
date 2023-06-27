@@ -171,9 +171,7 @@ if __name__ == '__main__':
                 err.write('---------' * 25)
                 err.write('\n\n')
                 start_status += 1
-                sleep(60)
-                continue
-
+            
 
     print("Дата и время запуска: ", datetime.strftime(TIME_START_SCRIPT, "%d.%m.%Y %H:%M:%S"))
 
@@ -420,5 +418,4 @@ if __name__ == '__main__':
                 err.write('---------' * 25)
                 err.write('\n\n')
                 end_status += 1
-                sleep(60)
-                continue
+                

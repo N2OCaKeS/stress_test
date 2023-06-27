@@ -242,7 +242,6 @@ class PSQLStatistics:
             
             panda_series = df['rating_2']
             data_for_df[key]['rating'] = panda_series.tolist()
-            df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])
             
             df_5_10 = df[df["Ядро"].str.contains('5.10', case=False)]
             temp_data_kernel['5.10'].append(df_5_10)
@@ -250,6 +249,8 @@ class PSQLStatistics:
             temp_data_kernel["5.15-gen"].append(df_5_15_gen)
             df_5_15_ll = df[df["Ядро"].str.contains('5.15\S*low', case=False, regex=True)]
             temp_data_kernel["5.15-ll"].append(df_5_15_ll)
+
+            df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])
 
             # print(df_5_15_gen)
 
@@ -354,6 +355,23 @@ class PSQLStatistics:
                     plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                 fig.savefig(f"statistics/postresql_statistics_{list(data_kernel['Стенд'])[0]}_{kernel}.jpg")
         
+        # first_df = temp_data_kernel.items()[0]
+        first_passed = False
+        df_temp_merge = ""
+        for ind, (key_kernel, tdf2) in enumerate(temp_data_kernel.items()):
+            df_temp_merge = pd.merge(tdf2[ind], tdf2[ind + 1], how='outer', left_on=["Релиз", "Ядро", "Стенд"], right_on=["Релиз", "Ядро", "Стенд"])
+            break
+        
+        print(df_temp_merge)
+            
+            # print(tdf2)
+            # print("________________-")
+            # for data_kernel2 in tdf2:
+            #     print(data_kernel2)
+            #     print("****************")
+        
+
+        
         # print(sorted(os.listdir("statistics")))
 
     """
@@ -438,3 +456,4 @@ class PSQLStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages, name_html="postresql")
         self.upload_statistics()
+

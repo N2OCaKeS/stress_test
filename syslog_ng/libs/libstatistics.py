@@ -367,7 +367,11 @@ class FileSystemStatistics:
 
                 if type_fs == "OCFS2":
                     continue
-                file_system_data['data'][stand][temp_key_fs_with_parsec].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
+                try:
+                    file_system_data['data'][stand][temp_key_fs_with_parsec]. \
+                    append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
+                except KeyError:
+                    continue
 
         for key, data in file_system_data['data'].items():
             #print(key, data)

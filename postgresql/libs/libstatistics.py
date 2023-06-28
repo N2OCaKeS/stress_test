@@ -488,3 +488,21 @@ class PSQLStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages, name_html="postresql")
         self.upload_statistics()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--username',
+                        action='store',
+                        required=True,
+                        help='confluence user',
+                        dest='USER')
+    parser.add_argument('-t', '--token',
+                        action='store',
+                        required=True,
+                        default=None,
+                        help='confluence access token',
+                        dest='TOKEN')
+    args = parser.parse_args()
+    
+    stat = PSQLStatistics(username=args.USER, token=args.TOKEN)
+    stat.update_statistics()

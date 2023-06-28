@@ -13,6 +13,7 @@ import pandas as pd
 from scipy import integrate
 from os import listdir, chdir
 from datetime import datetime
+from sklearn import preprocessing
 from matplotlib import pyplot as plt
 from libs.libsng import astra_version
 
@@ -77,7 +78,11 @@ class Report:
         '''
             Получить рейтинг
         '''
-        func = self.data_aproximation(x, y)
+        y = y + [100]
+        scaler = preprocessing.MinMaxScaler()
+        normalized_data_2d_array = scaler.fit_transform(np.array(y)[:, np.newaxis])
+        normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[0:-1])]
+        func = self.data_aproximation(x, normalized_data_list)
         I, err = integrate.quad(func, x[0], x[-1])
         try:
             return 1/I

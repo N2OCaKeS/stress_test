@@ -272,17 +272,17 @@ if __name__ == '__main__':
         Создание отчета
     '''
     sng_data = pd.DataFrame(data={'load_cpu': data_cpu, 'load_memory': data_memory, 'load_syslog_ng_memory': data_syslog_memory, 'load_disk': data_disk}, index=data_time)
-    scaler = preprocessing.MinMaxScaler()
+    # scaler = preprocessing.MinMaxScaler()
     # Нормализуем данные
-    d = scaler.fit_transform(sng_data)
+    # d = scaler.fit_transform(sng_data)
     # Строим новый dataframe с нормированными данными
-    scaled_sng_data = pd.DataFrame(d, columns=sng_data.columns)
+    # scaled_sng_data = pd.DataFrame(d, columns=sng_data.columns)
     
     report = libtable.Report(os.path.expanduser(REPORT_PATH), float(IMAGE_WIDTH), float(IMAGE_HEIGHT))
-    rating_cpu = report.get_rating(x=data_time, y=scaled_sng_data['load_cpu'])
-    rating_memory = report.get_rating(x=data_time, y=scaled_sng_data['load_memory'])
-    rating_syslog_memory = report.get_rating(x=data_time, y=scaled_sng_data['load_syslog_ng_memory'])
-    rating_disk = report.get_rating(x=data_time, y=scaled_sng_data['load_disk'])
+    rating_cpu = report.get_rating(x=data_time, y=sng_data['load_cpu'])
+    rating_memory = report.get_rating(x=data_time, y=sng_data['load_memory'])
+    rating_syslog_memory = report.get_rating(x=data_time, y=sng_data['load_syslog_ng_memory'])
+    rating_disk = report.get_rating(x=data_time, y=sng_data['load_disk'])
     total_rating = report.get_total_rating([rating_cpu, rating_memory, rating_syslog_memory, rating_disk])
 
     # Вывод данных на экран

@@ -9,7 +9,7 @@ import re
 import pandas
 import tarfile
 import warnings
-
+import pysnooper
 import numpy as np
 from time import time
 from scipy import integrate
@@ -24,6 +24,7 @@ from libs.liblsb import astra_version, astra_kernel_version
 
 
 class Report:
+    @pysnooper.snoop()
     def __init__(self,
                  ox_lo_lim,
                  ox_up_lim,
@@ -54,9 +55,13 @@ class Report:
                 # объявляем новый дикт с кючами значениями
                 self.__raw_dict[test] = {}
                 self.__raw_dict[test]['parallel_threads'] = [float(index) for index in range(self.__ox_lower_limit, self.__ox_upper_limit, self.__ox_step)]
+                print('parallel_threads', [float(index) for index in range(self.__ox_lower_limit, self.__ox_upper_limit, self.__ox_step)])
                 self.__raw_dict[test]['value'] = [float(result_tuple[0]) for result_tuple in result_tuples]
+                print('value', [float(result_tuple[0]) for result_tuple in result_tuples])
                 self.__raw_dict[test]['time'] = [float(result_tuple[1]) for result_tuple in result_tuples]
+                print('time', [float(result_tuple[1]) for result_tuple in result_tuples])
                 self.__raw_dict[test]['samples'] = [float(result_tuple[2]) for result_tuple in result_tuples]
+                print('samples', [float(result_tuple[2]) for result_tuple in result_tuples])
 
         # соберем датафреймы
         self.__raw_tables = {}

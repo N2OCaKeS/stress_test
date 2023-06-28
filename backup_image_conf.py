@@ -15,7 +15,7 @@ modes = {
 
 parent_page_list = {
     '1.7.4.UU.1':{'postgresql':'1.7.4.UU.1 ⬝ PostgreSQL',
-                  'postgresql_sm':'1.7.4.UU.1 ⬝ PostgreSQL',
+                  'postgresql-sm':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'XFS':'1.7.4.UU.1 ⬝ Файловые системы',
                   'NTFS':'1.7.4.UU.1 ⬝ Файловые системы',
                   'EXT4':'1.7.4.UU.1 ⬝ Файловые системы',
@@ -26,7 +26,7 @@ parent_page_list = {
                   'syslog-ng':'1.7.4.UU.1 ⬝ Системные службы'
                  },
     '1.7.4':{'postgresql':'PostgreSQL',
-             'postgresql_sm':'PostgreSQL',
+             'postgresql-sm':'PostgreSQL',
              'XFS':'Файловые системы',
              'NTFS':'Файловые системы',
              'EXT4':'Файловые системы',
@@ -37,7 +37,7 @@ parent_page_list = {
              'syslog-ng':'1.7.4 ⬝ Системные службы'
             },
     '1.7.2':{'postgresql':'1.7.2 ⬝ PostgreSQL',
-             'postgresql_sm':'1.7.2 ⬝ PostgreSQL',
+             'postgresql-sm':'1.7.2 ⬝ PostgreSQL',
              'auditd-p':'1.7.2 ⬝ Системные службы',
              'auditd-f':'1.7.2 ⬝ Системные службы',
              'auditd-u':'1.7.2 ⬝ Системные службы',
@@ -48,7 +48,7 @@ parent_page_list = {
              'EXT4 parsec':'1.7.2 ⬝ Файловые системы'
             },
     '1.7.3':{'postgresql':'1.7.3 ⬝ PostgreSQL',
-             'postgresql_sm':'1.7.3 ⬝ PostgreSQL',
+             'postgresql-sm':'1.7.3 ⬝ PostgreSQL',
              'auditd-p':'1.7.3 ⬝ Системные службы',
              'auditd-f':'1.7.3 ⬝ Системные службы',
              'auditd-u':'1.7.3 ⬝ Системные службы',
@@ -63,14 +63,14 @@ parent_page_list = {
                   'EXT4':'1.7.3.UU.2 ⬝ Файловые системы',
                   'EXT4 parsec':'1.7.3.UU.2 ⬝ Файловые системы',
                   'postgresql':'1.7.3.UU.2 ⬝ PostgreSQL',
-                  'postgresql_sm':'1.7.3.UU.2 ⬝ PostgreSQL',
+                  'postgresql-sm':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'auditd-p':'1.7.3.UU.2 ⬝ Системные службы',
                   'auditd-f':'1.7.3.UU.2 ⬝ Системные службы',
                   'auditd-u':'1.7.3.UU.2 ⬝ Системные службы',
                   'syslog-ng':'1.7.3.UU.2 ⬝ Системные службы'
                  },
     '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'postgresql_sm':'1.7.3 UU1 ⬝ PostgreSQL',
+                  'postgresql-sm':'1.7.3 UU1 ⬝ PostgreSQL',
                   'XFS':'1.7.3 UU1 ⬝ Файловые системы',
                   'NTFS':'1.7.3 UU1 ⬝ Файловые системы',
                   'EXT4':'1.7.3 UU1 ⬝ Файловые системы',
@@ -81,7 +81,7 @@ parent_page_list = {
                   'syslog-ng':'1.7.3 UU1 ⬝ Системные службы'
                  },
     '1.7.1':{'postgresql':'1.7.1 ⬝ PostgreSQL',
-             'postgresql_sm':'1.7.1 ⬝ PostgreSQL',
+             'postgresql-sm':'1.7.1 ⬝ PostgreSQL',
              'XFS':'1.7.1 ⬝ Файловые системы',
              'NTFS':'1.7.1 ⬝ Файловые системы',
              'EXT4':'1.7.1 ⬝ Файловые системы',
@@ -126,7 +126,7 @@ tests = {
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
-    'postgresql benchmark smol':'postgresql_sm',
+    'postgresql benchmark smol':'postgresql-sm',
     'file system benchmark. OCFS2':'OCFS2',
     'file system benchmark. NTFS':'NTFS',
     'file system benchmark. EXT3':'EXT3',

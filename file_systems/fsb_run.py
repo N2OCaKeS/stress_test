@@ -188,9 +188,9 @@ while start_status == 0:
 '''
     main
 '''
-run_storage_init = 'sudo {dir}/venv/bin/python {dir}/fsb_storage_init.py --fs {fs}'
-run_test = 'sudo {dir}/venv/bin/python {dir}/fsb_test.py --test-set {ts}'
-run_test_parsec = 'sudo {dir}/venv/bin/python {dir}/fsb_test.py --test-set {ts} --parsec'
+run_storage_init = 'sudo python3 {dir}/fsb_storage_init.py --fs {fs}'
+run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts}'
+run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec'
 
 '''
     VirtualBox

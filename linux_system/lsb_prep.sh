@@ -8,6 +8,7 @@ sudo apt-get install -y python3-numpy python3-scipy python3-pandas python3-matpl
 sudo mkdir /home/u/modules
 sudo wget -P /home/u/modules ftp://10.177.103.10/modules/*
 sudo dpkg -i /home/u/modules/*.deb
+sudo apt install -fy
 
 #sudo apt-get install -y python3-dev python3-requests libffi-dev syslog-ng python3-numpy python3-scipy python3-pandas
 #sudo apt-get install -y python3-matplotlib

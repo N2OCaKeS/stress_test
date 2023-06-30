@@ -1,2 +1,1 @@
-pretty-html-table == 0.9.16
 atlassian-python-api == 3.28.1

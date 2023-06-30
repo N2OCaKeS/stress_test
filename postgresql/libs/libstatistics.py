@@ -787,7 +787,7 @@ class PSQLStatistics2:
                     if val != 0:
                         plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                 ax.legend(["Orel", "Smolensk"])
-                plt.savefig(f"statistics/summ_graph_{df['Стенд'].mode()[0]}_summ.png")
+                plt.savefig(f"statistics/summ_graph_{df['Стенд'].mode()[0]}_summ.jpg")
                 
             
         
@@ -831,32 +831,33 @@ class PSQLStatistics2:
 
         summ_graphs_list = []
 
+        header_orel, header_smolensk, header_orel_vs_smolensk = [], [], []
+
         for file in sorted(os.listdir("statistics")):
-            
             if file.endswith("png"):
+                # print(file)
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file)
+                name_stand = file.split("_")[2].split(".")[0]
                 if file.startswith("postgresql-sm"):
                     images_list_smolensk.append(img)
-                    # print(file, "test====1")
+                    header_smolensk.append(name_stand)
                 elif file.startswith("postgresql-vo"):
                     pass
                 else:
                     image_list.append(img)
-                    # print(file, "test****1")
+                    header_orel.append(name_stand)
 
             if file.endswith("1.html"):
                 file_table = open(f'statistics/{file}', 'r')
                 table = file_table.read()
                 file_table.close()
                 if file.startswith("postgresql-sm"):
-                    # print(file, "test====2")
                     table_with_data_list_smolensk.append(table)
                 elif file.startswith("postgresql-vo"):
                     pass
                 else:
-                    # print(file, "test****2")
                     table_with_data_list.append(table)
 
             if file.endswith("2.html"):
@@ -887,21 +888,50 @@ class PSQLStatistics2:
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                   img_png=file))
             
-            if file.endswith("summ.png"):
+            if file.endswith("summ.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file))
+                name_stand = file.split("_")[2]
+                header_orel_vs_smolensk.append(name_stand)
                 
         html_list = []
+
+        nav_start = """
+            <nav>
+            <h2>Содержание:</h2>
+            <ul>
+        """
+        nav_end = """
+            </ul>
+            </nav>
+        """
+        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk = [], [], []
+        nav_body = '''
+            <li><a href="#id-Статистика.PostgreSQL-Orel">Orel</a>
+                <ul>
+                    {list_orel}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.PostgreSQL-Smolensk">Smolensk</a>
+                <ul>
+                    {list_smolensk}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.PostgreSQL-OrelvsSmolensk">Orel vs Smolensk</a>
+                <ul>
+                    {list_orel_vs_smolensk}
+                </ul>
+            </li>
+        '''
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
         for item in lst_all_stands_stat_kernel:
             html_list.append(item)
-
-        # print(len(image_list), len(images_list_smolensk))
-        # print(len(table_with_data_list))
         
         for ind, item in enumerate(table_with_data_list):
+            nav_lst_orel.append(f'<li><a href="#id-Статистика.PostgreSQL-{header_orel[ind]}">{header_orel[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{header_orel[ind]}</h1>")
             html_list.append(image_list[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
@@ -910,16 +940,23 @@ class PSQLStatistics2:
             html_list.append(kernel_image_list[1][ind])
             html_list.append(kernel_image_list[2][ind])
 
-        # print(len(images_list_smolensk), len(table_with_data_list_smolensk))
-        html_list.append('<hr/><h1 style="text-align: center;">Smolensk</h1>')
+        html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
         for ind, item in enumerate(table_with_data_list_smolensk):
+            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{header_smolensk[ind]}.1">{header_smolensk[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{header_smolensk[ind]}</h1>")
             html_list.append(images_list_smolensk[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
         
-        html_list.append('<hr/><h1 style="text-align: center;">Orel vs Smolensk</h1>')
+        html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
         for ind, item in enumerate(summ_graphs_list):
+            nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{header_orel_vs_smolensk[ind]}.2">{header_orel_vs_smolensk[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{header_orel_vs_smolensk[ind]}</h1>")
             html_list.append(item)
+
+        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk)) + nav_end
+
+        html_list.insert(0, nav)
 
         html_page = "".join(html_list)
 

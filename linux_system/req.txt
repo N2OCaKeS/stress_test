@@ -1,2 +1,3 @@
 atlassian-python-api==3.28.1
 pysnooper==1.1.1
+pretty-html-table == 0.9.16

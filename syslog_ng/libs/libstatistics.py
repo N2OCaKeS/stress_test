@@ -369,7 +369,7 @@ class FileSystemStatistics:
                     continue
                 try:
                     file_system_data['data'][stand][temp_key_fs_with_parsec]. \
-                    append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
+                        append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
                 except KeyError:
                     continue
 

@@ -1,4 +1,2 @@
 fabric == 2.6.0
-pretty-html-table == 0.9.16
 atlassian-python-api == 3.28.1
-beautifulsoup4==4.12.2

@@ -436,7 +436,7 @@ class Report:
 
     def get_total_auditd_rating(self,
                                 path=REPORT,
-                                multiplier=10**(2),
+                                multiplier=10**(-1),
                                 accuracy=0):
         # weight coefficients
         clat = 0.5

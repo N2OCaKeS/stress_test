@@ -237,7 +237,7 @@ if args.TEST_LIST == 'base':
         print('# INFO # --- max clients count {}'.format(str(limite_clients)))
 
         if args.SYSMON:
-            sysmon = subprocess.Popen("venv/bin/python3 psb_sysmon.py", shell=True)
+            sysmon = subprocess.Popen("python3 psb_sysmon.py", shell=True)
 
         while clients <= limite_clients:
             print('# INFO # --- clients count {}'.format(str(clients)))

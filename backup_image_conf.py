@@ -34,7 +34,8 @@ parent_page_list = {
              'auditd-p':'1.7.4 ⬝ Системные службы',
              'auditd-f':'1.7.4 ⬝ Системные службы',
              'auditd-u':'1.7.4 ⬝ Системные службы',
-             'syslog-ng':'1.7.4 ⬝ Системные службы'
+             'syslog-ng':'1.7.4 ⬝ Системные службы',
+             'unix':'UnixBench'
             },
     '1.7.2':{'postgresql':'1.7.2 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.2 ⬝ PostgreSQL',
@@ -108,7 +109,8 @@ branches = {
     'auditd benchmark. psaud':'auditd',
     'auditd benchmark. fileaud':'auditd',
     'auditd benchmark. useraud':'auditd',
-    'syslog-ng benchmark':'syslog_ng'
+    'syslog-ng benchmark':'syslog_ng',
+    'linux_system_benchmark. UnixBench':'linux_system'
 }
 
 
@@ -137,6 +139,7 @@ tests = {
     'auditd benchmark. psaud':'auditd-p',
     'auditd benchmark. fileaud':'auditd-f',
     'auditd benchmark. useraud':'auditd-u',
-    'syslog-ng benchmark':'syslog-ng'
+    'syslog-ng benchmark':'syslog-ng',
+    'linux_system_benchmark. UnixBench':'UnixBench'
 }
 

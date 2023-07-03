@@ -140,6 +140,6 @@ tests = {
     'auditd benchmark. fileaud':'auditd-f',
     'auditd benchmark. useraud':'auditd-u',
     'syslog-ng benchmark':'syslog-ng',
-    'linux_system_benchmark. UnixBench':'UnixBench'
+    'linux_system_benchmark. UnixBench':'unix'
 }
 

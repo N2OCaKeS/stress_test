@@ -584,6 +584,7 @@ class PSQLStatistics2:
             """
                 Строим таблицу №1
             """
+            dataframes_for_summary_graph = {}
             temp_data_for_graph = {}
             temp_data_kernel = {
                 '5.10': [],
@@ -610,6 +611,8 @@ class PSQLStatistics2:
                 temp_data_kernel["5.15-ll"].append(df_5_15_ll[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
 
                 df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])
+
+                dataframes_for_summary_graph[key] = df[['Релиз', 'Ядро', 'Стенд', 'rating_2']]
 
                 df = df.drop('rating_2', axis=1)
                 temp_data_for_graph[key] = (df['Релиз'] + "_" + df['Ядро'])
@@ -656,7 +659,7 @@ class PSQLStatistics2:
                 new_file_html.write(mat_stat_table_html)
                 new_file_html.close()
 
-            return temp_data_for_graph, temp_data_kernel
+            return temp_data_for_graph, temp_data_kernel, dataframes_for_summary_graph
         
         def create_graphs(data_for_df, test_name, temp_data_for_graph):
             """
@@ -748,15 +751,58 @@ class PSQLStatistics2:
 
                 plt.savefig(f"statistics/{test_name}_statistics_all_stands_{title}_kernel.jpg")
         
+        def create_summary_table(dfs1, dfs2):
+            merged_dataframes = []
+            for stand, df in dfs2.items():
+                if stand in dfs1.keys():
+                    df_temp = pd.merge(dfs1[stand], dfs2[stand], how='outer', left_on=["Релиз", "Ядро", "Стенд"], right_on=["Релиз", "Ядро", "Стенд"])
+                    merged_dataframes.append(df_temp)
+                    # print(df_temp)
+            return merged_dataframes
+        
+        def create_summary_graph(merged_df):
+            for df in merged_df:
+                shcala_x = [x for x in range(len(df['Релиз']))]
+                fig, ax = plt.subplots(figsize=(16, 9))
+                ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL orel/smolensk.\n{df['Стенд'].mode()[0]}")
+                # ax.grid(True, alpha=.3)
+                ax.set_ylabel("Значение рейтинга")
+                ax.set_ylim([0, max(df['rating_2_x'].fillna(0)) + max(df['rating_2_x'].fillna(0)) * 0.2])
+                df['version'] = df['Релиз'] + "_" + df['Ядро']
+                ax.bar(df['version'], df['rating_2_x'], color='#88c1f2')
+                ax.bar(df['version'], df['rating_2_y'], color='#ea5c76', alpha=0.9, width=0.7)
+                plt.xticks(rotation=20, horizontalalignment='right')
+                for i, val in enumerate(df['rating_2_x']):
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        pass
+                    if val != 0:
+                        plt.text(i, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                for i, val in enumerate(df['rating_2_y']):
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        pass
+                    if val != 0:
+                        plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                ax.legend(["Orel", "Smolensk"])
+                plt.savefig(f"statistics/summ_graph_{df['Стенд'].mode()[0]}_summ.jpg")
+                
+            
+        
         data_df_orel = collect_data(test_name="postgresql")
-        tmp_data_for_gr, tmp_data_krnl = build_dataframes(data_for_df=data_df_orel, test_name="postgresql")
+        tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="postgresql")
         create_graphs(data_for_df=data_df_orel, test_name="postgresql", temp_data_for_graph=tmp_data_for_gr)
         create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         
         data_df_smolensk = collect_data(test_name="postgresql-sm")
-        tmp_data_for_gr_smol, tmp_data_krnl_smol = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
+        tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
         create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
+
+        summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
+        create_summary_graph(merged_df=summ_df)
 
 
     """
@@ -783,32 +829,35 @@ class PSQLStatistics2:
         kernel_image_list = [[], [], []]
         lst_all_stands_stat_kernel = []
 
+        summ_graphs_list = []
+
+        header_orel, header_smolensk, header_orel_vs_smolensk = [], [], []
+
         for file in sorted(os.listdir("statistics")):
-            
             if file.endswith("png"):
+                # print(file)
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                     img_png=file)
+                name_stand = file.split("_")[2].split(".")[0]
                 if file.startswith("postgresql-sm"):
                     images_list_smolensk.append(img)
-                    print(file, "test====1")
+                    header_smolensk.append(name_stand)
                 elif file.startswith("postgresql-vo"):
                     pass
                 else:
                     image_list.append(img)
-                    print(file, "test****1")
+                    header_orel.append(name_stand)
 
             if file.endswith("1.html"):
                 file_table = open(f'statistics/{file}', 'r')
                 table = file_table.read()
                 file_table.close()
                 if file.startswith("postgresql-sm"):
-                    print(file, "test====2")
                     table_with_data_list_smolensk.append(table)
                 elif file.startswith("postgresql-vo"):
                     pass
                 else:
-                    print(file, "test****2")
                     table_with_data_list.append(table)
 
             if file.endswith("2.html"):
@@ -838,17 +887,51 @@ class PSQLStatistics2:
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
                                                   img_png=file))
+            
+            if file.endswith("summ.jpg"):
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                                                    img_png=file))
+                name_stand = file.split("_")[2]
+                header_orel_vs_smolensk.append(name_stand)
                 
         html_list = []
 
-        html_list.append('<hr/><h1 style="text-align: center;">Орёл</h1>')
+        nav_start = """
+            <nav>
+            <h2>Содержание:</h2>
+            <ul>
+        """
+        nav_end = """
+            </ul>
+            </nav>
+        """
+        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk = [], [], []
+        nav_body = '''
+            <li><a href="#id-Статистика.PostgreSQL-Orel">Orel</a>
+                <ul>
+                    {list_orel}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.PostgreSQL-Smolensk">Smolensk</a>
+                <ul>
+                    {list_smolensk}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.PostgreSQL-OrelvsSmolensk">Orel vs Smolensk</a>
+                <ul>
+                    {list_orel_vs_smolensk}
+                </ul>
+            </li>
+        '''
+
+        html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
         for item in lst_all_stands_stat_kernel:
             html_list.append(item)
-
-        # print(len(image_list), len(images_list_smolensk))
-        # print(len(table_with_data_list))
         
         for ind, item in enumerate(table_with_data_list):
+            nav_lst_orel.append(f'<li><a href="#id-Статистика.PostgreSQL-{header_orel[ind]}">{header_orel[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{header_orel[ind]}</h1>")
             html_list.append(image_list[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
@@ -857,13 +940,24 @@ class PSQLStatistics2:
             html_list.append(kernel_image_list[1][ind])
             html_list.append(kernel_image_list[2][ind])
 
-        # print(len(images_list_smolensk), len(table_with_data_list_smolensk))
-        html_list.append('<hr/><h1 style="text-align: center;">Смоленск</h1>')
+        html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
         for ind, item in enumerate(table_with_data_list_smolensk):
+            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{header_smolensk[ind]}.1">{header_smolensk[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{header_smolensk[ind]}</h1>")
             html_list.append(images_list_smolensk[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
         
+        html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
+        for ind, item in enumerate(summ_graphs_list):
+            nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{header_orel_vs_smolensk[ind]}.2">{header_orel_vs_smolensk[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{header_orel_vs_smolensk[ind]}</h1>")
+            html_list.append(item)
+
+        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk)) + nav_end
+
+        html_list.insert(0, nav)
+
         html_page = "".join(html_list)
 
         confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)

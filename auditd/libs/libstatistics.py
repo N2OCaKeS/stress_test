@@ -479,13 +479,13 @@ class FileSystemStatistics:
             html_list.append(item)
             html_list.append("<br/>" + table_with_mat_stat_list[ind])
         
-        for ind, item in enumerate(ext4_and_ext4_parsec_comparison_list):
-            nav_lst.append(f'<li><a href="#id-Статистика.Системныеслужбы-{headers_for_content2[ind]}">{headers_for_content2[ind]}</a></li>')
-            html_list.append("<br/><hr/>")
-            html_list.append(headers2[ind])
-            html_list.append(image_list_ext4_comparison[ind])
-            html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
-            html_list.append(item)
+        #for ind, item in enumerate(ext4_and_ext4_parsec_comparison_list):
+        #    nav_lst.append(f'<li><a href="#id-Статистика.Системныеслужбы-{headers_for_content2[ind]}">{headers_for_content2[ind]}</a></li>')
+        #    html_list.append("<br/><hr/>")
+        #    html_list.append(headers2[ind])
+        #    html_list.append(image_list_ext4_comparison[ind])
+        #    html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
+        #    html_list.append(item)
 
         nav_tmp = "".join(nav_lst)
         nav = nav_start + nav_tmp + nav_end

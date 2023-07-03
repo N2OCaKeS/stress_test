@@ -151,7 +151,7 @@ elif args.AUDIT:
 elif args.TEST == 'EXT4 parsec':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} --parsec'
-elif args.TEST == 'syslog-ng':
+elif args.TEST == 'syslog-ng' or args.TEST == 'unix':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 else: 

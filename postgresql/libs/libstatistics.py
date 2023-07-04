@@ -482,9 +482,9 @@ class PSQLStatistics2:
     @staticmethod
     def get_grade(stand):
             if stand == "stand1":
-                grade = "low_1"
+                grade = "low"
             elif stand == "stand2":
-                grade = "low_2"
+                grade = "low"
             elif stand == "stand3":
                 grade = "middle"
             elif stand == "stand4":
@@ -638,7 +638,7 @@ class PSQLStatistics2:
                 file_html = open(f"statistics/{test_name}_{key}_1.html", "w")
                 file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 grage = self.get_grade(key)
-                file_html.writelines(f"<h1>Сводная таблица результатов тестирования {grage}</h1> {statistics_table_html}")
+                file_html.writelines(f"<h1>Сводная таблица результатов тестирования {grage}_{key}</h1> {statistics_table_html}")
                 file_html.close()
 
                 data_rat = data.get('rating')
@@ -703,7 +703,7 @@ class PSQLStatistics2:
                 # ax.set_xlabel("Порядковый номер теста")
                 ax.set_ylabel("Значение рейтинга")
                 grade = self.get_grade(key)
-                ax.set_title(f"PostgreSQL. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}")
+                ax.set_title(f"PostgreSQL. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}")
                 for i, val in enumerate(data_ratings.get("rating")):
                     try:
                         val = int(val)
@@ -723,7 +723,7 @@ class PSQLStatistics2:
                     fig, ax = plt.subplots(figsize=(12.8, 7.2))
                     ax.bar(data_kernel['Релиз'], data_kernel['rating_2'], color="#a3d1cd")
                     grade = self.get_grade(list(data_kernel['Стенд'])[0])
-                    ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по ядрам.\n{grade} - {kernel}")
+                    ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по ядрам.\n{grade}_{list(data_kernel['Стенд'])[0]} - {kernel}")
                     for i, val in enumerate(data_kernel['rating_2']):
                         try:
                             val = int(val)
@@ -753,6 +753,7 @@ class PSQLStatistics2:
                 ratings_for_plt_graph = merged_df.iloc[::, 3::2]
                 names_stand = merged_df.iloc[::, 2::2].mode().iloc[0].tolist()
                 grades = list(map(self.get_grade, names_stand))
+                grades_with_stands = list(map(lambda x, y: x + "_" + y, grades, names_stand))
                 title = merged_df['Ядро'].mode()[0]
                 fig, ax = plt.subplots(figsize=(12.8, 7.2))
                 ax.grid(True, alpha=.6)
@@ -760,7 +761,7 @@ class PSQLStatistics2:
                 colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
                 for index in range(ratings_for_plt_graph.shape[1]):
                     ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
-                plt.legend(grades)
+                plt.legend(grades_with_stands)
 
                 # Lighten borders
                 plt.gca().spines["top"].set_alpha(.0)
@@ -783,7 +784,7 @@ class PSQLStatistics2:
                 shcala_x = [x for x in range(len(df['Релиз']))]
                 fig, ax = plt.subplots(figsize=(16, 9))
                 grade = self.get_grade(df['Стенд'].mode()[0])
-                ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL orel/smolensk.\n{grade}")
+                ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL orel/smolensk.\n{grade}_{df['Стенд'].mode()[0]}")
                 # ax.grid(True, alpha=.3)
                 ax.set_ylabel("Значение рейтинга")
                 ax.set_ylim([0, max(df['rating_2_x'].fillna(0)) + max(df['rating_2_x'].fillna(0)) * 0.2])
@@ -950,8 +951,8 @@ class PSQLStatistics2:
         
         for ind, item in enumerate(table_with_data_list):
             grade = self.get_grade(header_orel[ind])
-            nav_lst_orel.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}">{grade}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}</h1>")
+            nav_lst_orel.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel[ind]}">{grade}_{header_orel[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{grade}_{header_orel[ind]}</h1>")
             html_list.append(image_list[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
@@ -963,8 +964,8 @@ class PSQLStatistics2:
         html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
         for ind, item in enumerate(table_with_data_list_smolensk):
             grade = self.get_grade(header_smolensk[ind])
-            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}.1">{grade}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}</h1>")
+            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
             html_list.append(images_list_smolensk[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
@@ -972,8 +973,8 @@ class PSQLStatistics2:
         html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
         for ind, item in enumerate(summ_graphs_list):
             grade = self.get_grade(header_orel_vs_smolensk[ind])
-            nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}.2">{grade}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}</h1>")
+            nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
             html_list.append(item)
 
         nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk)) + nav_end

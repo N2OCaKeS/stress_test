@@ -1,7 +1,7 @@
 import json
 from libs.libpublic import Public
 from libs.zefir import ZefirStatusAPI, ZefirResultTable
-from libs.libstatistics import PSQLStatistics
+from libs.libstatistics import PSQLStatistics2
 from time import ctime, sleep
 from libs.libpsb import response
 
@@ -31,7 +31,7 @@ def upload_result_status():
                                     username=public_args['username'])
     zefir_table
 
-    statistics = PSQLStatistics(username=public_args['username'], 
+    statistics = PSQLStatistics2(username=public_args['username'], 
                                 token=public_args['token'])
     statistics.update_statistics()
 

@@ -158,21 +158,21 @@ else:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 
-with open(f'/home/u/git/stress_test/{dates_name}', 'w') as w:
+with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
     w.write(dates)
 
 home_dir = os.path.expanduser('~')
-if not os.path.isdir(f'/home/u/git/stress_test/status_{args.STAND}'):
-    os.mkdir(f'/home/u/git/stress_test/status_{args.STAND}')
-status_dir = f'/home/u/git/stress_test/status_{args.STAND}'
-if not os.path.isdir(f'/home/u/git/stress_test/logs'):
-    os.mkdir(f'/home/u/git/stress_test/logs')
+if not os.path.isdir(f'/home/u/git/stress_test/bendiks_app/status_{args.STAND}'):
+    os.mkdir(f'/home/u/git/stress_test/bendiks_app/status_{args.STAND}')
+status_dir = f'/home/u/git/stress_test/bendiks_app/status_{args.STAND}'
+if not os.path.isdir(f'/home/u/git/stress_test/bendiks_app/logs'):
+    os.mkdir(f'/home/u/git/stress_test/bendiks_app/logs')
 except_num = 1
-if os.path.isfile(f'/home/u/git/stress_test/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log'):
-    os.remove(f'/home/u/git/stress_test/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
+if os.path.isfile(f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log'):
+    os.remove(f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
 
 logging.basicConfig(
-        filename=f'/home/u/git/stress_test/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log', 
+        filename=f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log', 
         level=logging.DEBUG, 
         filemode='a',
         format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
@@ -183,7 +183,7 @@ logging.error(f'{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND
 
 
 with open('conf/actual_log_path.conf', 'w') as w:
-    w.write(f'/home/u/git/stress_test/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
+    w.write(f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
 
 def write_status(status):
     with open(status_dir + '/status.txt', 'w') as wr:
@@ -335,9 +335,9 @@ if read_status() == success:
     write_status(success)
 
 #dates.conf
-create_remote_file(f'/home/u/git/stress_test/{dates_name}', f'/home/u/{dates_name}')
+create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
 #starter
-create_remote_file('/home/u/git/stress_test/starter.sh', '/home/u/starter.sh')
+create_remote_file('/home/u/git/stress_test/bendiks_app/starter.sh', '/home/u/starter.sh')
 #stand_number
 #with open('/home/u/git/stress_test/stand_number.conf', 'w') as wr:
 #    wr.write(args.ST)

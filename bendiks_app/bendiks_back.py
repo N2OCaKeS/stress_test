@@ -289,7 +289,7 @@ try:
         else: 
             save_all_output(f'Cтенд: {dates_list[i][0][3]} игнорируется\n')
             print(f'Cтенд: {dates_list[i][0][3]} игнорируется')
-    sleep(30)
+    #sleep(30)
     save_all_output(f'\nDONE\n')
     print(f'\n\033[95mDone\033[0m\n')
 except Exception as e:

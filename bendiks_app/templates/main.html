@@ -1,0 +1,654 @@
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bendiks demo</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-KK94CHFLLe+nY2dmCWGMq91rCGa5gtU4mk92HdvYe+M/SXH301p5ILy+dN9+nJOZ" crossorigin="anonymous">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+
+</head>
+<body style="background-color: #012f41 ;">
+<h3 style="background-color: #ff7b00 ; color: #1e1d22 ;">Bendiks</h3>
+<!-- <img src=http://127.0.0.1:8000/static/team.gif alt="Bendiks"> -->
+
+
+<div class="container-fluid text-center">
+  <div class="row align-items-left">
+    <div class="col-3">
+      <div class="card text-bg-dark mb-3" style="max-width: 20rem;">
+        <div class="card-header">Список подготовленных тестов</div>
+        <div class="card-body">
+          <p class="card-text">{{ test_list }}</p>
+        </div>
+      </div>
+      <div class="card text-bg-dark mb-3" style="max-width: 20rem;">
+        <div class="card-header">Подготовленный релиз</div>
+        <div class="card-body">
+          <p class="card-text">{{ releas_list }}</p>
+        </div>
+      </div>
+
+      <style>
+        .custom-bg {
+            background-color: #aab5c0; /* Здесь указывается ваш цвет фона */
+        }
+      </style>
+      <div class="card custom-bg mb-3" style="max-width: 20rem;">
+        <div class="card-header">Настройки</div>
+        <div class="card-body">
+          <form method="POST" action="/{{ main_url }}">
+            <div class="card-header">Доступные тесты</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">
+              {% for value in options %}
+                    <div style="text-align: right;">
+                      <label for="{{ value }}">{{ value }}</label>
+                      <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}"><br>
+                    </div>
+                  {% endfor %}
+            </div>
+            <div class="card-header">Доступные Релизы</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">             
+                {% for value in releases %}
+                    <div style="text-align: right;">
+                      <label for="{{ value }}">{{ value }}</label>
+                      <input type="radio" id="{{ value }}" name="releas" value="{{ value }}"><br>
+                    </div>
+                {% endfor %}
+            </div>
+            <br></br>
+            <div style="text-align: center;">
+              <button id="mainSaveButton" class="btn btn-light" type="submit">Сохранить</button>
+            </div>
+          </form>
+        </div>
+        </div>
+      </div>
+    
+
+
+
+
+
+
+      
+    <style>
+      .stands .card-header {
+        background-color: #004c6a; 
+      }
+      .accordion-button {
+        background-color: #ff7b00;
+        color: #333;
+        border-color: #496f6b;
+      }
+      .accordion-button:not(.collapsed) {
+        background-color: #bec720;
+        color: #333;
+        border-color: #de425a;
+      }
+      .accordion-body {
+        background-color: #606465;
+      }
+    </style>
+    
+    <div class="col-2 stands">
+      <div class="card text-bg-dark mb-3" style="max-width: 28rem; height: 140%;">
+        <div class="card-header">Stand 1</div>
+        <div class="card-body">
+          <div class="accordion" id="accordionstand1">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne1" aria-expanded="true" aria-controls="collapseOne">
+                  Статус
+                </button>
+              </h2>
+              <div id="collapseOne1" class="accordion-collapse collapse show" data-bs-parent="#accordionstand1">
+                <div class="accordion-body" style="text-align: left;">
+                  <strong>Статус: {{ status_stand1 }}</strong> <br>
+                  <img src={{ status_gif_stand1 }} alt="описание_изображения" width="128" height="128" style="float: right;"> <br>
+                  <br>
+                  <br>
+                  <br>
+                  <br>
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                    }
+                  </style>
+                  {% if status_stand1 == "Запущен" %}
+                    <div class="line-break">
+                     {{ stand1_sett }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo1" aria-expanded="false" aria-controls="collapseTwo">
+                  Прогресс
+                </button>
+              </h2>
+              <div id="collapseTwo1" class="accordion-collapse collapse" data-bs-parent="#accordionstand1">
+                <div class="accordion-body">
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                        text-align: left;
+                    }
+                  </style>
+                  <div class="line-break">
+                    {{ progress_stand1 }}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree1" aria-expanded="false" aria-controls="collapseThree">
+                  Лог
+                </button>
+              </h2>
+              <div id="collapseThree1" class="accordion-collapse collapse" data-bs-parent="#accordionstand1">
+                <div class="accordion-body">
+                  {{ stand1_log }}
+                </div>
+              </div>
+            </div>
+
+            <br></br>
+
+
+            <form method="POST" action="/run-command-stand1">
+              <style>
+                .btn-start {
+                  background-color: #465645;
+                  color: #ffffff;
+                }
+                .btn-start:hover {
+                  background-color: #47ca6a;
+                }
+              
+                .btn-stop {
+                  background-color: #564745;
+                  color: #ffffff;
+                }
+                .btn-stop:hover {
+                  background-color: #ca5747;
+                }
+            </style>
+            <div class="btn-group" role="group" aria-label="Basic example">
+              <button id="start-btn1" class="btn btn-start" name="command1" type="submit" value="start">Запустить</button>
+              <button id="stop-btn1" class="btn btn-stop" name="command1" type="submit" value="stop">Остановить</button>
+            </div>
+            
+            <script>
+              var status = "{{ status_stand1 }}"; // Значение переменной из сервера
+            
+              if (status === "Остановлен") {
+                document.getElementById("start-btn1").disabled = false;
+                document.getElementById("stop-btn1").disabled = true;
+              } else if (status === "Запущен") {
+                document.getElementById("start-btn1").disabled = true;
+                document.getElementById("stop-btn1").disabled = false;
+              } else {
+                document.getElementById("start-btn1").disabled = true;
+                document.getElementById("stop-btn1").disabled = false;
+              }
+            </script>
+          </form>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+
+     
+
+
+    <div class="col-2 stands">
+      <div class="card text-bg-dark mb-3" style="max-width: 28rem; height: 140%;">
+        <div class="card-header">Stand 2</div>
+        <div class="card-body">
+          <div class="accordion" id="accordionstand2">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne2" aria-expanded="true" aria-controls="collapseOne">
+                  Статус
+                </button>
+              </h2>
+              <div id="collapseOne2" class="accordion-collapse collapse show" data-bs-parent="#accordionstand2">
+                <div class="accordion-body" style="text-align: left;">
+                  <strong>Статус: {{ status_stand2 }}</strong> <br>
+                  <img src={{ status_gif_stand2 }} alt="описание_изображения" width="128" height="128" style="float: right;"> <br>
+                  <br>
+                  <br>
+                  <br>
+                  <br>
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                    }
+                  </style>
+                  {% if status_stand2 == "Запущен" %}
+                    <div class="line-break">
+                     {{ stand2_sett }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo2" aria-expanded="false" aria-controls="collapseTwo">
+                  Прогресс
+                </button>
+              </h2>
+              <div id="collapseTwo2" class="accordion-collapse collapse" data-bs-parent="#accordionstand2">
+                <div class="accordion-body">
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                        text-align: left;
+                    }
+                  </style>
+                  <div class="line-break">
+                    {{ progress_stand2 }}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree2" aria-expanded="false" aria-controls="collapseThree">
+                  Лог
+                </button>
+              </h2>
+              <div id="collapseThree2" class="accordion-collapse collapse" data-bs-parent="#accordionstand2">
+                <div class="accordion-body">
+                  {{ stand2_log }}
+                </div>
+              </div>
+            </div>
+
+            <br></br>
+
+
+            <form method="POST" action="/run-command-stand2">
+              <style>
+                .btn-start {
+                  background-color: #465645;
+                  color: #ffffff;
+                }
+                .btn-start:hover {
+                  background-color: #47ca6a;
+                }
+              
+                .btn-stop {
+                  background-color: #564745;
+                  color: #ffffff;
+                }
+                .btn-stop:hover {
+                  background-color: #ca5747;
+                }
+            </style>
+            <div class="btn-group" role="group" aria-label="Basic example">
+              <button id="start-btn2" class="btn btn-start" name="command2" type="submit" value="start">Запустить</button>
+              <button id="stop-btn2" class="btn btn-stop" name="command2" type="submit" value="stop">Остановить</button>
+            </div>
+            
+            <script>
+              var status = "{{ status_stand2 }}"; // Значение переменной из сервера
+            
+              if (status === "Остановлен") {
+                document.getElementById("start-btn2").disabled = false;
+                document.getElementById("stop-btn2").disabled = true;
+              } else if (status === "Запущен") {
+                document.getElementById("start-btn2").disabled = true;
+                document.getElementById("stop-btn2").disabled = false;
+              } else {
+                document.getElementById("start-btn2").disabled = true;
+                document.getElementById("stop-btn2").disabled = false;
+              }
+            </script>
+          </form>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+
+
+
+
+
+
+    <div class="col-2 stands">
+      <div class="card text-bg-dark mb-3" style="max-width: 28rem; height: 140%;">
+        <div class="card-header">Stand 3</div>
+        <div class="card-body">
+          <div class="accordion" id="accordionstand3">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne3" aria-expanded="true" aria-controls="collapseOne">
+                  Статус
+                </button>
+              </h2>
+              <div id="collapseOne3" class="accordion-collapse collapse show" data-bs-parent="#accordionstand3">
+                <div class="accordion-body" style="text-align: left;">
+                  <strong>Статус: {{ status_stand3 }}</strong> <br>
+                  <img src={{ status_gif_stand3 }} alt="описание_изображения" width="128" height="128" style="float: right;"> <br>
+                  <br>
+                  <br>
+                  <br>
+                  <br>
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                    }
+                  </style>
+                  {% if status_stand3 == "Запущен" %}
+                    <div class="line-break">
+                     {{ stand3_sett }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo3" aria-expanded="false" aria-controls="collapseTwo">
+                  Прогресс
+                </button>
+              </h2>
+              <div id="collapseTwo3" class="accordion-collapse collapse" data-bs-parent="#accordionstand3">
+                <div class="accordion-body">
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                        text-align: left;
+                    }
+                  </style>
+                  <div class="line-break">
+                    {{ progress_stand3 }}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree3" aria-expanded="false" aria-controls="collapseThree">
+                  Лог
+                </button>
+              </h2>
+              <div id="collapseThree3" class="accordion-collapse collapse" data-bs-parent="#accordionstand3">
+                <div class="accordion-body">
+                  {{ stand3_log }}
+                </div>
+              </div>
+            </div>
+
+            <br></br>
+
+
+            <form method="POST" action="/run-command-stand3">
+              <style>
+                .btn-start {
+                  background-color: #465645;
+                  color: #ffffff;
+                }
+                .btn-start:hover {
+                  background-color: #47ca6a;
+                }
+              
+                .btn-stop {
+                  background-color: #564745;
+                  color: #ffffff;
+                }
+                .btn-stop:hover {
+                  background-color: #ca5747;
+                }
+            </style>
+            <div class="btn-group" role="group" aria-label="Basic example">
+              <button id="start-btn3" class="btn btn-start" name="command3" type="submit" value="start">Запустить</button>
+              <button id="stop-btn3" class="btn btn-stop" name="command3" type="submit" value="stop">Остановить</button>
+            </div>
+            
+            <script>
+              var status = "{{ status_stand3 }}"; // Значение переменной из сервера
+            
+              if (status === "Остановлен") {
+                document.getElementById("start-btn3").disabled = false;
+                document.getElementById("stop-btn3").disabled = true;
+              } else if (status === "Запущен") {
+                document.getElementById("start-btn3").disabled = true;
+                document.getElementById("stop-btn3").disabled = false;
+              } else {
+                document.getElementById("start-btn3").disabled = true;
+                document.getElementById("stop-btn3").disabled = false;
+              }
+            </script>
+          </form>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+
+
+
+    <div class="col-2 stands">
+      <div class="card text-bg-dark mb-3" style="max-width: 28rem; height: 140%;">
+        <div class="card-header">Stand 4</div>
+        <div class="card-body">
+          <div class="accordion" id="accordionstand4">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne4" aria-expanded="true" aria-controls="collapseOne">
+                  Статус
+                </button>
+              </h2>
+              <div id="collapseOne4" class="accordion-collapse collapse show" data-bs-parent="#accordionstand4">
+                <div class="accordion-body" style="text-align: left;">
+                  <strong>Статус: {{ status_stand4 }}</strong> <br>
+                  <img src={{ status_gif_stand4 }} alt="описание_изображения" width="128" height="128" style="float: right;"> <br>
+                  <br>
+                  <br>
+                  <br>
+                  <br>
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                    }
+                  </style>
+                  {% if status_stand4 == "Запущен" %}
+                    <div class="line-break">
+                     {{ stand4_sett }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo4" aria-expanded="false" aria-controls="collapseTwo">
+                  Прогресс
+                </button>
+              </h2>
+              <div id="collapseTwo4" class="accordion-collapse collapse" data-bs-parent="#accordionstand4">
+                <div class="accordion-body">
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                        text-align: left;
+                    }
+                  </style>
+                  <div class="line-break">
+                    {{ progress_stand4 }}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree4" aria-expanded="false" aria-controls="collapseThree">
+                  Лог
+                </button>
+              </h2>
+              <div id="collapseThree4" class="accordion-collapse collapse" data-bs-parent="#accordionstand4">
+                <div class="accordion-body">
+                  {{ stand4_log }}
+                </div>
+              </div>
+            </div>
+
+            <br></br>
+
+
+            <form method="POST" action="/run-command-stand4">
+              <style>
+                .btn-start {
+                  background-color: #465645;
+                  color: #ffffff;
+                }
+                .btn-start:hover {
+                  background-color: #47ca6a;
+                }
+              
+                .btn-stop {
+                  background-color: #564745;
+                  color: #ffffff;
+                }
+                .btn-stop:hover {
+                  background-color: #ca5747;
+                }
+            </style>
+            <div class="btn-group" role="group" aria-label="Basic example">
+              <button id="start-btn4" class="btn btn-start" name="command4" type="submit" value="start">Запустить</button>
+              <button id="stop-btn4" class="btn btn-stop" name="command4" type="submit" value="stop">Остановить</button>
+            </div>
+            
+            <script>
+              var status = "{{ status_stand4 }}"; // Значение переменной из сервера
+            
+              if (status === "Остановлен") {
+                document.getElementById("start-btn4").disabled = false;
+                document.getElementById("stop-btn4").disabled = true;
+              } else if (status === "Запущен") {
+                document.getElementById("start-btn4").disabled = true;
+                document.getElementById("stop-btn4").disabled = false;
+              } else {
+                document.getElementById("start-btn4").disabled = true;
+                document.getElementById("stop-btn4").disabled = false;
+              }
+            </script>
+          </form>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+<!-- <div class="card text-bg-dark mb-3" style="max-width: 28rem;">
+  <div class="card-header">Список выбранных тестов</div>
+  <div class="card-body">
+    <p class="card-text">{{ test_list }}</p>
+  </div>
+</div>
+
+
+
+
+<div class="card text-bg-secondary mb-3" style="max-width: 28rem;">
+  <div class="card-header">Доступные тесты</div>
+  <div class="card-body">
+    <form method="POST" action="/">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">
+        {% for value in options %}
+          <div style="text-align: right;">
+            <label for="{{ value }}">{{ value }}</label>
+            <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}"><br>
+          </div>
+        {% endfor %}
+      </div>
+      <br></br>
+      <div style="text-align: center;">
+        <button class="btn btn-primary" type="submit">Отправить</button>
+      </div>
+    </form>
+  </div>
+</div> -->
+
+
+
+
+
+
+<!-- a class="btn btn-primary" href="#" role="button">Link</a -->
+<!-- button class="btn btn-primary" type="submit">Button</button -->
+<!-- input class="btn btn-primary" type="button" value="Input" -->
+
+
+{% if test_list %}
+<div id="alert" class="alert alert-info" role="alert" style="margin-top: 1rem; max-width: 18%; background-color: #012f41; border-color: #012f41;">
+  <img src="http://127.0.0.1:8000/static/31.gif" alt="gif image">
+  <!-- {{ test_list }}
+  {{ stand }} -->
+</div>
+{% endif %}
+
+<script>
+  setTimeout(function() {
+    document.getElementById("alert").style.display = "none";
+  }, 2000);
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ENjdO4Dr2bkBIFxQpeoTz1HIcje39Wm4jDKdf19U8gI4ddQ3GYNS7NTKfAdVQSZe" crossorigin="anonymous"></script>
+
+
+<!-- <script>
+  setTimeout(function(){
+     window.history.replaceState({}, '', '/');
+     location.reload();
+  }, 10000);
+</script> -->
+
+<script>
+  // Устанавливаем время простоя в секундах
+  var idleTime = 10; // Пример: 10 секунд
+  // Установка счетчика и обработчика событий
+  var timer;
+  function resetTimer() {
+    clearTimeout(timer);
+    timer = setTimeout(refreshPage, idleTime * 1000);
+  }
+  // Обработчики событий для сброса таймера
+  window.onload = resetTimer;
+  document.onmousemove = resetTimer;
+  document.onkeypress = resetTimer;
+  window.history.replaceState({}, '', '/{{ main_url }}');
+  // Функция обновления страницы
+  function refreshPage() {
+    window.location.reload();
+  }
+</script>
+
+
+
+<footer>
+  <img src=http://127.0.0.1:8000/static/team.gif alt="© QA Team13">
+</footer>
+</body>
+</html>

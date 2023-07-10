@@ -71,16 +71,16 @@ def index():
             real_path = rl.read()
             if 'stand1' in real_path:
                 with open(real_path, 'r') as r:
-                    stand1_log = rl.read()
+                    stand1_log = r.read()
             elif 'stand2' in real_path:
                 with open(real_path, 'r') as r:
-                    stand2_log = rl.read()
+                    stand2_log = r.read()
             elif 'stand3' in real_path:
                 with open(real_path, 'r') as r:
-                    stand3_log = rl.read()
+                    stand3_log = r.read()
             elif 'stand4' in real_path:
                 with open(real_path, 'r') as r:
-                    stand4_log = rl.read()
+                    stand4_log = r.read()
     except FileNotFoundError:
         pass
 

@@ -14,7 +14,7 @@ def generate_random_string(length):
     return rand_string * 5
 
 with open('/home/u/url', 'r') as r:
-    main_url = r.read()
+    main_url = r.read().replace('\n', '').replace('\r', '')
 with open('/home/u/up', 'r') as r:
     up = r.read()
 
@@ -22,7 +22,7 @@ options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresq
                   'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix'])
 releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1']
 #main_url = generate_random_string(60)
-red_gif = 'http://10.177.103.10:8000/static/red.gif'
+red_gif = 'http://www.bendiks.rbt/static/red.gif'
 ping_gif = 'http://10.177.103.10:8000/static/ping.gif'
 green_gif = 'http://10.177.103.10:8000/static/green.gif'
 done_gif = 'http://10.177.103.10:8000/static/done.gif'

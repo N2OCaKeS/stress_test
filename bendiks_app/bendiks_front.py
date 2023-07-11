@@ -204,11 +204,14 @@ def index():
             tests.append('No options selected')
         #tests = ', '.join(test).replace(',','')
         
-        kernel = request.form.getlist('kernel')
+        # kernel = request.form.getlist('kernel')
+        # with open('conf/kernel_args.conf', 'w') as w:
+        #     if len(kernel) == 0:
+        #         w.write('None')
+        #     else: w.write(str(kernel))
+        kernel = request.form.get('kernel')
         with open('conf/kernel_args.conf', 'w') as w:
-            if len(kernel) == 0:
-                w.write('None')
-            else: w.write(str(kernel))
+            w.write(str(kernel))
 
         releas = request.form.getlist('releas')
         with open('conf/releas_args.conf', 'w') as w:

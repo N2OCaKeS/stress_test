@@ -4,6 +4,7 @@ from flask import Flask, render_template, request, send_from_directory, redirect
 import string
 import random
 import subprocess
+from os import path, remove
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'srv_2113'
@@ -197,7 +198,11 @@ def index():
         if not tests:
             tests.append('No options selected')
         #tests = ', '.join(test).replace(',','')
+        
         kernel = request.form.get('kernel')
+        with open('conf/kernel_args.conf', 'w') as w:
+            w.write(str(kernel))
+
         releas = request.form.getlist('releas')
         with open('conf/releas_args.conf', 'w') as w:
             w.write(str(releas))
@@ -241,9 +246,8 @@ def send_static(path):
 
 
 @app.route('/run-command-stand1', methods=['POST'])
-def run_command_stand1(kernel):
+def run_command_stand1():
     process = None
-    #kernel = request.form.get('kernel')
     command = request.form.get('command1')
 
     if command == 'start':
@@ -253,6 +257,10 @@ def run_command_stand1(kernel):
             tests = r.read()
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
+        if path.isfile('conf/kernel_args.conf'):
+            with open('conf/kernel_args.conf', 'r') as r:
+                kernel = r.read()
+
         
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn {kernel}'
@@ -260,12 +268,16 @@ def run_command_stand1(kernel):
             if kernel != None:
                 w.write(command_to_run_kernel)
             else: w.write(command_to_run)
+            if path.isfile('conf/kernel_args.conf'):
+                remove('conf/kernel_args.conf')
         #process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     elif command == 'stop':
         if process is not None:
             process.terminate()
             process = None
 
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
         with open('conf/work_status_stand1.conf', 'w') as w:
             w.write('Остановлен')
 

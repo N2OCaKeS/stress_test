@@ -283,6 +283,12 @@ def run_command_stand1():
         else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
+        return redirect(url_for('index'))
+    elif command == 'ok':
+        with open('conf/work_status_stand1.conf', 'w') as w:
+            w.write('Остановлен')
+        return redirect(url_for('index'))
+    
     elif command == 'stop':
         if process is not None:
             process.terminate()
@@ -320,10 +326,13 @@ def run_command_stand2():
         else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
+        return redirect(url_for('index'))
+    
     elif command == 'ok':
         with open('conf/work_status_stand2.conf', 'w') as w:
             w.write('Остановлен')
         return redirect(url_for('index'))
+    
     elif command == 'stop':
         if process2 is not None:
             process2.terminate()

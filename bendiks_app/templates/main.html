@@ -172,42 +172,64 @@
 
             <form method="POST" action="/run-command-stand1">
               <style>
-                .btn-start {
-                  background-color: #465645;
-                  color: #ffffff;
-                }
-                .btn-start:hover {
-                  background-color: #47ca6a;
-                }
+                  .btn-start, .btn-stop, .btn-ok {
+                      color: #ffffff;
+                  }
+                  .btn-start {
+                      background-color: #465645;
+                  }
+                  .btn-start:hover {
+                      background-color: #47ca6a;
+                  }
+                  .btn-stop {
+                      background-color: #564745;
+                  }
+                  .btn-stop:hover {
+                      background-color: #ca5747;
+                  }
+                  .btn-ok {
+                      background-color: #465645;
+                  }
+                  .btn-ok:hover {
+                      background-color: #47ca6a;
+                  }
+              </style>
               
-                .btn-stop {
-                  background-color: #564745;
-                  color: #ffffff;
-                }
-                .btn-stop:hover {
-                  background-color: #ca5747;
-                }
-            </style>
-            <div class="btn-group" role="group" aria-label="Basic example">
-              <button id="start-btn1" class="btn btn-start" name="command1" type="submit" value="start">Запустить</button>
-              <button id="stop-btn1" class="btn btn-stop" name="command1" type="submit" value="stop">Остановить</button>
-            </div>
-            
-            <script>
-              var status = "{{ status_stand1 }}"; // Значение переменной из сервера
-            
-              if (status === "Остановлен") {
-                document.getElementById("start-btn1").disabled = false;
-                document.getElementById("stop-btn1").disabled = true;
-              } else if (status === "Запущен") {
-                document.getElementById("start-btn1").disabled = true;
-                document.getElementById("stop-btn1").disabled = false;
-              } else {
-                document.getElementById("start-btn1").disabled = true;
-                document.getElementById("stop-btn1").disabled = false;
-              }
-            </script>
-          </form>
+              <div class="btn-group" role="group" aria-label="Basic example">
+                  <button id="start-btn1" class="btn btn-start" name="command1" type="submit" value="start">Запустить</button>
+                  <button id="stop-btn1" class="btn btn-stop" name="command1" type="submit" value="stop">Остановить</button>
+                  <!-- <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button> -->
+              </div>
+              <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button>
+          
+              <script>
+                  var status = "{{ status_stand1 }}"; 
+          
+                  var start_btn = document.getElementById("start-btn1");
+                  var stop_btn = document.getElementById("stop-btn1");
+                  var ok_btn = document.getElementById("ok-btn1");
+          
+                  switch (status) {
+                      case "Остановлен":
+                          start_btn.disabled = false;
+                          stop_btn.disabled = true;
+                          ok_btn.style.display = "none";
+                          break;
+                      case "Запущен":
+                          start_btn.disabled = true;
+                          stop_btn.disabled = false;
+                          ok_btn.style.display = "none";
+                          break;
+                      case "Готово":
+                          start_btn.style.display = "none";
+                          stop_btn.style.display = "none";
+                          ok_btn.style.display = "inline-block";
+                          break;
+                      default:
+                          break;
+                  }
+              </script>
+            </form>
 
           </div>
         </div>
@@ -305,18 +327,19 @@
                       background-color: #ca5747;
                   }
                   .btn-ok {
-                      background-color: #128C7E;
+                      background-color: #465645;
                   }
                   .btn-ok:hover {
-                      background-color: #075E54;
+                      background-color: #47ca6a;
                   }
               </style>
               
               <div class="btn-group" role="group" aria-label="Basic example">
                   <button id="start-btn2" class="btn btn-start" name="command2" type="submit" value="start">Запустить</button>
                   <button id="stop-btn2" class="btn btn-stop" name="command2" type="submit" value="stop">Остановить</button>
-                  <button id="ok-btn2" class="btn btn-ok" style="display: none;" name="command2" type="submit" value="ok">Ок</button>
+                  <!-- <button id="ok-btn2" class="btn btn-ok" style="display: none;" name="command2" type="submit" value="ok">Ок</button> -->
               </div>
+              <button id="ok-btn2" class="btn btn-ok" style="display: none;" name="command2" type="submit" value="ok">Ок</button>
           
               <script>
                   var status = "{{ status_stand2 }}"; 

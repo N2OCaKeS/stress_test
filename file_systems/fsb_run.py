@@ -160,14 +160,15 @@ def test_cycle_status_start():
                                     basic_auth=args.BA,
                                     username=args.USER)
     zefir_table
+    return 0
 
 start_status = 0
 while start_status == 0:
     jira_start, life_start = response()
     try:
         if jira_start == 200 and life_start == 200:
-            test_cycle_status_start()
-            start_status += 1
+            if test_cycle_status_start() == 0:
+                start_status += 1
         else: 
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('start:\n')
@@ -392,14 +393,15 @@ def upload_result_status():
     statisctics = FileSystemStatistics(username=args.USER, 
                                     token=args.TOKEN)
     statisctics.update_statistics()
+    return 0
 
 end_status = 0
 while end_status == 0:
     jira_end, life_end = response()
     try:
         if jira_end == 200 and life_end == 200:
-            upload_result_status()
-            end_status += 1
+            if upload_result_status() == 0:
+                end_status += 1
         else: 
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('end:\n')

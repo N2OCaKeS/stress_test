@@ -311,8 +311,8 @@ def run_command_stand2():
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
-        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
+        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}"'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
             process2 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -349,8 +349,8 @@ def run_command_stand3():
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
-        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
+        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}"'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
             process3 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -386,8 +386,8 @@ def run_command_stand4():
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
-        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
+        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
             process4 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

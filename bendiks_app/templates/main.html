@@ -40,7 +40,7 @@
         <div class="card-header" style="background: #004c6a; color: #f8f9f9 ;">Настройки</div>
         <div class="card-body">
           <form method="POST" action="/{{ main_url }}">
-            <div class="card-header">Доступные тесты</div>
+            <div class="card-header" style="background: #9ea5a7;">Доступные тесты</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">
               {% for value in options %}
                     <div style="text-align: right;">
@@ -49,7 +49,7 @@
                     </div>
                   {% endfor %}
             </div>
-            <div class="card-header">Доступные Релизы</div>
+            <div class="card-header" style="background: #9ea5a7;">Доступные Релизы</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">             
                 {% for value in releases %}
                     <div style="text-align: right;">
@@ -58,7 +58,7 @@
                     </div>
                 {% endfor %}
             </div>
-            <div class="card-header">Доступные ядра</div>
+            <div class="card-header" style="background: #9ea5a7;">Доступные ядра</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">             
                 {% for value in kernels %}
                     <div style="text-align: right;">

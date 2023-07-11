@@ -283,11 +283,10 @@ def run_command_stand1():
         else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
-        return redirect(url_for('index'))
+    
     elif command == 'ok':
         with open('conf/work_status_stand1.conf', 'w') as w:
             w.write('Остановлен')
-        return redirect(url_for('index'))
     
     elif command == 'stop':
         if process is not None:
@@ -299,7 +298,7 @@ def run_command_stand1():
         with open('conf/work_status_stand1.conf', 'w') as w:
             w.write('Остановлен')
 
-    return index()
+    return redirect(url_for('index'))
 
 
 @app.route('/run-command-stand2', methods=['POST'])
@@ -326,12 +325,10 @@ def run_command_stand2():
         else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
-        return redirect(url_for('index'))
     
     elif command == 'ok':
         with open('conf/work_status_stand2.conf', 'w') as w:
             w.write('Остановлен')
-        return redirect(url_for('index'))
     
     elif command == 'stop':
         if process2 is not None:
@@ -371,6 +368,12 @@ def run_command_stand3():
         else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
+    
+    elif command == 'ok':
+        with open('conf/work_status_stand3.conf', 'w') as w:
+            w.write('Остановлен')
+        
+    
     elif command == 'stop':
         if process3 is not None:
             process3.terminate()
@@ -381,7 +384,7 @@ def run_command_stand3():
         with open('conf/work_status_stand3.conf', 'w') as w:
             w.write('Остановлен')
 
-    return index()
+    return redirect(url_for('index'))
 
 
 @app.route('/run-command-stand4', methods=['POST'])
@@ -408,6 +411,11 @@ def run_command_stand4():
         else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
+    
+    elif command == 'ok':
+        with open('conf/work_status_stand4.conf', 'w') as w:
+            w.write('Остановлен')
+
     elif command == 'stop':
         if process4 is not None:
             process4.terminate()
@@ -418,7 +426,7 @@ def run_command_stand4():
         with open('conf/work_status_stand4.conf', 'w') as w:
             w.write('Остановлен')
 
-    return index()
+    return redirect(url_for('index'))
 
 
 

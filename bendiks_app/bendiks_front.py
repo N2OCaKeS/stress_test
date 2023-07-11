@@ -49,7 +49,7 @@ def login():
         # Обработка логики входа пользователя
         username = request.form.get('username')
         password = request.form.get('password')
-        if username == 'u' and password == '1':
+        if username == 'u' and password == str(up):
             return redirect(f'/{main_url}')  # Перенаправление на главную страницу после успешного входа
         else:
             return render_template('login.html', error="Неверный логин или пароль")

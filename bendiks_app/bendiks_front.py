@@ -189,9 +189,8 @@ def index():
             test_list = str(r.read())
     with open('conf/releas_args.conf', 'r') as r:
             releas_list = str(r.read())
-    if path.isfile('conf/kernel_args.conf'):
-            with open('conf/kernel_args.conf', 'r') as r:
-                kernel_list = str(r.read())
+    with open('conf/kernel_args.conf', 'r') as r:
+            kernel_list = str(r.read())
 
     if request.method == 'POST':
         selected_options = request.form.getlist('options')

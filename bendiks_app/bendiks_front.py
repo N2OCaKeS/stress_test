@@ -189,8 +189,11 @@ def index():
             test_list = str(r.read())
     with open('conf/releas_args.conf', 'r') as r:
             releas_list = str(r.read())
-    with open('conf/kernel_args.conf', 'r') as r:
-            kernel_list = str(r.read())
+    try:
+        with open('conf/kernel_args.conf', 'r') as r:
+                kernel_list = str(r.read())
+    except FileNotFoundError:
+        kernel_list = 'None'
 
     if request.method == 'POST':
         selected_options = request.form.getlist('options')
@@ -201,9 +204,11 @@ def index():
             tests.append('No options selected')
         #tests = ', '.join(test).replace(',','')
         
-        kernel = request.form.get('kernel')
+        kernel = request.form.getlist('kernel')
         with open('conf/kernel_args.conf', 'w') as w:
-            w.write(str(kernel))
+            if len(kernel) == 0:
+                w.write('None')
+            else: w.write(str(kernel))
 
         releas = request.form.getlist('releas')
         with open('conf/releas_args.conf', 'w') as w:
@@ -212,7 +217,7 @@ def index():
         with open('conf/tests_args.conf', 'w') as w:
             w.write(str(tests))
         
-        return index()
+        return redirect(url_for('index'))
             
 
     return render_template('main.html', 
@@ -267,7 +272,7 @@ def run_command_stand1():
                 kernel = r.read()
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
-        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn {kernel}'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
         with open('TEST', 'w') as w:
             if kernel != 'None':
                 w.write(command_to_run_kernel)

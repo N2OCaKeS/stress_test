@@ -190,54 +190,55 @@ try:
             save_all_output(f'Cтенд: {dates_list[i][0][3]}\n')
             if tests[dates_list[i][1]] in __test_list:
                 if args.KERNEL:
-                    if dates_list[i][0][2] == args.KERNEL:
-                        save_all_output(f'Ядро: {args.KERNEL}\n')
-                        print(f'Ядро: \033[92m{args.KERNEL}\033[0m')
-                        save_all_output(f'Тест: {tests[dates_list[i][1]]}\n')
-                        print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
-                        kn = f'-kn {args.KERNEL}'
-                        tcyc = f'-tcyc {dates_list[i][0][0]}_{dates_list[i][0][1]}_{args.KERNEL}_{dates_list[i][0][3]}'
-                        sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
-                        rs = f'-rs {dates_list[i][0][0]}'
-                        test = f'-test "{tests[dates_list[i][1]]}"' 
-                        mode = f'-mode {dates_list[i][0][1]}'
-                        stand = f'-stand {dates_list[i][0][3]}'
-                        tcas = f'-tcas "{dates_list[i][1]}"' 
-                        branch = f'-branch {branches[dates_list[i][1]]}' 
-                        cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
-                        pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
-                        testnum = f'-testnum {i + 1}'
-                        psql = '-ps psql'
-                        if tests[dates_list[i][1]] == 'auditd-p':
-                            testlist = f'-aud psaud'
-                        elif tests[dates_list[i][1]] == 'auditd-f':
-                            testlist = f'-aud fileaud'
-                        elif tests[dates_list[i][1]] == 'auditd-u':
-                            testlist = f'-aud useraud'
-                        save_all_output('Выполняется...\n')
-                        print('Выполняется...')
-                        #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
-                        if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
-                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
-                        elif tests[dates_list[i][1]].startswith('auditd'):
-                            subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                    for num in args.KERNEL:
+                        if dates_list[i][0][2] == args.KERNEL:
+                            save_all_output(f'Ядро: {args.KERNEL}\n')
+                            print(f'Ядро: \033[92m{args.KERNEL}\033[0m')
+                            save_all_output(f'Тест: {tests[dates_list[i][1]]}\n')
+                            print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
+                            kn = f'-kn {args.KERNEL}'
+                            tcyc = f'-tcyc {dates_list[i][0][0]}_{dates_list[i][0][1]}_{args.KERNEL}_{dates_list[i][0][3]}'
+                            sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
+                            rs = f'-rs {dates_list[i][0][0]}'
+                            test = f'-test "{tests[dates_list[i][1]]}"' 
+                            mode = f'-mode {dates_list[i][0][1]}'
+                            stand = f'-stand {dates_list[i][0][3]}'
+                            tcas = f'-tcas "{dates_list[i][1]}"' 
+                            branch = f'-branch {branches[dates_list[i][1]]}' 
+                            cti = f'-cti {cycle_tree_index[dates_list[i][0][0]]}'
+                            pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
+                            testnum = f'-testnum {i + 1}'
+                            psql = '-ps psql'
+                            if tests[dates_list[i][1]] == 'auditd-p':
+                                testlist = f'-aud psaud'
+                            elif tests[dates_list[i][1]] == 'auditd-f':
+                                testlist = f'-aud fileaud'
+                            elif tests[dates_list[i][1]] == 'auditd-u':
+                                testlist = f'-aud useraud'
+                            save_all_output('Выполняется...\n')
+                            print('Выполняется...')
+                            #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
+                            if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                            elif tests[dates_list[i][1]].startswith('auditd'):
+                                subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
+                                            {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                            else: 
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                                {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                            end_time = datetime.datetime.now().replace(microsecond=0)
+                            save_all_output('Выполнен\n')
+                            print('Выполнен')
+                            save_all_output(f'Время завершения: {end_time}\n')
+                            #save_status_output(f'Время завершения: {end_time}\n')
+                            print(f'Время завершения: {end_time}')
+                            save_all_output(f'Затрачено времени: {end_time - start_time}\n')
+                            print(f'Затрачено времени: {end_time - start_time}')
+                            #save_status_output(f'Затрачено времени: {end_time - start_time}\n')
                         else: 
-                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum}', shell=True)
-                        end_time = datetime.datetime.now().replace(microsecond=0)
-                        save_all_output('Выполнен\n')
-                        print('Выполнен')
-                        save_all_output(f'Время завершения: {end_time}\n')
-                        #save_status_output(f'Время завершения: {end_time}\n')
-                        print(f'Время завершения: {end_time}')
-                        save_all_output(f'Затрачено времени: {end_time - start_time}\n')
-                        print(f'Затрачено времени: {end_time - start_time}')
-                        #save_status_output(f'Затрачено времени: {end_time - start_time}\n')
-                    else: 
-                        save_all_output(f'Ядро: {dates_list[i][0][2]} игнорируется\n')
-                        print(f'Ядро: \033[91m{dates_list[i][0][2]}\033[0m игнорируется')
+                            save_all_output(f'Ядро: {dates_list[i][0][2]} игнорируется\n')
+                            print(f'Ядро: \033[91m{dates_list[i][0][2]}\033[0m игнорируется')
                 else:
                     save_all_output(f'Ядро: {dates_list[i][0][2]}\n')
                     print(f'Ядро: {dates_list[i][0][2]}')

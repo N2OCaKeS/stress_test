@@ -189,6 +189,9 @@ def index():
             test_list = str(r.read())
     with open('conf/releas_args.conf', 'r') as r:
             releas_list = str(r.read())
+    if path.isfile('conf/kernel_args.conf'):
+            with open('conf/kernel_args.conf', 'r') as r:
+                kernel_list = str(r.read())
 
     if request.method == 'POST':
         selected_options = request.form.getlist('options')
@@ -209,12 +212,15 @@ def index():
         
         with open('conf/tests_args.conf', 'w') as w:
             w.write(str(tests))
+        
+        return index()
             
 
     return render_template('main.html', 
                            options=options, 
                            test_list=test_list,
-                           releas_list=releas_list, 
+                           releas_list=releas_list,
+                           kernel_list=kernel_list, 
                            releases=releases, 
                            stand=stand,
                            kernels=kernels,
@@ -261,11 +267,10 @@ def run_command_stand1():
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn {kernel}'
         with open('TEST', 'w') as w:
-            if kernel != None:
+            if kernel != 'None':
                 w.write(command_to_run_kernel)
             else: w.write(command_to_run)
             if path.isfile('conf/kernel_args.conf'):

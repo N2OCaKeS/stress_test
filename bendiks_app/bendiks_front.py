@@ -21,6 +21,7 @@ with open('/home/u/up', 'r') as r:
 options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 
                   'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix'])
 releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1']
+kernels = ['5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency']
 #main_url = generate_random_string(60)
 red_gif = 'http://10.177.103.10:8000/static/red.gif'
 ping_gif = 'http://10.177.103.10:8000/static/ping.gif'
@@ -49,7 +50,7 @@ def login():
         # Обработка логики входа пользователя
         username = request.form.get('username')
         password = request.form.get('password')
-        if username == 'u' and password == str(up):
+        if username == 'u' and password == str(up).replace('\n', '').replace('\r', ''):
             return redirect(f'/{main_url}')  # Перенаправление на главную страницу после успешного входа
         else:
             return render_template('login.html', error="Неверный логин или пароль")
@@ -211,6 +212,7 @@ def index():
                            releas_list=releas_list, 
                            releases=releases, 
                            stand=stand,
+                           kernels=kernels,
                            status_stand1=status_stand1,
                            status_stand2=status_stand2,
                            status_stand3=status_stand3,
@@ -241,6 +243,7 @@ def send_static(path):
 @app.route('/run-command-stand1', methods=['POST'])
 def run_command_stand1():
     process = None
+    kernel = request.form.get('kernel')
     command = request.form.get('command1')
 
     if command == 'start':
@@ -252,8 +255,11 @@ def run_command_stand1():
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
         
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
-        #print(command_to_run)
-        process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn {kernel}'
+        if kernel != None:
+            print(command_to_run_kernel)
+        else: print(command_to_run)
+        #process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     elif command == 'stop':
         if process is not None:
             process.terminate()
@@ -363,6 +369,6 @@ def run_command_stand4():
 
 
 
-#if __name__ == '__main__':
-    #app.run(host='127.0.0.1', port=8000, debug=True)
+# if __name__ == '__main__':
+#     app.run(host='127.0.0.1', port=8000, debug=True)
 

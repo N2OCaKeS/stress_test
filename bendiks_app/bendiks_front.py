@@ -201,7 +201,7 @@ def index():
         
         tests = [option for option in options if option in selected_options]
         if not tests:
-            tests.append('No options selected')
+            tests = 'Тесты не выбраны'
         #tests = ', '.join(test).replace(',','')
         
         # kernel = request.form.getlist('kernel')
@@ -216,6 +216,8 @@ def index():
         releas = request.form.getlist('releas')
         with open('conf/releas_args.conf', 'w') as w:
             w.write(str(releas))
+        if not releas:
+            releas = 'Релиз не выбран'
         
         with open('conf/tests_args.conf', 'w') as w:
             w.write(str(tests))
@@ -318,6 +320,10 @@ def run_command_stand2():
         else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
+    elif command == 'ok':
+        with open('conf/work_status_stand2.conf', 'w') as w:
+            w.write('Остановлен')
+        return redirect(url_for('index'))
     elif command == 'stop':
         if process2 is not None:
             process2.terminate()
@@ -328,7 +334,7 @@ def run_command_stand2():
         with open('conf/work_status_stand2.conf', 'w') as w:
             w.write('Остановлен')
 
-    return index()
+    return redirect(url_for('index'))
 
 
 

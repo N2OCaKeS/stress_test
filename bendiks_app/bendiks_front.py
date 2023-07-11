@@ -197,7 +197,7 @@ def index():
         if not tests:
             tests.append('No options selected')
         #tests = ', '.join(test).replace(',','')
-
+        kernel = request.form.get('kernel')
         releas = request.form.getlist('releas')
         with open('conf/releas_args.conf', 'w') as w:
             w.write(str(releas))
@@ -241,9 +241,9 @@ def send_static(path):
 
 
 @app.route('/run-command-stand1', methods=['POST'])
-def run_command_stand1():
+def run_command_stand1(kernel):
     process = None
-    kernel = request.form.get('kernel')
+    #kernel = request.form.get('kernel')
     command = request.form.get('command1')
 
     if command == 'start':
@@ -256,9 +256,10 @@ def run_command_stand1():
         
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn {kernel}'
-        if kernel != None:
-            print(command_to_run_kernel)
-        else: print(command_to_run)
+        with open('TEST', 'w') as w:
+            if kernel != None:
+                w.write(command_to_run_kernel)
+            else: w.write(command_to_run)
         #process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     elif command == 'stop':
         if process is not None:

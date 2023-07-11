@@ -273,13 +273,11 @@ def run_command_stand1():
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
-        with open('TEST', 'w') as w:
-            if kernel != 'None':
-                w.write(command_to_run_kernel)
-            else: w.write(command_to_run)
-            if path.isfile('conf/kernel_args.conf'):
-                remove('conf/kernel_args.conf')
-        #process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if kernel != 'None':
+            process = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
     elif command == 'stop':
         if process is not None:
             process.terminate()
@@ -306,28 +304,24 @@ def run_command_stand2():
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
         
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}"'
-        print(command_to_run)
-        process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # stdout, stderr = process2.communicate()
-        # if process2.returncode != 0:
-        #     print("Статус ошибки:", process2.returncode)
-        #     print("Текст ошибки:", stderr.decode("utf-8"))
-        #     if process2 is not None:
-        #         process2.terminate()
-        #         process2 = None
-        #         with open('conf/work_status_stand2.conf', 'w') as w:
-        #             w.write('Остановлен')
-        # else: 
-        #     with open('conf/work_status_stand2.conf', 'w') as w:
-        #             w.write('Остановлен')
-        
+        if path.isfile('conf/kernel_args.conf'):
+            with open('conf/kernel_args.conf', 'r') as r:
+                kernel = r.read()
 
+        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
+        if kernel != 'None':
+            process2 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
     elif command == 'stop':
         if process2 is not None:
             process2.terminate()
             process2 = None
 
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
         with open('conf/work_status_stand2.conf', 'w') as w:
             w.write('Остановлен')
 
@@ -348,14 +342,24 @@ def run_command_stand3():
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
         
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}"'
-        #print(command_to_run)
-        process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if path.isfile('conf/kernel_args.conf'):
+            with open('conf/kernel_args.conf', 'r') as r:
+                kernel = r.read()
+
+        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
+        if kernel != 'None':
+            process3 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
     elif command == 'stop':
         if process3 is not None:
             process3.terminate()
             process3 = None
 
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
         with open('conf/work_status_stand3.conf', 'w') as w:
             w.write('Остановлен')
 
@@ -375,14 +379,24 @@ def run_command_stand4():
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
         
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
-        #print(command_to_run)
-        process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if path.isfile('conf/kernel_args.conf'):
+            with open('conf/kernel_args.conf', 'r') as r:
+                kernel = r.read()
+
+        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
+        if kernel != 'None':
+            process4 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
     elif command == 'stop':
         if process4 is not None:
             process4.terminate()
             process4 = None
 
+        if path.isfile('conf/kernel_args.conf'):
+            remove('conf/kernel_args.conf')
         with open('conf/work_status_stand4.conf', 'w') as w:
             w.write('Остановлен')
 

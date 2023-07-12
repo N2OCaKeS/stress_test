@@ -335,6 +335,9 @@ if args.RELEASE != 'debian10':
         while socket_available() != 0:
             sleep(30)
         write_status(success)
+else: 
+    while socket_available() != 0:
+        sleep(30)
 
 #dates.conf
 create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')

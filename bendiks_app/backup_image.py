@@ -182,7 +182,7 @@ logging.error('\n\n\nStart logging\n')
 logging.error(f'{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}\n\n\n')
 
 
-with open('conf/actual_log_path.conf', 'w') as w:
+with open(f'conf/actual_log_path_{args.STAND}.conf', 'w') as w:
     w.write(f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
 
 def write_status(status):

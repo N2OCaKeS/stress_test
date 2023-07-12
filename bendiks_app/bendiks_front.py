@@ -69,20 +69,22 @@ def index():
     stand4_log = ''
     
     try:
-        with open('conf/actual_log_path.conf', 'r') as rl:
-            real_path = rl.read()
-            if 'stand1' in real_path:
-                with open(real_path, 'r') as r:
-                    stand1_log = r.read()
-            elif 'stand2' in real_path:
-                with open(real_path, 'r') as r:
-                    stand2_log = r.read()
-            elif 'stand3' in real_path:
-                with open(real_path, 'r') as r:
-                    stand3_log = r.read()
-            elif 'stand4' in real_path:
-                with open(real_path, 'r') as r:
-                    stand4_log = r.read()
+        with open('conf/actual_log_path_stand1.conf', 'r') as rl:
+            real_path1 = rl.read()
+            with open(real_path1, 'r') as r:
+                stand1_log = r.read()
+        with open('conf/actual_log_path_stand2.conf', 'r') as rl:
+            real_path2 = rl.read()
+            with open(real_path2, 'r') as r:
+                stand2_log = r.read()
+        with open('conf/actual_log_path_stand3.conf', 'r') as rl:
+            real_path3 = rl.read()
+            with open(real_path3, 'r') as r:
+                stand3_log = r.read()
+        with open('conf/actual_log_path_stand4.conf', 'r') as rl:
+            real_path4 = rl.read()
+            with open(real_path4, 'r') as r:
+                stand4_log = r.read()
     except FileNotFoundError:
         pass
 

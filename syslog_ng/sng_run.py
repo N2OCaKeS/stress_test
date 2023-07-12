@@ -18,7 +18,7 @@ import libs.libscanner as libscanner
 from time import sleep, ctime
 from datetime import datetime
 from sklearn import preprocessing
-from os import chmod, mkdir, getcwd
+from os import chmod, mkdir, getcwd, path
 from find_err_in_logs import collecting_logs
 from libs.libsng import (astra_version, 
                          check_service_status, 
@@ -419,3 +419,13 @@ if __name__ == '__main__':
                 err.write('\n\n')
                 end_status += 1
                 
+if path.isfile('libs/zefir.log'):
+    with open('libs/zefir.log', 'r') as r:
+        zefir_log = r.read()
+if path.isfile('JIRA_ERROR.log'):
+    with open('JIRA_ERROR.log', 'r') as r:
+        jira_log = r.read()
+print('\n\n\nZefir-log\n')
+print(zefir_log)
+print('\n\n\nJira-log\n')
+print(jira_log)

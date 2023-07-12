@@ -32,6 +32,10 @@ status_stand1 = '-'
 status_stand2 = '-'
 status_stand3 = '-'
 status_stand4 = '-'
+process = None
+process2 = None
+process3 = None
+process4 = None
 
 
 
@@ -264,7 +268,7 @@ def send_static(path):
 
 @app.route('/run-command-stand1', methods=['POST'])
 def run_command_stand1():
-    process = None
+    global process
     command = request.form.get('command1')
 
     if command == 'start':
@@ -305,7 +309,7 @@ def run_command_stand1():
 
 @app.route('/run-command-stand2', methods=['POST'])
 def run_command_stand2():
-    process2 = None
+    global process2
     command = request.form.get('command2')
 
     if command == 'start':
@@ -348,7 +352,7 @@ def run_command_stand2():
 
 @app.route('/run-command-stand3', methods=['POST'])
 def run_command_stand3():
-    process3 = None
+    global process3
     command = request.form.get('command3')
 
     if command == 'start':
@@ -391,7 +395,7 @@ def run_command_stand3():
 
 @app.route('/run-command-stand4', methods=['POST'])
 def run_command_stand4():
-    process4 = None
+    global process4
     command = request.form.get('command4')
 
     if command == 'start':

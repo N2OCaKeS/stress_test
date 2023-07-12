@@ -307,12 +307,12 @@ if comm_and_log(clonezilla_command) == 0:
     write_status(success)
 else: write_status(fail)
 
-if args.RELEASE != 'debian10':
-    if read_status() == success:
-        write_status(in_prog)
-        comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
-                    -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
-        sleep(3)
+if read_status() == success:
+    write_status(in_prog)
+    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
+    sleep(3)
+    if args.RELEASE != 'debian10':
         holder = 0
         while holder == 0:
             try:
@@ -324,7 +324,7 @@ if args.RELEASE != 'debian10':
                 sleep(60)
         comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                     u@' + stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
-        write_status(success)
+    write_status(success)
 
 if args.RELEASE != 'debian10':
     if read_status() == success:

@@ -10,10 +10,14 @@ stands_ip = {
 
 modes = {
     'orel':'0',
-    'smolensk':'2'
+    'smolensk':'2',
+    '10':'10'
 }
 
 parent_page_list = {
+    'debian':{'postgresql':'Debian ⬝ PostgreSQL',
+              'postgresql-sm':'Debian ⬝ PostgreSQL'
+             },
     '1.7.4.UU.1':{'postgresql':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'XFS':'1.7.4.UU.1 ⬝ Файловые системы',
@@ -115,6 +119,7 @@ branches = {
 
 
 cycle_tree_index = {
+    'debian':'2967',
     '1.7.4':'2773',
     '1.7.3':'2774',
     '1.7.3.UU.1':'2745',

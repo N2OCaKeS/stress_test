@@ -270,6 +270,7 @@ def send_static(path):
 def run_command_stand1():
     global process
     command = request.form.get('command1')
+    kernel = None
 
     if command == 'start':
         with open('conf/work_status_stand1.conf', 'w') as w:
@@ -311,6 +312,7 @@ def run_command_stand1():
 def run_command_stand2():
     global process2
     command = request.form.get('command2')
+    kernel = None
 
     if command == 'start':
         with open('conf/work_status_stand2.conf', 'w') as w:
@@ -354,6 +356,7 @@ def run_command_stand2():
 def run_command_stand3():
     global process3
     command = request.form.get('command3')
+    kernel = None
 
     if command == 'start':
         with open('conf/work_status_stand3.conf', 'w') as w:
@@ -397,6 +400,7 @@ def run_command_stand3():
 def run_command_stand4():
     global process4
     command = request.form.get('command4')
+    kernel = None
 
     if command == 'start':
         with open('conf/work_status_stand4.conf', 'w') as w:

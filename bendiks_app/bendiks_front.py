@@ -4,7 +4,8 @@ from flask import Flask, render_template, request, send_from_directory, redirect
 import string
 import random
 import subprocess
-from os import path, remove
+from os import path, remove, kill
+import signal
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'srv_2113'
@@ -32,10 +33,10 @@ status_stand1 = '-'
 status_stand2 = '-'
 status_stand3 = '-'
 status_stand4 = '-'
-process = None
-process2 = None
-process3 = None
-process4 = None
+pid = None
+pid2 = None
+pid3 = None
+pid4 = None
 
 
 
@@ -268,7 +269,7 @@ def send_static(path):
 
 @app.route('/run-command-stand1', methods=['POST'])
 def run_command_stand1():
-    global process
+    global pid
     command = request.form.get('command1')
     kernel = None
 
@@ -288,6 +289,7 @@ def run_command_stand1():
         if kernel != 'None':
             process = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pid = process.pid
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -296,6 +298,7 @@ def run_command_stand1():
             w.write('Остановлен')
     
     elif command == 'stop':
+        kill(pid, signal.SIGKILL)
         if process is not None:
             process.terminate()
             process = None
@@ -331,6 +334,7 @@ def run_command_stand2():
         if kernel != 'None':
             process2 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pid2 = process2.pid
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -339,6 +343,7 @@ def run_command_stand2():
             w.write('Остановлен')
     
     elif command == 'stop':
+        kill(pid2, signal.SIGKILL)
         if process2 is not None:
             process2.terminate()
             process2 = None
@@ -375,6 +380,7 @@ def run_command_stand3():
         if kernel != 'None':
             process3 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pid3 = process3.pid
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -384,6 +390,7 @@ def run_command_stand3():
         
     
     elif command == 'stop':
+        kill(pid3, signal.SIGKILL)
         if process3 is not None:
             process3.terminate()
             process3 = None
@@ -419,6 +426,7 @@ def run_command_stand4():
         if kernel != 'None':
             process4 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pid4 = process4.pid
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -427,6 +435,7 @@ def run_command_stand4():
             w.write('Остановлен')
 
     elif command == 'stop':
+        kill(pid4, signal.SIGKILL)
         if process4 is not None:
             process4.terminate()
             process4 = None

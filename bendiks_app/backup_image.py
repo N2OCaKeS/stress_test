@@ -307,32 +307,34 @@ if comm_and_log(clonezilla_command) == 0:
     write_status(success)
 else: write_status(fail)
 
-if read_status() == success:
-    write_status(in_prog)
-    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
-                 -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
-    sleep(3)
-    holder = 0
-    while holder == 0:
-        try:
-            if grub_default(args.KERNEL, stand_ip) == 0:
-                holder += 1
-            else: sleep(60)
-        except Exception as e:
-            logging.error(e)
-            sleep(60)
-    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                 u@' + stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
-    write_status(success)
+if args.RELEASE != 'debian.10':
+    if read_status() == success:
+        write_status(in_prog)
+        comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
+                    -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
+        sleep(3)
+        holder = 0
+        while holder == 0:
+            try:
+                if grub_default(args.KERNEL, stand_ip) == 0:
+                    holder += 1
+                else: sleep(60)
+            except Exception as e:
+                logging.error(e)
+                sleep(60)
+        comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                    u@' + stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
+        write_status(success)
 
-if read_status() == success:
-    write_status(in_prog)
-    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                 u@' + stand_ip + ' sudo reboot')
-    sleep(3)
-    while socket_available() != 0:
-        sleep(30)
-    write_status(success)
+if args.RELEASE != 'debian.10':
+    if read_status() == success:
+        write_status(in_prog)
+        comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                    u@' + stand_ip + ' sudo reboot')
+        sleep(3)
+        while socket_available() != 0:
+            sleep(30)
+        write_status(success)
 
 #dates.conf
 create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')

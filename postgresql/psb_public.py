@@ -4,6 +4,7 @@ from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.libstatistics import PSQLStatistics2
 from time import ctime, sleep
 from libs.libpsb import response
+from os import path
 
 with open('psb_public_args.json', 'r') as r:
     public_args = json.load(r)
@@ -59,3 +60,13 @@ while end_status == 0:
             err.write('\n\n')
             end_status += 1
 
+if path.isfile('libs/zefir.log'):
+    with open('libs/zefir.log', 'r') as r:
+        zefir_log = r.read()
+if path.isfile('JIRA_ERROR.log'):
+    with open('JIRA_ERROR.log', 'r') as r:
+        jira_log = r.read()
+print('\n\n\nZefir-log\n')
+print(zefir_log)
+print('\n\n\nJira-log\n')
+print(jira_log)

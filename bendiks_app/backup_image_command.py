@@ -2,6 +2,8 @@
 
 cz_comm = {
     'stand1':{
+        'debian.10':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.201" \
+                -l ru_RU.UTF-8 startdisk restore stand-1-qa-team-13-debian10 nvme0n1',
         '1.7.4.UU.1':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.201" \
                 -l ru_RU.UTF-8 startdisk restore stand-1-qa-team-13-174UU1rc4 nvme0n1',
         '1.7.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.201" \

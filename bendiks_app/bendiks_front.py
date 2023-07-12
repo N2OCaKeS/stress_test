@@ -21,7 +21,7 @@ with open('/home/u/up', 'r') as r:
 
 options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 
                   'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix'])
-releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1']
+releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', 'debian10']
 kernels = ['5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency']
 #main_url = generate_random_string(60)
 red_gif = 'http://10.177.103.10:8000/static/red.gif'

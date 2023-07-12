@@ -313,7 +313,7 @@ def run_command_stand1():
 
 @app.route('/run-command-stand2', methods=['POST'])
 def run_command_stand2():
-    global process2
+    global pid2
     command = request.form.get('command2')
     kernel = None
 
@@ -359,7 +359,7 @@ def run_command_stand2():
 
 @app.route('/run-command-stand3', methods=['POST'])
 def run_command_stand3():
-    global process3
+    global pid3
     command = request.form.get('command3')
     kernel = None
 
@@ -405,7 +405,7 @@ def run_command_stand3():
 
 @app.route('/run-command-stand4', methods=['POST'])
 def run_command_stand4():
-    global process4
+    global pid4
     command = request.form.get('command4')
     kernel = None
 

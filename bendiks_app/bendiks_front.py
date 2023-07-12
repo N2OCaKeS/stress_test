@@ -298,7 +298,8 @@ def run_command_stand1():
             w.write('Остановлен')
     
     elif command == 'stop':
-        kill(pid, signal.SIGKILL)
+        if pid is not None:
+            kill(pid, signal.SIGKILL)
         if process is not None:
             process.terminate()
             process = None
@@ -343,7 +344,8 @@ def run_command_stand2():
             w.write('Остановлен')
     
     elif command == 'stop':
-        kill(pid2, signal.SIGKILL)
+        if pid2 is not None:
+            kill(pid2, signal.SIGKILL)
         if process2 is not None:
             process2.terminate()
             process2 = None
@@ -390,7 +392,8 @@ def run_command_stand3():
         
     
     elif command == 'stop':
-        kill(pid3, signal.SIGKILL)
+        if pid3 is not None:
+            kill(pid3, signal.SIGKILL)
         if process3 is not None:
             process3.terminate()
             process3 = None
@@ -435,7 +438,8 @@ def run_command_stand4():
             w.write('Остановлен')
 
     elif command == 'stop':
-        kill(pid4, signal.SIGKILL)
+        if pid4 is not None:
+            kill(pid4, signal.SIGKILL)
         if process4 is not None:
             process4.terminate()
             process4 = None

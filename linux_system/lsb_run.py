@@ -319,3 +319,14 @@ def main():
                 end_status += 1
 
 main()
+
+if path.isfile('libs/zefir.log'):
+    with open('libs/zefir.log', 'r') as r:
+        zefir_log = r.read()
+if path.isfile('JIRA_ERROR.log'):
+    with open('JIRA_ERROR.log', 'r') as r:
+        jira_log = r.read()
+print('\n\n\nZefir-log\n')
+print(zefir_log)
+print('\n\n\nJira-log\n')
+print(jira_log)

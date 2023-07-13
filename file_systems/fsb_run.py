@@ -176,6 +176,11 @@ while start_status == 0:
                 err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
                 err.write('---------' * 25)
                 err.write('\n\n')
+                print('start:\n')
+                print(ctime())
+                print(f'jira_status = {jira_start}\nlife_status = {life_start}')
+                print('---------' * 25)
+                print('\n\n')
             sleep(60)
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
@@ -184,6 +189,11 @@ while start_status == 0:
             err.write(str(e))
             err.write('---------' * 25)
             err.write('\n\n')
+            print('start:\n')
+            print(ctime())
+            print(str(e))
+            print('---------' * 25)
+            print('\n\n')
             start_status += 1
 
 '''

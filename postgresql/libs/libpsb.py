@@ -45,10 +45,6 @@ def cmd(command, err=subprocess.DEVNULL, out=subprocess.DEVNULL):
     subprocess.run(command, shell=True, stderr=err, stdout=out)
 
 
-def debian_version():
-
-
-
 def astra_version():
     version = []
     # astra_digit_version = subprocess.run("cat /etc/os-release | grep '^VERSION_ID'",

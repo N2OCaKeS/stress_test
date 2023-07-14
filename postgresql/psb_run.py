@@ -207,11 +207,19 @@ if args.DB_PREPARE:
     '''
         Настроить машину, инициализировать тестовую БД
     '''
-    subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file}'.format(dir=SCRIPT_DIR,
+    if 'debian' in args.NPAGE:
+        subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {deb}'.format(dir=SCRIPT_DIR,
+                                                                                    stand=args.STAND,
+                                                                                    init_file='psb_init.sql',
+                                                                                    deb='debian'),
+                                                                                    shell=True,
+                                                                                    stderr=subprocess.DEVNULL)
+    else:
+        subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file}'.format(dir=SCRIPT_DIR,
                                                                                     stand=args.STAND,
                                                                                     init_file='psb_init.sql'),
-                   shell=True,
-                   stderr=subprocess.DEVNULL)
+                                                                                    shell=True,
+                                                                                    stderr=subprocess.DEVNULL)
 
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':
@@ -243,10 +251,17 @@ if args.TEST_LIST == 'base':
             print('# INFO # --- clients count {}'.format(str(clients)))
             with open(REPORT_FILENAME, 'a+') as report_file:
                 report_file.write(str(clients))
-            test = Test(scale=scale_factor,
-                        trs=transactions,
-                        ths=threads,
-                        cls=clients)
+            if 'debian' in args.NPAGE:
+                test = Test(scale=scale_factor,
+                            trs=transactions,
+                            ths=threads,
+                            cls=clients,
+                            debian=True)
+            else: 
+                test = Test(scale=scale_factor,
+                            trs=transactions,
+                            ths=threads,
+                            cls=clients)
             print(test.run_test())
             if args.SYSMON:
                 file_sysmon = open(f'{DATA_SYSMON_FILENAME}', 'a+')

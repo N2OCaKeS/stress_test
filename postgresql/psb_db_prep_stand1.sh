@@ -208,7 +208,11 @@ do
   cp $MAIN_DIR/sql/$sql_script /tmp/$sql_script
   cd /tmp
   chmod 644 /tmp/$sql_script
-  su -c "psql -p $port -f /tmp/$sql_script" postgres
+  if [[ $2 -eq 'debian' ]]; then
+    sudo su -c "psql $port -f /tmp/$sql_script" postgres
+  else
+    su -c "psql -p $port -f /tmp/$sql_script" postgres
+  fi
   rm /tmp/$sql_script
   cd - &> /dev/null
 done

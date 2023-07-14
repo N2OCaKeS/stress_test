@@ -26,7 +26,8 @@ class Test:
                  ths=10,
                  trs=10,
                  cls=1,
-                 mac_sql_trn=MAC_SQL_TRANSACTION):
+                 mac_sql_trn=MAC_SQL_TRANSACTION,
+                 debian=False):
 
         logging.basicConfig(filename=LOG_FILENAME,
                             filemode="a+",
@@ -42,6 +43,11 @@ class Test:
         self.transactions = trs
         self.clients = cls
         self.mac_sql_script = mac_sql_trn
+        self.debian = debian
+        self.pgbench_cmd_deb = "su -c 'pgbench -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,                       
+                                                                                            t=self.transactions,
+                                                                                            j=self.threads,
+                                                                                            c=self.clients)
         self.pgbench_cmd = "su -c 'pgbench -h localhost -p {p} -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
                                                                                                            p=self.port,
                                                                                                            t=self.transactions,
@@ -63,7 +69,10 @@ class Test:
         init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor)
         result = '# TEST # --- '
         try:
-            decode_std = pgbench(self.pgbench_cmd)
+            if self.debian == True:
+                decode_std = pgbench(self.pgbench_cmd_deb)
+            else:
+                decode_std = pgbench(self.pgbench_cmd)
             out = os.linesep.join([s for s in decode_std[0].splitlines() if s])
             self.logger.info(out)
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])

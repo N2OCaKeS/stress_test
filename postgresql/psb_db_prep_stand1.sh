@@ -203,13 +203,13 @@ if [ $? -eq 0 ]; then
     mount /dev/${STORAGE}1 /var/lib/postgresql/11/
 fi
 
-for port in $(pg_lsclusters -h | gawk '{print $3}');
+for port in $(pg_lsclusters -h | awk '{print $3}');
 do
   cp $MAIN_DIR/sql/$sql_script /tmp/$sql_script
   cd /tmp
   chmod 644 /tmp/$sql_script
   if [[ $2 -eq 'debian' ]]; then
-    sudo su -c "psql $port -f /tmp/$sql_script" postgres
+    sudo su -c "psql -p $port -f /tmp/$sql_script" postgres
   else
     su -c "psql -p $port -f /tmp/$sql_script" postgres
   fi

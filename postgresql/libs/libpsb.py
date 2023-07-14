@@ -70,6 +70,7 @@ def astra_version():
         with open("/etc/debian_version", "r") as file:
             debian_version = file.read()
         version.append(debian_version.strip('\n'))
+        return (version[0], 'orel')
     else:
         with open("/etc/astra_version", "r") as file:
             astra_update_version = file.read()

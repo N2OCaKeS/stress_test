@@ -67,7 +67,10 @@ class Test:
             tpcb-like simple-update и select-only
             Работает.
         '''
-        init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor)
+        if self.debian == True:
+            init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, self.debian)
+        else:
+            init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor)
         result = '# TEST # --- '
         try:
             if self.debian == True:

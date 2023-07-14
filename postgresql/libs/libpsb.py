@@ -109,17 +109,24 @@ def init_test_tables(database,
                      tablespace,
                      port,
                      t_scale_factor,
-                     t_filling_factor):
+                     t_filling_factor,
+                     debian=False):
 
     '''
         pgbench -i создаёт четыре таблицы
         pgbench_accounts, pgbench_branches, pgbench_history и pgbench_tellers
     '''
-    cmd("su -c 'pgbench -i -h localhost -p {p} --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
-                                                                                                      ts=tablespace,
-                                                                                                      p=port,
-                                                                                                      s=t_scale_factor,
-                                                                                                      f=t_filling_factor))
+    if debian == True:
+        cmd("su -c 'pgbench -i --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
+                                                                                    ts=tablespace,                                                                                                    
+                                                                                    s=t_scale_factor,
+                                                                                    f=t_filling_factor))
+    else:
+        cmd("su -c 'pgbench -i -h localhost -p {p} --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
+                                                                                                          ts=tablespace,
+                                                                                                          p=port,
+                                                                                                          s=t_scale_factor,
+                                                                                                          f=t_filling_factor))
 
     # TODO: Сделать вывод размера БД
 

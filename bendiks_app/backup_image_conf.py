@@ -9,8 +9,8 @@ stands_ip = {
 
 
 modes = {
+    'orel':'0',
     'smolensk':'2',
-    '10':'10'
 }
 
 parent_page_list = {

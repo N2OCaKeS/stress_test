@@ -15,6 +15,7 @@ from shutil import copy2
 import ftplib
 import requests
 from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME
+import pysnooper
 
 
 if not path.isdir(REPORT_PATH):
@@ -103,7 +104,7 @@ def astra_version():
 
     return version
 
-
+@pysnooper.snoop()
 def init_test_tables(database,
                      tablespace,
                      port,
@@ -133,7 +134,7 @@ def upgrade_test_table(sql_script):
     cmd('su -c "psql -p 5432 -f {}" postgres'.format(sql_script))
     remove('/tmp/{}'.format(sql_script))
 
-
+@pysnooper.snoop()
 def pgbench(start_cmd):
     '''
         Запуск на стандартных транзакциях

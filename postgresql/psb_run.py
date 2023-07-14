@@ -203,6 +203,7 @@ if not path.exists(REPORT_PATH):
     os.mkdir(REPORT_PATH, mode=0o755)
 
 version = astra_version()
+print(args.NPAGE)
 if args.DB_PREPARE:
     '''
         Настроить машину, инициализировать тестовую БД

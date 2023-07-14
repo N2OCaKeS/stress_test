@@ -14,6 +14,7 @@ from psb_conf import LOG_FILENAME, DATABASE_NAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
     TABLESPACE_DEFAULT, REPORT_FILENAME, PG_SETEST_PORT, PG_VERSION
 from libs.libpsb import init_test_tables, upgrade_test_table, pgbench, pgbench_custom
+import pysnooper
 
 
 class Test:
@@ -59,7 +60,7 @@ class Test:
                                                                                                                            j=self.threads,
                                                                                                                            c=self.clients,
                                                                                                                            f=self.mac_sql_script)
-
+    @pysnooper.snoop()
     def run_test(self):
         '''
             Запуск проверки на встроенных тестовых скриптах

@@ -305,8 +305,8 @@ def run_command_stand1():
     elif command == 'stop':
         if pid is not None:
             try:
-                kill(pid, 0) # проверка существования процесса
-                kill(pid, signal.SIGKILL) # остановка процесса, если он существует
+                kill(pid, 0) 
+                kill(pid, signal.SIGKILL) 
             except ProcessLookupError:
                 print(f"Процесс с pid {pid} не существует")
             
@@ -357,8 +357,8 @@ def run_command_stand2():
     elif command == 'stop':
         if pid2 is not None:
             try:
-                kill(pid2, 0) # проверка существования процесса
-                kill(pid2, signal.SIGKILL) # остановка процесса, если он существует
+                kill(pid2, 0) 
+                kill(pid2, signal.SIGKILL) 
             except ProcessLookupError:
                 print(f"Процесс с pid {pid2} не существует")
             
@@ -411,8 +411,8 @@ def run_command_stand3():
     elif command == 'stop':
         if pid3 is not None:
             try:
-                kill(pid3, 0) # проверка существования процесса
-                kill(pid3, signal.SIGKILL) # остановка процесса, если он существует
+                kill(pid3, 0) 
+                kill(pid3, signal.SIGKILL)
             except ProcessLookupError:
                 print(f"Процесс с pid {pid3} не существует")
             
@@ -463,8 +463,8 @@ def run_command_stand4():
     elif command == 'stop':
         if pid4 is not None:
             try:
-                kill(pid4, 0) # проверка существования процесса
-                kill(pid4, signal.SIGKILL) # остановка процесса, если он существует
+                kill(pid4, 0) 
+                kill(pid4, signal.SIGKILL) 
             except ProcessLookupError:
                 print(f"Процесс с pid {pid4} не существует")
             

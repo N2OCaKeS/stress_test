@@ -304,7 +304,12 @@ def run_command_stand1():
     
     elif command == 'stop':
         if pid is not None:
-            kill(pid, signal.SIGKILL)
+            try:
+                kill(pid, 0) # проверка существования процесса
+                kill(pid, signal.SIGKILL) # остановка процесса, если он существует
+            except ProcessLookupError:
+                print(f"Процесс с pid {pid} не существует")
+            
         if process is not None:
             process.terminate()
             process = None
@@ -351,7 +356,12 @@ def run_command_stand2():
     
     elif command == 'stop':
         if pid2 is not None:
-            kill(pid2, signal.SIGKILL)
+            try:
+                kill(pid2, 0) # проверка существования процесса
+                kill(pid2, signal.SIGKILL) # остановка процесса, если он существует
+            except ProcessLookupError:
+                print(f"Процесс с pid {pid2} не существует")
+            
         if process2 is not None:
             process2.terminate()
             process2 = None
@@ -400,7 +410,12 @@ def run_command_stand3():
     
     elif command == 'stop':
         if pid3 is not None:
-            kill(pid3, signal.SIGKILL)
+            try:
+                kill(pid3, 0) # проверка существования процесса
+                kill(pid3, signal.SIGKILL) # остановка процесса, если он существует
+            except ProcessLookupError:
+                print(f"Процесс с pid {pid3} не существует")
+            
         if process3 is not None:
             process3.terminate()
             process3 = None
@@ -447,7 +462,12 @@ def run_command_stand4():
 
     elif command == 'stop':
         if pid4 is not None:
-            kill(pid4, signal.SIGKILL)
+            try:
+                kill(pid4, 0) # проверка существования процесса
+                kill(pid4, signal.SIGKILL) # остановка процесса, если он существует
+            except ProcessLookupError:
+                print(f"Процесс с pid {pid4} не существует")
+            
         if process4 is not None:
             process4.terminate()
             process4 = None

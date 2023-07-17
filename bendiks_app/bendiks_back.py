@@ -47,7 +47,7 @@ __pt_version = args.RELEASE
 #__stand = 'stand1'
 __stand = args.STAND
 #__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix']
-__test_list = args.TESTS
+__test_list = eval(args.TESTS)
 #Делаем get запрос в jira
 matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                 period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.
@@ -219,13 +219,13 @@ try:
                         #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                         if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True, capture_output=True, check=True)
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
                         else: 
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
                         end_time = datetime.datetime.now().replace(microsecond=0)
                         save_all_output('Выполнен\n')
                         print('Выполнен')
@@ -267,13 +267,13 @@ try:
                     
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True, capture_output=True, check=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
                     end_time = datetime.datetime.now().replace(microsecond=0)
                     save_all_output('Выполнен\n')
                     print('Выполнен')
@@ -292,6 +292,8 @@ try:
     #sleep(30)
     save_all_output(f'\nDONE\n')
     print(f'\n\033[95mDone\033[0m\n')
+    with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
+            wr.write('Готово')
 except Exception as e:
     print(e)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:

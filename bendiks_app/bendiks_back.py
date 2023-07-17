@@ -219,13 +219,13 @@ try:
                         #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                         if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True, capture_output=True, check=True)
+                                        {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
+                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                         else: 
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
+                                            {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                         end_time = datetime.datetime.now().replace(microsecond=0)
                         save_all_output('Выполнен\n')
                         print('Выполнен')
@@ -267,13 +267,13 @@ try:
                     
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True, capture_output=True, check=True)
+                                    {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
+                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum}', shell=True, capture_output=True, check=True)
+                                        {tcas} {branch} {cti} {pp} {testnum}', shell=True)
                     end_time = datetime.datetime.now().replace(microsecond=0)
                     save_all_output('Выполнен\n')
                     print('Выполнен')

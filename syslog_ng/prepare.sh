@@ -13,4 +13,5 @@ sudo apt install -fy
 # install python dependencies in venv
 #source venv/bin/activate
 python3 -m pip install --upgrade pip
-pip3 install -r req.txt
+python3 -m pip install -r req.txt
+#pip3 install -r req.txt

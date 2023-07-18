@@ -1,9 +1,10 @@
 #!/bin/python3
 
 from flask import Flask, render_template, request, send_from_directory, redirect, url_for
+from multiprocessing import Process, Manager
 import string
 import random
-import subprocess
+from subprocess import Popen, PIPE, signal
 from os import path, remove, kill
 import signal
 
@@ -271,10 +272,12 @@ def send_static(path):
     return send_from_directory('static', path)
 
 
+manager = Manager()
+global_vars = manager.dict()
+global_vars['pid1'] = None
+global_vars['process1'] = None
 @app.route('/run-command-stand1', methods=['POST'])
 def run_command_stand1():
-    global pid
-    global process
     command = request.form.get('command1')
     kernel = None
 
@@ -285,34 +288,43 @@ def run_command_stand1():
             tests = r.read()
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
+
         if path.isfile('conf/kernel_args.conf'):
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
+
+        def target_fn(cmd):
+            process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+            global_vars['process1'] = process
+            global_vars['pid1'] = process.pid
+
         if kernel != 'None':
-            process = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        pid = process.pid
+            p = Process(target=target_fn, args=(command_to_run_kernel, ))
+        else:
+            p = Process(target=target_fn, args=(command_to_run, ))
+        p.start()
+
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
-    
+
     elif command == 'ok':
         with open('conf/work_status_stand1.conf', 'w') as w:
             w.write('Остановлен')
-    
+
     elif command == 'stop':
-        if pid is not None:
+        if global_vars['pid1'] is not None:
             try:
-                kill(pid, 0) 
-                kill(pid, signal.SIGKILL) 
+                kill(global_vars['pid1'], 0)
+                kill(global_vars['pid1'], signal.SIGKILL)
             except ProcessLookupError:
-                print(f"Процесс с pid {pid} не существует")
-            
-        if process is not None:
-            process.terminate()
-            process = None
+                print(f"Процесс с pid {global_vars['pid1']} не существует")
+
+        if global_vars['process1'] is not None:
+            global_vars['process1'].terminate()
+            global_vars['process1'] = None
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
@@ -322,10 +334,11 @@ def run_command_stand1():
     return redirect(url_for('index'))
 
 
+
+global_vars['pid2'] = None
+global_vars['process2'] = None
 @app.route('/run-command-stand2', methods=['POST'])
 def run_command_stand2():
-    global pid2
-    global process2
     command = request.form.get('command2')
     kernel = None
 
@@ -336,35 +349,43 @@ def run_command_stand2():
             tests = r.read()
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
-        
+
         if path.isfile('conf/kernel_args.conf'):
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}" -kn "{kernel}"'
+
+        def target_fn(cmd):
+            process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+            global_vars['process2'] = process
+            global_vars['pid2'] = process.pid
+
         if kernel != 'None':
-            process2 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        pid2 = process2.pid
+            p = Process(target=target_fn, args=(command_to_run_kernel, ))
+        else:
+            p = Process(target=target_fn, args=(command_to_run, ))
+        p.start()
+
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
-    
+
     elif command == 'ok':
         with open('conf/work_status_stand2.conf', 'w') as w:
             w.write('Остановлен')
-    
+
     elif command == 'stop':
-        if pid2 is not None:
+        if global_vars['pid2'] is not None:
             try:
-                kill(pid2, 0) 
-                kill(pid2, signal.SIGKILL) 
+                kill(global_vars['pid2'], 0)
+                kill(global_vars['pid2'], signal.SIGKILL)
             except ProcessLookupError:
-                print(f"Процесс с pid {pid2} не существует")
-            
-        if process2 is not None:
-            process2.terminate()
-            process2 = None
+                print(f"Процесс с pid {global_vars['pid2']} не существует")
+
+        if global_vars['process2'] is not None:
+            global_vars['process2'].terminate()
+            global_vars['process2'] = None
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
@@ -375,10 +396,10 @@ def run_command_stand2():
 
 
 
+global_vars['pid3'] = None
+global_vars['process3'] = None
 @app.route('/run-command-stand3', methods=['POST'])
 def run_command_stand3():
-    global pid3
-    global process3
     command = request.form.get('command3')
     kernel = None
 
@@ -389,36 +410,43 @@ def run_command_stand3():
             tests = r.read()
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
-        
+
         if path.isfile('conf/kernel_args.conf'):
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}" -kn "{kernel}"'
+
+        def target_fn(cmd):
+            process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+            global_vars['process3'] = process
+            global_vars['pid3'] = process.pid
+
         if kernel != 'None':
-            process3 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        pid3 = process3.pid
+            p = Process(target=target_fn, args=(command_to_run_kernel, ))
+        else:
+            p = Process(target=target_fn, args=(command_to_run, ))
+        p.start()
+
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
-    
+
     elif command == 'ok':
         with open('conf/work_status_stand3.conf', 'w') as w:
             w.write('Остановлен')
-        
-    
+
     elif command == 'stop':
-        if pid3 is not None:
+        if global_vars['pid3'] is not None:
             try:
-                kill(pid3, 0) 
-                kill(pid3, signal.SIGKILL)
+                kill(global_vars['pid3'], 0)
+                kill(global_vars['pid3'], signal.SIGKILL)
             except ProcessLookupError:
-                print(f"Процесс с pid {pid3} не существует")
-            
-        if process3 is not None:
-            process3.terminate()
-            process3 = None
+                print(f"Процесс с pid {global_vars['pid3']} не существует")
+
+        if global_vars['process3'] is not None:
+            global_vars['process3'].terminate()
+            global_vars['process3'] = None
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
@@ -428,10 +456,10 @@ def run_command_stand3():
     return redirect(url_for('index'))
 
 
+global_vars['pid4'] = None
+global_vars['process4'] = None
 @app.route('/run-command-stand4', methods=['POST'])
 def run_command_stand4():
-    global pid4
-    global process4
     command = request.form.get('command4')
     kernel = None
 
@@ -442,35 +470,43 @@ def run_command_stand4():
             tests = r.read()
         with open('conf/releas_args.conf', 'r') as r:
             releas = str(r.read()).replace('[', '').replace(']', '').strip("'")
-        
+
         if path.isfile('conf/kernel_args.conf'):
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}" -kn "{kernel}"'
+
+        def target_fn(cmd):
+            process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+            global_vars['process4'] = process
+            global_vars['pid4'] = process.pid
+
         if kernel != 'None':
-            process4 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        pid4 = process4.pid
+            p = Process(target=target_fn, args=(command_to_run_kernel, ))
+        else:
+            p = Process(target=target_fn, args=(command_to_run, ))
+        p.start()
+
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
-    
+
     elif command == 'ok':
         with open('conf/work_status_stand4.conf', 'w') as w:
             w.write('Остановлен')
 
     elif command == 'stop':
-        if pid4 is not None:
+        if global_vars['pid4'] is not None:
             try:
-                kill(pid4, 0) 
-                kill(pid4, signal.SIGKILL) 
+                kill(global_vars['pid4'], 0)
+                kill(global_vars['pid4'], signal.SIGKILL)
             except ProcessLookupError:
-                print(f"Процесс с pid {pid4} не существует")
-            
-        if process4 is not None:
-            process4.terminate()
-            process4 = None
+                print(f"Процесс с pid {global_vars['pid4']} не существует")
+
+        if global_vars['process4'] is not None:
+            global_vars['process4'].terminate()
+            global_vars['process4'] = None
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')

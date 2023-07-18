@@ -615,7 +615,8 @@ class PSQLStatistics2:
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()
                 
-                df_5_10 = df[df["Ядро"].str.contains('5.10', case=False)]
+                df_5_10 = df[df["Ядро"].str.startswith('5.10')]
+                # print(df_5_10)
                 df_5_10['Ядро'] = '5.10'
                 temp_data_kernel['5.10'].append(df_5_10[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
                 df_5_15_gen = df[df["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]

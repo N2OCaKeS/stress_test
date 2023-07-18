@@ -1,6 +1,7 @@
 #!/bin/python3
 
 from flask import Flask, render_template, request, send_from_directory, redirect, url_for
+from concurrent.futures import ThreadPoolExecutor
 import string
 import random
 import subprocess
@@ -322,12 +323,20 @@ def run_command_stand1():
     return redirect(url_for('index'))
 
 
+
+
+executor = ThreadPoolExecutor(max_workers=1)
+
 @app.route('/run-command-stand2', methods=['POST'])
 def run_command_stand2():
     global pid2
     global process2
     command = request.form.get('command2')
     kernel = None
+
+    def run_command_async(command_to_run):
+        process = subprocess.run(command_to_run, shell=True, capture_output=True, text=True)
+        return process
 
     if command == 'start':
         with open('conf/work_status_stand2.conf', 'w') as w:
@@ -344,9 +353,11 @@ def run_command_stand2():
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
-            process2 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        pid2 = process2.pid
+            future = executor.submit(run_command_async, command_to_run_kernel)
+        else: 
+            future = executor.submit(run_command_async, command_to_run)
+            
+        pid2, process2 = future.result().pid, future.result()
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     

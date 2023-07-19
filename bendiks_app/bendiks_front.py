@@ -6,51 +6,51 @@ import random
 import subprocess
 from os import path, remove, kill
 import signal
-import logging
+#import logging
 import threading
-from queue import Queue, Empty
+#from queue import Queue, Empty
 
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'srv_2113'
 
-logging.basicConfig(
-        filename='front.log', 
-        level=logging.INFO, 
-        filemode='a',
-        format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-)
-logging.info('Start front logging\n\n')
+# logging.basicConfig(
+#         filename='front.log', 
+#         level=logging.INFO, 
+#         filemode='a',
+#         format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
+#         datefmt='%Y-%m-%d %H:%M:%S',
+# )
+# logging.info('Start front logging\n\n')
 
-def stream_watcher(identifier, stream, queue):
-    for line in stream:
-        queue.put((identifier, line))
+# def stream_watcher(identifier, stream, queue):
+#     for line in stream:
+#         queue.put((identifier, line))
 
-    if not stream.closed:
-        stream.close()
+#     if not stream.closed:
+#         stream.close()
 
-def log_outputs(process):
-    q = Queue()
-    out_thread = threading.Thread(target=stream_watcher, name='stdout-watcher', args=('STDOUT', process.stdout, q), daemon=True)
-    err_thread = threading.Thread(target=stream_watcher, name='stderr-watcher', args=('STDERR', process.stderr, q), daemon=True)
+# def log_outputs(process):
+#     q = Queue()
+#     out_thread = threading.Thread(target=stream_watcher, name='stdout-watcher', args=('STDOUT', process.stdout, q), daemon=True)
+#     err_thread = threading.Thread(target=stream_watcher, name='stderr-watcher', args=('STDERR', process.stderr, q), daemon=True)
 
-    out_thread.start()
-    err_thread.start()
+#     out_thread.start()
+#     err_thread.start()
 
-    while True:
-        try:
-            if not out_thread.is_alive() and not err_thread.is_alive():
-                break
+#     while True:
+#         try:
+#             if not out_thread.is_alive() and not err_thread.is_alive():
+#                 break
 
-            identifier, line = q.get_nowait()
-            if identifier == 'STDOUT':
-                logging.info(f'Standart Out:\n{line}')
-            else:
-                logging.error(f'Standart Error:\n{line}')
+#             identifier, line = q.get_nowait()
+#             if identifier == 'STDOUT':
+#                 logging.info(f'Standart Out:\n{line}')
+#             else:
+#                 logging.error(f'Standart Error:\n{line}')
 
-        except Empty:
-            pass
+#         except Empty:
+#             pass
 
 
 def generate_random_string(length):
@@ -322,6 +322,8 @@ def run_command_stand1():
     kernel = None
 
     if command == 'start':
+        with open("front_stand1.log", "w") as w:
+            w.write('Start front logging\n\n')
         with open('conf/work_status_stand1.conf', 'w') as w:
             w.write('Запущен')
         with open('conf/tests_args.conf', 'r') as r:
@@ -332,13 +334,18 @@ def run_command_stand1():
             with open('conf/kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
+        def run_command_and_log(command):
+            with open("front_stand1.log", "a") as output:
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+            return process.pid
+    
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
-            process = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        pid = process.pid
-        log_outputs(process)
+            pid = threading.Thread(target=run_command_and_log, args=(command_to_run_kernel,)).start()
+        else:
+            pid = threading.Thread(target=run_command_and_log, args=(command_to_run,)).start()
+        
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -375,6 +382,8 @@ def run_command_stand2():
     kernel = None
 
     if command == 'start':
+        with open("front_stand2.log", "w") as w:
+            w.write('Start front logging\n\n')
         with open('conf/work_status_stand2.conf', 'w') as w:
             w.write('Запущен')
         with open('conf/tests_args.conf', 'r') as r:
@@ -388,11 +397,17 @@ def run_command_stand2():
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}" -kn "{kernel}"'
+        
+        def run_command_and_log(command):
+            with open("front_stand2.log", "a") as output:
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+            return process.pid
+        
         if kernel != 'None':
-            process2 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        pid2 = process2.pid
-        log_outputs(process2)
+            pid2 = threading.Thread(target=run_command_and_log, args=(command_to_run_kernel,)).start()
+        else:
+            pid2 = threading.Thread(target=run_command_and_log, args=(command_to_run,)).start()
+
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -429,6 +444,8 @@ def run_command_stand3():
     kernel = None
 
     if command == 'start':
+        with open("front_stand3.log", "w") as w:
+            w.write('Start front logging\n\n')
         with open('conf/work_status_stand3.conf', 'w') as w:
             w.write('Запущен')
         with open('conf/tests_args.conf', 'r') as r:
@@ -442,11 +459,17 @@ def run_command_stand3():
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}" -kn "{kernel}"'
+
+        def run_command_and_log(command):
+            with open("front_stand3.log", "a") as output:
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+            return process.pid
+        
         if kernel != 'None':
-            process3 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        pid3 = process3.pid
-        log_outputs(process3)
+            pid3 = threading.Thread(target=run_command_and_log, args=(command_to_run_kernel,)).start()
+        else:
+            pid3 = threading.Thread(target=run_command_and_log, args=(command_to_run,)).start()
+
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -483,6 +506,8 @@ def run_command_stand4():
     kernel = None
 
     if command == 'start':
+        with open("front_stand4.log", "w") as w:
+            w.write('Start front logging\n\n')
         with open('conf/work_status_stand4.conf', 'w') as w:
             w.write('Запущен')
         with open('conf/tests_args.conf', 'r') as r:
@@ -496,11 +521,17 @@ def run_command_stand4():
 
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}" -kn "{kernel}"'
+
+        def run_command_and_log(command):
+            with open("front_stand4.log", "a") as output:
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+            return process.pid
+        
         if kernel != 'None':
-            process4 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        pid4 = process4.pid
-        log_outputs(process4)
+            pid4 = threading.Thread(target=run_command_and_log, args=(command_to_run_kernel,)).start()
+        else:
+            pid4 = threading.Thread(target=run_command_and_log, args=(command_to_run,)).start()
+
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     

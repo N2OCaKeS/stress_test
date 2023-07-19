@@ -16,12 +16,12 @@ app.config['SECRET_KEY'] = 'srv_2113'
 
 logging.basicConfig(
         filename='front.log', 
-        level=logging.DEBUG, 
+        level=logging.INFO, 
         filemode='a',
         format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
 )
-
+logging.info('Start front logging\n\n')
 
 def stream_watcher(identifier, stream, queue):
     for line in stream:
@@ -32,8 +32,8 @@ def stream_watcher(identifier, stream, queue):
 
 def log_outputs(process):
     q = Queue()
-    out_thread = threading.Thread(target=stream_watcher, name='stdout-watcher', args=('STDOUT', process.stdout, q))
-    err_thread = threading.Thread(target=stream_watcher, name='stderr-watcher', args=('STDERR', process.stderr, q))
+    out_thread = threading.Thread(target=stream_watcher, name='stdout-watcher', args=('STDOUT', process.stdout, q), daemon=True)
+    err_thread = threading.Thread(target=stream_watcher, name='stderr-watcher', args=('STDERR', process.stderr, q), daemon=True)
 
     out_thread.start()
     err_thread.start()
@@ -43,7 +43,7 @@ def log_outputs(process):
             if not out_thread.is_alive() and not err_thread.is_alive():
                 break
 
-            identifier, line = q.get()
+            identifier, line = q.get_nowait()
             if identifier == 'STDOUT':
                 logging.info(f'Standart Out:\n{line}')
             else:
@@ -335,9 +335,10 @@ def run_command_stand1():
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
-            process = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        else: process = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         pid = process.pid
+        log_outputs(process)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -442,9 +443,10 @@ def run_command_stand3():
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand3 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
-            process3 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process3 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        else: process3 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         pid3 = process3.pid
+        log_outputs(process3)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     
@@ -495,9 +497,10 @@ def run_command_stand4():
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
-            process4 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process4 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        else: process4 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         pid4 = process4.pid
+        log_outputs(process4)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     

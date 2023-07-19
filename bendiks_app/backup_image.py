@@ -316,20 +316,7 @@ def main():
         ftp.close()
         client.close()
 
-    #@pysnooper.snoop()
-    # def send_remote_command(command):
-    #     ssh = paramiko.SSHClient()
-    #     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    #     ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
-    #     chanel = ssh.get_transport().open_session()
-    #     chanel.get_pty()
-    #     chanel.exec_command(command)
-    #     output = chanel.makefile().read().decode('utf-8')
-    #     err_output = chanel.makefile_stderr().read().decode('utf-8')
-    #     logging.debug(output)
-    #     logging.error(err_output)
-    #     ssh.close()
-
+    @pysnooper.snoop()
     def send_remote_command(command):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -337,15 +324,28 @@ def main():
         chanel = ssh.get_transport().open_session()
         chanel.get_pty()
         chanel.exec_command(command)
-
-        while not chanel.exit_status_ready():
-            if chanel.recv_ready():
-                output = chanel.recv(1024).decode('utf-8')
-                logging.debug(output)
-            if chanel.recv_stderr_ready():
-                err_output = chanel.recv_stderr(1024).decode('utf-8')
-                logging.error(err_output)
+        output = chanel.makefile().read().decode('utf-8')
+        err_output = chanel.makefile_stderr().read().decode('utf-8')
+        logging.debug(output)
+        logging.error(err_output)
         ssh.close()
+
+    # def send_remote_command(command):
+    #     ssh = paramiko.SSHClient()
+    #     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    #     ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
+    #     chanel = ssh.get_transport().open_session()
+    #     chanel.get_pty()
+    #     chanel.exec_command(command)
+
+    #     while not chanel.exit_status_ready():
+    #         if chanel.recv_ready():
+    #             output = chanel.recv(1024).decode('utf-8')
+    #             logging.debug(output)
+    #         if chanel.recv_stderr_ready():
+    #             err_output = chanel.recv_stderr(1024).decode('utf-8')
+    #             logging.error(err_output)
+    #     ssh.close()
 
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
             wr.write('Запущен')

@@ -323,20 +323,20 @@ def main():
         ftp.close()
         client.close()
 
-    @pysnooper.snoop()
-    # def send_remote_command(command):
-    #     ssh = paramiko.SSHClient()
-    #     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    #     ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
-    #     ssh.get_transport().set_keepalive(60)
-    #     chanel = ssh.get_transport().open_session()
-    #     chanel.get_pty()
-    #     chanel.exec_command(command)
-    #     output = chanel.makefile().read().decode('utf-8')
-    #     err_output = chanel.makefile_stderr().read().decode('utf-8')
-    #     logging.debug(output)
-    #     logging.error(err_output)
-    #     ssh.close()
+    #@pysnooper.snoop()
+    def send_remote_command(command):
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
+        ssh.get_transport().set_keepalive(60)
+        chanel = ssh.get_transport().open_session()
+        chanel.get_pty()
+        chanel.exec_command(command)
+        output = chanel.makefile().read().decode('utf-8')
+        err_output = chanel.makefile_stderr().read().decode('utf-8')
+        logging.debug(output)
+        logging.error(err_output)
+        ssh.close()
 
 
     class ResultCallback(CallbackBase):
@@ -347,7 +347,7 @@ def main():
         def v2_runner_on_ok(self, result, **kwargs):
             self.output += result._result.get('stdout', '') + "\n"
 
-    def send_remote_command(command):
+    def send_remote_command_ansible(command):
         loader = DataLoader()
         inventory_manager = InventoryManager(loader=loader, sources='localhost,')
         variable_manager = VariableManager(loader=loader, inventory=inventory_manager)

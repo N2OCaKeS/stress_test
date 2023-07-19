@@ -8,6 +8,7 @@ import logging
 from tempfile import mkstemp
 import socket
 import paramiko
+from paramiko import ssh_exception
 from backup_image_command import cz_comm
 import argparse
 from backup_image_conf import *
@@ -291,7 +292,10 @@ def main():
             except paramiko.AuthenticationException:
                 sleep(30)
                 continue
-        
+            except ssh_exception.NoValidConnectionsError:
+                sleep(30)
+                continue
+
         
     #@pysnooper.snoop()
     def grub_default(kernel, host):

@@ -18,6 +18,8 @@ parent_page_list = {
              },
     'debian10-5.15':{'postgresql':'Debian ⬝ PostgreSQL',
              },
+    'debian11-5.15':{'postgresql':'Debian ⬝ PostgreSQL',
+             },
     '1.7.4.UU.1':{'postgresql':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'XFS':'1.7.4.UU.1 ⬝ Файловые системы',
@@ -121,6 +123,7 @@ branches = {
 cycle_tree_index = {
     'debian10':'2967',
     'debian10-5.15':'2974',
+    'debian11-5.15':'2977',
     '1.7.4':'2773',
     '1.7.3':'2774',
     '1.7.3.UU.1':'2745',

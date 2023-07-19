@@ -12,6 +12,13 @@ from backup_image_command import cz_comm
 import argparse
 from backup_image_conf import *
 import pysnooper
+from ansible.plugins.callback import CallbackBase
+from ansible.executor.task_queue_manager import TaskQueueManager
+from ansible.playbook.play import Play
+from ansible.inventory.host import Host
+from ansible.parsing.dataloader import DataLoader
+from ansible.inventory.manager import InventoryManager
+from ansible.vars.manager import VariableManager
 
 
 parser = argparse.ArgumentParser()
@@ -317,19 +324,62 @@ def main():
         client.close()
 
     @pysnooper.snoop()
+    # def send_remote_command(command):
+    #     ssh = paramiko.SSHClient()
+    #     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    #     ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
+    #     ssh.get_transport().set_keepalive(60)
+    #     chanel = ssh.get_transport().open_session()
+    #     chanel.get_pty()
+    #     chanel.exec_command(command)
+    #     output = chanel.makefile().read().decode('utf-8')
+    #     err_output = chanel.makefile_stderr().read().decode('utf-8')
+    #     logging.debug(output)
+    #     logging.error(err_output)
+    #     ssh.close()
+
+
+    class ResultCallback(CallbackBase):
+        def __init__(self, *args, **kwargs):
+            super(ResultCallback, self).__init__(*args, **kwargs)
+            self.output = ""
+
+        def v2_runner_on_ok(self, result, **kwargs):
+            self.output += result._result.get('stdout', '') + "\n"
+
     def send_remote_command(command):
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
-        ssh.get_transport().set_keepalive(60)
-        chanel = ssh.get_transport().open_session()
-        chanel.get_pty()
-        chanel.exec_command(command)
-        output = chanel.makefile().read().decode('utf-8')
-        err_output = chanel.makefile_stderr().read().decode('utf-8')
-        logging.debug(output)
-        logging.error(err_output)
-        ssh.close()
+        loader = DataLoader()
+        inventory_manager = InventoryManager(loader=loader, sources='localhost,')
+        variable_manager = VariableManager(loader=loader, inventory=inventory_manager)
+        
+        host = Host(name=stand_ip)
+        inventory_manager._hosts[host.name] = host
+        
+        play_source = dict(
+            name = "Ansible Play",
+            hosts = stand_ip,
+            gather_facts = 'no',
+            tasks = [
+                dict(action=dict(module='command', args=dict(cmd=command)))
+            ]
+        )
+
+        play = Play().load(play_source, variable_manager=variable_manager, loader=loader)
+        tqm = None
+        try:
+            result_callback = ResultCallback()
+            tqm = TaskQueueManager(
+                inventory=inventory_manager,
+                variable_manager=variable_manager,
+                loader=loader,
+                passwords=dict(vault_pass='password'), # Укажите правильные значения
+                stdout_callback=result_callback,
+            )
+            tqm.run(play)
+        finally:
+            if tqm is not None:
+                tqm.cleanup() 
+        return result_callback.output.strip()
 
     # def send_remote_command(command):
     #     ssh = paramiko.SSHClient()

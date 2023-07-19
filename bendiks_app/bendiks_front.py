@@ -1,15 +1,57 @@
 #!/bin/python3
 
 from flask import Flask, render_template, request, send_from_directory, redirect, url_for
-from concurrent.futures import ThreadPoolExecutor
 import string
 import random
 import subprocess
 from os import path, remove, kill
 import signal
+import logging
+import threading
+from queue import Queue, Empty
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'srv_2113'
+
+logging.basicConfig(
+        filename='front.log', 
+        level=logging.DEBUG, 
+        filemode='a',
+        format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+)
+
+
+def stream_watcher(identifier, stream, queue):
+    for line in stream:
+        queue.put((identifier, line))
+
+    if not stream.closed:
+        stream.close()
+
+def log_outputs(process):
+    q = Queue()
+    out_thread = threading.Thread(target=stream_watcher, name='stdout-watcher', args=('STDOUT', process.stdout, q))
+    err_thread = threading.Thread(target=stream_watcher, name='stderr-watcher', args=('STDERR', process.stderr, q))
+
+    out_thread.start()
+    err_thread.start()
+
+    while True:
+        try:
+            if not out_thread.is_alive() and not err_thread.is_alive():
+                break
+
+            identifier, line = q.get()
+            if identifier == 'STDOUT':
+                logging.info(f'Standart Out:\n{line}')
+            else:
+                logging.error(f'Standart Error:\n{line}')
+
+        except Empty:
+            pass
+
 
 def generate_random_string(length):
     letters_and_digits = string.ascii_letters + string.digits
@@ -324,19 +366,12 @@ def run_command_stand1():
 
 
 
-
-executor = ThreadPoolExecutor(max_workers=1)
-
 @app.route('/run-command-stand2', methods=['POST'])
 def run_command_stand2():
     global pid2
     global process2
     command = request.form.get('command2')
     kernel = None
-
-    def run_command_async(command_to_run):
-        process = subprocess.run(command_to_run, shell=True, capture_output=True, text=True)
-        return process
 
     if command == 'start':
         with open('conf/work_status_stand2.conf', 'w') as w:
@@ -353,11 +388,10 @@ def run_command_stand2():
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand2 -ts "{tests}" -kn "{kernel}"'
         if kernel != 'None':
-            future = executor.submit(run_command_async, command_to_run_kernel)
-        else: 
-            future = executor.submit(run_command_async, command_to_run)
-            
-        pid2, process2 = future.result().pid, future.result()
+            process2 = subprocess.Popen(command_to_run_kernel, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        else: process2 = subprocess.Popen(command_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        pid2 = process2.pid
+        log_outputs(process2)
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
     

@@ -321,6 +321,7 @@ def main():
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
+        ssh.get_transport().set_keepalive(60)
         chanel = ssh.get_transport().open_session()
         chanel.get_pty()
         chanel.exec_command(command)

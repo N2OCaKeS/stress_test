@@ -142,6 +142,12 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     help='test-cycle-version',
                     dest='TCV')
 
+parser.add_argument('-psql_aud',
+                    action='store',
+                    required=False,
+                    help='auditoff arg',
+                    dest='AUDIT_OFF')
+
 args = parser.parse_args()
 
 
@@ -208,19 +214,27 @@ if args.DB_PREPARE:
     '''
         Настроить машину, инициализировать тестовую БД
     '''
-    if 'debian' in args.NPAGE:
-        subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {deb}'.format(dir=SCRIPT_DIR,
-                                                                                    stand=args.STAND,
-                                                                                    init_file='psb_init.sql',
-                                                                                    deb='debian'),
-                                                                                    shell=True,
-                                                                                    stderr=subprocess.DEVNULL)
+    if args.AUDIT_OFF:
+        subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {aud_off}'.format(dir=SCRIPT_DIR,
+                                                                                        stand=args.STAND,
+                                                                                        init_file='psb_init.sql',
+                                                                                        aud_off='audit_off'),
+                                                                                        shell=True,
+                                                                                        stderr=subprocess.DEVNULL)
     else:
-        subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file}'.format(dir=SCRIPT_DIR,
-                                                                                    stand=args.STAND,
-                                                                                    init_file='psb_init.sql'),
-                                                                                    shell=True,
-                                                                                    stderr=subprocess.DEVNULL)
+        if 'debian' in args.NPAGE:
+            subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {deb}'.format(dir=SCRIPT_DIR,
+                                                                                        stand=args.STAND,
+                                                                                        init_file='psb_init.sql',
+                                                                                        deb='debian'),
+                                                                                        shell=True,
+                                                                                        stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file}'.format(dir=SCRIPT_DIR,
+                                                                                        stand=args.STAND,
+                                                                                        init_file='psb_init.sql'),
+                                                                                        shell=True,
+                                                                                        stderr=subprocess.DEVNULL)
 
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':

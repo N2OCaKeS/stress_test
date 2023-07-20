@@ -31,7 +31,7 @@ parser.add_argument('-kn',
 parser.add_argument('-ts',
                     action='store',
                     required=True,
-                    help='stand',
+                    help='test name(s)',
                     dest='TESTS')
 
 args = parser.parse_args()

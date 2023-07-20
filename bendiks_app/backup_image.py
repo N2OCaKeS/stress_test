@@ -113,9 +113,13 @@ parser.add_argument('-testnum',
                     help='testlist',
                     dest='TESTNUM')
 
+parser.add_argument('-psql_aud',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='AUDIT_OFF')
+
 args = parser.parse_args()
-
-
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
 __conf_token = tokens['conf_token']
@@ -152,9 +156,13 @@ ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
 pack_sql = '--package postgresql-11'
 testlist = f'--testlist {args.AUDIT}'
+psql_aud_off = '-psql_aud off'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
+elif args.AUDIT_OFF:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_aud_off}'
 elif args.AUDIT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {testlist} {fti} {tcyc} {tcas} {ba} {tcv}'
@@ -376,7 +384,7 @@ def main():
                 inventory=inventory_manager,
                 variable_manager=variable_manager,
                 loader=loader,
-                passwords=dict(vault_pass='password'), # Укажите правильные значения
+                passwords=dict(vault_pass='1'),
                 stdout_callback=result_callback,
             )
             tqm.run(play)

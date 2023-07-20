@@ -208,6 +208,7 @@ try:
                         pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
                         testnum = f'-testnum {i + 1}'
                         psql = '-ps psql'
+                        psql_aud_off = '-psql_aud off'
                         if tests[dates_list[i][1]] == 'auditd-p':
                             testlist = f'-aud psaud'
                         elif tests[dates_list[i][1]] == 'auditd-f':
@@ -220,6 +221,9 @@ try:
                         if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                        elif tests[dates_list[i][1]] == 'postgresql-aud':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {psql} {testnum} {psql_aud_off}', shell=True)
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
@@ -256,6 +260,7 @@ try:
                     pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
                     testnum = f'-testnum {i + 1}'
                     psql = '-ps psql'
+                    psql_aud_off = '-psql_aud off'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -268,6 +273,9 @@ try:
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                    elif tests[dates_list[i][1]] == 'postgresql-aud':
+                        subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                    {tcas} {branch} {cti} {pp} {psql} {testnum} {psql_aud_off}', shell=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)

@@ -43,6 +43,8 @@ parent_page_list = {
              'auditd-f':'1.7.4 ⬝ Системные службы',
              'auditd-u':'1.7.4 ⬝ Системные службы',
              'syslog-ng':'1.7.4 ⬝ Системные службы',
+             'RAM-overflow':'1.7.4 ⬝ Системные службы',
+             'SD-overflow':'1.7.4 ⬝ Системные службы',
              'unix':'UnixBench'
             },
     '1.7.2':{'postgresql':'1.7.2 ⬝ PostgreSQL',
@@ -162,5 +164,5 @@ tests = {
     'syslog-ng benchmark':'syslog-ng',
     'linux_system_benchmark. UnixBench':'unix',
     'storage drive overflow':'SD-overflow',
-    'storage drive overflow':'RAM-overflow'
+    'ram overflow':'RAM-overflow'
 }

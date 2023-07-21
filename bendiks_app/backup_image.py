@@ -164,6 +164,8 @@ pack_sql = '--package postgresql-11'
 testlist = f'--testlist {args.AUDIT}'
 psql_aud_off = '-psql_aud off'
 ovf = f'-ovf {args.OVF}'
+ovf_ram_dates = f'{username} {token} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
+ovf_sd_dates = f'{username} {token} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
@@ -470,10 +472,21 @@ def main():
         write_status(in_prog)
         #comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         #             u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
-        if args.OVF:
-            
-            #TODO написать функцию
-
+        if args.OVF == 'ram':
+            send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+            with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
+                w.write(ovf_ram_dates)
+            create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
+            send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+        elif args.OVF == 'sd':
+            with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}_new', 'w') as w:
+                w.write(ovf_sd_dates)
+            create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}_new', f'/home/u/{dates_name}_new')
+            send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+            comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                        u@' + stand_ip + ' sudo reboot')
+            sleep(420)
+            send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}_new')
             write_status(done)
         else:    
             send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')

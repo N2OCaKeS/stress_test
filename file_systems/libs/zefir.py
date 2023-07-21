@@ -366,7 +366,8 @@ class Zefir_result_table:
                             'file system benchmark. Fat32':'FS_Fat32', 'syslog-ng benchmark':'Syslog-NG', 'postgresql benchmark':'PostgreSQL',
                             'file system benchmark. EXT4 parsec':'FS_EXT4_parsec', 'auditd benchmark. fileaud':'Auditd_fileaud',
                             'auditd benchmark. useraud':'Auditd_useraud', 'file system benchmark. OCFS2 parsec':'FS_OCFS2_parsec',
-                            'postgresql benchmark smol':'PostgreSQL_smol', 'postgresql benchmark audit-off':'PSQL_audit-off'}
+                            'postgresql benchmark smol':'PostgreSQL_smol', 'postgresql benchmark audit-off':'PSQL_audit-off',
+                            'storage drive overflow':'SD_overflow', 'storage drive overflow':'RAM_overflow'}
         for k, v in testname_columns.items():
             self.new_tab.rename(columns={k:v}, inplace=True)
         for name in self.new_tab.columns:

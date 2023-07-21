@@ -119,6 +119,12 @@ parser.add_argument('-psql_aud',
                     help='testlist',
                     dest='AUDIT_OFF')
 
+parser.add_argument('-ovf',
+                    action='store',
+                    required=False,
+                    help='overflow',
+                    dest='OVF')
+
 args = parser.parse_args()
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
@@ -157,12 +163,15 @@ tcv = f'-tcv {args.RELEASE}'
 pack_sql = '--package postgresql-11'
 testlist = f'--testlist {args.AUDIT}'
 psql_aud_off = '-psql_aud off'
+ovf = f'-ovf {args.OVF}'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
 elif args.AUDIT_OFF:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_aud_off}'
+elif args.OVF:
+    dates = f'{username} {token} {sn} {fti} {tcyc} {tcas} {ba} {tcv} {ovf}'
 elif args.AUDIT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {testlist} {fti} {tcyc} {tcas} {ba} {tcv}'
@@ -461,8 +470,14 @@ def main():
         write_status(in_prog)
         #comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         #             u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
-        write_status(done)
+        if args.OVF:
+            
+            #TODO написать функцию
+
+            write_status(done)
+        else:    
+            send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+            write_status(done)
 
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
             wr.write('Готово')

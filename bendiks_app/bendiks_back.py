@@ -209,6 +209,8 @@ try:
                         testnum = f'-testnum {i + 1}'
                         psql = '-ps psql'
                         psql_aud_off = '-psql_aud off'
+                        ram_ovf = '-ovf ram'
+                        sd_ovf = '-ovf sd'
                         if tests[dates_list[i][1]] == 'auditd-p':
                             testlist = f'-aud psaud'
                         elif tests[dates_list[i][1]] == 'auditd-f':
@@ -224,6 +226,12 @@ try:
                         elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {psql} {testnum} {psql_aud_off}', shell=True)
+                        elif tests[dates_list[i][1]] == 'RAM-overflow':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {testnum} {ram_ovf}', shell=True)
+                        elif tests[dates_list[i][1]] == 'SD-overflow':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {testnum} {sd_ovf}', shell=True)
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
@@ -261,6 +269,8 @@ try:
                     testnum = f'-testnum {i + 1}'
                     psql = '-ps psql'
                     psql_aud_off = '-psql_aud off'
+                    ram_ovf = '-ovf ram'
+                    sd_ovf = '-ovf sd'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -276,6 +286,12 @@ try:
                     elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {psql} {testnum} {psql_aud_off}', shell=True)
+                    elif tests[dates_list[i][1]] == 'RAM-overflow':
+                        subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                    {tcas} {branch} {cti} {pp} {testnum} {ram_ovf}', shell=True)
+                    elif tests[dates_list[i][1]] == 'SD-overflow':
+                        subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                    {tcas} {branch} {cti} {pp} {testnum} {sd_ovf}', shell=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)

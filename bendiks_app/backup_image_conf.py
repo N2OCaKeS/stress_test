@@ -124,7 +124,9 @@ branches = {
     'auditd benchmark. fileaud':'auditd',
     'auditd benchmark. useraud':'auditd',
     'syslog-ng benchmark':'syslog_ng',
-    'linux_system_benchmark. UnixBench':'linux_system'
+    'linux_system_benchmark. UnixBench':'linux_system',
+    'ram overflow':'overflow',
+    'storage drive overflow':'overflow'
 }
 
 
@@ -158,5 +160,7 @@ tests = {
     'auditd benchmark. fileaud':'auditd-f',
     'auditd benchmark. useraud':'auditd-u',
     'syslog-ng benchmark':'syslog-ng',
-    'linux_system_benchmark. UnixBench':'unix'
+    'linux_system_benchmark. UnixBench':'unix',
+    'storage drive overflow':'SD-overflow',
+    'storage drive overflow':'RAM-overflow'
 }

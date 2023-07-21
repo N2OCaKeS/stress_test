@@ -228,10 +228,10 @@ try:
                                         {tcas} {branch} {cti} {pp} {psql} {testnum} {psql_aud_off}', shell=True)
                         elif tests[dates_list[i][1]] == 'RAM-overflow':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {testnum} {ram_ovf}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {testnum} {ram_ovf}', shell=True)
                         elif tests[dates_list[i][1]] == 'SD-overflow':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {testnum} {sd_ovf}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {testnum} {sd_ovf}', shell=True)
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)

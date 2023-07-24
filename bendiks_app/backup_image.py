@@ -173,7 +173,7 @@ elif args.AUDIT_OFF:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_aud_off}'
 elif args.OVF:
-    dates = f'{username} {token} {sn} {fti} {tcyc} {tcas} {ba} {tcv} {ovf}'
+    dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} {ovf}'
 elif args.AUDIT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {testlist} {fti} {tcyc} {tcas} {ba} {tcv}'

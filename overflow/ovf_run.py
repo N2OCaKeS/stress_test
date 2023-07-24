@@ -182,43 +182,43 @@ def fill_disk():
     
     print("Тестирование завершено!")
     print(psutil.disk_usage("/"))
-    def upload_result_status():
-        zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
-                                test_cycle_name=args.TCYC,
-                                test_case_name=args.TCAS,
-                                basic_auth=args.BA)
-        zefir.upload_status(92)
+    # def upload_result_status():
+    #     zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
+    #                             test_cycle_name=args.TCYC,
+    #                             test_case_name=args.TCAS,
+    #                             basic_auth=args.BA)
+    #     zefir.upload_status(92)
 
-        zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
-                                        token=args.TOKEN,
-                                        basic_auth=args.BA,
-                                        username=args.USER)
-        zefir_table
-        return 0
+    #     zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
+    #                                     token=args.TOKEN,
+    #                                     basic_auth=args.BA,
+    #                                     username=args.USER)
+    #     zefir_table
+    #     return 0
 
-    end_status = 0
-    while end_status == 0:
-        jira_end, life_end = response()
-        try:
-            if jira_end == 200 and life_end == 200:
-                if upload_result_status() == 0:
-                    end_status += 1
-            else: 
-                with open('JIRA_ERROR.log', 'a') as err:
-                    err.write('end:\n')
-                    err.write(ctime())
-                    err.write(f'jira_status = {jira_end}\nlife_status = {life_end}')
-                    err.write('---------' * 25)
-                    err.write('\n\n')
-                sleep(60)
-        except Exception as e:
-            with open('JIRA_ERROR.log', 'a') as err:
-                err.write('end:\n')
-                err.write(ctime())
-                err.write(str(e))
-                err.write('---------' * 25)
-                err.write('\n\n')
-                end_status += 1
+    # end_status = 0
+    # while end_status == 0:
+    #     jira_end, life_end = response()
+    #     try:
+    #         if jira_end == 200 and life_end == 200:
+    #             if upload_result_status() == 0:
+    #                 end_status += 1
+    #         else: 
+    #             with open('JIRA_ERROR.log', 'a') as err:
+    #                 err.write('end:\n')
+    #                 err.write(ctime())
+    #                 err.write(f'jira_status = {jira_end}\nlife_status = {life_end}')
+    #                 err.write('---------' * 25)
+    #                 err.write('\n\n')
+    #             sleep(60)
+    #     except Exception as e:
+    #         with open('JIRA_ERROR.log', 'a') as err:
+    #             err.write('end:\n')
+    #             err.write(ctime())
+    #             err.write(str(e))
+    #             err.write('---------' * 25)
+    #             err.write('\n\n')
+    #             end_status += 1
 
 
 
@@ -271,6 +271,6 @@ elif args.OVF == 'sd':
 
 if args.CHECK == 'drop':
     check_drop()
-elif args.CHECK == 'reboot':
-    jira_start()
+# elif args.CHECK == 'reboot':
+#     jira_start()
 

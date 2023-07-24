@@ -822,6 +822,10 @@ class PSQLStatistics2:
         tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
         create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
 
+        data_df_orel_audit_off = collect_data(test_name="postgresql-aud-off")
+        tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
+        create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
+
         summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
         create_summary_graph(merged_df=summ_df)
 
@@ -845,15 +849,15 @@ class PSQLStatistics2:
             </span>
         """
 
-        image_list, images_list_smolensk = [], []
-        table_with_data_list, table_with_data_list_smolensk = [], []
-        table_with_mat_stat_list, table_with_mat_stat_list_smolensk = [], []
+        image_list, images_list_smolensk, image_list_aud_off = [], [], []
+        table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off = [], [], []
+        table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off = [], [], []
         kernel_image_list = [[], [], []]
         lst_all_stands_stat_kernel = []
 
         summ_graphs_list = []
 
-        header_orel, header_smolensk, header_orel_vs_smolensk = [], [], []
+        header_orel, header_smolensk, header_orel_vs_smolensk, header_aud_off = [], [], [], []
 
         for file in sorted(os.listdir("statistics")):
             if file.endswith("png"):
@@ -864,6 +868,9 @@ class PSQLStatistics2:
                 if file.startswith("postgresql-sm"):
                     images_list_smolensk.append(img)
                     header_smolensk.append(name_stand)
+                elif file.startswith('postgresql-aud-off'):
+                    image_list_aud_off.append(img)
+                    header_aud_off.append(name_stand)
                 elif file.startswith("postgresql-vo"):
                     pass
                 else:
@@ -876,6 +883,8 @@ class PSQLStatistics2:
                 file_table.close()
                 if file.startswith("postgresql-sm"):
                     table_with_data_list_smolensk.append(table)
+                elif file.startswith('postgresql-aud-off'):
+                    table_with_data_list_aud_off.append(table)
                 elif file.startswith("postgresql-vo"):
                     pass
                 else:
@@ -887,6 +896,8 @@ class PSQLStatistics2:
                 new_file_table.close()
                 if file.startswith("postgresql-sm"):
                     table_with_mat_stat_list_smolensk.append(mat_stat_table)
+                elif file.startswith('postgresql-aud-off'):
+                    table_with_mat_stat_list_aud_off.append(mat_stat_table)
                 elif file.startswith("postgresql-vo"):
                     pass
                 else:
@@ -927,7 +938,7 @@ class PSQLStatistics2:
             </ul>
             </nav>
         """
-        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk = [], [], []
+        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off = [], [], [], []
         nav_body = '''
             <li><a href="#id-Статистика.PostgreSQL-Orel">Orel</a>
                 <ul>
@@ -942,6 +953,11 @@ class PSQLStatistics2:
             <li><a href="#id-Статистика.PostgreSQL-OrelvsSmolensk">Orel vs Smolensk</a>
                 <ul>
                     {list_orel_vs_smolensk}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.PostgreSQL-Orelauditoff">Orel audit off</a>
+                <ul>
+                    {list_aud_off}
                 </ul>
             </li>
         '''
@@ -978,7 +994,18 @@ class PSQLStatistics2:
             html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
             html_list.append(item)
 
-        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk)) + nav_end
+        html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
+        for ind, item in enumerate(table_with_data_list_aud_off):
+            grade = self.get_grade(header_aud_off[ind])
+            nav_lst_aud_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
+            html_list.append(image_list_aud_off[ind])
+            html_list.append(item)
+            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
+
+
+
+        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off)) + nav_end
 
         html_list.insert(0, nav)
 

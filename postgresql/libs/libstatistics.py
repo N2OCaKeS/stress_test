@@ -780,12 +780,12 @@ class PSQLStatistics2:
                     merged_dataframes.append(df_temp)
             return merged_dataframes
         
-        def create_summary_graph(merged_df):
+        def create_summary_graph(merged_df, legend):
             for df in merged_df:
                 shcala_x = [x for x in range(len(df['Релиз']))]
                 fig, ax = plt.subplots(figsize=(16, 9))
                 grade = self.get_grade(df['Стенд'].mode()[0])
-                ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL orel/smolensk.\n{grade}_{df['Стенд'].mode()[0]}")
+                ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL {legend[0]}/{legend[1]}.\n{grade}_{df['Стенд'].mode()[0]}")
                 # ax.grid(True, alpha=.3)
                 ax.set_ylabel("Значение рейтинга")
                 ax.set_ylim([0, max(df['rating_2_x'].fillna(0)) + max(df['rating_2_x'].fillna(0)) * 0.2])
@@ -807,8 +807,8 @@ class PSQLStatistics2:
                         pass
                     if val != 0:
                         plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
-                ax.legend(["Orel", "Smolensk"])
-                plt.savefig(f"statistics/summ_graph_{df['Стенд'].mode()[0]}_summ.jpg")
+                ax.legend(legend)
+                plt.savefig(f"statistics/{legend[0]}-{legend[1]}_graph_{df['Стенд'].mode()[0]}_summ.jpg")
                 
             
         
@@ -827,7 +827,10 @@ class PSQLStatistics2:
         create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
 
         summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
-        create_summary_graph(merged_df=summ_df)
+        create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
+
+        summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
+        create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
 
     """
@@ -855,9 +858,9 @@ class PSQLStatistics2:
         kernel_image_list = [[], [], []]
         lst_all_stands_stat_kernel = []
 
-        summ_graphs_list = []
+        summ_graphs_list, summ_graphs_list_aud_on_off = [], []
 
-        header_orel, header_smolensk, header_orel_vs_smolensk, header_aud_off = [], [], [], []
+        header_orel, header_smolensk, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], []
 
         for file in sorted(os.listdir("statistics")):
             if file.endswith("png"):
@@ -906,26 +909,35 @@ class PSQLStatistics2:
             if file.endswith("5.10.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
+                                                                img_png=file))
             if file.endswith("5.15-gen.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
+                                                                img_png=file))
             if file.endswith("5.15-ll.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
+                                                                img_png=file))
             if file.endswith("kernel.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                  img_png=file))
+                                                                      img_png=file))
             
             if file.endswith("summ.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
                 name_stand = file.split("_")[2]
-                header_orel_vs_smolensk.append(name_stand)
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                if file.startswith("Orel-Smolensk"):
+                    summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"), 
+                                                                img_png=file))
+                    header_orel_vs_smolensk.append(name_stand)
+                elif file.startswith("Orel-Orel-audit-off"):
+                    summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"), 
+                                                                           img_png=file))
+                    header_aud_on_vs_off.append(name_stand)
+                    # print(header_aud_on_vs_off)
+                else:
+                    pass                            
+                
                 
         html_list = []
 
@@ -938,7 +950,7 @@ class PSQLStatistics2:
             </ul>
             </nav>
         """
-        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off = [], [], [], []
+        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off = [], [], [], [], []
         nav_body = '''
             <li><a href="#id-Статистика.PostgreSQL-Orel">Orel</a>
                 <ul>
@@ -960,6 +972,12 @@ class PSQLStatistics2:
                     {list_aud_off}
                 </ul>
             </li>
+            <li><a href="#id-Статистика.PostgreSQL-OrelvsOrelauditoff">Orel vs Orel audit off</a>
+                <ul>
+                    {list_aud_on_off}
+                </ul>
+            </li>
+            
         '''
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
@@ -1003,9 +1021,15 @@ class PSQLStatistics2:
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
 
+        html_list.append('<h1 style="text-align: center;">Orel vs Orel audit off</h1>')
+        for ind, item in enumerate(summ_graphs_list_aud_on_off):
+            grade = self.get_grade(header_aud_on_vs_off[ind])
+            # print(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
+            nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
+            html_list.append(item)
 
-
-        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off)) + nav_end
+        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
 
         html_list.insert(0, nav)
 

@@ -20,6 +20,7 @@ from ansible.inventory.host import Host
 from ansible.parsing.dataloader import DataLoader
 from ansible.inventory.manager import InventoryManager
 from ansible.vars.manager import VariableManager
+from bendiks_back import jira_send_status
 
 
 parser = argparse.ArgumentParser()
@@ -315,6 +316,28 @@ def main():
                 sleep(30)
                 continue
 
+    def check_running_system():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex((stand_ip, 22))
+        if result == 0:
+            logging.debug('port is open')
+        else: 
+            logging.error('port is closed')
+
+        try:
+            system_status = ssh_command('systemctl is-system-running')
+            if system_status == 'running':
+                logging.debug('System is running')
+                sock.close()
+                return True
+            else:
+                logging.error(f'System is not fully loaded yet: {system_status}')
+                sleep(30)
+        except paramiko.AuthenticationException:
+            sleep(30)
+        except ssh_exception.NoValidConnectionsError:
+            sleep(30)
+           
         
     #@pysnooper.snoop()
     def grub_default(kernel, host):
@@ -480,14 +503,21 @@ def main():
             send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
             write_status(done)
         elif args.OVF == 'sd':
-            with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}_new', 'w') as w:
-                w.write(ovf_sd_dates)
-            create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}_new', f'/home/u/{dates_name}_new')
             send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+            jira_send_status(FTI=args.CTI, 
+                             TCYC=args.TCYCLE, 
+                             TCAS=args.TCASE, 
+                             TCV=args.RELEASE, 
+                             status='fail')
             comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                         u@' + stand_ip + ' sudo reboot')
-            sleep(420)
-            send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}_new')
+            sleep(600)
+            if check_running_system:
+                jira_send_status(FTI=args.CTI, 
+                             TCYC=args.TCYCLE, 
+                             TCAS=args.TCASE, 
+                             TCV=args.RELEASE, 
+                             status='pass')
             write_status(done)
         else:    
             send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')

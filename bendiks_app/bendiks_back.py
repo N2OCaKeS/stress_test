@@ -6,7 +6,8 @@ import requests
 import json
 import argparse
 import datetime
-from time import sleep
+from time import sleep, ctime
+from libs.zefir import ZefirResultTable, ZefirStatusAPI, response_status
 
 
 parser = argparse.ArgumentParser()
@@ -48,6 +49,51 @@ __pt_version = args.RELEASE
 __stand = args.STAND
 #__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix']
 __test_list = eval(args.TESTS)
+
+def jira_send_status(FTI, TCYC, TCAS, TCV, status):
+    def test_cycle_status_start():
+        zefir = ZefirStatusAPI(folder_tree_id=FTI,
+                                test_cycle_name=TCYC,
+                                test_case_name=TCAS,
+                                basic_auth=__jira_token)
+        if status == 'pass':
+            status_code = 91
+        elif status == 'fail':
+            status_code = 92
+        zefir.upload_status(status_code)
+        zefir_table = ZefirResultTable(test_cycle_version=TCV,
+                                        token=__conf_token,
+                                        basic_auth=__jira_token,
+                                        username=__username)
+        zefir_table
+
+    with open('JIRA_ERROR.log', 'w') as w:
+        w.write('')
+
+    start_status = 0
+    while start_status == 0:
+        jira_start, life_start = response_status()
+        try:
+            if jira_start == 200 and life_start == 200:
+                test_cycle_status_start()
+                start_status += 1
+            else: 
+                with open('JIRA_ERROR.log', 'a') as err:
+                    err.write('start:\n')
+                    err.write(ctime())
+                    err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
+                    err.write('---------' * 25)
+                    err.write('\n\n')
+                sleep(60)
+        except Exception as e:
+            with open('JIRA_ERROR.log', 'a') as err:
+                err.write('start:\n')
+                err.write(ctime())
+                err.write(str(e))
+                err.write('---------' * 25)
+                err.write('\n\n')
+                start_status += 1
+
 #Делаем get запрос в jira
 matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                 period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.

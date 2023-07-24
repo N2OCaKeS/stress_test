@@ -376,13 +376,11 @@ def main():
                 return True
             else:
                 logging.error(f'System is not fully loaded yet: {system_status}')
-                sleep(30)
         except paramiko.AuthenticationException:
-            sleep(30)
+            pass
         except ssh_exception.NoValidConnectionsError:
-            sleep(30)
+            pass
            
-        
     #@pysnooper.snoop()
     def grub_default(kernel, host):
         def client_command(command):

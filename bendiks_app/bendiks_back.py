@@ -6,7 +6,7 @@ import requests
 import json
 import argparse
 import datetime
-from time import sleep, ctime
+from time import sleep
 
 
 parser = argparse.ArgumentParser()

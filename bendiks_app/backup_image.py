@@ -164,8 +164,8 @@ pack_sql = '--package postgresql-11'
 testlist = f'--testlist {args.AUDIT}'
 psql_aud_off = '-psql_aud off'
 ovf = f'-ovf {args.OVF}'
-ovf_ram_dates = f'{username} {token} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
-ovf_sd_dates = f'{username} {token} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
+ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
+ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
@@ -478,6 +478,7 @@ def main():
                 w.write(ovf_ram_dates)
             create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
             send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+            write_status(done)
         elif args.OVF == 'sd':
             with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}_new', 'w') as w:
                 w.write(ovf_sd_dates)

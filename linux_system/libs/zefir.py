@@ -384,9 +384,9 @@ class ZefirResultTable:
         #Создаем новую html страницу
         with open('res.html', 'r') as r:
             html_table = r.readlines()
-        with open('/home/u/git/stress_test/syslog_ng/templates/stand.html', 'r') as r:
+        with open('/home/u/git/stress_test/linux_system/templates/stand.html', 'r') as r:
             stand = r.read()
-        with open('/home/u/git/stress_test/syslog_ng/templates/times.html', 'r') as r:
+        with open('/home/u/git/stress_test/linux_system/templates/times.html', 'r') as r:
             times = r.read()
         def write_html(string):
             with open('result.html', 'a') as w:

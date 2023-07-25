@@ -54,13 +54,13 @@ class Public:
                  'storage':'SSD Patriot Burst Elite 960GB'}
         }
 
-        if self.stands == 1:
+        if self.grade_stand == 1:
             self.limit = STAND1_UPPER_LIMIT
-        elif self.stands == 2:
+        elif self.grade_stand == 2:
             self.limit = STAND2_UPPER_LIMIT
-        elif self.stands == 3:
+        elif self.grade_stand == 3:
             self.limit = STAND3_UPPER_LIMIT
-        elif self.stands == 4:
+        elif self.grade_stand == 4:
             self.limit = STAND4_UPPER_LIMIT
 
     def run_publish(self):

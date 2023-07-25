@@ -215,7 +215,7 @@ if __name__ == '__main__':
                 'Restart=always\n',
                 'WorkingDirectory={}/\n'.format(dir),
                 'OOMScoreAdjust = -100\n', # Prohibition on the use of the out-of-memory service and the OOM trigger mechanism
-                'ExecStart={}/python3 /tmp/dirtylogger{}.py\n'.format(dir, service_num),
+                'ExecStart=/usr/bin/python3 /tmp/dirtylogger{}.py\n'.format(service_num),
                 'TimeoutSec=1\n',
                 '[Install]\n',
                 'WantedBy = multi - user.target\n']

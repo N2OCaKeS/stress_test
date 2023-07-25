@@ -110,7 +110,8 @@ class Public:
                                         spawn_rating=search(r'spawn: (-?\d+.\d+)', report_temp).group(1),
                                         shell1_rating=search(r'shell1: (-?\d+.\d+)', report_temp).group(1),
                                         shell8_rating=search(r'shell8: (-?\d+.\d+)', report_temp).group(1),
-                                        syscall_rating=search(r'syscall: (-?\d+.\d+)', report_temp).group(1))
+                                        syscall_rating=search(r'syscall: (-?\d+.\d+)', report_temp).group(1),
+                                        total_rating=search(r'System Benchmarks Index Score\s+\d+', report_temp).group(1))
             
         tables = ''
         for file in Path(REPORT_DIR).glob('lsb_*_table.html'):

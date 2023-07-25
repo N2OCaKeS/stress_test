@@ -110,8 +110,8 @@ class Report:
         total_rating = 1
         for item_rating in list_rating:
             total_rating += c_weiht * item_rating
-        if stand == '4':
-            return round((total_rating * 10**3) - 10000, 2)
+        if stand == '4' or stand == '3':
+            return round((total_rating * 10**4) - 10000, 2)
         else:
             return round(total_rating * 10**3, 3)
     

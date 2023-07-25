@@ -309,7 +309,7 @@ def main():
                     with open('JIRA_ERROR.log', 'a') as err:
                         err.write('start:\n')
                         err.write(ctime())
-                        err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
+                        err.write(f'jira_status = {jira_start}\nlife_status = {life_start}\n')
                         err.write('---------' * 25)
                         err.write('\n\n')
                     sleep(60)

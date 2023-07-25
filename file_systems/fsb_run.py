@@ -160,14 +160,15 @@ def test_cycle_status_start():
                                     basic_auth=args.BA,
                                     username=args.USER)
     zefir_table
+    return 0
 
 start_status = 0
 while start_status == 0:
     jira_start, life_start = response()
     try:
         if jira_start == 200 and life_start == 200:
-            test_cycle_status_start()
-            start_status += 1
+            if test_cycle_status_start() == 0:
+                start_status += 1
         else: 
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('start:\n')
@@ -175,6 +176,11 @@ while start_status == 0:
                 err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
                 err.write('---------' * 25)
                 err.write('\n\n')
+                print('start:\n')
+                print(ctime())
+                print(f'jira_status = {jira_start}\nlife_status = {life_start}')
+                print('---------' * 25)
+                print('\n\n')
             sleep(60)
     except Exception as e:
         with open('JIRA_ERROR.log', 'a') as err:
@@ -183,6 +189,11 @@ while start_status == 0:
             err.write(str(e))
             err.write('---------' * 25)
             err.write('\n\n')
+            print('start:\n')
+            print(ctime())
+            print(str(e))
+            print('---------' * 25)
+            print('\n\n')
             start_status += 1
 
 '''
@@ -392,14 +403,15 @@ def upload_result_status():
     statisctics = FileSystemStatistics(username=args.USER, 
                                     token=args.TOKEN)
     statisctics.update_statistics()
+    return 0
 
 end_status = 0
 while end_status == 0:
     jira_end, life_end = response()
     try:
         if jira_end == 200 and life_end == 200:
-            upload_result_status()
-            end_status += 1
+            if upload_result_status() == 0:
+                end_status += 1
         else: 
             with open('JIRA_ERROR.log', 'a') as err:
                 err.write('end:\n')
@@ -416,3 +428,14 @@ while end_status == 0:
             err.write('---------' * 25)
             err.write('\n\n')
             end_status += 1
+
+if path.isfile('libs/zefir.log'):
+    with open('libs/zefir.log', 'r') as r:
+        zefir_log = r.read()
+        print('\n\n\nZefir-log\n')
+        print(zefir_log)
+if path.isfile('JIRA_ERROR.log'):
+    with open('JIRA_ERROR.log', 'r') as r:
+        jira_log = r.read()
+        print('\n\n\nJira-log\n')
+        print(jira_log)

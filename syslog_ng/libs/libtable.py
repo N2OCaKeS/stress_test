@@ -103,14 +103,19 @@ class Report:
     #         total_rating += item_rating
     #     return round(round(total_rating, accuracy) * 1000000, 3)
 
-    def get_total_rating(self, list_rating=[]):
+    def get_total_rating(self, stand, list_rating=[]):
         c_weiht = 0.25
         # Итоговый рейтинг
         # total_rating = round((c_weiht * list_rating[0]) * (c_weiht * list_rating[1]) * (c_weiht * list_rating[2]) * (c_weiht * list_rating[3]) * 10**20, 3)
         total_rating = 1
         for item_rating in list_rating:
             total_rating += c_weiht * item_rating
-        return round((total_rating * 10**3) - 10000, 2)
+        if stand == '4':
+            return round((total_rating * 10**3) - 10000, 2)
+        else:
+            return round(total_rating * 10**3, 3)
+    
+        
 
     def create_html(self, graph_lst, total_rating, service_count, time_execution):    
         '''

@@ -283,7 +283,7 @@ if __name__ == '__main__':
     rating_memory = report.get_rating(x=data_time, y=sng_data['load_memory'])
     rating_syslog_memory = report.get_rating(x=data_time, y=sng_data['load_syslog_ng_memory'])
     rating_disk = report.get_rating(x=data_time, y=sng_data['load_disk'])
-    total_rating = report.get_total_rating([rating_cpu, rating_memory, rating_syslog_memory, rating_disk])
+    total_rating = report.get_total_rating([rating_cpu, rating_memory, rating_syslog_memory, rating_disk], stand=args.STAND)
 
     # Вывод данных на экран
     print("Total rating:", total_rating)

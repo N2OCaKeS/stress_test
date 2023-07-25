@@ -207,9 +207,9 @@ class FileSystemStatistics:
             
             for temp in rating_fg:
                 #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
-                if temp < np.mean(rating_fg) - 1 * np.std(rating_fg):
+                if temp < np.mean(rating_fg) - 2 * np.std(rating_fg):
                     colors.append("#ea5c76")
-                elif temp > np.mean(rating_fg) + 1 * np.std(rating_fg):
+                elif temp > np.mean(rating_fg) + 2 * np.std(rating_fg):
                     colors.append("#ffc322")
                 else:
                     colors.append("#c7d84c")

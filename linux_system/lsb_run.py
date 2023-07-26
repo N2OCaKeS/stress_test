@@ -204,7 +204,8 @@ def main():
 
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
-            cmd('./Run ' + cmd_parallel_processes)
+            #cmd('./Run ' + cmd_parallel_processes)
+            cmd(f'./Run -c {STAND2_UPPER_LIMIT}')
 
             # выгрузить результаты
             upload_result(current_dir)

@@ -182,8 +182,7 @@ def main():
 
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
-            #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND1_UPPER_LIMIT}')
+            cmd('./Run ' + cmd_parallel_processes)
 
             # выгрузить результаты
             upload_result(current_dir)
@@ -205,8 +204,7 @@ def main():
 
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
-            #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND2_UPPER_LIMIT}')
+            cmd('./Run ' + cmd_parallel_processes)
 
             # выгрузить результаты
             upload_result(current_dir)
@@ -228,8 +226,7 @@ def main():
 
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
-            #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND3_UPPER_LIMIT}')
+            cmd('./Run ' + cmd_parallel_processes)
 
             # выгрузить результаты
             upload_result(current_dir)
@@ -251,8 +248,7 @@ def main():
 
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
-            #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND4_UPPER_LIMIT}')
+            cmd('./Run ' + cmd_parallel_processes)
 
             # выгрузить результаты
             upload_result(current_dir)

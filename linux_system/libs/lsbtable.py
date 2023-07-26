@@ -54,8 +54,8 @@ class Report:
                 result_tuples = re.findall(regexp, text)
                 # объявляем новый дикт с кючами значениями
                 self.__raw_dict[test] = {}
-                self.__raw_dict[test]['parallel_threads'] = [float(self.__ox_upper_limit)]
-                print('parallel_threads', [float(self.__ox_upper_limit)])
+                self.__raw_dict[test]['parallel_threads'] = [float(index) for index in range(self.__ox_lower_limit, self.__ox_upper_limit, self.__ox_step)]
+                print('parallel_threads', [float(index) for index in range(self.__ox_lower_limit, self.__ox_upper_limit, self.__ox_step)])
                 self.__raw_dict[test]['value'] = [float(result_tuple[0]) for result_tuple in result_tuples]
                 print('value', [float(result_tuple[0]) for result_tuple in result_tuples])
                 self.__raw_dict[test]['time'] = [float(result_tuple[1]) for result_tuple in result_tuples]

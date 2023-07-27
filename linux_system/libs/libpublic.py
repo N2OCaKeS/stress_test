@@ -113,7 +113,7 @@ class Public:
             #                             shell8_rating=search(r'shell8: (-?\d+.\d+)', report_temp).group(1),
             #                             syscall_rating=search(r'syscall: (-?\d+.\d+)', report_temp).group(1),
             #                             total_rating=search(r'System Benchmarks Index Score\s+\d+', report_temp).group(1))
-            rating = rating_temp.format(total_rating=rating_temp)
+            rating = rating_temp.format(total_rating=report_temp)
             
         tables = ''
         for file in Path(REPORT_DIR).glob('lsb_*_table.html'):

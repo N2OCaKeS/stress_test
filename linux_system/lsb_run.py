@@ -15,6 +15,7 @@ from libs.liblsb import cmd, put_system_info_in_file, upload_result, response, u
 from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.lsbtable import Report
 from libs.libpublic import Public
+from libs.libstatistics import UnixBenchStatistics
 from lsb_conf import INFO_FILENAME, \
     LOG_DIR, REPORT_DIR, REPORT_FILENAME, \
     STAND1_LOWER_LIMIT, STAND1_UPPER_LIMIT, STAND1_STEP, \
@@ -291,9 +292,8 @@ def main():
                                         username=args.USER)
         zefir_table
 
-        #statisctics = FileSystemStatistics(username=args.USER, 
-        #                                token=args.TOKEN)
-        #statisctics.update_statistics()
+        statisctics = UnixBenchStatistics(username=args.USER, token=args.TOKEN)
+        statisctics.update_statistics()
 
     end_status = 0
     while end_status == 0:

@@ -170,7 +170,7 @@ class UnixBenchStatistics:
         return required_pages
     
     def get_info_from_pages(self, pages, columns_df):
-        def collect_data(test_name="unixbench"):
+        def collect_data(test_name="unix"):
             data_for_df = {
 
                 'stand1': {
@@ -354,14 +354,15 @@ class UnixBenchStatistics:
                 ax.legend(handles=[red_patch, green_patch, yellow_patch])
                 fig.savefig(f"statistics/{test_name}_statistics_{key}.png")
 
-        data_df_orel = collect_data(test_name="unixbench")
-        tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="unixbench")
-        create_graphs(data_for_df=data_df_orel, test_name="unixbench", temp_data_for_graph=tmp_data_for_gr)
+        data_df_orel = collect_data(test_name="unix")
+        print(data_df_orel)
+        tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="unix")
+        create_graphs(data_for_df=data_df_orel, test_name="unix", temp_data_for_graph=tmp_data_for_gr)
 
     """
         Создаем итоговую html страницу для life
     """
-    def upload_statistics(self, type_stat='PostgreSQL'):
+    def upload_statistics(self, type_stat='UnixBench'):
         
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
         confluence_stat.create_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
@@ -376,5 +377,61 @@ class UnixBenchStatistics:
                 <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
             </span>
         """
+        image_list = []
+        table_with_data_list = []
+        table_with_mat_stat_list = []
+
+        for file in sorted(os.listdir("statistics")):
+            if file.endswith("png"):
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                                                    img_png=file)
+                image_list.append(img)
+
+            if file.endswith("1.html"):
+                file_table = open(f'statistics/{file}', 'r')
+                table = file_table.read()
+                file_table.close()
+                table_with_data_list.append(table)
+            if file.endswith("2.html"):
+                new_file_table = open(f'statistics/{file}', 'r')
+                mat_stat_table = new_file_table.read()
+                new_file_table.close()
+                table_with_mat_stat_list.append(mat_stat_table)
+            
+        html_list = []
+        for ind, item in enumerate(table_with_data_list):
+            # grade = self.get_grade(header_orel[ind])
+            html_list.append(image_list[ind])
+            html_list.append(item)
+            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
+        
+        html_page = "".join(html_list)
+
+        confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
     
+    def update_statistics(self):
+        pages = self.get_list_required_pages()
+        columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "Рейтинг", 'rating_2']
+        self.get_info_from_pages(pages=pages, columns_df=columns)
+        self.upload_statistics()
+
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--username',
+                        action='store',
+                        required=True,
+                        help='confluence user',
+                        dest='USER')
+    parser.add_argument('-t', '--token',
+                        action='store',
+                        required=True,
+                        default=None,
+                        help='confluence access token',
+                        dest='TOKEN')
+    args = parser.parse_args()
     
+    stat = UnixBenchStatistics(username=args.USER, token=args.TOKEN)
+    stat.update_statistics()

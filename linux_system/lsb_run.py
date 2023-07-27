@@ -15,6 +15,7 @@ from libs.liblsb import cmd, put_system_info_in_file, upload_result, response, u
 from libs.zefir import ZefirStatusAPI, ZefirResultTable
 from libs.lsbtable import Report
 from libs.libpublic import Public
+from libs.libstatistics import UnixBenchStatistics
 from lsb_conf import INFO_FILENAME, \
     LOG_DIR, REPORT_DIR, REPORT_FILENAME, \
     STAND1_LOWER_LIMIT, STAND1_UPPER_LIMIT, STAND1_STEP, \
@@ -191,7 +192,7 @@ def main():
             r = Report(STAND1_LOWER_LIMIT,
                     STAND1_UPPER_LIMIT,
                     STAND1_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 
@@ -214,7 +215,7 @@ def main():
             r = Report(STAND2_LOWER_LIMIT,
                     STAND2_UPPER_LIMIT,
                     STAND2_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 
@@ -236,7 +237,7 @@ def main():
             r = Report(STAND3_LOWER_LIMIT,
                     STAND3_UPPER_LIMIT,
                     STAND3_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 
@@ -258,7 +259,7 @@ def main():
             r = Report(STAND4_LOWER_LIMIT,
                     STAND4_UPPER_LIMIT,
                     STAND4_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 
@@ -291,9 +292,8 @@ def main():
                                         username=args.USER)
         zefir_table
 
-        #statisctics = FileSystemStatistics(username=args.USER, 
-        #                                token=args.TOKEN)
-        #statisctics.update_statistics()
+        statisctics = UnixBenchStatistics(username=args.USER, token=args.TOKEN)
+        statisctics.update_statistics()
 
     end_status = 0
     while end_status == 0:

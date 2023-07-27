@@ -333,7 +333,7 @@ class Report:
         with open(report_file_name, 'r') as report_file:
             for line in report_file:
                 if "System Benchmarks Index Score" in line:
-                    total_rating = line.strip("\n").split(" ")[1]
+                    total_rating = line.strip("\n").split(" ")[-1]
                     ratings['total_rating'] = total_rating
                     with open(rating_file, "w") as file_for_rating:
                         file_for_rating.write(total_rating)

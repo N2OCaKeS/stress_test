@@ -329,8 +329,8 @@ class Report:
         #     ratings[test_name] = rating
         #     with open(rating_file, 'a+') as target_file:
         #         target_file.write('{}: {}\n'.format(test_name, rating))
-
-        with open(REPORT_FILENAME, 'r') as report_file:
+        report_file_name = '{}/{}'.format(self.__report_dir, REPORT_FILENAME)
+        with open(report_file_name, 'r') as report_file:
             for line in report_file:
                 if "System Benchmarks Index Score" in line:
                     total_rating = line.strip("\n").split(" ")[1]

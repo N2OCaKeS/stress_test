@@ -191,7 +191,7 @@ def main():
             r = Report(STAND1_LOWER_LIMIT,
                     STAND1_UPPER_LIMIT,
                     STAND1_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 
@@ -214,7 +214,7 @@ def main():
             r = Report(STAND2_LOWER_LIMIT,
                     STAND2_UPPER_LIMIT,
                     STAND2_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 
@@ -236,7 +236,7 @@ def main():
             r = Report(STAND3_LOWER_LIMIT,
                     STAND3_UPPER_LIMIT,
                     STAND3_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 
@@ -258,7 +258,7 @@ def main():
             r = Report(STAND4_LOWER_LIMIT,
                     STAND4_UPPER_LIMIT,
                     STAND4_STEP)
-            r.create_all_graphs()
+            # r.create_all_graphs()
             r.get_all_ratings()
             r.create_tar()
 

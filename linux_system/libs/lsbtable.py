@@ -323,12 +323,20 @@ class Report:
         f = open(rating_file, 'w')
         f.close()
 
-        # вычисляем рейтинги и складываем в лист и в файл
-        for test_name in TEST_NAMES:
-            rating = self.get_rating(test_name)
-            ratings[test_name] = rating
-            with open(rating_file, 'a+') as target_file:
-                target_file.write('{}: {}\n'.format(test_name, rating))
+        # # вычисляем рейтинги и складываем в лист и в файл
+        # for test_name in TEST_NAMES:
+        #     rating = self.get_rating(test_name)
+        #     ratings[test_name] = rating
+        #     with open(rating_file, 'a+') as target_file:
+        #         target_file.write('{}: {}\n'.format(test_name, rating))
+
+        with open(REPORT_FILENAME, 'r') as report_file:
+            for line in report_file:
+                if "" in line:
+                    total_rating = line.strip("\n").split(" ")[1]
+                    ratings['total_rating'] = total_rating
+                    with open(rating_file, "w") as file_for_rating:
+                        file_for_rating.write(total_rating)
 
         return ratings
 

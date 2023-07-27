@@ -100,19 +100,20 @@ class Public:
             rating_temp = template.read()
         with open(f'{REPORT_DIR}/{RATING_FILENAME}', 'r') as report:
             report_temp = report.read()
-            rating = rating_temp.format(dhry2reg_rating=search(r'dhry2reg: (-?\d+.\d+)', report_temp).group(1),
-                                        whetstone_double_rating=search(r'whetstone-double: (-?\d+.\d+)', report_temp).group(1),
-                                        execl_rating=search(r'execl: (-?\d+.\d+)', report_temp).group(1),
-                                        fstime_rating=search(r'fstime: (-?\d+.\d+)', report_temp).group(1),
-                                        fsbuffer_rating=search(r'fsbuffer: (-?\d+.\d+)', report_temp).group(1),
-                                        fsdisk_rating=search(r'fsdisk: (-?\d+.\d+)', report_temp).group(1),
-                                        pipe_rating=search(r'pipe: (-?\d+.\d+)', report_temp).group(1),
-                                        context1_rating=search(r'context1: (-?\d+.\d+)', report_temp).group(1),
-                                        spawn_rating=search(r'spawn: (-?\d+.\d+)', report_temp).group(1),
-                                        shell1_rating=search(r'shell1: (-?\d+.\d+)', report_temp).group(1),
-                                        shell8_rating=search(r'shell8: (-?\d+.\d+)', report_temp).group(1),
-                                        syscall_rating=search(r'syscall: (-?\d+.\d+)', report_temp).group(1),
-                                        total_rating=search(r'System Benchmarks Index Score\s+\d+', report_temp).group(1))
+            # rating = rating_temp.format(dhry2reg_rating=search(r'dhry2reg: (-?\d+.\d+)', report_temp).group(1),
+            #                             whetstone_double_rating=search(r'whetstone-double: (-?\d+.\d+)', report_temp).group(1),
+            #                             execl_rating=search(r'execl: (-?\d+.\d+)', report_temp).group(1),
+            #                             fstime_rating=search(r'fstime: (-?\d+.\d+)', report_temp).group(1),
+            #                             fsbuffer_rating=search(r'fsbuffer: (-?\d+.\d+)', report_temp).group(1),
+            #                             fsdisk_rating=search(r'fsdisk: (-?\d+.\d+)', report_temp).group(1),
+            #                             pipe_rating=search(r'pipe: (-?\d+.\d+)', report_temp).group(1),
+            #                             context1_rating=search(r'context1: (-?\d+.\d+)', report_temp).group(1),
+            #                             spawn_rating=search(r'spawn: (-?\d+.\d+)', report_temp).group(1),
+            #                             shell1_rating=search(r'shell1: (-?\d+.\d+)', report_temp).group(1),
+            #                             shell8_rating=search(r'shell8: (-?\d+.\d+)', report_temp).group(1),
+            #                             syscall_rating=search(r'syscall: (-?\d+.\d+)', report_temp).group(1),
+            #                             total_rating=search(r'System Benchmarks Index Score\s+\d+', report_temp).group(1))
+            rating = rating_temp.format(total_rating=rating_temp)
             
         tables = ''
         for file in Path(REPORT_DIR).glob('lsb_*_table.html'):

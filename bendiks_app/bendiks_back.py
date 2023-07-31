@@ -226,7 +226,7 @@ try:
                                         {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
                         elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {psql} {testnum} {psql_aud_off}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)
                         elif tests[dates_list[i][1]] == 'RAM-overflow':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {testnum} {ram_ovf}', shell=True)
@@ -286,7 +286,7 @@ try:
                                     {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
                     elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {psql} {testnum} {psql_aud_off}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)
                     elif tests[dates_list[i][1]] == 'RAM-overflow':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {testnum} {ram_ovf}', shell=True)

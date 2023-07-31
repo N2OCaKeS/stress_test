@@ -33,6 +33,8 @@ parent_page_list = {
                   'auditd-f':'1.7.4.UU.1 ⬝ Системные службы',
                   'auditd-u':'1.7.4.UU.1 ⬝ Системные службы',
                   'syslog-ng':'1.7.4.UU.1 ⬝ Системные службы',
+                  'RAM-overflow':'1.7.4.UU.1 ⬝ Системные службы',
+                  'SD-overflow':'1.7.4.UU.1 ⬝ Системные службы',
                   'unix':'1.7.4.UU.1 ⬝ UnixBench'
                  },
     '1.7.4':{'postgresql':'PostgreSQL',
@@ -61,6 +63,8 @@ parent_page_list = {
              'NTFS':'1.7.2 ⬝ Файловые системы',
              'EXT4':'1.7.2 ⬝ Файловые системы',
              'EXT4 parsec':'1.7.2 ⬝ Файловые системы',
+             'RAM-overflow':'1.7.2 ⬝ Системные службы',
+             'SD-overflow':'1.7.2 ⬝ Системные службы',
              'unix':'1.7.2 ⬝ UnixBench'
             },
     '1.7.3':{'postgresql':'1.7.3 ⬝ PostgreSQL',
@@ -74,6 +78,8 @@ parent_page_list = {
              'NTFS':'1.7.3 ⬝ Файловые системы',
              'EXT4':'1.7.3 ⬝ Файловые системы',
              'EXT4 parsec':'1.7.3 ⬝ Файловые системы',
+             'RAM-overflow':'1.7.3 ⬝ Системные службы',
+             'SD-overflow':'1.7.3 ⬝ Системные службы',
              'unix':'1.7.3 ⬝ UnixBench'
             },
     '1.7.3.UU.2':{'XFS':'1.7.3.UU.2 ⬝ Файловые системы',
@@ -87,6 +93,8 @@ parent_page_list = {
                   'auditd-f':'1.7.3.UU.2 ⬝ Системные службы',
                   'auditd-u':'1.7.3.UU.2 ⬝ Системные службы',
                   'syslog-ng':'1.7.3.UU.2 ⬝ Системные службы',
+                  'RAM-overflow':'1.7.3.UU.2 ⬝ Системные службы',
+                  'SD-overflow':'1.7.3.UU.2 ⬝ Системные службы',
                   'unix':'1.7.3.UU.2 ⬝ UnixBench'
                  },
     '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',
@@ -100,6 +108,8 @@ parent_page_list = {
                   'auditd-f':'1.7.3 UU1 ⬝ Системные службы',
                   'auditd-u':'1.7.3 UU1 ⬝ Системные службы',
                   'syslog-ng':'1.7.3 UU1 ⬝ Системные службы',
+                  'RAM-overflow':'1.7.3 UU1 ⬝ Системные службы',
+                  'SD-overflow':'1.7.3 UU1 ⬝ Системные службы',
                   'unix':'1.7.3.UU.1 ⬝ UnixBench'
                  },
     '1.7.1':{'postgresql':'1.7.1 ⬝ PostgreSQL',
@@ -113,6 +123,8 @@ parent_page_list = {
              'auditd-p':'Системные службы',
              'auditd-f':'Системные службы',
              'auditd-u':'Системные службы',
+             'RAM-overflow':'Системные службы',
+             'SD-overflow':'Системные службы',
              'unix':'1.7.1 ⬝ UnixBench'
             }
 }

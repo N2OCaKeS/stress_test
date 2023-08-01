@@ -87,6 +87,8 @@ pid2 = None
 pid3 = None
 pid4 = None
 process_manager4 = None
+process_list4 = []
+
 
 
 
@@ -507,6 +509,7 @@ def run_command_stand3():
 @app.route('/run-command-stand4', methods=['POST'])
 def run_command_stand4():
     global process_manager4
+    global process_list4
     command = request.form.get('command4')
     kernel = None
 

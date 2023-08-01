@@ -1,6 +1,7 @@
 #!/bin/python3
 
 from flask import Flask, render_template, request, send_from_directory, redirect, url_for
+from multiprocessing import Process, Manager
 import string
 import random
 import subprocess
@@ -67,7 +68,7 @@ with open('/home/u/up', 'r') as r:
 options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 
                   'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow'])
 releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', 'debian10-5.15', 'debian11-6.1', 'altlinux-5.10']
-kernels = ['5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency']
+kernels = ['5.10.0-1057-generic', '5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency']
 #main_url = generate_random_string(60)
 red_gif = 'http://10.177.103.10:8000/static/red.gif'
 ping_gif = 'http://10.177.103.10:8000/static/ping.gif'
@@ -85,6 +86,7 @@ pid = None
 pid2 = None
 pid3 = None
 pid4 = None
+process_manager4 = None
 
 
 
@@ -504,8 +506,7 @@ def run_command_stand3():
 
 @app.route('/run-command-stand4', methods=['POST'])
 def run_command_stand4():
-    global pid4
-    global process4
+    global process_manager4
     command = request.form.get('command4')
     kernel = None
 
@@ -526,15 +527,18 @@ def run_command_stand4():
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}" -kn "{kernel}"'
 
-        def run_command_and_log(command):
+        def run_command_and_log(command, process_list=list):
             with open("front_stand4.log", "a") as output:
-                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
-            return process.pid
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
+            process_list.append(process)
         
+        with Manager() as manager:
+            process_list4 = manager.list()
         if kernel != 'None':
-            pid4 = threading.Thread(target=run_command_and_log, args=(command_to_run_kernel,)).start()
+            process_manager4 = Process(target=run_command_and_log, args=(command_to_run_kernel, process_list4))
         else:
-            pid4 = threading.Thread(target=run_command_and_log, args=(command_to_run,)).start()
+            process_manager4 = Process(target=run_command_and_log, args=(command_to_run, process_list4))
+        process_manager4.start()
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
@@ -544,19 +548,13 @@ def run_command_stand4():
             w.write('Остановлен')
 
     elif command == 'stop':
-        if pid4 is not None:
-            parent_proc = psutil.Process(pid4) 
-            child_procs = parent_proc.children(recursive=True)
-            for child_proc in child_procs:
+        if process_manager4 is not None:
+            for process in process_list4:
                 try:
-                    child_proc.send_signal(signal.SIGTERM)
-                except psutil.NoSuchProcess:
-                    print(f"Процесс с pid {child_proc.pid} уже не существует")
-            parent_proc.send_signal(signal.SIGTERM)
-            
-        if process4 is not None:
-            process4.terminate()
-            process4 = None
+                    killpg(getpgid(process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    print(f"Процесс с PID {process.pid} уже не существует")
+            process_manager4 = None
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')

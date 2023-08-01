@@ -8,6 +8,7 @@ from os import path, remove, kill, getpgid, killpg, setsid
 import signal
 #import logging
 import threading
+import psutil
 #from queue import Queue, Empty
 
 
@@ -527,7 +528,7 @@ def run_command_stand4():
 
         def run_command_and_log(command):
             with open("front_stand4.log", "a") as output:
-                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
             return process.pid
         
         if kernel != 'None':
@@ -544,12 +545,14 @@ def run_command_stand4():
 
     elif command == 'stop':
         if pid4 is not None:
-            try:
-                #kill(pid4, 0) 
-                #kill(pid4, signal.SIGKILL) 
-                killpg(getpgid(pid4), signal.SIGTERM)
-            except ProcessLookupError:
-                print(f"Процесс с pid {pid4} не существует")
+            parent_proc = psutil.Process(pid4) 
+            child_procs = parent_proc.children(recursive=True)
+            for child_proc in child_procs:
+                try:
+                    child_proc.send_signal(signal.SIGTERM)
+                except psutil.NoSuchProcess:
+                    print(f"Процесс с pid {child_proc.pid} уже не существует")
+            parent_proc.send_signal(signal.SIGTERM)
             
         if process4 is not None:
             process4.terminate()

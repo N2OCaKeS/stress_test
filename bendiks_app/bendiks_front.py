@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, send_from_directory, redirect
 import string
 import random
 import subprocess
-from os import path, remove, kill
+from os import path, remove, kill, getpgid, killpg, setsid
 import signal
 #import logging
 import threading
@@ -336,7 +336,7 @@ def run_command_stand1():
 
         def run_command_and_log(command):
             with open("front_stand1.log", "a") as output:
-                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
             return process.pid
     
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand1 -ts "{tests}"'
@@ -356,8 +356,9 @@ def run_command_stand1():
     elif command == 'stop':
         if pid is not None:
             try:
-                kill(pid, 0) 
-                kill(pid, signal.SIGKILL) 
+                #kill(pid, 0) 
+                #kill(pid, signal.SIGKILL) 
+                killpg(getpgid(pid), signal.SIGTERM)
             except ProcessLookupError:
                 print(f"Процесс с pid {pid} не существует")
             
@@ -400,7 +401,7 @@ def run_command_stand2():
         
         def run_command_and_log(command):
             with open("front_stand2.log", "a") as output:
-                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
             return process.pid
         
         if kernel != 'None':
@@ -418,8 +419,9 @@ def run_command_stand2():
     elif command == 'stop':
         if pid2 is not None:
             try:
-                kill(pid2, 0) 
-                kill(pid2, signal.SIGKILL) 
+                #kill(pid2, 0) 
+                #kill(pid2, signal.SIGKILL) 
+                killpg(getpgid(pid2), signal.SIGTERM)
             except ProcessLookupError:
                 print(f"Процесс с pid {pid2} не существует")
             
@@ -462,7 +464,7 @@ def run_command_stand3():
 
         def run_command_and_log(command):
             with open("front_stand3.log", "a") as output:
-                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
             return process.pid
         
         if kernel != 'None':
@@ -481,8 +483,9 @@ def run_command_stand3():
     elif command == 'stop':
         if pid3 is not None:
             try:
-                kill(pid3, 0) 
-                kill(pid3, signal.SIGKILL)
+                #kill(pid3, 0) 
+                #kill(pid3, signal.SIGKILL)
+                killpg(getpgid(pid3), signal.SIGTERM)
             except ProcessLookupError:
                 print(f"Процесс с pid {pid3} не существует")
             
@@ -524,7 +527,7 @@ def run_command_stand4():
 
         def run_command_and_log(command):
             with open("front_stand4.log", "a") as output:
-                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True)
+                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
             return process.pid
         
         if kernel != 'None':
@@ -539,20 +542,12 @@ def run_command_stand4():
         with open('conf/work_status_stand4.conf', 'w') as w:
             w.write('Остановлен')
 
-
-
-#
-#        """TODO убивать дочерние процессы"""
-#
-
-
-
-
     elif command == 'stop':
         if pid4 is not None:
             try:
-                kill(pid4, 0) 
-                kill(pid4, signal.SIGKILL) 
+                #kill(pid4, 0) 
+                #kill(pid4, signal.SIGKILL) 
+                killpg(getpgid(pid4), signal.SIGTERM)
             except ProcessLookupError:
                 print(f"Процесс с pid {pid4} не существует")
             

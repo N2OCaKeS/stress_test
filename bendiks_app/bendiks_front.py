@@ -537,11 +537,11 @@ def run_command_stand4():
         
         with Manager() as manager:
             process_list4 = manager.list()
-        if kernel != 'None':
-            process_manager4 = Process(target=run_command_and_log, args=(command_to_run_kernel, process_list4))
-        else:
-            process_manager4 = Process(target=run_command_and_log, args=(command_to_run, process_list4))
-        process_manager4.start()
+            if kernel != 'None':
+                process_manager4 = Process(target=run_command_and_log, args=(command_to_run_kernel, process_list4))
+            else:
+                process_manager4 = Process(target=run_command_and_log, args=(command_to_run, process_list4))
+            process_manager4.start()
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
@@ -552,12 +552,13 @@ def run_command_stand4():
 
     elif command == 'stop':
         if process_manager4 is not None:
-            for process in process_list4:
-                try:
-                    killpg(getpgid(process.pid), signal.SIGTERM)
-                except ProcessLookupError:
-                    print(f"Процесс с PID {process.pid} уже не существует")
-            process_manager4 = None
+            with Manager() as manager:
+                for process in process_list4:
+                    try:
+                        killpg(getpgid(process.pid), signal.SIGTERM)
+                    except ProcessLookupError:
+                        print(f"Процесс с PID {process.pid} уже не существует")
+                process_manager4 = None
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')

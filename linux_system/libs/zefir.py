@@ -108,7 +108,7 @@ class UploaderZC(Public, UnixBenchStatistics):
                 with open('JIRA_ERROR.log', 'a') as err:
                     err.write('start:\n')
                     err.write(ctime())
-                    err.write(str(e))
+                    err.write(f'Type: {type(e).__name__}, Message: {str(e)}')
                     err.write('---------' * 25)
                     err.write('\n\n')
                     except_counter += 1

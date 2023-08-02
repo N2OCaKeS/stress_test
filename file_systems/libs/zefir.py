@@ -35,7 +35,8 @@ class UploaderZC(Public, FileSystemStatistics):
                  package=None,
                  public=False,
                  statistics=False,
-                 file_system=None):
+                 file_system=None,
+                 test_set=None):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -52,6 +53,7 @@ class UploaderZC(Public, FileSystemStatistics):
         self.public = public
         self.statistics = statistics
         self.file_system=file_system
+        self.TSET = test_set
 
     def test_cycle_status_changer(self, status):
 
@@ -63,7 +65,8 @@ class UploaderZC(Public, FileSystemStatistics):
                             conf_new_page_name=self.CNPN,
                             grade_stand=self.GS,
                             package=self.PKG,
-                            file_system=self.file_system)
+                            file_system=self.file_system,
+                            test_set=self.TSET)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,

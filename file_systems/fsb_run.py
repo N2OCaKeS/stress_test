@@ -159,7 +159,8 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                  conf_parent_page=args.PPAGE,
                  conf_new_page_name=args.NPAGE,
                  grade_stand=args.STAND,
-                 file_system=args.FS)
+                 file_system=args.FS,
+                 test_set=args.TS)
     
 uzs.upload_test_cycle_status('progress')
 

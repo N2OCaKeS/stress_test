@@ -34,7 +34,8 @@ class UploaderZC(Public, FileSystemStatistics):
                  grade_stand=None,
                  package=None,
                  public=False,
-                 statistics=False):
+                 statistics=False,
+                 file_system=None):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -50,6 +51,7 @@ class UploaderZC(Public, FileSystemStatistics):
         self.PKG = package
         self.public = public
         self.statistics = statistics
+        self.file_system=file_system
 
     def test_cycle_status_changer(self, status):
 
@@ -60,7 +62,8 @@ class UploaderZC(Public, FileSystemStatistics):
                             conf_parent_page=self.CPP,
                             conf_new_page_name=self.CNPN,
                             grade_stand=self.GS,
-                            package=self.PKG)
+                            package=self.PKG,
+                            file_system=self.file_system)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,
@@ -109,7 +112,7 @@ class UploaderZC(Public, FileSystemStatistics):
                 with open('JIRA_ERROR.log', 'a') as err:
                     err.write('start:\n')
                     err.write(ctime())
-                    err.write(str(e))
+                    err.write(f'Type: {type(e).__name__}, Message: {str(e)}')
                     err.write('---------' * 25)
                     err.write('\n\n')
                     except_counter += 1

@@ -24,10 +24,9 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
 from libs.libpsqltests import Test
 from libs.zefir import UploaderZC
-from libs.libpsb import astra_version, dump, upload_results_to_ftp, response
+from libs.libpsb import astra_version, dump, upload_results_to_ftp
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
-from libs.libpublic import Public
 
 
 DESCRIPTION = ""

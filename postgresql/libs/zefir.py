@@ -11,9 +11,9 @@ import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
-from libpsb import response
-from libpublic import Public
-from libstatistics import PSQLStatistics2
+from libs.libpsb import response
+from libs.libpublic import Public
+from libs.libstatistics import PSQLStatistics2
 from time import sleep, ctime
 
 

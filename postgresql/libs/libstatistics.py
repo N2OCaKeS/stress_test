@@ -688,9 +688,9 @@ class PSQLStatistics2:
                 colors = []
                 for temp in data_ratings.get('rating'):
                     #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
-                    if temp < np.mean(data_ratings.get('rating')) - 1 * np.std(data_ratings.get('rating')):
+                    if temp < np.mean(data_ratings.get('rating')) - 1.5 * np.std(data_ratings.get('rating')):
                         colors.append("#ea5c76")
-                    elif temp > np.mean(data_ratings.get('rating')) + 1 * np.std(data_ratings.get('rating')):
+                    elif temp > np.mean(data_ratings.get('rating')) + 1.5 * np.std(data_ratings.get('rating')):
                         colors.append("#ffc322")
                     else:
                         colors.append("#c7d84c")
@@ -711,9 +711,9 @@ class PSQLStatistics2:
                     except ValueError:
                         pass
                     plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
-                red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину превышающую стандартное отклонение')
+                red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину x1.5 превышающую стандартное отклонение')
                 green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
-                yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
+                yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
                 ax.legend(handles=[red_patch, green_patch, yellow_patch])
                 fig.savefig(f"statistics/{test_name}_statistics_{key}.png")
 

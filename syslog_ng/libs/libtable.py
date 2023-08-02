@@ -109,8 +109,10 @@ class Report:
         # total_rating = round((c_weiht * list_rating[0]) * (c_weiht * list_rating[1]) * (c_weiht * list_rating[2]) * (c_weiht * list_rating[3]) * 10**20, 3)
         total_rating = 1
         for item_rating in list_rating:
+            print(item_rating)
             total_rating += c_weiht * item_rating
         if stand == '4' or stand == '3':
+            print(stand)
             return round((total_rating * 10**4) - 10000, 2)
         else:
             return round(total_rating * 10**3, 3)

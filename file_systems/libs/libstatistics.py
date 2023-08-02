@@ -207,9 +207,9 @@ class FileSystemStatistics:
             
             for temp in rating_fg:
                 #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
-                if temp < np.mean(rating_fg) - 1 * np.std(rating_fg):
+                if temp < np.mean(rating_fg) - 1.5 * np.std(rating_fg):
                     colors.append("#ea5c76")
-                elif temp > np.mean(rating_fg) + 1 * np.std(rating_fg):
+                elif temp > np.mean(rating_fg) + 1.5 * np.std(rating_fg):
                     colors.append("#ffc322")
                 else:
                     colors.append("#c7d84c")
@@ -233,9 +233,9 @@ class FileSystemStatistics:
                 except ValueError:
                     pass
                 plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
-            red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину превышающую стандартное отклонение')
+            red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину x1.5 превышающую стандартное отклонение')
             green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
-            yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину превышающую стандартное отклонение')
+            yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
             ax.legend(handles=[red_patch, green_patch, yellow_patch])
             fig.savefig(f"statistics/fs_{fs_type}_{stand}_1.png")
         
@@ -515,3 +515,22 @@ class FileSystemStatistics:
         pages = self.get_list_required_pages()
         self.get_info_from_pages(pages=pages)
         self.upload_statistics(type_stat="Файловые системы")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--username',
+                        action='store',
+                        required=True,
+                        help='confluence user',
+                        dest='USER')
+    parser.add_argument('-t', '--token',
+                        action='store',
+                        required=True,
+                        default=None,
+                        help='confluence access token',
+                        dest='TOKEN')
+    args = parser.parse_args()
+    
+    stat = FileSystemStatistics(username=args.USER, token=args.TOKEN)
+    stat.update_statistics()

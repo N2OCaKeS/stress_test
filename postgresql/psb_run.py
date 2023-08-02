@@ -23,7 +23,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
 from libs.libpsqltests import Test
-from libs.zefir import ZefirStatusAPI, ZefirResultTable
+from libs.zefir import UploaderZC
 from libs.libpsb import astra_version, dump, upload_results_to_ftp, response
 from libs.libtable import Report
 from libs.libsysmon import create_avgsysmon_filereport, sorted_data_from_sysmonfile
@@ -151,42 +151,14 @@ parser.add_argument('-psql_aud',
 args = parser.parse_args()
 
 
-def test_cycle_status_start():
-    zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
-                            test_cycle_name=args.TCYC,
-                            test_case_name=args.TCAS,
-                            basic_auth=args.BA)
-    zefir.upload_status(90)
-    zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
-                                    token=args.TOKEN,
-                                    basic_auth=args.BA,
-                                    username=args.USER)
-    zefir_table
-
-start_status = 0
-while start_status == 0:
-    jira_start, life_start = response()
-    try:
-        if jira_start == 200 and life_start == 200:
-            test_cycle_status_start()
-            start_status += 1
-        else: 
-            with open('JIRA_ERROR.log', 'a') as err:
-                err.write('start:\n')
-                err.write(ctime())
-                err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
-                err.write('---------' * 25)
-                err.write('\n\n')
-            sleep(60)
-    except Exception as e:
-        with open('JIRA_ERROR.log', 'a') as err:
-            err.write('start:\n')
-            err.write(ctime())
-            err.write(str(e))
-            err.write('---------' * 25)
-            err.write('\n\n')
-            start_status += 1
-
+uzs = UploaderZC(folder_tree_id=args.FTI,
+                        test_cycle_name=args.TCYC,
+                        test_case_name=args.TCAS,
+                        basic_auth=args.BA,
+                        test_cycle_version=args.TCV,
+                        token=args.TOKEN,
+                        username=args.USER)
+uzs.upload_test_cycle_status('progress')
 
 #
 start_time = time()

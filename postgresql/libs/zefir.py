@@ -11,6 +11,111 @@ import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
+from libpsb import response
+from libpublic import Public
+from libstatistics import PSQLStatistics2
+from time import sleep, ctime
+
+
+class UploaderZC(Public, PSQLStatistics2):
+
+    def __init__(self,
+                 folder_tree_id=None,
+                 test_cycle_name=None,
+                 test_case_name=None,
+                 basic_auth=None,
+                 test_cycle_version=None,
+                 token=None,
+                 username=None,
+                 conf_space=None,
+                 conf_parent_page=None,
+                 conf_new_page_name=None,
+                 grade_stand=None,
+                 package=None,
+                 public=False,
+                 statistics=False):
+
+        self.FTI = folder_tree_id
+        self.TCYC = test_cycle_name
+        self.TCAS = test_case_name
+        self.BA = basic_auth
+        self.TCV = test_cycle_version
+        self.CT = token
+        self.UN = username
+        self.CS = conf_space
+        self.CPP = conf_parent_page
+        self.CNPN = conf_new_page_name
+        self.GS = grade_stand
+        self.PKG = package
+        self.public = public
+        self.statistics = statistics
+
+    def test_cycle_status_changer(self, status):
+
+        if self.public == True:
+            public = Public(username=self.UN,
+                            token=self.CT,
+                            conf_space=self.CS,
+                            conf_parent_page=self.CPP,
+                            conf_new_page_name=self.CNPN,
+                            grade_stand=self.GS,
+                            package=self.PKG)
+            public.run_publish()
+
+        zefir = ZefirStatusAPI(folder_tree_id=self.FTI,
+                               test_cycle_name=self.TCYC,
+                               test_case_name=self.TCAS,
+                               basic_auth=self.BA)
+        if status == 'pass':
+            status_code = 91
+        elif status == 'fail':
+            status_code = 92
+        elif status == 'progress':
+            status_code = 90
+        zefir.upload_status(status_code)
+        zefir_table = ZefirResultTable(test_cycle_version=self.TCV,
+                                       token=self.CT,
+                                       basic_auth=self.BA,
+                                       username=self.UN)
+        zefir_table
+
+        if self.statistics == True:
+            statistics = PSQLStatistics2(username=self.UN, 
+                                        token=self.CT)
+            statistics.update_statistics()
+
+
+    def upload_test_cycle_status(self, zefir_status):
+        wait_time = 30 #Минут ожидания
+        requests_frequency = 180 #Периодичность обращений к jira в секундах 
+        status = 0
+        except_counter = 0
+        while status == 0:
+            jira, life = response()
+            try:
+                if jira == 200 and life == 200:
+                    self.test_cycle_status_changer(zefir_status)
+                    status += 1
+                else: 
+                    with open('JIRA_ERROR.log', 'a') as err:
+                        err.write('start:\n')
+                        err.write(ctime())
+                        err.write(f'jira_status = {jira}\nlife_status = {life}')
+                        err.write('---------' * 25)
+                        err.write('\n\n')
+                    sleep(60)
+            except Exception as e:
+                with open('JIRA_ERROR.log', 'a') as err:
+                    err.write('start:\n')
+                    err.write(ctime())
+                    err.write(str(e))
+                    err.write('---------' * 25)
+                    err.write('\n\n')
+                    except_counter += 1
+                    sleep(requests_frequency)
+                    if except_counter == wait_time * 60 / requests_frequency:
+                        err.write(f'Except count = {except_counter}, aborted')
+                        status += 1
 
 
 

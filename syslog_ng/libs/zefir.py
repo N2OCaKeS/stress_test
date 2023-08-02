@@ -11,10 +11,10 @@ import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
-from libpublic import Public
-from libstatistics import FileSystemStatistics
+from libs.libpublic import Public
+from libs.libstatistics import FileSystemStatistics
 from time import sleep, ctime
-from libsng import response
+from libs.libsng import response
 
 
 

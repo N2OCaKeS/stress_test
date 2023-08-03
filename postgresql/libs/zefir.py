@@ -66,6 +66,12 @@ class UploaderZC(Public, PSQLStatistics2):
                                test_cycle_name=self.TCYC,
                                test_case_name=self.TCAS,
                                basic_auth=self.BA)
+
+        if self.statistics == True:
+            statistics = PSQLStatistics2(username=self.UN, 
+                                        token=self.CT)
+            statistics.update_statistics()
+
         if status == 'pass':
             status_code = 91
         elif status == 'fail':
@@ -78,12 +84,7 @@ class UploaderZC(Public, PSQLStatistics2):
                                        basic_auth=self.BA,
                                        username=self.UN)
         zefir_table
-
-        if self.statistics == True:
-            statistics = PSQLStatistics2(username=self.UN, 
-                                        token=self.CT)
-            statistics.update_statistics()
-
+        return 0
 
     def upload_test_cycle_status(self, zefir_status):
         wait_time = 30 #Минут ожидания
@@ -94,12 +95,12 @@ class UploaderZC(Public, PSQLStatistics2):
             jira, life = response()
             try:
                 if jira == 200 and life == 200:
-                    self.test_cycle_status_changer(zefir_status)
-                    status += 1
+                    if self.test_cycle_status_changer(zefir_status) == 0:
+                        status += 1
                 else: 
                     with open('JIRA_ERROR.log', 'a') as err:
                         err.write('start:\n')
-                        err.write(ctime())
+                        err.write(str(ctime()) + '\n')
                         err.write(f'jira_status = {jira}\nlife_status = {life}')
                         err.write('---------' * 25)
                         err.write('\n\n')
@@ -107,7 +108,7 @@ class UploaderZC(Public, PSQLStatistics2):
             except Exception as e:
                 with open('JIRA_ERROR.log', 'a') as err:
                     err.write('start:\n')
-                    err.write(ctime())
+                    err.write(str(ctime()) + '\n')
                     err.write(f'Type: {type(e).__name__}, Message: {str(e)}')
                     err.write('---------' * 25)
                     err.write('\n\n')

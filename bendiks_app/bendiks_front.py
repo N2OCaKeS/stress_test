@@ -530,35 +530,33 @@ def run_command_stand4():
         command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}" -kn "{kernel}"'
 
-        def run_command_and_log(command, process_list=list):
+        def run_command_and_log(command):
             with open("front_stand4.log", "a") as output:
                 process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
-            process_list.append(process)
-        
-        with Manager() as manager:
-            process_list4 = manager.list()
-            if kernel != 'None':
-                process_manager4 = Process(target=run_command_and_log, args=(command_to_run_kernel, process_list4))
-            else:
-                process_manager4 = Process(target=run_command_and_log, args=(command_to_run, process_list4))
-            process_manager4.start()
+            process_list4.append(process)
+
+        if kernel != 'None':
+            process_manager4 = Process(target=run_command_and_log, args=(command_to_run_kernel,))
+        else:
+            process_manager4 = Process(target=run_command_and_log, args=(command_to_run,))
+        process_manager4.start()
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')
-    
+
     elif command == 'ok':
         with open('conf/work_status_stand4.conf', 'w') as w:
             w.write('Остановлен')
 
     elif command == 'stop':
         if process_manager4 is not None:
-            with Manager() as manager:
-                for process in process_list4:
-                    try:
-                        killpg(getpgid(process.pid), signal.SIGTERM)
-                    except ProcessLookupError:
-                        print(f"Процесс с PID {process.pid} уже не существует")
-                process_manager4 = None
+            for process in process_list4:
+                try:
+                    killpg(getpgid(process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    print(f"Процесс с PID {process.pid} уже не существует")
+            process_manager4 = None
+            process_list4 = []
 
         if path.isfile('conf/kernel_args.conf'):
             remove('conf/kernel_args.conf')

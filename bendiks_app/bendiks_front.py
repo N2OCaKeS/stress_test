@@ -534,6 +534,9 @@ def run_command_stand4():
             with open("front_stand4.log", "a") as output:
                 process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
             process_list4.append(process)
+#            with open("process_list4.log", "w") as ot:
+#                for process in process_list4:
+#                    ot.write(str(process.pid) + '\n')
 
         if kernel != 'None':
             process_manager4 = Process(target=run_command_and_log, args=(command_to_run_kernel,))
@@ -552,7 +555,7 @@ def run_command_stand4():
         if process_manager4 is not None:
             for process in process_list4:
                 try:
-                    killpg(getpgid(process.pid), signal.SIGTERM)
+                    process.terminate()
                 except ProcessLookupError:
                     print(f"Процесс с PID {process.pid} уже не существует")
             process_manager4 = None

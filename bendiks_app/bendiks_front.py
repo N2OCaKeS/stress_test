@@ -64,6 +64,8 @@ with open('/home/u/url', 'r') as r:
     main_url = r.read().replace('\n', '').replace('\r', '')
 with open('/home/u/up', 'r') as r:
     up = r.read()
+mobile_url = 'mobile'
+
 
 options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 
                   'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow'])
@@ -114,6 +116,11 @@ def login():
             return render_template('login.html', error="Неверный логин или пароль")
     else:
         return render_template('login.html')
+
+
+@app.route(f'/{mobile_url}', methods=['GET', 'POST'])
+def mobile():
+    render_template('mobile.html')
 
 
 @app.route(f'/{main_url}', methods=['GET', 'POST'])
@@ -280,11 +287,13 @@ def index():
         
         with open('conf/tests_args.conf', 'w') as w:
             w.write(str(tests))
+
+        mobile_method = request.headers.get('PostID')
         
         return redirect(url_for('index'))
             
-
-    return render_template('main.html', 
+    if mobile_method != None:
+        return render_template('mobile.html', 
                            options=options, 
                            test_list=test_list,
                            releas_list=releas_list,
@@ -312,7 +321,39 @@ def index():
                            progress_stand2=progress_stand2,
                            progress_stand3=progress_stand3,
                            progress_stand4=progress_stand4,
-                           main_url=main_url)
+                           main_url=main_url,
+                           mobile_url=mobile_url)
+    else:
+        return render_template('main.html', 
+                            options=options, 
+                            test_list=test_list,
+                            releas_list=releas_list,
+                            kernel_list=kernel_list, 
+                            releases=releases, 
+                            stand=stand,
+                            kernels=kernels,
+                            status_stand1=status_stand1,
+                            status_stand2=status_stand2,
+                            status_stand3=status_stand3,
+                            status_stand4=status_stand4,
+                            stand1_log=stand1_log,
+                            stand2_log=stand2_log,
+                            stand3_log=stand3_log,
+                            stand4_log=stand4_log,
+                            status_gif_stand1=status_gif_stand1,
+                            status_gif_stand2=status_gif_stand2,
+                            status_gif_stand3=status_gif_stand3,
+                            status_gif_stand4=status_gif_stand4,
+                            stand1_sett=stand1_sett,
+                            stand2_sett=stand2_sett,
+                            stand3_sett=stand3_sett,
+                            stand4_sett=stand4_sett,
+                            progress_stand1=progress_stand1,
+                            progress_stand2=progress_stand2,
+                            progress_stand3=progress_stand3,
+                            progress_stand4=progress_stand4,
+                            main_url=main_url,
+                            mobile_url=mobile_url)
 
 @app.route('/static/<path:path>')
 def send_static(path):

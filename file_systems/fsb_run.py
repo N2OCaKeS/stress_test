@@ -168,8 +168,8 @@ uzs.upload_test_cycle_status('progress')
     main
 '''
 run_storage_init = 'sudo python3 {dir}/fsb_storage_init.py --fs {fs}'
-run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts} {sn}'
-run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec {sn}'
+run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts} -sn {sn}'
+run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
 
 '''
     VirtualBox
@@ -279,7 +279,7 @@ if args.VIRTUAL: # вирт. стенд
                                                 sn=args.STAND))
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
-        print(exception)
+        print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
         exit(2)
     '''
         Выключить машину.
@@ -316,13 +316,15 @@ else: # физ. стенд
     try:
         if args.PARSEC:
             cmd(run_test_parsec.format(dir=SCRIPT_DIR,
-                                       ts=args.TS))
+                                       ts=args.TS,
+                                       sn=args.STAND))
         else:
             cmd(run_test.format(dir=SCRIPT_DIR,
-                                ts=args.TS))
+                                ts=args.TS,
+                                sn=args.STAND))
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
-        print(exception)
+        print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
         exit(2)
 
     cmd('umount {}'.format(STORAGE_MOUNT_DIR))

@@ -168,8 +168,8 @@ uzs.upload_test_cycle_status('progress')
     main
 '''
 run_storage_init = 'sudo python3 {dir}/fsb_storage_init.py --fs {fs}'
-run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts}'
-run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec'
+run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts} {sn}'
+run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec {sn}'
 
 '''
     VirtualBox
@@ -271,10 +271,12 @@ if args.VIRTUAL: # вирт. стенд
                         connect_kwargs={"password": PASSWORD}) as node_client:
             if args.PARSEC:
                 node_client.run(run_test_parsec.format(dir=SCRIPT_DIR,
-                                                       ts=args.TS))
+                                                       ts=args.TS,
+                                                       sn=args.STAND))
             else:
                 node_client.run(run_test.format(dir=SCRIPT_DIR,
-                                                ts=args.TS))
+                                                ts=args.TS,
+                                                sn=args.STAND))
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
         print(exception)

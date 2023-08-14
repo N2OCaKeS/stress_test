@@ -5,7 +5,6 @@
 <title>Bendiks</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-KK94CHFLLe+nY2dmCWGMq91rCGa5gtU4mk92HdvYe+M/SXH301p5ILy+dN9+nJOZ" crossorigin="anonymous">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 
 <body style="background-color: #00121a ;">
@@ -34,7 +33,7 @@
   <div class="card text-bg-dark mb-3">
     <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Настройки</div>
     <div class="card-body">
-      <form method="POST" action="/{{ main_url }}" id="mobile_method">
+      <form method="POST" action="/{{ mobile_url }}">
         <div class="card-header">Доступные тесты</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">
           {% for value in options %}
@@ -64,12 +63,12 @@
             {% endfor %}
         </div>
         <br></br>
-        <script>
+        <!-- <script>
         var xhr = new XMLHttpRequest();
         xhr.open("POST", '/{{ main_url }}', true);
         xhr.setRequestHeader("PostID", "mobile_method");
         xhr.send();
-        </script>
+        </script> -->
 
         <style>
           #mainSaveButton {
@@ -840,7 +839,7 @@ setTimeout(function(){
 
 <script>
 // Устанавливаем время простоя в секундах
-var idleTime = 10; // Пример: 10 секунд
+var idleTime = 60; // Пример: 10 секунд
 // Установка счетчика и обработчика событий
 var timer;
 function resetTimer() {
@@ -851,7 +850,7 @@ function resetTimer() {
 window.onload = resetTimer;
 document.onmousemove = resetTimer;
 document.onkeypress = resetTimer;
-window.history.replaceState({}, '', '/{{ main_url }}');
+window.history.replaceState({}, '', '/{{ mobile_url }}');
 // Функция обновления страницы
 function refreshPage() {
   window.location.reload();

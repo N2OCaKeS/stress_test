@@ -120,7 +120,202 @@ def login():
 
 @app.route(f'/{mobile_url}', methods=['GET', 'POST'])
 def mobile():
-    render_template('mobile.html')
+    tests = []
+    stand = []
+    stand1_log = ''
+    stand2_log = ''
+    stand3_log = ''
+    stand4_log = ''
+    
+    try:
+        with open('conf/actual_log_path_stand1.conf', 'r') as rl:
+            real_path1 = rl.read()
+            with open(real_path1, 'r') as r:
+                stand1_log = r.read()
+        with open('conf/actual_log_path_stand2.conf', 'r') as rl:
+            real_path2 = rl.read()
+            with open(real_path2, 'r') as r:
+                stand2_log = r.read()
+        with open('conf/actual_log_path_stand3.conf', 'r') as rl:
+            real_path3 = rl.read()
+            with open(real_path3, 'r') as r:
+                stand3_log = r.read()
+        with open('conf/actual_log_path_stand4.conf', 'r') as rl:
+            real_path4 = rl.read()
+            with open(real_path4, 'r') as r:
+                stand4_log = r.read()
+    except FileNotFoundError:
+        pass
+
+
+    try:
+        with open('conf/all_output_stand1.log', 'r') as r:
+            progress_stand1 = r.read()
+    except FileNotFoundError:
+        progress_stand1 = ''
+    try:
+        with open('conf/all_output_stand2.log', 'r') as r:
+            progress_stand2 = r.read()
+    except FileNotFoundError:
+        progress_stand2 = ''
+    try:
+        with open('conf/all_output_stand3.log', 'r') as r:
+            progress_stand3 = r.read()
+    except FileNotFoundError:
+        progress_stand3 = ''
+    try:
+        with open('conf/all_output_stand4.log', 'r') as r:
+            progress_stand4 = r.read()
+    except FileNotFoundError:
+        progress_stand4 = ''
+
+
+
+
+    try:
+        with open('conf/status_output_stand1.log', 'r') as rsc:
+            stand1_sett = rsc.read()
+    except FileNotFoundError:
+        stand1_sett = ''
+    try:
+        with open('conf/status_output_stand2.log', 'r') as rsc:
+            stand2_sett = rsc.read()
+    except FileNotFoundError:
+        stand2_sett = ''
+    try:
+        with open('conf/status_output_stand3.log', 'r') as rsc:
+            stand3_sett = rsc.read()
+    except FileNotFoundError:
+        stand3_sett = ''
+    try:
+        with open('conf/status_output_stand4.log', 'r') as rsc:
+            stand4_sett = rsc.read()
+    except FileNotFoundError:
+        stand4_sett = ''
+
+
+
+    with open('conf/work_status_stand1.conf', 'r') as rs:
+        status_stand1 = rs.read()
+        if status_stand1 == 'Остановлен':
+            status_gif_stand1 = red_gif
+        elif status_stand1 == 'Запущен':
+            status_gif_stand1 = green_gif
+        elif status_stand1 == 'Готово':
+            status_gif_stand1 = done_gif
+        else: 
+            status_stand1 = 'Нераспознан'
+            status_gif_stand1 = ping_gif
+
+    with open('conf/work_status_stand2.conf', 'r') as rs:
+        status_stand2 = rs.read()
+        if status_stand2 == 'Остановлен':
+            status_gif_stand2 = red_gif
+        elif status_stand2 == 'Запущен':
+            status_gif_stand2 = green_gif
+        elif status_stand2 == 'Готово':
+            status_gif_stand2 = done_gif
+        else: 
+            status_stand2 = 'Нераспознан'
+            status_gif_stand2 = ping_gif
+
+    with open('conf/work_status_stand3.conf', 'r') as rs:
+        status_stand3 = rs.read()
+        if status_stand3 == 'Остановлен':
+            status_gif_stand3 = red_gif
+        elif status_stand3 == 'Запущен':
+            status_gif_stand3 = green_gif
+        elif status_stand3 == 'Готово':
+            status_gif_stand3 = done_gif
+        else: 
+            status_stand3 = 'Нераспознан'
+            status_gif_stand3 = ping_gif
+
+    with open('conf/work_status_stand4.conf', 'r') as rs:
+        status_stand4 = rs.read()
+        if status_stand4 == 'Остановлен':
+            status_gif_stand4 = red_gif
+        elif status_stand4 == 'Запущен':
+            status_gif_stand4 = green_gif
+        elif status_stand4 == 'Готово':
+            status_gif_stand4 = done_gif
+        else: 
+            status_stand4 = 'Нераспознан'
+            status_gif_stand4 = ping_gif
+
+
+
+
+    with open('conf/tests_args.conf', 'r') as r:
+            test_list = str(r.read())
+    with open('conf/releas_args.conf', 'r') as r:
+            releas_list = str(r.read())
+    try:
+        with open('conf/kernel_args.conf', 'r') as r:
+                kernel_list = str(r.read())
+    except FileNotFoundError:
+        kernel_list = 'None'
+
+    if request.method == 'POST':
+        selected_options = request.form.getlist('options')
+        selected_stand = request.form.getlist('stands')
+        
+        tests = [option for option in options if option in selected_options]
+        if not tests:
+            tests = 'Тесты не выбраны'
+        #tests = ', '.join(test).replace(',','')
+        
+        # kernel = request.form.getlist('kernel')
+        # with open('conf/kernel_args.conf', 'w') as w:
+        #     if len(kernel) == 0:
+        #         w.write('None')
+        #     else: w.write(str(kernel))
+        kernel = request.form.get('kernel')
+        with open('conf/kernel_args.conf', 'w') as w:
+            w.write(str(kernel))
+
+        releas = request.form.getlist('releas')
+        with open('conf/releas_args.conf', 'w') as w:
+            w.write(str(releas))
+        if not releas:
+            releas = 'Релиз не выбран'
+        
+        with open('conf/tests_args.conf', 'w') as w:
+            w.write(str(tests))
+        
+        return redirect(url_for('mobile'))
+            
+
+    return render_template('mobile.html', 
+                           options=options, 
+                           test_list=test_list,
+                           releas_list=releas_list,
+                           kernel_list=kernel_list, 
+                           releases=releases, 
+                           stand=stand,
+                           kernels=kernels,
+                           status_stand1=status_stand1,
+                           status_stand2=status_stand2,
+                           status_stand3=status_stand3,
+                           status_stand4=status_stand4,
+                           stand1_log=stand1_log,
+                           stand2_log=stand2_log,
+                           stand3_log=stand3_log,
+                           stand4_log=stand4_log,
+                           status_gif_stand1=status_gif_stand1,
+                           status_gif_stand2=status_gif_stand2,
+                           status_gif_stand3=status_gif_stand3,
+                           status_gif_stand4=status_gif_stand4,
+                           stand1_sett=stand1_sett,
+                           stand2_sett=stand2_sett,
+                           stand3_sett=stand3_sett,
+                           stand4_sett=stand4_sett,
+                           progress_stand1=progress_stand1,
+                           progress_stand2=progress_stand2,
+                           progress_stand3=progress_stand3,
+                           progress_stand4=progress_stand4,
+                           main_url=main_url,
+                           mobile_url=mobile_url)
 
 
 @app.route(f'/{main_url}', methods=['GET', 'POST'])
@@ -287,44 +482,10 @@ def index():
         
         with open('conf/tests_args.conf', 'w') as w:
             w.write(str(tests))
-
-        mobile_method = request.headers.get('PostID')
         
         return redirect(url_for('index'))
             
-    if mobile_method != None:
-        return render_template('mobile.html', 
-                           options=options, 
-                           test_list=test_list,
-                           releas_list=releas_list,
-                           kernel_list=kernel_list, 
-                           releases=releases, 
-                           stand=stand,
-                           kernels=kernels,
-                           status_stand1=status_stand1,
-                           status_stand2=status_stand2,
-                           status_stand3=status_stand3,
-                           status_stand4=status_stand4,
-                           stand1_log=stand1_log,
-                           stand2_log=stand2_log,
-                           stand3_log=stand3_log,
-                           stand4_log=stand4_log,
-                           status_gif_stand1=status_gif_stand1,
-                           status_gif_stand2=status_gif_stand2,
-                           status_gif_stand3=status_gif_stand3,
-                           status_gif_stand4=status_gif_stand4,
-                           stand1_sett=stand1_sett,
-                           stand2_sett=stand2_sett,
-                           stand3_sett=stand3_sett,
-                           stand4_sett=stand4_sett,
-                           progress_stand1=progress_stand1,
-                           progress_stand2=progress_stand2,
-                           progress_stand3=progress_stand3,
-                           progress_stand4=progress_stand4,
-                           main_url=main_url,
-                           mobile_url=mobile_url)
-    else:
-        return render_template('main.html', 
+    return render_template('main.html', 
                             options=options, 
                             test_list=test_list,
                             releas_list=releas_list,

@@ -11,6 +11,8 @@ import signal
 import threading
 import psutil
 #from queue import Queue, Empty
+from libs.zefir import ZefirResultTable
+import json
 
 
 app = Flask(__name__)
@@ -53,7 +55,15 @@ app.config['SECRET_KEY'] = 'srv_2113'
 
 #         except Empty:
 #             pass
+with open('/home/u/tokens.json', 'r') as r:
+    tokens = json.load(r)
+__conf_token = tokens['conf_token']
+__username = tokens['username']
+__jira_token = tokens['jira_token']
 
+zefir_table = ZefirResultTable(token=__conf_token,
+                               basic_auth=__jira_token,
+                               username=__username)
 
 def generate_random_string(length):
     letters_and_digits = string.ascii_letters + string.digits
@@ -771,6 +781,15 @@ def run_command_stand4():
     return redirect(url_for('index'))
 
 
+@app.route('/update/<version>')
+def update_stp(version):
+    """
+    Обновить состав тестового прогона
+    """
+    zefir_table.test_cycle_version = str(version)
+    zefir_table
+
+    return redirect(url_for('index'))
 
 
 # if __name__ == '__main__':

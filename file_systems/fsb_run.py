@@ -168,8 +168,10 @@ uzs.upload_test_cycle_status('progress')
     main
 '''
 run_storage_init = 'sudo python3 {dir}/fsb_storage_init.py --fs {fs}'
-run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts} -sn {sn}'
-run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
+run_test_ext4_st4 = 'sudo python3 {dir}/fsb_test.py --test-set {ts} -sn {sn}'
+run_test_parsec_ext4_st4 = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
+run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts}'
+run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec'
 
 '''
     VirtualBox
@@ -270,13 +272,21 @@ if args.VIRTUAL: # вирт. стенд
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as node_client:
             if args.PARSEC:
-                node_client.run(run_test_parsec.format(dir=SCRIPT_DIR,
-                                                       ts=args.TS,
-                                                       sn=args.STAND))
+                if args.FS == 'ext4' and args.STAND == '4':
+                    node_client.run(run_test_parsec_ext4_st4.format(dir=SCRIPT_DIR,
+                                                                    ts=args.TS,
+                                                                    sn=args.STAND))
+                else:
+                    node_client.run(run_test_parsec.format(dir=SCRIPT_DIR,
+                                                           ts=args.TS))
             else:
-                node_client.run(run_test.format(dir=SCRIPT_DIR,
-                                                ts=args.TS,
-                                                sn=args.STAND))
+                if args.FS == 'ext4' and args.STAND == '4':
+                    node_client.run(run_test_ext4_st4.format(dir=SCRIPT_DIR,
+                                                             ts=args.TS,
+                                                             sn=args.STAND))
+                else:
+                    node_client.run(run_test.format(dir=SCRIPT_DIR,
+                                                    ts=args.TS))
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
         print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
@@ -315,13 +325,21 @@ else: # физ. стенд
 
     try:
         if args.PARSEC:
-            cmd(run_test_parsec.format(dir=SCRIPT_DIR,
-                                       ts=args.TS,
-                                       sn=args.STAND))
+            if args.FS == 'ext4' and args.STAND == '4':
+                cmd(run_test_parsec_ext4_st4.format(dir=SCRIPT_DIR,
+                                                    ts=args.TS,
+                                                    sn=args.STAND))
+            else:
+                cmd(run_test_parsec.format(dir=SCRIPT_DIR,
+                                           ts=args.TS))
         else:
-            cmd(run_test.format(dir=SCRIPT_DIR,
-                                ts=args.TS,
-                                sn=args.STAND))
+            if args.FS == 'ext4' and args.STAND == '4':
+                cmd(run_test_ext4_st4.format(dir=SCRIPT_DIR,
+                                             ts=args.TS,
+                                             sn=args.STAND))
+            else:
+                cmd(run_test.format(dir=SCRIPT_DIR,
+                                    ts=args.TS))             
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")
         print(f'Type: {type(exception).__name__}, Message: {str(exception)}')

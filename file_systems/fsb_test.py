@@ -221,9 +221,14 @@ if args.TS == 'fs_mark_count':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    report = Report(ox_lo_lim=FILES,
-                    ox_step=FILES_STEP,
-                    ox_up_lim=FILES_LIMIT)
+    if args.STAND == '4':
+        report = Report(ox_lo_lim=FILES_ST4,
+                        ox_step=FILES_STEP_ST4,
+                        ox_up_lim=FILES_LIMIT_ST4)
+    else:
+        report = Report(ox_lo_lim=FILES,
+                        ox_step=FILES_STEP,
+                        ox_up_lim=FILES_LIMIT)
     report.create_beauty_table()
     report.create_fsb_fc_sp_graph()
     report.create_fsb_fc_app_overhead_graph()

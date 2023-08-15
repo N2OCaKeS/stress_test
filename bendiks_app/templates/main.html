@@ -38,19 +38,40 @@
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Обновить СТП</a>
     <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="/update/1.7.1">1.7.1</a></li>
-      <li><a class="dropdown-item" href="/update/1.7.2">1.7.2</a></li>
-      <li><a class="dropdown-item" href="/update/1.7.3">1.7.3</a></li>
-      <li><a class="dropdown-item" href="/update/1.7.3.UU.1">1.7.3.UU.1</a></li>
-      <li><a class="dropdown-item" href="/update/1.7.3.UU.2">1.7.3.UU.2</a></li>
-      <li><a class="dropdown-item" href="/update/1.7.4">1.7.4</a></li>
-      <li><a class="dropdown-item" href="/update/1.7.4.UU.1">1.7.4.UU.1</a></li>
+      <li><a class="dropdown-item" href="javascript:update('1.7.1')">1.7.1</a></li>
+      <li><a class="dropdown-item" href="javascript:update('1.7.2')">1.7.2</a></li>
+      <li><a class="dropdown-item" href="javascript:update('1.7.3')">1.7.3</a></li>
+      <li><a class="dropdown-item" href="javascript:update('1.7.3.UU.1')">1.7.3.UU.1</a></li>
+      <li><a class="dropdown-item" href="javascript:update('1.7.3.UU.2')">1.7.3.UU.2</a></li>
+      <li><a class="dropdown-item" href="javascript:update('1.7.4')">1.7.4</a></li>
+      <li><a class="dropdown-item" href="javascript:update('1.7.4.UU.1')">1.7.4.UU.1</a></li>
     </ul>
   </li>
   <li class="nav-item">
     <a class="nav-link disabled" aria-disabled="true">About project</a>
   </li>
 </ul>
+<div id="loading-spinner" class="spinner-border text-secondary" role="status" style="display: none;">
+  <span class="visually-hidden">Loading...</span>
+</div>
+<script>
+  function update(version) {
+      document.getElementById('loading-spinner').style.display = 'block';
+ 
+      fetch('/update/' + version, {
+          method: 'GET'
+      })
+      .then(response => response.text())
+      .then(data => {
+          document.getElementById('loading-spinner').style.display = 'none';
+          console.log('Update completed:', data);
+      })
+      .catch((error) => {
+          document.getElementById('loading-spinner').style.display = 'none';
+          console.error('Error:', error);
+      });
+  }
+  </script>
 
 
 <div class="container-fluid text-center">

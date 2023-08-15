@@ -61,9 +61,6 @@ __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
 
-zefir_table = ZefirResultTable(token=__conf_token,
-                               basic_auth=__jira_token,
-                               username=__username)
 
 def generate_random_string(length):
     letters_and_digits = string.ascii_letters + string.digits
@@ -786,7 +783,10 @@ def update_stp(version):
     """
     Обновить состав тестового прогона
     """
-    zefir_table.test_cycle_version = str(version)
+    zefir_table = ZefirResultTable(test_cycle_version=str(version),
+                                   token=__conf_token,
+                                   basic_auth=__jira_token,
+                                   username=__username)
     zefir_table
 
     return redirect(url_for('index'))

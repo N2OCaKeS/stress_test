@@ -899,8 +899,35 @@
     </div>
   </div>
 </div>
+<script>
+$(document).ready(function() {
+  // Обновление статуса
+  setInterval(function() {
+      $.get("/{{ main_url }}", function(data) {
+          $('#collapseOne4 .accordion-body strong').html("Статус: " + data);
+          if(data == "Запущен" || data == "Готово") {
+              $.get("/sett-url", function(settData){
+                  $('#collapseOne4 .accordion-body .line-break').html(settData);
+              });
+          }
+      });
+  }, 3000);
 
+  // Обновление прогресса
+  setInterval(function() {
+      $.get("/{{ main_url }}", function(data) {
+          $('#collapseTwo4 .accordion-body .line-break').html(data);
+      });
+  }, 3000);
 
+  // Обновление логов
+  setInterval(function() {
+      $.get("/{{ main_url }}", function(data) {
+          $('#collapseThree4 .accordion-body').html(data);
+      });
+  }, 3000);
+});
+</script>
 
 
 
@@ -968,7 +995,7 @@
   }, 10000);
 </script> -->
 
-<script>
+<!-- <script>
   // Устанавливаем время простоя в секундах
   var idleTime = 10; // Пример: 10 секунд
   // Установка счетчика и обработчика событий
@@ -986,7 +1013,7 @@
   function refreshPage() {
     window.location.reload();
   }
-</script>
+</script> -->
 
 
 

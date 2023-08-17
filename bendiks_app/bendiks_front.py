@@ -117,7 +117,7 @@ def output_remote_load(stand):
     conn = psycopg2.connect(
         host="127.0.0.1",
         database="bendiks",
-        user="postgre",
+        user="postgres",
         password="1"
     )
 

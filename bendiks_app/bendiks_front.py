@@ -1,6 +1,6 @@
 #!/bin/python3
 
-from flask import Flask, render_template, request, send_from_directory, redirect, url_for
+from flask import Flask, render_template, request, send_from_directory, redirect, url_for, jsonify
 from multiprocessing import Process, Manager
 import string
 import random
@@ -13,6 +13,10 @@ import psutil
 #from queue import Queue, Empty
 from libs.zefir import ZefirResultTable
 import json
+from backup_image import output_remote_load
+from time import sleep
+import threading
+import psycopg2
 
 
 app = Flask(__name__)
@@ -72,6 +76,16 @@ with open('/home/u/url', 'r') as r:
 with open('/home/u/up', 'r') as r:
     up = r.read()
 mobile_url = 'mobile'
+
+
+def background_task():
+    stands = ['stand1', 'stand2', 'stand3', 'stand4']
+    while True:
+        [output_remote_load(str(stand)) for stand in stands]
+        sleep(3)
+
+t = threading.Thread(target=background_task)
+t.start()
 
 
 options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 
@@ -790,6 +804,36 @@ def update_stp(version):
     zefir_table
 
     return redirect(url_for('index'))
+
+
+@app.route('/api/load_info/<stand>', methods=['GET'])
+def get_load_info(stand):
+    conn = psycopg2.connect(
+        host="127.0.0.1",
+        database="bendiks",
+        user="postgre",
+        password="1"
+    )
+
+    cursor = conn.cursor()
+    select_query = f"SELECT {stand}_cpu, {stand}_ram FROM main_table WHERE id = %s"
+    cursor.execute(select_query, [stand])
+
+    result = cursor.fetchone()
+    if result is not None:
+        load_cpu = result[0]
+        load_ram = result[1]
+    else:
+        load_cpu = '-'
+        load_ram = '-'
+
+    cursor.close()
+    conn.close()
+    
+    return jsonify({
+        "load_cpu_st4": load_cpu,
+        "load_ram_st4": load_ram
+    }) 
 
 
 # if __name__ == '__main__':

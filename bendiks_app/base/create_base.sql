@@ -1,0 +1,18 @@
+-- sudo -u postgres psql
+-- CREATE DATABASE bendiks;
+
+-- и запустить скрипт командой: 
+-- psql -d bendiks -f create_base.sql
+
+CREATE TABLE main_table (
+    id SERIAL PRIMARY KEY,
+    stand1_cpu VARCHAR(255),
+    stand1_ram VARCHAR(255),
+    stand2_cpu VARCHAR(255),
+    stand2_ram VARCHAR(255),
+    stand3_cpu VARCHAR(255),
+    stand3_ram VARCHAR(255),
+    stand4_cpu VARCHAR(255),
+    stand4_ram VARCHAR(255)
+);
+

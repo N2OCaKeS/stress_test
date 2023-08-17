@@ -724,24 +724,36 @@
 
           <table class="table table-dark table-striped-columns">
             <thead>
-              <tr>               
-                <th scope="col">CPU/Mem info</th>               
-              </tr>
+                <tr>
+                    <th scope="col">CPU/Mem info</th>
+                </tr>
             </thead>
             <tbody>
-              <tr>                
-                <td>CPU load</td>
-                <td></td>
-                <td>0</td>
-              </tr>
-              <tr>                
-                <td>RAM load</td>
-                <td></td>
-                <td>0</td>
-              </tr>              
+                <tr>
+                    <td>CPU load</td>
+                    <td></td>
+                    <td id="load_cpu">{{ load_cpu_st4 }}</td>
+                </tr>
+                <tr>
+                    <td>RAM load</td>
+                    <td></td>
+                    <td id="load_ram">{{ load_ram_st4 }}</td>
+                </tr>
             </tbody>
-          </table>
-          <br></br>
+        </table>
+        <br></br>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script>
+            setInterval(function () {
+                $.ajax({
+                    url: "/api/load_info/stand4", 
+                    success: function(result) {
+                        $("#load_cpu").html(result.load_cpu_st4);
+                        $("#load_ram").html(result.load_ram_st4);
+                    }
+                });
+            }, 3000);
+        </script>
           
           <div class="accordion" id="accordionstand4">
             <div class="accordion-item">

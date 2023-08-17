@@ -1053,6 +1053,27 @@ def update():
                     'status_gif_stand1': status_gif_stand1
                     })
 
+
+@app.route('/update_power_status/<stand>')
+def check_running_system(stand):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect_ex((stands_ip[stand], 22))
+
+    try:
+        system_status = ssh_command('systemctl is-system-running',
+                                    stand_ip=stands_ip[stand])
+        if system_status == 'running':
+            sock.close()
+            return jsonify(is_running=True)
+        else:
+            return jsonify(is_running=False)
+    except paramiko.AuthenticationException:
+        return jsonify(is_running=False)
+    except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
+        return jsonify(is_running=False)
+   
+
+
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)
 

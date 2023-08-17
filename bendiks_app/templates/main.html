@@ -901,31 +901,23 @@
 </div>
 <script>
 $(document).ready(function() {
-  // Обновление статуса
   setInterval(function() {
-      $.get("/{{ main_url }}", function(data) {
-          $('#collapseOne4 .accordion-body strong').html("Статус: " + data);
-          if(data == "Запущен" || data == "Готово") {
-              $.get("/sett-url", function(settData){
-                  $('#collapseOne4 .accordion-body .line-break').html(settData);
-              });
+      $.ajax({
+          url: '/update_page_info',  
+          type: 'get',  
+          dataType: 'json',  
+          success: function(data) {
+              $('#collapseOne4 .accordion-body strong').html("Статус: " + data['status_stand4']);
+
+              if(data['status_stand4'] == "Запущен" || data['status_stand4'] == "Готово") {
+                  $('#collapseOne4 .accordion-body .line-break').html(data['stand4_sett']);
+              }
+
+              $('#collapseTwo4 .accordion-body .line-break').html(data['progress_stand4']);
+              $('#collapseThree4 .accordion-body').html(data['stand4_log']);
           }
       });
-  }, 3000);
-
-  // Обновление прогресса
-  setInterval(function() {
-      $.get("/{{ main_url }}", function(data) {
-          $('#collapseTwo4 .accordion-body .line-break').html(data);
-      });
-  }, 3000);
-
-  // Обновление логов
-  setInterval(function() {
-      $.get("/{{ main_url }}", function(data) {
-          $('#collapseThree4 .accordion-body').html(data);
-      });
-  }, 3000);
+  }, 3000);  
 });
 </script>
 
@@ -995,7 +987,7 @@ $(document).ready(function() {
   }, 10000);
 </script> -->
 
-<!-- <script>
+<script>
   // Устанавливаем время простоя в секундах
   var idleTime = 10; // Пример: 10 секунд
   // Установка счетчика и обработчика событий
@@ -1013,7 +1005,7 @@ $(document).ready(function() {
   function refreshPage() {
     window.location.reload();
   }
-</script> -->
+</script>
 
 
 

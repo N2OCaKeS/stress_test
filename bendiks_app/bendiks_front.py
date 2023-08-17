@@ -123,8 +123,9 @@ def output_remote_load(stand):
 
     cursor = conn.cursor()
 
+    id = 1
     select_query = f"SELECT * FROM main_table WHERE id = %s"
-    cursor.execute(select_query, [stand])
+    cursor.execute(select_query, [id])
 
     if cursor.fetchone() is not None:
         update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_ram = %s WHERE id = %s"

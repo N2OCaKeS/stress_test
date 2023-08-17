@@ -199,24 +199,36 @@
      
           <table class="table table-dark table-striped-columns">
             <thead>
-              <tr>               
-                <th scope="col">CPU/Mem info</th>               
-              </tr>
+                <tr>
+                    <th scope="col">CPU/Mem info</th>
+                </tr>
             </thead>
             <tbody>
-              <tr>                
-                <td>CPU load</td>
-                <td></td>
-                <td>0</td>
-              </tr>
-              <tr>                
-                <td>RAM load</td>
-                <td></td>
-                <td>0</td>
-              </tr>              
+                <tr>
+                    <td>CPU load</td>
+                    <td></td>
+                    <td id="load_cpu_stand1">{{ load_cpu_stand1 }}</td>
+                </tr>
+                <tr>
+                    <td>RAM load</td>
+                    <td></td>
+                    <td id="load_ram_stand1">{{ load_ram_stand1 }}</td>
+                </tr>
             </tbody>
-          </table>
-          <br></br> 
+        </table>
+        <br></br>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script>
+            setInterval(function () {
+                $.ajax({
+                    url: "/api/load_info/stand1", 
+                    success: function(result) {
+                        $("#load_cpu_stand1").html(result.load_cpu_stand1);
+                        $("#load_ram_stand1").html(result.load_ram_stand1);
+                    }
+                });
+            }, 3000);
+        </script> 
           
           <div class="accordion" id="accordionstand1">
             <div class="accordion-item">
@@ -347,7 +359,28 @@
         </div>
       </div>
     </div>
-
+    <script>
+      $(document).ready(function() {
+        setInterval(function() {
+            $.ajax({
+                url: '/update_page_info',  
+                type: 'get',  
+                dataType: 'json',  
+                success: function(data) {
+                    $('#collapseOne1 .accordion-body strong').html("Статус: " + data['status_stand1']);
+                    $('#collapseOne1 .accordion-body img').attr("src", data['status_gif_stand1']);
+      
+                    if(data['status_stand1'] == "Запущен" || data['status_stand1'] == "Готово") {
+                        $('#collapseOne1 .accordion-body .line-break').html(data['stand1_sett']);
+                    }
+      
+                    $('#collapseTwo1 .accordion-body .line-break').html(data['progress_stand1']);
+                    $('#collapseThree1 .accordion-body').html(data['stand1_log']);
+                }
+            });
+        }, 3000);  
+      });
+      </script>
 
 
      
@@ -403,7 +436,6 @@
                 });
             }, 3000);
         </script>
-          <br></br>
 
           <div class="accordion" id="accordionstand2">
             <div class="accordion-item">
@@ -534,7 +566,28 @@
         </div>
       </div>
     </div>
-
+    <script>
+      $(document).ready(function() {
+        setInterval(function() {
+            $.ajax({
+                url: '/update_page_info',  
+                type: 'get',  
+                dataType: 'json',  
+                success: function(data) {
+                    $('#collapseOne2 .accordion-body strong').html("Статус: " + data['status_stand2']);
+                    $('#collapseOne2 .accordion-body img').attr("src", data['status_gif_stand2']);
+      
+                    if(data['status_stand2'] == "Запущен" || data['status_stand2'] == "Готово") {
+                        $('#collapseOne2 .accordion-body .line-break').html(data['stand2_sett']);
+                    }
+      
+                    $('#collapseTwo2 .accordion-body .line-break').html(data['progress_stand2']);
+                    $('#collapseThree2 .accordion-body').html(data['stand2_log']);
+                }
+            });
+        }, 3000);  
+      });
+      </script>
 
 
 
@@ -563,24 +616,36 @@
 
           <table class="table table-dark table-striped-columns">
             <thead>
-              <tr>               
-                <th scope="col">CPU/Mem info</th>               
-              </tr>
+                <tr>
+                    <th scope="col">CPU/Mem info</th>
+                </tr>
             </thead>
             <tbody>
-              <tr>                
-                <td>CPU load</td>
-                <td></td>
-                <td>0</td>
-              </tr>
-              <tr>                
-                <td>RAM load</td>
-                <td></td>
-                <td>0</td>
-              </tr>              
+                <tr>
+                    <td>CPU load</td>
+                    <td></td>
+                    <td id="load_cpu_stand3">{{ load_cpu_stand3 }}</td>
+                </tr>
+                <tr>
+                    <td>RAM load</td>
+                    <td></td>
+                    <td id="load_ram_stand3">{{ load_ram_stand3 }}</td>
+                </tr>
             </tbody>
-          </table>
-          <br></br>
+        </table>
+        <br></br>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script>
+            setInterval(function () {
+                $.ajax({
+                    url: "/api/load_info/stand3", 
+                    success: function(result) {
+                        $("#load_cpu_stand3").html(result.load_cpu_stand3);
+                        $("#load_ram_stand3").html(result.load_ram_stand3);
+                    }
+                });
+            }, 3000);
+        </script>
 
           <div class="accordion" id="accordionstand3">
             <div class="accordion-item">
@@ -711,7 +776,28 @@
         </div>
       </div>
     </div>
-
+    <script>
+      $(document).ready(function() {
+        setInterval(function() {
+            $.ajax({
+                url: '/update_page_info',  
+                type: 'get',  
+                dataType: 'json',  
+                success: function(data) {
+                    $('#collapseOne3 .accordion-body strong').html("Статус: " + data['status_stand3']);
+                    $('#collapseOne3 .accordion-body img').attr("src", data['status_gif_stand3']);
+      
+                    if(data['status_stand3'] == "Запущен" || data['status_stand3'] == "Готово") {
+                        $('#collapseOne3 .accordion-body .line-break').html(data['stand3_sett']);
+                    }
+      
+                    $('#collapseTwo3 .accordion-body .line-break').html(data['progress_stand3']);
+                    $('#collapseThree3 .accordion-body').html(data['stand3_log']);
+                }
+            });
+        }, 3000);  
+      });
+      </script>
 
 
 
@@ -908,6 +994,7 @@ $(document).ready(function() {
           dataType: 'json',  
           success: function(data) {
               $('#collapseOne4 .accordion-body strong').html("Статус: " + data['status_stand4']);
+              $('#collapseOne4 .accordion-body img').attr("src", data['status_gif_stand4']);
 
               if(data['status_stand4'] == "Запущен" || data['status_stand4'] == "Готово") {
                   $('#collapseOne4 .accordion-body .line-break').html(data['stand4_sett']);
@@ -987,7 +1074,7 @@ $(document).ready(function() {
   }, 10000);
 </script> -->
 
-<script>
+<!-- <script>
   // Устанавливаем время простоя в секундах
   var idleTime = 10; // Пример: 10 секунд
   // Установка счетчика и обработчика событий
@@ -1005,7 +1092,7 @@ $(document).ready(function() {
   function refreshPage() {
     window.location.reload();
   }
-</script>
+</script> -->
 
 
 

@@ -110,7 +110,7 @@ def output_remote_load(stand):
         except paramiko.AuthenticationException:
             output_cpu = 'Auth Error'
             output_ram = 'Auth Error'
-        except ssh_exception.NoValidConnectionsError:
+        except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException) :
             output_cpu = 'Connection Error'
             output_ram = 'Connection Error'
 
@@ -1034,7 +1034,23 @@ def update():
                     'status_stand4': status_stand4,
                     'stand4_sett': stand4_sett,
                     'progress_stand4': progress_stand4,
-                    'stand4_log': stand4_log
+                    'stand4_log': stand4_log,
+                    'status_gif_stand4': status_gif_stand4,
+                    'status_stand3': status_stand3,
+                    'stand3_sett': stand3_sett,
+                    'progress_stand3': progress_stand3,
+                    'stand3_log': stand3_log,
+                    'status_gif_stand3': status_gif_stand3,
+                    'status_stand2': status_stand2,
+                    'stand2_sett': stand2_sett,
+                    'progress_stand2': progress_stand2,
+                    'stand2_log': stand2_log,
+                    'status_gif_stand2': status_gif_stand2,
+                    'status_stand1': status_stand1,
+                    'stand1_sett': stand1_sett,
+                    'progress_stand1': progress_stand1,
+                    'stand1_log': stand1_log,
+                    'status_gif_stand1': status_gif_stand1
                     })
 
 # if __name__ == '__main__':

@@ -866,13 +866,14 @@ def get_load_info(stand):
     conn = psycopg2.connect(
         host="127.0.0.1",
         database="bendiks",
-        user="postgre",
+        user="postgres",
         password="1"
     )
 
+    id = 1
     cursor = conn.cursor()
     select_query = f"SELECT {stand}_cpu, {stand}_ram FROM main_table WHERE id = %s"
-    cursor.execute(select_query, [stand])
+    cursor.execute(select_query, [id])
 
     result = cursor.fetchone()
     if result is not None:

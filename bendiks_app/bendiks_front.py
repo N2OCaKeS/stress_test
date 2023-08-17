@@ -8,12 +8,15 @@ import subprocess
 from os import path, remove, kill, getpgid, killpg, setsid
 import signal
 #import logging
+import paramiko
+from paramiko import ssh_exception
+import socket
 import threading
 import psutil
 #from queue import Queue, Empty
 from libs.zefir import ZefirResultTable
 import json
-from backup_image import output_remote_load
+from backup_image_conf import *
 from time import sleep
 import threading
 import psycopg2
@@ -64,6 +67,8 @@ with open('/home/u/tokens.json', 'r') as r:
 __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
+user = 'u'
+port = 22
 
 
 def generate_random_string(length):
@@ -76,6 +81,61 @@ with open('/home/u/url', 'r') as r:
 with open('/home/u/up', 'r') as r:
     up = r.read()
 mobile_url = 'mobile'
+
+
+def ssh_command(command, stand_ip):
+    client = paramiko.SSHClient()
+    
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    client.connect(stand_ip, port=port, username=user, password='1')
+    stdin, stdout, stderr = client.exec_command(command)
+    response = stdout.read().decode().strip()
+    client.close()
+    return response
+
+
+def output_remote_load(stand):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex((stands_ip[stand], 22))
+    
+    if result != 0:
+        output_cpu = '-'
+        output_ram = '-'
+    else:
+        try:
+            output_cpu  = ssh_command("""grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage "%"}'""", stand_ip=stand)
+            output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", stand_ip=stand)
+        except paramiko.AuthenticationException:
+            output_cpu = 'Auth Error'
+            output_ram = 'Auth Error'
+        except ssh_exception.NoValidConnectionsError:
+            output_cpu = 'Connection Error'
+            output_ram = 'Connection Error'
+
+    conn = psycopg2.connect(
+        host="127.0.0.1",
+        database="bendiks",
+        user="postgre",
+        password="1"
+    )
+
+    cursor = conn.cursor()
+
+    select_query = f"SELECT * FROM main_table WHERE id = %s"
+    cursor.execute(select_query, [stand])
+
+    if cursor.fetchone() is not None:
+        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_ram = %s WHERE id = %s"
+        data = (output_cpu, output_ram, stand)
+        cursor.execute(update_query, data)
+    else:
+        insert_query = f"INSERT INTO main_table (id, {stand}_cpu, {stand}_ram) VALUES (%s, %s, %s)"
+        data = (stand, output_cpu, output_ram)
+        cursor.execute(insert_query, data)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 
 def background_task():

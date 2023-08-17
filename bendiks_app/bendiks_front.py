@@ -887,8 +887,8 @@ def get_load_info(stand):
     conn.close()
     
     return jsonify({
-        "load_cpu_st4": load_cpu,
-        "load_ram_st4": load_ram
+        f"load_cpu_{stand}": load_cpu,
+        f"load_ram_{stand}": load_ram
     }) 
 
 

@@ -373,23 +373,36 @@
           
           <table class="table table-dark table-striped-columns">
             <thead>
-              <tr>               
-                <th scope="col">CPU/Mem info</th>               
-              </tr>
+                <tr>
+                    <th scope="col">CPU/Mem info</th>
+                </tr>
             </thead>
             <tbody>
-              <tr>                
-                <td>CPU load</td>
-                <td></td>
-                <td>0</td>
-              </tr>
-              <tr>                
-                <td>RAM load</td>
-                <td></td>
-                <td>0</td>
-              </tr>              
+                <tr>
+                    <td>CPU load</td>
+                    <td></td>
+                    <td id="load_cpu">{{ load_cpu_stand3 }}</td>
+                </tr>
+                <tr>
+                    <td>RAM load</td>
+                    <td></td>
+                    <td id="load_ram">{{ load_ram_stand3 }}</td>
+                </tr>
             </tbody>
-          </table>
+        </table>
+        <br></br>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script>
+            setInterval(function () {
+                $.ajax({
+                    url: "/api/load_info/stand3", 
+                    success: function(result) {
+                        $("#load_cpu").html(result.load_cpu_stand3);
+                        $("#load_ram").html(result.load_ram_stand3);
+                    }
+                });
+            }, 3000);
+        </script>
           <br></br>
 
           <div class="accordion" id="accordionstand2">
@@ -732,12 +745,12 @@
                 <tr>
                     <td>CPU load</td>
                     <td></td>
-                    <td id="load_cpu">{{ load_cpu_st4 }}</td>
+                    <td id="load_cpu">{{ load_cpu_stand4 }}</td>
                 </tr>
                 <tr>
                     <td>RAM load</td>
                     <td></td>
-                    <td id="load_ram">{{ load_ram_st4 }}</td>
+                    <td id="load_ram">{{ load_ram_stand4 }}</td>
                 </tr>
             </tbody>
         </table>
@@ -748,8 +761,8 @@
                 $.ajax({
                     url: "/api/load_info/stand4", 
                     success: function(result) {
-                        $("#load_cpu").html(result.load_cpu_st4);
-                        $("#load_ram").html(result.load_ram_st4);
+                        $("#load_cpu").html(result.load_cpu_stand4);
+                        $("#load_ram").html(result.load_ram_stand4);
                     }
                 });
             }, 3000);

@@ -382,6 +382,7 @@
     </div>
     <script>
       $(document).ready(function() {
+        let prevStatusGifStand1 = null;
         setInterval(function() {
             $.ajax({
                 url: '/update_page_info',  
@@ -389,7 +390,11 @@
                 dataType: 'json',  
                 success: function(data) {
                     $('#collapseOne1 .accordion-body strong').html("Статус: " + data['status_stand1']);
-                    $('#collapseOne1 .accordion-body img').attr("src", data['status_gif_stand1']);
+                  
+                    if (prevStatusGifStand1 !== data['status_gif_stand1']) {
+                        $('#collapseOne1 .accordion-body img').attr("src", data['status_gif_stand1']);
+                        prevStatusGifStand1 = data['status_gif_stand1'];
+                    }
       
                     if(data['status_stand1'] == "Запущен" || data['status_stand1'] == "Готово") {
                         $('#collapseOne1 .accordion-body .line-break').html(data['stand1_sett']);
@@ -401,7 +406,7 @@
             });
         }, 3000);  
       });
-      </script>
+    </script>
 
 
      
@@ -610,6 +615,7 @@
     </div>
     <script>
       $(document).ready(function() {
+        let prevStatusGifStand2 = null;
         setInterval(function() {
             $.ajax({
                 url: '/update_page_info',  
@@ -617,7 +623,11 @@
                 dataType: 'json',  
                 success: function(data) {
                     $('#collapseOne2 .accordion-body strong').html("Статус: " + data['status_stand2']);
-                    $('#collapseOne2 .accordion-body img').attr("src", data['status_gif_stand2']);
+                  
+                    if (prevStatusGifStand2 !== data['status_gif_stand2']) {
+                        $('#collapseOne2 .accordion-body img').attr("src", data['status_gif_stand2']);
+                        prevStatusGifStand2 = data['status_gif_stand2'];
+                    }
       
                     if(data['status_stand2'] == "Запущен" || data['status_stand2'] == "Готово") {
                         $('#collapseOne2 .accordion-body .line-break').html(data['stand2_sett']);
@@ -629,9 +639,7 @@
             });
         }, 3000);  
       });
-      </script>
-
-
+    </script>
 
 
 
@@ -841,6 +849,7 @@
     </div>
     <script>
       $(document).ready(function() {
+        let prevStatusGifStand3 = null;
         setInterval(function() {
             $.ajax({
                 url: '/update_page_info',  
@@ -848,7 +857,11 @@
                 dataType: 'json',  
                 success: function(data) {
                     $('#collapseOne3 .accordion-body strong').html("Статус: " + data['status_stand3']);
-                    $('#collapseOne3 .accordion-body img').attr("src", data['status_gif_stand3']);
+                  
+                    if (prevStatusGifStand3 !== data['status_gif_stand3']) {
+                        $('#collapseOne3 .accordion-body img').attr("src", data['status_gif_stand3']);
+                        prevStatusGifStand3 = data['status_gif_stand3'];
+                    }
       
                     if(data['status_stand3'] == "Запущен" || data['status_stand3'] == "Готово") {
                         $('#collapseOne3 .accordion-body .line-break').html(data['stand3_sett']);
@@ -860,7 +873,7 @@
             });
         }, 3000);  
       });
-      </script>
+    </script>
 
 
 
@@ -1070,26 +1083,31 @@
   </div>
 </div>
 <script>
-$(document).ready(function() {
-  setInterval(function() {
-      $.ajax({
-          url: '/update_page_info',  
-          type: 'get',  
-          dataType: 'json',  
-          success: function(data) {
-              $('#collapseOne4 .accordion-body strong').html("Статус: " + data['status_stand4']);
-              $('#collapseOne4 .accordion-body img').attr("src", data['status_gif_stand4']);
-
-              if(data['status_stand4'] == "Запущен" || data['status_stand4'] == "Готово") {
-                  $('#collapseOne4 .accordion-body .line-break').html(data['stand4_sett']);
-              }
-
-              $('#collapseTwo4 .accordion-body .line-break').html(data['progress_stand4']);
-              $('#collapseThree4 .accordion-body').html(data['stand4_log']);
-          }
-      });
-  }, 3000);  
-});
+  $(document).ready(function() {
+    let prevStatusGifStand4 = null;
+    setInterval(function() {
+        $.ajax({
+            url: '/update_page_info',  
+            type: 'get',  
+            dataType: 'json',  
+            success: function(data) {
+                $('#collapseOne4 .accordion-body strong').html("Статус: " + data['status_stand4']);
+              
+                if (prevStatusGifStand4 !== data['status_gif_stand4']) {
+                    $('#collapseOne4 .accordion-body img').attr("src", data['status_gif_stand4']);
+                    prevStatusGifStand4 = data['status_gif_stand4'];
+                }
+  
+                if(data['status_stand4'] == "Запущен" || data['status_stand4'] == "Готово") {
+                    $('#collapseOne4 .accordion-body .line-break').html(data['stand4_sett']);
+                }
+  
+                $('#collapseTwo4 .accordion-body .line-break').html(data['progress_stand4']);
+                $('#collapseThree4 .accordion-body').html(data['stand4_log']);
+            }
+        });
+    }, 3000);  
+  });
 </script>
 
 

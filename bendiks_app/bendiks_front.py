@@ -1,13 +1,23 @@
 #!/bin/python3
 
-from flask import Flask, render_template, request, send_from_directory, redirect, url_for, jsonify
-from multiprocessing import Process, Manager
+from flask import (Flask, 
+                   render_template, 
+                   request, 
+                   send_from_directory, 
+                   redirect, 
+                   url_for, 
+                   jsonify)
+from multiprocessing import Process
 import string
 import random
 import subprocess
-from os import path, remove, kill, getpgid, killpg, setsid
+from os import (path, 
+                remove, 
+                kill, 
+                getpgid, 
+                killpg, 
+                setsid)
 import signal
-#import logging
 import paramiko
 from paramiko import ssh_exception
 import socket

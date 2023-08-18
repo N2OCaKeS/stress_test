@@ -127,11 +127,11 @@ def output_remote_load(stand):
                 output_ram = 'Connection Error'
 
         conn = psycopg2.connect(
-            host="127.0.0.1",
-            database="bendiks",
-            user="postgres",
-            password="1"
-        )
+                                host=psyc['host'],
+                                database=psyc['database'],
+                                user=psyc['user'],
+                                password=psyc['password']
+                                )
 
         cursor = conn.cursor()
 
@@ -880,11 +880,11 @@ def update_stp(version):
 @app.route('/api/load_info/<stand>', methods=['GET'])
 def get_load_info(stand):
     conn = psycopg2.connect(
-        host="127.0.0.1",
-        database="bendiks",
-        user="postgres",
-        password="1"
-    )
+                            host=psyc['host'],
+                            database=psyc['database'],
+                            user=psyc['user'],
+                            password=psyc['password']
+                            )
 
     id = 1
     cursor = conn.cursor()

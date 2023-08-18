@@ -187,3 +187,10 @@ tests = {
     'storage drive overflow':'SD-overflow',
     'ram overflow':'RAM-overflow'
 }
+
+psyc = {
+        'host':'127.0.0.1',
+        'database':'bendiks',
+        'user':'postgres',
+        'password':'1'
+}            

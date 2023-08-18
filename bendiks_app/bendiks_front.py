@@ -30,6 +30,8 @@ from backup_image_conf import *
 from time import sleep
 import threading
 import psycopg2
+from collections import deque
+
 
 
 app = Flask(__name__)
@@ -106,7 +108,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(1.5)
+    sock.settimeout(2)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -122,9 +124,9 @@ def output_remote_load(stand):
             except paramiko.AuthenticationException:
                 output_cpu = 'Auth Error'
                 output_ram = 'Auth Error'
-            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException) :
-                output_cpu = 'Connection Error'
-                output_ram = 'Connection Error'
+            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
+                output_cpu = 'Connect Error'
+                output_ram = 'Connect Error'
 
         conn = psycopg2.connect(
                                 host=psyc['host'],
@@ -921,19 +923,19 @@ def update():
         with open('conf/actual_log_path_stand1.conf', 'r') as rl:
             real_path1 = rl.read()
             with open(real_path1, 'r') as r:
-                stand1_log = r.read()
+                stand1_log = '\n'.join(deque(r, maxlen=30))
         with open('conf/actual_log_path_stand2.conf', 'r') as rl:
             real_path2 = rl.read()
             with open(real_path2, 'r') as r:
-                stand2_log = r.read()
+                stand2_log = '\n'.join(deque(r, maxlen=30))
         with open('conf/actual_log_path_stand3.conf', 'r') as rl:
             real_path3 = rl.read()
             with open(real_path3, 'r') as r:
-                stand3_log = r.read()
+                stand3_log = '\n'.join(deque(r, maxlen=30))
         with open('conf/actual_log_path_stand4.conf', 'r') as rl:
             real_path4 = rl.read()
             with open(real_path4, 'r') as r:
-                stand4_log = r.read()
+                stand4_log = '\n'.join(deque(r, maxlen=30))
     except FileNotFoundError:
         pass
 

@@ -106,41 +106,47 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    result = sock.connect_ex((stands_ip[stand], 22))
-    
-    if result != 0:
-        output_cpu = '-'
-        output_ram = '-'
-    else:
-        try:
-            output_cpu  = ssh_command("""grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage "%"}'""", 
-                                      stand_ip=stands_ip[stand])
-            output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", 
-                                      stand_ip=stands_ip[stand])
-        except paramiko.AuthenticationException:
-            output_cpu = 'Auth Error'
-            output_ram = 'Auth Error'
-        except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException) :
-            output_cpu = 'Connection Error'
-            output_ram = 'Connection Error'
+    sock.settimeout(1.5)
+    try:
+        result = sock.connect_ex((stands_ip[stand], 22))
+        
+        if result != 0:
+            output_cpu = '-'
+            output_ram = '-'
+        else:
+            try:
+                output_cpu  = ssh_command("""grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage "%"}'""", 
+                                        stand_ip=stands_ip[stand])
+                output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", 
+                                        stand_ip=stands_ip[stand])
+            except paramiko.AuthenticationException:
+                output_cpu = 'Auth Error'
+                output_ram = 'Auth Error'
+            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException) :
+                output_cpu = 'Connection Error'
+                output_ram = 'Connection Error'
 
-    conn = psycopg2.connect(
-        host="127.0.0.1",
-        database="bendiks",
-        user="postgres",
-        password="1"
-    )
+        conn = psycopg2.connect(
+            host="127.0.0.1",
+            database="bendiks",
+            user="postgres",
+            password="1"
+        )
 
-    cursor = conn.cursor()
+        cursor = conn.cursor()
 
-    id = 1 #row number
-    update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_ram = %s WHERE id = %s"
-    data = (output_cpu, output_ram, id)
-    cursor.execute(update_query, data)
+        id = 1 #row number
+        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_ram = %s WHERE id = %s"
+        data = (output_cpu, output_ram, id)
+        cursor.execute(update_query, data)
 
-    conn.commit()
-    cursor.close()
-    conn.close()
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except socket.timeout:
+        pass
+    finally:
+        conn.close()
 
 
 def background_task():

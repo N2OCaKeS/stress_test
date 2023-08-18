@@ -595,7 +595,7 @@
       var stop_btn = document.getElementById("stop-btn2");
       var ok_btn = document.getElementById("ok-btn2");
   
-      function setStatus(status) {
+      function setStatus2(status) {
           switch (status) {
               case "Остановлен":
                   start_btn.disabled = false;
@@ -637,7 +637,7 @@
   
                       $('#collapseTwo2 .accordion-body .line-break').html(data['progress_stand2']);
                       $('#collapseThree2 .accordion-body').html(data['stand2_log']);
-                      setStatus(data['status_stand2']);
+                      setStatus2(data['status_stand2']);
                   }
               });
           }, 3000);
@@ -828,7 +828,7 @@
       var stop_btn = document.getElementById("stop-btn3");
       var ok_btn = document.getElementById("ok-btn3");
   
-      function setStatus(status) {
+      function setStatus3(status) {
           switch (status) {
               case "Остановлен":
                   start_btn.disabled = false;
@@ -870,7 +870,7 @@
   
                       $('#collapseTwo3 .accordion-body .line-break').html(data['progress_stand3']);
                       $('#collapseThree3 .accordion-body').html(data['stand3_log']);
-                      setStatus(data['status_stand3']);
+                      setStatus3(data['status_stand3']);
                   }
               });
           }, 3000);
@@ -1062,7 +1062,7 @@
   var stop_btn = document.getElementById("stop-btn4");
   var ok_btn = document.getElementById("ok-btn4");
 
-  function setStatus(status) {
+  function setStatus4(status) {
       switch (status) {
           case "Остановлен":
               start_btn.disabled = false;
@@ -1104,7 +1104,7 @@
 
                   $('#collapseTwo4 .accordion-body .line-break').html(data['progress_stand4']);
                   $('#collapseThree4 .accordion-body').html(data['stand4_log']);
-                  setStatus(data['status_stand4']);
+                  setStatus4(data['status_stand4']);
               }
           });
       }, 3000);

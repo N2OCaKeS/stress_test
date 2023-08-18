@@ -387,19 +387,19 @@
                   type: 'get',
                   dataType: 'json',
                   success: function(data) {
-                      $('#collapseTwo1 .accordion-body strong').html("Статус: " + data['status_stand1']);
+                      $('#collapseOne1 .accordion-body strong').html("Статус: " + data['status_stand1']);
   
                       if (prevStatusGifStand1 !== data['status_gif_stand1']) {
-                          $('#collapseTwo1 .accordion-body img').attr("src", data['status_gif_stand1']);
+                          $('#collapseOne1 .accordion-body img').attr("src", data['status_gif_stand1']);
                           prevStatusGifStand1 = data['status_gif_stand1'];
                       }
   
                       if(data['status_stand1'] === "Запущен" || data['status_stand1'] === "Готово") {
-                          $('#collapseTwo1 .accordion-body .line-break').html(data['stand1_sett']);
+                          $('#collapseOne1 .accordion-body .line-break').html(data['stand1_sett']);
                       }
   
-                      $('#collapseThree1 .accordion-body .line-break').html(data['progress_stand1']);
-                      $('#collapseFour1 .accordion-body').html(data['stand1_log']);
+                      $('#collapseTwo1 .accordion-body .line-break').html(data['progress_stand1']);
+                      $('#collapseThree1 .accordion-body').html(data['stand1_log']);
   
                       setStatus1(data['status_stand1']); 
                   }

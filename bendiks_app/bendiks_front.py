@@ -115,8 +115,8 @@ def output_remote_load(stand):
             output_ram = '-'
         else:
             try:
-                output_cpu  = ssh_command("""grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage "%"}'""", 
-                                        stand_ip=stands_ip[stand])
+                output_cpu  = round(ssh_command("""grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage "%"}'""", 
+                                        stand_ip=stands_ip[stand]), 3)
                 output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", 
                                         stand_ip=stands_ip[stand])
             except paramiko.AuthenticationException:

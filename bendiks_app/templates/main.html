@@ -431,24 +431,28 @@
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-        $(document).ready(function(){
-            setInterval(function(){
-                $.ajax({
-                    url: '/update_power_status/stand2',
-                    type: 'get',
-                    dataType: 'json',
-                    success: function(response){
-                        var status_image = document.getElementById("status-image-stand2");
-                        if (response.is_running){
-                            status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                        } else {
-                            status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                        }
-                    }
-                });
-            }, 5000);  
-        });
-        </script>
+          $(document).ready(function(){
+              setInterval(function(){
+                  $.ajax({
+                      url: '/update_power_status/stand2',
+                      type: 'get',
+                      dataType: 'json',
+                      success: function(response){
+                          var status_image = document.getElementById("status-image-stand2");
+                          if (response.is_running){
+                              status_image.src = "http://10.177.103.10:8000/static/status_on.png";
+                          } else {
+                              status_image.src = "http://10.177.103.10:8000/static/status_off.png";
+                          }
+                      },
+                      error: function(){
+                          var status_image = document.getElementById("status-image-stand2");
+                          status_image.src = "http://10.177.103.10:8000/static/status_off.png";
+                      }
+                  });
+              }, 5000);  
+          });
+          </script>
           <br></br>
           
           <table class="table table-dark table-striped-columns">

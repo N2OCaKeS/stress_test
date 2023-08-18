@@ -1068,10 +1068,17 @@ def update():
 def check_running_system(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = sock.connect_ex((stands_ip[stand], 22))
-    if result == 0:
-        return jsonify(is_running=True)
-    else: 
+    try:
+        result = sock.connect_ex((stands_ip[stand], 22))
+        if result == 0:
+            return jsonify(is_running=True)
+        else: 
+            return jsonify(is_running=False)
+    except Exception as e:
+        print(e)
         return jsonify(is_running=False)
+    finally:
+        sock.close()
 
   
 

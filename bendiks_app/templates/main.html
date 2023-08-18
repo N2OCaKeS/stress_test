@@ -477,15 +477,18 @@
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-            setInterval(function () {
-                $.ajax({
-                    url: "/api/load_info/stand2", 
-                    success: function(result) {
-                        $("#load_cpu_stand2").html(result.load_cpu_stand2);
-                        $("#load_ram_stand2").html(result.load_ram_stand2);
-                    }
-                });
-            }, 3000);
+          setInterval(function () {
+            $.ajax({
+                url: "/api/load_info/stand2", 
+                success: function(result) {
+                    $("#load_cpu_stand2").html(result.load_cpu_stand2);
+                    $("#load_ram_stand2").html(result.load_ram_stand2);
+                },
+                error: function(jqXHR, textStatus, errorThrown) {
+                    console.log("Error: " + textStatus + ", " + errorThrown);
+                }
+            });
+        }, 3000);
         </script>
 
           <div class="accordion" id="accordionstand2">

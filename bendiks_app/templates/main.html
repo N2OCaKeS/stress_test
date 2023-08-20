@@ -358,61 +358,8 @@
         </div>
       </div>
     </div>
-    <!-- <script>
-      let prevStatusGifStand1 = null;
-      var start_btn1 = document.getElementById("start-btn1");
-      var stop_btn1 = document.getElementById("stop-btn1");
-      var ok_btn1 = document.getElementById("ok-btn1");
-  
-      function setStatus1(status) {
-          switch (status) {
-              case "Остановлен":
-                  start_btn1.disabled = false;
-                  stop_btn1.disabled = true;
-                  ok_btn1.style.display = "none";
-                  break;
-              case "Запущен":
-                  start_btn1.disabled = true;
-                  stop_btn1.disabled = false;
-                  ok_btn1.style.display = "none";
-                  break;
-              case "Готово":
-                  start_btn1.style.display = "none";
-                  stop_btn1.style.display = "none";
-                  ok_btn1.style.display = "inline-block";
-                  break;
-              default:
-                  break;
-          }
-      }
-  
-      $(document).ready(function() {
-          setInterval(function() {
-              $.ajax({
-                  url: '/update_page_info',
-                  type: 'get',
-                  dataType: 'json',
-                  success: function(data) {
-                      $('#collapseOne1 .accordion-body strong').html("Статус: " + data['status_stand1']);
-  
-                      if (prevStatusGifStand1 !== data['status_gif_stand1']) {
-                          $('#collapseOne1 .accordion-body img').attr("src", data['status_gif_stand1']);
-                          prevStatusGifStand1 = data['status_gif_stand1'];
-                      }
-  
-                      if(data['status_stand1'] === "Запущен" || data['status_stand1'] === "Готово") {
-                          $('#collapseOne1 .accordion-body .line-break').html(data['stand1_sett']);
-                      }
-  
-                      $('#collapseTwo1 .accordion-body .line-break').html(data['progress_stand1']);
-                      $('#collapseThree1 .accordion-body').html(data['stand1_log']);
-  
-                      setStatus1(data['status_stand1']); 
-                  }
-              });
-          }, 3000);
-      });
-  </script> -->
+    
+
 
 
      
@@ -597,61 +544,7 @@
         </div>
       </div>
     </div>
-    <!-- <script>
-      let prevStatusGifStand2 = null;
-      var start_btn2 = document.getElementById("start-btn2");
-      var stop_btn2 = document.getElementById("stop-btn2");
-      var ok_btn2 = document.getElementById("ok-btn2");
-  
-      function setStatus2(status) {
-          switch (status) {
-              case "Остановлен":
-                  start_btn2.disabled = false;
-                  stop_btn2.disabled = true;
-                  ok_btn2.style.display = "none";
-                  break;
-              case "Запущен":
-                  start_btn2.disabled = true;
-                  stop_btn2.disabled = false;
-                  ok_btn2.style.display = "none";
-                  break;
-              case "Готово":
-                  start_btn2.style.display = "none";
-                  stop_btn2.style.display = "none";
-                  ok_btn2.style.display = "inline-block";
-                  break;
-              default:
-                  break;
-          }
-      }
-  
-      $(document).ready(function() {
-          setInterval(function() {
-              $.ajax({
-                  url: '/update_page_info',
-                  type: 'get',
-                  dataType: 'json',
-                  success: function(data) {
-                      $('#collapseOne2 .accordion-body strong').html("Статус: " + data['status_stand2']);
-  
-                      if (prevStatusGifStand2 !== data['status_gif_stand2']) {
-                          $('#collapseOne2 .accordion-body img').attr("src", data['status_gif_stand2']);
-                          prevStatusGifStand2 = data['status_gif_stand2'];
-                      }
-  
-                      if(data['status_stand2'] === "Запущен" || data['status_stand2'] === "Готово") {
-                          $('#collapseOne2 .accordion-body .line-break').html(data['stand2_sett']);
-                      }
-  
-                      $('#collapseTwo2 .accordion-body .line-break').html(data['progress_stand2']);
-                      $('#collapseThree2 .accordion-body').html(data['stand2_log']);
-  
-                      setStatus2(data['status_stand2']); 
-                  }
-              });
-          }, 3000);
-      });
-  </script> -->
+    
 
 
 
@@ -837,61 +730,7 @@
         </div>
       </div>
     </div>
-    <!-- <script>
-      let prevStatusGifStand3 = null;
-      var start_btn3 = document.getElementById("start-btn3");
-      var stop_btn3 = document.getElementById("stop-btn3");
-      var ok_btn3 = document.getElementById("ok-btn3");
-  
-      function setStatus3(status) {
-          switch (status) {
-              case "Остановлен":
-                  start_btn3.disabled = false;
-                  stop_btn3.disabled = true;
-                  ok_btn3.style.display = "none";
-                  break;
-              case "Запущен":
-                  start_btn3.disabled = true;
-                  stop_btn3.disabled = false;
-                  ok_btn3.style.display = "none";
-                  break;
-              case "Готово":
-                  start_btn3.style.display = "none";
-                  stop_btn3.style.display = "none";
-                  ok_btn3.style.display = "inline-block";
-                  break;
-              default:
-                  break;
-          }
-      }
-  
-      $(document).ready(function() {
-          setInterval(function() {
-              $.ajax({
-                  url: '/update_page_info',
-                  type: 'get',
-                  dataType: 'json',
-                  success: function(data) {
-                      $('#collapseOne3 .accordion-body strong').html("Статус: " + data['status_stand3']);
-  
-                      if (prevStatusGifStand3 !== data['status_gif_stand3']) {
-                          $('#collapseOne3 .accordion-body img').attr("src", data['status_gif_stand3']);
-                          prevStatusGifStand3 = data['status_gif_stand3'];
-                      }
-  
-                      if(data['status_stand3'] === "Запущен" || data['status_stand3'] === "Готово") {
-                          $('#collapseOne3 .accordion-body .line-break').html(data['stand3_sett']);
-                      }
-  
-                      $('#collapseTwo3 .accordion-body .line-break').html(data['progress_stand3']);
-                      $('#collapseThree3 .accordion-body').html(data['stand3_log']);
-  
-                      setStatus3(data['status_stand3']); 
-                  }
-              });
-          }, 3000);
-      });
-  </script> -->
+    
 
 
 

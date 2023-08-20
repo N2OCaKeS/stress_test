@@ -1144,31 +1144,36 @@ function setStatus(standNum, status) {
     }
 }
 
+function updateInfo() {
+  $.ajax({
+          url: '/update_page_info',
+          type: 'get',
+          dataType: 'json',
+          success: function(data) {
+              [4, 3, 2, 1].forEach((standNum) => {
+                  $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
+                  if (prevStatusGifs[4-standNum] !== data['status_gif_stand' + standNum]) {
+                      $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);
+                      prevStatusGifs[4-standNum] = data['status_gif_stand' + standNum];
+                  }
+                  if(data['status_stand' + standNum] === "Запущен" || data['status_stand' + standNum] === "Готово") {
+                      $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);
+                  }
+                  $('#collapseTwo' + standNum + ' .accordion-body .line-break').html(data['progress_stand' + standNum]);
+                  $('#collapseThree' + standNum + ' .accordion-body').html(data['stand' + standNum + '_log']);
+                  setStatus(standNum, data['status_stand' + standNum]);
+              });
+          }
+      });
+}
 $(document).ready(function() {
-    setInterval(function() {
-        $.ajax({
-            url: '/update_page_info',
-            type: 'get',
-            dataType: 'json',
-            success: function(data) {
-                [4, 3, 2, 1].forEach((standNum) => {
-                    $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
-                    if (prevStatusGifs[4-standNum] !== data['status_gif_stand' + standNum]) {
-                        $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);
-                        prevStatusGifs[4-standNum] = data['status_gif_stand' + standNum];
-                    }
-                    if(data['status_stand' + standNum] === "Запущен" || data['status_stand' + standNum] === "Готово") {
-                        $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);
-                    }
-                    $('#collapseTwo' + standNum + ' .accordion-body .line-break').html(data['progress_stand' + standNum]);
-                    $('#collapseThree' + standNum + ' .accordion-body').html(data['stand' + standNum + '_log']);
-                    setStatus(standNum, data['status_stand' + standNum]);
-                });
-            }
-        });
-    }, 3000);
+  updateInfo(); 
+  setInterval(updateInfo, 5000); 
 });
 </script>
+
+
+
 
 
 <!-- <div class="card text-bg-dark mb-3" style="max-width: 28rem;">

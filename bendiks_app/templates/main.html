@@ -352,7 +352,7 @@
         </div>
       </div>
     </div>
-    <script>
+    <!-- <script>
       let prevStatusGifStand1 = null;
       var start_btn1 = document.getElementById("start-btn1");
       var stop_btn1 = document.getElementById("stop-btn1");
@@ -406,7 +406,7 @@
               });
           }, 3000);
       });
-  </script>
+  </script> -->
 
 
      
@@ -589,7 +589,7 @@
         </div>
       </div>
     </div>
-    <script>
+    <!-- <script>
       let prevStatusGifStand2 = null;
       var start_btn2 = document.getElementById("start-btn2");
       var stop_btn2 = document.getElementById("stop-btn2");
@@ -643,7 +643,7 @@
               });
           }, 3000);
       });
-  </script>
+  </script> -->
 
 
 
@@ -823,7 +823,7 @@
         </div>
       </div>
     </div>
-    <script>
+    <!-- <script>
       let prevStatusGifStand3 = null;
       var start_btn3 = document.getElementById("start-btn3");
       var stop_btn3 = document.getElementById("stop-btn3");
@@ -877,7 +877,7 @@
               });
           }, 3000);
       });
-  </script>
+  </script> -->
 
 
 
@@ -1058,7 +1058,7 @@
     </div>
   </div>
 </div>
-<script>
+<!-- <script>
   let prevStatusGifStand4 = null;
   var start_btn4 = document.getElementById("start-btn4");
   var stop_btn4 = document.getElementById("stop-btn4");
@@ -1112,8 +1112,63 @@
           });
       }, 3000);
   });
-</script>
+</script> -->
+<script>
+let prevStatusGifs = [null, null, null, null];
+var start_btns = ["start-btn4", "start-btn3", "start-btn2", "start-btn1"].map(id => document.getElementById(id));
+var stop_btns = ["stop-btn4", "stop-btn3", "stop-btn2", "stop-btn1"].map(id => document.getElementById(id));
+var ok_btns = ["ok-btn4", "ok-btn3", "ok-btn2", "ok-btn1"].map(id => document.getElementById(id));
 
+function setStatus(standNum, status) {
+    let start_btn = start_btns[4-standNum];
+    let stop_btn = stop_btns[4-standNum];
+    let ok_btn = ok_btns[4-standNum];
+    switch (status) {
+        case "Остановлен":
+            start_btn.disabled = false;
+            stop_btn.disabled = true;
+            ok_btn.style.display = "none";
+            break;
+        case "Запущен":
+            start_btn.disabled = true;
+            stop_btn.disabled = false;
+            ok_btn.style.display = "none";
+            break;
+        case "Готово":
+            start_btn.style.display = "none";
+            stop_btn.style.display = "none";
+            ok_btn.style.display = "inline-block";
+            break;
+        default:
+            break;
+    }
+}
+
+$(document).ready(function() {
+    setInterval(function() {
+        $.ajax({
+            url: '/update_page_info',
+            type: 'get',
+            dataType: 'json',
+            success: function(data) {
+                [4, 3, 2, 1].forEach((standNum) => {
+                    $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
+                    if (prevStatusGifs[4-standNum] !== data['status_gif_stand' + standNum]) {
+                        $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);
+                        prevStatusGifs[4-standNum] = data['status_gif_stand' + standNum];
+                    }
+                    if(data['status_stand' + standNum] === "Запущен" || data['status_stand' + standNum] === "Готово") {
+                        $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);
+                    }
+                    $('#collapseTwo' + standNum + ' .accordion-body .line-break').html(data['progress_stand' + standNum]);
+                    $('#collapseThree' + standNum + ' .accordion-body').html(data['stand' + standNum + '_log']);
+                    setStatus(standNum, data['status_stand' + standNum]);
+                });
+            }
+        });
+    }, 3000);
+});
+</script>
 
 
 <!-- <div class="card text-bg-dark mb-3" style="max-width: 28rem;">

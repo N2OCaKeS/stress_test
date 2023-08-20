@@ -198,22 +198,24 @@
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-        $(document).ready(function(){
-            setInterval(function(){
-                $.ajax({
-                    url: '/update_power_status/stand1',
-                    type: 'get',
-                    dataType: 'json',
-                    success: function(response){
-                        var status_image = document.getElementById("status-image-stand1");
-                        if (response.is_running){
-                            status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                        } else {
-                            status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                        }
+          function updatePowerStatus1() {
+            $.ajax({
+                url: '/update_power_status/stand1',
+                type: 'get',
+                dataType: 'json',
+                success: function(response){
+                    var status_image = document.getElementById("status-image-stand1");
+                    if (response.is_running){
+                        status_image.src = "http://10.177.103.10:8000/static/status_on.png";
+                    } else {
+                        status_image.src = "http://10.177.103.10:8000/static/status_off.png";
                     }
-                });
-            }, 5000);  
+                }
+            });
+        }   
+        $(document).ready(function(){
+            updatePowerStatus1(); 
+            setInterval(updatePowerStatus1, 5000);
         });
         </script>
           <br></br>
@@ -431,28 +433,26 @@
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-          $(document).ready(function(){
-              setInterval(function(){
-                  $.ajax({
-                      url: '/update_power_status/stand2',
-                      type: 'get',
-                      dataType: 'json',
-                      success: function(response){
-                          var status_image = document.getElementById("status-image-stand2");
-                          if (response.is_running){
-                              status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                          } else {
-                              status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                          }
-                      },
-                      error: function(){
-                          var status_image = document.getElementById("status-image-stand2");
-                          status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                      }
-                  });
-              }, 5000);  
-          });
-          </script>
+          function updatePowerStatus2() {
+            $.ajax({
+                url: '/update_power_status/stand2',
+                type: 'get',
+                dataType: 'json',
+                success: function(response){
+                    var status_image = document.getElementById("status-image-stand2");
+                    if (response.is_running){
+                        status_image.src = "http://10.177.103.10:8000/static/status_on.png";
+                    } else {
+                        status_image.src = "http://10.177.103.10:8000/static/status_off.png";
+                    }
+                }
+            });
+        }
+        $(document).ready(function(){
+            updatePowerStatus2(); 
+            setInterval(updatePowerStatus2, 5000);
+        });
+        </script>
           <br></br>
           
           <table class="table table-dark table-striped-columns">
@@ -669,22 +669,24 @@
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-        $(document).ready(function(){
-            setInterval(function(){
-                $.ajax({
-                    url: '/update_power_status/stand3',
-                    type: 'get',
-                    dataType: 'json',
-                    success: function(response){
-                        var status_image = document.getElementById("status-image-stand3");
-                        if (response.is_running){
-                            status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                        } else {
-                            status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                        }
+          function updatePowerStatus3() {
+            $.ajax({
+                url: '/update_power_status/stand3',
+                type: 'get',
+                dataType: 'json',
+                success: function(response){
+                    var status_image = document.getElementById("status-image-stand3");
+                    if (response.is_running){
+                        status_image.src = "http://10.177.103.10:8000/static/status_on.png";
+                    } else {
+                        status_image.src = "http://10.177.103.10:8000/static/status_off.png";
                     }
-                });
-            }, 5000);  
+                }
+            });
+        }   
+        $(document).ready(function(){
+            updatePowerStatus3(); 
+            setInterval(updatePowerStatus3, 5000);
         });
         </script>
           <br></br>
@@ -902,22 +904,24 @@
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-        $(document).ready(function(){
-            setInterval(function(){
-                $.ajax({
-                    url: '/update_power_status/stand4',
-                    type: 'get',
-                    dataType: 'json',
-                    success: function(response){
-                        var status_image = document.getElementById("status-image-stand4");
-                        if (response.is_running){
-                            status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                        } else {
-                            status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                        }
+          function updatePowerStatus4() {
+            $.ajax({
+                url: '/update_power_status/stand4',
+                type: 'get',
+                dataType: 'json',
+                success: function(response){
+                    var status_image = document.getElementById("status-image-stand4");
+                    if (response.is_running){
+                        status_image.src = "http://10.177.103.10:8000/static/status_on.png";
+                    } else {
+                        status_image.src = "http://10.177.103.10:8000/static/status_off.png";
                     }
-                });
-            }, 5000);  
+                }
+            });
+        }   
+        $(document).ready(function(){
+            updatePowerStatus4(); 
+            setInterval(updatePowerStatus4, 5000);
         });
         </script>
           <br></br>

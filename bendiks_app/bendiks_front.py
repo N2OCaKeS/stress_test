@@ -672,7 +672,7 @@ def run_command_stand1():
         with open('conf/work_status_stand1.conf', 'w') as w:
             w.write('Остановлен')
 
-    return redirect(url_for('update_page_info'))
+    return redirect(url_for('index'))
 
 
 
@@ -735,7 +735,7 @@ def run_command_stand2():
         with open('conf/work_status_stand2.conf', 'w') as w:
             w.write('Остановлен')
 
-    return redirect(url_for('update_page_info'))
+    return redirect(url_for('index'))
 
 
 
@@ -799,7 +799,7 @@ def run_command_stand3():
         with open('conf/work_status_stand3.conf', 'w') as w:
             w.write('Остановлен')
 
-    return redirect(url_for('update_page_info'))
+    return redirect(url_for('index'))
 
 
 @app.route('/run-command-stand4', methods=['POST'])
@@ -862,7 +862,7 @@ def run_command_stand4():
         with open('conf/work_status_stand4.conf', 'w') as w:
             w.write('Остановлен')
 
-    return redirect(url_for('update_page_info'))
+    return redirect(url_for('index'))
 
 
 @app.route('/update/<version>')
@@ -911,7 +911,7 @@ def get_load_info(stand):
 
 
 @app.route('/update_page_info')
-def update_page_info():
+def update():
     tests = []
     stand = []
     stand1_log = ''

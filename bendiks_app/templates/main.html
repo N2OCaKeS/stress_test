@@ -242,16 +242,20 @@
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-            setInterval(function () {
-                $.ajax({
-                    url: "/api/load_info/stand1", 
-                    success: function(result) {
-                        $("#load_cpu_stand1").html(result.load_cpu_stand1);
-                        $("#load_ram_stand1").html(result.load_ram_stand1);
-                    }
-                });
-            }, 3000);
-        </script> 
+          function loadInfo1() {
+              $.ajax({
+                  url: "/api/load_info/stand1", 
+                  success: function(result) {
+                      $("#load_cpu_stand1").html(result.load_cpu_stand1);
+                      $("#load_ram_stand1").html(result.load_ram_stand1);
+                  }
+              });
+          }
+          $(document).ready(function(){
+              loadInfo1(); 
+              setInterval(loadInfo1, 3000); 
+          });
+      </script> 
           
           <div class="accordion" id="accordionstand1">
             <div class="accordion-item">
@@ -477,16 +481,20 @@
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-            setInterval(function () {
-                $.ajax({
-                    url: "/api/load_info/stand2", 
-                    success: function(result) {
-                        $("#load_cpu_stand2").html(result.load_cpu_stand2);
-                        $("#load_ram_stand2").html(result.load_ram_stand2);
-                    }
-                });
-            }, 3000);
-        </script>
+          function loadInfo2() {
+              $.ajax({
+                  url: "/api/load_info/stand2", 
+                  success: function(result) {
+                      $("#load_cpu_stand2").html(result.load_cpu_stand2);
+                      $("#load_ram_stand2").html(result.load_ram_stand2);
+                  }
+              });
+          }
+          $(document).ready(function(){
+              loadInfo2(); 
+              setInterval(loadInfo2, 3000); 
+          });
+      </script>
 
           <div class="accordion" id="accordionstand2">
             <div class="accordion-item">
@@ -713,16 +721,20 @@
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-            setInterval(function () {
-                $.ajax({
-                    url: "/api/load_info/stand3", 
-                    success: function(result) {
-                        $("#load_cpu_stand3").html(result.load_cpu_stand3);
-                        $("#load_ram_stand3").html(result.load_ram_stand3);
-                    }
-                });
-            }, 3000);
-        </script>
+          function loadInfo3() {
+              $.ajax({
+                  url: "/api/load_info/stand3", 
+                  success: function(result) {
+                      $("#load_cpu_stand3").html(result.load_cpu_stand3);
+                      $("#load_ram_stand3").html(result.load_ram_stand3);
+                  }
+              });
+          }
+          $(document).ready(function(){
+              loadInfo3(); 
+              setInterval(loadInfo3, 3000); 
+          });
+      </script>
 
           <div class="accordion" id="accordionstand3">
             <div class="accordion-item">
@@ -948,16 +960,20 @@
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-            setInterval(function () {
-                $.ajax({
-                    url: "/api/load_info/stand4", 
-                    success: function(result) {
-                        $("#load_cpu_stand4").html(result.load_cpu_stand4);
-                        $("#load_ram_stand4").html(result.load_ram_stand4);
-                    }
-                });
-            }, 3000);
-        </script>
+          function loadInfo4() {
+              $.ajax({
+                  url: "/api/load_info/stand4", 
+                  success: function(result) {
+                      $("#load_cpu_stand4").html(result.load_cpu_stand4);
+                      $("#load_ram_stand4").html(result.load_ram_stand4);
+                  }
+              });
+          }
+          $(document).ready(function(){
+              loadInfo4(); 
+              setInterval(loadInfo4, 3000); 
+          });
+      </script>
           
           <div class="accordion" id="accordionstand4">
             <div class="accordion-item">

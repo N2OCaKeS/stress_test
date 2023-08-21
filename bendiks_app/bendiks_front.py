@@ -108,7 +108,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(5)
+    sock.settimeout(3)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -117,7 +117,7 @@ def output_remote_load(stand):
             output_ram = '-'
         else:
             try:
-                output_cpu  = ssh_command("""top -bn2 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{print 100-$8 "%"}'""", 
+                output_cpu  = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$8); print 100-$8 "%"}'""", 
                                         stand_ip=stands_ip[stand])
                 output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", 
                                         stand_ip=stands_ip[stand])

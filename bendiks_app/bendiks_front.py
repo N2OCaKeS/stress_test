@@ -108,7 +108,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2)
+    sock.settimeout(5)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -117,7 +117,7 @@ def output_remote_load(stand):
             output_ram = '-'
         else:
             try:
-                output_cpu  = ssh_command("""grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {printf "%.3f%%", usage}'""", 
+                output_cpu  = ssh_command("""top -bn2 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{print 100-$8 "%"}'""", 
                                         stand_ip=stands_ip[stand])
                 output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", 
                                         stand_ip=stands_ip[stand])
@@ -163,7 +163,7 @@ t.start()
 
 options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 
                   'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow'])
-releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', 'debian10-5.15', 'debian11-6.1', 'altlinux-5.10']
+releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1']
 kernels = ['5.10.0-1057-generic', '5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency']
 #main_url = generate_random_string(60)
 red_gif = 'http://10.177.103.10:8000/static/red_ring_64.gif'

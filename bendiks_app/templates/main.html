@@ -277,11 +277,11 @@
                         white-space: pre-line;
                     }
                   </style>
-                  {% if status_stand1 == "Запущен" or status_stand1 == "Готово" %}
+                  <!-- {% if status_stand1 == "Запущен" or status_stand1 == "Готово" %}
                     <div class="line-break">
                       {{ stand1_sett }}
                     </div>
-                  {% endif %}
+                  {% endif %} -->
                 </div>
               </div>
             </div>
@@ -463,11 +463,11 @@
                         white-space: pre-line;
                     }
                   </style>
-                  {% if status_stand2 == "Запущен" or status_stand2 == "Готово" %}
+                  <!-- {% if status_stand2 == "Запущен" or status_stand2 == "Готово" %}
                     <div class="line-break">
                      {{ stand2_sett }}
                     </div>
-                  {% endif %}
+                  {% endif %} -->
                 </div>
               </div>
             </div>
@@ -649,11 +649,11 @@
                         white-space: pre-line;
                     }
                   </style>
-                  {% if status_stand3 == "Запущен" or status_stand3 == "Готово"%}
+                  <!-- {% if status_stand3 == "Запущен" or status_stand3 == "Готово"%}
                     <div class="line-break">
                      {{ stand3_sett }}
                     </div>
-                  {% endif %}
+                  {% endif %} -->
                 </div>
               </div>
             </div>
@@ -834,11 +834,11 @@
                         white-space: pre-line;
                     }
                   </style>
-                  {% if status_stand4 == "Запущен" or status_stand4 == "Готово" %}
+                  <!-- {% if status_stand4 == "Запущен" or status_stand4 == "Готово" %}
                     <div class="line-break">
                      {{ stand4_sett }}
                     </div>
-                  {% endif %}
+                  {% endif %} -->
                 </div>
               </div>
             </div>
@@ -1016,7 +1016,9 @@ function updateInfo() {
                       prevStatusGifs[4-standNum] = data['status_gif_stand' + standNum];
                   }
                   if(data['status_stand' + standNum] === "Запущен" || data['status_stand' + standNum] === "Готово") {
-                      $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);
+                    $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);
+                  } else {
+                    $('#collapseOne' + standNum + ' .accordion-body .line-break').empty();
                   }
                   $('#collapseTwo' + standNum + ' .accordion-body .line-break').html(data['progress_stand' + standNum]);
                   $('#collapseThree' + standNum + ' .accordion-body').html(data['stand' + standNum + '_log']);

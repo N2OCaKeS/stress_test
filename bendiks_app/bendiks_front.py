@@ -108,7 +108,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3)
+    sock.settimeout(2.5)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -923,21 +923,33 @@ def update():
         with open('conf/actual_log_path_stand1.conf', 'r') as rl:
             real_path1 = rl.read()
             with open(real_path1, 'r') as r:
-                stand1_log = '\n'.join(deque(r, maxlen=30))
+                stand1_log = '\n'.join(deque(r, maxlen=50))
+    except Exception as e:
+        stand1_log = f'Type: {type(e).__name__}, Message: {str(e)}'
+
+    try:    
         with open('conf/actual_log_path_stand2.conf', 'r') as rl:
             real_path2 = rl.read()
             with open(real_path2, 'r') as r:
-                stand2_log = '\n'.join(deque(r, maxlen=30))
+                stand2_log = '\n'.join(deque(r, maxlen=50))
+    except Exception as e:
+        stand2_log = f'Type: {type(e).__name__}, Message: {str(e)}'
+
+    try:
         with open('conf/actual_log_path_stand3.conf', 'r') as rl:
             real_path3 = rl.read()
             with open(real_path3, 'r') as r:
-                stand3_log = '\n'.join(deque(r, maxlen=30))
+                stand3_log = '\n'.join(deque(r, maxlen=50))
+    except Exception as e:
+        stand3_log = f'Type: {type(e).__name__}, Message: {str(e)}'
+
+    try:
         with open('conf/actual_log_path_stand4.conf', 'r') as rl:
             real_path4 = rl.read()
             with open(real_path4, 'r') as r:
-                stand4_log = '\n'.join(deque(r, maxlen=30))
-    except FileNotFoundError:
-        pass
+                stand4_log = '\n'.join(deque(r, maxlen=50))
+    except Exception as e:
+        stand4_log = f'Type: {type(e).__name__}, Message: {str(e)}'
 
 
     try:
@@ -1091,6 +1103,20 @@ def check_running_system(stand):
         sock.close()
 
   
+
+@app.route('/reboot/<stand>', methods=['POST'])
+def reboot(stand):
+    ssh_command('sudo reboot', 
+                stand_ip=stands_ip[stand])
+
+
+
+@app.route('/poweroff/<stand>', methods=['POST'])
+def poweroff(stand):
+    ssh_command('sudo poweroff', 
+                stand_ip=stands_ip[stand])
+
+
 
 
 # if __name__ == '__main__':

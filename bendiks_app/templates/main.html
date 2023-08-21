@@ -183,6 +183,22 @@
         <div class="card-header">Stand 1</div>
         <div class="card-body">
 
+          <style>
+            .commandButton {
+                margin-right: 5px;                 
+                color: white; 
+            }
+            .commandButton:hover {
+                background-color: #ff7b00; 
+            }             
+            .commandButton:active {
+                background-color: #3e8e41;
+            }
+        </style>
+        <button class="commandButton btn btn-dark" data-command="/reboot/stand1">Reboot</button>
+        <button class="commandButton btn btn-dark" data-command="/poweroff/stand1">Power off</button>
+        
+
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>               
@@ -365,6 +381,9 @@
       <div class="card text-bg-dark mb-3">
         <div class="card-header">Stand 2</div>
         <div class="card-body">
+
+          <button class="commandButton btn btn-dark" data-command="/reboot/stand2">Reboot</button>
+          <button class="commandButton btn btn-dark" data-command="/poweroff/stand2">Power off</button>
 
           <table class="table table-dark table-striped-columns">
             <thead>
@@ -549,6 +568,9 @@
         <div class="card-header">Stand 3</div>
         <div class="card-body">
 
+          <button class="commandButton btn btn-dark" data-command="/reboot/stand3">Reboot</button>
+          <button class="commandButton btn btn-dark" data-command="/poweroff/stand3">Power off</button>
+
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>               
@@ -731,6 +753,26 @@
         <div class="card-header">Stand 4</div>
         <div class="card-body">
 
+          <button class="commandButton btn btn-dark" data-command="/reboot/stand4">Reboot</button>
+          <button class="commandButton btn btn-dark" data-command="/poweroff/stand4">Power off</button>
+          <script>
+            $(document).ready(function(){
+                $(".commandButton").click(function(){
+                    var url = $(this).data('command');
+                    $.ajax({
+                        url: url,
+                        type: 'POST',
+                        success: function(response) {
+                            alert(response);
+                        },
+                        error: function(error) {
+                            console.log(error);
+                        }
+                    });
+                });
+            });
+            </script>
+
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>               
@@ -894,7 +936,6 @@
               <div class="btn-group" role="group" aria-label="Basic example">
                   <button id="start-btn4" class="btn btn-start" name="command4" type="submit" value="start">Запустить</button>
                   <button id="stop-btn4" class="btn btn-stop" name="command4" type="submit" value="stop">Остановить</button>
-                  <!-- <button id="ok-btn4" class="btn btn-ok" style="display: none;" name="command4" type="submit" value="ok">Ок</button> -->
               </div>
               <button id="ok-btn4" class="btn btn-ok" style="display: none;" name="command4" type="submit" value="ok">Ок</button>
             </form>
@@ -973,12 +1014,16 @@ function setStatus(standNum, status) {
     switch (status) {
         case "Остановлен":
             start_btn.disabled = false;
+            start_btn.style.display = "inline-block";
             stop_btn.disabled = true;
+            stop_btn.style.display = "inline-block";
             ok_btn.style.display = "none";
             break;
         case "Запущен":
             start_btn.disabled = true;
+            start_btn.style.display = "inline-block";
             stop_btn.disabled = false;
+            stop_btn.style.display = "inline-block";
             ok_btn.style.display = "none";
             break;
         case "Готово":

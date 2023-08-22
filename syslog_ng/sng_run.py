@@ -29,7 +29,7 @@ from libs.libsng import (astra_version,
 from libs.zefir import UploaderZC
 from libs.libpublic import Public
 from libs.libstatistics import FileSystemStatistics
-from sng_conf import SERVICE_COUNT, TIME_EXEC, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME
+from sng_conf import SERVICE_COUNT, TIME_EXEC, TIME_EXEC_ST3_ST4, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME
 
 
 TIME_START_SCRIPT = datetime.now()
@@ -215,7 +215,9 @@ if __name__ == '__main__':
     data_disk.append(sc.get_disk_load())
     data_time.append(0)
 
-    time_exec = TIME_EXEC * 60
+    if args.STAND == '3' or args.STAND == '4':
+        time_exec = TIME_EXEC_ST3_ST4 * 60
+    else: time_exec = TIME_EXEC * 60
     qty_sec_after_start = 1
     
 

@@ -1,5 +1,6 @@
 SERVICE_COUNT = 4800 # 4800
 TIME_EXEC = 90 # 1440
+TIME_EXEC_ST3_ST4 = 180
 SCRIPT_DIR = "/home/u/git/stress_test/syslog_ng"
 REPORT_PATH = "{}/report".format(SCRIPT_DIR)
 REPORT_FILENAME = 'main_report.html'
@@ -18,3 +19,4 @@ GRAPH_DESCRIPTIONS = {
     'sng_syslog_memory.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости загрузки оперативной памяти сервисом syslog-ng от количества прошедших секунд.<ul><li><b>OX</b>: Количество секунд после запуска тестового сценария;</li><li><b>OY</b>: Загрузка оперативной памяти сервисом syslog-ng;</li><li><b>Функция</b>: Аппроксимирующая функция точек</li></ul></p>',
     'sng_disk.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости загрузки диска (дисковое заполнение) от количества прошедших секунд.<ul><li><b>OX</b>: Количество секунд после запуска тестового сценария;</li><li><b>OY</b>: Загрузка диска (дисковое наполнение)</li><li><b>Функция</b>: Аппроксимирующая функция точек</li></ul></p>',
 }
+

@@ -163,8 +163,9 @@ t.start()
 
 options = sorted(['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 
                   'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow'])
-releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1']
-kernels = ['5.10.0-1057-generic', '5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency']
+releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5']
+kernels = ['5.10.0-1057-generic', '5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', 
+           '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency', '5.10.190-1-generic']
 #main_url = generate_random_string(60)
 red_gif = 'http://10.177.103.10:8000/static/red_ring_64.gif'
 ping_gif = 'http://10.177.103.10:8000/static/ping.gif'

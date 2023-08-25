@@ -10,7 +10,7 @@ import pathlib
 from os import path
 if path.isfile('/home/u/ilo.py'):
     shutil.copyfile('/home/u/ilo.py', str(pathlib.Path(__file__).parent / 'ilo.py'))
-    from ilo import stand3, stand4
+    from libs.ilo import stand3, stand4
 else:
     print('Not exist settnigs ilo file')
     exit(2)
@@ -31,7 +31,7 @@ class iLOConsoleCaller:
         username = self.stand['username']
         password = self.stand['password']
 
-        driver = webdriver.Firefox(service=Service(f'{pathlib.Path(__file__).parent.parent}/drivers/geckodriver')) 
+        driver = webdriver.Firefox(service=Service(f'{pathlib.Path(__file__).parent}/drivers/geckodriver')) 
         driver.get(url)
         driver.switch_to.frame("appFrame")
 

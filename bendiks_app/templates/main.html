@@ -572,7 +572,7 @@
 
           <button class="commandButton btn btn-dark" data-command="/reboot/stand3">Reboot</button>
           <button class="commandButton btn btn-dark" data-command="/poweroff/stand3">Power off</button>
-          <button class="commandButton btn btn-dark" data-command="/ilo/stand3">iLO</button>
+          <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand3">iLO</button> -->
 
           <table class="table table-dark table-striped-columns">
             <thead>
@@ -758,8 +758,8 @@
 
           <button class="commandButton btn btn-dark" data-command="/reboot/stand4">Reboot</button>
           <button class="commandButton btn btn-dark" data-command="/poweroff/stand4">Power off</button>
-          <button class="commandButton btn btn-dark" data-command="/ilo/stand4">iLO</button>
-          <script>
+          <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand4">iLO</button> -->
+          <!-- <script>
             $(document).ready(function(){
                 $(".commandButton").click(function(){
                     var url = $(this).data('command');
@@ -775,7 +775,76 @@
                     });
                 });
             });
-            </script>
+            </script> -->
+            <script>
+              $(document).ready(function() {
+                $(".commandButton").click(function() {
+                  var standNumber, username, password, url;
+                  url = $(this).data('command');
+              
+                  if (url.includes("ilo/stand3")) {
+                    standNumber = "stand3";
+                    username = "UsernameForStand3";
+                    password = "PasswordForStand3";
+                    url = "UrlForStand3";
+                  } else if (url.includes("ilo/stand4")) {
+                    standNumber = "stand4";
+                    username = "UsernameForStand4";
+                    password = "PasswordForStand4";
+                    url = "UrlForStand4";
+                  }
+              
+                  if (url.includes("/ilo/")) {
+                    $.ajax({
+                      url: url,
+                      type: 'POST',
+                      success: function(response) {
+                        alert(response);
+              
+                        var usernameInputId, passwordInputId, logonButtonId;
+                        if (standNumber === "stand3") {
+                          usernameInputId = "usernameInput";
+                          passwordInputId = "passwordInput";
+                          logonButtonId = "ID_LOGON";
+                        } else if (standNumber === "stand4") {
+                          usernameInputId = "username";
+                          passwordInputId = "password";
+                          logonButtonId = "login-form__submit";
+                        } else {
+                          console.error("Invalid stand number");
+                          return;
+                        }
+              
+                        setTimeout(function() {
+                          $("#" + usernameInputId).val(username);
+                          $("#" + passwordInputId).val(password);
+                          $("#" + logonButtonId).click();
+                        }, 500);
+              
+                        setTimeout(function() {
+                          $("a:contains('HTML5')").click();
+                        }, 5000); 
+                      },
+                      error: function(error) {
+                        console.log(error);
+                      }
+                    });
+                  } else {
+                    $.ajax({
+                      url: url,
+                      type: 'POST',
+                      success: function(response) {
+                        alert(response);
+                      },
+                      error: function(error) {
+                        console.log(error);
+                      }
+                    });
+                  }
+                });
+              });
+              </script>
+
 
           <table class="table table-dark table-striped-columns">
             <thead>

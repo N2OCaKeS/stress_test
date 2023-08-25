@@ -31,6 +31,7 @@ from time import sleep
 import threading
 import psycopg2
 from collections import deque
+from libs.libilo import iLOConsoleCaller
 
 
 
@@ -1118,6 +1119,11 @@ def poweroff(stand):
                 stand_ip=stands_ip[stand])
 
 
+
+@app.route('/ilo/<stand>', methods=['POST'])
+def ilo_console_caller(stand):
+    icc = iLOConsoleCaller(stand_number=stand)
+    icc.ilo_console_loader()
 
 
 # if __name__ == '__main__':

@@ -142,12 +142,9 @@ def info_collector(page, ajax=None):
                         **sett_logs,
                         **progress_logs})    
 
-    test_list = ''
-    releas_list = ''
-    kernel_list = ''
     if page == 'mobile':
-        create_args('main')
-    else: create_args(page)
+        test_list, releas_list, kernel_list = create_args('main')
+    else: test_list, releas_list, kernel_list = create_args(page)
     
     if request.method == 'POST':
         selected_options = request.form.getlist('options')

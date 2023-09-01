@@ -11,7 +11,6 @@
 </head>
 <body style="background-color: #00121a ;">
 <h3 style="background-color: #ff7b00 ; color: #1e1d22 ;">Bendiks</h3>
-<!-- <img src=http://127.0.0.1:8000/static/team.gif alt="Bendiks"> -->
 
 
 <style>
@@ -32,22 +31,7 @@
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Версии</a>
     <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="#">Основная версия</a></li>
-      <li><a class="dropdown-item" href="{{ mobile_url }}">Мобильная версия</a></li>
       <li><a class="dropdown-item" href="{{ brest_url }}">Брест</a></li>
-    </ul>
-  </li>
-  <li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Обновить СТП</a>
-    <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="javascript:update('1.7.1')">1.7.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.2')">1.7.2</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.3')">1.7.3</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.3.UU.1')">1.7.3.UU.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.3.UU.2')">1.7.3.UU.2</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.4')">1.7.4</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.4.UU.1')">1.7.4.UU.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.5')">1.7.5</a></li>
     </ul>
   </li>
   <li class="nav-item">
@@ -88,12 +72,7 @@
           <p class="card-text">{{ kernel_list }}</p>
         </div>
       </div>
-      <!-- <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
-        <div class="card-header">Подготовленный релиз</div>
-        <div class="card-body">
-          <p class="card-text">{{ releas_list }}</p>
-        </div>
-      </div> -->
+      
 
       <style>
         .custom-bg {
@@ -183,7 +162,7 @@
     
     <div class="col-2 stands">
       <div class="card text-bg-dark mb-3" >
-        <div class="card-header">Stand 1</div>
+        <div class="card-header">Stand 10</div>
         <div class="card-body">
 
           <style>
@@ -198,8 +177,8 @@
                 background-color: #3e8e41;
             }
         </style>
-        <button class="commandButton btn btn-dark" data-command="/reboot/stand1">Reboot</button>
-        <button class="commandButton btn btn-dark" data-command="/poweroff/stand1">Power off</button>
+        <button class="commandButton btn btn-dark" data-command="/reboot/stand10">Reboot</button>
+        <button class="commandButton btn btn-dark" data-command="/poweroff/stand10">Power off</button>
         
 
           <table class="table table-dark table-striped-columns">
@@ -210,20 +189,20 @@
             </thead>
             <tbody>
                 <tr>                
-                    <td><img id="status-image-stand1" src="" alt='Status image' width='100' height='30'></td>
+                    <td><img id="status-image-stand10" src="" alt='Status image' width='100' height='30'></td>
                 </tr>             
             </tbody>
         </table>
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-          function updatePowerStatus1() {
+          function updatePowerStatus10() {
             $.ajax({
-                url: '/update_power_status/stand1',
+                url: '/update_power_status/stand10',
                 type: 'get',
                 dataType: 'json',
                 success: function(response){
-                    var status_image = document.getElementById("status-image-stand1");
+                    var status_image = document.getElementById("status-image-stand10");
                     if (response.is_running){
                         status_image.src = "http://10.177.103.10:8000/static/status_on.png";
                     } else {
@@ -233,8 +212,8 @@
             });
         }   
         $(document).ready(function(){
-            updatePowerStatus1(); 
-            setInterval(updatePowerStatus1, 5000);
+            updatePowerStatus10(); 
+            setInterval(updatePowerStatus10, 5000);
         });
         </script>
           <br></br>
@@ -249,44 +228,44 @@
                 <tr>
                     <td>CPU load</td>
                     <td></td>
-                    <td id="load_cpu_stand1">{{ load_cpu_stand1 }}</td>
+                    <td id="load_cpu_stand10">{{ load_cpu_stand10 }}</td>
                 </tr>
                 <tr>
                     <td>RAM load</td>
                     <td></td>
-                    <td id="load_ram_stand1">{{ load_ram_stand1 }}</td>
+                    <td id="load_ram_stand10">{{ load_ram_stand10 }}</td>
                 </tr>
             </tbody>
         </table>
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-          function loadInfo1() {
+          function loadInfo10() {
               $.ajax({
-                  url: "/api/load_info/stand1", 
+                  url: "/api/load_info/stand10", 
                   success: function(result) {
-                      $("#load_cpu_stand1").html(result.load_cpu_stand1);
-                      $("#load_ram_stand1").html(result.load_ram_stand1);
+                      $("#load_cpu_stand10").html(result.load_cpu_stand10);
+                      $("#load_ram_stand10").html(result.load_ram_stand10);
                   }
               });
           }
           $(document).ready(function(){
-              loadInfo1(); 
-              setInterval(loadInfo1, 3000); 
+              loadInfo10(); 
+              setInterval(loadInfo10, 3000); 
           });
       </script> 
           
-          <div class="accordion" id="accordionstand1">
+          <div class="accordion" id="accordionstand10">
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne1" aria-expanded="true" aria-controls="collapseOne">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne10" aria-expanded="true" aria-controls="collapseOne">
                   Статус
                 </button>
               </h2>
-              <div id="collapseOne1" class="accordion-collapse collapse show" data-bs-parent="#accordionstand1">
+              <div id="collapseOne10" class="accordion-collapse collapse show" data-bs-parent="#accordionstand10">
                 <div class="accordion-body" style="text-align: left;">
-                  <strong>Статус: {{ status_stand1 }}</strong> <br>
-                  <img src={{ status_gif_stand1 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
+                  <strong>Статус: {{ status_stand10 }}</strong> <br>
+                  <img src={{ status_gif_stand10 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
                   <br>
                   <!-- <br>
                   <br> -->
@@ -303,11 +282,11 @@
             </div>
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo1" aria-expanded="false" aria-controls="collapseTwo">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo10" aria-expanded="false" aria-controls="collapseTwo">
                   Прогресс
                 </button>
               </h2>
-              <div id="collapseTwo1" class="accordion-collapse collapse" data-bs-parent="#accordionstand1">
+              <div id="collapseTwo10" class="accordion-collapse collapse" data-bs-parent="#accordionstand10">
                 <div class="accordion-body">
                   <style>
                     .line-break {
@@ -316,20 +295,20 @@
                     }
                   </style>
                   <div class="line-break">
-                    {{ progress_stand1 }}
+                    {{ progress_stand10 }}
                   </div>
                 </div>
               </div>
             </div>
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree1" aria-expanded="false" aria-controls="collapseThree">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree10" aria-expanded="false" aria-controls="collapseThree">
                   Лог
                 </button>
               </h2>
-              <div id="collapseThree1" class="accordion-collapse collapse" data-bs-parent="#accordionstand1">
+              <div id="collapseThree10" class="accordion-collapse collapse" data-bs-parent="#accordionstand10">
                 <div class="accordion-body">
-                  {{ stand1_log }}
+                  {{ stand10_log }}
                 </div>
               </div>
             </div>
@@ -337,7 +316,7 @@
             <br></br>
 
 
-            <form method="POST" action="/run-command-stand1">
+            <form method="POST" action="/run-command-stand10">
               <style>
                   .btn-start, .btn-stop, .btn-ok {
                       color: #ffffff;
@@ -363,11 +342,10 @@
               </style>
               
               <div class="btn-group" role="group" aria-label="Basic example">
-                  <button id="start-btn1" class="btn btn-start" name="command1" type="submit" value="start">Запустить</button>
-                  <button id="stop-btn1" class="btn btn-stop" name="command1" type="submit" value="stop">Остановить</button>
-                  <!-- <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button> -->
+                  <button id="start-btn10" class="btn btn-start" name="command10" type="submit" value="start">Запустить</button>
+                  <button id="stop-btn10" class="btn btn-stop" name="command10" type="submit" value="stop">Остановить</button>
               </div>
-              <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button>
+              <button id="ok-btn10" class="btn btn-ok" style="display: none;" name="command10" type="submit" value="ok">Ок</button>
             </form>
 
           </div>
@@ -382,11 +360,11 @@
 
     <div class="col-2 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">Stand 2</div>
+        <div class="card-header">Stand 11</div>
         <div class="card-body">
 
-          <button class="commandButton btn btn-dark" data-command="/reboot/stand2">Reboot</button>
-          <button class="commandButton btn btn-dark" data-command="/poweroff/stand2">Power off</button>
+          <button class="commandButton btn btn-dark" data-command="/reboot/stand11">Reboot</button>
+          <button class="commandButton btn btn-dark" data-command="/poweroff/stand11">Power off</button>
 
           <table class="table table-dark table-striped-columns">
             <thead>
@@ -396,20 +374,20 @@
             </thead>
             <tbody>
                 <tr>                
-                    <td><img id="status-image-stand2" src="" alt='Status image' width='100' height='30'></td>
+                    <td><img id="status-image-stand11" src="" alt='Status image' width='100' height='30'></td>
                 </tr>             
             </tbody>
         </table>
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-          function updatePowerStatus2() {
+          function updatePowerStatus11() {
             $.ajax({
-                url: '/update_power_status/stand2',
+                url: '/update_power_status/stand11',
                 type: 'get',
                 dataType: 'json',
                 success: function(response){
-                    var status_image = document.getElementById("status-image-stand2");
+                    var status_image = document.getElementById("status-image-stand11");
                     if (response.is_running){
                         status_image.src = "http://10.177.103.10:8000/static/status_on.png";
                     } else {
@@ -419,8 +397,8 @@
             });
         }
         $(document).ready(function(){
-            updatePowerStatus2(); 
-            setInterval(updatePowerStatus2, 5000);
+            updatePowerStatus11(); 
+            setInterval(updatePowerStatus11, 5000);
         });
         </script>
           <br></br>
@@ -435,44 +413,44 @@
                 <tr>
                     <td>CPU load</td>
                     <td></td>
-                    <td id="load_cpu_stand2">{{ load_cpu_stand2 }}</td>
+                    <td id="load_cpu_stand11">{{ load_cpu_stand11 }}</td>
                 </tr>
                 <tr>
                     <td>RAM load</td>
                     <td></td>
-                    <td id="load_ram_stand2">{{ load_ram_stand2 }}</td>
+                    <td id="load_ram_stand11">{{ load_ram_stand11 }}</td>
                 </tr>
             </tbody>
         </table>
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-          function loadInfo2() {
+          function loadInfo11() {
               $.ajax({
-                  url: "/api/load_info/stand2", 
+                  url: "/api/load_info/stand11", 
                   success: function(result) {
-                      $("#load_cpu_stand2").html(result.load_cpu_stand2);
-                      $("#load_ram_stand2").html(result.load_ram_stand2);
+                      $("#load_cpu_stand11").html(result.load_cpu_stand11);
+                      $("#load_ram_stand11").html(result.load_ram_stand11);
                   }
               });
           }
           $(document).ready(function(){
-              loadInfo2(); 
-              setInterval(loadInfo2, 3000); 
+              loadInfo11(); 
+              setInterval(loadInfo11, 3000); 
           });
       </script>
 
-          <div class="accordion" id="accordionstand2">
+          <div class="accordion" id="accordionstand11">
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne2" aria-expanded="true" aria-controls="collapseOne">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne11" aria-expanded="true" aria-controls="collapseOne">
                   Статус
                 </button>
               </h2>
-              <div id="collapseOne2" class="accordion-collapse collapse show" data-bs-parent="#accordionstand2">
+              <div id="collapseOne11" class="accordion-collapse collapse show" data-bs-parent="#accordionstand11">
                 <div class="accordion-body" style="text-align: left;">
-                  <strong>Статус: {{ status_stand2 }}</strong> <br>
-                  <img src={{ status_gif_stand2 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
+                  <strong>Статус: {{ status_stand11 }}</strong> <br>
+                  <img src={{ status_gif_stand11 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
                   <br>
                   <!-- <br>
                   <br> -->
@@ -489,11 +467,11 @@
             </div>
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo2" aria-expanded="false" aria-controls="collapseTwo">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo11" aria-expanded="false" aria-controls="collapseTwo">
                   Прогресс
                 </button>
               </h2>
-              <div id="collapseTwo2" class="accordion-collapse collapse" data-bs-parent="#accordionstand2">
+              <div id="collapseTwo11" class="accordion-collapse collapse" data-bs-parent="#accordionstand11">
                 <div class="accordion-body">
                   <style>
                     .line-break {
@@ -502,20 +480,20 @@
                     }
                   </style>
                   <div class="line-break">
-                    {{ progress_stand2 }}
+                    {{ progress_stand11 }}
                   </div>
                 </div>
               </div>
             </div>
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree2" aria-expanded="false" aria-controls="collapseThree">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree11" aria-expanded="false" aria-controls="collapseThree">
                   Лог
                 </button>
               </h2>
-              <div id="collapseThree2" class="accordion-collapse collapse" data-bs-parent="#accordionstand2">
+              <div id="collapseThree11" class="accordion-collapse collapse" data-bs-parent="#accordionstand11">
                 <div class="accordion-body">
-                  {{ stand2_log }}
+                  {{ stand11_log }}
                 </div>
               </div>
             </div>
@@ -523,7 +501,7 @@
             <br></br>
 
 
-            <form method="POST" action="/run-command-stand2">
+            <form method="POST" action="/run-command-stand11">
               <style>
                   .btn-start, .btn-stop, .btn-ok {
                       color: #ffffff;
@@ -549,11 +527,11 @@
               </style>
               
               <div class="btn-group" role="group" aria-label="Basic example">
-                  <button id="start-btn2" class="btn btn-start" name="command2" type="submit" value="start">Запустить</button>
-                  <button id="stop-btn2" class="btn btn-stop" name="command2" type="submit" value="stop">Остановить</button>
-                  <!-- <button id="ok-btn2" class="btn btn-ok" style="display: none;" name="command2" type="submit" value="ok">Ок</button> -->
+                  <button id="start-btn11" class="btn btn-start" name="command11" type="submit" value="start">Запустить</button>
+                  <button id="stop-btn1" class="btn btn-stop" name="command11" type="submit" value="stop">Остановить</button>
+                  <!-- <button id="ok-btn11" class="btn btn-ok" style="display: none;" name="command11" type="submit" value="ok">Ок</button> -->
               </div>
-              <button id="ok-btn2" class="btn btn-ok" style="display: none;" name="command2" type="submit" value="ok">Ок</button>
+              <button id="ok-btn2" class="btn btn-ok" style="display: none;" name="command11" type="submit" value="ok">Ок</button>
             </form>
 
           </div>
@@ -566,217 +544,17 @@
 
 
 
-    <div class="col-2 stands">
-      <div class="card text-bg-dark mb-3">
-        <div class="card-header">Stand 3</div>
-        <div class="card-body">
-
-          <button class="commandButton btn btn-dark" data-command="/reboot/stand3">Reboot</button>
-          <button class="commandButton btn btn-dark" data-command="/poweroff/stand3">Power off</button>
-          <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand3">iLO</button> -->
-
-          <table class="table table-dark table-striped-columns">
-            <thead>
-                <tr>               
-                    <th scope="col">Power status</th>               
-                </tr>
-            </thead>
-            <tbody>
-                <tr>                
-                    <td><img id="status-image-stand3" src="" alt='Status image' width='100' height='30'></td>
-                </tr>             
-            </tbody>
-        </table>
-        
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-        <script>
-          function updatePowerStatus3() {
-            $.ajax({
-                url: '/update_power_status/stand3',
-                type: 'get',
-                dataType: 'json',
-                success: function(response){
-                    var status_image = document.getElementById("status-image-stand3");
-                    if (response.is_running){
-                        status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                    } else {
-                        status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                    }
-                }
-            });
-        }   
-        $(document).ready(function(){
-            updatePowerStatus3(); 
-            setInterval(updatePowerStatus3, 5000);
-        });
-        </script>
-          <br></br>
-
-          <table class="table table-dark table-striped-columns">
-            <thead>
-                <tr>
-                    <th scope="col">CPU/Mem info</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>CPU load</td>
-                    <td></td>
-                    <td id="load_cpu_stand3">{{ load_cpu_stand3 }}</td>
-                </tr>
-                <tr>
-                    <td>RAM load</td>
-                    <td></td>
-                    <td id="load_ram_stand3">{{ load_ram_stand3 }}</td>
-                </tr>
-            </tbody>
-        </table>
-        <br></br>
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-        <script>
-          function loadInfo3() {
-              $.ajax({
-                  url: "/api/load_info/stand3", 
-                  success: function(result) {
-                      $("#load_cpu_stand3").html(result.load_cpu_stand3);
-                      $("#load_ram_stand3").html(result.load_ram_stand3);
-                  }
-              });
-          }
-          $(document).ready(function(){
-              loadInfo3(); 
-              setInterval(loadInfo3, 3000); 
-          });
-      </script>
-
-          <div class="accordion" id="accordionstand3">
-            <div class="accordion-item">
-              <h2 class="accordion-header">
-                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne3" aria-expanded="true" aria-controls="collapseOne">
-                  Статус
-                </button>
-              </h2>
-              <div id="collapseOne3" class="accordion-collapse collapse show" data-bs-parent="#accordionstand3">
-                <div class="accordion-body" style="text-align: left;">
-                  <strong>Статус: {{ status_stand3 }}</strong> <br>
-                  <img src={{ status_gif_stand3 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
-                  <br>
-                  <!-- <br>
-                  <br> -->
-                  <br>
-                  <style>
-                    .line-break {
-                        white-space: pre-line;
-                    }
-                  </style>
-                  <div class="line-break">
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="accordion-item">
-              <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo3" aria-expanded="false" aria-controls="collapseTwo">
-                  Прогресс
-                </button>
-              </h2>
-              <div id="collapseTwo3" class="accordion-collapse collapse" data-bs-parent="#accordionstand3">
-                <div class="accordion-body">
-                  <style>
-                    .line-break {
-                        white-space: pre-line;
-                        text-align: left;
-                    }
-                  </style>
-                  <div class="line-break">
-                    {{ progress_stand3 }}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="accordion-item">
-              <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree3" aria-expanded="false" aria-controls="collapseThree">
-                  Лог
-                </button>
-              </h2>
-              <div id="collapseThree3" class="accordion-collapse collapse" data-bs-parent="#accordionstand3">
-                <div class="accordion-body">
-                  {{ stand3_log }}
-                </div>
-              </div>
-            </div>
-
-            <br></br>
-
-
-            <form method="POST" action="/run-command-stand3">
-              <style>
-                  .btn-start, .btn-stop, .btn-ok {
-                      color: #ffffff;
-                  }
-                  .btn-start {
-                      background-color: #465645;
-                  }
-                  .btn-start:hover {
-                      background-color: #47ca6a;
-                  }
-                  .btn-stop {
-                      background-color: #564745;
-                  }
-                  .btn-stop:hover {
-                      background-color: #ca5747;
-                  }
-                  .btn-ok {
-                      background-color: #465645;
-                  }
-                  .btn-ok:hover {
-                      background-color: #47ca6a;
-                  }
-              </style>
-              
-              <div class="btn-group" role="group" aria-label="Basic example">
-                  <button id="start-btn3" class="btn btn-start" name="command3" type="submit" value="start">Запустить</button>
-                  <button id="stop-btn3" class="btn btn-stop" name="command3" type="submit" value="stop">Остановить</button>
-                  <!-- <button id="ok-btn3" class="btn btn-ok" style="display: none;" name="command3" type="submit" value="ok">Ок</button> -->
-              </div>
-              <button id="ok-btn3" class="btn btn-ok" style="display: none;" name="command3" type="submit" value="ok">Ок</button>
-            </form>
-
-          </div>
-        </div>
-      </div>
-    </div>
-    
-
-
 
 
     <div class="col-2 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">Stand 4</div>
+        <div class="card-header">Stand 12</div>
         <div class="card-body">
 
-          <button class="commandButton btn btn-dark" data-command="/reboot/stand4">Reboot</button>
-          <button class="commandButton btn btn-dark" data-command="/poweroff/stand4">Power off</button>
-          <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand4">iLO</button> -->
-          <!-- <script>
-            $(document).ready(function(){
-                $(".commandButton").click(function(){
-                    var url = $(this).data('command');
-                    $.ajax({
-                        url: url,
-                        type: 'POST',
-                        success: function(response) {
-                            alert(response);
-                        },
-                        error: function(error) {
-                            console.log(error);
-                        }
-                    });
-                });
-            });
-            </script> -->
+          <button class="commandButton btn btn-dark" data-command="/reboot/stand12">Reboot</button>
+          <button class="commandButton btn btn-dark" data-command="/poweroff/stand12">Power off</button>
+          <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand12">iLO</button> -->
+          
             <script>
               $(document).ready(function() {
                 $(".commandButton").click(function() {
@@ -855,20 +633,20 @@
             </thead>
             <tbody>
                 <tr>                
-                    <td><img id="status-image-stand4" src="" alt='Status image' width='100' height='30'></td>
+                    <td><img id="status-image-stand12" src="" alt='Status image' width='100' height='30'></td>
                 </tr>             
             </tbody>
         </table>
         
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-          function updatePowerStatus4() {
+          function updatePowerStatus12() {
             $.ajax({
-                url: '/update_power_status/stand4',
+                url: '/update_power_status/stand12',
                 type: 'get',
                 dataType: 'json',
                 success: function(response){
-                    var status_image = document.getElementById("status-image-stand4");
+                    var status_image = document.getElementById("status-image-stand12");
                     if (response.is_running){
                         status_image.src = "http://10.177.103.10:8000/static/status_on.png";
                     } else {
@@ -878,8 +656,8 @@
             });
         }   
         $(document).ready(function(){
-            updatePowerStatus4(); 
-            setInterval(updatePowerStatus4, 5000);
+            updatePowerStatus12(); 
+            setInterval(updatePowerStatus12, 5000);
         });
         </script>
           <br></br>
@@ -894,44 +672,44 @@
                 <tr>
                     <td>CPU load</td>
                     <td></td>
-                    <td id="load_cpu_stand4">{{ load_cpu_stand4 }}</td>
+                    <td id="load_cpu_stand12">{{ load_cpu_stand12 }}</td>
                 </tr>
                 <tr>
                     <td>RAM load</td>
                     <td></td>
-                    <td id="load_ram_stand4">{{ load_ram_stand4 }}</td>
+                    <td id="load_ram_stand12">{{ load_ram_stand12 }}</td>
                 </tr>
             </tbody>
         </table>
         <br></br>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-          function loadInfo4() {
+          function loadInfo12() {
               $.ajax({
-                  url: "/api/load_info/stand4", 
+                  url: "/api/load_info/stand12", 
                   success: function(result) {
-                      $("#load_cpu_stand4").html(result.load_cpu_stand4);
-                      $("#load_ram_stand4").html(result.load_ram_stand4);
+                      $("#load_cpu_stand12").html(result.load_cpu_stand12);
+                      $("#load_ram_stand12").html(result.load_ram_stand12);
                   }
               });
           }
           $(document).ready(function(){
-              loadInfo4(); 
-              setInterval(loadInfo4, 3000); 
+              loadInfo12(); 
+              setInterval(loadInfo12, 3000); 
           });
       </script>
           
-          <div class="accordion" id="accordionstand4">
+          <div class="accordion" id="accordionstand12">
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne4" aria-expanded="true" aria-controls="collapseOne">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne12" aria-expanded="true" aria-controls="collapseOne">
                   Статус
                 </button>
               </h2>
-              <div id="collapseOne4" class="accordion-collapse collapse show" data-bs-parent="#accordionstand4">
+              <div id="collapseOne12" class="accordion-collapse collapse show" data-bs-parent="#accordionstand12">
                 <div class="accordion-body" style="text-align: left;">
-                  <strong>Статус: {{ status_stand4 }}</strong> <br>
-                  <img src={{ status_gif_stand4 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
+                  <strong>Статус: {{ status_stand12 }}</strong> <br>
+                  <img src={{ status_gif_stand12 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
                   <br>
                   <!-- <br>
                   <br> -->
@@ -948,11 +726,11 @@
             </div>
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo4" aria-expanded="false" aria-controls="collapseTwo">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo12" aria-expanded="false" aria-controls="collapseTwo">
                   Прогресс
                 </button>
               </h2>
-              <div id="collapseTwo4" class="accordion-collapse collapse" data-bs-parent="#accordionstand4">
+              <div id="collapseTwo12" class="accordion-collapse collapse" data-bs-parent="#accordionstand12">
                 <div class="accordion-body">
                   <style>
                     .line-break {
@@ -961,20 +739,20 @@
                     }
                   </style>
                   <div class="line-break">
-                    {{ progress_stand4 }}
+                    {{ progress_stand12 }}
                   </div>
                 </div>
               </div>
             </div>
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree4" aria-expanded="false" aria-controls="collapseThree">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree12" aria-expanded="false" aria-controls="collapseThree">
                   Лог
                 </button>
               </h2>
-              <div id="collapseThree4" class="accordion-collapse collapse" data-bs-parent="#accordionstand4">
+              <div id="collapseThree12" class="accordion-collapse collapse" data-bs-parent="#accordionstand12">
                 <div class="accordion-body">
-                  {{ stand4_log }}
+                  {{ stand12_log }}
                 </div>
               </div>
             </div>
@@ -982,7 +760,7 @@
             <br></br>
 
 
-            <form method="POST" action="/run-command-stand4">
+            <form method="POST" action="/run-command-stand12">
               <style>
                   .btn-start, .btn-stop, .btn-ok {
                       color: #ffffff;
@@ -1008,10 +786,10 @@
               </style>
               
               <div class="btn-group" role="group" aria-label="Basic example">
-                  <button id="start-btn4" class="btn btn-start" name="command4" type="submit" value="start">Запустить</button>
-                  <button id="stop-btn4" class="btn btn-stop" name="command4" type="submit" value="stop">Остановить</button>
+                  <button id="start-btn12" class="btn btn-start" name="command12" type="submit" value="start">Запустить</button>
+                  <button id="stop-btn12" class="btn btn-stop" name="command12" type="submit" value="stop">Остановить</button>
               </div>
-              <button id="ok-btn4" class="btn btn-ok" style="display: none;" name="command4" type="submit" value="ok">Ок</button>
+              <button id="ok-btn12" class="btn btn-ok" style="display: none;" name="command12" type="submit" value="ok">Ок</button>
             </form>
 
           </div>
@@ -1020,71 +798,17 @@
     </div>
   </div>
 </div>
-<!-- <script>
-  let prevStatusGifStand4 = null;
-  var start_btn4 = document.getElementById("start-btn4");
-  var stop_btn4 = document.getElementById("stop-btn4");
-  var ok_btn4 = document.getElementById("ok-btn4");
 
-  function setStatus4(status) {
-      switch (status) {
-          case "Остановлен":
-              start_btn4.disabled = false;
-              stop_btn4.disabled = true;
-              ok_btn4.style.display = "none";
-              break;
-          case "Запущен":
-              start_btn4.disabled = true;
-              stop_btn4.disabled = false;
-              ok_btn4.style.display = "none";
-              break;
-          case "Готово":
-              start_btn4.style.display = "none";
-              stop_btn4.style.display = "none";
-              ok_btn4.style.display = "inline-block";
-              break;
-          default:
-              break;
-      }
-  }
-
-  $(document).ready(function() {
-      setInterval(function() {
-          $.ajax({
-              url: '/update_page_info',
-              type: 'get',
-              dataType: 'json',
-              success: function(data) {
-                  $('#collapseOne4 .accordion-body strong').html("Статус: " + data['status_stand4']);
-
-                  if (prevStatusGifStand4 !== data['status_gif_stand4']) {
-                      $('#collapseOne4 .accordion-body img').attr("src", data['status_gif_stand4']);
-                      prevStatusGifStand4 = data['status_gif_stand4'];
-                  }
-
-                  if(data['status_stand4'] === "Запущен" || data['status_stand4'] === "Готово") {
-                      $('#collapseOne4 .accordion-body .line-break').html(data['stand4_sett']);
-                  }
-
-                  $('#collapseTwo4 .accordion-body .line-break').html(data['progress_stand4']);
-                  $('#collapseThree4 .accordion-body').html(data['stand4_log']);
-
-                  setStatus4(data['status_stand4']); 
-              }
-          });
-      }, 3000);
-  });
-</script> -->
 <script>
 let prevStatusGifs = [null, null, null, null];
-var start_btns = ["start-btn4", "start-btn3", "start-btn2", "start-btn1"].map(id => document.getElementById(id));
-var stop_btns = ["stop-btn4", "stop-btn3", "stop-btn2", "stop-btn1"].map(id => document.getElementById(id));
-var ok_btns = ["ok-btn4", "ok-btn3", "ok-btn2", "ok-btn1"].map(id => document.getElementById(id));
+var start_btns = ["start-btn12", "start-btn11", "start-btn10"].map(id => document.getElementById(id));
+var stop_btns = ["stop-btn12", "stop-btn11", "stop-btn10"].map(id => document.getElementById(id));
+var ok_btns = ["ok-btn12", "ok-btn11", "ok-btn10"].map(id => document.getElementById(id));
 
 function setStatus(standNum, status) {
-    let start_btn = start_btns[4-standNum];
-    let stop_btn = stop_btns[4-standNum];
-    let ok_btn = ok_btns[4-standNum];
+    let start_btn = start_btns[3-standNum];
+    let stop_btn = stop_btns[3-standNum];
+    let ok_btn = ok_btns[3-standNum];
     switch (status) {
         case "Остановлен":
             start_btn.disabled = false;
@@ -1116,11 +840,11 @@ function updateInfo() {
           type: 'get',
           dataType: 'json',
           success: function(data) {
-              [4, 3, 2, 1].forEach((standNum) => {
+              [12, 11, 10].forEach((standNum) => {
                   $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
-                  if (prevStatusGifs[4-standNum] !== data['status_gif_stand' + standNum]) {
+                  if (prevStatusGifs[3-standNum] !== data['status_gif_stand' + standNum]) {
                       $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);
-                      prevStatusGifs[4-standNum] = data['status_gif_stand' + standNum];
+                      prevStatusGifs[3-standNum] = data['status_gif_stand' + standNum];
                   }
                   if(data['status_stand' + standNum] === "Запущен" || data['status_stand' + standNum] === "Готово") {
                     $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);
@@ -1144,51 +868,10 @@ $(document).ready(function() {
 
 
 
-<!-- <div class="card text-bg-dark mb-3" style="max-width: 28rem;">
-  <div class="card-header">Список выбранных тестов</div>
-  <div class="card-body">
-    <p class="card-text">{{ test_list }}</p>
-  </div>
-</div>
-
-
-
-
-<div class="card text-bg-secondary mb-3" style="max-width: 28rem;">
-  <div class="card-header">Доступные тесты</div>
-  <div class="card-body">
-    <form method="POST" action="/">
-      <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">
-        {% for value in options %}
-          <div style="text-align: right;">
-            <label for="{{ value }}">{{ value }}</label>
-            <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}"><br>
-          </div>
-        {% endfor %}
-      </div>
-      <br></br>
-      <div style="text-align: center;">
-        <button class="btn btn-primary" type="submit">Отправить</button>
-      </div>
-    </form>
-  </div>
-</div> -->
-
-
-
-
-
-
-<!-- a class="btn btn-primary" href="#" role="button">Link</a -->
-<!-- button class="btn btn-primary" type="submit">Button</button -->
-<!-- input class="btn btn-primary" type="button" value="Input" -->
-
 
 {% if test_list %}
 <div id="alert" class="alert alert-info" role="alert" style="margin-top: 1rem; max-width: 18%; background-color: #00121a; border-color: #00121a;">
   <img src="http://10.177.103.10:8000/static/31.gif" alt="gif image">
-  <!-- {{ test_list }}
-  {{ stand }} -->
 </div>
 {% endif %}
 
@@ -1200,33 +883,6 @@ $(document).ready(function() {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ENjdO4Dr2bkBIFxQpeoTz1HIcje39Wm4jDKdf19U8gI4ddQ3GYNS7NTKfAdVQSZe" crossorigin="anonymous"></script>
 
-
-<!-- <script>
-  setTimeout(function(){
-     window.history.replaceState({}, '', '/');
-     location.reload();
-  }, 10000);
-</script> -->
-
-<!-- <script>
-  // Устанавливаем время простоя в секундах
-  var idleTime = 10; // Пример: 10 секунд
-  // Установка счетчика и обработчика событий
-  var timer;
-  function resetTimer() {
-    clearTimeout(timer);
-    timer = setTimeout(refreshPage, idleTime * 1000);
-  }
-  // Обработчики событий для сброса таймера
-  window.onload = resetTimer;
-  document.onmousemove = resetTimer;
-  document.onkeypress = resetTimer;
-  window.history.replaceState({}, '', '/{{ main_url }}');
-  // Функция обновления страницы
-  function refreshPage() {
-    window.location.reload();
-  }
-</script> -->
 
 
 

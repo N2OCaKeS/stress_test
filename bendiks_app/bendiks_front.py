@@ -38,8 +38,10 @@ __username = tokens['username']
 __jira_token = tokens['jira_token']
 
 
-t = threading.Thread(target=background_task)
-t.start()
+m = threading.Thread(target=background_task('main'))
+b = threading.Thread(target=background_task('brest'))
+m.start()
+b.start()
 
 
 @app.route('/')
@@ -47,13 +49,6 @@ def redirect_login():
     return redirect(url_for('login'))
 
 
-# @app.errorhandler(404)
-# def page_not_found():
-#     return redirect(url_for('login'))
-
-# @app.errorhandler(500)
-# def internal_server_error():
-#     return redirect(url_for('login'))
 @app.errorhandler(500)
 def internal_server_error(e):
     app.logger.error(e)
@@ -63,6 +58,7 @@ def internal_server_error(e):
 def page_not_found(e):
     app.logger.error(e)
     return redirect(url_for('login'))
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

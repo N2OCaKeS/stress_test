@@ -326,8 +326,12 @@ def output_remote_load(stand):
         conn.close()
 
 
-def background_task():
-    stands = main_stands + brest_stands
+def background_task(name):
+    if name == 'main':
+        stands = main_stands
+    elif name == 'brest':
+        stands = brest_stands
+        
     while True:
         [output_remote_load(str(stand)) for stand in stands]
         sleep(3)

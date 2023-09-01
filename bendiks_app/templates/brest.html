@@ -800,15 +800,15 @@
 </div>
 
 <script>
-let prevStatusGifs = [null, null, null, null];
-var start_btns = ["start-btn12", "start-btn11", "start-btn10"].map(id => document.getElementById(id));
-var stop_btns = ["stop-btn12", "stop-btn11", "stop-btn10"].map(id => document.getElementById(id));
-var ok_btns = ["ok-btn12", "ok-btn11", "ok-btn10"].map(id => document.getElementById(id));
+let prevStatusGifs = [null, null, null];
+var start_btns = ["start-btn10", "start-btn11", "start-btn12"].map(id => document.getElementById(id));
+var stop_btns = ["stop-btn10", "stop-btn11", "stop-btn12"].map(id => document.getElementById(id));
+var ok_btns = ["ok-btn10", "ok-btn11", "ok-btn12"].map(id => document.getElementById(id));
 
 function setStatus(standNum, status) {
-    let start_btn = start_btns[3-standNum];
-    let stop_btn = stop_btns[3-standNum];
-    let ok_btn = ok_btns[3-standNum];
+    let start_btn = start_btns[standNum-10];
+    let stop_btn = stop_btns[standNum-10];
+    let ok_btn = ok_btns[standNum-10];
     switch (status) {
         case "Остановлен":
             start_btn.disabled = false;
@@ -836,15 +836,15 @@ function setStatus(standNum, status) {
 
 function updateInfo() {
   $.ajax({
-          url: '/update_page_info',
+          url: '/update_page_info_brest',
           type: 'get',
           dataType: 'json',
           success: function(data) {
-              [12, 11, 10].forEach((standNum) => {
+              [10, 11, 12].forEach((standNum) => {
                   $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
-                  if (prevStatusGifs[3-standNum] !== data['status_gif_stand' + standNum]) {
+                  if (prevStatusGifs[standNum-10] !== data['status_gif_stand' + standNum]) {
                       $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);
-                      prevStatusGifs[3-standNum] = data['status_gif_stand' + standNum];
+                      prevStatusGifs[standNum-10] = data['status_gif_stand' + standNum];
                   }
                   if(data['status_stand' + standNum] === "Запущен" || data['status_stand' + standNum] === "Готово") {
                     $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);

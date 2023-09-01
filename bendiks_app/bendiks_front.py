@@ -146,9 +146,9 @@ def get_load_info(stand):
     }) 
 
 
-@app.route('/update_page_info')
-def update():
-    return index_page('main', ajax=True)
+@app.route('/update_page_info_<page>')
+def update(page):
+    return index_page(f'{page}', ajax=True)
 
 
 @app.route('/update_power_status/<stand>')

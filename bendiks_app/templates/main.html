@@ -1051,7 +1051,7 @@
   $(document).ready(function() {
       setInterval(function() {
           $.ajax({
-              url: '/update_page_info',
+              url: '/update_page_info_main',
               type: 'get',
               dataType: 'json',
               success: function(data) {
@@ -1112,7 +1112,7 @@ function setStatus(standNum, status) {
 
 function updateInfo() {
   $.ajax({
-          url: '/update_page_info',
+          url: '/update_page_info_main',
           type: 'get',
           dataType: 'json',
           success: function(data) {

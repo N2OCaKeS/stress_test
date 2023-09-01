@@ -42,8 +42,10 @@ done_gif = 'http://10.177.103.10:8000/static/done.gif'
 
 with open('/home/u/url', 'r') as r:
     main_url = r.read().replace('\n', '').replace('\r', '')
-mobile_url = 'mobile'
-brest_url = 'brest4421'
+with open('/home/u/url_mob', 'r') as r:
+    mobile_url = r.read().replace('\n', '').replace('\r', '')
+with open('/home/u/url_brest', 'r') as r:
+    brest_url = r.read().replace('\n', '').replace('\r', '')
 
 user_app = 'user'
 user = 'u'
@@ -93,9 +95,11 @@ def info_collector(page, ajax=None):
                    'Запущен': green_gif, 
                    'Готово': done_gif}
     stands_dict = {'main':main_stands,
-                   'brest':brest_stands}
+                   'brest':brest_stands,
+                   'mobile':mobile_stands}
     options = {'main':main_options,
-               'brest':brest_options}
+               'brest':brest_options,
+               'mobile':main_options}
     status_logs = {f'status_{stand}':'-' for stand in stands_dict[page]}
         
     
@@ -340,4 +344,3 @@ def background_task_brest():
         [output_remote_load(str(stand)) for stand in stands]
         sleep(3)
 
-        

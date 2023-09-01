@@ -1,4 +1,10 @@
 -- sudo -u postgres psql
+-- \connect your_database_name
+-- \dt
+-- SELECT * FROM table_name;
+
+
+
 -- CREATE DATABASE bendiks;
 
 -- и запустить скрипт командой: 
@@ -15,4 +21,13 @@ CREATE TABLE main_table (
     stand4_cpu VARCHAR(255),
     stand4_ram VARCHAR(255)
 );
+
+
+-- ALTER TABLE main_table 
+-- ADD COLUMN stand10_cpu VARCHAR(255), 
+-- ADD COLUMN stand10_ram VARCHAR(255),
+-- ADD COLUMN stand11_cpu VARCHAR(255),
+-- ADD COLUMN stand11_ram VARCHAR(255),
+-- ADD COLUMN stand12_cpu VARCHAR(255),
+-- ADD COLUMN stand12_ram VARCHAR(255);
 

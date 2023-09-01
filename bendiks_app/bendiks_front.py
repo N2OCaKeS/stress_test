@@ -49,7 +49,10 @@ def redirect_login():
 
 @app.errorhandler(404)
 def page_not_found():
-    # При обращении к несуществующему URL, перенаправляем на правильный URL
+    return redirect(url_for('login'))
+
+@app.errorhandler(500)
+def internal_server_error():
     return redirect(url_for('login'))
 
 

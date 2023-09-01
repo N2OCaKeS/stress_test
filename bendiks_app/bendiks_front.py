@@ -17,7 +17,8 @@ from libs.libilo import iLOConsoleCaller
 from libs.libbend import (index_page,
                           run_command_on_stand,
                           ssh_command,
-                          background_task,
+                          background_task_main,
+                          background_task_brest,
                           main_url,
                           mobile_url,
                           brest_url,
@@ -38,8 +39,8 @@ __username = tokens['username']
 __jira_token = tokens['jira_token']
 
 
-m = threading.Thread(target=background_task('main'))
-b = threading.Thread(target=background_task('brest'))
+m = threading.Thread(target=background_task_main)
+b = threading.Thread(target=background_task_brest)
 m.start()
 b.start()
 

@@ -142,16 +142,10 @@ def info_collector(page, ajax=None):
                         **sett_logs,
                         **progress_logs})    
 
-    with open(f'conf/{page}_tests_args.conf', 'r') as r:
-            test_list = str(r.read())
-    with open(f'conf/{page}_releas_args.conf', 'r') as r:
-            releas_list = str(r.read())
-    try:
-        with open(f'conf/{page}_kernel_args.conf', 'r') as r:
-                kernel_list = str(r.read())
-    except FileNotFoundError:
-        kernel_list = 'None'
-
+    if page == 'mobile':
+        create_args('main')
+    else: create_args(page)
+    
     if request.method == 'POST':
         selected_options = request.form.getlist('options')
         
@@ -271,6 +265,21 @@ def run_command_on_stand(num):
             w.write('Остановлен')
 
     return redirect(url_for(f'index_{prefix}'))
+
+
+
+def create_args(page):
+    with open(f'conf/{page}_tests_args.conf', 'r') as r:
+            test_list = str(r.read())
+    with open(f'conf/{page}_releas_args.conf', 'r') as r:
+            releas_list = str(r.read())
+    try:
+        with open(f'conf/{page}_kernel_args.conf', 'r') as r:
+                kernel_list = str(r.read())
+    except FileNotFoundError:
+        kernel_list = 'None'
+    
+    return test_list, releas_list, kernel_list
 
 
 

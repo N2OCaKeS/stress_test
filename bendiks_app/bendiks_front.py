@@ -26,9 +26,7 @@ from libs.libbend import (index_page,
                           bp, 
                           psyc,
                           stands_ip,
-                          user_app,
-                          main_stands,
-                          brest_stands)
+                          user_app)
 
 
 app = Flask(__name__)
@@ -177,20 +175,12 @@ def check_running_system(stand):
 def reboot(stand):
     ssh_command('sudo reboot', 
                 stand_ip=stands_ip[stand])
-    if stand in main_stands:
-        return index_page('main')
-    elif stand in brest_stands:
-        return index_page('brest')
    
 
 @app.route('/poweroff/<stand>', methods=['POST'])
 def poweroff(stand):
     ssh_command('sudo poweroff', 
                 stand_ip=stands_ip[stand])
-    if stand in main_stands:
-        return index_page('main')
-    elif stand in brest_stands:
-        return index_page('brest')
 
 
 @app.route('/ilo/<stand>', methods=['POST'])

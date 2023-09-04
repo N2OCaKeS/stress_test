@@ -40,13 +40,6 @@ ping_gif = 'http://10.177.103.10:8000/static/ping.gif'
 green_gif = 'http://10.177.103.10:8000/static/blue_ring_64.gif'
 done_gif = 'http://10.177.103.10:8000/static/done.gif'
 
-with open('/home/u/url', 'r') as r:
-    main_url = r.read().replace('\n', '').replace('\r', '')
-with open('/home/u/url_mob', 'r') as r:
-    mobile_url = r.read().replace('\n', '').replace('\r', '')
-with open('/home/u/url_brest', 'r') as r:
-    brest_url = r.read().replace('\n', '').replace('\r', '')
-
 user_app = 'user'
 user = 'u'
 port = 22
@@ -75,6 +68,22 @@ def generate_random_string(length):
     letters_and_digits = string.ascii_letters + string.digits
     rand_string = ''.join(random.sample(letters_and_digits, length))
     return rand_string * 5
+
+with open('/home/u/url', 'w') as w:
+    gen_main_url = generate_random_string(40)
+    w.write(gen_main_url)
+with open('/home/u/url', 'r') as r:
+    main_url = r.read().replace('\n', '').replace('\r', '')
+with open('/home/u/url_mob', 'w') as w:
+    gen_mob_url = generate_random_string(40)
+    w.write(gen_mob_url)
+with open('/home/u/url_mob', 'r') as r:
+    mobile_url = r.read().replace('\n', '').replace('\r', '')
+with open('/home/u/url_brest', 'w') as w:
+    gen_brest_url = generate_random_string(40)
+    w.write(gen_brest_url)
+with open('/home/u/url_brest', 'r') as r:
+    brest_url = r.read().replace('\n', '').replace('\r', '')
 
 
 def index_page(general_page, ajax=None):

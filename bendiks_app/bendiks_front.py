@@ -26,7 +26,9 @@ from libs.libbend import (index_page,
                           bp, 
                           psyc,
                           stands_ip,
-                          user_app)
+                          user_app,
+                          main_stands,
+                          brest_stands)
 
 
 app = Flask(__name__)
@@ -51,15 +53,14 @@ def redirect_login():
 
 
 @app.errorhandler(500)
-def internal_server_error():
-#def internal_server_error(e):
-    #app.logger.error(e)
+def internal_server_error(e):
+    app.logger.error(e)
     return redirect(url_for('login'))
 
 
 @app.errorhandler(404)
-def page_not_found():
-    #app.logger.error(e)
+def page_not_found(e):
+    app.logger.error(e)
     return redirect(url_for('login'))
 
 
@@ -176,12 +177,20 @@ def check_running_system(stand):
 def reboot(stand):
     ssh_command('sudo reboot', 
                 stand_ip=stands_ip[stand])
-
+    if stand in main_stands:
+        return index_page('main')
+    elif stand in brest_stands:
+        return index_page('brest')
+   
 
 @app.route('/poweroff/<stand>', methods=['POST'])
 def poweroff(stand):
     ssh_command('sudo poweroff', 
                 stand_ip=stands_ip[stand])
+    if stand in main_stands:
+        return index_page('main')
+    elif stand in brest_stands:
+        return index_page('brest')
 
 
 @app.route('/ilo/<stand>', methods=['POST'])

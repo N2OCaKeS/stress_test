@@ -12,6 +12,9 @@ git_directory="stress_test"
 #dates_file="/home/u/dates.txt"
 #args=`cat "$dates_file"`
 
+#Предустановка пакетов
+dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y
+
 #Клонируем репозиторий, удаляем старый, если есть
 cd /home/u/git
 ./git_clone.py

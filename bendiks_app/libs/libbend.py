@@ -391,10 +391,9 @@ def background_stat_storage_main():
     stands = main_stands
 
     while True:
-        for stand in stands:
-            remote_storage_load(stand)
-            remote_sysstat_available(stand)
-            sleep(5)
+        [remote_storage_load(str(stand)) for stand in stands]
+        #remote_sysstat_available(stand)
+        sleep(5)
 
 
 def background_task_main():

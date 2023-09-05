@@ -123,7 +123,7 @@ def info_collector(page, ajax=None):
 
     for stand in stands_dict[page]:
         try:
-            with open('conf/status_output_stand10.log', 'r') as rsc:
+            with open(f'conf/status_output_{stand}.log', 'r') as rsc:
                 sett_logs[f'{stand}_sett'] = rsc.read()
         except FileNotFoundError:
             sett_logs[f'{stand}_sett'] = ''
@@ -233,9 +233,6 @@ def run_command_on_stand(num):
             with open(f'front_stand{num}.log', 'a') as output:
                 process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
             process_list.append(process)
-#            with open("process_list4.log", "w") as ot:
-#                for process in process_list4:
-#                    ot.write(str(process.pid) + '\n')
 
         if kernel != 'None':
             process_manager = Process(target=run_command_and_log, args=(command_to_run_kernel,))
@@ -265,7 +262,7 @@ def run_command_on_stand(num):
         with open(f'conf/work_status_stand{num}.conf', 'w') as w:
             w.write('Остановлен')
 
-    return redirect(url_for(f'index_{prefix}'))
+    return index_page(prefix)
 
 
 
@@ -387,44 +384,40 @@ def remote_storage_load(stand):
 
 def remote_sysstat_available(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(30)
-    try:
-        result = sock.connect_ex((stands_ip[stand], 22))
+    
+    result = sock.connect_ex((stands_ip[stand], 22))
         
-        if result != 0:
-            output_nvme = '-'
-            output_sda = '-'
-        else:
-            try:
-                ssh_command("""dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y""", 
-                            stand_ip=stands_ip[stand])
-            except paramiko.AuthenticationException:
-                output_nvme = 'Auth Error'
-                output_sda = 'Auth Error'
-            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
-                output_nvme = 'Connect Error'
-                output_sda = 'Connect Error'
+    if result != 0:
+        output_nvme = '-'
+        output_sda = '-'
+    else:
+        try:
+            ssh_command("""dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y""", 
+                        stand_ip=stands_ip[stand])
+        except paramiko.AuthenticationException:
+            output_nvme = 'Auth Error'
+            output_sda = 'Auth Error'
+        except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
+            output_nvme = 'Connect Error'
+            output_sda = 'Connect Error'
 
-        conn = psycopg2.connect(
-                                host=psyc['host'],
-                                database=psyc['database'],
-                                user=psyc['user'],
-                                password=psyc['password']
-                                )
+    conn = psycopg2.connect(
+                            host=psyc['host'],
+                            database=psyc['database'],
+                            user=psyc['user'],
+                            password=psyc['password']
+                            )
             
-        cursor = conn.cursor()    
-        id = 1 #row number
-        update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s WHERE id = %s"
-        data = (output_nvme, output_sda, id)
-        cursor.execute(update_query, data)
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except socket.timeout:
-        pass
-    finally:
-        conn.close()
+    cursor = conn.cursor()    
+    id = 1 #row number
+    update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s WHERE id = %s"
+    data = (output_nvme, output_sda, id)
+    cursor.execute(update_query, data)
+       
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
 
 
 def background_stat_storage_main():

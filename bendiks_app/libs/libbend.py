@@ -350,7 +350,7 @@ def remote_storage_load(stand):
             output_sda = '-'
         else:
             try:
-                output_nvme  = ssh_command("""iostat -dx | awk '/nvme0n1/ {print $NF"%"}'""", 
+                output_nvme  = ssh_command("""iostat -dx | awk '/nvme0n1|nvme0c0n1/ {print $NF"%"}'""", 
                                         stand_ip=stands_ip[stand])
                 output_sda  = ssh_command("""iostat -dx | awk '/sda/ {print $NF"%"}'""", 
                                         stand_ip=stands_ip[stand])

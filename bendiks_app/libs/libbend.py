@@ -150,7 +150,7 @@ def info_collector(page, ajax=None):
     if request.method == 'POST':
         selected_options = request.form.getlist('options')
         
-        tests = [option for option in stands_dict[page] if option in selected_options]
+        tests = [option for option in options[page] if option in selected_options]
         if not tests:
             tests = 'Тесты не выбраны'
         

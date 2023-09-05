@@ -116,7 +116,7 @@ def update_stp(version):
                                    username=__username)
     zefir_table
 
-    return redirect(url_for('index'))
+    return index_page('main')
 
 
 @app.route('/api/load_info/<stand>', methods=['GET'])

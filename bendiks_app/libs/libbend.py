@@ -238,9 +238,9 @@ def run_command_on_stand(num):
 #                    ot.write(str(process.pid) + '\n')
 
         if kernel != 'None':
-            process_manager = Process(target=run_command_and_log, args=(command_to_run_kernel))
+            process_manager = Process(target=run_command_and_log, args=(command_to_run_kernel,))
         else:
-            process_manager = Process(target=run_command_and_log, args=(command_to_run))
+            process_manager = Process(target=run_command_and_log, args=(command_to_run,))
         process_manager.start()
 
         if path.isfile(f'conf/{prefix}_kernel_args.conf'):

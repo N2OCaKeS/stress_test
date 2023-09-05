@@ -31,3 +31,14 @@ CREATE TABLE main_table (
 -- ADD COLUMN stand12_cpu VARCHAR(255),
 -- ADD COLUMN stand12_ram VARCHAR(255);
 
+
+ALTER TABLE main_table 
+ADD COLUMN stand1_nvme VARCHAR(255), 
+ADD COLUMN stand1_sda VARCHAR(255),
+ADD COLUMN stand2_nvme VARCHAR(255), 
+ADD COLUMN stand2_sda VARCHAR(255),
+ADD COLUMN stand3_nvme VARCHAR(255), 
+ADD COLUMN stand3_sda VARCHAR(255),
+ADD COLUMN stand4_nvme VARCHAR(255), 
+ADD COLUMN stand4_sda VARCHAR(255);
+

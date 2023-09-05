@@ -19,6 +19,7 @@ from libs.libbend import (index_page,
                           ssh_command,
                           background_task_main,
                           background_task_brest,
+                          background_stat_storage_main,
                           main_url,
                           mobile_url,
                           brest_url,
@@ -39,10 +40,12 @@ __username = tokens['username']
 __jira_token = tokens['jira_token']
 
 
+sm = threading.Thread(target=background_stat_storage_main)
 m = threading.Thread(target=background_task_main)
 b = threading.Thread(target=background_task_brest)
 m.start()
 b.start()
+sm.start()
 
 
 @app.route('/')
@@ -127,23 +130,29 @@ def get_load_info(stand):
 
     id = 1
     cursor = conn.cursor()
-    select_query = f"SELECT {stand}_cpu, {stand}_ram FROM main_table WHERE id = %s"
+    select_query = f"SELECT {stand}_cpu, {stand}_ram, {stand}_nvme, {stand}_sda FROM main_table WHERE id = %s"
     cursor.execute(select_query, [id])
 
     result = cursor.fetchone()
     if result is not None:
         load_cpu = result[0]
         load_ram = result[1]
+        load_nvme = result[2]
+        load_sda = result[3]
     else:
         load_cpu = '-'
         load_ram = '-'
+        load_nvme = '-'
+        load_sda = '-'
 
     cursor.close()
     conn.close()
     
     return jsonify({
         f"load_cpu_{stand}": load_cpu,
-        f"load_ram_{stand}": load_ram
+        f"load_ram_{stand}": load_ram,
+        f"load_nvme_{stand}": load_nvme,
+        f"load_sda_{stand}": load_sda
     }) 
 
 

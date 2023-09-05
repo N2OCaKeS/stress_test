@@ -339,12 +339,72 @@ def output_remote_load(stand):
         conn.close()
 
 
+def remote_storage_load(stand):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(2)
+    try:
+        result = sock.connect_ex((stands_ip[stand], 22))
+        
+        if result != 0:
+            output_nvme = '-'
+            output_sda = '-'
+        else:
+            try:
+                output_nvme  = ssh_command("""iostat -dx | awk '/nvme0n1/ {print $NF"%"}'""", 
+                                        stand_ip=stands_ip[stand])
+                output_sda  = ssh_command("""iostat -dx | awk '/sda/ {print $NF"%"}'""", 
+                                        stand_ip=stands_ip[stand])
+            except paramiko.AuthenticationException:
+                output_nvme = 'Auth Error'
+                output_sda = 'Auth Error'
+            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
+                output_nvme = 'Connect Error'
+                output_sda = 'Connect Error'
+
+        conn = psycopg2.connect(
+                                host=psyc['host'],
+                                database=psyc['database'],
+                                user=psyc['user'],
+                                password=psyc['password']
+                                )
+
+        cursor = conn.cursor()
+
+        id = 1 #row number
+        update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s WHERE id = %s"
+        data = (output_nvme, output_sda, id)
+        cursor.execute(update_query, data)
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except socket.timeout:
+        pass
+    finally:
+        conn.close()
+
+
+def remote_sysstat_available(stand):
+    ssh_command("""dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y""", 
+                stand_ip=stands_ip[stand])
+
+
+def background_stat_storage_main():
+    stands = main_stands
+
+    while True:
+        [remote_sysstat_available(str(stand)) for stand in stands]
+        [remote_storage_load(str(stand)) for stand in stands]
+        sleep(5)
+
+
 def background_task_main():
     stands = main_stands
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
         sleep(3)
+
 
 def background_task_brest():
     stands = brest_stands

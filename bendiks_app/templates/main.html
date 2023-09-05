@@ -242,7 +242,7 @@
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>
-                    <th scope="col">CPU/Mem info</th>
+                    <th scope="col">CPU/Mem/IO info</th>
                 </tr>
             </thead>
             <tbody>
@@ -256,6 +256,16 @@
                     <td></td>
                     <td id="load_ram_stand1">{{ load_ram_stand1 }}</td>
                 </tr>
+                <tr>
+                  <td>NVME load</td>
+                  <td></td>
+                  <td id="load_nvme_stand1">{{ load_nvme_stand1 }}</td>
+              </tr>
+              <tr>
+                <td>SDA load</td>
+                <td></td>
+                <td id="load_sda_stand1">{{ load_sda_stand1 }}</td>
+            </tr>
             </tbody>
         </table>
         <br></br>
@@ -267,6 +277,8 @@
                   success: function(result) {
                       $("#load_cpu_stand1").html(result.load_cpu_stand1);
                       $("#load_ram_stand1").html(result.load_ram_stand1);
+                      $("#load_nvme_stand1").html(result.load_nvme_stand1);
+                      $("#load_sda_stand1").html(result.load_sda_stand1);
                   }
               });
           }
@@ -428,7 +440,7 @@
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>
-                    <th scope="col">CPU/Mem info</th>
+                    <th scope="col">CPU/Mem/IO info</th>
                 </tr>
             </thead>
             <tbody>
@@ -442,6 +454,16 @@
                     <td></td>
                     <td id="load_ram_stand2">{{ load_ram_stand2 }}</td>
                 </tr>
+                <tr>
+                  <td>NVME load</td>
+                  <td></td>
+                  <td id="load_nvme_stand2">{{ load_nvme_stand2 }}</td>
+                </tr>
+                <tr>
+                  <td>SDA load</td>
+                  <td></td>
+                  <td id="load_sda_stand2">{{ load_sda_stand2 }}</td>
+                </tr>
             </tbody>
         </table>
         <br></br>
@@ -453,6 +475,8 @@
                   success: function(result) {
                       $("#load_cpu_stand2").html(result.load_cpu_stand2);
                       $("#load_ram_stand2").html(result.load_ram_stand2);
+                      $("#load_nvme_stand2").html(result.load_nvme_stand2);
+                      $("#load_sda_stand2").html(result.load_sda_stand2);
                   }
               });
           }
@@ -615,7 +639,7 @@
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>
-                    <th scope="col">CPU/Mem info</th>
+                    <th scope="col">CPU/Mem/IO info</th>
                 </tr>
             </thead>
             <tbody>
@@ -629,6 +653,16 @@
                     <td></td>
                     <td id="load_ram_stand3">{{ load_ram_stand3 }}</td>
                 </tr>
+                <tr>
+                  <td>NVME load</td>
+                  <td></td>
+                  <td id="load_nvme_stand3">{{ load_nvme_stand3 }}</td>
+                </tr>
+                <tr>
+                  <td>SDA load</td>
+                  <td></td>
+                  <td id="load_sda_stand3">{{ load_sda_stand3 }}</td>
+                </tr>
             </tbody>
         </table>
         <br></br>
@@ -640,6 +674,8 @@
                   success: function(result) {
                       $("#load_cpu_stand3").html(result.load_cpu_stand3);
                       $("#load_ram_stand3").html(result.load_ram_stand3);
+                      $("#load_nvme_stand3").html(result.load_nvme_stand3);
+                      $("#load_sda_stand3").html(result.load_sda_stand3);
                   }
               });
           }
@@ -887,7 +923,7 @@
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>
-                    <th scope="col">CPU/Mem info</th>
+                    <th scope="col">CPU/Mem/IO info</th>
                 </tr>
             </thead>
             <tbody>
@@ -901,6 +937,16 @@
                     <td></td>
                     <td id="load_ram_stand4">{{ load_ram_stand4 }}</td>
                 </tr>
+                <tr>
+                  <td>NVME load</td>
+                  <td></td>
+                  <td id="load_nvme_stand4">{{ load_nvme_stand4 }}</td>
+                </tr>
+                <tr>
+                  <td>SDA load</td>
+                  <td></td>
+                  <td id="load_sda_stand4">{{ load_sda_stand4 }}</td>
+                </tr>
             </tbody>
         </table>
         <br></br>
@@ -912,6 +958,8 @@
                   success: function(result) {
                       $("#load_cpu_stand4").html(result.load_cpu_stand4);
                       $("#load_ram_stand4").html(result.load_ram_stand4);
+                      $("#load_nvme_stand4").html(result.load_nvme_stand4);
+                      $("#load_sda_stand4").html(result.load_sda_stand4);
                   }
               });
           }

@@ -13,6 +13,7 @@ stands_ip = {
 
 modes = {
     'orel':'0',
+    'voronezh':'1',
     'smolensk':'2',
 }
 

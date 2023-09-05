@@ -28,7 +28,8 @@ brest_options = ['apache-graph']
 
 releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5']
 kernels = ['5.10.0-1057-generic', '5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', 
-           '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency', '5.10.190-1-generic']
+           '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency', '5.10.190-1-generic',
+           '6.1.29-1-generic']
 
 main_stands = ['stand1', 'stand2', 'stand3', 'stand4']
 mobile_stands = ['stand1', 'stand2', 'stand3', 'stand4']

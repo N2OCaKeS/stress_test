@@ -226,8 +226,8 @@ def run_command_on_stand(num):
             with open(f'conf/{prefix}_kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}"'
-        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand4 -ts "{tests}" -kn "{kernel}"'
+        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}"'
+        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}"'
 
         def run_command_and_log(command):
             with open(f'front_stand{num}.log', 'a') as output:

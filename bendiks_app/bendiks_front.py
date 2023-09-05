@@ -55,13 +55,13 @@ def redirect_login():
 
 @app.errorhandler(500)
 def internal_server_error(e):
-    app.logger.error(e)
+    #app.logger.error(e)
     return redirect(url_for('login'))
 
 
 @app.errorhandler(404)
 def page_not_found(e):
-    app.logger.error(e)
+    #app.logger.error(e)
     return redirect(url_for('login'))
 
 

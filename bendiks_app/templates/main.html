@@ -1125,14 +1125,14 @@
 </script> -->
 <script>
 let prevStatusGifs = [null, null, null, null];
-var start_btns = ["start-btn4", "start-btn3", "start-btn2", "start-btn1"].map(id => document.getElementById(id));
-var stop_btns = ["stop-btn4", "stop-btn3", "stop-btn2", "stop-btn1"].map(id => document.getElementById(id));
-var ok_btns = ["ok-btn4", "ok-btn3", "ok-btn2", "ok-btn1"].map(id => document.getElementById(id));
+var start_btns = ["start-btn1", "start-btn2", "start-btn3", "start-btn4"].map(id => document.getElementById(id));
+var stop_btns = ["stop-btn1", "stop-btn2", "stop-btn3", "stop-btn4"].map(id => document.getElementById(id));
+var ok_btns = ["ok-btn1", "ok-btn2", "ok-btn3", "ok-btn4"].map(id => document.getElementById(id));
 
 function setStatus(standNum, status) {
-    let start_btn = start_btns[4-standNum];
-    let stop_btn = stop_btns[4-standNum];
-    let ok_btn = ok_btns[4-standNum];
+    let start_btn = start_btns[standNum-1];
+    let stop_btn = stop_btns[standNum-1];
+    let ok_btn = ok_btns[standNum-1];
     switch (status) {
         case "Остановлен":
             start_btn.disabled = false;

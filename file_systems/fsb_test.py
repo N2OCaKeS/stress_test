@@ -14,7 +14,7 @@ from libs.libtable import Report
 from os import path, mkdir
 from fsb_conf import LOG_PATH, REPORT_PATH, \
         START_BORDER_FOR_DATA, STEP_FOR_BORDER, END_BORDER_FOR_DATA, TIMEOUT, \
-        FILES, FILES_STEP, FILES_LIMIT, \
+        FILES, FILES_STEP, FILES_LIMIT, FILES_ST4, FILES_STEP_ST4, FILES_LIMIT_ST4, \
         SIZE, SIZE_STEP, SIZE_LIMIT, \
         TH_START_BORDER_FOR_DATA, TH_STEP_FOR_BORDER, TH_END_BORDER_FOR_DATA
 
@@ -36,6 +36,16 @@ parser.add_argument('--parsec',
                     required=False,
                     help='',
                     dest='PARSEC')
+
+parser.add_argument('-sn', '--stand-num',
+                    action='store',
+                    choices=['1',
+                             '2',
+                             '3',
+                             '4'],
+                    required=False,
+                    help='stand num',
+                    dest='STAND')
 
 args = parser.parse_args()
 
@@ -194,9 +204,15 @@ if args.TS == 'fs_mark_count':
     '''
     # Изменение количества файлов
     start_time = time()
-    run_test = TestSet(start_burder=FILES,
-                       end_burder=FILES_LIMIT,
-                       step=FILES_STEP)
+    if args.STAND == '4':
+        run_test = TestSet(start_burder=FILES_ST4,
+                           end_burder=FILES_LIMIT_ST4,
+                           step=FILES_STEP_ST4)
+    else:
+        run_test = TestSet(start_burder=FILES,
+                           end_burder=FILES_LIMIT,
+                           step=FILES_STEP)
+        
     try:
         run_test.test_7_fs_mark33_count(parsec=args.PARSEC)
     except Exception as exeption:
@@ -205,9 +221,14 @@ if args.TS == 'fs_mark_count':
         log.info("--- {} sec ---".format(round(time() - start_time)))
         print("# INFO # --- {} sec ---".format(round(time() - start_time)))
 
-    report = Report(ox_lo_lim=FILES,
-                    ox_step=FILES_STEP,
-                    ox_up_lim=FILES_LIMIT)
+    if args.STAND == '4':
+        report = Report(ox_lo_lim=FILES_ST4,
+                        ox_step=FILES_STEP_ST4,
+                        ox_up_lim=FILES_LIMIT_ST4)
+    else:
+        report = Report(ox_lo_lim=FILES,
+                        ox_step=FILES_STEP,
+                        ox_up_lim=FILES_LIMIT)
     report.create_beauty_table()
     report.create_fsb_fc_sp_graph()
     report.create_fsb_fc_app_overhead_graph()

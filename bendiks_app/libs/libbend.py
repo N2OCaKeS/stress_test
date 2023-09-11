@@ -294,7 +294,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2.7)
+    sock.settimeout(2.5)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         

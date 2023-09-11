@@ -48,3 +48,19 @@ ADD COLUMN stand11_sda VARCHAR(255),
 ADD COLUMN stand12_nvme VARCHAR(255), 
 ADD COLUMN stand12_sda VARCHAR(255);
 
+
+ALTER TABLE main_table 
+ADD COLUMN stand1_cpu_user VARCHAR(255), 
+ADD COLUMN stand1_cpu_system VARCHAR(255),
+ADD COLUMN stand2_cpu_user VARCHAR(255), 
+ADD COLUMN stand2_cpu_system VARCHAR(255),
+ADD COLUMN stand3_cpu_user VARCHAR(255), 
+ADD COLUMN stand3_cpu_system VARCHAR(255),
+ADD COLUMN stand4_cpu_user VARCHAR(255), 
+ADD COLUMN stand4_cpu_system VARCHAR(255),
+ADD COLUMN stand10_cpu_user VARCHAR(255), 
+ADD COLUMN stand10_cpu_system VARCHAR(255),
+ADD COLUMN stand11_cpu_user VARCHAR(255), 
+ADD COLUMN stand11_cpu_system VARCHAR(255),
+ADD COLUMN stand12_cpu_user VARCHAR(255), 
+ADD COLUMN stand12_cpu_system VARCHAR(255);

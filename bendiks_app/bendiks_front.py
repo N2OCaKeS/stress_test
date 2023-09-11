@@ -130,17 +130,21 @@ def get_load_info(stand):
 
     id = 1
     cursor = conn.cursor()
-    select_query = f"SELECT {stand}_cpu, {stand}_ram, {stand}_nvme, {stand}_sda FROM main_table WHERE id = %s"
+    select_query = f"SELECT {stand}_cpu, {stand}_cpu_user, {stand}_cpu_system, {stand}_ram, {stand}_nvme, {stand}_sda FROM main_table WHERE id = %s"
     cursor.execute(select_query, [id])
 
     result = cursor.fetchone()
     if result is not None:
         load_cpu = result[0]
-        load_ram = result[1]
-        load_nvme = result[2]
-        load_sda = result[3]
+        load_cpu_user = result[1]
+        load_cpu_system = result[2]
+        load_ram = result[3]
+        load_nvme = result[4]
+        load_sda = result[5]
     else:
         load_cpu = '-'
+        load_cpu_user = '-'
+        load_cpu_system = '-'
         load_ram = '-'
         load_nvme = '-'
         load_sda = '-'
@@ -150,6 +154,8 @@ def get_load_info(stand):
     
     return jsonify({
         f"load_cpu_{stand}": load_cpu,
+        f"load_cpu_user_{stand}": load_cpu_user,
+        f"load_cpu_system_{stand}": load_cpu_system,
         f"load_ram_{stand}": load_ram,
         f"load_nvme_{stand}": load_nvme,
         f"load_sda_{stand}": load_sda

@@ -294,25 +294,35 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2.5)
+    sock.settimeout(2.7)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
         if result != 0:
             output_cpu = '-'
             output_ram = '-'
+            output_cpu_user = '-'
+            output_cpu_system = '-'
         else:
             try:
                 output_cpu  = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$8); print 100-$8 "%"}'""", 
-                                        stand_ip=stands_ip[stand])
+                                          stand_ip=stands_ip[stand])
+                output_cpu_user = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$2); print $2 "%"}'""", 
+                                              stand_ip=stands_ip[stand])
+                output_cpu_system = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$4); print $4 "%"}'""", 
+                                                stand_ip=stands_ip[stand])
                 output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", 
-                                        stand_ip=stands_ip[stand])
+                                          stand_ip=stands_ip[stand])
             except paramiko.AuthenticationException:
                 output_cpu = 'Auth Error'
                 output_ram = 'Auth Error'
+                output_cpu_user = 'Auth Error'
+                output_cpu_system = 'Auth Error'
             except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
                 output_cpu = 'Connect Error'
                 output_ram = 'Connect Error'
+                output_cpu_user = 'Connect Error'
+                output_cpu_system = 'Connect Error'
 
         conn = psycopg2.connect(
                                 host=psyc['host'],
@@ -324,8 +334,8 @@ def output_remote_load(stand):
         cursor = conn.cursor()
 
         id = 1 #row number
-        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_ram = %s WHERE id = %s"
-        data = (output_cpu, output_ram, id)
+        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_cpu_user = %s, {stand}_cpu_system = %s, {stand}_ram = %s WHERE id = %s"
+        data = (output_cpu, output_cpu_user, output_cpu_system, output_ram, id)
         cursor.execute(update_query, data)
 
         conn.commit()

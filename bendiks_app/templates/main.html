@@ -1220,9 +1220,6 @@ function updateInfo() {
               }
               if(data['status_stand' + standNum] === "Запущен" || data['status_stand' + standNum] === "Готово") {
                 $('#collapseOne' + standNum + ' .accordion-body .line-break').html(data['stand' + standNum + '_sett']);
-              } else if (status === "Остановлен") {
-                $('#collapseTwo' + standNum + ' .accordion-body .line-break').html('-');
-                $('#collapseThree' + standNum + ' .accordion-body').html('-');
               } else {
                 $('#collapseOne' + standNum + ' .accordion-body .line-break').empty();
               }

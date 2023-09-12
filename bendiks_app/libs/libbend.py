@@ -135,6 +135,9 @@ def info_collector(page, ajax=None):
             status_gif_logs[f'status_gif_{stand}'] = gif_mapping.get(status, ping_gif)
             if status_gif_logs[f'status_gif_{stand}'] == ping_gif:
                 status_logs[f'status_{stand}'] = 'Нераспознан'
+            if status == 'Остановлен':
+                progress_logs[f'progress_{stand}'] = ''
+                logs[f'{stand}_log'] = ''
     
     if ajax == True:
         return jsonify({**status_logs,

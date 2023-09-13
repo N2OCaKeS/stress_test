@@ -314,7 +314,7 @@ def output_remote_load(stand):
                                               stand_ip=stands_ip[stand])
                 output_cpu_system = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$4); print $4 "%"}'""", 
                                                 stand_ip=stands_ip[stand])
-                output_ram  = ssh_command("""free -m | awk 'NR==2{printf $3 "M"}'""", 
+                output_ram  = ssh_command("""free -m | awk 'NR==2{printf "%sM\n", $2-$7}'""", 
                                           stand_ip=stands_ip[stand])
             except paramiko.AuthenticationException:
                 output_cpu = 'Auth Error'

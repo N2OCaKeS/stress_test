@@ -77,155 +77,92 @@
   </script>
 
 
-<div class="container-fluid text-center">
-  <div class="row align-items-left">
-    <div class="col-3">
-      <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
-        <div class="card-header" style="background: #002534;">Список подготовленных компонентов</div>
-        <div class="card-body">
-          <p class="card-text">{{ test_list }}</p>
-          <p class="card-text">{{ releas_list }}</p>
-          <p class="card-text">{{ kernel_list }}</p>
+  <div class="container-fluid text-center">
+    <div class="row align-items-left">
+      <div class="col-3">
+        <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
+          <div class="card-header" style="background: #002534;">Список подготовленных компонентов</div>
+          <div class="card-body">
+            <p class="card-text">{{ test_list }}</p>
+            <p class="card-text">{{ releas_list }}</p>
+            <p class="card-text">{{ kernel_list }}</p>
+          </div>
+        </div>
+  
+        <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
+          <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Настройки</div>
+          <div class="card-body">
+            <form method="POST" action="/{{ main_url }}">
+              <div class="accordion" id="settingsAccordion">
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTests">
+                      Доступные тесты
+                    </button>
+                  </h2>
+                  <div id="collapseTests" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                    <div class="accordion-body" style="text-align: right;">
+                      {% for value in options %}
+                        <label for="{{ value }}">{{ value }}</label>
+                        <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}"><br>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleases">
+                      Доступные Релизы
+                    </button>
+                  </h2>
+                  <div id="collapseReleases" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                    <div class="accordion-body" style="text-align: right;">
+                      {% for value in releases %}
+                        <label for="{{ value }}">{{ value }}</label>
+                        <input type="radio" id="{{ value }}" name="releas" value="{{ value }}"><br>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKernels">
+                      Доступные ядра
+                    </button>
+                  </h2>
+                  <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                    <div class="accordion-body" style="text-align: right;">
+                      {% for value in kernels %}
+                        <label for="{{ value }}">{{ value }}</label>
+                        <input type="radio" id="{{ value }}" name="kernel" value="{{ value }}"><br>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <style>
+                #mainSaveButton {
+                    background-color: #292d30; 
+                    color: white; 
+                }
+                #mainSaveButton:hover {
+                    background-color: #ff7b00; 
+                }             
+                #mainSaveButton:active {
+                    background-color: #3e8e41; 
+                }
+              </style>
+              <div style="text-align: center;">
+                <button id="mainSaveButton" class="btn btn-secondary" type="submit">Сохранить</button>
+              </div>
+  
+            </form>
+          </div>
         </div>
       </div>
-      <!-- <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
-        <div class="card-header">Подготовленный релиз</div>
-        <div class="card-body">
-          <p class="card-text">{{ releas_list }}</p>
-        </div>
-      </div> -->
-
-      <style>
-        .custom-bg {
-            background-color: #9ea5a7; 
-        }
-      </style>
-      <!-- <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
-        <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Настройки</div>
-        <div class="card-body">
-          <form method="POST" action="/{{ main_url }}">
-            <div class="card-header">Доступные тесты</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">
-              {% for value in options %}
-                    <div style="text-align: right;">
-                      <label for="{{ value }}">{{ value }}</label>
-                      <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}"><br>
-                    </div>
-                  {% endfor %}
-            </div>
-            <!-- <div class="card-header" style="background: #9ea5a7;">Доступные Релизы</div> -->
-            <div class="card-header">Доступные Релизы</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">             
-                {% for value in releases %}
-                    <div style="text-align: right;">
-                      <label for="{{ value }}">{{ value }}</label>
-                      <input type="radio" id="{{ value }}" name="releas" value="{{ value }}"><br>
-                    </div>
-                {% endfor %}
-            </div>
-            <div class="card-header">Доступные ядра</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">             
-                {% for value in kernels %}
-                    <div style="text-align: right;">
-                      <label for="{{ value }}">{{ value }}</label>
-                      <input type="radio" id="{{ value }}" name="kernel" value="{{ value }}"><br>
-                    </div>
-                {% endfor %}
-            </div>
-            <br></br>
-
-            <style>
-              #mainSaveButton {
-                  background-color: #292d30; 
-                  color: white; 
-              }
-              #mainSaveButton:hover {
-                  background-color: #ff7b00; 
-              }             
-              #mainSaveButton:active {
-                  background-color: #3e8e41; 
-              }
-            </style>
-            <div style="text-align: center;">
-              <button id="mainSaveButton" class="btn btn-secondary" type="submit">Сохранить</button>
-            </div>
-
-          </form>
-        </div>
-        </div>
-      </div> -->
-
-      <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
-        <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Настройки</div>
-        <div class="card-body">
-          <form method="POST" action="/{{ main_url }}">
-            <div class="accordion" id="settingsAccordion">
-              <div class="accordion-item">
-                <h2 class="accordion-header">
-                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTests">
-                    Доступные тесты
-                  </button>
-                </h2>
-                <div id="collapseTests" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
-                  <div class="accordion-body" style="text-align: right;">
-                    {% for value in options %}
-                      <label for="{{ value }}">{{ value }}</label>
-                      <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}"><br>
-                    {% endfor %}
-                  </div>
-                </div>
-              </div>
-              <div class="accordion-item">
-                <h2 class="accordion-header">
-                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleases">
-                    Доступные Релизы
-                  </button>
-                </h2>
-                <div id="collapseReleases" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
-                  <div class="accordion-body" style="text-align: right;">
-                    {% for value in releases %}
-                      <label for="{{ value }}">{{ value }}</label>
-                      <input type="radio" id="{{ value }}" name="releas" value="{{ value }}"><br>
-                    {% endfor %}
-                  </div>
-                </div>
-              </div>
-              <div class="accordion-item">
-                <h2 class="accordion-header">
-                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKernels">
-                    Доступные ядра
-                  </button>
-                </h2>
-                <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
-                  <div class="accordion-body" style="text-align: right;">
-                    {% for value in kernels %}
-                      <label for="{{ value }}">{{ value }}</label>
-                      <input type="radio" id="{{ value }}" name="kernel" value="{{ value }}"><br>
-                    {% endfor %}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <style>
-              #mainSaveButton {
-                  background-color: #292d30; 
-                  color: white; 
-              }
-              #mainSaveButton:hover {
-                  background-color: #ff7b00; 
-              }             
-              #mainSaveButton:active {
-                  background-color: #3e8e41; 
-              }
-            </style>
-            <div style="text-align: center;">
-              <button id="mainSaveButton" class="btn btn-secondary" type="submit">Сохранить</button>
-            </div>
-          </form>
-        </div>
-    </div>
-
-
+       
+  
+    
 
 
 

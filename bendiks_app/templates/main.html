@@ -93,6 +93,7 @@
           <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Настройки</div>
           <div class="card-body">
             <form method="POST" action="/{{ main_url }}">
+              <br></br>
               <div class="accordion" id="settingsAccordion">
                 <div class="accordion-item">
                   <h2 class="accordion-header">
@@ -101,10 +102,10 @@
                     </button>
                   </h2>
                   <div id="collapseTests" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
-                    <div class="accordion-body" style="text-align: right;">
+                    <div class="accordion-body" style="text-align: left;">
                       {% for value in options %}
-                        <label for="{{ value }}">{{ value }}</label>
                         <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}"><br>
+                        <label for="{{ value }}">{{ value }}</label>                        
                       {% endfor %}
                     </div>
                   </div>
@@ -116,10 +117,10 @@
                     </button>
                   </h2>
                   <div id="collapseReleases" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
-                    <div class="accordion-body" style="text-align: right;">
+                    <div class="accordion-body" style="text-align: left;">
                       {% for value in releases %}
-                        <label for="{{ value }}">{{ value }}</label>
                         <input type="radio" id="{{ value }}" name="releas" value="{{ value }}"><br>
+                        <label for="{{ value }}">{{ value }}</label>                        
                       {% endfor %}
                     </div>
                   </div>
@@ -131,10 +132,10 @@
                     </button>
                   </h2>
                   <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
-                    <div class="accordion-body" style="text-align: right;">
+                    <div class="accordion-body" style="text-align: left;">
                       {% for value in kernels %}
-                        <label for="{{ value }}">{{ value }}</label>
                         <input type="radio" id="{{ value }}" name="kernel" value="{{ value }}"><br>
+                        <label for="{{ value }}">{{ value }}</label>                        
                       {% endfor %}
                     </div>
                   </div>
@@ -152,6 +153,7 @@
                     background-color: #3e8e41; 
                 }
               </style>
+              <br></br>
               <div style="text-align: center;">
                 <button id="mainSaveButton" class="btn btn-secondary" type="submit">Сохранить</button>
               </div>

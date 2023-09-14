@@ -89,12 +89,31 @@
           </div>
         </div>
   
+        <style>
+          .customAccordion .accordion-item .accordion-header {
+            background-color: #002534; 
+          }
+          .customAccordion .accordion-button {
+            background-color: #002534;
+            color: #f8f9f9;
+            border-color: #606465;
+          }
+          .customAccordion .accordion-button:not(.collapsed) {
+            background-color: #ff7b00;
+            color: #333;
+            border-color: #de425a;
+          }
+          .customAccordion .accordion-body {
+            background-color: #292d30;
+            color: #f8f9f9;
+          }
+          </style>
         <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
           <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Настройки</div>
           <div class="card-body">
             <form method="POST" action="/{{ main_url }}">
               <br></br>
-              <div class="accordion" id="settingsAccordion">
+              <div class="accordion customAccordion" id="settingsAccordion">
                 <div class="accordion-item">
                   <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTests">

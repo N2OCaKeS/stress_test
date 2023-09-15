@@ -229,10 +229,19 @@ class ZefirResultTable:
         self.__basic = basic_auth
         self.__pt_version = test_cycle_version
 
+        check_len_version = self.__pt_version.split('.')
+        if len(check_len_version) == 4:
+            release_version = '.'.join(check_len_version[:3])
+            rc_version = self.__pt_version
+            filter_url = f"'%2Fstress_test%2F{release_version}%2F{self.__pt_version}%2F**'"
+        elif len(check_len_version) == 3:
+            filter_url = f'%27%2Fstress_test%27,%27%2Fstress_test%2F{self.__pt_version}%27'
+
+
         #Делаем get запрос в jira
         matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                         period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.
-                        folderName+IN+(%27%2Fstress_test%27,%27%2Fstress_test%2F{self.__pt_version}%27)&traceabilityCustomTreeDisplayOption=
+                        folderName+IN+({filter_url})&traceabilityCustomTreeDisplayOption=
                         CONDENSED&traceabilityMatrixOption=COVERAGE_TEST_CASES&traceabilityReportOption=COVERAGE_TEST_CASES&traceability
                         TreeOption=COVERAGE_TEST_CASES
                         '''

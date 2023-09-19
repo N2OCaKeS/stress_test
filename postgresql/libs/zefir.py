@@ -394,11 +394,11 @@ class ZefirResultTable:
         self.__pt_version = test_cycle_version
 
         check_len_version = self.__pt_version.split('.')
-        if len(check_len_version) == 4:
+        if check_len_version[3] != 'UU' and len(check_len_version) == 4:
             release_version = '.'.join(check_len_version[:3])
             rc_version = self.__pt_version
-            filter_url = f"'%2Fstress_test%2F{release_version}%2F{self.__pt_version}%2F**'"
-        elif len(check_len_version) == 3:
+            filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"
+        else:
             filter_url = f'%27%2Fstress_test%27,%27%2Fstress_test%2F{self.__pt_version}%27'
 
 
@@ -540,7 +540,7 @@ class ZefirResultTable:
                         name_page:str, 
                         body):
             check_len_version = name_page.split('.')
-            if len(check_len_version) == 4:
+            if check_len_version[3] != 'UU' and len(check_len_version) == 4:
                 release_version = '.'.join(check_len_version[:3])
                 rc_version = self.__pt_version
                 if not confluence.page_exists(space=space,
@@ -565,7 +565,7 @@ class ZefirResultTable:
                                                                             title=rc_version),
                                             title=rc_version,
                                             body=body)
-            elif len(check_len_version) == 3:
+            else:
                 if not confluence.page_exists(space=space,
                                              title=name_page):
                     confluence.create_page(space=space,

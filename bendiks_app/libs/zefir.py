@@ -385,11 +385,7 @@ class ZefirResultTable:
                                            parent_id=confluence.get_page_id(space=space,
                                                                             title=title),
                                            title=release_version,
-                                           body=body)
-                else: confluence.update_page(page_id=confluence.get_page_id(space=space,
-                                                                            title=release_version),
-                                            title=release_version,
-                                            body=body)
+                                           body='')
                 if not confluence.page_exists(space=space,
                                              title=rc_version):
                     confluence.create_page(space=space,

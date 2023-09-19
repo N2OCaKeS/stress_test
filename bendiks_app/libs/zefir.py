@@ -230,7 +230,7 @@ class ZefirResultTable:
         self.__pt_version = test_cycle_version
 
         check_len_version = self.__pt_version.split('.')
-        if check_len_version[3] != 'UU' and len(check_len_version) == 4:
+        if len(check_len_version) == 4 and check_len_version[3] != 'UU':
             release_version = '.'.join(check_len_version[:3])
             rc_version = self.__pt_version
             filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"

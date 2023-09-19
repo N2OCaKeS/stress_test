@@ -376,48 +376,35 @@ class ZefirResultTable:
                         name_page:str, 
                         body):
             check_len_version = name_page.split('.')
-            try:
-                if check_len_version[3] != 'UU' and len(check_len_version) == 4:
-                    release_version = '.'.join(check_len_version[:3])
-                    rc_version = self.__pt_version
-                    if not confluence.page_exists(space=space,
-                                                title=release_version):
-                        confluence.create_page(space=space,
-                                            parent_id=confluence.get_page_id(space=space,
-                                                                                title=title),
-                                            title=release_version,
-                                            body='')
-                    if not confluence.page_exists(space=space,
-                                                title=rc_version):
-                        confluence.create_page(space=space,
-                                            parent_id=confluence.get_page_id(space=space,
-                                                                                title=release_version),
+            if len(check_len_version) == 4 and check_len_version[3] != 'UU':
+                release_version = '.'.join(check_len_version[:3])
+                rc_version = self.__pt_version
+                if not confluence.page_exists(space=space,
+                                            title=release_version):
+                    confluence.create_page(space=space,
+                                        parent_id=confluence.get_page_id(space=space,
+                                                                            title=title),
+                                        title=release_version,
+                                        body='')
+                if not confluence.page_exists(space=space,
+                                            title=rc_version):
+                    confluence.create_page(space=space,
+                                        parent_id=confluence.get_page_id(space=space,
+                                                                            title=release_version),
+                                        title=rc_version,
+                                        body=body)
+                else: confluence.update_page(page_id=confluence.get_page_id(space=space,
+                                                                            title=rc_version),
                                             title=rc_version,
                                             body=body)
-                    else: confluence.update_page(page_id=confluence.get_page_id(space=space,
-                                                                                title=rc_version),
-                                                title=rc_version,
-                                                body=body)
-                else:
-                    if not confluence.page_exists(space=space,
-                                                  title=name_page):
-                        confluence.create_page(space=space,
-                                               parent_id=confluence.get_page_id(space=space,
-                                                                                title=title),
-                                               title=name_page,
-                                               body=body)
-                    else: confluence.update_page(page_id=confluence.get_page_id(space=space,
-                                                                                title=name_page),
-                                                title=name_page,
-                                                body=body)
-            except IndexError:
+            else:
                 if not confluence.page_exists(space=space,
-                                              title=name_page):
+                                                title=name_page):
                     confluence.create_page(space=space,
-                                           parent_id=confluence.get_page_id(space=space,
+                                            parent_id=confluence.get_page_id(space=space,
                                                                             title=title),
-                                           title=name_page,
-                                           body=body)
+                                            title=name_page,
+                                            body=body)
                 else: confluence.update_page(page_id=confluence.get_page_id(space=space,
                                                                             title=name_page),
                                             title=name_page,

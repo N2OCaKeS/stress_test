@@ -230,10 +230,10 @@ class ZefirResultTable:
         self.__pt_version = test_cycle_version
 
         check_len_version = self.__pt_version.split('.')
-        if len(check_len_version) == 4:
+        if check_len_version[3] != 'UU' and len(check_len_version) == 4:
             release_version = '.'.join(check_len_version[:3])
             rc_version = self.__pt_version
-            filter_url = f"'%2Fstress_test%2F{release_version}%2F{self.__pt_version}%2F**'"
+            filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"
         elif len(check_len_version) == 3:
             filter_url = f'%27%2Fstress_test%27,%27%2Fstress_test%2F{self.__pt_version}%27'
 
@@ -371,18 +371,48 @@ class ZefirResultTable:
         #print(table)
 
 
-        def upload_page(space, title, name_page, body):
-            if not confluence.page_exists(space=space,
-                                        title=name_page):
-                confluence.create_page(space=space,
-                                    parent_id=confluence.get_page_id(space=space,
-                                                                        title=title),
-                                    title=name_page,
-                                    body=body)
-            else: confluence.update_page(page_id=confluence.get_page_id(space=space,
-                                                                        title=name_page),
-                                        title=name_page,
-                                        body=body)
+        def upload_page(space, 
+                        title, 
+                        name_page:str, 
+                        body):
+            check_len_version = name_page.split('.')
+            if check_len_version[3] != 'UU' and len(check_len_version) == 4:
+                release_version = '.'.join(check_len_version[:3])
+                rc_version = self.__pt_version
+                if not confluence.page_exists(space=space,
+                                             title=release_version):
+                    confluence.create_page(space=space,
+                                           parent_id=confluence.get_page_id(space=space,
+                                                                            title=title),
+                                           title=release_version,
+                                           body=body)
+                else: confluence.update_page(page_id=confluence.get_page_id(space=space,
+                                                                            title=release_version),
+                                            title=release_version,
+                                            body=body)
+                if not confluence.page_exists(space=space,
+                                             title=rc_version):
+                    confluence.create_page(space=space,
+                                           parent_id=confluence.get_page_id(space=space,
+                                                                            title=release_version),
+                                           title=rc_version,
+                                           body=body)
+                else: confluence.update_page(page_id=confluence.get_page_id(space=space,
+                                                                            title=rc_version),
+                                            title=rc_version,
+                                            body=body)
+            else:
+                if not confluence.page_exists(space=space,
+                                             title=name_page):
+                    confluence.create_page(space=space,
+                                           parent_id=confluence.get_page_id(space=space,
+                                                                            title=title),
+                                           title=name_page,
+                                           body=body)
+                else: confluence.update_page(page_id=confluence.get_page_id(space=space,
+                                                                            title=name_page),
+                                            title=name_page,
+                                            body=body)
 
         upload_page('DD', 'Состав тестового прогона', self.__pt_version, table)
 

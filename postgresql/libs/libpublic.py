@@ -42,7 +42,7 @@ class Public:
                  'storage':'Patriot Burst El 960GB'},
             '4':{'grade':'high(150)',
                  'cpu':'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz',
-                 'ram':'125GB',
+                 'ram':'128GB',
                  'storage':'nvme0n1'}
         }
 

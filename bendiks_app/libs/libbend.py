@@ -293,7 +293,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2.5)
+    sock.settimeout(3.5)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -348,7 +348,7 @@ def output_remote_load(stand):
 
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2)
+    sock.settimeout(3)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -357,9 +357,11 @@ def remote_storage_load(stand):
             output_sda = '-'
         else:
             try:
-                output_nvme  = ssh_command("""iostat -dx | awk '/nvme0n1|nvme0c0n1/ {print $NF"%"}'""", 
+                output_nvme  = ssh_command("""iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); \
+                                              printf "%.1f%%\\n", $NF}' | tail -n 1""", 
                                         stand_ip=stands_ip[stand])
-                output_sda  = ssh_command("""iostat -dx | awk '/sda/ {print $NF"%"}'""", 
+                output_sda  = ssh_command("""iostat -dx 1 2 | awk '/sda/ {gsub(",", ".", $NF); \
+                                             printf "%.1f%%\\n", $NF}' | tail -n 1""", 
                                         stand_ip=stands_ip[stand])
             except paramiko.AuthenticationException:
                 output_nvme = 'Auth Error'
@@ -410,7 +412,7 @@ def background_task_main():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(3)
+        sleep(4)
 
 
 def background_task_brest():
@@ -418,5 +420,5 @@ def background_task_brest():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(3)
+        sleep(4)
 

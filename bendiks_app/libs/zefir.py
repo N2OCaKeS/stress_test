@@ -234,7 +234,7 @@ class ZefirResultTable:
             release_version = '.'.join(check_len_version[:3])
             rc_version = self.__pt_version
             filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"
-        elif len(check_len_version) == 3:
+        else:
             filter_url = f'%27%2Fstress_test%27,%27%2Fstress_test%2F{self.__pt_version}%27'
 
 

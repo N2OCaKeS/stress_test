@@ -383,7 +383,7 @@ class ZefirResultTable:
                                               title=release_version):
                     confluence.create_page(space=space,
                                            parent_id=confluence.get_page_id(space=space,
-                                                                            title=release_version),
+                                                                            title=title),
                                            title=release_version,
                                            body='')
                 if not confluence.page_exists(space=space,

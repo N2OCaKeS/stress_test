@@ -229,8 +229,8 @@ def run_command_on_stand(num):
         command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}"'
 
         def run_command_and_log(command):
-            with open(f'front_stand{num}.log', 'a') as output:
-                process = subprocess.Popen(command, stdout=output, stderr=output, shell=True, text=True, preexec_fn=setsid)
+            with open(f'front_stand{num}.log', 'a') as cpu_ram_output:
+                process = subprocess.Popen(command, stdout=cpu_ram_output, stderr=cpu_ram_output, shell=True, text=True, preexec_fn=setsid)
             process_list.append(process)
 
         if kernel != 'None':
@@ -293,7 +293,13 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3.6)
+    sock.settimeout(2.5)
+
+    command = """
+            top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$8); 
+            printf "%s,%s,%s,", 100-$8 "%", $2 "%", $4 "%"}'; free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
+            """
+
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -304,14 +310,12 @@ def output_remote_load(stand):
             output_cpu_system = '-'
         else:
             try:
-                output_cpu  = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$8); print 100-$8 "%"}'""", 
-                                          stand_ip=stands_ip[stand])
-                output_cpu_user = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$2); print $2 "%"}'""", 
-                                              stand_ip=stands_ip[stand])
-                output_cpu_system = ssh_command("""top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$4); print $4 "%"}'""", 
-                                                stand_ip=stands_ip[stand])
-                output_ram  = ssh_command("""free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'""", 
-                                          stand_ip=stands_ip[stand])
+                cpu_ram_output = ssh_command(command, stand_ip=stands_ip[stand])
+                cpu_ram_output = cpu_ram_output.split(',')
+                output_cpu = cpu_ram_output[0]
+                output_cpu_user = cpu_ram_output[1]
+                output_cpu_system = cpu_ram_output[2]
+                output_ram = cpu_ram_output[3]
             except paramiko.AuthenticationException:
                 output_cpu = 'Auth Error'
                 output_ram = 'Auth Error'
@@ -348,7 +352,13 @@ def output_remote_load(stand):
 
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3.6)
+    sock.settimeout(2.5)
+
+    command = """
+            iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); 
+            printf "%.1f%%\\n", $NF} /sda/ {gsub(",", ".", $NF); printf "%.1f%%\\n", $NF}' | tail -n 2
+            """
+    
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -357,12 +367,10 @@ def remote_storage_load(stand):
             output_sda = '-'
         else:
             try:
-                output_nvme  = ssh_command("""iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); \
-                                              printf "%.1f%%\\n", $NF}' | tail -n 1""", 
-                                        stand_ip=stands_ip[stand])
-                output_sda  = ssh_command("""iostat -dx 1 2 | awk '/sda/ {gsub(",", ".", $NF); \
-                                             printf "%.1f%%\\n", $NF}' | tail -n 1""", 
-                                        stand_ip=stands_ip[stand])
+                output = ssh_command(command, stand_ip=stands_ip[stand])
+                output = output.split('\n')
+                output_nvme = output[0]
+                output_sda = output[1]
             except paramiko.AuthenticationException:
                 output_nvme = 'Auth Error'
                 output_sda = 'Auth Error'
@@ -404,7 +412,7 @@ def background_stat_storage_main():
     while True:
         [remote_storage_load(str(stand)) for stand in stands]
         #remote_sysstat_available(stand)
-        sleep(4)
+        sleep(3)
 
 
 def background_task_main():
@@ -412,7 +420,7 @@ def background_task_main():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(4)
+        sleep(3)
 
 
 def background_task_brest():
@@ -420,5 +428,5 @@ def background_task_brest():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(4)
+        sleep(3)
 

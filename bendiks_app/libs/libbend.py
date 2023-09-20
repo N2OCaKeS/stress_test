@@ -293,7 +293,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3.5)
+    sock.settimeout(3.2)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -348,7 +348,7 @@ def output_remote_load(stand):
 
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3)
+    sock.settimeout(3.5)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -404,7 +404,7 @@ def background_stat_storage_main():
     while True:
         [remote_storage_load(str(stand)) for stand in stands]
         #remote_sysstat_available(stand)
-        sleep(5)
+        sleep(4)
 
 
 def background_task_main():
@@ -412,7 +412,7 @@ def background_task_main():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(4)
+        sleep(3.5)
 
 
 def background_task_brest():
@@ -420,5 +420,5 @@ def background_task_brest():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(4)
+        sleep(3.5)
 

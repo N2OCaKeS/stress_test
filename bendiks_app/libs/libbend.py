@@ -293,7 +293,7 @@ def ssh_command(command, stand_ip):
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3.2)
+    sock.settimeout(3.6)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -317,7 +317,7 @@ def output_remote_load(stand):
                 output_ram = 'Auth Error'
                 output_cpu_user = 'Auth Error'
                 output_cpu_system = 'Auth Error'
-            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
+            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException, EOFError):
                 output_cpu = 'Connect Error'
                 output_ram = 'Connect Error'
                 output_cpu_user = 'Connect Error'
@@ -348,7 +348,7 @@ def output_remote_load(stand):
 
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3.5)
+    sock.settimeout(3.6)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -366,7 +366,7 @@ def remote_storage_load(stand):
             except paramiko.AuthenticationException:
                 output_nvme = 'Auth Error'
                 output_sda = 'Auth Error'
-            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
+            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException, EOFError):
                 output_nvme = 'Connect Error'
                 output_sda = 'Connect Error'
 
@@ -412,7 +412,7 @@ def background_task_main():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(3.5)
+        sleep(4)
 
 
 def background_task_brest():
@@ -420,5 +420,5 @@ def background_task_brest():
 
     while True:
         [output_remote_load(str(stand)) for stand in stands]
-        sleep(3.5)
+        sleep(4)
 

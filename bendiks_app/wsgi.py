@@ -19,7 +19,7 @@ handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', datefmt='%m/%d
 
 
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.ERROR)
 logger.addHandler(handler)
 
 from bendiks_front import app

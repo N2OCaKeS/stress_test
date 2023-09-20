@@ -296,8 +296,9 @@ def output_remote_load(stand):
     sock.settimeout(2.5)
 
     command = """
-            top -bn1 | grep '%Cpu' | tail -1 | grep -P '(....|...) id,'|awk '{gsub(",",".",$8); 
-            printf "%s,%s,%s,", 100-$8 "%", $2 "%", $4 "%"}'; free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
+            top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
+            printf "%s::%s::%s::", 100-$8 "%", $2 "%", $4 "%"}'; 
+            free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
             """
 
     try:
@@ -311,11 +312,11 @@ def output_remote_load(stand):
         else:
             try:
                 cpu_ram_output = ssh_command(command, stand_ip=stands_ip[stand])
-                cpu_ram_output = cpu_ram_output.split(',')
+                cpu_ram_output = cpu_ram_output.split('::')
                 output_cpu = cpu_ram_output[0]
                 output_cpu_user = cpu_ram_output[1]
                 output_cpu_system = cpu_ram_output[2]
-                output_ram = cpu_ram_output[3]
+                output_ram = cpu_ram_output[3].strip()
             except paramiko.AuthenticationException:
                 output_cpu = 'Auth Error'
                 output_ram = 'Auth Error'
@@ -367,10 +368,10 @@ def remote_storage_load(stand):
             output_sda = '-'
         else:
             try:
-                output = ssh_command(command, stand_ip=stands_ip[stand])
-                output = output.split('\n')
-                output_nvme = output[0]
-                output_sda = output[1]
+                cpu_ram_output = ssh_command(command, stand_ip=stands_ip[stand])
+                cpu_ram_output = cpu_ram_output.split('\n')
+                output_nvme = cpu_ram_output[0]
+                output_sda = cpu_ram_output[1]
             except paramiko.AuthenticationException:
                 output_nvme = 'Auth Error'
                 output_sda = 'Auth Error'

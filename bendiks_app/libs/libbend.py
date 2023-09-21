@@ -353,13 +353,7 @@ def output_remote_load(stand):
 
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3.5)
-
-    command = """
-            iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); 
-            printf "%.1f%%\\n", $NF} /sda/ {gsub(",", ".", $NF); printf "%.1f%%\\n", $NF}' | tail -n 2
-            """
-    
+    sock.settimeout(3.7)
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
@@ -368,14 +362,16 @@ def remote_storage_load(stand):
             output_sda = '-'
         else:
             try:
-                cpu_ram_output = ssh_command(command, stand_ip=stands_ip[stand])
-                cpu_ram_output = cpu_ram_output.split('\n')
-                output_nvme = cpu_ram_output[0]
-                output_sda = cpu_ram_output[1]
+                output_nvme  = ssh_command("""iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); \
+                                              printf "%.1f%%\\n", $NF}' | tail -n 1""", 
+                                        stand_ip=stands_ip[stand])
+                output_sda  = ssh_command("""iostat -dx 1 2 | awk '/sda/ {gsub(",", ".", $NF); \
+                                             printf "%.1f%%\\n", $NF}' | tail -n 1""", 
+                                        stand_ip=stands_ip[stand])
             except paramiko.AuthenticationException:
                 output_nvme = 'Auth Error'
                 output_sda = 'Auth Error'
-            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException, EOFError):
+            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
                 output_nvme = 'Connect Error'
                 output_sda = 'Connect Error'
 

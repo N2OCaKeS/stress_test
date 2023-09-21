@@ -353,7 +353,7 @@ def output_remote_load(stand):
 
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2.5)
+    sock.settimeout(3.5)
 
     command = """
             iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); 
@@ -413,7 +413,7 @@ def background_stat_storage_main():
     while True:
         [remote_storage_load(str(stand)) for stand in stands]
         #remote_sysstat_available(stand)
-        sleep(3)
+        sleep(4)
 
 
 def background_task_main():

@@ -314,8 +314,8 @@ def output_remote_load(stand):
                 cpu_ram_output = ssh_command(command, stand_ip=stands_ip[stand])
                 cpu_ram_output = cpu_ram_output.split('::')
                 output_cpu = cpu_ram_output[0]
-                output_cpu_user = cpu_ram_output[1]
-                output_cpu_system = cpu_ram_output[2]
+                output_cpu_user = cpu_ram_output[1].replace(',','.')
+                output_cpu_system = cpu_ram_output[2].replace(',','.')
                 output_ram = cpu_ram_output[3].strip()
             except paramiko.AuthenticationException:
                 output_cpu = 'Auth Error'

@@ -173,17 +173,17 @@ run_test_parsec_ext4_st4 = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --par
 run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts}'
 run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec'
 
-'''
-    VirtualBox
-'''
-vm_dir = '/home/$USER/VirtualBox\ VMs/'
-vm_restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {shapshot}'
-vm_storage_create = 'VBoxManage createmedium disk --filename {dir}{fs}_storage --size {size} --format VDI --variant Standard'
-vm_storage_detache = ''
-vm_storage_remove = 'rm -rf {dir}{fs}_storage.vdi'
-vm_storage_attach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium {dir}{fs}_storage.vdi'
-vm_power_on = 'VBoxManage startvm {host}_{postfix} --type headless'
-vm_power_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
+# '''
+#     VirtualBox
+# '''
+# vm_dir = '/home/$USER/VirtualBox\ VMs/'
+# vm_restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {shapshot}'
+# vm_storage_create = 'VBoxManage createmedium disk --filename {dir}{fs}_storage --size {size} --format VDI --variant Standard'
+# vm_storage_detache = ''
+# vm_storage_remove = 'rm -rf {dir}{fs}_storage.vdi'
+# vm_storage_attach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium {dir}{fs}_storage.vdi'
+# vm_power_on = 'VBoxManage startvm {host}_{postfix} --type headless'
+# vm_power_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
 
 
 def cmd(command):
@@ -209,93 +209,95 @@ def host_is_available(node):
 
 start_time = time()
 
-if args.PARSEC and 'ext' not in args.FS:
-    print('"--parsec" is only ext* file systems')
-    exit(2)
+# if args.PARSEC and 'ext' not in args.FS:
+#     print('"--parsec" is only ext* file systems')
+#     exit(2)
 
 if args.VIRTUAL: # вирт. стенд
-    '''
-        Создать тестовый диск заданного размера. 
-        Подключить к машине тестовый диск. 
-        Запустить машину.
-    '''
-    # Восстановить последний актуальные снимки
-    cmd(vm_restore_snapshot.format(host=args.HOST,
-                                   postfix=MACHINE_POSTFIX,
-                                   shapshot=SNAPSHOT_NAME))
-    # Создать тестовый накопитель
-    cmd(vm_storage_create.format(fs=args.FS,
-                                 dir=vm_dir,
-                                 size=args.DISK_SIZE))
+    pass
+    # '''
+    #     Создать тестовый диск заданного размера. 
+    #     Подключить к машине тестовый диск. 
+    #     Запустить машину.
+    # '''
+    # # Восстановить последний актуальные снимки
+    # cmd(vm_restore_snapshot.format(host=args.HOST,
+    #                                postfix=MACHINE_POSTFIX,
+    #                                shapshot=SNAPSHOT_NAME))
+    # # Создать тестовый накопитель
+    # cmd(vm_storage_create.format(fs=args.FS,
+    #                              dir=vm_dir,
+    #                              size=args.DISK_SIZE))
 
-    # Подключить тестовый накопитель
-    cmd(vm_storage_attach.format(host=args.HOST,
-                                 postfix=MACHINE_POSTFIX,
-                                 dir=vm_dir,
-                                 fs=args.FS))
+    # # Подключить тестовый накопитель
+    # cmd(vm_storage_attach.format(host=args.HOST,
+    #                              postfix=MACHINE_POSTFIX,
+    #                              dir=vm_dir,
+    #                              fs=args.FS))
 
-    # Запустить виртуальную машину
-    cmd(vm_power_on.format(host=args.HOST,
-                           postfix=MACHINE_POSTFIX))
+    # # Запустить виртуальную машину
+    # cmd(vm_power_on.format(host=args.HOST,
+    #                        postfix=MACHINE_POSTFIX))
 
-    # Дождаться окончания загрузки
-    while host_is_available(args.HOST) is False:
-        sleep(1)
-    sleep(10)
+    # # Дождаться окончания загрузки
+    # while host_is_available(args.HOST) is False:
+    #     sleep(1)
+    # sleep(10)
 
-    '''
-        Запустить скрипт настройки тестовой машины.
-    '''
-    try:
-        with Connection(host='127.0.0.1',
-                        port=HOSTS[args.HOST]['port'],
-                        user=USER,
-                        connect_kwargs={"password": PASSWORD}) as storage_host_client:
-            storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
-                                                            fs=args.FS))
-    except Exception as exception:
-        print("\033[91mНе удалось настроить стенд.\033[0m")
-        print(exception)
-        exit(2)
+    # '''
+    #     Запустить скрипт настройки тестовой машины.
+    # '''
+    # try:
+    #     with Connection(host='127.0.0.1',
+    #                     port=HOSTS[args.HOST]['port'],
+    #                     user=USER,
+    #                     connect_kwargs={"password": PASSWORD}) as storage_host_client:
+    #         storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
+    #                                                         fs=args.FS))
+    # except Exception as exception:
+    #     print("\033[91mНе удалось настроить стенд.\033[0m")
+    #     print(exception)
+    #     exit(2)
 
-    '''
-        Начать тестирование. 
-        Запустить прогон.
-    '''
-    # Очистить лог
-    log_file = open(LOG_FILENAME, 'w')
-    log_file.close()
+    # '''
+    #     Начать тестирование. 
+    #     Запустить прогон.
+    # '''
+    # # Очистить лог
+    # log_file = open(LOG_FILENAME, 'w')
+    # log_file.close()
 
-    try:
-        with Connection(host='127.0.0.1',
-                        port=HOSTS[args.HOST]['port'],
-                        user=USER,
-                        connect_kwargs={"password": PASSWORD}) as node_client:
-            if args.PARSEC:
-                if args.FS == 'ext4' and args.STAND == '4':
-                    node_client.run(run_test_parsec_ext4_st4.format(dir=SCRIPT_DIR,
-                                                                    ts=args.TS,
-                                                                    sn=args.STAND))
-                else:
-                    node_client.run(run_test_parsec.format(dir=SCRIPT_DIR,
-                                                           ts=args.TS))
-            else:
-                if args.FS == 'ext4' and args.STAND == '4':
-                    node_client.run(run_test_ext4_st4.format(dir=SCRIPT_DIR,
-                                                             ts=args.TS,
-                                                             sn=args.STAND))
-                else:
-                    node_client.run(run_test.format(dir=SCRIPT_DIR,
-                                                    ts=args.TS))
-    except Exception as exception:
-        print("\033[91m Тестирование завершилось исключением.\033[0m")
-        print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
-        exit(2)
-    '''
-        Выключить машину.
-    '''
-    cmd(vm_power_off.format(host=args.HOST, postfix=MACHINE_POSTFIX))
-    cmd(vm_storage_remove.format(fs=args.FS, dir=vm_dir))
+    # try:
+    #     with Connection(host='127.0.0.1',
+    #                     port=HOSTS[args.HOST]['port'],
+    #                     user=USER,
+    #                     connect_kwargs={"password": PASSWORD}) as node_client:
+    #         if args.PARSEC:
+    #             if args.FS == 'ext4' and args.STAND == '4':
+    #                 node_client.run(run_test_parsec_ext4_st4.format(dir=SCRIPT_DIR,
+    #                                                                 ts=args.TS,
+    #                                                                 sn=args.STAND))
+    #             else:
+    #                 node_client.run(run_test_parsec.format(dir=SCRIPT_DIR,
+    #                                                        ts=args.TS))
+    #         else:
+    #             if args.FS == 'ext4' and args.STAND == '4':
+    #                 node_client.run(run_test_ext4_st4.format(dir=SCRIPT_DIR,
+    #                                                          ts=args.TS,
+    #                                                          sn=args.STAND))
+    #             else:
+    #                 node_client.run(run_test.format(dir=SCRIPT_DIR,
+    #                                                 ts=args.TS))
+    # except Exception as exception:
+    #     print("\033[91m Тестирование завершилось исключением.\033[0m")
+    #     print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
+    #     exit(2)
+    # '''
+    #     Выключить машину.
+    # '''
+    # cmd(vm_power_off.format(host=args.HOST, postfix=MACHINE_POSTFIX))
+    # cmd(vm_storage_remove.format(fs=args.FS, dir=vm_dir))
+
 else: # физ. стенд
     '''
         Запустить скрипт настройки тестовой машины.

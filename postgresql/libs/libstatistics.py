@@ -477,6 +477,8 @@ class PSQLStatistics2:
         self.CP = ConfluencePage(username=self.username, token=self.token)
         if not "statistics" in os.listdir():
             os.mkdir("statistics")
+        if not "statistics_rc" in os.listdir():
+            os.mkdir("statistics_rc")
 
 
     @staticmethod
@@ -502,7 +504,7 @@ class PSQLStatistics2:
         """
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
         """
-        required_pages = []
+        required_pages, required_pages_rc = [], []
         """
             Проходим по всем версиям
         """
@@ -519,6 +521,24 @@ class PSQLStatistics2:
                     Получаем информацию о странице
                 """
                 page = self.CP.get_page_as_html(id=page_id)
+                #### ------ TESTING------###
+                try:
+                    title = page.get("title").split(" ⬝ ")
+                    rc_version = int(title[1].split(".")[-1])
+                    if rc_version:
+                        # print(page.get('title'))
+                        child_rc_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                        # print(child_rc_pages)
+                        for child_rc_page in child_rc_pages:
+                            rc_page = self.CP.get_page_as_html(id=child_rc_page)
+                            if "PostgreSQL" in rc_page.get("title") and self.CP.get_child_page_as_html(id=child_rc_page):
+                                # print("true")
+                                required_pages_rc.append(child_rc_page)
+                except IndexError:
+                    pass
+                except ValueError:
+                    continue
+                ### ------ TESTING------###
                 """
                     Проверяем есть ли в заголовке PostreSQL и имеются ли дочерние страницы
                 """
@@ -529,10 +549,15 @@ class PSQLStatistics2:
                 if "Файловые системы" in page.get("title") and self.CP.get_child_page_as_html(id=page_id):
                     pass
 
-        return required_pages
+        return required_pages, required_pages_rc
 
     
-    def get_info_from_pages(self, pages, columns_df):
+    def get_info_from_pages(self, pages, columns_df, rc=False):
+        if rc:
+            stat_dir = "statistics_rc"
+        else:
+            stat_dir = "statistics"
+
         def collect_data(test_name="postgresql"):
             data_for_df = {
 
@@ -560,10 +585,11 @@ class PSQLStatistics2:
                 """
                 list_pages_with_report = self.CP.get_child_page_as_html(id)
                 for title in list_pages_with_report:
+                    # print(title)
                     """
                         Получаем конкретную страницу отчета
                     """
-                    src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
+                    src_html = self.CP.get_page_as_html(page_space="DEVQA", page_title=title)
                     data = src_html.get("body").get("view").get("value")
                     soup = BeautifulSoup(data, 'lxml')
                     temp_data = title.split("_")
@@ -577,10 +603,11 @@ class PSQLStatistics2:
                             Выдергиваем значение рейтинга из html страницы
                         """
                         rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
+                        # print(rating)
                         """
                             Генерируем ссылку на отчет
                         """
-                        link = "https://life.astralinux.ru/display/DD/" + title 
+                        link = "https://life.astralinux.ru/display/DEVQA/" + title 
                         rating_with_link = f'<a href="{link}">{rating}</a>'
                         """
                             Записываем полученные данные для дальнейшего составления DataFrame
@@ -636,7 +663,7 @@ class PSQLStatistics2:
                 Строим HTML
                 """
                 statistics_table_html = df.to_html(escape=False, index=False)
-                file_html = open(f"statistics/{test_name}_{key}_1.html", "w")
+                file_html = open(f"{stat_dir}/{test_name}_{key}_1.html", "w")
                 file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 grage = self.get_grade(key)
                 file_html.writelines(f"<h1>Сводная таблица результатов тестирования {grage}_{key}</h1> {statistics_table_html}")
@@ -672,7 +699,7 @@ class PSQLStatistics2:
                     Строим вторую HTML таблицу
                 """
                 mat_stat_table_html = df_mat_stat.to_html(index=False)
-                new_file_html = open(f"statistics/{test_name}_{key}_2.html", 'w')
+                new_file_html = open(f"{stat_dir}/{test_name}_{key}_2.html", 'w')
                 new_file_html.write(mat_stat_table_html)
                 new_file_html.close()
 
@@ -715,7 +742,7 @@ class PSQLStatistics2:
                 green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
                 yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
                 ax.legend(handles=[red_patch, green_patch, yellow_patch])
-                fig.savefig(f"statistics/{test_name}_statistics_{key}.png")
+                fig.savefig(f"{stat_dir}/{test_name}_statistics_{key}.png")
 
 
         def create_comparison_kernel_graph(temp_data_kernel, test_name):
@@ -731,7 +758,7 @@ class PSQLStatistics2:
                         except ValueError:
                             pass
                         plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
-                    fig.savefig(f"statistics/{test_name}_statistics_{list(data_kernel['Стенд'])[0]}_{kernel}.jpg")
+                    fig.savefig(f"{stat_dir}/{test_name}_statistics_{list(data_kernel['Стенд'])[0]}_{kernel}.jpg")
         
 
         def create_comparison_kernel_and_stand_graph(temp_data_kernel, test_name):
@@ -770,7 +797,7 @@ class PSQLStatistics2:
                 plt.gca().spines["right"].set_alpha(.0)
                 plt.gca().spines["left"].set_alpha(.3)
 
-                plt.savefig(f"statistics/{test_name}_statistics_all_stands_{title}_kernel.jpg")
+                plt.savefig(f"{stat_dir}/{test_name}_statistics_all_stands_{title}_kernel.jpg")
         
         def create_summary_table(dfs1, dfs2):
             merged_dataframes = []
@@ -808,29 +835,29 @@ class PSQLStatistics2:
                     if val != 0:
                         plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                 ax.legend(legend)
-                plt.savefig(f"statistics/{legend[0]}-{legend[1]}_graph_{df['Стенд'].mode()[0]}_summ.jpg")
+                plt.savefig(f"{stat_dir}/{legend[0]}-{legend[1]}_graph_{df['Стенд'].mode()[0]}_summ.jpg")
                 
             
         
         data_df_orel = collect_data(test_name="postgresql")
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="postgresql")
         create_graphs(data_for_df=data_df_orel, test_name="postgresql", temp_data_for_graph=tmp_data_for_gr)
-        create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-        create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+        # create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+        # create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         
-        data_df_smolensk = collect_data(test_name="postgresql-sm")
-        tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
-        create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
+        # data_df_smolensk = collect_data(test_name="postgresql-sm")
+        # tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
+        # create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
 
-        data_df_orel_audit_off = collect_data(test_name="postgresql-aud-off")
-        tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
-        create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
+        # data_df_orel_audit_off = collect_data(test_name="postgresql-aud-off")
+        # tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
+        # create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
 
-        summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
-        create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
+        # summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
+        # create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
 
-        summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
-        create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
+        # summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
+        # create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
 
     """
@@ -1038,11 +1065,13 @@ class PSQLStatistics2:
         confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
 
     def update_statistics(self):
-        pages = self.get_list_required_pages()
+        pages, rc_pages = self.get_list_required_pages()
+        print(rc_pages)
         columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "PostgreSQL_11 rating", 'rating_2']
 
-        self.get_info_from_pages(pages=pages, columns_df=columns)
-        self.upload_statistics()
+        # self.get_info_from_pages(pages=pages, columns_df=columns)
+        self.get_info_from_pages(pages=rc_pages, columns_df=columns, rc=True)
+        # self.upload_statistics()
 
 
 if __name__ == '__main__':

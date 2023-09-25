@@ -640,9 +640,9 @@ class FileSystemStatistics:
     def update_statistics(self):
         pages, rc_pages = self.get_list_required_pages()
         # print(pages, rc_pages)
-        # self.get_info_from_pages(pages=pages)
-        self.get_info_from_pages(pages=rc_pages, rc=True)
-        # self.upload_statistics(type_stat="Файловые системы")
+        self.get_info_from_pages(pages=pages)
+        # self.get_info_from_pages(pages=rc_pages, rc=True)
+        self.upload_statistics(type_stat="Файловые системы")
 
 
 if __name__ == '__main__':

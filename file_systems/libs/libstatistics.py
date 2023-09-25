@@ -127,7 +127,7 @@ class FileSystemStatistics:
         """
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
         """
-        required_pages = []
+        required_pages, required_pages_rc = [], []
         """
             Проходим по всем версиям
         """
@@ -144,15 +144,38 @@ class FileSystemStatistics:
                     Получаем информацию о странице
                 """
                 page = self.CP.get_page_as_html(id=page_id)
+
+                #### ------ TESTING------###
+                try:
+                    title = page.get("title").split(" ⬝ ")
+                    rc_version = int(title[1].split(".")[-1])
+                    if rc_version:
+                        # print(page.get('title'))
+                        child_rc_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                        # print(child_rc_pages)
+                        for child_rc_page in child_rc_pages:
+                            rc_page = self.CP.get_page_as_html(id=child_rc_page)
+                            if "Файловые системы" in rc_page.get("title") and self.CP.get_child_page_as_html(id=child_rc_page):
+                                # print("true")
+                                required_pages_rc.append(child_rc_page)
+                except IndexError:
+                    pass
+                except ValueError:
+                    continue
+                ### ------ TESTING------###
                 """
                     Проверяем есть ли в заголовке Файловые системы и имеются ли дочерние страницы
                 """
                 if "Файловые системы" in page.get("title") and self.CP.get_child_page_as_html(id=page_id):
                     required_pages.append(page_id)
 
-        return required_pages
+        return required_pages, required_pages_rc
     
-    def get_info_from_pages(self, pages):
+    def get_info_from_pages(self, pages, rc=False):
+        if rc:
+            stat_dir = "statistics_rc"
+        else:
+            stat_dir = "statistics"
         def build_main_dataframe(fs_type, data_fs, stand):
             columns = ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг', 'Рейтинг2']
             df = pd.DataFrame(data=data_fs, columns=columns)
@@ -164,7 +187,7 @@ class FileSystemStatistics:
             df = df.drop('Рейтинг2', axis=1)
             
             table = df.to_html(escape=False, index=False)
-            f_ext4 = open(f"statistics/fs_{fs_type}_{stand}_1.html", 'w')
+            f_ext4 = open(f"{stat_dir}/fs_{fs_type}_{stand}_1.html", 'w')
             f_ext4.writelines(f"<h2>Сводная таблица результатов тестирования {fs_type} {stand}</h2> {table}")
             f_ext4.close()
 
@@ -198,7 +221,7 @@ class FileSystemStatistics:
                 Строим вторую HTML таблицу
             """
             mat_stat_table_html = df_mat_stat.to_html(index=False)
-            new_file_html = open(f"statistics/fs_{fs_type}_{stand}_2.html", 'w')
+            new_file_html = open(f"{stat_dir}/fs_{fs_type}_{stand}_2.html", 'w')
             new_file_html.write(f'<h2>Таблица основных статистических параметров {fs_type} {stand}</h2> {mat_stat_table_html}')
             new_file_html.close()
 
@@ -237,7 +260,7 @@ class FileSystemStatistics:
             green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
             yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
             ax.legend(handles=[red_patch, green_patch, yellow_patch])
-            fig.savefig(f"statistics/fs_{fs_type}_{stand}_1.png")
+            fig.savefig(f"{stat_dir}/fs_{fs_type}_{stand}_1.png")
         
         def build_summary_graph(stand, rating1, rating2, shcala_txt):
             """
@@ -271,7 +294,7 @@ class FileSystemStatistics:
                 if val != 0:
                     plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             ax.legend(['EXT4', 'EXT4 with parsec'])
-            fig.savefig(f"statistics/fs_EXT4_and_EXT4_with_parsec_{stand}_a.png")
+            fig.savefig(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{stand}_a.png")
 
 
         def build_summary_graph_template(stand, rating1, rating2, shcala_txt, file_system_names, colors=['#88c1f2', '#ea5c76']):
@@ -304,7 +327,7 @@ class FileSystemStatistics:
                 if val != 0:
                     plt.text(i + 1 + bar_width / 2, val * 0.5, val, rotation=90, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             ax.legend([file_system_names[0], file_system_names[1]])
-            fig.savefig(f"statistics/fs_{file_system_names[0]}_and_{file_system_names[1]}_{stand}.png")
+            fig.savefig(f"{stat_dir}/fs_{file_system_names[0]}_and_{file_system_names[1]}_{stand}.png")
 
 
         def create_summary_table(fs_data=[], stand=None):
@@ -333,7 +356,7 @@ class FileSystemStatistics:
             df_merge= df_merge.drop(['Рейтинг2_ext4', "Рейтинг2_ext4_parsec"], axis=1)
 
             table = df_merge.to_html(escape=False, index=False)
-            file = open(f"statistics/fs_EXT4_and_EXT4_with_parsec_{stand}_a.html", 'w')
+            file = open(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{stand}_a.html", 'w')
             file.writelines(f"<h2>Сводная таблица результатов тестирования EXT4 и EXT4 с parsec {stand}</h2> {table}")
             file.close()
             return rating.to_list(), rating_parsec.to_list(), df_merge['Релиз'] + '_' + df_merge['Ядро']
@@ -363,7 +386,7 @@ class FileSystemStatistics:
             df_merge= df_merge.drop([f'Рейтинг2_{file_system_names[0]}', f"Рейтинг2_{file_system_names[1]}"], axis=1)
 
             table = df_merge.to_html(escape=False, index=False)
-            file = open(f"statistics/fs_{file_system_names[0]}_and_{file_system_names[1]}_{stand}.html", 'w')
+            file = open(f"{stat_dir}/fs_{file_system_names[0]}_and_{file_system_names[1]}_{stand}.html", 'w')
             file.writelines(f"<h2>Сводная таблица результатов тестирования {file_system_names[0]} и {file_system_names[1]} {stand}</h2> {table}")
             file.close()
 
@@ -414,10 +437,11 @@ class FileSystemStatistics:
             """
             list_pages_with_report = self.CP.get_child_page_as_html(id)
             for title in list_pages_with_report:
+                print(title)
                 """
                     Получаем конкретную страницу отчета
                 """
-                src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
+                src_html = self.CP.get_page_as_html(page_space="DEVQA", page_title=title)
                 data = src_html.get("body").get("view").get("value")
                 soup = BeautifulSoup(data, 'lxml')
                 temp_data = title.replace(" ", "_").split("_")
@@ -434,7 +458,7 @@ class FileSystemStatistics:
                 """
                     Генерируем ссылку на отчет
                 """
-                link = "https://life.astralinux.ru/display/DD/" + title 
+                link = "https://life.astralinux.ru/display/DEVQA/" + title 
                 rating_with_link = f'<a href="{link}">{rating}</a>'
 
                 if parsec:
@@ -614,9 +638,11 @@ class FileSystemStatistics:
 
 
     def update_statistics(self):
-        pages = self.get_list_required_pages()
-        self.get_info_from_pages(pages=pages)
-        self.upload_statistics(type_stat="Файловые системы")
+        pages, rc_pages = self.get_list_required_pages()
+        # print(pages, rc_pages)
+        # self.get_info_from_pages(pages=pages)
+        self.get_info_from_pages(pages=rc_pages, rc=True)
+        # self.upload_statistics(type_stat="Файловые системы")
 
 
 if __name__ == '__main__':

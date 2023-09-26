@@ -36,6 +36,21 @@ parent_page_list = {
              },
     'altlinux-5.10':{'postgresql':'Debian ⬝ PostgreSQL',
              },
+    '1.7.5.5':{'postgresql':'1.7.5.5 ⬝ PostgreSQL',
+             'postgresql-sm':'',
+             'postgresql-aud-off':'',
+             'XFS':'',
+             'EXT4':'',
+             'EXT4 parsec':'',
+             'NTFS':'',
+             'auditd-p':'',
+             'auditd-f':'',
+             'auditd-u':'',
+             'syslog-ng':'',
+             'RAM-overflow':'',
+             'SD-overflow':'',
+             'unix':''
+            },
     '1.7.5.4':{'postgresql':'1.7.5.4 ⬝ PostgreSQL',
              'postgresql-sm':'',
              'postgresql-aud-off':'',
@@ -219,7 +234,8 @@ cycle_tree_index = {
     '1.7.4.UU.1':'2936',
     '1.7.2':'2937',
     '1.7.1':'2947',
-    '1.7.5.4':'3056'
+    '1.7.5.4':'3056',
+    '1.7.5.5':'3760'
 }
 
 

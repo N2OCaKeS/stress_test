@@ -149,7 +149,7 @@ systems = ['debian10', 'debian10-5.15', 'altlinux-5.10']
 dates_name = f'dates_{args.STAND}.conf'
 username = f'--username {__username}'
 token = f'--token {__conf_token}'
-confluence_space = "--confluence-space 'DD'"
+confluence_space = "--confluence-space 'DEVQA'"
 confluence_parent_page = f'--confluence-parent-page "{parent_page}"'
 confluence_new_page = f'--confluence-new-page "{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}"'
 if args.TEST == 'EXT4 parsec' or args.TEST == 'XFS parsec':

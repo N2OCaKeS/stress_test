@@ -105,8 +105,8 @@ def info_collector(page, ajax=None):
             with open(f'conf/actual_log_path_{stand}.conf', 'r') as rl:
                 real_path = rl.read()
             with open(real_path, 'r') as r:
-                logs[f'{stand}_log'] = r.read()
-                #logs[f'{stand}_log'] = '\n'.join(deque(r, maxlen=50))
+                #logs[f'{stand}_log'] = r.read()
+                logs[f'{stand}_log'] = '\n'.join(deque(r, maxlen=50))
         except FileNotFoundError:
             continue
 

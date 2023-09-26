@@ -1,4 +1,5 @@
-#!/usr/bin/env bash
+#!/bin/bash
+
 set -vx
 
 export PG_MAIN_CLUSTER=main

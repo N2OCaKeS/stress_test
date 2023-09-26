@@ -191,6 +191,7 @@ branches = {
     'file system benchmark. Fat32':'file_systems',
     'file system benchmark. EXT4 parsec':'file_systems',
     'file system benchmark. OCFS2 parsec':'file_systems',
+    'file system benchmark. XFS parsec':'file_systems',
     'auditd benchmark. psaud':'auditd',
     'auditd benchmark. fileaud':'auditd',
     'auditd benchmark. useraud':'auditd',
@@ -238,6 +239,7 @@ tests = {
     'file system benchmark. EXT2':'EXT2',
     'file system benchmark. Fat32':'Fat32',
     'file system benchmark. EXT4 parsec':'EXT4 parsec',
+    'file system benchmark. XFS parsec':'XFS parsec',
     'file system benchmark. OCFS2 parsec':'OCFS2 parsec',
     'auditd benchmark. psaud':'auditd-p',
     'auditd benchmark. fileaud':'auditd-f',
@@ -266,7 +268,7 @@ psyc = {
 #Основной перечень тестов
 #################################################################################################################################################
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'auditd-p', 'auditd-u', 
-              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow']
+              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec']
 
 
 

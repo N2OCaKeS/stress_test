@@ -152,7 +152,7 @@ token = f'--token {__conf_token}'
 confluence_space = "--confluence-space 'DD'"
 confluence_parent_page = f'--confluence-parent-page "{parent_page}"'
 confluence_new_page = f'--confluence-new-page "{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}"'
-if args.TEST == 'EXT4 parsec':
+if args.TEST == 'EXT4 parsec' or args.TEST == 'XFS parsec':
     fs = f'-fs {args.TEST.split()[0].lower()}'
 else:
     fs = f'-fs {args.TEST.lower()}'
@@ -180,7 +180,7 @@ elif args.OVF:
 elif args.AUDIT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {testlist} {fti} {tcyc} {tcas} {ba} {tcv}'
-elif args.TEST == 'EXT4 parsec':
+elif args.TEST == 'EXT4 parsec' or args.TEST == 'XFS parsec':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} --parsec'
 elif args.TEST == 'syslog-ng' or args.TEST == 'unix':

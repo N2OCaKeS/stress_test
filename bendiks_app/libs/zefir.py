@@ -447,6 +447,7 @@ class ZefirTestRun:
 
     def __init__(self,
                  use_kernels=None,
+                 stands=None,
                  release=None,
                  rc=False,
                  kernel_repo=testing17_pkg,
@@ -470,7 +471,7 @@ class ZefirTestRun:
         self.testcase_orel_stand2 = testcase_orel_stand2
         self.testcase_smolensk = testcase_smolensk
         self.testcase_smolensk_stand2 = testcase_smolensk_stand2
-        self.stands = test_run_stands
+        self.stands = stands
         self.modes = test_run_modes
         self.tests_case_zefir_key = tests_case_zefir_key
 

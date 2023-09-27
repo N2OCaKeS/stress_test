@@ -150,24 +150,39 @@ def info_collector(page, ajax=None):
     else: test_list, releas_list, kernel_list = create_args(page)
     
     if request.method == 'POST':
-        selected_options = request.form.getlist('options')
-        
-        tests = [option for option in options[page] if option in selected_options]
-        if not tests:
-            tests = 'Тесты не выбраны'
-        
-        kernel = request.form.get('kernel')
-        with open(f'conf/{page}_kernel_args.conf', 'w') as w:
-            w.write(str(kernel))
+        tr_stands = request.form.getlist('stands')
+        if tr_stands:
+            rc_part = request.form.getlist('rc')
+            releases_part = request.form.getlist('releas')
+            kernel_part = request.form.get('kernel')
+            if rc_part:
+                test_run = ZefirTestRun(use_kernels=kernel_part,
+                                    stands=tr_stands,
+                                    release=releases_part,
+                                    rc=rc_part)
+            else:
+                test_run = ZefirTestRun(use_kernels=kernel_part,
+                                        stands=tr_stands,
+                                        release=releases_part)
+            test_run.creater()
+        else:
+            selected_options = request.form.getlist('options')
+            tests = [option for option in options[page] if option in selected_options]
+            if not tests:
+                tests = 'Тесты не выбраны'
+            
+            kernel = request.form.get('kernel')
+            with open(f'conf/{page}_kernel_args.conf', 'w') as w:
+                w.write(str(kernel))
 
-        releas = request.form.getlist('releas')
-        with open(f'conf/{page}_releas_args.conf', 'w') as w:
-            w.write(str(releas))
-        if not releas:
-            releas = 'Релиз не выбран'
-        
-        with open(f'conf/{page}_tests_args.conf', 'w') as w:
-            w.write(str(tests))
+            releas = request.form.getlist('releas')
+            with open(f'conf/{page}_releas_args.conf', 'w') as w:
+                w.write(str(releas))
+            if not releas:
+                releas = 'Релиз не выбран'
+            
+            with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                w.write(str(tests))
         
         return 'index'
 

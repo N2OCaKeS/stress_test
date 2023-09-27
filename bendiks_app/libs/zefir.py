@@ -529,7 +529,7 @@ class ZefirTestRun:
             folder_name = f'/stress_test/{release}'
 
         is_env_empty = False
-        headers = {"Authorization": "Bearer " + bearer_token}
+        headers = {"Authorization":bearer_token}
         jira_user_request_url = self.JIRA_URL + "/rest/api/2/user?username=" + assignee
         jira_user_response = requests.get(jira_user_request_url, headers=headers)
         jira_user_id = jira_user_response.json()["key"]

@@ -191,7 +191,7 @@ class PSQLStatistics:
                 """
                     Получаем конкретную страницу отчета
                 """
-                src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
+                src_html = self.CP.get_page_as_html(page_space="DEVQA", page_title=title)
                 data = src_html.get("body").get("view").get("value")
                 soup = BeautifulSoup(data, 'lxml')
                 temp_data = title.split("_")
@@ -206,7 +206,7 @@ class PSQLStatistics:
                 """
                     Генерируем ссылку на отчет
                 """
-                link = "https://life.astralinux.ru/display/DD/" + title 
+                link = "https://life.astralinux.ru/display/DEVQA/" + title 
                 rating_with_link = f'<a href="{link}">{rating}</a>'
                 """
                     Записываем полученные данные для дальнейшего составления DataFrame
@@ -468,8 +468,6 @@ class PSQLStatistics:
         self.upload_statistics()
 
 
-
-
 class PSQLStatistics2:
     
     def __init__(self, username, token) -> None:
@@ -699,12 +697,10 @@ class PSQLStatistics2:
                     continue
                 df = pd.DataFrame(data=data.get("data"), columns=columns_df, index=np.arange(1, len(data.get("data")) + 1))
                 df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
-                
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()
                 
                 df_5_10 = df[df["Ядро"].str.startswith('5.10')]
-                # print(df_5_10)
                 df_5_10['Ядро'] = '5.10'
                 temp_data_kernel['5.10'].append(df_5_10[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
                 df_5_15_gen = df[df["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]
@@ -763,7 +759,7 @@ class PSQLStatistics2:
                 new_file_html = open(f"{stat_dir}/{test_name}_{key}_2.html", 'w')
                 new_file_html.write(mat_stat_table_html)
                 new_file_html.close()
-
+            
             return temp_data_for_graph, temp_data_kernel, dataframes_for_summary_graph
         
         def create_graphs(data_for_df, test_name, temp_data_for_graph):
@@ -903,31 +899,31 @@ class PSQLStatistics2:
         data_df_orel = collect_data(test_name="postgresql")
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="postgresql")
         create_graphs(data_for_df=data_df_orel, test_name="postgresql", temp_data_for_graph=tmp_data_for_gr)
-        # create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-        # create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-        
-        # data_df_smolensk = collect_data(test_name="postgresql-sm")
-        # tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
-        # create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
+        if not rc:
+            create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+            create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+            
+            data_df_smolensk = collect_data(test_name="postgresql-sm")
+            tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
+            create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
 
-        # data_df_orel_audit_off = collect_data(test_name="postgresql-aud-off")
-        # tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
-        # create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
+            data_df_orel_audit_off = collect_data(test_name="postgresql-aud-off")
+            tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
+            create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
 
-        # summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
-        # create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
+            summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
+            create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
 
-        # summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
-        # create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
+            summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
+            create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
 
     """
         Создаем итоговую html страницу для life
     """
     def upload_statistics(self, type_stat='PostgreSQL'):
-        
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
+        confluence_stat.create_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
 
         template_img = """ 
             <p>
@@ -952,8 +948,8 @@ class PSQLStatistics2:
 
         for file in sorted(os.listdir("statistics")):
             if file.endswith("png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                     img_png=file)
                 name_stand = file.split("_")[2].split(".")[0]
                 if file.startswith("postgresql-sm"):
@@ -995,31 +991,31 @@ class PSQLStatistics2:
                     table_with_mat_stat_list.append(mat_stat_table)
 
             if file.endswith("5.10.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                                 img_png=file))
             if file.endswith("5.15-gen.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                                 img_png=file))
             if file.endswith("5.15-ll.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                                 img_png=file))
             if file.endswith("kernel.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                                       img_png=file))
             
             if file.endswith("summ.jpg"):
                 name_stand = file.split("_")[2]
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
                 if file.startswith("Orel-Smolensk"):
-                    summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"), 
+                    summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"), 
                                                                 img_png=file))
                     header_orel_vs_smolensk.append(name_stand)
                 elif file.startswith("Orel-Orel-audit-off"):
-                    summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"), 
+                    summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"), 
                                                                            img_png=file))
                     header_aud_on_vs_off.append(name_stand)
                     # print(header_aud_on_vs_off)
@@ -1123,17 +1119,16 @@ class PSQLStatistics2:
 
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", page_body=html_page)
 
     def update_statistics(self):
         pages, rc_pages = self.get_list_required_pages()
         print(rc_pages)
         columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "PostgreSQL_11 rating", 'rating_2']
 
-        # self.get_info_from_pages(pages=pages, columns_df=columns)
+        self.get_info_from_pages(pages=pages, columns_df=columns)
         for key, value in rc_pages.items():
             if value:
-                # print(value)
                 self.get_info_from_pages(pages=value, columns_df=columns, rc=True, version_key=key)
         # self.upload_statistics()
 

@@ -110,8 +110,8 @@
             color: #f8f9f9;
           }
           </style>
-        <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
-          <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Настройки</div>
+        <div id="accordionBlock1" class="card text-bg-dark mb-3" style="max-width: 27rem;">
+          <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Параметры запуска тестов</div>
           <div class="card-body">
             <form method="POST" action="/{{ main_url }}">
               <br></br>
@@ -163,14 +163,17 @@
                 </div>
               </div>
               <style>
-                #mainSaveButton {
+                #mainSaveButton
+                 {
                     background-color: #292d30; 
                     color: white; 
                 }
-                #mainSaveButton:hover {
+                #mainSaveButton
+                :hover {
                     background-color: #ff7b00; 
                 }             
-                #mainSaveButton:active {
+                #mainSaveButton
+                :active {
                     background-color: #3e8e41; 
                 }
               </style>
@@ -182,15 +185,149 @@
             </form>
           </div>
         </div>
-      </div>
-       
+      
+             
+                                     
+
+
+        <style>
+          .customAccordionnew .accordion-item .accordion-header {
+            background-color: #002534; 
+          }
+          .customAccordionnew .accordion-button {
+            background-color: #002534;
+            color: #f8f9f9;
+            border-color: #606465;
+          }
+          .customAccordionnew .accordion-button:not(.collapsed) {
+            background-color: #ff7b00;
+            color: #333;
+            border-color: #de425a;
+          }
+          .customAccordionnew .accordion-body {
+            background-color: #292d30;
+            color: #f8f9f9;
+          }
+          </style>
+        <div id="accordionBlock2" class="card text-bg-dark mb-3" style="max-width: 27rem; display: none;">
+          <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Параметры создания прогона</div>
+          <div class="card-body">
+            <form method="POST" action="/{{ main_url }}">
+              <br></br>
+              <div class="accordion customAccordionnew" id="settingsAccordionnew">
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTests">
+                      Доступные RC
+                    </button>
+                  </h2>
+                  <div id="collapseTests" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                    <div class="accordion-body" style="text-align: left;">
+                      {% for value in rc %}
+                        <input type="checkbox" id="{{ value }}" name="rc" value="{{ value }}">
+                        <label for="{{ value }}">{{ value }}</label><br>                        
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleases">
+                      Доступные Релизы
+                    </button>
+                  </h2>
+                  <div id="collapseReleases" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                    <div class="accordion-body" style="text-align: left;">
+                      {% for value in releases %}
+                        <input type="radio" id="{{ value }}" name="releas" value="{{ value }}">
+                        <label for="{{ value }}">{{ value }}</label><br>                        
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseStands">
+                      Доступные Стенды
+                    </button>
+                  </h2>
+                  <div id="collapseStands" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                    <div class="accordion-body" style="text-align: left;">
+                      {% for value in stands %}
+                        <input type="checkbox" id="{{ value }}" name="stands" value="{{ value }}">
+                        <label for="{{ value }}">{{ value }}</label><br>                        
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKernels">
+                      Доступные ядра
+                    </button>
+                  </h2>
+                  <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                    <div class="accordion-body" style="text-align: left;">
+                      {% for value in kernels %}
+                        <input type="checkbox" id="{{ value }}" name="kernel" value="{{ value }}">
+                        <label for="{{ value }}">{{ value }}</label><br>                        
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <style>
+                #mainSaveButtonnew
+                 {
+                    background-color: #292d30; 
+                    color: white; 
+                }
+                #mainSaveButtonnew
+                :hover {
+                    background-color: #ff7b00; 
+                }             
+                #mainSaveButtonnew
+                :active {
+                    background-color: #3e8e41; 
+                }
+              </style>
+              <br></br>
+              <div style="text-align: center;">
+                <button id="mainSaveButtonnew" class="btn btn-secondary" type="submit">Создать</button>
+              </div>
   
-    
-
-
-
+            </form>
+          </div>
+        </div>
+        <!-- <button id="toggleButton" onclick="toggleAccordion()">Toggle Accordion</button> -->
+        <button id="toggleButton" onclick="toggleAccordion()" style="padding: 0; border: none; background: none;">
+          <img src="http://10.177.103.10:8000/static/settings.gif" alt="Settings" style="width: 100%; height: 100%;">
+        </button>
+      </div>
+      
 
       
+
+    <script>
+      function toggleAccordion() {
+        var accordionBlock1 = document.getElementById('accordionBlock1');
+        var accordionBlock2 = document.getElementById('accordionBlock2');
+      
+        if (accordionBlock1.style.display == "none") {
+          accordionBlock1.style.display = "block";
+          accordionBlock2.style.display = "none";
+        } else {
+          accordionBlock1.style.display = "none";
+          accordionBlock2.style.display = "block";
+        }
+      }
+    </script>
+
+
+
+
+
+
     <style>
       .stands .card-header {
         background-color: #002534; 

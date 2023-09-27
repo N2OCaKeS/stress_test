@@ -23,8 +23,10 @@ from backup_image_conf import (psyc,
                                kernels,
                                main_stands,
                                mobile_stands,
-                               brest_stands)
+                               brest_stands,
+                               test_run_stands)
 from time import sleep
+from libs.zefir import ZefirTestRun
 
 
 
@@ -170,7 +172,8 @@ def info_collector(page, ajax=None):
 
     if page == 'brest':
         return render_template(f'{page}.html', 
-                                options=options[page], 
+                                options=options[page],
+                                stands=test_run_stands, 
                                 test_list=test_list,
                                 releas_list=releas_list,
                                 kernel_list=kernel_list, 
@@ -184,7 +187,8 @@ def info_collector(page, ajax=None):
                                 **progress_logs)
     else:
         return render_template(f'{page}.html', 
-                                options=options[page], 
+                                options=options[page],
+                                stands=test_run_stands, 
                                 test_list=test_list,
                                 releas_list=releas_list,
                                 kernel_list=kernel_list, 

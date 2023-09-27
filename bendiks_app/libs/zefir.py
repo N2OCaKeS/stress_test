@@ -11,6 +11,17 @@ import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
+import re
+from backup_image_conf import(testing17_pkg, 
+                              testing17_vers,
+                              testcase_orel,
+                              testcase_orel_stand2,
+                              testcase_smolensk,
+                              testcase_smolensk_stand2,
+                              test_run_stands,
+                              test_run_modes,
+                              tests_case_zefir_key)
+
 
 
 def response_status():
@@ -430,3 +441,176 @@ class ZefirResultTable:
         #    remove(rfp)
 
         
+
+
+class ZefirTestRun:
+
+    def __init__(self,
+                 use_kernels=None,
+                 release=None,
+                 rc=False,
+                 kernel_repo=testing17_pkg,
+                 kernel_vers=testing17_vers):
+        
+
+
+        self.JIRA_URL = 'https://jira.astralinux.ru'
+        self.headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0'}
+        with open('/home/u/tokens.json', 'r') as r:
+            tokens = json.load(r)
+        self.__username = tokens['username']
+        self.__jira_token = tokens['jira_token']
+        self.PROJECT_NAME = "BT"
+        self.release = release
+        self.rc = rc
+        self.kernel_vers = kernel_vers
+        self.kernel_repo = kernel_repo
+        self.use_kernels = use_kernels
+        self.testcase_orel = testcase_orel
+        self.testcase_orel_stand2 = testcase_orel_stand2
+        self.testcase_smolensk = testcase_smolensk
+        self.testcase_smolensk_stand2 = testcase_smolensk_stand2
+        self.stands = test_run_stands
+        self.modes = test_run_modes
+        self.tests_case_zefir_key = tests_case_zefir_key
+
+
+
+    def get_kernels_from_repository(self):
+        kern_packages_list = []
+        kernels = []
+
+        repsponse_vers = requests.get(self.kernel_vers, headers=self.headers)
+        if repsponse_vers.status_code == 200:
+            vers_pattern = re.compile(r'Version: \d.*', re.IGNORECASE)
+            vers_release = re.search(vers_pattern, repsponse_vers.text)
+
+        response = requests.get(self.kernel_repo, headers=self.headers)
+        packages_list = response.text
+        if response.status_code == 200:
+            for package in packages_list.split('\n'):
+                if 'Package: linux-image' in package:
+                    package = package.replace("Package: ", "")
+                    kern_packages_list.append(package)
+            for kern_package in kern_packages_list:
+                pattern_generic = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-generic\D*', re.IGNORECASE)
+                pattern_lowlatency = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-lowlatency\D*', re.IGNORECASE)
+                #pattern_hardened = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-hardened\D*', re.IGNORECASE)
+                generic_kernel = re.findall(pattern_generic, kern_package)
+                lowlatency_kernel = re.findall(pattern_lowlatency, kern_package)
+                
+                if generic_kernel:
+                    kernels.append(str(generic_kernel).replace("[", "").replace("]", "").replace("'", "").replace("linux-image-", ""))
+                if lowlatency_kernel:
+                    kernels.append(str(lowlatency_kernel).replace("[", "").replace("]", "").replace("'", "").replace("linux-image-", ""))
+
+            kernel_list = [kernel for kernel in kernels if kernel.startswith('6.1') 
+                                                        or kernel.startswith('5.15') 
+                                                        or kernel.startswith('5.10')]
+
+            print(vers_release[0])
+            print(kernel_list)
+            return vers_release[0], kernel_list
+        else:
+            print("An error was encountered. Response: " + str(response.status_code) + str(response.text))
+        
+    #get_kernels_from_repository(testing17_pkg, testing17_vers)
+
+
+
+    # Создание тестового прогона
+    def create_test_run(self, bearer_token, kernel, cases, assignee, release, mode, stand, rc=False):
+        if rc:
+            testrun_name = f'{rc}_{mode}_{kernel}_{stand}'
+            folder_name = f'/stress_test/{release}/{rc}'
+        else: 
+            testrun_name = f'{release}_{mode}_{kernel}_{stand}'
+            folder_name = f'/stress_test/{release}'
+
+        is_env_empty = False
+        headers = {"Authorization": "Bearer " + bearer_token}
+        jira_user_request_url = self.JIRA_URL + "/rest/api/2/user?username=" + assignee
+        jira_user_response = requests.get(jira_user_request_url, headers=headers)
+        jira_user_id = jira_user_response.json()["key"]
+
+        # Формируем строку в JSON формате с указанием проекта, имени прогона, списка тест-кейсов и задачей в DEVQA    
+        items = [f'{{"testCaseKey":"{case}", "environment":"{kernel}", "assignedTo":"{jira_user_id}"}}' for case in cases]
+        testrun_body = f'{{"projectKey":"{self.PROJECT_NAME}", "folder":"{folder_name}", "name":"{testrun_name}", "items":[{",".join(items)}]}}'
+        testrun_body = json.loads(testrun_body)
+
+        # Выполняем POST запрос на создание тестового прогона и проверяем ответ сервера
+        # (ожидается HTTP-код 201 - успешно создано)
+        request_url = self.JIRA_URL + "/rest/atm/1.0/testrun/"
+        print("Sending request to create testrun and link it to jira task.")
+        print("Request_URL: " + str(request_url))
+        #print("Testrun_body: " + str(testrun_body))
+        response = requests.post(request_url, json=testrun_body, headers=headers)
+        environment_text = 'was not found for field environment on project BT'
+        if response.status_code == 400 and str(response.json()).find(environment_text, 0, len(str(response.json()))) != -1:
+            print(f'Kernel {str(kernel)} was not found for field environment on project BT')
+            is_env_empty = True       
+            items = [f'{{"testCaseKey":"{case}", "assignedTo":"{jira_user_id}"}}' for case in cases]
+            testrun_body = f'{{"projectKey":"{self.PROJECT_NAME}", "folder":"{folder_name}", "name":"{testrun_name}", "items":[{",".join(items)}]}}'
+            testrun_body = json.loads(testrun_body)
+            request_url = self.JIRA_URL + "/rest/atm/1.0/testrun/"
+
+            print("Trying to create testrun with empty environment field.")
+            print("Request_URL: " + str(request_url))
+            #print("Testrun_body: " + str(testrun_body))
+            response = requests.post(request_url, json=testrun_body, headers=headers)
+        if response.status_code == 201:
+            testrun_url = self.JIRA_URL + "/secure/Tests.jspa#/testCycle/" + response.json().get('key')
+            if is_env_empty:
+                result = "Успешно создан тестовый прогон " + testrun_url 
+            else:
+                result = "Успешно создан тестовый прогон " + testrun_url 
+            print(result)
+        else:
+            print("Failed to create testrun. Response: " + str(response.status_code))
+            print(response.text)
+
+
+
+    def creater(self):
+        for kernel in self.use_kernels:
+            for stand in self.stands:
+                for mode in self.modes:
+                    if mode == 'orel' and stand != 'stand2':
+                        self.create_test_run(bearer_token=self.__jira_token, 
+                                             kernel=kernel, 
+                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_orel],
+                                             assignee=self.__username,
+                                             release=self.release,
+                                             mode=mode,
+                                             stand=stand,
+                                             rc=self.rc)
+                    elif mode == 'orel' and stand == 'stand2':
+                        self.create_test_run(bearer_token=self.__jira_token, 
+                                             kernel=kernel, 
+                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_orel_stand2],
+                                             assignee=self.__username,
+                                             release=self.release,
+                                             mode=mode,
+                                             stand=stand,
+                                             rc=self.rc)
+                    elif mode == 'smolensk' and stand != 'stand2':
+                        self.create_test_run(bearer_token=self.__jira_token, 
+                                             kernel=kernel, 
+                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_smolensk],
+                                             assignee=self.__username,
+                                             release=self.release,
+                                             mode=mode,
+                                             stand=stand,
+                                             rc=self.rc)
+                    elif mode == 'smolensk' and stand == 'stand2':
+                        self.create_test_run(bearer_token=self.__jira_token, 
+                                             kernel=kernel, 
+                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_smolensk_stand2],
+                                             assignee=self.__username,
+                                             release=self.release,
+                                             mode=mode,
+                                             stand=stand,
+                                             rc=self.rc)
+                    
+
+

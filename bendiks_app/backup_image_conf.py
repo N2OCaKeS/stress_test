@@ -320,3 +320,36 @@ main_stands = ['stand1', 'stand2', 'stand3', 'stand4']
 mobile_stands = ['stand1', 'stand2', 'stand3', 'stand4']
 brest_stands = ['stand10', 'stand11', 'stand12']
 
+
+
+
+#################################################################################################################################################
+#Перечень настроек, используемых для создания тестовых прогонов
+#################################################################################################################################################
+testing17_pkg = 'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages'
+testing17_vers = 'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/Release'
+#use_kernels = ['5.10.190-1-generic', '5.15.0-83-generic', '5.15.0-83-lowlatency', '6.1.50-1-generic']
+testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'syslog-ng', 'unix']
+testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
+testcase_smolensk = ['postgresql-sm', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
+testcase_smolensk_stand2 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
+test_run_stands = [f'stand{x}' for x in range(1, 5, 1)]
+test_run_modes = ['orel', 'smolensk']
+tests_case_zefir_key = {
+    'postgresql':'BT-T7555',
+    'postgresql-aud-off':'BT-T9169',
+    'postgresql-sm':'BT-T9106',
+    'EXT4':'BT-T7562',
+    'EXT4 parsec':'BT-T8822',
+    'NTFS':'BT-T7564',
+    'XFS':'BT-T8069',
+    'XFS parsec':'BT-T9488',
+    'unix':'BT-T8737',
+    'RAM-overflow':'BT-T9170',
+    'SD-overflow':'BT-T9172',
+    'auditd-f':'BT-T8215',
+    'auditd-p':'BT-T8213',
+    'auditd-u':'BT-T8214',
+    'syslog-ng':'BT-T8119'
+}
+

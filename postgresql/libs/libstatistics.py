@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import argparse
 import numpy as np
 import pandas as pd
@@ -479,6 +480,7 @@ class PSQLStatistics2:
             os.mkdir("statistics")
         if not "statistics_rc" in os.listdir():
             os.mkdir("statistics_rc")
+            time.sleep(1)
 
 
     @staticmethod
@@ -501,10 +503,13 @@ class PSQLStatistics2:
             Получаем дочерние страницы 1.7: 1.7.1; 1.7.2; 1.7.n...
         """
         children_main_page = self.CP.get_child_page_as_html(id="156339086", by_title=False)
+        # print(children_main_page)
         """
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
         """
         required_pages, required_pages_rc = [], []
+        test_dict_rc = {}
+
         """
             Проходим по всем версиям
         """
@@ -512,33 +517,26 @@ class PSQLStatistics2:
             """
                 Получаем ID страниц PostgreSQL, Системные службы, Файловые системы в каждой конкретной версии
             """
+            try:
+                name_page = self.CP.get_page_as_html(id=id_children_from_main_page).get("title").split(" ⬝ ")[1]
+                # print(name_page)
+            except IndexError:
+                pass
+            
             astra_version_child_pages = self.CP.get_child_page_as_html(id=id_children_from_main_page, by_title=False)
+            temp_arr = []
+            # print(astra_version_child_pages)
+
+            # test_dict_rc[name_page] = astra_version_child_pages
             """
                 Проходим по каждому полученному ID
             """
             for page_id in astra_version_child_pages:
+                # print("PAGE_ID", page_id)
                 """
                     Получаем информацию о странице
                 """
                 page = self.CP.get_page_as_html(id=page_id)
-                #### ------ TESTING------###
-                try:
-                    title = page.get("title").split(" ⬝ ")
-                    rc_version = int(title[1].split(".")[-1])
-                    if rc_version:
-                        # print(page.get('title'))
-                        child_rc_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
-                        # print(child_rc_pages)
-                        for child_rc_page in child_rc_pages:
-                            rc_page = self.CP.get_page_as_html(id=child_rc_page)
-                            if "PostgreSQL" in rc_page.get("title") and self.CP.get_child_page_as_html(id=child_rc_page):
-                                # print("true")
-                                required_pages_rc.append(child_rc_page)
-                except IndexError:
-                    pass
-                except ValueError:
-                    continue
-                ### ------ TESTING------###
                 """
                     Проверяем есть ли в заголовке PostreSQL и имеются ли дочерние страницы
                 """
@@ -548,19 +546,83 @@ class PSQLStatistics2:
                     pass
                 if "Файловые системы" in page.get("title") and self.CP.get_child_page_as_html(id=page_id):
                     pass
+                
+                """
+                    Статистика для RC
+                """
+                try:
+                    name_child_page = page.get("title").split(" ⬝ ")[1]
+                except IndexError:
+                    pass
+                if "1.7" in name_child_page or "1.8" in name_child_page:
+                    hz_kak_nazvat_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                    if hz_kak_nazvat_pages:
+                        for item_page in hz_kak_nazvat_pages:
+                            if "PostgreSQL" in self.CP.get_page_as_html(id=item_page).get("title"):
+                                temp_arr.append(item_page)
 
-        return required_pages, required_pages_rc
+            test_dict_rc[name_page] = temp_arr
+
+              
+                # if not "1.7.5" in page.get("title"):
+                #     continue
+                
+                # pre_title = page.get("title").split(" ⬝ ")
+                # try:
+                #     if not "UU" in pre_title[1]:
+                #         rc_version = int(pre_title[1].split(".")[-1])
+                #     else:
+                #         rc_version = int(pre_title[1].split(".")[3])
+                # except IndexError:
+                #     pass
+                # except ValueError:
+                #     rc_version = None
+                # if rc_version:
+                #     rc_children = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                #     print(pre_title, rc_version, rc_children)
+                #     for item in rc_children:
+                #         lst_page_rc = self.CP.get_child_page_as_html(id=item)
+                #         print(lst_page_rc)                        
+                        
+
+
+                # #### ------ TESTING------###
+                # try:
+                #     title = page.get("title").split(" ⬝ ")
+                #     print(title)
+                #     if "1.7" in title[0]:
+                #         pass ### Это страницы без DEBIAN и RHEL
+                #     if not "UU" in title[1]:
+                #         rc_version = int(title[1].split(".")[3])
+                #     else:
+                #         rc_version = int(title[1].split(".")[-1])
+                #     if rc_version:
+                #         child_rc_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                #         for child_rc_page in child_rc_pages:
+                #             rc_page = self.CP.get_page_as_html(id=child_rc_page)
+                #             if "PostgreSQL" in rc_page.get("title") and self.CP.get_child_page_as_html(id=child_rc_page):
+                #                 required_pages_rc.append(child_rc_page)          
+                # except IndexError:
+                #     pass
+                # except ValueError:
+                #     continue
+                
+                ### ------ TESTING------###
+
+        return required_pages, test_dict_rc
 
     
-    def get_info_from_pages(self, pages, columns_df, rc=False):
-        if rc:
-            stat_dir = "statistics_rc"
+    def get_info_from_pages(self, pages, columns_df, rc=False, version_key=None):
+        if rc and version_key:
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
         else:
             stat_dir = "statistics"
 
         def collect_data(test_name="postgresql"):
             data_for_df = {
-
                 'stand1': {
                     "data": [],
                     "rating": []
@@ -577,7 +639,6 @@ class PSQLStatistics2:
                     "data": [],
                     "rating": []
                 }
-
             }  
             for id in pages:
                 """
@@ -1070,7 +1131,10 @@ class PSQLStatistics2:
         columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "PostgreSQL_11 rating", 'rating_2']
 
         # self.get_info_from_pages(pages=pages, columns_df=columns)
-        self.get_info_from_pages(pages=rc_pages, columns_df=columns, rc=True)
+        for key, value in rc_pages.items():
+            if value:
+                # print(value)
+                self.get_info_from_pages(pages=value, columns_df=columns, rc=True, version_key=key)
         # self.upload_statistics()
 
 

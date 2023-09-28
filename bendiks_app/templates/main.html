@@ -306,16 +306,16 @@
                   method: 'POST',
                   body: form_data
               })
-              .then(response => response.json())
+              .then(response => response.text())
               .then(data => {
                   document.getElementById('loading-spinner').style.display = 'none';
                   console.log('POST response:', data);
 
                   const container = document.querySelector('.container-fluid .card-body');
                   container.innerHTML = `
-                    <p class="card-text">${data.test_list}</p>
-                    <p class="card-text">${data.releas_list}</p>
-                    <p class="card-text">${data.kernel_list}</p>
+                    <p class="card-text">${test_list}</p>
+                    <p class="card-text">${releas_list}</p>
+                    <p class="card-text">${kernel_list}</p>
                   `;
 
                   form.reset();

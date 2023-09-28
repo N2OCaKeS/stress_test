@@ -90,6 +90,32 @@
             <p class="card-text">{{ kernel_list }}</p>
           </div>
         </div>
+
+        <script>
+          function updateBlock() {
+              // Получить новые данные
+              fetch('{{ main_url }}')
+                  .then(response => response.json())
+                  .then(data => {
+
+                      const container = document.querySelector('.container-fluid .card-body');
+                      container.innerHTML = `
+                      <p class="card-text">${data.test_list}</p>
+                      <p class="card-text">${data.releas_list}</p>
+                      <p class="card-text">${data.kernel_list}</p>
+                      `;
+                  })
+                  .catch((error) => {
+                      console.error('Error:', error);
+                  });
+          }
+      
+          // Вызовите функцию обновления при загрузке страницы
+          window.onload = updateBlock;
+        
+          // Или вызовите функцию обновления в любое время по желанию
+          // updateBlock();
+        </script>
   
         <style>
           .customAccordion .accordion-item .accordion-header {
@@ -310,14 +336,7 @@
               .then(data => {
                   document.getElementById('loading-spinner').style.display = 'none';
                   console.log('POST response:', data);
-
-                  const container = document.querySelector('.container-fluid .card-body');
-                  container.innerHTML = `
-                    <p class="card-text">${test_list}</p>
-                    <p class="card-text">${releas_list}</p>
-                    <p class="card-text">${kernel_list}</p>
-                  `;
-
+                  
                   form.reset();
                   $('.collapse').collapse('hide');
                   

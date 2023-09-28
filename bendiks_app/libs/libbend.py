@@ -450,3 +450,11 @@ def background_task_brest():
         [output_remote_load(str(stand)) for stand in stands]
         sleep(3)
 
+
+def update_settings_block():
+    test_list, releas_list, kernel_list = create_args('main')
+
+    return jsonify(test_list=test_list, 
+                   releas_list=releas_list, 
+                   kernel_list=kernel_list)
+

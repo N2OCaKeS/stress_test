@@ -20,6 +20,7 @@ from libs.libbend import (index_page,
                           background_task_main,
                           background_task_brest,
                           background_stat_storage_main,
+                          update_settings_block,
                           main_url,
                           mobile_url,
                           brest_url,
@@ -203,6 +204,10 @@ def ilo_console_caller(stand):
     icc = iLOConsoleCaller(stand_number=stand)
     icc.ilo_console_loader()
 
+
+@app.route('/update_block', methods=['GET', 'POST'])
+def update_block():
+    return update_settings_block()
 
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)

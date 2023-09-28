@@ -264,6 +264,10 @@ def run_command_on_stand(num):
 
         if path.isfile(f'conf/{prefix}_kernel_args.conf'):
             remove(f'conf/{prefix}_kernel_args.conf')
+        with open(f'conf/{prefix}_tests_args.conf', 'w') as w:
+            w.write('')
+        with open(f'conf/{prefix}_releas_args.conf', 'w') as w:
+            w.write('')
 
     elif command == 'ok':
         with open(f'conf/work_status_stand{num}.conf', 'w') as w:

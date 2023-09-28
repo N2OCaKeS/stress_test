@@ -467,6 +467,7 @@ class PSQLStatistics:
         self.get_info_from_pages(pages=pages, name_html="postresql")
         self.upload_statistics()
 
+SPACE = "DEVQA"
 
 class PSQLStatistics2:
     
@@ -648,7 +649,7 @@ class PSQLStatistics2:
                     """
                         Получаем конкретную страницу отчета
                     """
-                    src_html = self.CP.get_page_as_html(page_space="DEVQA", page_title=title)
+                    src_html = self.CP.get_page_as_html(page_space=SPACE, page_title=title)
                     data = src_html.get("body").get("view").get("value")
                     soup = BeautifulSoup(data, 'lxml')
                     temp_data = title.split("_")
@@ -666,7 +667,7 @@ class PSQLStatistics2:
                         """
                             Генерируем ссылку на отчет
                         """
-                        link = "https://life.astralinux.ru/display/DEVQA/" + title 
+                        link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
                         rating_with_link = f'<a href="{link}">{rating}</a>'
                         """
                             Записываем полученные данные для дальнейшего составления DataFrame
@@ -921,9 +922,20 @@ class PSQLStatistics2:
     """
         Создаем итоговую html страницу для life
     """
-    def upload_statistics(self, type_stat='PostgreSQL'):
+    def upload_statistics(self, type_stat='PostgreSQL', rc=None, version_key=None):
+        if rc and version_key:
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
+        if rc:
+            parent_page = version_key
+        else:
+            parent_page = "Статистика"
+        confluence_stat.create_confluence_page(page_space=SPACE, page_title=f"Статистика. {type_stat}", parent_page_title=parent_page)
 
         template_img = """ 
             <p>
@@ -946,10 +958,15 @@ class PSQLStatistics2:
 
         header_orel, header_smolensk, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], []
 
-        for file in sorted(os.listdir("statistics")):
+        if rc:
+            page_rc_title = version_key
+        else:
+            page_rc_title = ""
+        
+        for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file)
                 name_stand = file.split("_")[2].split(".")[0]
                 if file.startswith("postgresql-sm"):
@@ -965,7 +982,7 @@ class PSQLStatistics2:
                     header_orel.append(name_stand)
 
             if file.endswith("1.html"):
-                file_table = open(f'statistics/{file}', 'r')
+                file_table = open(f'{stat_dir}/{file}', 'r')
                 table = file_table.read()
                 file_table.close()
                 if file.startswith("postgresql-sm"):
@@ -978,7 +995,7 @@ class PSQLStatistics2:
                     table_with_data_list.append(table)
 
             if file.endswith("2.html"):
-                new_file_table = open(f'statistics/{file}', 'r')
+                new_file_table = open(f'{stat_dir}/{file}', 'r')
                 mat_stat_table = new_file_table.read()
                 new_file_table.close()
                 if file.startswith("postgresql-sm"):
@@ -991,31 +1008,31 @@ class PSQLStatistics2:
                     table_with_mat_stat_list.append(mat_stat_table)
 
             if file.endswith("5.10.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                 img_png=file))
             if file.endswith("5.15-gen.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                 img_png=file))
             if file.endswith("5.15-ll.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                 img_png=file))
             if file.endswith("kernel.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                       img_png=file))
             
             if file.endswith("summ.jpg"):
                 name_stand = file.split("_")[2]
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 if file.startswith("Orel-Smolensk"):
-                    summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"), 
+                    summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
                                                                 img_png=file))
                     header_orel_vs_smolensk.append(name_stand)
                 elif file.startswith("Orel-Orel-audit-off"):
-                    summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"), 
+                    summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
                                                                            img_png=file))
                     header_aud_on_vs_off.append(name_stand)
                     # print(header_aud_on_vs_off)
@@ -1119,7 +1136,7 @@ class PSQLStatistics2:
 
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", page_body=html_page)
 
     def update_statistics(self):
         pages, rc_pages = self.get_list_required_pages()
@@ -1130,7 +1147,7 @@ class PSQLStatistics2:
         for key, value in rc_pages.items():
             if value:
                 self.get_info_from_pages(pages=value, columns_df=columns, rc=True, version_key=key)
-        # self.upload_statistics()
+        self.upload_statistics()
 
 
 if __name__ == '__main__':

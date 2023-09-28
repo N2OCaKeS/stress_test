@@ -224,7 +224,7 @@
                   <div id="collapseRC" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
                     <div class="accordion-body" style="text-align: left;">
                       {% for value in rc %}
-                        <input type="checkbox" id="{{ value }}" name="rc" value="{{ value }}">
+                        <input type="radio" id="{{ value }}" name="rc" value="{{ value }}">
                         <label for="{{ value }}">{{ value }}</label><br>                        
                       {% endfor %}
                     </div>
@@ -232,14 +232,14 @@
                 </div>
                 <div class="accordion-item">
                   <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleases">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleaseslist">
                       Доступные Релизы
                     </button>
                   </h2>
-                  <div id="collapseReleases" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                  <div id="collapseReleaseslist" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
                     <div class="accordion-body" style="text-align: left;">
-                      {% for value in releases %}
-                        <input type="radio" id="{{ value }}" name="releas" value="{{ value }}">
+                      {% for value in releaseslist %}
+                        <input type="radio" id="{{ value }}" name="releaseslist" value="{{ value }}">
                         <label for="{{ value }}">{{ value }}</label><br>                        
                       {% endfor %}
                     </div>

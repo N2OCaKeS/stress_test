@@ -462,8 +462,8 @@ class ZefirTestRun:
         self.__username = tokens['username']
         self.__jira_token = tokens['jira_token']
         self.PROJECT_NAME = "BT"
-        self.release = release
-        self.rc = rc
+        self.release = ''.join(release)
+        self.rc = ''.join(rc)
         self.kernel_vers = kernel_vers
         self.kernel_repo = kernel_repo
         self.use_kernels = use_kernels

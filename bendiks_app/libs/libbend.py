@@ -25,7 +25,8 @@ from backup_image_conf import (psyc,
                                mobile_stands,
                                brest_stands,
                                test_run_stands,
-                               rc_list)
+                               rc_list,
+                               releases_list)
 from time import sleep
 from libs.zefir import ZefirTestRun
 
@@ -205,6 +206,7 @@ def info_collector(page, ajax=None):
                                 options=options[page],
                                 stands=test_run_stands,
                                 rc=rc_list, 
+                                releaseslist=releases_list,
                                 test_list=test_list,
                                 releas_list=releas_list,
                                 kernel_list=kernel_list, 

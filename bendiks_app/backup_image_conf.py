@@ -329,6 +329,7 @@ brest_stands = ['stand10', 'stand11', 'stand12']
 testing17_pkg = 'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages'
 testing17_vers = 'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/Release'
 rc_list = ['1.7.5.4', '1.7.5.5']
+releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5']
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'syslog-ng', 'unix']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
 testcase_smolensk = ['postgresql-sm', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']

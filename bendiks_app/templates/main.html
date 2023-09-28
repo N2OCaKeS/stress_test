@@ -315,7 +315,8 @@
                   document.getElementById('loading-spinner').style.display = 'none';
                   console.log('POST response:', data);
 
-                  $("#accordionBlock2").hide().show();
+                  form.reset();
+                  $('.collapse').collapse('hide');
                   
               })
               .catch((error) => {

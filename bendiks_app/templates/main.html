@@ -163,17 +163,15 @@
                 </div>
               </div>
               <style>
-                #mainSaveButton
-                 {
+                .cst-btn-secondary {
                     background-color: #292d30; 
                     color: white; 
+                    border: 1px solid white;
                 }
-                #mainSaveButton
-                :hover {
+                .cst-btn-secondary:hover {
                     background-color: #ff7b00; 
                 }             
-                #mainSaveButton
-                :active {
+                .cst-btn-secondary:active {
                     background-color: #3e8e41; 
                 }
               </style>
@@ -280,7 +278,7 @@
                 .cst-btn-secondary {
                     background-color: #292d30; 
                     color: white; 
-                    border: 2px solid white;
+                    border: 1px solid white;
                 }
                 .cst-btn-secondary:hover {
                     background-color: #ff7b00; 
@@ -327,6 +325,9 @@
         <!-- <button id="toggleButton" onclick="toggleAccordion()">Toggle Accordion</button> -->
         <button id="toggleButton" onclick="toggleAccordion()" style="padding: 0; border: none; background: none; float: left;">
           <img src="http://10.177.103.10:8000/static/settings.gif" alt="Settings" style="width: 100%; height: 100%;">
+        </button>
+        <button id="anotherButton" style="padding: 0; border: none; background: none; float: left;">
+          <img src="http://path_to_your_image_source" alt="Another Button" style="width: 100%; height: 100%;">
         </button>
       </div>
       

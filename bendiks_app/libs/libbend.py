@@ -155,7 +155,7 @@ def info_collector(page, ajax=None):
         if tr_stands:
             rc_part = request.form.getlist('rc')
             releases_part = request.form.getlist('releaseslist')
-            kernel_part = request.form.get('kernelslist')
+            kernel_part = request.form.getlist('kernelslist')
             if rc_part:
                 test_run = ZefirTestRun(use_kernels=kernel_part,
                                     stands=tr_stands,

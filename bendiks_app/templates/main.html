@@ -305,6 +305,7 @@
               event.preventDefault();  
               document.getElementById('loading-spinner').style.display = 'block';  
               var form_data = new FormData(this); 
+              var form = this;
               fetch('{{ main_url }}', {
                   method: 'POST',
                   body: form_data
@@ -313,6 +314,8 @@
               .then(data => {
                   document.getElementById('loading-spinner').style.display = 'none';
                   console.log('POST response:', data);
+
+                  form.reset();
                   
               })
               .catch((error) => {

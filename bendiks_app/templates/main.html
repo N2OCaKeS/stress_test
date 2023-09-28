@@ -93,7 +93,6 @@
 
         <script>
           function updateBlock() {
-              // Получить новые данные
               fetch('{{ main_url }}')
                   .then(response => response.json())
                   .then(data => {
@@ -109,12 +108,7 @@
                       console.error('Error:', error);
                   });
           }
-      
-          // Вызовите функцию обновления при загрузке страницы
           window.onload = updateBlock;
-        
-          // Или вызовите функцию обновления в любое время по желанию
-          // updateBlock();
         </script>
   
         <style>
@@ -339,6 +333,8 @@
                   
                   form.reset();
                   $('.collapse').collapse('hide');
+
+                  updateBlock();
                   
               })
               .catch((error) => {

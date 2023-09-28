@@ -154,8 +154,8 @@ def info_collector(page, ajax=None):
         tr_stands = request.form.getlist('stands')
         if tr_stands:
             rc_part = request.form.getlist('rc')
-            releases_part = request.form.getlist('releas')
-            kernel_part = request.form.get('kernel')
+            releases_part = request.form.getlist('releaseslist')
+            kernel_part = request.form.get('kernelslist')
             if rc_part:
                 test_run = ZefirTestRun(use_kernels=kernel_part,
                                     stands=tr_stands,
@@ -205,6 +205,7 @@ def info_collector(page, ajax=None):
         return render_template(f'{page}.html', 
                                 options=options[page],
                                 stands=test_run_stands,
+                                kernelslist=kernels,
                                 rc=rc_list, 
                                 releaseslist=releases_list,
                                 test_list=test_list,

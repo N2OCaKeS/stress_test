@@ -266,10 +266,10 @@
                       Доступные ядра
                     </button>
                   </h2>
-                  <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                  <div id="collapseKernelslist" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
                     <div class="accordion-body" style="text-align: left;">
-                      {% for value in kernels %}
-                        <input type="checkbox" id="{{ value }}" name="kernel" value="{{ value }}">
+                      {% for value in kernelslist %}
+                        <input type="checkbox" id="{{ value }}" name="kernelslist" value="{{ value }}">
                         <label for="{{ value }}">{{ value }}</label><br>                        
                       {% endfor %}
                     </div>

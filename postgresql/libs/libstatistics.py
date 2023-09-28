@@ -517,6 +517,7 @@ class PSQLStatistics2:
                 Получаем ID страниц PostgreSQL, Системные службы, Файловые системы в каждой конкретной версии
             """
             try:
+                name_page_original = self.CP.get_page_as_html(id=id_children_from_main_page).get("title")
                 name_page = self.CP.get_page_as_html(id=id_children_from_main_page).get("title").split(" ⬝ ")[1]
                 # print(name_page)
             except IndexError:
@@ -560,7 +561,7 @@ class PSQLStatistics2:
                             if "PostgreSQL" in self.CP.get_page_as_html(id=item_page).get("title"):
                                 temp_arr.append(item_page)
 
-            test_dict_rc[name_page] = temp_arr
+            test_dict_rc[name_page_original] = temp_arr
 
               
                 # if not "1.7.5" in page.get("title"):
@@ -922,8 +923,9 @@ class PSQLStatistics2:
     """
         Создаем итоговую html страницу для life
     """
-    def upload_statistics(self, type_stat='PostgreSQL', rc=None, version_key=None):
-        if rc and version_key:
+    def upload_statistics(self, type_stat='PostgreSQL', rc=None, pp_title=None):
+        if rc and pp_title:
+            version_key = pp_title.split(" ⬝ ")[1]
             main_stat_dir = 'statistics_rc'
             stat_dir = f"{main_stat_dir}/{version_key}"
             if not version_key in os.listdir(main_stat_dir):
@@ -932,10 +934,13 @@ class PSQLStatistics2:
             stat_dir = "statistics"
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
         if rc:
-            parent_page = version_key
+            parent_page = pp_title
+            page_rc_title = version_key
         else:
             parent_page = "Статистика"
-        confluence_stat.create_confluence_page(page_space=SPACE, page_title=f"Статистика. {type_stat}", parent_page_title=parent_page)
+            page_rc_title = ""
+        
+        confluence_stat.create_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", parent_page_title=parent_page)
 
         template_img = """ 
             <p>
@@ -957,11 +962,6 @@ class PSQLStatistics2:
         summ_graphs_list, summ_graphs_list_aud_on_off = [], []
 
         header_orel, header_smolensk, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], []
-
-        if rc:
-            page_rc_title = version_key
-        else:
-            page_rc_title = ""
         
         for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
@@ -1092,43 +1092,45 @@ class PSQLStatistics2:
             html_list.append(image_list[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
-            
-            html_list.append(kernel_image_list[0][ind])
-            html_list.append(kernel_image_list[1][ind])
-            html_list.append(kernel_image_list[2][ind])
-
-        html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
-        for ind, item in enumerate(table_with_data_list_smolensk):
-            grade = self.get_grade(header_smolensk[ind])
-            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
-            html_list.append(images_list_smolensk[ind])
-            html_list.append(item)
-            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
+            if not rc:
+                html_list.append(kernel_image_list[0][ind])
+                html_list.append(kernel_image_list[1][ind])
+                html_list.append(kernel_image_list[2][ind])
         
-        html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
-        for ind, item in enumerate(summ_graphs_list):
-            grade = self.get_grade(header_orel_vs_smolensk[ind])
-            nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
-            html_list.append(item)
+        if not rc:
 
-        html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
-        for ind, item in enumerate(table_with_data_list_aud_off):
-            grade = self.get_grade(header_aud_off[ind])
-            nav_lst_aud_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
-            html_list.append(image_list_aud_off[ind])
-            html_list.append(item)
-            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
+            html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
+            for ind, item in enumerate(table_with_data_list_smolensk):
+                grade = self.get_grade(header_smolensk[ind])
+                nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
+                html_list.append(images_list_smolensk[ind])
+                html_list.append(item)
+                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
+            
+            html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
+            for ind, item in enumerate(summ_graphs_list):
+                grade = self.get_grade(header_orel_vs_smolensk[ind])
+                nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
+                html_list.append(item)
 
-        html_list.append('<h1 style="text-align: center;">Orel vs Orel audit off</h1>')
-        for ind, item in enumerate(summ_graphs_list_aud_on_off):
-            grade = self.get_grade(header_aud_on_vs_off[ind])
-            # print(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
-            nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
-            html_list.append(item)
+            html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
+            for ind, item in enumerate(table_with_data_list_aud_off):
+                grade = self.get_grade(header_aud_off[ind])
+                nav_lst_aud_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
+                html_list.append(image_list_aud_off[ind])
+                html_list.append(item)
+                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
+
+            html_list.append('<h1 style="text-align: center;">Orel vs Orel audit off</h1>')
+            for ind, item in enumerate(summ_graphs_list_aud_on_off):
+                grade = self.get_grade(header_aud_on_vs_off[ind])
+                # print(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
+                nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
+                html_list.append(item)
 
         nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
 
@@ -1146,8 +1148,11 @@ class PSQLStatistics2:
         self.get_info_from_pages(pages=pages, columns_df=columns)
         for key, value in rc_pages.items():
             if value:
-                self.get_info_from_pages(pages=value, columns_df=columns, rc=True, version_key=key)
+                self.get_info_from_pages(pages=value, columns_df=columns, rc=True, version_key=key.split(" ⬝ ")[1])
         self.upload_statistics()
+        for key, value in rc_pages.items():
+            if value:
+                self.upload_statistics(rc=True, pp_title=key)
 
 
 if __name__ == '__main__':

@@ -21,6 +21,7 @@ from libs.libbend import (index_page,
                           background_task_brest,
                           background_stat_storage_main,
                           update_settings_block,
+                          get_kernels_from_rc,
                           main_url,
                           mobile_url,
                           brest_url,
@@ -210,7 +211,7 @@ def update_block(part):
     if part == 'components':
         return update_settings_block()
     elif part == 'kernels':
-        return update_settings_block()
+        return get_kernels_from_rc()
 
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)

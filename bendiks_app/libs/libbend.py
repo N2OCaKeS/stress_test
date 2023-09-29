@@ -456,9 +456,17 @@ def background_task_brest():
 
 
 def update_settings_block():
-    test_list, releas_list, kernel_list = create_args('main')
 
+    test_list, releas_list, kernel_list = create_args('main')
     return jsonify(test_list=test_list, 
                    releas_list=releas_list, 
                    kernel_list=kernel_list)
 
+
+def get_kernels_from_rc():
+
+    get_kernels = ZefirTestRun()
+    version, kernels = get_kernels.get_kernels_from_repository()
+    return jsonify(test_list=f'Version: {version}', 
+                   releas_list=f'Kernels: {" ".join(kernels)}', 
+                   kernel_list='')

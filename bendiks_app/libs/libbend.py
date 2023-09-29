@@ -175,8 +175,6 @@ def info_collector(page, ajax=None):
             kernel = request.form.get('kernel')
             with open(f'conf/{page}_kernel_args.conf', 'w') as w:
                 w.write(str(kernel))
-            if kernel == 'None':
-                kernel = 'Ядро не выбрано'
 
             releas = request.form.getlist('releas')
             with open(f'conf/{page}_releas_args.conf', 'w') as w:
@@ -258,7 +256,7 @@ def run_command_on_stand(num):
                 process = subprocess.Popen(command, stdout=cpu_ram_output, stderr=cpu_ram_output, shell=True, text=True, preexec_fn=setsid)
             process_list.append(process)
 
-        if kernel != 'None' or kernel != 'Ядро не выбрано':
+        if kernel != 'None':
             process_manager = Process(target=run_command_and_log, args=(command_to_run_kernel,))
         else:
             process_manager = Process(target=run_command_and_log, args=(command_to_run,))
@@ -299,9 +297,13 @@ def create_args(page):
             test_list = str(r.read())
     with open(f'conf/{page}_releas_args.conf', 'r') as r:
             releas_list = str(r.read())
+            if releas_list == '[]':
+                releas_list = 'Релиз не выбран'
     try:
         with open(f'conf/{page}_kernel_args.conf', 'r') as r:
                 kernel_list = str(r.read())
+                if kernel_list == 'None':
+                    kernel_list = 'Ядро не выбрано'
     except FileNotFoundError:
         kernel_list = 'Ядро не выбрано'
     

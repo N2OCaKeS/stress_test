@@ -175,7 +175,7 @@ def info_collector(page, ajax=None):
             kernel = request.form.get('kernel')
             with open(f'conf/{page}_kernel_args.conf', 'w') as w:
                 w.write(str(kernel))
-            if not kernel:
+            if kernel == 'None':
                 kernel = 'Ядро не выбрано'
 
             releas = request.form.getlist('releas')
@@ -258,7 +258,7 @@ def run_command_on_stand(num):
                 process = subprocess.Popen(command, stdout=cpu_ram_output, stderr=cpu_ram_output, shell=True, text=True, preexec_fn=setsid)
             process_list.append(process)
 
-        if kernel != 'None':
+        if kernel != 'None' or kernel != 'Ядро не выбрано':
             process_manager = Process(target=run_command_and_log, args=(command_to_run_kernel,))
         else:
             process_manager = Process(target=run_command_and_log, args=(command_to_run,))

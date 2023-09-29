@@ -467,6 +467,6 @@ def get_kernels_from_rc():
 
     get_kernels = ZefirTestRun()
     version, kernels = get_kernels.get_kernels_from_repository()
-    return jsonify(test_list=f'Version: {version}', 
-                   releas_list=f'Kernels: {" ".join(kernels)}', 
+    return jsonify(test_list=version, 
+                   releas_list=f'''Kernels: {" ".join(kernels).replace(" ", "', '")}''', 
                    kernel_list='')

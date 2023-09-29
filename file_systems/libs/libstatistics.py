@@ -145,24 +145,24 @@ class FileSystemStatistics:
                 """
                 page = self.CP.get_page_as_html(id=page_id)
 
-                #### ------ TESTING------###
-                try:
-                    title = page.get("title").split(" ⬝ ")
-                    rc_version = int(title[1].split(".")[-1])
-                    if rc_version:
-                        # print(page.get('title'))
-                        child_rc_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
-                        # print(child_rc_pages)
-                        for child_rc_page in child_rc_pages:
-                            rc_page = self.CP.get_page_as_html(id=child_rc_page)
-                            if "Файловые системы" in rc_page.get("title") and self.CP.get_child_page_as_html(id=child_rc_page):
-                                # print("true")
-                                required_pages_rc.append(child_rc_page)
-                except IndexError:
-                    pass
-                except ValueError:
-                    continue
-                ### ------ TESTING------###
+                # #### ------ TESTING------###
+                # try:
+                #     title = page.get("title").split(" ⬝ ")
+                #     rc_version = int(title[1].split(".")[-1])
+                #     if rc_version:
+                #         # print(page.get('title'))
+                #         child_rc_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                #         # print(child_rc_pages)
+                #         for child_rc_page in child_rc_pages:
+                #             rc_page = self.CP.get_page_as_html(id=child_rc_page)
+                #             if "Файловые системы" in rc_page.get("title") and self.CP.get_child_page_as_html(id=child_rc_page):
+                #                 # print("true")
+                #                 required_pages_rc.append(child_rc_page)
+                # except IndexError:
+                #     pass
+                # except ValueError:
+                #     continue
+                # ### ------ TESTING------###
                 """
                     Проверяем есть ли в заголовке Файловые системы и имеются ли дочерние страницы
                 """
@@ -510,7 +510,7 @@ class FileSystemStatistics:
     """
     def upload_statistics(self, type_stat='PostgreSQL'):
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
+        confluence_stat.create_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
 
          ### TODO изменить пространство и parent_page_title
 
@@ -533,8 +533,8 @@ class FileSystemStatistics:
             part_header = file.split("_")
             if file.endswith("_1.png"):
                 # part_header = file.split("_")
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                     img_png=file))
                 if part_header[2] == "parsec":
                     headers.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}</b></h1>")
@@ -544,8 +544,8 @@ class FileSystemStatistics:
                     headers_for_content.append(f"{part_header[1]}_{part_header[2]}")
                 
             if file.endswith("_a.png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                     img_png=file))
                 
                 # part_header = file.split("_")
@@ -555,8 +555,8 @@ class FileSystemStatistics:
             if file.endswith(".png"):
                 if "EXT4_and_XFS" in file:
                     
-                    confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                    img_lst_comparison_ext4_xfs.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                    confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
+                    img_lst_comparison_ext4_xfs.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
                                                     img_png=file))
                     # print(part_header)
                     headers3.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4].replace('.png', '')}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4].replace('.png', '')}</b></h1>")
@@ -634,7 +634,7 @@ class FileSystemStatistics:
 
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", page_body=html_page)
 
 
     def update_statistics(self):

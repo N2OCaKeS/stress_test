@@ -175,6 +175,8 @@ def info_collector(page, ajax=None):
             kernel = request.form.get('kernel')
             with open(f'conf/{page}_kernel_args.conf', 'w') as w:
                 w.write(str(kernel))
+            if not kernel:
+                kernel = 'Ядро не выбрано'
 
             releas = request.form.getlist('releas')
             with open(f'conf/{page}_releas_args.conf', 'w') as w:
@@ -301,7 +303,7 @@ def create_args(page):
         with open(f'conf/{page}_kernel_args.conf', 'r') as r:
                 kernel_list = str(r.read())
     except FileNotFoundError:
-        kernel_list = 'None'
+        kernel_list = 'Ядро не выбрано'
     
     return test_list, releas_list, kernel_list
 

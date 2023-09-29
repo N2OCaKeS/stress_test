@@ -868,7 +868,9 @@ class PSQLStatistics2:
         
         def create_summary_graph(merged_df, legend):
             for df in merged_df:
-                shcala_x = [x for x in range(len(df['Релиз']))]
+                bar_width = 0.3
+                # shcala_x = [x for x in range(len(df['Релиз']))]
+                
                 fig, ax = plt.subplots(figsize=(16, 9))
                 grade = self.get_grade(df['Стенд'].mode()[0])
                 ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL {legend[0]}/{legend[1]}.\n{grade}_{df['Стенд'].mode()[0]}")
@@ -876,23 +878,31 @@ class PSQLStatistics2:
                 ax.set_ylabel("Значение рейтинга")
                 ax.set_ylim([0, max(df['rating_2_x'].fillna(0)) + max(df['rating_2_x'].fillna(0)) * 0.2])
                 df['version'] = df['Релиз'] + "_" + df['Ядро']
-                ax.bar(df['version'], df['rating_2_x'], color='#88c1f2')
-                ax.bar(df['version'], df['rating_2_y'], color='#ea5c76', alpha=0.9, width=0.7)
-                plt.xticks(rotation=20, horizontalalignment='right')
+                shcala_x = np.array([x for x in range(len(df['Релиз']))])
+                
+                # shcala_x = np.array([x for x in range(1, len(df['version']) + 1, 1)])
+                # print(shcala_x)
+                ax.bar(shcala_x - bar_width / 2, df['rating_2_x'], color='#88c1f2', alpha=0.8, width=bar_width)
+                ax.bar(shcala_x + bar_width / 2, df['rating_2_y'], color='#ea5c76', alpha=0.8, width=bar_width)
+                plt.xticks(ticks=shcala_x, labels=df['version'], rotation=20, horizontalalignment='right')
+                # plt.gca().set_xticklabels(df['version'], rotation=20, horizontalalignment='right')
+                
                 for i, val in enumerate(df['rating_2_x']):
                     try:
                         val = int(val)
                     except ValueError:
                         pass
                     if val != 0:
-                        plt.text(i, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                        # plt.text(i, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                        plt.text(i - bar_width / 2, val * 0.5, val, rotation=90, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                 for i, val in enumerate(df['rating_2_y']):
                     try:
                         val = int(val)
                     except ValueError:
                         pass
                     if val != 0:
-                        plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                        # plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                         plt.text(i + bar_width / 2, val * 0.5, val, rotation=90, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                 ax.legend(legend)
                 plt.savefig(f"{stat_dir}/{legend[0]}-{legend[1]}_graph_{df['Стенд'].mode()[0]}_summ.jpg")
                 

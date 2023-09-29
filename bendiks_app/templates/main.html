@@ -55,7 +55,7 @@
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Список ядер</a>
     <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="">(RC) testing</a></li>
+      <li><a class="dropdown-item" href="" onclick="updateBlockKernels(); return false;">(RC) testing</a></li>
     </ul>
   </li>
   <li class="nav-item">
@@ -98,12 +98,38 @@
         </div>
 
         <script>
-          function updateBlock() {
-              fetch('/update_block')
+          function updateBlockKernels() {
+              fetch('/update_block_kernels')
                   .then(response => response.json())
                   .then(data => {
 
                       const container = document.querySelector('.container-fluid .card-body');
+                      const header = document.querySelector('.card-header');
+                      header.textContent = 'Список ядер в репозитории';
+
+                      container.innerHTML = `
+                      <p class="card-text">${data.test_list}</p>
+                      <p class="card-text">${data.releas_list}</p>
+                      <p class="card-text">${data.kernel_list}</p>
+                      `;
+                  })
+                  .catch((error) => {
+                      console.error('Error:', error);
+                  });
+          }
+          window.onload = updateBlockKernels;
+        </script>
+
+        <script>
+          function updateBlock() {
+              fetch('/update_block_components')
+                  .then(response => response.json())
+                  .then(data => {
+
+                      const container = document.querySelector('.container-fluid .card-body');
+                      const header = document.querySelector('.card-header');
+                      header.textContent = 'Список подготовленных компонентов';
+
                       container.innerHTML = `
                       <p class="card-text">${data.test_list}</p>
                       <p class="card-text">${data.releas_list}</p>

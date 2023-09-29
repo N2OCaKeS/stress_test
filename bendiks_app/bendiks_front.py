@@ -205,9 +205,12 @@ def ilo_console_caller(stand):
     icc.ilo_console_loader()
 
 
-@app.route('/update_block', methods=['GET', 'POST'])
-def update_block():
-    return update_settings_block()
+@app.route('/update_block_<part>', methods=['GET', 'POST'])
+def update_block(part):
+    if part == 'components':
+        return update_settings_block()
+    elif part == 'kernels':
+        pass
 
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)

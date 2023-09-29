@@ -266,11 +266,13 @@ class FileSystemStatistics:
             """
                 Метод будет удален в следующих версиях
             """
-            shcala_x = [x for x in range(1, len(shcala_txt) + 1, 1)]
+            bar_width = 0.3
+            # shcala_x = [x for x in range(1, len(shcala_txt) + 1, 1)]
+            shcala_x = np.array([x for x in range(1, len(shcala_txt) + 1, 1)])
             fig, ax = plt.subplots(figsize=(16, 9))
 
-            ax.bar(shcala_x, rating1, color='#88c1f2')
-            ax.bar(shcala_x, rating2, color='#ea5c76', alpha=0.9, width=0.7)
+            ax.bar(shcala_x - bar_width / 2, rating1, color='#88c1f2', alpha=0.8, width=bar_width)
+            ax.bar(shcala_x + bar_width / 2, rating2, color='#ea5c76', alpha=0.8, width=bar_width)
             if max(rating1) > max(rating2):
                 ax.set_ylim([0, max(rating1) + max(rating1) * 0.15])
             else:
@@ -285,14 +287,16 @@ class FileSystemStatistics:
                 except ValueError:
                     pass
                 if val != 0:
-                    plt.text(i + 1, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                    # plt.text(i + 1, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                    plt.text(i + 1 - bar_width / 2, val * 0.5, val, rotation=90, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             for i, val in enumerate(rating2):
                 try:
                     val = int(val)
                 except ValueError:
                     pass
                 if val != 0:
-                    plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                    # plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                    plt.text(i + 1 + bar_width / 2, val * 0.5, val, rotation=90, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             ax.legend(['EXT4', 'EXT4 with parsec'])
             fig.savefig(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{stand}_a.png")
 

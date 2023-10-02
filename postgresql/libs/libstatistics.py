@@ -911,17 +911,19 @@ class PSQLStatistics2:
         data_df_orel = collect_data(test_name="postgresql")
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="postgresql")
         create_graphs(data_for_df=data_df_orel, test_name="postgresql", temp_data_for_graph=tmp_data_for_gr)
+        
+            
+        data_df_smolensk = collect_data(test_name="postgresql-sm")
+        tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
+        create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
+
+        data_df_orel_audit_off = collect_data(test_name="postgresql-aud-off")
+        tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
+        create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
+
         if not rc:
             create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
             create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-            
-            data_df_smolensk = collect_data(test_name="postgresql-sm")
-            tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
-            create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
-
-            data_df_orel_audit_off = collect_data(test_name="postgresql-aud-off")
-            tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
-            create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
 
             summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
             create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
@@ -1068,7 +1070,7 @@ class PSQLStatistics2:
                     {list_orel}
                 </ul>
             </li>
-            <li><a href="#id-Статистика.PostgreSQL-Smolensk">Smolensk</a>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Smolensk">Smolensk</a>
                 <ul>
                     {list_smolensk}
                 </ul>
@@ -1078,7 +1080,7 @@ class PSQLStatistics2:
                     {list_orel_vs_smolensk}
                 </ul>
             </li>
-            <li><a href="#id-Статистика.PostgreSQL-Orelauditoff">Orel audit off</a>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orelauditoff">Orel audit off</a>
                 <ul>
                     {list_aud_off}
                 </ul>
@@ -1093,6 +1095,9 @@ class PSQLStatistics2:
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
         for item in lst_all_stands_stat_kernel:
+            """
+                TODO требуется доработка для RC 
+            """
             html_list.append(item)
         
         for ind, item in enumerate(table_with_data_list):
@@ -1107,32 +1112,33 @@ class PSQLStatistics2:
                 html_list.append(kernel_image_list[1][ind])
                 html_list.append(kernel_image_list[2][ind])
         
-        if not rc:
+        # if not rc:
 
-            html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
-            for ind, item in enumerate(table_with_data_list_smolensk):
-                grade = self.get_grade(header_smolensk[ind])
-                nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
-                html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
-                html_list.append(images_list_smolensk[ind])
-                html_list.append(item)
-                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
+        html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
+        for ind, item in enumerate(table_with_data_list_smolensk):
+            grade = self.get_grade(header_smolensk[ind])
+            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
+            html_list.append(images_list_smolensk[ind])
+            html_list.append(item)
+            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
             
+        html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
+        for ind, item in enumerate(table_with_data_list_aud_off):
+            grade = self.get_grade(header_aud_off[ind])
+            nav_lst_aud_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
+            html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
+            html_list.append(image_list_aud_off[ind])
+            html_list.append(item)
+            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
+
+        if not rc:
             html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
             for ind, item in enumerate(summ_graphs_list):
                 grade = self.get_grade(header_orel_vs_smolensk[ind])
                 nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
                 html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
                 html_list.append(item)
-
-            html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
-            for ind, item in enumerate(table_with_data_list_aud_off):
-                grade = self.get_grade(header_aud_off[ind])
-                nav_lst_aud_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
-                html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
-                html_list.append(image_list_aud_off[ind])
-                html_list.append(item)
-                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
 
             html_list.append('<h1 style="text-align: center;">Orel vs Orel audit off</h1>')
             for ind, item in enumerate(summ_graphs_list_aud_on_off):

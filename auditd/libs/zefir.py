@@ -11,6 +11,116 @@ import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
+from libs.libpublic import Public
+from libs.libstatistics import FileSystemStatistics
+from time import sleep, ctime
+from libs.libaub import response
+
+
+
+class UploaderZC(Public, FileSystemStatistics):
+
+    def __init__(self,
+                 folder_tree_id=None,
+                 test_cycle_name=None,
+                 test_case_name=None,
+                 basic_auth=None,
+                 test_cycle_version=None,
+                 token=None,
+                 username=None,
+                 conf_space=None,
+                 conf_parent_page=None,
+                 conf_new_page_name=None,
+                 grade_stand=None,
+                 package=None,
+                 test_set=None,
+                 public=False,
+                 statistics=False):
+
+        self.FTI = folder_tree_id
+        self.TCYC = test_cycle_name
+        self.TCAS = test_case_name
+        self.BA = basic_auth
+        self.TCV = test_cycle_version
+        self.CT = token
+        self.UN = username
+        self.CS = conf_space
+        self.CPP = conf_parent_page
+        self.CNPN = conf_new_page_name
+        self.GS = grade_stand
+        self.PKG = package
+        self.public = public
+        self.statistics = statistics
+        self.TS = test_set
+
+    def test_cycle_status_changer(self, status):
+
+        if self.public == True:
+            public = Public(username=self.UN,
+                            token=self.CT,
+                            conf_space=self.CS,
+                            conf_parent_page=self.CPP,
+                            conf_new_page_name=self.CNPN,
+                            grade_stand=self.GS,
+                            package=self.PKG,
+                            test_set=self.TS)
+            public.run_publish()
+
+        zefir = ZefirStatusAPI(folder_tree_id=self.FTI,
+                               test_cycle_name=self.TCYC,
+                               test_case_name=self.TCAS,
+                               basic_auth=self.BA)
+
+        if self.statistics == True:
+            statistics = FileSystemStatistics(username=self.UN, 
+                                              token=self.CT)
+            statistics.update_statistics()
+
+        if status == 'pass':
+            status_code = 91
+        elif status == 'fail':
+            status_code = 92
+        elif status == 'progress':
+            status_code = 90
+        zefir.upload_status(status_code)
+        zefir_table = ZefirResultTable(test_cycle_version=self.TCV,
+                                       token=self.CT,
+                                       basic_auth=self.BA,
+                                       username=self.UN)
+        zefir_table
+        return 0
+
+    def upload_test_cycle_status(self, zefir_status):
+        wait_time = 30 #Минут ожидания
+        requests_frequency = 180 #Периодичность обращений к jira в секундах 
+        status = 0
+        except_counter = 0
+        while status == 0:
+            jira, life = response()
+            try:
+                if jira == 200 and life == 200:
+                    if self.test_cycle_status_changer(zefir_status) == 0:
+                        status += 1
+                else: 
+                    with open('JIRA_ERROR.log', 'a') as err:
+                        err.write('start:\n')
+                        err.write(str(ctime()) + '\n')
+                        err.write(f'jira_status = {jira}\nlife_status = {life}')
+                        err.write('---------' * 25)
+                        err.write('\n\n')
+                    sleep(60)
+            except Exception as e:
+                with open('JIRA_ERROR.log', 'a') as err:
+                    err.write('start:\n')
+                    err.write(str(ctime()) + '\n')
+                    err.write(f'Type: {type(e).__name__}, Message: {str(e)}')
+                    err.write('---------' * 25)
+                    err.write('\n\n')
+                    except_counter += 1
+                    sleep(requests_frequency)
+                    if except_counter == wait_time * 60 / requests_frequency:
+                        err.write(f'Except count = {except_counter}, aborted')
+                        status += 1
 
 
 
@@ -287,10 +397,23 @@ class ZefirResultTable:
         self.__basic = basic_auth
         self.__pt_version = test_cycle_version
 
+        check_len_version = self.__pt_version.split('.')
+        if len(check_len_version) == 4 and check_len_version[3] != 'UU':
+            release_version = '.'.join(check_len_version[:3])
+            rc_version = self.__pt_version
+            filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"
+        elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
+            release_version = '.'.join(check_len_version[:5])
+            rc_version = self.__pt_version
+            filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"
+        else:
+            filter_url = f'%27%2Fstress_test%27,%27%2Fstress_test%2F{self.__pt_version}%27'
+
+
         #Делаем get запрос в jira
         matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                         period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.
-                        folderName+IN+(%27%2Fstress_test%27,%27%2Fstress_test%2F{self.__pt_version}%27)&traceabilityCustomTreeDisplayOption=
+                        folderName+IN+({filter_url})&traceabilityCustomTreeDisplayOption=
                         CONDENSED&traceabilityMatrixOption=COVERAGE_TEST_CASES&traceabilityReportOption=COVERAGE_TEST_CASES&traceability
                         TreeOption=COVERAGE_TEST_CASES
                         '''
@@ -367,7 +490,7 @@ class ZefirResultTable:
                             'file system benchmark. EXT4 parsec':'FS_EXT4_parsec', 'auditd benchmark. fileaud':'Auditd_fileaud',
                             'auditd benchmark. useraud':'Auditd_useraud', 'file system benchmark. OCFS2 parsec':'FS_OCFS2_parsec',
                             'postgresql benchmark smol':'PostgreSQL_smol', 'postgresql benchmark audit-off':'PSQL_audit-off',
-                            'storage drive overflow':'SD_overflow', 'ram overflow':'RAM_overflow'}
+                            'storage drive overflow':'SD_overflow', 'ram overflow':'RAM_overflow', 'file system benchmark. XFS parsec':'FS_XFS_parsec'}
         for k, v in testname_columns.items():
             self.new_tab.rename(columns={k:v}, inplace=True)
         for name in self.new_tab.columns:
@@ -421,20 +544,50 @@ class ZefirResultTable:
         #print(table)
 
 
-        def upload_page(space, title, name_page, body):
-            if not confluence.page_exists(space=space,
-                                        title=name_page):
-                confluence.create_page(space=space,
-                                    parent_id=confluence.get_page_id(space=space,
-                                                                        title=title),
-                                    title=name_page,
-                                    body=body)
-            else: confluence.update_page(page_id=confluence.get_page_id(space=space,
-                                                                        title=name_page),
-                                        title=name_page,
-                                        body=body)
+        def upload_page(space, 
+                        title, 
+                        name_page:str, 
+                        body):
+            
+            check_len_version = name_page.split('.')
+            if len(check_len_version) == 4 and check_len_version[3] != 'UU':
+                release_version = '.'.join(check_len_version[:3])
+                rc_version = self.__pt_version
+                if not confluence.page_exists(space=space, title=release_version):
+                    parent_id = confluence.get_page_id(space=space, title=title)
+                    confluence.create_page(space=space, parent_id=parent_id, title=release_version, body='')
+                    
+                if not confluence.page_exists(space=space, title=rc_version):
+                    parent_id = confluence.get_page_id(space=space, title=release_version)
+                    confluence.create_page(space=space, parent_id=parent_id, title=rc_version, body=body)
+                else: 
+                    page_id = confluence.get_page_id(space=space, title=rc_version)
+                    confluence.update_page(page_id=page_id, title=rc_version, body=body)
 
-        upload_page('DD', 'Состав тестового прогона', self.__pt_version, table)
+            elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
+                release_version = '.'.join(check_len_version[:5])
+                rc_version = self.__pt_version
+                if not confluence.page_exists(space=space, title=release_version):
+                    parent_id = confluence.get_page_id(space=space, title=title)
+                    confluence.create_page(space=space, parent_id=parent_id, title=release_version, body='')
+                    
+                if not confluence.page_exists(space=space, title=rc_version):
+                    parent_id = confluence.get_page_id(space=space, title=release_version)
+                    confluence.create_page(space=space, parent_id=parent_id, title=rc_version, body=body)
+                else: 
+                    page_id = confluence.get_page_id(space=space, title=rc_version)
+                    confluence.update_page(page_id=page_id, title=rc_version, body=body)
+
+            else:
+                if not confluence.page_exists(space=space, title=name_page):
+                    parent_id = confluence.get_page_id(space=space, title=title)
+                    confluence.create_page(space=space, parent_id=parent_id, title=name_page, body=body)
+                else: 
+                    page_id = confluence.get_page_id(space=space, title=name_page)
+                    confluence.update_page(page_id=page_id, title=name_page, body=body)
+                
+
+        upload_page('DEVQA', 'Состав тестового прогона', self.__pt_version, table)
 
         if path.isfile('res.html'):
             remove('res.html')

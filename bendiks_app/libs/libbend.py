@@ -429,7 +429,8 @@ def remote_storage_load(stand):
     except socket.timeout:
         pass
     finally:
-        conn.close()
+        if conn != None:
+            conn.close()
 
 
 def remote_sysstat_available(stand):

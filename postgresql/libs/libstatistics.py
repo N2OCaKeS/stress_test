@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import argparse
 import numpy as np
 import pandas as pd
@@ -190,7 +191,7 @@ class PSQLStatistics:
                 """
                     Получаем конкретную страницу отчета
                 """
-                src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
+                src_html = self.CP.get_page_as_html(page_space="DEVQA", page_title=title)
                 data = src_html.get("body").get("view").get("value")
                 soup = BeautifulSoup(data, 'lxml')
                 temp_data = title.split("_")
@@ -205,7 +206,7 @@ class PSQLStatistics:
                 """
                     Генерируем ссылку на отчет
                 """
-                link = "https://life.astralinux.ru/display/DD/" + title 
+                link = "https://life.astralinux.ru/display/DEVQA/" + title 
                 rating_with_link = f'<a href="{link}">{rating}</a>'
                 """
                     Записываем полученные данные для дальнейшего составления DataFrame
@@ -466,8 +467,7 @@ class PSQLStatistics:
         self.get_info_from_pages(pages=pages, name_html="postresql")
         self.upload_statistics()
 
-
-
+SPACE = "DEVQA"
 
 class PSQLStatistics2:
     
@@ -477,6 +477,9 @@ class PSQLStatistics2:
         self.CP = ConfluencePage(username=self.username, token=self.token)
         if not "statistics" in os.listdir():
             os.mkdir("statistics")
+        if not "statistics_rc" in os.listdir():
+            os.mkdir("statistics_rc")
+            time.sleep(1)
 
 
     @staticmethod
@@ -499,10 +502,13 @@ class PSQLStatistics2:
             Получаем дочерние страницы 1.7: 1.7.1; 1.7.2; 1.7.n...
         """
         children_main_page = self.CP.get_child_page_as_html(id="156339086", by_title=False)
+        # print(children_main_page)
         """
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
         """
-        required_pages = []
+        required_pages, required_pages_rc = [], []
+        test_dict_rc = {}
+
         """
             Проходим по всем версиям
         """
@@ -510,11 +516,23 @@ class PSQLStatistics2:
             """
                 Получаем ID страниц PostgreSQL, Системные службы, Файловые системы в каждой конкретной версии
             """
+            try:
+                name_page_original = self.CP.get_page_as_html(id=id_children_from_main_page).get("title")
+                name_page = self.CP.get_page_as_html(id=id_children_from_main_page).get("title").split(" ⬝ ")[1]
+                # print(name_page)
+            except IndexError:
+                pass
+            
             astra_version_child_pages = self.CP.get_child_page_as_html(id=id_children_from_main_page, by_title=False)
+            temp_arr = []
+            # print(astra_version_child_pages)
+
+            # test_dict_rc[name_page] = astra_version_child_pages
             """
                 Проходим по каждому полученному ID
             """
             for page_id in astra_version_child_pages:
+                # print("PAGE_ID", page_id)
                 """
                     Получаем информацию о странице
                 """
@@ -528,14 +546,83 @@ class PSQLStatistics2:
                     pass
                 if "Файловые системы" in page.get("title") and self.CP.get_child_page_as_html(id=page_id):
                     pass
+                
+                """
+                    Статистика для RC
+                """
+                try:
+                    name_child_page = page.get("title").split(" ⬝ ")[1]
+                except IndexError:
+                    pass
+                if "1.7" in name_child_page or "1.8" in name_child_page:
+                    hz_kak_nazvat_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                    if hz_kak_nazvat_pages:
+                        for item_page in hz_kak_nazvat_pages:
+                            if "PostgreSQL" in self.CP.get_page_as_html(id=item_page).get("title"):
+                                temp_arr.append(item_page)
 
-        return required_pages
+            test_dict_rc[name_page_original] = temp_arr
+
+              
+                # if not "1.7.5" in page.get("title"):
+                #     continue
+                
+                # pre_title = page.get("title").split(" ⬝ ")
+                # try:
+                #     if not "UU" in pre_title[1]:
+                #         rc_version = int(pre_title[1].split(".")[-1])
+                #     else:
+                #         rc_version = int(pre_title[1].split(".")[3])
+                # except IndexError:
+                #     pass
+                # except ValueError:
+                #     rc_version = None
+                # if rc_version:
+                #     rc_children = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                #     print(pre_title, rc_version, rc_children)
+                #     for item in rc_children:
+                #         lst_page_rc = self.CP.get_child_page_as_html(id=item)
+                #         print(lst_page_rc)                        
+                        
+
+
+                # #### ------ TESTING------###
+                # try:
+                #     title = page.get("title").split(" ⬝ ")
+                #     print(title)
+                #     if "1.7" in title[0]:
+                #         pass ### Это страницы без DEBIAN и RHEL
+                #     if not "UU" in title[1]:
+                #         rc_version = int(title[1].split(".")[3])
+                #     else:
+                #         rc_version = int(title[1].split(".")[-1])
+                #     if rc_version:
+                #         child_rc_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                #         for child_rc_page in child_rc_pages:
+                #             rc_page = self.CP.get_page_as_html(id=child_rc_page)
+                #             if "PostgreSQL" in rc_page.get("title") and self.CP.get_child_page_as_html(id=child_rc_page):
+                #                 required_pages_rc.append(child_rc_page)          
+                # except IndexError:
+                #     pass
+                # except ValueError:
+                #     continue
+                
+                ### ------ TESTING------###
+
+        return required_pages, test_dict_rc
 
     
-    def get_info_from_pages(self, pages, columns_df):
+    def get_info_from_pages(self, pages, columns_df, rc=False, version_key=None):
+        if rc and version_key:
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
+
         def collect_data(test_name="postgresql"):
             data_for_df = {
-
                 'stand1': {
                     "data": [],
                     "rating": []
@@ -552,7 +639,6 @@ class PSQLStatistics2:
                     "data": [],
                     "rating": []
                 }
-
             }  
             for id in pages:
                 """
@@ -560,10 +646,11 @@ class PSQLStatistics2:
                 """
                 list_pages_with_report = self.CP.get_child_page_as_html(id)
                 for title in list_pages_with_report:
+                    # print(title)
                     """
                         Получаем конкретную страницу отчета
                     """
-                    src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
+                    src_html = self.CP.get_page_as_html(page_space=SPACE, page_title=title)
                     data = src_html.get("body").get("view").get("value")
                     soup = BeautifulSoup(data, 'lxml')
                     temp_data = title.split("_")
@@ -577,10 +664,11 @@ class PSQLStatistics2:
                             Выдергиваем значение рейтинга из html страницы
                         """
                         rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
+                        # print(rating)
                         """
                             Генерируем ссылку на отчет
                         """
-                        link = "https://life.astralinux.ru/display/DD/" + title 
+                        link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
                         rating_with_link = f'<a href="{link}">{rating}</a>'
                         """
                             Записываем полученные данные для дальнейшего составления DataFrame
@@ -611,12 +699,10 @@ class PSQLStatistics2:
                     continue
                 df = pd.DataFrame(data=data.get("data"), columns=columns_df, index=np.arange(1, len(data.get("data")) + 1))
                 df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
-                
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()
                 
                 df_5_10 = df[df["Ядро"].str.startswith('5.10')]
-                # print(df_5_10)
                 df_5_10['Ядро'] = '5.10'
                 temp_data_kernel['5.10'].append(df_5_10[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
                 df_5_15_gen = df[df["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]
@@ -636,7 +722,7 @@ class PSQLStatistics2:
                 Строим HTML
                 """
                 statistics_table_html = df.to_html(escape=False, index=False)
-                file_html = open(f"statistics/{test_name}_{key}_1.html", "w")
+                file_html = open(f"{stat_dir}/{test_name}_{key}_1.html", "w")
                 file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 grage = self.get_grade(key)
                 file_html.writelines(f"<h1>Сводная таблица результатов тестирования {grage}_{key}</h1> {statistics_table_html}")
@@ -672,10 +758,10 @@ class PSQLStatistics2:
                     Строим вторую HTML таблицу
                 """
                 mat_stat_table_html = df_mat_stat.to_html(index=False)
-                new_file_html = open(f"statistics/{test_name}_{key}_2.html", 'w')
+                new_file_html = open(f"{stat_dir}/{test_name}_{key}_2.html", 'w')
                 new_file_html.write(mat_stat_table_html)
                 new_file_html.close()
-
+            
             return temp_data_for_graph, temp_data_kernel, dataframes_for_summary_graph
         
         def create_graphs(data_for_df, test_name, temp_data_for_graph):
@@ -715,7 +801,7 @@ class PSQLStatistics2:
                 green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
                 yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
                 ax.legend(handles=[red_patch, green_patch, yellow_patch])
-                fig.savefig(f"statistics/{test_name}_statistics_{key}.png")
+                fig.savefig(f"{stat_dir}/{test_name}_statistics_{key}.png")
 
 
         def create_comparison_kernel_graph(temp_data_kernel, test_name):
@@ -731,7 +817,7 @@ class PSQLStatistics2:
                         except ValueError:
                             pass
                         plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
-                    fig.savefig(f"statistics/{test_name}_statistics_{list(data_kernel['Стенд'])[0]}_{kernel}.jpg")
+                    fig.savefig(f"{stat_dir}/{test_name}_statistics_{list(data_kernel['Стенд'])[0]}_{kernel}.jpg")
         
 
         def create_comparison_kernel_and_stand_graph(temp_data_kernel, test_name):
@@ -770,7 +856,7 @@ class PSQLStatistics2:
                 plt.gca().spines["right"].set_alpha(.0)
                 plt.gca().spines["left"].set_alpha(.3)
 
-                plt.savefig(f"statistics/{test_name}_statistics_all_stands_{title}_kernel.jpg")
+                plt.savefig(f"{stat_dir}/{test_name}_statistics_all_stands_{title}_kernel.jpg")
         
         def create_summary_table(dfs1, dfs2):
             merged_dataframes = []
@@ -782,7 +868,9 @@ class PSQLStatistics2:
         
         def create_summary_graph(merged_df, legend):
             for df in merged_df:
-                shcala_x = [x for x in range(len(df['Релиз']))]
+                bar_width = 0.3
+                # shcala_x = [x for x in range(len(df['Релиз']))]
+                
                 fig, ax = plt.subplots(figsize=(16, 9))
                 grade = self.get_grade(df['Стенд'].mode()[0])
                 ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL {legend[0]}/{legend[1]}.\n{grade}_{df['Стенд'].mode()[0]}")
@@ -790,34 +878,41 @@ class PSQLStatistics2:
                 ax.set_ylabel("Значение рейтинга")
                 ax.set_ylim([0, max(df['rating_2_x'].fillna(0)) + max(df['rating_2_x'].fillna(0)) * 0.2])
                 df['version'] = df['Релиз'] + "_" + df['Ядро']
-                ax.bar(df['version'], df['rating_2_x'], color='#88c1f2')
-                ax.bar(df['version'], df['rating_2_y'], color='#ea5c76', alpha=0.9, width=0.7)
-                plt.xticks(rotation=20, horizontalalignment='right')
+                shcala_x = np.array([x for x in range(len(df['Релиз']))])
+                
+                # shcala_x = np.array([x for x in range(1, len(df['version']) + 1, 1)])
+                # print(shcala_x)
+                ax.bar(shcala_x - bar_width / 2, df['rating_2_x'], color='#88c1f2', alpha=0.8, width=bar_width)
+                ax.bar(shcala_x + bar_width / 2, df['rating_2_y'], color='#ea5c76', alpha=0.8, width=bar_width)
+                plt.xticks(ticks=shcala_x, labels=df['version'], rotation=20, horizontalalignment='right')
+                # plt.gca().set_xticklabels(df['version'], rotation=20, horizontalalignment='right')
+                
                 for i, val in enumerate(df['rating_2_x']):
                     try:
                         val = int(val)
                     except ValueError:
                         pass
                     if val != 0:
-                        plt.text(i, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                        # plt.text(i, val, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                        plt.text(i - bar_width / 2, val * 0.5, val, rotation=90, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                 for i, val in enumerate(df['rating_2_y']):
                     try:
                         val = int(val)
                     except ValueError:
                         pass
                     if val != 0:
-                        plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                        # plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                         plt.text(i + bar_width / 2, val * 0.5, val, rotation=90, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                 ax.legend(legend)
-                plt.savefig(f"statistics/{legend[0]}-{legend[1]}_graph_{df['Стенд'].mode()[0]}_summ.jpg")
+                plt.savefig(f"{stat_dir}/{legend[0]}-{legend[1]}_graph_{df['Стенд'].mode()[0]}_summ.jpg")
                 
             
         
         data_df_orel = collect_data(test_name="postgresql")
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="postgresql")
         create_graphs(data_for_df=data_df_orel, test_name="postgresql", temp_data_for_graph=tmp_data_for_gr)
-        create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-        create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         
+            
         data_df_smolensk = collect_data(test_name="postgresql-sm")
         tmp_data_for_gr_smol, tmp_data_krnl_smol, df_psql_sm = build_dataframes(data_for_df=data_df_smolensk, test_name="postgresql-sm")
         create_graphs(data_for_df=data_df_smolensk, test_name="postgresql-sm", temp_data_for_graph=tmp_data_for_gr_smol)
@@ -826,20 +921,38 @@ class PSQLStatistics2:
         tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
         create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
 
-        summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
-        create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
+        if not rc:
+            create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+            create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
 
-        summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
-        create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
+            summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
+            create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
+
+            summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
+            create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
 
     """
         Создаем итоговую html страницу для life
     """
-    def upload_statistics(self, type_stat='PostgreSQL'):
-        
+    def upload_statistics(self, type_stat='PostgreSQL', rc=None, pp_title=None):
+        if rc and pp_title:
+            version_key = pp_title.split(" ⬝ ")[1]
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
+        if rc:
+            parent_page = pp_title
+            page_rc_title = version_key
+        else:
+            parent_page = "Статистика"
+            page_rc_title = ""
+        
+        confluence_stat.create_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", parent_page_title=parent_page)
 
         template_img = """ 
             <p>
@@ -861,11 +974,11 @@ class PSQLStatistics2:
         summ_graphs_list, summ_graphs_list_aud_on_off = [], []
 
         header_orel, header_smolensk, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], []
-
-        for file in sorted(os.listdir("statistics")):
+        
+        for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file)
                 name_stand = file.split("_")[2].split(".")[0]
                 if file.startswith("postgresql-sm"):
@@ -881,7 +994,7 @@ class PSQLStatistics2:
                     header_orel.append(name_stand)
 
             if file.endswith("1.html"):
-                file_table = open(f'statistics/{file}', 'r')
+                file_table = open(f'{stat_dir}/{file}', 'r')
                 table = file_table.read()
                 file_table.close()
                 if file.startswith("postgresql-sm"):
@@ -894,7 +1007,7 @@ class PSQLStatistics2:
                     table_with_data_list.append(table)
 
             if file.endswith("2.html"):
-                new_file_table = open(f'statistics/{file}', 'r')
+                new_file_table = open(f'{stat_dir}/{file}', 'r')
                 mat_stat_table = new_file_table.read()
                 new_file_table.close()
                 if file.startswith("postgresql-sm"):
@@ -907,31 +1020,31 @@ class PSQLStatistics2:
                     table_with_mat_stat_list.append(mat_stat_table)
 
             if file.endswith("5.10.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                 img_png=file))
             if file.endswith("5.15-gen.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                 img_png=file))
             if file.endswith("5.15-ll.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                 img_png=file))
             if file.endswith("kernel.jpg"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                       img_png=file))
             
             if file.endswith("summ.jpg"):
                 name_stand = file.split("_")[2]
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 if file.startswith("Orel-Smolensk"):
-                    summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"), 
+                    summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
                                                                 img_png=file))
                     header_orel_vs_smolensk.append(name_stand)
                 elif file.startswith("Orel-Orel-audit-off"):
-                    summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"), 
+                    summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
                                                                            img_png=file))
                     header_aud_on_vs_off.append(name_stand)
                     # print(header_aud_on_vs_off)
@@ -952,12 +1065,12 @@ class PSQLStatistics2:
         """
         nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off = [], [], [], [], []
         nav_body = '''
-            <li><a href="#id-Статистика.PostgreSQL-Orel">Orel</a>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orel">Orel</a>
                 <ul>
                     {list_orel}
                 </ul>
             </li>
-            <li><a href="#id-Статистика.PostgreSQL-Smolensk">Smolensk</a>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Smolensk">Smolensk</a>
                 <ul>
                     {list_smolensk}
                 </ul>
@@ -967,7 +1080,7 @@ class PSQLStatistics2:
                     {list_orel_vs_smolensk}
                 </ul>
             </li>
-            <li><a href="#id-Статистика.PostgreSQL-Orelauditoff">Orel audit off</a>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orelauditoff">Orel audit off</a>
                 <ul>
                     {list_aud_off}
                 </ul>
@@ -982,67 +1095,80 @@ class PSQLStatistics2:
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
         for item in lst_all_stands_stat_kernel:
+            """
+                TODO требуется доработка для RC 
+            """
             html_list.append(item)
         
         for ind, item in enumerate(table_with_data_list):
             grade = self.get_grade(header_orel[ind])
-            nav_lst_orel.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel[ind]}">{grade}_{header_orel[ind]}</a></li>')
+            nav_lst_orel.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel[ind]}">{grade}_{header_orel[ind]}</a></li>')
             html_list.append(f"<hr/><h1>{grade}_{header_orel[ind]}</h1>")
             html_list.append(image_list[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
-            
-            html_list.append(kernel_image_list[0][ind])
-            html_list.append(kernel_image_list[1][ind])
-            html_list.append(kernel_image_list[2][ind])
+            if not rc:
+                html_list.append(kernel_image_list[0][ind])
+                html_list.append(kernel_image_list[1][ind])
+                html_list.append(kernel_image_list[2][ind])
+        
+        # if not rc:
 
         html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
         for ind, item in enumerate(table_with_data_list_smolensk):
             grade = self.get_grade(header_smolensk[ind])
-            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
+            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
             html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
             html_list.append(images_list_smolensk[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
-        
-        html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
-        for ind, item in enumerate(summ_graphs_list):
-            grade = self.get_grade(header_orel_vs_smolensk[ind])
-            nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
-            html_list.append(item)
-
+            
         html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
         for ind, item in enumerate(table_with_data_list_aud_off):
             grade = self.get_grade(header_aud_off[ind])
-            nav_lst_aud_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
+            nav_lst_aud_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
             html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
             html_list.append(image_list_aud_off[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
 
-        html_list.append('<h1 style="text-align: center;">Orel vs Orel audit off</h1>')
-        for ind, item in enumerate(summ_graphs_list_aud_on_off):
-            grade = self.get_grade(header_aud_on_vs_off[ind])
-            # print(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
-            nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
-            html_list.append(item)
+        if not rc:
+            html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
+            for ind, item in enumerate(summ_graphs_list):
+                grade = self.get_grade(header_orel_vs_smolensk[ind])
+                nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
+                html_list.append(item)
 
-        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
+            html_list.append('<h1 style="text-align: center;">Orel vs Orel audit off</h1>')
+            for ind, item in enumerate(summ_graphs_list_aud_on_off):
+                grade = self.get_grade(header_aud_on_vs_off[ind])
+                # print(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
+                nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
+                html_list.append(item)
+
+        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
 
         html_list.insert(0, nav)
 
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", page_body=html_page)
 
     def update_statistics(self):
-        pages = self.get_list_required_pages()
+        pages, rc_pages = self.get_list_required_pages()
+        print(rc_pages)
         columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "PostgreSQL_11 rating", 'rating_2']
 
         self.get_info_from_pages(pages=pages, columns_df=columns)
+        for key, value in rc_pages.items():
+            if value:
+                self.get_info_from_pages(pages=value, columns_df=columns, rc=True, version_key=key.split(" ⬝ ")[1])
         self.upload_statistics()
+        for key, value in rc_pages.items():
+            if value:
+                self.upload_statistics(rc=True, pp_title=key)
 
 
 if __name__ == '__main__':

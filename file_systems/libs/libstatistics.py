@@ -100,7 +100,7 @@ class StatisticsToConfluence():
                                              representation='storage',
                                              editor='v2'):
                 print('+++ page {} is ready in space {}'.format(page_title, page_space))
-    
+       
     def update_confluence_page(self,
                                page_space,
                                page_title,
@@ -110,6 +110,7 @@ class StatisticsToConfluence():
                                           title=page_title,
                                           body=page_body)
 
+SPACE = "DEVQA"
 
 class FileSystemStatistics:
     def __init__(self, username, token) -> None:
@@ -118,6 +119,9 @@ class FileSystemStatistics:
         self.CP = ConfluencePage(username=self.username, token=self.token)
         if not "statistics" in os.listdir():
             os.mkdir("statistics")
+        if not "statistics_rc" in os.listdir():
+            os.mkdir("statistics_rc")
+            # time.sleep(1)
 
     def get_list_required_pages(self):
         """
@@ -128,6 +132,7 @@ class FileSystemStatistics:
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
         """
         required_pages, required_pages_rc = [], []
+        test_dict_rc = {}
         """
             Проходим по всем версиям
         """
@@ -135,7 +140,15 @@ class FileSystemStatistics:
             """
                 Получаем ID страниц PostgreSQL, Системные службы, Файловые системы в каждой конкретной версии
             """
+            try:
+                name_page_original = self.CP.get_page_as_html(id=id_children_from_main_page).get("title")
+                name_page = self.CP.get_page_as_html(id=id_children_from_main_page).get("title").split(" ⬝ ")[1]
+                # print(name_page)
+            except IndexError:
+                pass
+    
             astra_version_child_pages = self.CP.get_child_page_as_html(id=id_children_from_main_page, by_title=False)
+            temp_arr = []
             """
                 Проходим по каждому полученному ID
             """
@@ -168,14 +181,33 @@ class FileSystemStatistics:
                 """
                 if "Файловые системы" in page.get("title") and self.CP.get_child_page_as_html(id=page_id):
                     required_pages.append(page_id)
+                """
+                    Статистика для RC
+                """
+                try:
+                    name_child_page = page.get("title").split(" ⬝ ")[1]
+                except IndexError:
+                    pass
+                if "1.7" in name_child_page or "1.8" in name_child_page:
+                    hz_kak_nazvat_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                    if hz_kak_nazvat_pages:
+                        for item_page in hz_kak_nazvat_pages:
+                            if "Файловые системы" in self.CP.get_page_as_html(id=item_page).get("title"):
+                                temp_arr.append(item_page)
 
-        return required_pages, required_pages_rc
+            test_dict_rc[name_page_original] = temp_arr
+
+        return required_pages, test_dict_rc
     
-    def get_info_from_pages(self, pages, rc=False):
-        if rc:
-            stat_dir = "statistics_rc"
+    def get_info_from_pages(self, pages, rc=False, version_key=None):
+        if rc and version_key:
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
         else:
             stat_dir = "statistics"
+
         def build_main_dataframe(fs_type, data_fs, stand):
             columns = ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг', 'Рейтинг2']
             df = pd.DataFrame(data=data_fs, columns=columns)
@@ -445,7 +477,7 @@ class FileSystemStatistics:
                 """
                     Получаем конкретную страницу отчета
                 """
-                src_html = self.CP.get_page_as_html(page_space="DEVQA", page_title=title)
+                src_html = self.CP.get_page_as_html(page_space=SPACE, page_title=title)
                 data = src_html.get("body").get("view").get("value")
                 soup = BeautifulSoup(data, 'lxml')
                 temp_data = title.replace(" ", "_").split("_")
@@ -462,7 +494,7 @@ class FileSystemStatistics:
                 """
                     Генерируем ссылку на отчет
                 """
-                link = "https://life.astralinux.ru/display/DEVQA/" + title 
+                link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
                 rating_with_link = f'<a href="{link}">{rating}</a>'
 
                 if parsec:
@@ -500,22 +532,37 @@ class FileSystemStatistics:
                 rating_for_graph, shcl = build_main_dataframe("XFS_parsec", data.get("XFS_parsec"), key)
                 build_mat_stat_dataframe("XFS_parsec", rating_for_graph, key)
                 build_graph(fs_type="XFS_parsec", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
-            if data.get("EXT4") and data.get("EXT4_parsec"):
-                rat, rat_parsec, shcl = create_summary_table(fs_data=[data.get("EXT4"), data.get("EXT4_parsec")], stand=key)
-                build_summary_graph(stand=key, rating1=rat, rating2=rat_parsec, shcala_txt=shcl)
-            if data.get("EXT4") and data.get("XFS"):
-                rat_ext4, rat_xfs, shcl = create_summary_table_template(fs_data={"EXT4": data.get("EXT4"), "XFS": data.get("XFS")}, stand=key)
-                build_summary_graph_template(stand=key, rating1=rat_ext4, rating2=rat_xfs, shcala_txt=shcl, file_system_names=["EXT4", "XFS"])
+            if not rc:
+                if data.get("EXT4") and data.get("EXT4_parsec"):
+                    rat, rat_parsec, shcl = create_summary_table(fs_data=[data.get("EXT4"), data.get("EXT4_parsec")], stand=key)
+                    build_summary_graph(stand=key, rating1=rat, rating2=rat_parsec, shcala_txt=shcl)
+                if data.get("EXT4") and data.get("XFS"):
+                    rat_ext4, rat_xfs, shcl = create_summary_table_template(fs_data={"EXT4": data.get("EXT4"), "XFS": data.get("XFS")}, stand=key)
+                    build_summary_graph_template(stand=key, rating1=rat_ext4, rating2=rat_xfs, shcala_txt=shcl, file_system_names=["EXT4", "XFS"])
         
         
 
     """
         Создаем итоговую html страницу для life
     """
-    def upload_statistics(self, type_stat='PostgreSQL'):
-        confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
+    def upload_statistics(self, type_stat="Файловые системы", rc=None, pp_title=None):
+        if rc and pp_title:
+            version_key = pp_title.split(" ⬝ ")[1]
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
+        if rc:
+            parent_page = pp_title
+            page_rc_title = version_key
+        else:
+            parent_page = "Статистика"
+            page_rc_title = ""
 
+        confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
+        confluence_stat.create_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", parent_page_title=parent_page)
          ### TODO изменить пространство и parent_page_title
 
         template_img = """ 
@@ -533,12 +580,12 @@ class FileSystemStatistics:
         headers_for_content, headers_for_content2, headers_for_content3 = [], [], []
 
         
-        for file in sorted(os.listdir("statistics")):
+        for file in sorted(os.listdir(f"{stat_dir}")):
             part_header = file.split("_")
             if file.endswith("_1.png"):
                 # part_header = file.split("_")
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file))
                 if part_header[2] == "parsec":
                     headers.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}</b></h1>")
@@ -548,8 +595,8 @@ class FileSystemStatistics:
                     headers_for_content.append(f"{part_header[1]}_{part_header[2]}")
                 
             if file.endswith("_a.png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file))
                 
                 # part_header = file.split("_")
@@ -559,8 +606,8 @@ class FileSystemStatistics:
             if file.endswith(".png"):
                 if "EXT4_and_XFS" in file:
                     
-                    confluence_stat.attache_files(file=f'statistics/{file}', page_space="DEVQA", page_title=f"Статистика. {type_stat}")
-                    img_lst_comparison_ext4_xfs.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DEVQA", f"Статистика. {type_stat}"),
+                    confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                    img_lst_comparison_ext4_xfs.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file))
                     # print(part_header)
                     headers3.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4].replace('.png', '')}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4].replace('.png', '')}</b></h1>")
@@ -568,23 +615,23 @@ class FileSystemStatistics:
                     
 
             if file.endswith("_1.html"):
-                file_table = open(f'statistics/{file}', 'r')
+                file_table = open(f'{stat_dir}/{file}', 'r')
                 table = file_table.read()
                 file_table.close()
                 table_with_data_list.append(table)
             if file.endswith("_2.html"):
-                new_file_table = open(f'statistics/{file}', 'r')
+                new_file_table = open(f'{stat_dir}/{file}', 'r')
                 mat_stat_table = new_file_table.read()
                 new_file_table.close()
                 table_with_mat_stat_list.append(mat_stat_table)
             if file.endswith("_a.html"):
-                file_sys_with_parsec_table = open(f'statistics/{file}', "r")
+                file_sys_with_parsec_table = open(f'{stat_dir}/{file}', "r")
                 g_table = file_sys_with_parsec_table.read()
                 file_sys_with_parsec_table.close()
                 ext4_and_ext4_parsec_comparison_list.append(g_table)
             if file.endswith(".html"):
                 if "EXT4_and_XFS" in file:
-                    ext_xfs_table_file = open(f'statistics/{file}', 'r')
+                    ext_xfs_table_file = open(f'{stat_dir}/{file}', 'r')
                     e_x_fs_table = ext_xfs_table_file.read()
                     ext_xfs_table_file.close()
                     ext4_and_xfs_comparison_list.append(e_x_fs_table)
@@ -606,30 +653,30 @@ class FileSystemStatistics:
         nav_lst = []
 
         for ind, item in enumerate(table_with_data_list):
-            nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content[ind]}">{headers_for_content[ind]}</a></li>')
+            nav_lst.append(f'<li><a href="#id-Статистика.{page_rc_title}Файловыесистемы-{headers_for_content[ind]}">{headers_for_content[ind]}</a></li>')
             html_list.append("<br/><hr/>")
             html_list.append(headers[ind])
             html_list.append(image_list[ind])
             html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(item)
             html_list.append("<br/>" + table_with_mat_stat_list[ind])
-        
-        for ind, item in enumerate(ext4_and_ext4_parsec_comparison_list):
-            nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content2[ind]}">{headers_for_content2[ind]}</a></li>')
-            html_list.append("<br/><hr/>")
-            html_list.append(headers2[ind])
-            html_list.append(image_list_ext4_comparison[ind])
-            html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
-            html_list.append(item)
-        
-        # print("******", len(ext4_and_xfs_comparison_list), len(img_lst_comparison_ext4_xfs))
-        for ind, item in enumerate(ext4_and_xfs_comparison_list):
-            nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content3[ind]}">{headers_for_content3[ind]}</a></li>')
-            html_list.append("<br/><hr/>")
-            html_list.append(headers3[ind])
-            html_list.append(img_lst_comparison_ext4_xfs[ind])
-            html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
-            html_list.append(item)
+        if not rc:
+            for ind, item in enumerate(ext4_and_ext4_parsec_comparison_list):
+                nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content2[ind]}">{headers_for_content2[ind]}</a></li>')
+                html_list.append("<br/><hr/>")
+                html_list.append(headers2[ind])
+                html_list.append(image_list_ext4_comparison[ind])
+                html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
+                html_list.append(item)
+            
+            # print("******", len(ext4_and_xfs_comparison_list), len(img_lst_comparison_ext4_xfs))
+            for ind, item in enumerate(ext4_and_xfs_comparison_list):
+                nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content3[ind]}">{headers_for_content3[ind]}</a></li>')
+                html_list.append("<br/><hr/>")
+                html_list.append(headers3[ind])
+                html_list.append(img_lst_comparison_ext4_xfs[ind])
+                html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
+                html_list.append(item)
 
 
         nav_tmp = "".join(nav_lst)
@@ -638,16 +685,21 @@ class FileSystemStatistics:
 
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="DEVQA", page_title=f"Статистика. {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", page_body=html_page)
 
 
     def update_statistics(self):
         pages, rc_pages = self.get_list_required_pages()
-        # print(pages, rc_pages)
-        self.get_info_from_pages(pages=pages)
-        # self.get_info_from_pages(pages=rc_pages, rc=True)
-        self.upload_statistics(type_stat="Файловые системы")
+        print(rc_pages)
 
+        self.get_info_from_pages(pages=pages)
+        for key, value in rc_pages.items():
+            if value:
+                self.get_info_from_pages(pages=value, rc=True, version_key=key.split(" ⬝ ")[1])
+        self.upload_statistics()
+        for key, value in rc_pages.items():
+            if value:
+                self.upload_statistics(rc=True, pp_title=key)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

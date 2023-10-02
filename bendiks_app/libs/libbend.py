@@ -378,8 +378,11 @@ def output_remote_load(stand):
         conn.close()
     except socket.timeout:
         pass
+    except IndexError as e:
+        print(f'IndexError: {type(e).__name__}, Message: {str(e)}')
     finally:
-        conn.close()
+        if conn != None:
+            conn.close()
 
 
 def remote_storage_load(stand):

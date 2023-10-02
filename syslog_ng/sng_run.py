@@ -26,10 +26,10 @@ from libs.libsng import (astra_version,
                          put_system_info_in_file, 
                          upload_results_to_ftp,
                          response)
-from libs.zefir import ZefirStatusAPI, ZefirResultTable
+from libs.zefir import UploaderZC
 from libs.libpublic import Public
 from libs.libstatistics import FileSystemStatistics
-from sng_conf import SERVICE_COUNT, TIME_EXEC, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME
+from sng_conf import SERVICE_COUNT, TIME_EXEC, TIME_EXEC_ST3_ST4, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME
 
 
 TIME_START_SCRIPT = datetime.now()
@@ -136,43 +136,20 @@ def cmd(command):
 
 if __name__ == '__main__':
 
-    def test_cycle_status_start():
-        zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
-                                test_cycle_name=args.TCYC,
-                                test_case_name=args.TCAS,
-                                basic_auth=args.BA)
-        zefir.upload_status(90)
-        zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
-                                        token=args.TOKEN,
-                                        basic_auth=args.BA,
-                                        username=args.USER)
-        zefir_table
-
-    start_status = 0
-    while start_status == 0:
-        jira_start, life_start = response()
-        try:
-            if jira_start == 200 and life_start == 200:
-                test_cycle_status_start()
-                start_status += 1
-            else: 
-                with open('JIRA_ERROR.log', 'a') as err:
-                    err.write('start:\n')
-                    err.write(ctime())
-                    err.write(f'jira_status = {jira_start}\nlife_status = {life_start}')
-                    err.write('---------' * 25)
-                    err.write('\n\n')
-                sleep(60)
-        except Exception as e:
-            with open('JIRA_ERROR.log', 'a') as err:
-                err.write('start:\n')
-                err.write(ctime())
-                err.write(str(e))
-                err.write('---------' * 25)
-                err.write('\n\n')
-                start_status += 1
+    uzs = UploaderZC(folder_tree_id=args.FTI,
+                     test_cycle_name=args.TCYC,
+                     test_case_name=args.TCAS,
+                     basic_auth=args.BA,
+                     test_cycle_version=args.TCV,
+                     token=args.TOKEN,
+                     username=args.USER,
+                     conf_space=args.SPACE,
+                     conf_parent_page=args.PPAGE,
+                     conf_new_page_name=args.NPAGE,
+                     grade_stand=args.STAND)
+    
+    uzs.upload_test_cycle_status('progress')
             
-
     print("Дата и время запуска: ", datetime.strftime(TIME_START_SCRIPT, "%d.%m.%Y %H:%M:%S"))
 
     """
@@ -238,7 +215,9 @@ if __name__ == '__main__':
     data_disk.append(sc.get_disk_load())
     data_time.append(0)
 
-    time_exec = TIME_EXEC * 60
+    if args.STAND == '3' or args.STAND == '4':
+        time_exec = TIME_EXEC_ST3_ST4 * 60
+    else: time_exec = TIME_EXEC * 60
     qty_sec_after_start = 1
     
 
@@ -369,56 +348,10 @@ if __name__ == '__main__':
 
     upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'syslog-ng_{args.TCYC}_{REPORT_FILENAME}')
 
-    def upload_result_status():
-        public = Public(username=args.USER,
-                        token=args.TOKEN,
-                        conf_space=args.SPACE,
-                        conf_parent_page=args.PPAGE,
-                        conf_new_page_name=args.NPAGE,
-                        grade_stand=args.STAND)
-
-        public.run_publish()
-
-        zefir = ZefirStatusAPI(folder_tree_id=args.FTI,
-                                test_cycle_name=args.TCYC,
-                                test_case_name=args.TCAS,
-                                basic_auth=args.BA)
-        zefir.upload_status(91)
-
-        zefir_table = ZefirResultTable(test_cycle_version=args.TCV,
-                                        token=args.TOKEN,
-                                        basic_auth=args.BA,
-                                        username=args.USER)
-        zefir_table
-
-        statisctics = FileSystemStatistics(username=args.USER, 
-                                        token=args.TOKEN)
-        statisctics.update_statistics()
-
-    end_status = 0
-    while end_status == 0:
-        jira_end, life_end = response()
-        try:
-            if jira_end == 200 and life_end == 200:
-                upload_result_status()
-                end_status += 1
-            else: 
-                with open('JIRA_ERROR.log', 'a') as err:
-                    err.write('end:\n')
-                    err.write(ctime())
-                    err.write(f'jira_status = {jira_end}\nlife_status = {life_end}')
-                    err.write('---------' * 25)
-                    err.write('\n\n')
-                sleep(60)
-        except Exception as e:
-            with open('JIRA_ERROR.log', 'a') as err:
-                err.write('end:\n')
-                err.write(ctime())
-                err.write(str(e))
-                err.write('---------' * 25)
-                err.write('\n\n')
-                end_status += 1
-                
+    uzs.public = True
+    uzs.statistics = True
+    uzs.upload_test_cycle_status(zefir_status='pass')
+               
 if path.isfile('libs/zefir.log'):
     with open('libs/zefir.log', 'r') as r:
         zefir_log = r.read()

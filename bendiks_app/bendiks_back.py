@@ -51,11 +51,15 @@ __test_list = eval(args.TESTS)
 
 
 check_len_version = __pt_version.split('.')
-if len(check_len_version) == 4:
+if len(check_len_version) == 4 and check_len_version[3] != 'UU':
     release_version = '.'.join(check_len_version[:3])
     rc_version = __pt_version
-    filter_url = f"'%2Fstress_test%2F{release_version}%2F{__pt_version}%2F**'"
-elif len(check_len_version) == 3:
+    filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"
+elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
+    release_version = '.'.join(check_len_version[:5])
+    rc_version = __pt_version
+    filter_url = f"'%2Fstress_test%2F{release_version}%2F{rc_version}%2F**'"
+else:
     filter_url = f'%27%2Fstress_test%27,%27%2Fstress_test%2F{__pt_version}%27'
 
 

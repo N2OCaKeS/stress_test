@@ -1063,7 +1063,7 @@ class PSQLStatistics2:
         """
         nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off = [], [], [], [], []
         nav_body = '''
-            <li><a href="#id-Статистика.PostgreSQL-Orel">Orel</a>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orel">Orel</a>
                 <ul>
                     {list_orel}
                 </ul>
@@ -1097,7 +1097,7 @@ class PSQLStatistics2:
         
         for ind, item in enumerate(table_with_data_list):
             grade = self.get_grade(header_orel[ind])
-            nav_lst_orel.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel[ind]}">{grade}_{header_orel[ind]}</a></li>')
+            nav_lst_orel.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel[ind]}">{grade}_{header_orel[ind]}</a></li>')
             html_list.append(f"<hr/><h1>{grade}_{header_orel[ind]}</h1>")
             html_list.append(image_list[ind])
             html_list.append(item)
@@ -1142,7 +1142,7 @@ class PSQLStatistics2:
                 html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
                 html_list.append(item)
 
-        nav = nav_start + nav_body.format(list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
+        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
 
         html_list.insert(0, nav)
 

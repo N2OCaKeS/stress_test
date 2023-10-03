@@ -494,9 +494,14 @@ def get_kernels_from_rc(version_rc):
         c_name = ctypes.c_char_p(bytes(name, encoding='utf8'))
         clib.download_file(c_path, c_name)
 
+    pkg_path_chank = 'pkg_path_' + version_rc
+    vers_path_chank = 'vers_path_' + version_rc
+    pkg_path = globals()[pkg_path_chank]
+    vers_path = globals()[vers_path_chank]
+
     get_kernels = ZefirTestRun()
-    get_file('pkg_path_' + version_rc, 'available_packages')
-    get_file('vers_path_' + version_rc, 'available_version')
+    get_file(pkg_path, 'available_packages')
+    get_file(vers_path, 'available_version')
     version, kernels = get_kernels.get_kernels_from_file()
 
     return jsonify(test_list=version, 

@@ -9,7 +9,8 @@ from collections import deque
 import subprocess
 from os import (path, 
                 remove,  
-                setsid)
+                setsid,
+                getcwd)
 from multiprocessing import Process
 import paramiko
 from paramiko import ssh_exception
@@ -26,9 +27,12 @@ from backup_image_conf import (psyc,
                                brest_stands,
                                test_run_stands,
                                rc_list,
-                               releases_list)
+                               releases_list,
+                               testing17_pkg,
+                               testing17_vers)
 from time import sleep
 from libs.zefir import ZefirTestRun
+import ctypes
 
 
 
@@ -476,9 +480,21 @@ def update_settings_block():
 
 
 def get_kernels_from_rc():
+    pathlib = str(getcwd() + 'libs/datlib.so')
+    clib = ctypes.CDLL(pathlib)
+
+    def get_file(path, name):
+        c_path = ctypes.c_char_p(bytes(path, encoding='utf8'))
+        c_name = ctypes.c_char_p(bytes(name, encoding='utf8'))
+        clib.download_file(c_path, c_name)
 
     get_kernels = ZefirTestRun()
-    version, kernels = get_kernels.get_kernels_from_repository()
+    get_file(testing17_pkg, 'available_packages')
+    get_file(testing17_vers, 'available_version')
+    version, kernels = get_kernels.get_kernels_from_file()
+
     return jsonify(test_list=version, 
                    releas_list=f'''Kernels: \'{" ".join(kernels).replace(" ", "', '")}\'''', 
                    kernel_list='')
+
+

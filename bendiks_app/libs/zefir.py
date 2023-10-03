@@ -479,45 +479,50 @@ class ZefirTestRun:
 
 
 
-    def get_kernels_from_repository(self):
-        kern_packages_list = []
-        kernels = []
+def get_kernels_from_file(self):
+    kern_packages_list = []
+    kernels = []
 
-        repsponse_vers = requests.get(self.kernel_vers, headers=self.headers)
-        if repsponse_vers.status_code == 200:
-            vers_pattern = re.compile(r'Version: \d.*', re.IGNORECASE)
-            vers_release = re.search(vers_pattern, repsponse_vers.text)
+    if path.isfile('available_version'):
+        with open('available_version', 'r') as r:
+            repsponse_vers = r.read()
 
-        response = requests.get(self.kernel_repo, headers=self.headers)
-        packages_list = response.text
-        if response.status_code == 200:
-            for package in packages_list.split('\n'):
-                if 'Package: linux-image' in package:
-                    package = package.replace("Package: ", "")
-                    kern_packages_list.append(package)
-            for kern_package in kern_packages_list:
-                pattern_generic = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-generic\D*', re.IGNORECASE)
-                pattern_lowlatency = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-lowlatency\D*', re.IGNORECASE)
-                #pattern_hardened = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-hardened\D*', re.IGNORECASE)
-                generic_kernel = re.findall(pattern_generic, kern_package)
-                lowlatency_kernel = re.findall(pattern_lowlatency, kern_package)
-                
-                if generic_kernel:
-                    kernels.append(str(generic_kernel).replace("[", "").replace("]", "").replace("'", "").replace("linux-image-", ""))
-                if lowlatency_kernel:
-                    kernels.append(str(lowlatency_kernel).replace("[", "").replace("]", "").replace("'", "").replace("linux-image-", ""))
+        vers_pattern = re.compile(r'Version: \d.*', re.IGNORECASE)
+        vers_release = re.search(vers_pattern, repsponse_vers)
 
-            kernel_list = [kernel for kernel in kernels if kernel.startswith('6.1') 
-                                                        or kernel.startswith('5.15') 
-                                                        or kernel.startswith('5.10')]
-
-            print(vers_release[0])
-            print(kernel_list)
-            return vers_release[0], kernel_list
-        else:
-            print("An error was encountered. Response: " + str(response.status_code) + str(response.text))
+    if path.isfile('available_packages'):
+        with open('available_packages', 'r') as r:
+            packages_list = r.read()
         
-    #get_kernels_from_repository(testing17_pkg, testing17_vers)
+        for package in packages_list.split('\n'):
+            if 'Package: linux-image' in package:
+                package = package.replace("Package: ", "")
+                kern_packages_list.append(package)
+        for kern_package in kern_packages_list:
+            pattern_generic = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-generic\D*', re.IGNORECASE)
+            pattern_lowlatency = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-lowlatency\D*', re.IGNORECASE)
+            #pattern_hardened = re.compile(r'linux-image-\d\.\d*\.\d*-\d*-hardened\D*', re.IGNORECASE)
+            generic_kernel = re.findall(pattern_generic, kern_package)
+            lowlatency_kernel = re.findall(pattern_lowlatency, kern_package)
+            
+            if generic_kernel:
+                kernels.append(str(generic_kernel).replace("[", "").replace("]", "").replace("'", "").replace("linux-image-", ""))
+            if lowlatency_kernel:
+                kernels.append(str(lowlatency_kernel).replace("[", "").replace("]", "").replace("'", "").replace("linux-image-", ""))
+
+        kernel_list = [kernel for kernel in kernels if kernel.startswith('6.1') 
+                                                    or kernel.startswith('5.15') 
+                                                    or kernel.startswith('5.10')]
+
+        print(vers_release[0])
+        print(kernel_list)
+
+        if path.isfile('available_packages'):
+            remove('available_packages')
+        if path.isfile('available_version'):
+            remove('available_version')
+        
+        return vers_release[0], kernel_list
 
 
 

@@ -358,6 +358,8 @@ def output_remote_load(stand):
                 output_ram = 'Connect Error'
                 output_cpu_user = 'Connect Error'
                 output_cpu_system = 'Connect Error'
+            except socket.timeout as st:
+                print(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
 
         conn = psycopg2.connect(
                                 host=psyc['host'],
@@ -408,6 +410,8 @@ def remote_storage_load(stand):
             except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
                 output_nvme = 'Connect Error'
                 output_sda = 'Connect Error'
+            except socket.timeout as st:
+                print(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
 
         conn = psycopg2.connect(
                                 host=psyc['host'],

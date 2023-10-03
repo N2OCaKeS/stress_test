@@ -480,7 +480,7 @@ def update_settings_block():
 
 
 def get_kernels_from_rc():
-    pathlib = str(getcwd() + 'libs/datlib.so')
+    pathlib = str(getcwd() + '/libs/datlib.so')
     clib = ctypes.CDLL(pathlib)
 
     def get_file(path, name):

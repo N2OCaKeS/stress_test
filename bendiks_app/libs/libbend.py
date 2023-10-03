@@ -28,8 +28,10 @@ from backup_image_conf import (psyc,
                                test_run_stands,
                                rc_list,
                                releases_list,
-                               testing17_pkg,
-                               testing17_vers)
+                               pkg_path_testing,
+                               vers_path_testing,
+                               pkg_path_170,
+                               vers_path_170)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -483,7 +485,7 @@ def update_settings_block():
                    kernel_list=kernel_list)
 
 
-def get_kernels_from_rc():
+def get_kernels_from_rc(version_rc):
     pathlib = str(getcwd() + '/libs/datlib.so')
     clib = ctypes.CDLL(pathlib)
 
@@ -493,8 +495,8 @@ def get_kernels_from_rc():
         clib.download_file(c_path, c_name)
 
     get_kernels = ZefirTestRun()
-    get_file(testing17_pkg, 'available_packages')
-    get_file(testing17_vers, 'available_version')
+    get_file('pkg_path_' + version_rc, 'available_packages')
+    get_file('vers_path_' + version_rc, 'available_version')
     version, kernels = get_kernels.get_kernels_from_file()
 
     return jsonify(test_list=version, 

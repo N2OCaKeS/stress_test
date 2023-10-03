@@ -182,7 +182,7 @@ def check_running_system(stand):
     except socket.timeout:
         return jsonify(is_running=False)
     except Exception as e:
-        #print(e)
+        print(e)
         return jsonify(is_running=False)
     finally:
         sock.close()
@@ -210,8 +210,8 @@ def ilo_console_caller(stand):
 def update_block(part):
     if part == 'components':
         return update_settings_block()
-    elif part == 'kernels':
-        return get_kernels_from_rc()
+    else:
+        return get_kernels_from_rc(part)
 
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)

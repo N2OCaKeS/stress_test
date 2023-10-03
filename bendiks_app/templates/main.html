@@ -55,7 +55,10 @@
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Список ядер</a>
     <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels(); return false;">(RC) testing</a></li>
+      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('testing'); return false;">(RC) testing</a></li>
+    </ul>
+    <ul class="dropdown-menu">
+      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.0'); return false;">1.7.0</a></li>
     </ul>
   </li>
   <li class="nav-item dropdown">
@@ -113,11 +116,11 @@
         </div>
 
         <script>
-          function updateBlockKernels() {
+          function updateBlockKernels(version) {
 
               document.getElementById('loading-spinner').style.display = 'block';
 
-              fetch('/update_block_kernels')
+              fetch('/update_block_' + version)
                   .then(response => response.json())
                   .then(data => {
 
@@ -139,7 +142,7 @@
                       document.getElementById('loading-spinner').style.display = 'none';
                   });
           }
-          window.onload = updateBlockKernels;
+          <!-- window.onload = updateBlockKernels; -->
         </script>
 
         <script>

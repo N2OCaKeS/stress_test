@@ -386,6 +386,8 @@ def output_remote_load(stand):
         pass
     except IndexError as e:
         print(f'IndexError: {type(e).__name__}, Message: {str(e)}')
+    except Exception as all_e:
+        print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
     finally:
         if conn != None:
             conn.close()
@@ -436,6 +438,8 @@ def remote_storage_load(stand):
         conn.close()
     except socket.timeout:
         pass
+    except Exception as all_e:
+        print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
     finally:
         if conn != None:
             conn.close()

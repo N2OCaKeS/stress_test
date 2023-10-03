@@ -12,9 +12,7 @@ from sys import exit
 from atlassian import Confluence
 from os import remove, path
 import re
-from backup_image_conf import(testing17_pkg, 
-                              testing17_vers,
-                              testcase_orel,
+from backup_image_conf import(testcase_orel,
                               testcase_orel_stand2,
                               testcase_smolensk,
                               testcase_smolensk_stand2,
@@ -450,8 +448,8 @@ class ZefirTestRun:
                  stands=None,
                  release=None,
                  rc=False,
-                 kernel_repo=testing17_pkg,
-                 kernel_vers=testing17_vers):
+                 kernel_repo=None,
+                 kernel_vers=None):
         
 
 
@@ -466,8 +464,8 @@ class ZefirTestRun:
             self.release = ''.join(release)
         if rc != False:
             self.rc = ''.join(rc)
-        self.kernel_vers = kernel_vers
-        self.kernel_repo = kernel_repo
+        #self.kernel_vers = kernel_vers
+        #self.kernel_repo = kernel_repo
         self.use_kernels = use_kernels
         self.testcase_orel = testcase_orel
         self.testcase_orel_stand2 = testcase_orel_stand2

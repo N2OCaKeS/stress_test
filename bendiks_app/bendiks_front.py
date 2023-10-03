@@ -182,7 +182,7 @@ def check_running_system(stand):
     except socket.timeout:
         return jsonify(is_running=False)
     except Exception as e:
-        print(e)
+        #print(e)
         return jsonify(is_running=False)
     finally:
         sock.close()

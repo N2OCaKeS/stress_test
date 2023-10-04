@@ -21,17 +21,20 @@ class Public:
                  grade_stand=None,
                  package=None,
                  file_system=None,
-                 test_set=None):
+                 test_set=None,
+                 test_cycle_version=None):
     
         self.username=username
         self.token=token
         self.c_space = conf_space
         self.c_pp = conf_parent_page
-        self.c_new_pn = conf_new_page_name
+        self.c_np = conf_new_page_name
         self.grade_stand = grade_stand
         self.package=package
         self.fs=file_system
         self.ts=test_set
+        self.tcv = test_cycle_version
+
         self.stands = {
             '1':{'grade':'low(141)',
                  'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
@@ -51,20 +54,20 @@ class Public:
                  'storage':'SSD Patriot Burst Elite 960GB'}
         }
 
-    def run_publish(self):
+    def preset_publish(self, c_pp, c_np):
 
         confluence_report = ReportToConfluence(username=self.username, password=None, token=self.token)
 
         #создать страницу confluence
         confluence_report.create_confluence_page(self.c_space,
-                                                 self.c_pp,
-                                                 self.c_new_pn)
+                                                 c_pp,
+                                                 c_np)
         
         #прикрепить файлы к странице confluence
         for file in os.listdir(REPORT_DIR):
             confluence_report.attache_files(f'{REPORT_DIR}/{file}',
                                             self.c_space,
-                                            self.c_new_pn)
+                                            c_np)
             
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:
@@ -107,7 +110,7 @@ class Public:
             img_temp = template.read()
             for file in os.listdir(REPORT_DIR):
                 if file.endswith('png'):
-                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, self.c_new_pn),
+                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
                                                     img_png=file,
                                                     description=GRAPH_DESCRIPTIONS[file]))
             images = '\n'.join(images_lst)
@@ -115,4 +118,34 @@ class Public:
         html_page = '\n'.join([header_table, rating, tables, images])
 
         #выкладываем информацию на страницу
-        confluence_report.update_confluence_page(self.c_space, self.c_new_pn, html_page)    
+        confluence_report.update_confluence_page(self.c_space, c_np, html_page)    
+
+
+    def run_publish(self):
+
+        check_len_version = self.tcv.split('.')
+
+        if len(check_len_version) == 4 and check_len_version[3] != 'UU':
+            release_version = '.'.join(check_len_version[:3])
+            rare_cpp = self.c_pp.split(' ')
+            cpp = ' '.join([release_version if release_version in rare_cpp[i] else rare_cpp[i] for i in range(len(rare_cpp))])
+            rare_cnp = self.c_np.split('_')
+            cnp = '_'.join([release_version if release_version in rare_cnp[i] else rare_cnp[i] for i in range(len(rare_cnp))])
+
+            self.preset_publish(self.c_pp, self.c_np)
+            self.preset_publish(cpp, cnp)
+
+        elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
+            release_version = '.'.join(check_len_version[:5])
+            rare_cpp = self.c_pp.split(' ')
+            cpp = ' '.join([release_version if release_version in rare_cpp[i] else rare_cpp[i] for i in range(len(rare_cpp))])
+            rare_cnp = self.c_np.split('_')
+            cnp = '_'.join([release_version if release_version in rare_cnp[i] else rare_cnp[i] for i in range(len(rare_cnp))])
+
+            self.preset_publish(self.c_pp, self.c_np)
+            self.preset_publish(cpp, cnp)
+
+        else:
+            self.preset_publish(self.c_pp, self.c_np)
+
+            

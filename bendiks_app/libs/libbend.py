@@ -445,10 +445,10 @@ def remote_storage_load(stand):
         id = 1 #row number
         update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
         if stand == 'stand1' or stand == 'stand2':
-            data = (output_nvme, output_sda, str(int(temp_cpu) / 1000).rstrip('.0') + '°C', id)
+            data = (output_nvme, output_sda, f'{int(float(temp_cpu) / 1000)}°', id)
         elif stand == 'stand3' or stand == 'stand4':
             temp_cpu = temp_cpu.split('\n')
-            data = (output_nvme, output_sda, str(int(temp_cpu[0]) / 1000).rstrip('.0') + '°C, ' + str(int(temp_cpu[1]) / 1000).rstrip('.0') + '°C', id)
+            data = (output_nvme, output_sda, f'{int(float(temp_cpu[0]) / 1000)}° | {int(float(temp_cpu[1]) / 1000)}°', id)
         cursor.execute(update_query, data)
 
         conn.commit()

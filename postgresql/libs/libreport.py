@@ -63,7 +63,7 @@ class ReportToConfluence():
                                              type='page',
                                              representation='storage',
                                              editor='v2'):
-                print('+++ page {} is ready in space {}'.format(page_title, page_space))
+                print(f'+++ page {page_title} is ready in space {page_space}, parent page {parent_page_title}')
 
     def update_confluence_page(self,
                                page_space,

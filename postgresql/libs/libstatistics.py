@@ -809,6 +809,8 @@ class PSQLStatistics2:
                 for data_kernel in temp_data_frame:
                     fig, ax = plt.subplots(figsize=(12.8, 7.2))
                     ax.bar(data_kernel['Релиз'], data_kernel['rating_2'], color="#a3d1cd")
+                    if data_kernel.empty:
+                        continue
                     grade = self.get_grade(list(data_kernel['Стенд'])[0])
                     ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по ядрам.\n{grade}_{list(data_kernel['Стенд'])[0]} - {kernel}")
                     for i, val in enumerate(data_kernel['rating_2']):
@@ -842,6 +844,8 @@ class PSQLStatistics2:
                 grades = list(map(self.get_grade, names_stand))
                 grades_with_stands = list(map(lambda x, y: x + "_" + y, grades, names_stand))
                 title = merged_df['Ядро'].mode()[0]
+                
+                
                 fig, ax = plt.subplots(figsize=(12.8, 7.2))
                 ax.grid(True, alpha=.6)
                 ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по стендам.\n{title}")
@@ -927,8 +931,9 @@ class PSQLStatistics2:
         summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
         create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
+        create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         if not rc:
-            create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+            
             create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
 
             # summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
@@ -975,6 +980,21 @@ class PSQLStatistics2:
         table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off = [], [], []
         table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off = [], [], []
         kernel_image_list = [[], [], []]
+        
+        # new_kernel_image_dict = {
+        #     'stand1': [[], [], []],
+        #     'stand2': [[], [], []],
+        #     'stand3': [[], [], []],
+        #     'stand4': [[], [], []] 
+        # }
+
+        new_kernel_image_dict = {
+            # 'stand1': [],
+            # 'stand2': [],
+            # 'stand3': [],
+            # 'stand4': [] 
+        }
+        
         lst_all_stands_stat_kernel = []
 
         summ_graphs_list, summ_graphs_list_aud_on_off = [], []
@@ -1025,18 +1045,25 @@ class PSQLStatistics2:
                 else:
                     table_with_mat_stat_list.append(mat_stat_table)
 
-            if file.endswith("5.10.jpg"):
+            stand_name_temp_for_key = file.split("_")[-2]
+            if stand_name_temp_for_key not in new_kernel_image_dict.keys():
+                    new_kernel_image_dict[stand_name_temp_for_key] = []
+            templ_img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), img_png=file)    
+            if file.endswith("5.10.jpg"):  
+                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
-                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                                img_png=file))
+                # kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+                #                                                 img_png=file))
             if file.endswith("5.15-gen.jpg"):
+                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
-                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                                img_png=file))
+                # kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+                #                                                 img_png=file))
             if file.endswith("5.15-ll.jpg"):
+                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
-                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                                img_png=file))
+                # kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+                #                                                 img_png=file))
             if file.endswith("kernel.jpg"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
@@ -1105,7 +1132,7 @@ class PSQLStatistics2:
                 TODO требуется доработка для RC 
             """
             html_list.append(item)
-        
+
         if len(table_with_data_list) > 0:
             for ind, item in enumerate(table_with_data_list):
                 grade = self.get_grade(header_orel[ind])
@@ -1114,11 +1141,22 @@ class PSQLStatistics2:
                 html_list.append(image_list[ind])
                 html_list.append(item)
                 html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
-                if not rc:
-                    html_list.append(kernel_image_list[0][ind])
-                    html_list.append(kernel_image_list[1][ind])
-                    html_list.append(kernel_image_list[2][ind])
-        
+                """
+                    Добавление картинок сравнения по ядром в основную HTML 3 ядра, поэтому range 3. см как задается kernel_image_list
+                """
+                # if not rc:
+                #     for i in range(3):
+                #         try:
+                #             html_list.append(kernel_image_list[i][ind])
+                #         except IndexError:
+                #             pass
+                # else:
+                for i in range(3):
+                    try:
+                        html_list.append(new_kernel_image_dict[header_orel[ind]][i])
+                    except IndexError:
+                        pass
+                    
         # if not rc:
         if len(table_with_data_list_smolensk) > 0:
             html_list.append('<h1 style="text-align: center;">Smolensk</h1>')

@@ -110,6 +110,7 @@ class StatisticsToConfluence():
                                           title=page_title,
                                           body=page_body)
 
+SPACE = "DEVQA"
 
 class UnixBenchStatistics:
 
@@ -119,6 +120,8 @@ class UnixBenchStatistics:
         self.CP = ConfluencePage(username=self.username, token=self.token)
         if not "statistics" in os.listdir():
             os.mkdir("statistics")
+        if not "statistics_rc" in os.listdir():
+            os.mkdir("statistics_rc")
 
 
     @staticmethod
@@ -144,7 +147,8 @@ class UnixBenchStatistics:
         """
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
         """
-        required_pages = []
+        required_pages, required_pages_rc = [], []
+        test_dict_rc = {}
         """
             Проходим по всем версиям
         """
@@ -152,7 +156,15 @@ class UnixBenchStatistics:
             """
                 Получаем ID страниц PostgreSQL, Системные службы, Файловые системы, UnixBench в каждой конкретной версии
             """
+            try:
+                name_page_original = self.CP.get_page_as_html(id=id_children_from_main_page).get("title")
+                name_page = self.CP.get_page_as_html(id=id_children_from_main_page).get("title").split(" ⬝ ")[1]
+                # print(name_page)
+            except IndexError:
+                pass
+
             astra_version_child_pages = self.CP.get_child_page_as_html(id=id_children_from_main_page, by_title=False)
+            temp_arr = []
             """
                 Проходим по каждому полученному ID
             """
@@ -166,10 +178,33 @@ class UnixBenchStatistics:
                 """
                 if "UnixBench" in page.get("title") and self.CP.get_child_page_as_html(id=page_id):
                     required_pages.append(page_id)
+                """
+                    Статистика для RC
+                """
+                try:
+                    name_child_page = page.get("title").split(" ⬝ ")[1]
+                except IndexError:
+                    pass
+                if "1.7" in name_child_page or "1.8" in name_child_page:
+                    hz_kak_nazvat_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                    if hz_kak_nazvat_pages:
+                        for item_page in hz_kak_nazvat_pages:
+                            if "UnixBench" in self.CP.get_page_as_html(id=item_page).get("title"):
+                                temp_arr.append(item_page)
 
-        return required_pages
+            test_dict_rc[name_page_original] = temp_arr
+
+        return required_pages, test_dict_rc
     
-    def get_info_from_pages(self, pages, columns_df):
+    def get_info_from_pages(self, pages, columns_df, rc=False, version_key=None):
+        if rc and version_key:
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
+
         def collect_data(test_name="unix"):
             data_for_df = {
 
@@ -200,7 +235,7 @@ class UnixBenchStatistics:
                     """
                         Получаем конкретную страницу отчета
                     """
-                    src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
+                    src_html = self.CP.get_page_as_html(page_space=SPACE, page_title=title)
                     data = src_html.get("body").get("view").get("value")
                     soup = BeautifulSoup(data, 'lxml')
                     temp_data = title.split("_")
@@ -217,7 +252,7 @@ class UnixBenchStatistics:
                         """
                             Генерируем ссылку на отчет
                         """
-                        link = "https://life.astralinux.ru/display/DD/" + title 
+                        link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
                         rating_with_link = f'<a href="{link}">{rating}</a>'
                         """
                             Записываем полученные данные для дальнейшего составления DataFrame
@@ -273,7 +308,7 @@ class UnixBenchStatistics:
                 Строим HTML
                 """
                 statistics_table_html = df.to_html(escape=False, index=False)
-                file_html = open(f"statistics/{test_name}_{key}_1.html", "w")
+                file_html = open(f"{stat_dir}/{test_name}_{key}_1.html", "w")
                 file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 grage = self.get_grade(key)
                 file_html.writelines(f"<h1>Сводная таблица результатов тестирования {grage}_{key}</h1> {statistics_table_html}")
@@ -309,7 +344,7 @@ class UnixBenchStatistics:
                     Строим вторую HTML таблицу
                 """
                 mat_stat_table_html = df_mat_stat.to_html(index=False)
-                new_file_html = open(f"statistics/{test_name}_{key}_2.html", 'w')
+                new_file_html = open(f"{stat_dir}/{test_name}_{key}_2.html", 'w')
                 new_file_html.write(mat_stat_table_html)
                 new_file_html.close()
 
@@ -352,7 +387,7 @@ class UnixBenchStatistics:
                 green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
                 yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
                 ax.legend(handles=[red_patch, green_patch, yellow_patch])
-                fig.savefig(f"statistics/{test_name}_statistics_{key}.png")
+                fig.savefig(f"{stat_dir}/{test_name}_statistics_{key}.png")
 
         data_df_orel = collect_data(test_name="unix")
         print(data_df_orel)
@@ -362,10 +397,26 @@ class UnixBenchStatistics:
     """
         Создаем итоговую html страницу для life
     """
-    def upload_statistics(self, type_stat='UnixBench'):
+    def upload_statistics(self, type_stat='UnixBench', rc=None, pp_title=None):
+        if rc and pp_title:
+            version_key = pp_title.split(" ⬝ ")[1]
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
         
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
+        if rc:
+            parent_page = pp_title
+            page_rc_title = version_key
+        else:
+            parent_page = "Статистика"
+            page_rc_title = ""
+
+        confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
+        confluence_stat.create_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", parent_page_title=parent_page)
 
         template_img = """ 
             <p>
@@ -381,20 +432,20 @@ class UnixBenchStatistics:
         table_with_data_list = []
         table_with_mat_stat_list = []
 
-        for file in sorted(os.listdir("statistics")):
+        for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                img = template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file)
                 image_list.append(img)
 
             if file.endswith("1.html"):
-                file_table = open(f'statistics/{file}', 'r')
+                file_table = open(f'{stat_dir}/{file}', 'r')
                 table = file_table.read()
                 file_table.close()
                 table_with_data_list.append(table)
             if file.endswith("2.html"):
-                new_file_table = open(f'statistics/{file}', 'r')
+                new_file_table = open(f'{stat_dir}/{file}', 'r')
                 mat_stat_table = new_file_table.read()
                 new_file_table.close()
                 table_with_mat_stat_list.append(mat_stat_table)
@@ -408,13 +459,19 @@ class UnixBenchStatistics:
         
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", page_body=html_page)
     
     def update_statistics(self):
-        pages = self.get_list_required_pages()
+        pages, rc_pages = self.get_list_required_pages()
         columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "Рейтинг", 'rating_2']
         self.get_info_from_pages(pages=pages, columns_df=columns)
+        for key, value in rc_pages.items():
+            if value:
+                self.get_info_from_pages(pages=value, columns_df=columns, rc=True, version_key=key.split(" ⬝ ")[1])
         self.upload_statistics()
+        for key, value in rc_pages.items():
+            if value:
+                self.upload_statistics(rc=True, pp_title=key)
 
 
 

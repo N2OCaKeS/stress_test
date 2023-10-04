@@ -382,6 +382,9 @@ class FileSystemStatistics:
                 df = df.drop("Режим защищенности", axis=1)
                 dataframes.append(df)
 
+            if len(dataframes) < 2:
+                return [], [], pd.DataFrame()
+
             df_merge = pd.merge(dataframes[0], dataframes[1], how='outer', left_on=["Релиз", "Ядро", "Стенд"], right_on=["Релиз", "Ядро", "Стенд"])
             df_merge['Рейтинг2_ext4'] = df_merge['Рейтинг2_ext4'].fillna(0)
             df_merge['Рейтинг2_ext4_parsec'] = df_merge['Рейтинг2_ext4_parsec'].fillna(0)
@@ -411,6 +414,9 @@ class FileSystemStatistics:
                 df = df.drop("Режим защищенности", axis=1)
                 dataframes.append(df)
             
+            if len(dataframes) < 2:
+                return [], [], pd.DataFrame()
+
             df_merge = pd.merge(dataframes[0], dataframes[1], how='outer', left_on=["Релиз", "Ядро", "Стенд"], right_on=["Релиз", "Ядро", "Стенд"])
             df_merge[f'Рейтинг2_{file_system_names[0]}'] = df_merge[f'Рейтинг2_{file_system_names[0]}'].fillna(0)
             df_merge[f'Рейтинг_{file_system_names[0]}'] = df_merge[f'Рейтинг_{file_system_names[0]}'].fillna("-")
@@ -532,12 +538,14 @@ class FileSystemStatistics:
                 rating_for_graph, shcl = build_main_dataframe("XFS_parsec", data.get("XFS_parsec"), key)
                 build_mat_stat_dataframe("XFS_parsec", rating_for_graph, key)
                 build_graph(fs_type="XFS_parsec", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
-            if not rc:
-                if data.get("EXT4") and data.get("EXT4_parsec"):
-                    rat, rat_parsec, shcl = create_summary_table(fs_data=[data.get("EXT4"), data.get("EXT4_parsec")], stand=key)
+            # if not rc:
+            if data.get("EXT4") and data.get("EXT4_parsec"):
+                rat, rat_parsec, shcl = create_summary_table(fs_data=[data.get("EXT4"), data.get("EXT4_parsec")], stand=key)
+                if rat and rat_parsec:
                     build_summary_graph(stand=key, rating1=rat, rating2=rat_parsec, shcala_txt=shcl)
-                if data.get("EXT4") and data.get("XFS"):
-                    rat_ext4, rat_xfs, shcl = create_summary_table_template(fs_data={"EXT4": data.get("EXT4"), "XFS": data.get("XFS")}, stand=key)
+            if data.get("EXT4") and data.get("XFS"):
+                rat_ext4, rat_xfs, shcl = create_summary_table_template(fs_data={"EXT4": data.get("EXT4"), "XFS": data.get("XFS")}, stand=key)
+                if rat_ext4 and rat_xfs:
                     build_summary_graph_template(stand=key, rating1=rat_ext4, rating2=rat_xfs, shcala_txt=shcl, file_system_names=["EXT4", "XFS"])
         
         
@@ -660,18 +668,20 @@ class FileSystemStatistics:
             html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(item)
             html_list.append("<br/>" + table_with_mat_stat_list[ind])
-        if not rc:
+        # if not rc:
+        if len(ext4_and_ext4_parsec_comparison_list) > 0:
             for ind, item in enumerate(ext4_and_ext4_parsec_comparison_list):
-                nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content2[ind]}">{headers_for_content2[ind]}</a></li>')
+                nav_lst.append(f'<li><a href="#id-Статистика.{page_rc_title}Файловыесистемы-{headers_for_content2[ind]}">{headers_for_content2[ind]}</a></li>')
                 html_list.append("<br/><hr/>")
                 html_list.append(headers2[ind])
                 html_list.append(image_list_ext4_comparison[ind])
                 html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
                 html_list.append(item)
-            
-            # print("******", len(ext4_and_xfs_comparison_list), len(img_lst_comparison_ext4_xfs))
+        
+        # print("******", len(ext4_and_xfs_comparison_list), len(img_lst_comparison_ext4_xfs))
+        if len(ext4_and_xfs_comparison_list) > 0:
             for ind, item in enumerate(ext4_and_xfs_comparison_list):
-                nav_lst.append(f'<li><a href="#id-Статистика.Файловыесистемы-{headers_for_content3[ind]}">{headers_for_content3[ind]}</a></li>')
+                nav_lst.append(f'<li><a href="#id-Статистика.{page_rc_title}Файловыесистемы-{headers_for_content3[ind]}">{headers_for_content3[ind]}</a></li>')
                 html_list.append("<br/><hr/>")
                 html_list.append(headers3[ind])
                 html_list.append(img_lst_comparison_ext4_xfs[ind])

@@ -23,16 +23,13 @@ CREATE TABLE main_table (
 );
 
 
--- ALTER TABLE main_table 
--- ADD COLUMN stand10_cpu VARCHAR(255), 
--- ADD COLUMN stand10_ram VARCHAR(255),
--- ADD COLUMN stand11_cpu VARCHAR(255),
--- ADD COLUMN stand11_ram VARCHAR(255),
--- ADD COLUMN stand12_cpu VARCHAR(255),
--- ADD COLUMN stand12_ram VARCHAR(255);
-
-
 ALTER TABLE main_table 
+ADD COLUMN stand10_cpu VARCHAR(255), 
+ADD COLUMN stand10_ram VARCHAR(255),
+ADD COLUMN stand11_cpu VARCHAR(255),
+ADD COLUMN stand11_ram VARCHAR(255),
+ADD COLUMN stand12_cpu VARCHAR(255),
+ADD COLUMN stand12_ram VARCHAR(255);
 ADD COLUMN stand1_nvme VARCHAR(255), 
 ADD COLUMN stand1_sda VARCHAR(255),
 ADD COLUMN stand2_nvme VARCHAR(255), 
@@ -47,9 +44,10 @@ ADD COLUMN stand11_nvme VARCHAR(255),
 ADD COLUMN stand11_sda VARCHAR(255),
 ADD COLUMN stand12_nvme VARCHAR(255), 
 ADD COLUMN stand12_sda VARCHAR(255);
-
-
-ALTER TABLE main_table 
+ADD COLUMN stand1_temp_cpu VARCHAR(255),
+ADD COLUMN stand2_temp_cpu VARCHAR(255),
+ADD COLUMN stand3_temp_cpu VARCHAR(255),
+ADD COLUMN stand4_temp_cpu VARCHAR(255),
 ADD COLUMN stand1_cpu_user VARCHAR(255), 
 ADD COLUMN stand1_cpu_system VARCHAR(255),
 ADD COLUMN stand2_cpu_user VARCHAR(255), 

@@ -395,12 +395,24 @@ def output_remote_load(stand):
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(3.7)
+
+    """
+    Add temp block
+    """
+    if stand == 'stand1' or stand == 'stand2':
+        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone1/temp'
+    elif stand == 'stand3':
+        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
+    elif stand == 'stand4':
+        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone1/temp; cat /sys/class/thermal/thermal_zone2/temp'
+
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
         
         if result != 0:
             output_nvme = '-'
             output_sda = '-'
+            temp_cpu = '-'
         else:
             try:
                 output_nvme  = ssh_command("""iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); \
@@ -409,12 +421,15 @@ def remote_storage_load(stand):
                 output_sda  = ssh_command("""iostat -dx 1 2 | awk '/sda/ {gsub(",", ".", $NF); \
                                              printf "%.1f%%\\n", $NF}' | tail -n 1""", 
                                         stand_ip=stands_ip[stand])
+                temp_cpu = ssh_command(temp_cpu_comm, stand_ip=stands_ip[stand])
             except paramiko.AuthenticationException:
                 output_nvme = 'Auth Error'
                 output_sda = 'Auth Error'
+                temp_cpu = 'Auth Error'
             except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
                 output_nvme = 'Connect Error'
                 output_sda = 'Connect Error'
+                temp_cpu = 'Connect Error'
             except socket.timeout as st:
                 print(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
 
@@ -428,8 +443,12 @@ def remote_storage_load(stand):
         cursor = conn.cursor()
 
         id = 1 #row number
-        update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s WHERE id = %s"
-        data = (output_nvme, output_sda, id)
+        update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
+        if stand == 'stand1' or stand == 'stand2':
+            data = (output_nvme, output_sda, f'{int(temp_cpu) / 1000}°C', id)
+        elif stand == 'stand3' or stand == 'stand4':
+            temp_cpu = temp_cpu.split('\r')
+            data = (output_nvme, output_sda, f'{int(temp_cpu[0]) / 1000}°C, {int(temp_cpu[1]) / 1000}°C', id)
         cursor.execute(update_query, data)
 
         conn.commit()

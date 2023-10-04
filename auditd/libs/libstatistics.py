@@ -110,6 +110,7 @@ class StatisticsToConfluence():
                                           title=page_title,
                                           body=page_body)
 
+SPACE = "DEVQA"
 
 class FileSystemStatistics:
     def __init__(self, username, token) -> None:
@@ -118,12 +119,16 @@ class FileSystemStatistics:
         self.CP = ConfluencePage(username=self.username, token=self.token)
         if not "statistics" in os.listdir():
             os.mkdir("statistics")
+        if not "statistics_rc" in os.listdir():
+            os.mkdir("statistics_rc")
 
     def get_list_required_pages(self):
         """
             Получаем дочерние страницы 1.7: 1.7.1; 1.7.2; 1.7.n...
         """
         children_main_page = self.CP.get_child_page_as_html(id="156339086", by_title=False)
+        required_pages, required_pages_rc = [], []
+        test_dict_rc = {}
         """
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
         """
@@ -135,7 +140,15 @@ class FileSystemStatistics:
             """
                 Получаем ID страниц PostgreSQL, Системные службы, Файловые системы в каждой конкретной версии
             """
+            try:
+                name_page_original = self.CP.get_page_as_html(id=id_children_from_main_page).get("title")
+                name_page = self.CP.get_page_as_html(id=id_children_from_main_page).get("title").split(" ⬝ ")[1]
+                # print(name_page)
+            except IndexError:
+                pass
+
             astra_version_child_pages = self.CP.get_child_page_as_html(id=id_children_from_main_page, by_title=False)
+            temp_arr = []
             """
                 Проходим по каждому полученному ID
             """
@@ -149,10 +162,34 @@ class FileSystemStatistics:
                 """
                 if "Системные службы" in page.get("title") and self.CP.get_child_page_as_html(id=page_id):
                     required_pages.append(page_id)
+                
+                """
+                    Статистика для RC
+                """
+                try:
+                    name_child_page = page.get("title").split(" ⬝ ")[1]
+                except IndexError:
+                    pass
+                if "1.7" in name_child_page or "1.8" in name_child_page:
+                    hz_kak_nazvat_pages = self.CP.get_child_page_as_html(id=page_id, by_title=False)
+                    if hz_kak_nazvat_pages:
+                        for item_page in hz_kak_nazvat_pages:
+                            if "Системные службы" in self.CP.get_page_as_html(id=item_page).get("title"):
+                                temp_arr.append(item_page)
 
-        return required_pages
+            test_dict_rc[name_page_original] = temp_arr
+
+        return required_pages, test_dict_rc
     
-    def get_info_from_pages(self, pages):
+    def get_info_from_pages(self, pages, rc=False, version_key=None):
+        if rc and version_key:
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
+
         def build_main_dataframe(fs_type, data_fs, stand):
             columns = ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг', 'Рейтинг2']
             df = pd.DataFrame(data=data_fs, columns=columns)
@@ -164,7 +201,7 @@ class FileSystemStatistics:
             df = df.drop('Рейтинг2', axis=1)
             
             table = df.to_html(escape=False, index=False)
-            f_ext4 = open(f"statistics/fs_{fs_type}_{stand}_1.html", 'w')
+            f_ext4 = open(f"{stat_dir}/fs_{fs_type}_{stand}_1.html", 'w')
             f_ext4.writelines(f"<h2>Сводная таблица результатов тестирования {fs_type} {stand}</h2> {table}")
             f_ext4.close()
 
@@ -198,7 +235,7 @@ class FileSystemStatistics:
                 Строим вторую HTML таблицу
             """
             mat_stat_table_html = df_mat_stat.to_html(index=False)
-            new_file_html = open(f"statistics/fs_{fs_type}_{stand}_2.html", 'w')
+            new_file_html = open(f"{stat_dir}/fs_{fs_type}_{stand}_2.html", 'w')
             new_file_html.write(f'<h2>Таблица основных статистических параметров {fs_type} {stand}</h2> {mat_stat_table_html}')
             new_file_html.close()
 
@@ -237,7 +274,7 @@ class FileSystemStatistics:
             green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
             yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
             ax.legend(handles=[red_patch, green_patch, yellow_patch])
-            fig.savefig(f"statistics/fs_{fs_type}_{stand}_1.png")
+            fig.savefig(f"{stat_dir}/fs_{fs_type}_{stand}_1.png")
         
         def build_summary_graph(stand, rating1, rating2, shcala_txt):
             shcala_x = [x for x in range(1, len(shcala_txt) + 1, 1)]
@@ -268,7 +305,7 @@ class FileSystemStatistics:
                 if val != 0:
                     plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             ax.legend(['EXT4', 'EXT4 with parsec'])
-            fig.savefig(f"statistics/fs_EXT4_and_EXT4_with_parsec_{stand}_a.png")
+            fig.savefig(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{stand}_a.png")
 
 
         def create_summary_table(fs_data=[], stand=None):
@@ -294,7 +331,7 @@ class FileSystemStatistics:
             df_merge= df_merge.drop(['Рейтинг2_ext4', "Рейтинг2_ext4_parsec"], axis=1)
 
             table = df_merge.to_html(escape=False, index=False)
-            file = open(f"statistics/fs_EXT4_and_EXT4_with_parsec_{stand}_a.html", 'w')
+            file = open(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{stand}_a.html", 'w')
             file.writelines(f"<h2>Сводная таблица результатов тестирования EXT4 и EXT4 с parsec {stand}</h2> {table}")
             file.close()
             return rating.to_list(), rating_parsec.to_list(), df_merge['Релиз'] + '_' + df_merge['Ядро']
@@ -339,7 +376,7 @@ class FileSystemStatistics:
                 """
                     Получаем конкретную страницу отчета
                 """
-                src_html = self.CP.get_page_as_html(page_space="DD", page_title=title)
+                src_html = self.CP.get_page_as_html(page_space=SPACE, page_title=title)
                 data = src_html.get("body").get("view").get("value")
                 soup = BeautifulSoup(data, 'lxml')
                 temp_data = title.replace(" ", "_").split("_")
@@ -357,7 +394,7 @@ class FileSystemStatistics:
                 """
                     Генерируем ссылку на отчет
                 """
-                link = "https://life.astralinux.ru/display/DD/" + title 
+                link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
                 rating_with_link = f'<a href="{link}">{rating}</a>'
 
                 if parsec:
@@ -396,9 +433,24 @@ class FileSystemStatistics:
     """
         Создаем итоговую html страницу для life
     """
-    def upload_statistics(self, type_stat='PostgreSQL'):
+    def upload_statistics(self, type_stat='Системные службы', rc=None, pp_title=None):
+        if rc and pp_title:
+            version_key = pp_title.split(" ⬝ ")[1]
+            main_stat_dir = 'statistics_rc'
+            stat_dir = f"{main_stat_dir}/{version_key}"
+            if not version_key in os.listdir(main_stat_dir):
+                os.mkdir(stat_dir)
+        else:
+            stat_dir = "statistics"
+        if rc:
+            parent_page = pp_title
+            page_rc_title = version_key
+        else:
+            parent_page = "Статистика"
+            page_rc_title = ""
+        
         confluence_stat = StatisticsToConfluence(username=self.username, token=self.token)
-        confluence_stat.create_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", parent_page_title="Статистика")
+        confluence_stat.create_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", parent_page_title=parent_page)
 
          ### TODO изменить пространство и parent_page_title
 
@@ -417,10 +469,10 @@ class FileSystemStatistics:
         headers_for_content, headers_for_content2 = [], []
 
         
-        for file in sorted(os.listdir("statistics")):
+        for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("1.png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file))
                 part_header = file.split("_")
                 if part_header[2] == "parsec":
@@ -431,8 +483,8 @@ class FileSystemStatistics:
                     headers_for_content.append(f"{part_header[1]}_{part_header[2]}")
                 
             if file.endswith("a.png"):
-                confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
-                image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
+                confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file))
                 
                 part_header = file.split("_")
@@ -440,17 +492,17 @@ class FileSystemStatistics:
                 headers_for_content2.append(f"{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[5]}_{part_header[6]}")
 
             if file.endswith("1.html"):
-                file_table = open(f'statistics/{file}', 'r')
+                file_table = open(f'{stat_dir}/{file}', 'r')
                 table = file_table.read()
                 file_table.close()
                 table_with_data_list.append(table)
             if file.endswith("2.html"):
-                new_file_table = open(f'statistics/{file}', 'r')
+                new_file_table = open(f'{stat_dir}/{file}', 'r')
                 mat_stat_table = new_file_table.read()
                 new_file_table.close()
                 table_with_mat_stat_list.append(mat_stat_table)
             if file.endswith("a.html"):
-                file_sys_with_parsec_table = open(f'statistics/{file}', "r")
+                file_sys_with_parsec_table = open(f'{stat_dir}/{file}', "r")
                 g_table = file_sys_with_parsec_table.read()
                 file_sys_with_parsec_table.close()
                 ext4_and_ext4_parsec_comparison_list.append(g_table)
@@ -471,7 +523,7 @@ class FileSystemStatistics:
         nav_lst = []
 
         for ind, item in enumerate(table_with_data_list):
-            nav_lst.append(f'<li><a href="#id-Статистика.Системныеслужбы-{headers_for_content[ind]}">{headers_for_content[ind]}</a></li>')
+            nav_lst.append(f'<li><a href="#id-Статистика.{page_rc_title}Системныеслужбы-{headers_for_content[ind]}">{headers_for_content[ind]}</a></li>')
             html_list.append("<br/><hr/>")
             html_list.append(headers[ind])
             html_list.append(image_list[ind])
@@ -493,10 +545,35 @@ class FileSystemStatistics:
 
         html_page = "".join(html_list)
 
-        confluence_stat.update_confluence_page(page_space="DD", page_title=f"Статистика. {type_stat}", page_body=html_page)
+        confluence_stat.update_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", page_body=html_page)
 
 
     def update_statistics(self):
-        pages = self.get_list_required_pages()
+        pages, rc_pages = self.get_list_required_pages()
+        print(rc_pages)
         self.get_info_from_pages(pages=pages)
-        self.upload_statistics(type_stat="Системные службы")
+        for key, value in rc_pages.items():
+            if value:
+                self.get_info_from_pages(pages=value, rc=True, version_key=key.split(" ⬝ ")[1])
+        self.upload_statistics()
+        for key, value in rc_pages.items():
+            if value:
+                self.upload_statistics(rc=True, pp_title=key)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--username',
+                        action='store',
+                        required=True,
+                        help='confluence user',
+                        dest='USER')
+    parser.add_argument('-t', '--token',
+                        action='store',
+                        required=True,
+                        default=None,
+                        help='confluence access token',
+                        dest='TOKEN')
+    args = parser.parse_args()
+    
+    stat = FileSystemStatistics(username=args.USER, token=args.TOKEN)
+    stat.update_statistics()

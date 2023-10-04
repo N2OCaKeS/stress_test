@@ -60,7 +60,8 @@ class UploaderZC(Public, FileSystemStatistics):
                             conf_parent_page=self.CPP,
                             conf_new_page_name=self.CNPN,
                             grade_stand=self.GS,
-                            package=self.PKG)
+                            package=self.PKG,
+                            test_cycle_version=self.TCV)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,

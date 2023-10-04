@@ -447,7 +447,7 @@ def remote_storage_load(stand):
         if stand == 'stand1' or stand == 'stand2':
             data = (output_nvme, output_sda, f'{int(temp_cpu) / 1000}°C', id)
         elif stand == 'stand3' or stand == 'stand4':
-            temp_cpu = temp_cpu.split('\r')
+            temp_cpu = temp_cpu.split('\n')
             data = (output_nvme, output_sda, f'{int(temp_cpu[0]) / 1000}°C, {int(temp_cpu[1]) / 1000}°C', id)
         cursor.execute(update_query, data)
 

@@ -28,16 +28,7 @@ from backup_image_conf import (psyc,
                                test_run_stands,
                                rc_list,
                                releases_list,
-                               pkg_path_testing,
-                               vers_path_testing,
-                               pkg_path_174,
-                               vers_path_174,
-                               pkg_path_173,
-                               vers_path_173,
-                               pkg_path_172,
-                               vers_path_172,
-                               pkg_path_171,
-                               vers_path_171)
+                               repo_path)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -500,10 +491,8 @@ def get_kernels_from_rc(version_rc: str):
         c_name = ctypes.c_char_p(bytes(name, encoding='utf8'))
         clib.download_file(c_path, c_name)
 
-    pkg_path_chank = 'pkg_path_' + version_rc.replace('.', '')
-    vers_path_chank = 'vers_path_' + version_rc.replace('.', '')
-    pkg_path = globals()[pkg_path_chank]
-    vers_path = globals()[vers_path_chank]
+    pkg_path = repo_path[f'pkg_path_{version_rc.replace(".", "")}']
+    vers_path = repo_path[f'vers_path_{version_rc.replace(".", "")}']
 
     get_kernels = ZefirTestRun()
     get_file(pkg_path, 'available_packages')

@@ -326,17 +326,28 @@ brest_stands = ['stand10', 'stand11', 'stand12']
 #################################################################################################################################################
 #Перечень настроек, используемых для создания тестовых прогонов
 #################################################################################################################################################
-pkg_path_testing = 'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages'
-vers_path_testing = 'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/Release'
-vers_path_174 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4/dists/1.7_x86-64/Release'
-pkg_path_174 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4/dists/1.7_x86-64/main/binary-amd64/Packages'
-vers_path_173 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3/dists/1.7_x86-64/Release'
-pkg_path_173 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3/dists/1.7_x86-64/main/binary-amd64/Packages'
-vers_path_172 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2/dists/1.7_x86-64/Release'
-pkg_path_172 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2/dists/1.7_x86-64/main/binary-amd64/Packages'
-vers_path_171 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/Release'
-pkg_path_171 = 'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/main/binary-amd64/Packages'
-rc_list = ['1.7.5.4', '1.7.5.5']
+repo_path = {
+    'pkg_path_testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/Release',
+    'vers_path_174UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4.1/dists/1.7_x86-64/Release',
+    'pkg_path_174UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4.1/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_174':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4/dists/1.7_x86-64/Release',
+    'pkg_path_174':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_173UU2':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.2/dists/1.7_x86-64/Release',
+    'pkg_path_173UU2':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.2/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_173UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.1/dists/1.7_x86-64/Release',
+    'pkg_path_173UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.1/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_173':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3/dists/1.7_x86-64/Release',
+    'pkg_path_173':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_172UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2.1/dists/1.7_x86-64/Release',
+    'pkg_path_172UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2.1/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_172':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2/dists/1.7_x86-64/Release',
+    'pkg_path_172':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/Release',
+    'pkg_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/main/binary-amd64/Packages'
+}
+
+rc_list = ['1.7.5.4', '1.7.5.5', '1.7.5.6']
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5']
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'syslog-ng', 'unix']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']

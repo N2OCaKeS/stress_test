@@ -837,30 +837,33 @@ class PSQLStatistics2:
                     except IndexError:
                         break
                 array_merged_dataframes.append(df_merged)
-            
+
             for merged_df in array_merged_dataframes:
-                ratings_for_plt_graph = merged_df.iloc[::, 3::2]
-                names_stand = merged_df.iloc[::, 2::2].mode().iloc[0].tolist()
-                grades = list(map(self.get_grade, names_stand))
-                grades_with_stands = list(map(lambda x, y: x + "_" + y, grades, names_stand))
-                title = merged_df['Ядро'].mode()[0]
-                
-                
-                fig, ax = plt.subplots(figsize=(12.8, 7.2))
-                ax.grid(True, alpha=.6)
-                ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по стендам.\n{title}")
-                colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
-                for index in range(ratings_for_plt_graph.shape[1]):
-                    ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
-                plt.legend(grades_with_stands)
+                if not merged_df.empty and merged_df.columns[0] == "Релиз":
+                    ratings_for_plt_graph = merged_df.iloc[::, 3::2]
+                    # names_stand = merged_df.iloc[::, 2::2].mode().iloc[0].tolist()
+                    mode_df = merged_df.iloc[:, 2::2].mode()
+                    if not mode_df.empty:
+                        names_stand = mode_df.iloc[0].dropna().tolist()
+                        grades = list(map(self.get_grade, names_stand))
+                        grades_with_stands = list(map(lambda x, y: str(x) + "_" + str(y), grades, names_stand))
+                        title = merged_df['Ядро'].mode()[0]
+                        
+                        fig, ax = plt.subplots(figsize=(12.8, 7.2))
+                        ax.grid(True, alpha=.6)
+                        ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по стендам.\n{title}")
+                        colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
+                        for index in range(ratings_for_plt_graph.shape[1]):
+                            ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
+                        plt.legend(grades_with_stands)
 
-                # Lighten borders
-                plt.gca().spines["top"].set_alpha(.0)
-                plt.gca().spines["bottom"].set_alpha(.3)
-                plt.gca().spines["right"].set_alpha(.0)
-                plt.gca().spines["left"].set_alpha(.3)
+                        # Lighten borders
+                        plt.gca().spines["top"].set_alpha(.0)
+                        plt.gca().spines["bottom"].set_alpha(.3)
+                        plt.gca().spines["right"].set_alpha(.0)
+                        plt.gca().spines["left"].set_alpha(.3)
 
-                plt.savefig(f"{stat_dir}/{test_name}_statistics_all_stands_{title}_kernel.jpg")
+                        plt.savefig(f"{stat_dir}/{test_name}_statistics_all_stands_{title}_kernel.jpg")
         
         def create_summary_table(dfs1, dfs2):
             merged_dataframes = []
@@ -932,15 +935,7 @@ class PSQLStatistics2:
         create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
         create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-        if not rc:
-            
-            create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-
-            # summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
-            # create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
-
-            # summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
-            # create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
+        create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
 
 
     """
@@ -979,7 +974,7 @@ class PSQLStatistics2:
         image_list, images_list_smolensk, image_list_aud_off = [], [], []
         table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off = [], [], []
         table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off = [], [], []
-        kernel_image_list = [[], [], []]
+        # kernel_image_list = [[], [], []]
         
         # new_kernel_image_dict = {
         #     'stand1': [[], [], []],

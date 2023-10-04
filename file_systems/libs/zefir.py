@@ -66,7 +66,8 @@ class UploaderZC(Public, FileSystemStatistics):
                             grade_stand=self.GS,
                             package=self.PKG,
                             file_system=self.file_system,
-                            test_set=self.TSET)
+                            test_set=self.TSET,
+                            test_cycle_version=self.TCV)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,

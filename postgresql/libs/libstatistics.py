@@ -1103,22 +1103,21 @@ class PSQLStatistics2:
                     {list_smolensk}
                 </ul>
             </li>
-            <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsSmolensk">Orel vs Smolensk</a>
-                <ul>
-                    {list_orel_vs_smolensk}
-                </ul>
-            </li>
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orelauditoff">Orel audit off</a>
                 <ul>
                     {list_aud_off}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsSmolensk">Orel vs Smolensk</a>
+                <ul>
+                    {list_orel_vs_smolensk}
                 </ul>
             </li>
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsOrelauditoff">Orel vs Orel audit off</a>
                 <ul>
                     {list_aud_on_off}
                 </ul>
-            </li>
-            
+            </li> 
         '''
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
@@ -1167,7 +1166,7 @@ class PSQLStatistics2:
             html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
             for ind, item in enumerate(table_with_data_list_aud_off):
                 grade = self.get_grade(header_aud_off[ind])
-                nav_lst_aud_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
+                nav_lst_aud_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_off[ind]}.2">{grade}_{header_aud_off[ind]}</a></li>')
                 html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
                 html_list.append(image_list_aud_off[ind])
                 html_list.append(item)
@@ -1178,7 +1177,7 @@ class PSQLStatistics2:
             html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
             for ind, item in enumerate(summ_graphs_list):
                 grade = self.get_grade(header_orel_vs_smolensk[ind])
-                nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
+                nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.3">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
                 html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
                 html_list.append(item)
 

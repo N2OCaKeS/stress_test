@@ -444,7 +444,7 @@ def remote_storage_load(stand):
 
         id = 1 #row number
         update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
-        if temp_cpu == '-':
+        if temp_cpu == '-' or temp_cpu == 'Auth Error' or temp_cpu == 'Connect Error':
             data = (output_nvme, output_sda, temp_cpu, id)
         else:
             if stand == 'stand1' or stand == 'stand2':

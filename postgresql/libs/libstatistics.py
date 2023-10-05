@@ -663,7 +663,10 @@ class PSQLStatistics2:
                         """
                             Выдергиваем значение рейтинга из html страницы
                         """
-                        rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
+                        try:
+                            rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
+                        except:
+                            rating = 0
                         # print(rating)
                         """
                             Генерируем ссылку на отчет

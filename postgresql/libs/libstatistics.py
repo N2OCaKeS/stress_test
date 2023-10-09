@@ -663,7 +663,10 @@ class PSQLStatistics2:
                         """
                             Выдергиваем значение рейтинга из html страницы
                         """
-                        rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
+                        try:
+                            rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
+                        except:
+                            rating = 0
                         # print(rating)
                         """
                             Генерируем ссылку на отчет
@@ -809,6 +812,8 @@ class PSQLStatistics2:
                 for data_kernel in temp_data_frame:
                     fig, ax = plt.subplots(figsize=(12.8, 7.2))
                     ax.bar(data_kernel['Релиз'], data_kernel['rating_2'], color="#a3d1cd")
+                    if data_kernel.empty:
+                        continue
                     grade = self.get_grade(list(data_kernel['Стенд'])[0])
                     ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по ядрам.\n{grade}_{list(data_kernel['Стенд'])[0]} - {kernel}")
                     for i, val in enumerate(data_kernel['rating_2']):
@@ -835,28 +840,33 @@ class PSQLStatistics2:
                     except IndexError:
                         break
                 array_merged_dataframes.append(df_merged)
-            
+
             for merged_df in array_merged_dataframes:
-                ratings_for_plt_graph = merged_df.iloc[::, 3::2]
-                names_stand = merged_df.iloc[::, 2::2].mode().iloc[0].tolist()
-                grades = list(map(self.get_grade, names_stand))
-                grades_with_stands = list(map(lambda x, y: x + "_" + y, grades, names_stand))
-                title = merged_df['Ядро'].mode()[0]
-                fig, ax = plt.subplots(figsize=(12.8, 7.2))
-                ax.grid(True, alpha=.6)
-                ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по стендам.\n{title}")
-                colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
-                for index in range(ratings_for_plt_graph.shape[1]):
-                    ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
-                plt.legend(grades_with_stands)
+                if not merged_df.empty and merged_df.columns[0] == "Релиз":
+                    ratings_for_plt_graph = merged_df.iloc[::, 3::2]
+                    # names_stand = merged_df.iloc[::, 2::2].mode().iloc[0].tolist()
+                    mode_df = merged_df.iloc[:, 2::2].mode()
+                    if not mode_df.empty:
+                        names_stand = mode_df.iloc[0].dropna().tolist()
+                        grades = list(map(self.get_grade, names_stand))
+                        grades_with_stands = list(map(lambda x, y: str(x) + "_" + str(y), grades, names_stand))
+                        title = merged_df['Ядро'].mode()[0]
+                        
+                        fig, ax = plt.subplots(figsize=(12.8, 7.2))
+                        ax.grid(True, alpha=.6)
+                        ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по стендам.\n{title}")
+                        colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
+                        for index in range(ratings_for_plt_graph.shape[1]):
+                            ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
+                        plt.legend(grades_with_stands)
 
-                # Lighten borders
-                plt.gca().spines["top"].set_alpha(.0)
-                plt.gca().spines["bottom"].set_alpha(.3)
-                plt.gca().spines["right"].set_alpha(.0)
-                plt.gca().spines["left"].set_alpha(.3)
+                        # Lighten borders
+                        plt.gca().spines["top"].set_alpha(.0)
+                        plt.gca().spines["bottom"].set_alpha(.3)
+                        plt.gca().spines["right"].set_alpha(.0)
+                        plt.gca().spines["left"].set_alpha(.3)
 
-                plt.savefig(f"{stat_dir}/{test_name}_statistics_all_stands_{title}_kernel.jpg")
+                        plt.savefig(f"{stat_dir}/{test_name}_statistics_all_stands_{title}_kernel.jpg")
         
         def create_summary_table(dfs1, dfs2):
             merged_dataframes = []
@@ -921,15 +931,14 @@ class PSQLStatistics2:
         tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
         create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
 
-        if not rc:
-            create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-            create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+        summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
+        create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
 
-            summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
-            create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
+        summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
+        create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
-            summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
-            create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
+        create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+        create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
 
 
     """
@@ -968,7 +977,22 @@ class PSQLStatistics2:
         image_list, images_list_smolensk, image_list_aud_off = [], [], []
         table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off = [], [], []
         table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off = [], [], []
-        kernel_image_list = [[], [], []]
+        # kernel_image_list = [[], [], []]
+        
+        # new_kernel_image_dict = {
+        #     'stand1': [[], [], []],
+        #     'stand2': [[], [], []],
+        #     'stand3': [[], [], []],
+        #     'stand4': [[], [], []] 
+        # }
+
+        new_kernel_image_dict = {
+            # 'stand1': [],
+            # 'stand2': [],
+            # 'stand3': [],
+            # 'stand4': [] 
+        }
+        
         lst_all_stands_stat_kernel = []
 
         summ_graphs_list, summ_graphs_list_aud_on_off = [], []
@@ -1019,18 +1043,25 @@ class PSQLStatistics2:
                 else:
                     table_with_mat_stat_list.append(mat_stat_table)
 
-            if file.endswith("5.10.jpg"):
+            stand_name_temp_for_key = file.split("_")[-2]
+            if stand_name_temp_for_key not in new_kernel_image_dict.keys():
+                    new_kernel_image_dict[stand_name_temp_for_key] = []
+            templ_img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), img_png=file)    
+            if file.endswith("5.10.jpg"):  
+                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
-                kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                                img_png=file))
+                # kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+                #                                                 img_png=file))
             if file.endswith("5.15-gen.jpg"):
+                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
-                kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                                img_png=file))
+                # kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+                #                                                 img_png=file))
             if file.endswith("5.15-ll.jpg"):
+                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
-                kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                                img_png=file))
+                # kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+                #                                                 img_png=file))
             if file.endswith("kernel.jpg"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
@@ -1075,22 +1106,21 @@ class PSQLStatistics2:
                     {list_smolensk}
                 </ul>
             </li>
-            <li><a href="#id-Статистика.PostgreSQL-OrelvsSmolensk">Orel vs Smolensk</a>
-                <ul>
-                    {list_orel_vs_smolensk}
-                </ul>
-            </li>
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orelauditoff">Orel audit off</a>
                 <ul>
                     {list_aud_off}
                 </ul>
             </li>
-            <li><a href="#id-Статистика.PostgreSQL-OrelvsOrelauditoff">Orel vs Orel audit off</a>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsSmolensk">Orel vs Smolensk</a>
+                <ul>
+                    {list_orel_vs_smolensk}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsOrelauditoff">Orel vs Orel audit off</a>
                 <ul>
                     {list_aud_on_off}
                 </ul>
-            </li>
-            
+            </li> 
         '''
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
@@ -1099,52 +1129,67 @@ class PSQLStatistics2:
                 TODO требуется доработка для RC 
             """
             html_list.append(item)
-        
-        for ind, item in enumerate(table_with_data_list):
-            grade = self.get_grade(header_orel[ind])
-            nav_lst_orel.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel[ind]}">{grade}_{header_orel[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_orel[ind]}</h1>")
-            html_list.append(image_list[ind])
-            html_list.append(item)
-            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
-            if not rc:
-                html_list.append(kernel_image_list[0][ind])
-                html_list.append(kernel_image_list[1][ind])
-                html_list.append(kernel_image_list[2][ind])
-        
+
+        if len(table_with_data_list) > 0:
+            for ind, item in enumerate(table_with_data_list):
+                grade = self.get_grade(header_orel[ind])
+                nav_lst_orel.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel[ind]}">{grade}_{header_orel[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_orel[ind]}</h1>")
+                html_list.append(image_list[ind])
+                html_list.append(item)
+                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
+                """
+                    Добавление картинок сравнения по ядром в основную HTML 3 ядра, поэтому range 3. см как задается kernel_image_list
+                """
+                # if not rc:
+                #     for i in range(3):
+                #         try:
+                #             html_list.append(kernel_image_list[i][ind])
+                #         except IndexError:
+                #             pass
+                # else:
+                for i in range(3):
+                    try:
+                        html_list.append(new_kernel_image_dict[header_orel[ind]][i])
+                    except IndexError:
+                        pass
+                    
         # if not rc:
+        if len(table_with_data_list_smolensk) > 0:
+            html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
+            for ind, item in enumerate(table_with_data_list_smolensk):
+                grade = self.get_grade(header_smolensk[ind])
+                nav_lst_smolensk.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
+                html_list.append(images_list_smolensk[ind])
+                html_list.append(item)
+                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
 
-        html_list.append('<h1 style="text-align: center;">Smolensk</h1>')
-        for ind, item in enumerate(table_with_data_list_smolensk):
-            grade = self.get_grade(header_smolensk[ind])
-            nav_lst_smolensk.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_smolensk[ind]}.1">{grade}_{header_smolensk[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_smolensk[ind]}</h1>")
-            html_list.append(images_list_smolensk[ind])
-            html_list.append(item)
-            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_smolensk[ind])
-            
-        html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
-        for ind, item in enumerate(table_with_data_list_aud_off):
-            grade = self.get_grade(header_aud_off[ind])
-            nav_lst_aud_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_off[ind]}.3">{grade}_{header_aud_off[ind]}</a></li>')
-            html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
-            html_list.append(image_list_aud_off[ind])
-            html_list.append(item)
-            html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
+        if len(table_with_data_list_aud_off) > 0:
+            html_list.append('<h1 style="text-align: center;">Orel audit off</h1>')
+            for ind, item in enumerate(table_with_data_list_aud_off):
+                grade = self.get_grade(header_aud_off[ind])
+                nav_lst_aud_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_off[ind]}.2">{grade}_{header_aud_off[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_aud_off[ind]}</h1>")
+                html_list.append(image_list_aud_off[ind])
+                html_list.append(item)
+                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_aud_off[ind])
 
-        if not rc:
+        # if not rc:
+        if len(summ_graphs_list) > 0:
             html_list.append('<h1 style="text-align: center;">Orel vs Smolensk</h1>')
             for ind, item in enumerate(summ_graphs_list):
                 grade = self.get_grade(header_orel_vs_smolensk[ind])
-                nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.2">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
+                nav_lst_orel_vs_smolensk.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel_vs_smolensk[ind]}.3">{grade}_{header_orel_vs_smolensk[ind]}</a></li>')
                 html_list.append(f"<hr/><h1>{grade}_{header_orel_vs_smolensk[ind]}</h1>")
                 html_list.append(item)
 
+        if len(summ_graphs_list_aud_on_off) > 0:
             html_list.append('<h1 style="text-align: center;">Orel vs Orel audit off</h1>')
             for ind, item in enumerate(summ_graphs_list_aud_on_off):
                 grade = self.get_grade(header_aud_on_vs_off[ind])
                 # print(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
-                nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
+                nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
                 html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
                 html_list.append(item)
 

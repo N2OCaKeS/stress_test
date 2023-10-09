@@ -328,6 +328,7 @@ def ssh_command(command, stand_ip):
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(2.5)
+    conn = None
 
     command = """
             top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
@@ -388,13 +389,14 @@ def output_remote_load(stand):
     except Exception as all_e:
         print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
     finally:
-        if conn != None:
+        if conn:
             conn.close()
 
 
 def remote_storage_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(3.7)
+    conn = None
 
     """
     Add temp block
@@ -462,7 +464,7 @@ def remote_storage_load(stand):
     except Exception as all_e:
         print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
     finally:
-        if conn != None:
+        if conn:
             conn.close()
 
 

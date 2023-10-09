@@ -2,8 +2,8 @@
 
 set -vx
 
-#export PG_MAIN_CLUSTER=main
-#export PG_MAIN_PORT=5432
+PG_MAIN_CLUSTER=main
+PG_MAIN_PORT=5432
 PG_VERSION=11
 STORAGE=$(cat psb_conf.py | grep 'STORAGE =' | awk '{print $3}' | tr -d "'")
 MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}' | tr -d "'")
@@ -155,5 +155,6 @@ do
   chmod 644 /tmp/$sql_script
   su -c "psql -p $port -f /tmp/$sql_script" postgres
   rm /tmp/$sql_script
-  cd - &> /dev/null
+  cd -
+  #cd - &> /dev/null
 done

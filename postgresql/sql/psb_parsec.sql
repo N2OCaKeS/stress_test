@@ -1,8 +1,8 @@
 -- Создаем пользователей
-CREATE USER u_0_00; -- метка {0,0}  00
+CREATE USER u_1_01; -- метка {0,0}  00
 
 -- Даем привилегии PARSEC_CAP_CHMAC и PARSEC_CAP_SETMAC
-ALTER USER u_0_00 WITH PARSEC_CAP_CHMAC, PARSEC_CAP_SETMAC;
+-- ALTER USER u_0_00 WITH PARSEC_CAP_CHMAC, PARSEC_CAP_SETMAC;
 
 
 
@@ -29,5 +29,5 @@ MAC CCR ON SCHEMA public IS OFF;
 
 
 -- #Создаем пользователя
--- sudo useradd u_0_00 && sudo usermac -m 0:0 -c 0:0 u_0_00
--- sudo usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_0_00
+-- sudo useradd u_1_01 && sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1_01
+-- sudo usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1_01

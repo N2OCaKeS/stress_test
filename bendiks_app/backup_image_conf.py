@@ -184,6 +184,7 @@ parent_page_list = {
              'postgresql-sm':'1.7.1 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.1 ⬝ PostgreSQL',
              'XFS':'1.7.1 ⬝ Файловые системы',
+             'XFS parsec':'1.7.1 ⬝ Файловые системы',
              'NTFS':'1.7.1 ⬝ Файловые системы',
              'EXT4':'1.7.1 ⬝ Файловые системы',
              'EXT4 parsec':'1.7.1 ⬝ Файловые системы',

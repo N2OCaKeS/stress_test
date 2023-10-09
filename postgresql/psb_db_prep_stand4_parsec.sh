@@ -127,7 +127,8 @@ setfacl -m u:postgres:rx /etc/parsec/capdb
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
 # Создать базу
-sql_script=psb_parsec.sql
+sql_script_add_user=psb_add_user.sql
+sql_script_set_mac=psb_parsec.sql
 
 # delete main
 pg_ctlcluster $PG_VERSION $PG_MAIN_CLUSTER stop
@@ -150,11 +151,18 @@ fi
 
 for port in $(pg_lsclusters -h | gawk '{print $3}');
 do
-  cp -r $MAIN_DIR/sql/$sql_script /tmp/$sql_script
+  cp -r $MAIN_DIR/sql/$sql_script_add_user /tmp/$sql_script_add_user
+  cp -r $MAIN_DIR/sql/$sql_script_set_mac /tmp/$sql_script_set_mac
   cd /tmp
-  chmod 644 /tmp/$sql_script
-  su -c "psql -p $port -f /tmp/$sql_script" postgres
-  rm /tmp/$sql_script
+  chmod 644 /tmp/$sql_script_add_user
+  chmod 644 /tmp/$sql_script_set_mac
+  su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
+  su -c "psql -p $port -f /tmp/$sql_script_set_mac" u_1_01
+  #rm /tmp/$sql_script
   cd -
   #cd - &> /dev/null
 done
+
+
+
+

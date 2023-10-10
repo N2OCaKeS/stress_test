@@ -1,6 +1,3 @@
--- Создаем тестовую базу данных
-CREATE DATABASE test_parsec;
-
 -- Устанавливаем мандатную метку кластера
 MAC LABEL ON CLUSTER IS '{255,0xFFFFFFFFFFFFFFFF}';
 

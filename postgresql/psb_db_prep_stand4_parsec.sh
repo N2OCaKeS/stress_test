@@ -36,10 +36,10 @@ fi
 
 
 # Создание тестового табличного пространства в ФС
-if [ ! -e $TABLESPACE_DEFAULT ]; then
-	mkdir $TABLESPACE_DEFAULT
-	chown postgres:postgres $TABLESPACE_DEFAULT
-fi
+#if [ ! -e $TABLESPACE_DEFAULT ]; then
+#	mkdir $TABLESPACE_DEFAULT
+#	chown postgres:postgres $TABLESPACE_DEFAULT
+#fi
 
 # Создание тестового табличного пространства для работы с MAC
 #if [ ! -e $TABLESPACE_MAC ]
@@ -121,6 +121,15 @@ setfacl -m u:postgres:rx /etc/parsec/macdb
 setfacl -d -m u:postgres:r /etc/parsec/capdb
 setfacl -R -m u:postgres:r /etc/parsec/capdb
 setfacl -m u:postgres:rx /etc/parsec/capdb
+
+# Настройка необходимых прав пользователю u_1
+usermod -a -G shadow u_1
+setfacl -d -m u:u_1:r /etc/parsec/macdb
+setfacl -R -m u:u_1:r /etc/parsec/macdb
+setfacl -m u:u_1:rx /etc/parsec/macdb
+setfacl -d -m u:u_1:r /etc/parsec/capdb
+setfacl -R -m u:u_1:r /etc/parsec/capdb
+setfacl -m u:u_1:rx /etc/parsec/capdb
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#- Создать БД #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-

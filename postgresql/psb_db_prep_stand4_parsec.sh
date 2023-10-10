@@ -177,3 +177,16 @@ done
 
 
 
+#!/bin/bash
+# clients="800 800 800 800 800 800 800 800 800 800"
+# t=600
+# dir=test
+# mkdir /home/u/test
+# for c in $clients; do
+#     echo "pgbench_${c}_${t}.txt"
+#     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+#     pgbench -h localhost -p 5432 -U postgres --random-seed=13 -c $c -j $c -T $t test >> "${dir}/pgbench_${c}.txt"
+#     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+
+# done
+

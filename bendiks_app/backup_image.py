@@ -576,6 +576,9 @@ if read_status() == success:
                 sleep(60)
         comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                     u@' + stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
+        if modes[args.MODE] == '2':
+            comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
+            comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
     write_status(success)
 
 if args.RELEASE not in systems:

@@ -14,14 +14,28 @@ TABLESPACE_DEFAULT=$(cat psb_conf.py | grep 'TABLESPACE_DEFAULT_PATH =' | awk '{
 #EXT_REP=$(cat psb_conf.py | grep 'EXTREP' | tr -d 'EXTREP=' | tr -d "'")
 
 
+# подключить диск
+lsblk | grep "${STORAGE}"
+if [ $? -eq 0 ]; then
+    lsblk | grep "${STORAGE}"
+    if [ $? -eq 0 ]; then
+        umount /var/lib/postgresql/11/
+        parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
+    fi
+    parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
+    mkfs -t xfs -f /dev/${STORAGE}1
+    mount /dev/${STORAGE}1 /var/lib/postgresql/11/
+fi
+
 
 apt-get install -y postgresql-${PG_VERSION}
 #apt-get install -y postgresql-se-test-${PG_VERSION}
 
 
 #Создаем пользователя
-useradd u_1 && sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
-usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
+#useradd postgres && sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
+sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF postgres
+usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC postgres
 
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -123,13 +137,13 @@ setfacl -R -m u:postgres:r /etc/parsec/capdb
 setfacl -m u:postgres:rx /etc/parsec/capdb
 
 # Настройка необходимых прав пользователю u_1
-usermod -a -G shadow u_1
-setfacl -d -m u:u_1:r /etc/parsec/macdb
-setfacl -R -m u:u_1:r /etc/parsec/macdb
-setfacl -m u:u_1:rx /etc/parsec/macdb
-setfacl -d -m u:u_1:r /etc/parsec/capdb
-setfacl -R -m u:u_1:r /etc/parsec/capdb
-setfacl -m u:u_1:rx /etc/parsec/capdb
+# usermod -a -G shadow u_1
+# setfacl -d -m u:u_1:r /etc/parsec/macdb
+# setfacl -R -m u:u_1:r /etc/parsec/macdb
+# setfacl -m u:u_1:rx /etc/parsec/macdb
+# setfacl -d -m u:u_1:r /etc/parsec/capdb
+# setfacl -R -m u:u_1:r /etc/parsec/capdb
+# setfacl -m u:u_1:rx /etc/parsec/capdb
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#- Создать БД #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -145,18 +159,6 @@ pg_dropcluster $PG_VERSION $PG_MAIN_CLUSTER --stop
 rm -rf /etc/postgresql/$PG_VERSION/$PG_MAIN_CLUSTER
 
 
-# подключить диск
-lsblk | grep "${STORAGE}"
-if [ $? -eq 0 ]; then
-    lsblk | grep "${STORAGE}"
-    if [ $? -eq 0 ]; then
-        umount /var/lib/postgresql/11/
-        parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
-    fi
-    parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
-    mkfs -t xfs -f /dev/${STORAGE}1
-    mount /dev/${STORAGE}1 /var/lib/postgresql/11/
-fi
 
 for port in $(pg_lsclusters -h | gawk '{print $3}');
 do
@@ -166,7 +168,7 @@ do
   chmod 644 /tmp/$sql_script_add_user
   chmod 644 /tmp/$sql_script_set_mac
   su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" u_1
+  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
   #rm /tmp/$sql_script
   cd -
   #cd - &> /dev/null

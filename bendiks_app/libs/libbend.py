@@ -420,7 +420,9 @@ def remote_storage_load(stand):
                 output_nvme  = ssh_command("""iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); \
                                               printf "%.1f%%\\n", $NF}' | tail -n 1""", 
                                         stand_ip=stands_ip[stand])
-                output_sda  = ssh_command("""iostat -dx 1 2 | awk '/sda/ {gsub(",", ".", $NF); \
+                block_device_name = ssh_command("lsblk | awk 'NR==2' | awk '{print $1;}'",
+                                                stand_ip=stands_ip[stand])
+                output_sda  = ssh_command("""iostat -dx 1 2 | awk '/""" + str(block_device_name) + """/ {gsub(",", ".", $NF); \
                                              printf "%.1f%%\\n", $NF}' | tail -n 1""", 
                                         stand_ip=stands_ip[stand])
                 temp_cpu = ssh_command(temp_cpu_comm, stand_ip=stands_ip[stand])

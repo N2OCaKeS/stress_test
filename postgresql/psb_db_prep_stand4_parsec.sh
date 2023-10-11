@@ -25,7 +25,7 @@ if [ $? -eq 0 ]; then
     parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
     mkfs -t xfs -f /dev/${STORAGE}1
     mkdir /var/lib/postgresql
-    mount /dev/${STORAGE}1 /var/lib/postgresql/11/
+    mount /dev/${STORAGE}1 /var/lib/postgresql
 fi
 
 

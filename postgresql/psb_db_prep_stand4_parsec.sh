@@ -24,6 +24,7 @@ if [ $? -eq 0 ]; then
     fi
     parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
     mkfs -t xfs -f /dev/${STORAGE}1
+    mkdir /var/lib/postgresql
     mount /dev/${STORAGE}1 /var/lib/postgresql/11/
 fi
 
@@ -33,9 +34,8 @@ apt-get install -y postgresql-${PG_VERSION}
 
 
 #Создаем пользователя
-#useradd postgres && sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
-sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF postgres
-usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC postgres
+#sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF postgres
+#usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC postgres
 
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -49,45 +49,15 @@ if [ "x$test_cluster" == "x" ]; then
 fi
 
 
-# Создание тестового табличного пространства в ФС
-#if [ ! -e $TABLESPACE_DEFAULT ]; then
-#	mkdir $TABLESPACE_DEFAULT
-#	chown postgres:postgres $TABLESPACE_DEFAULT
-#fi
-
-# Создание тестового табличного пространства для работы с MAC
-#if [ ! -e $TABLESPACE_MAC ]
-#then
-#	mkdir $TABLESPACE_MAC
-#	chown postgres:postgres $TABLESPACE_MAC
-#	sudo chmod 770 $TABLESPACE_MAC
-#	sudo pdpl-file 3:0:3:ccnr $TABLESPACE_MAC
-#fi
-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# Настройка кластеров #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 ### Настройка конфигурации основного сервера ###
 hba=/etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
 audit=/var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_audit.conf
-
-#hba_tst=/usr/share/postgresql/$PG_VERSION/test/pgacext/support/pg_hba.conf.tst
-#audit_tst=/usr/share/postgresql/$PG_VERSION/test/pgacext/support/pg_audit.conf.tst
-
-#setest_old_cfg=/etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-#setest_new_cfg=/etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf.new
-
-# pg_hint_plan
-#sed -e "s/shared_preload_libraries.*/shared_preload_libraries = 'online_analyze, plantuner, pg_hint_plan'/g" $setest_old_cfg > $setest_new_cfg
-#mv $setest_new_cfg $setest_old_cfg
-
-# from tst in main conf
-#cp $hba_tst $hba
-#cp $audit_tst $audit
-
 chown postgres.postgres /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/*
 
-sed -i 's/ac_enable_maclabels_on_files.*/ac_enable_maclabels_on_files = true/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+#sed -i 's/ac_enable_maclabels_on_files.*/ac_enable_maclabels_on_files = true/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_connections.*/max_connections = 200/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*shared_buffers.*/shared_buffers = 32256MB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*effective_cache_size.*/effective_cache_size = 96768MB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
@@ -136,14 +106,6 @@ setfacl -d -m u:postgres:r /etc/parsec/capdb
 setfacl -R -m u:postgres:r /etc/parsec/capdb
 setfacl -m u:postgres:rx /etc/parsec/capdb
 
-# Настройка необходимых прав пользователю u_1
-# usermod -a -G shadow u_1
-# setfacl -d -m u:u_1:r /etc/parsec/macdb
-# setfacl -R -m u:u_1:r /etc/parsec/macdb
-# setfacl -m u:u_1:rx /etc/parsec/macdb
-# setfacl -d -m u:u_1:r /etc/parsec/capdb
-# setfacl -R -m u:u_1:r /etc/parsec/capdb
-# setfacl -m u:u_1:rx /etc/parsec/capdb
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#- Создать БД #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -157,7 +119,6 @@ sql_script_set_mac=psb_parsec.sql
 pg_ctlcluster $PG_VERSION $PG_MAIN_CLUSTER stop
 pg_dropcluster $PG_VERSION $PG_MAIN_CLUSTER --stop
 rm -rf /etc/postgresql/$PG_VERSION/$PG_MAIN_CLUSTER
-
 
 
 for port in $(pg_lsclusters -h | gawk '{print $3}');

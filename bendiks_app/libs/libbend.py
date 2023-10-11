@@ -406,7 +406,7 @@ def remote_storage_load(stand):
     elif stand == 'stand3':
         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
     elif stand == 'stand4':
-        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone1/temp; cat /sys/class/thermal/thermal_zone2/temp'
+        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
 
     try:
         result = sock.connect_ex((stands_ip[stand], 22))

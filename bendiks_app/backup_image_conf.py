@@ -357,7 +357,7 @@ repo_path = {
     'pkg_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/main/binary-amd64/Packages'
 }
 
-rc_list = ['1.7.5.4', '1.7.5.5', '1.7.5.6']
+rc_list = ['1.7.5.4', '1.7.5.5', '1.7.5.6', '1.7.5.7']
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5']
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'syslog-ng', 'unix']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']

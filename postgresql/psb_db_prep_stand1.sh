@@ -5,7 +5,7 @@ set -vx
 export PG_MAIN_CLUSTER=main
 export PG_MAIN_PORT=5432
 PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION =' | awk '{print $3}')
-STORAGE=$(cat psb_conf.py | grep 'STORAGE =' | awk '{print $3}' | tr -d "'")
+STORAGE=`lsblk | awk 'NR==2' | awk '{print $1;}'`
 MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}' | tr -d "'")
 PG_SETEST_CLUSTER=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}' | tr -d "'")
 PG_SETEST_PORT=$(cat psb_conf.py | grep 'PG_SETEST_PORT =' | awk '{print $3}')

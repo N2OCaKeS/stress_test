@@ -32,6 +32,7 @@ from backup_image_conf import (psyc,
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
+import threading
 
 
 
@@ -529,4 +530,26 @@ def get_kernels_from_rc(version_rc: str):
                    releas_list=f'''Kernels: \'{" ".join(kernels).replace(" ", "', '")}\'''', 
                    kernel_list='')
 
+
+
+class BackgroundTasks:
+    def __init__(self, target):
+        self.target_function = target
+        self.working = False
+        self.thread = None
+
+    def start(self):
+        self.working = True
+        if self.thread is None or not self.thread.is_alive(): 
+            self.thread = threading.Thread(target=self.run)
+            self.thread.start()
+
+    def stop(self):
+        self.working = False
+        if self.thread is not None:
+            self.thread.join()  
+
+    def run(self):
+        while self.working:
+            self.target_function()
 

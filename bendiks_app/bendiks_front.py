@@ -8,13 +8,13 @@ from flask import (Flask,
                    url_for, 
                    jsonify)
 import socket
-import threading
 from libs.zefir import ZefirResultTable
-import threading
 import psycopg2
 import json
+from time import sleep
 from libs.libilo import iLOConsoleCaller
 from libs.libbend import (index_page,
+                          BackgroundTasks,
                           run_command_on_stand,
                           ssh_command,
                           background_task_main,
@@ -41,13 +41,23 @@ __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
 
+thread_task_main = BackgroundTasks(target=background_task_main)
+thread_task_brest = BackgroundTasks(target=background_task_brest)
+thread_storage_main = BackgroundTasks(target=background_stat_storage_main)
+thread_task_main.start()
+thread_task_brest.start()
+thread_storage_main.start()
 
-sm = threading.Thread(target=background_stat_storage_main)
-m = threading.Thread(target=background_task_main)
-b = threading.Thread(target=background_task_brest)
-m.start()
-b.start()
-sm.start()
+
+@app.route('/update_cpumeminfo', methods=['GET'])
+def restart_cpumeminfo():
+    thread_task_main.stop()
+    thread_task_brest.stop()
+    thread_storage_main.stop()
+    sleep(1)
+    thread_task_main.start()
+    thread_task_brest.start()
+    thread_storage_main.start()
 
 
 @app.route('/')

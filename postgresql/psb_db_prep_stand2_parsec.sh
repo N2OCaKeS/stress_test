@@ -34,7 +34,8 @@ apt-get install -y postgresql-${PG_VERSION}
 
 
 #Создаем пользователя
-useradd u_1 && usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
+useradd u_1 
+usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
 usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
 
 
@@ -124,9 +125,9 @@ do
   cd /tmp
   chmod 644 /tmp/$sql_script_add_user
   chmod 644 /tmp/$sql_script_set_mac
-  #su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-  #su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" u_1
-  su -c "psql -p $port -f /tmp/$sql_script_set_mac" postgres
+  su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
+  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
+  #su -c "psql -p $port -f /tmp/$sql_script_set_mac" postgres
   #rm /tmp/$sql_script
   cd -
   #cd - &> /dev/null

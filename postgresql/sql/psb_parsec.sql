@@ -1,14 +1,3 @@
--- Создаем пользователей
-CREATE USER u_1;
-
--- Создаем тестовую базу данных
-CREATE DATABASE test_parsec;
-
--- Даем необходимые права пользователю 
-ALTER DATABASE test_parsec OWNER TO u_1;
-ALTER TABLESPACE pg_global OWNER TO u_1;
-ALTER SCHEMA public OWNER TO u_1;
-
 -- Устанавливаем мандатную метку кластера
 MAC LABEL ON CLUSTER IS '{255,0xFFFFFFFFFFFFFFFF}';
 
@@ -26,6 +15,12 @@ MAC LABEL ON SCHEMA public IS '{255,0xFFFFFFFFFFFFFFFF}';
 
 -- Сбрасываем признак MAC CСR у схемы public
 MAC CCR ON SCHEMA public IS OFF;
+
+-- Даем необходимые права пользователю 
+ALTER DATABASE test_parsec OWNER TO u_1;
+ALTER TABLESPACE pg_global OWNER TO u_1;
+ALTER SCHEMA public OWNER TO u_1;
+
 
 
 -- #Создаем пользователя

@@ -165,6 +165,11 @@ done
 
 
 
+#astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && reboot
+
+#cp pgbench/pgbench /usr/bin/pgbench
+#cp pgbench/pgbench /bin/pgbench
+
 #pgbench -i -h localhost --macs -p 6000 -U u_1 -s 500 -F 100 test_parsec
 
 #pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec

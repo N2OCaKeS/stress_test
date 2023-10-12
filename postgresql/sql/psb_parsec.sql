@@ -16,12 +16,6 @@ MAC LABEL ON SCHEMA public IS '{255,0xFFFFFFFFFFFFFFFF}';
 -- Сбрасываем признак MAC CСR у схемы public
 MAC CCR ON SCHEMA public IS OFF;
 
--- Даем необходимые права пользователю 
-ALTER DATABASE test_parsec OWNER TO u_1;
-ALTER TABLESPACE pg_global OWNER TO u_1;
-ALTER SCHEMA public OWNER TO u_1;
-
-
 
 -- #Создаем пользователя
 -- sudo useradd u_1_01 && sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1_01

@@ -112,7 +112,11 @@ class UploaderZC(Public, FileSystemStatistics):
                         err.write(f'jira_status = {jira}\nlife_status = {life}')
                         err.write('---------' * 25)
                         err.write('\n\n')
-                    sleep(60)
+                    except_counter += 1
+                    sleep(requests_frequency)
+                    if except_counter == wait_time * 60 / requests_frequency:
+                        err.write(f'Except count = {except_counter}, aborted')
+                        status += 1
             except Exception as e:
                 with open('JIRA_ERROR.log', 'a') as err:
                     err.write('start:\n')

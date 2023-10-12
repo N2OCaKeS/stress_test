@@ -34,8 +34,8 @@ apt-get install -y postgresql-${PG_VERSION}
 
 
 #Создаем пользователя
-#sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF postgres
-#usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC postgres
+useradd u_1 && sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
+usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
 
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -125,7 +125,7 @@ do
   chmod 644 /tmp/$sql_script_add_user
   chmod 644 /tmp/$sql_script_set_mac
   su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
+  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" u_1
   #rm /tmp/$sql_script
   cd -
   #cd - &> /dev/null
@@ -147,10 +147,23 @@ done
 
 # done
 
+# !/bin/bash
+# clients="200 200 200 200 200 200 200 200 200 200"
+# t=30
+# dir=test
+# mkdir /home/u/test
+# for c in $clients; do
+#     echo "pgbench_${c}_${t}.txt"
+#     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+#     pgbench -h localhost --macs -p 6000 -U postgres --random-seed=13 -T $t -j $c -c $c test_parsec >> "${dir}/pgbench_${c}.txt"
+#     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+
+# done
 
 
 
-#pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
 
-#pgbench -h localhost --macs -p 6000 -U postgres --random-seed=13 -T 30 -j 200 -c 200 test_parsec
+#pgbench -i -h localhost --macs -p 6000 -U u_1 -s 500 -F 100 test_parsec
+
+#pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec
 

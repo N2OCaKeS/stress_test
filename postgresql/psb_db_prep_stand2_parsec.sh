@@ -124,8 +124,9 @@ do
   cd /tmp
   chmod 644 /tmp/$sql_script_add_user
   chmod 644 /tmp/$sql_script_set_mac
-  su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" u_1
+  #su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
+  #su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" u_1
+  su -c "psql -p $port -f /tmp/$sql_script_set_mac" postgres
   #rm /tmp/$sql_script
   cd -
   #cd - &> /dev/null

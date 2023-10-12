@@ -147,3 +147,10 @@ done
 
 # done
 
+
+
+
+#pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
+
+#pgbench -h localhost --macs -p 6000 -U postgres --random-seed=13 -T 30 -j 200 -c 200 test_parsec
+

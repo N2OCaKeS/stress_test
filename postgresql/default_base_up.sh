@@ -124,14 +124,15 @@ done
 
 cat << EOF > start_test.sh
 #!/bin/bash
-clients="200 200 200 200 200 200 200 200 200 200"
+#cclients="200 200 200 200 200 200 200 200 200 200"
+clients="\$1 \$1 \$1 \$1 \$1 \$1 \$1 \$1 \$1"
 t=30
 dir=test
 mkdir test
 for c in \$clients; do
     echo "pgbench_\${c}_\${t}.txt"
     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
-    pgbench -h localhost -p 6000 -U postgres --random-seed=13 -T \$t -j \$c -c \$c test_parsec >> "\${dir}/pgbench_\${c}.txt"
+    pgbench -h localhost -p 6000 -U postgres --random-seed=13 -T \$t -j \$c -c \$c test_parsec >> "\${dir}/pgbench_result.txt"
     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
 done
 EOF
@@ -139,5 +140,5 @@ EOF
 pgbench -i -h localhost -p 6000 -U postgres -s 500 -F 100 test_parsec
 
 
-#pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec
+#pgbench -h localhost -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec
 

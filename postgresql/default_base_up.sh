@@ -1,5 +1,10 @@
 #!/bin/bash
 
+################################
+### Stand1 or stand2 use only
+################################
+
+
 set -vx
 
 PG_MAIN_CLUSTER=main
@@ -31,13 +36,6 @@ fi
 
 apt-get install -y postgresql-${PG_VERSION}
 #apt-get install -y postgresql-se-test-${PG_VERSION}
-
-
-#Создаем пользователя
-useradd u_1 
-usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
-usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
-
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# Создание кластеров #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
@@ -95,15 +93,6 @@ sed -i 's/md5/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.con
 pg_ctlcluster $PG_VERSION $PG_MAIN_CLUSTER restart
 pg_ctlcluster $PG_VERSION $PG_SETEST_CLUSTER restart
 
-# Настройка необходимых прав пользователю postgres
-usermod -a -G shadow postgres
-setfacl -d -m u:postgres:r /etc/parsec/macdb
-setfacl -R -m u:postgres:r /etc/parsec/macdb
-setfacl -m u:postgres:rx /etc/parsec/macdb
-setfacl -d -m u:postgres:r /etc/parsec/capdb
-setfacl -R -m u:postgres:r /etc/parsec/capdb
-setfacl -m u:postgres:rx /etc/parsec/capdb
-
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#- Создать БД #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -127,52 +116,31 @@ do
   chmod 644 /tmp/$sql_script_add_user
   chmod 644 /tmp/$sql_script_set_mac
   su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
-  #su -c "psql -p $port -f /tmp/$sql_script_set_mac" postgres
-  #rm /tmp/$sql_script
   cd -
   #cd - &> /dev/null
 done
 
 
 
-
+cat << EOF > test.sh
 #!/bin/bash
-# clients="800 800 800 800 800 800 800 800 800 800"
-# t=600
-# dir=test
-# mkdir /home/u/test
-# for c in $clients; do
-#     echo "pgbench_${c}_${t}.txt"
-#     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
-#     pgbench -h localhost -p 5432 -U postgres --random-seed=13 -c $c -j $c -T $t test >> "${dir}/pgbench_${c}.txt"
-#     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+clients="200 200 200 200 200 200 200 200 200 200"
+t=30
+dir=test
+mkdir /home/u/test
+for c in $clients; do
+    echo "pgbench_${c}_${t}.txt"
+    echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+    pgbench -h localhost --macs -p 6000 -U postgres --random-seed=13 -T $t -j $c -c $c test_parsec >> "${dir}/pgbench_${c}.txt"
+    echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
 
-# done
-
-# !/bin/bash
-# clients="200 200 200 200 200 200 200 200 200 200"
-# t=30
-# dir=test
-# mkdir /home/u/test
-# for c in $clients; do
-#     echo "pgbench_${c}_${t}.txt"
-#     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
-#     pgbench -h localhost --macs -p 6000 -U postgres --random-seed=13 -T $t -j $c -c $c test_parsec >> "${dir}/pgbench_${c}.txt"
-#     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
-
-# done
+done
+EOF
 
 
 
+pgbench -i -h localhost -p 6000 -U postgres -s 500 -F 100 test_parsec
 
-#astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && reboot
-
-cp /home/u/git/stress_test/postgresql/pgbench/pgbench /usr/bin/pgbench
-cp /home/u/git/stress_test/postgresql/pgbench/pgbench /bin/pgbench
-
-pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
-#pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 test_parsec
 
 #pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec
 

@@ -84,6 +84,7 @@ sed -i 's/.*max_worker_processes.*/max_worker_processes = 8/g' /etc/postgresql/$
 sed -i 's/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 8/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/md5/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
 
@@ -167,10 +168,11 @@ done
 
 #astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && reboot
 
-#cp pgbench/pgbench /usr/bin/pgbench
-#cp pgbench/pgbench /bin/pgbench
+cp /home/u/git/stress_test/postgresql/pgbench/pgbench /usr/bin/pgbench
+cp /home/u/git/stress_test/postgresql/pgbench/pgbench /bin/pgbench
 
-#pgbench -i -h localhost --macs -p 6000 -U u_1 -s 500 -F 100 test_parsec
+#pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
+pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 test_parsec
 
 #pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec
 

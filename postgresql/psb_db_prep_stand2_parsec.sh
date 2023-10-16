@@ -29,10 +29,10 @@ if [ $? -eq 0 ]; then
 fi
 
 
-#apt-get install -y postgresql-${PG_VERSION}
-dpkg -i pkgs/*.deb
-apt-get install -fy
-dpkg -i pkgs/*.deb
+apt-get install -y postgresql-${PG_VERSION}
+#dpkg -i pkgs/*.deb
+#apt-get install -fy
+#dpkg -i pkgs/*.deb
 #apt-get install -y postgresql-se-test-${PG_VERSION}
 
 

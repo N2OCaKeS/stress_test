@@ -30,7 +30,9 @@ fi
 
 
 #apt-get install -y postgresql-${PG_VERSION}
-dpkg -i postgresql-11_11.21-astra.se6_fix_amd64.deb
+dpkg -i pkgs/*.deb
+apt-get install -fy
+dpkg -i pkgs/*.deb
 #apt-get install -y postgresql-se-test-${PG_VERSION}
 
 

@@ -58,6 +58,7 @@ def restart_cpumeminfo():
     thread_task_main.start()
     thread_task_brest.start()
     thread_storage_main.start()
+    return 0
 
 
 @app.route('/')

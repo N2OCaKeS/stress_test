@@ -352,6 +352,11 @@ def socket_available():
                 logging.debug('System is running')
                 sock.close()
                 return True
+            elif system_status == 'degraded':
+                logging.error(f'Some modules is not loaded: {system_status}')
+                ssh_command('sudo reboot')
+                sock.close()
+                socket_available()
             else:
                 logging.error(f'System is not fully loaded yet: {system_status}')
                 sleep(30)

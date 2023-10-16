@@ -29,7 +29,8 @@ if [ $? -eq 0 ]; then
 fi
 
 
-apt-get install -y postgresql-${PG_VERSION}
+#apt-get install -y postgresql-${PG_VERSION}
+dpkg -i postgresql-11_11.21-astra.se6_fix_amd64.deb
 #apt-get install -y postgresql-se-test-${PG_VERSION}
 
 

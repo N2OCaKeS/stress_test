@@ -66,12 +66,8 @@ def astra_version():
     #     print("Version of distribution not found")
     #     exit(2)
 
-    if exists("/etc/debian_version"):
-        with open("/etc/debian_version", "r") as file:
-            debian_version = file.read()
-        version.append(debian_version.strip('\n'))
-        return (version[0], 'orel')
-    else:
+
+    if exists("/etc/astra_version"):
         with open("/etc/astra_version", "r") as file:
             astra_update_version = file.read()
         version.append(astra_update_version.strip('\n'))
@@ -101,8 +97,13 @@ def astra_version():
                     version.append("orel")
                 else:
                     print("Version of distribution not found")
-                    exit(2)
-
+                exit(2)
+    else:
+        if exists("/etc/debian_version"):
+            with open("/etc/debian_version", "r") as file:
+                debian_version = file.read()
+            version.append(debian_version.strip('\n'))
+            return (version[0], 'orel')
     return version
 
 @pysnooper.snoop()

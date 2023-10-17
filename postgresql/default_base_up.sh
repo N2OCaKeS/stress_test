@@ -124,8 +124,7 @@ done
 
 cat << EOF > start_test.sh
 #!/bin/bash
-#cclients="200 200 200 200 200 200 200 200 200 200"
-clients="\$1 \$1 \$1 \$1 \$1 \$1 \$1 \$1 \$1"
+clients=$(printf "\$1 %.0s" {1..\$2})
 t=30
 dir=test
 mkdir test

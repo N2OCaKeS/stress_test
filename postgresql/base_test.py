@@ -15,8 +15,8 @@ except (ImportError, ImportWarning):
 cmd('sudo bash default_base_up.sh')
 
 
-def test_run(clients):
-    cmd(f'sudo bash start_test.sh {clients}')
+def test_run(clients, repeat):
+    cmd(f'sudo bash start_test.sh {clients} {repeat}')
     cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
 
     if path.isfile('result_testing.txt'):
@@ -27,18 +27,28 @@ def test_run(clients):
     print(f'Общий список всех результатов:\n{tps_values}')
 
 
-    # вычисление сырых z-оценок
-    mean = np.mean(tps_values)
-    std_dev = np.std(tps_values)
-    z_scores_raw = (tps_values - mean) / std_dev
-    threshold = 2
-    outliers = np.abs(z_scores_raw) > threshold
-    not_outliers = np.abs(z_scores_raw) <= threshold
-    tps_values_cleaned = tps_values[not_outliers]
+    #Лимит группы по количеству элементов, принимаемой к расчетам, в %
+    valid_values_percent = 50
+    #Лимит погрешности, в %
+    percent_limit = 1.5
 
-    print(f'Аномальные значения: {tps_values[outliers]}')
-    mean_cleaned = np.mean(tps_values_cleaned)
-    print(f"Среднее значение без учета аномалий: {int(mean_cleaned)}")
+    def check_value(value, all_values, percent_limit):
+        diffs = np.abs((all_values - value) / value * 100)
+        return np.sum(diffs <= percent_limit) >= len(all_values) / 2
 
 
-test_run(200)
+    valid_values = [value for value in tps_values if check_value(value, tps_values, percent_limit)]
+    novalid_values = [value for value in tps_values if value not in valid_values]
+    print('Используемые в расчетах значения:', valid_values)
+    print('Отсеянные значения:', novalid_values)
+
+    if len(valid_values) >= len(tps_values) * valid_values_percent / 100:
+        mean_cleaned = np.mean(valid_values)
+        print(f"Среднее значение без учета аномалий: {int(mean_cleaned)}")
+    else:
+        print('Нет подходящих групп значений для расчета среднего')
+
+
+test_run(200, 20)
+
+

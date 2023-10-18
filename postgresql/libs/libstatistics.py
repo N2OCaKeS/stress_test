@@ -700,7 +700,41 @@ class PSQLStatistics2:
             for key, data in data_for_df.items():
                 if len(data.get("data")) == 0:
                     continue
-                df = pd.DataFrame(data=data.get("data"), columns=columns_df, index=np.arange(1, len(data.get("data")) + 1))
+                old_df = pd.DataFrame(data=data.get("data"), columns=columns_df, index=np.arange(1, len(data.get("data")) + 1))
+                
+                ### 
+                """
+                    Здесь должна быть реализации по удалению ненужных ядер из статистики
+                    Например: Есть 2 протокола испытания версии 1.7.5, первый с ядром 6.1.29-1-generic и второй с ядром 6.1.50-1-generic.
+                    Решение: Необходимо удалить строчки из DF(набора данных) с ядром 6.1.29-1-generic (Так как есть более новая версия ядра. Считать с 3 позиции: 29 < 50)
+                """
+                unique_versions = list(old_df['Релиз'].unique())
+                new_df_temp = pd.DataFrame()
+                for uniq_vers in unique_versions:
+                    df_for_each_version = old_df.loc[old_df['Релиз'] == f'{uniq_vers}']
+                    df_sort_5_10_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.10\S*generic', case=False, regex=True)]
+                    df_sort_5_15_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]
+                    df_sort_5_15_ll = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\S*low', case=False, regex=True)]
+                    df_sort_6_1_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('6.1\S*generic', case=False, regex=True)]
+                    dfs = [df_sort_5_10_gen, df_sort_5_15_gen, df_sort_5_15_ll, df_sort_6_1_gen]
+                    for df_with_one_kernel in dfs:
+                        try:
+                            df_with_one_kernel[['numeric_version', 'additional_digits', 'kernel_type']] = df_with_one_kernel['Ядро'].str.split('-', expand=True)
+                            df_with_one_kernel['additional_digits'] = df_with_one_kernel['additional_digits'].astype(int)
+                        except ValueError:
+                            df_with_one_kernel[['numeric_version', 'additional_digits', 'kernel_type', 'minor_version']] = np.nan
+                        df_with_one_kernel['minor_version'] = df_with_one_kernel['numeric_version'].astype(str).str.split(".").str[-1].astype(int)
+
+                        max_minor_value = df_with_one_kernel['minor_version'].max()
+                        df_sort_by_minor_version = df_with_one_kernel[df_with_one_kernel['minor_version'] == max_minor_value]
+                        max_add_digit_value = df_sort_by_minor_version['additional_digits'].max()
+                        df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version[df_sort_by_minor_version['additional_digits'] == max_add_digit_value]
+                        df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version_and_add_digit.drop(['numeric_version', 'additional_digits', 'kernel_type', 'minor_version'], axis=1)
+                        new_df_temp = new_df_temp.append(df_sort_by_minor_version_and_add_digit)
+                    if "1.7" not in df_for_each_version['Релиз'].iloc[0]:
+                        new_df_temp = new_df_temp.append(df_for_each_version)
+                # ###
+                df = new_df_temp
                 df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()

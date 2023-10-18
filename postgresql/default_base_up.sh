@@ -136,6 +136,8 @@ for c in \$clients; do
 done
 EOF
 
+cat start_test.sh
+
 pgbench -i -h localhost -p 6000 -U postgres -s 500 -F 100 test_parsec
 
 

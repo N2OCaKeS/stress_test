@@ -11,15 +11,15 @@ except (ImportError, ImportWarning):
     cmd('sudo apt-get install -y python3-numpy')
     import numpy as np
 
-#Создание и настройка БД
-cmd('sudo bash default_base_up.sh')
 
 
 def test_run(clients, repeat):
     repeat_list = [str(clients) for i in range(repeat)]
     repeat_str = ' '.join(repeat_list)
-
-    cmd(f'sudo bash start_test.sh "{repeat_str}"')
+    
+    #Создание и настройка БД
+    cmd(f'sudo bash default_base_up.sh "{repeat_str}"')
+    cmd('sudo bash start_test.sh')
     cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
 
     if path.isfile('result_testing.txt'):

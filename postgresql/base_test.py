@@ -16,7 +16,10 @@ cmd('sudo bash default_base_up.sh')
 
 
 def test_run(clients, repeat):
-    cmd(f'sudo bash start_test.sh {clients} {repeat}')
+    repeat_list = [str(clients) for i in range(repeat)]
+    repeat_str = ' '.join(repeat_list)
+
+    cmd(f'sudo bash start_test.sh "{repeat_str}"')
     cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
 
     if path.isfile('result_testing.txt'):

@@ -122,17 +122,17 @@ done
 
 
 
-cat << 'EOF' > start_test.sh
+cat << EOF > start_test.sh
 #!/bin/bash
-clients=$(printf "$1 %.0s" {1..$2})
+clients="$1"
 t=30
 dir=test
-mkdir $dir
-for c in $clients; do
-    echo "pgbench_${c}_${t}.txt"
-    echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
-    pgbench -h localhost -p 6000 -U postgres --random-seed=13 -T $t -j $c -c $c test_parsec >> "${dir}/pgbench_result.txt"
-    echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+mkdir \$dir
+for c in \$clients; do
+    echo "pgbench_\${c}_\${t}.txt"
+    echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
+    pgbench -h localhost -p 6000 -U postgres --random-seed=13 -T \$t -j \$c -c \$c test_parsec >> "\${dir}/pgbench_result.txt"
+    echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
 done
 EOF
 

@@ -550,7 +550,10 @@ class FileSystemStatistics:
                 rat_ext4, rat_xfs, shcl = create_summary_table_template(fs_data={"EXT4": data.get("EXT4"), "XFS": data.get("XFS")}, stand=key)
                 if rat_ext4 and rat_xfs:
                     build_summary_graph_template(stand=key, rating1=rat_ext4, rating2=rat_xfs, shcala_txt=shcl, file_system_names=["EXT4", "XFS"])
-        
+            if data.get("XFS") and data.get("XFS_parsec"):
+                rat_xfs, rat_xfs_parsec, shcl = create_summary_table_template(fs_data={"XFS": data.get("XFS"), "XFS_parsec": data.get("XFS_parsec")}, stand=key)
+                if rat_xfs and rat_xfs_parsec:
+                    build_summary_graph_template(stand=key, rating1=rat_xfs, rating2=rat_xfs_parsec, shcala_txt=shcl, file_system_names=["XFS", "XFS_parsec"])
         
 
     """
@@ -585,10 +588,10 @@ class FileSystemStatistics:
         image_list = []
         table_with_data_list = []
         table_with_mat_stat_list = []
-        ext4_and_ext4_parsec_comparison_list, ext4_and_xfs_comparison_list = [], []
-        image_list_ext4_comparison, img_lst_comparison_ext4_xfs = [], []
-        headers, headers2, headers3 = [], [], []
-        headers_for_content, headers_for_content2, headers_for_content3 = [], [], []
+        ext4_and_ext4_parsec_comparison_list, ext4_and_xfs_comparison_list, xfs_and_xfs_parsec_comparison_list = [], [], []
+        image_list_ext4_comparison, img_lst_comparison_ext4_xfs, img_lst_comparison_xfs_xfs_parsec = [], [], []
+        headers, headers2, headers3, headers4 = [], [], [], []
+        headers_for_content, headers_for_content2, headers_for_content3, headers_for_content4 = [], [], [], []
 
         
         for file in sorted(os.listdir(f"{stat_dir}")):
@@ -619,10 +622,18 @@ class FileSystemStatistics:
                     
                     confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                     img_lst_comparison_ext4_xfs.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                    img_png=file))
+                                                       img_png=file))
                     # print(part_header)
                     headers3.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4].replace('.png', '')}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4].replace('.png', '')}</b></h1>")
                     headers_for_content3.append(f"{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4].replace('.png', '')}")
+                if "XFS_and_XFS_parsec" in file:
+                    print(part_header)
+                    # headers4.append()
+                    confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+                    img_lst_comparison_xfs_xfs_parsec.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+                                                             img_png=file))
+                    headers4.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4]}_{part_header[5].replace('.png', '')}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4]}_{part_header[5].replace('.png', '')}</b></h1>")
+                    headers_for_content4.append(f"{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[4]}_{part_header[5].replace('.png', '')}")
                     
 
             if file.endswith("_1.html"):
@@ -646,9 +657,11 @@ class FileSystemStatistics:
                     e_x_fs_table = ext_xfs_table_file.read()
                     ext_xfs_table_file.close()
                     ext4_and_xfs_comparison_list.append(e_x_fs_table)
-
-
-        
+                if "XFS_and_XFS_parsec" in file:
+                    xfs_xfs_parsec_table_file = open(f'{stat_dir}/{file}', 'r')
+                    xfs_xfs_parsec_table = xfs_xfs_parsec_table_file.read()
+                    xfs_xfs_parsec_table_file.close()
+                    xfs_and_xfs_parsec_comparison_list.append(xfs_xfs_parsec_table)
 
         html_list = []
 
@@ -688,6 +701,15 @@ class FileSystemStatistics:
                 html_list.append("<br/><hr/>")
                 html_list.append(headers3[ind])
                 html_list.append(img_lst_comparison_ext4_xfs[ind])
+                html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
+                html_list.append(item)
+        
+        if len(xfs_and_xfs_parsec_comparison_list) > 0:
+            for ind, item in enumerate(xfs_and_xfs_parsec_comparison_list):
+                nav_lst.append(f'<li><a href="#id-Статистика.{page_rc_title}Файловыесистемы-{headers_for_content4[ind]}">{headers_for_content4[ind]}</a></li>')
+                html_list.append("<br/><hr/>")
+                html_list.append(headers4[ind])
+                html_list.append(img_lst_comparison_xfs_xfs_parsec[ind])
                 html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
                 html_list.append(item)
 

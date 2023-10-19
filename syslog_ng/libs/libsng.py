@@ -141,5 +141,5 @@ def response():
         life = requests.get('https://life.astralinux.ru').status_code
         return jira, life
     except Exception as e:
-        jira, life = str(type(e).__name__, e)
+        jira, life = str(type(e).__name__), str(e)
         return jira, life

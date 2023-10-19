@@ -28,7 +28,8 @@ class Test:
                  trs=10,
                  cls=1,
                  mac_sql_trn=MAC_SQL_TRANSACTION,
-                 debian=False):
+                 debian=False,
+                 parsec=False):
 
         logging.basicConfig(filename=LOG_FILENAME,
                             filemode="a+",
@@ -45,6 +46,7 @@ class Test:
         self.clients = cls
         self.mac_sql_script = mac_sql_trn
         self.debian = debian
+        self.parsec = parsec
         self.pgbench_cmd_deb = "su -c 'pgbench -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,                       
                                                                                             t=self.transactions,
                                                                                             j=self.threads,
@@ -60,7 +62,10 @@ class Test:
                                                                                                                            j=self.threads,
                                                                                                                            c=self.clients,
                                                                                                                            f=self.mac_sql_script)
-    @pysnooper.snoop()
+        self.pgbench_cmd_parsec = f"su -c 'pgbench -h localhost --macs -p {self.port} --random-seed=13 -t {self.transactions} \
+                                    -j {self.threads} -c {self.clients} test_parsec' u_1"
+
+    #@pysnooper.snoop()
     def run_test(self):
         '''
             Запуск проверки на встроенных тестовых скриптах
@@ -69,12 +74,16 @@ class Test:
         '''
         if self.debian == True:
             init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, self.debian)
+        elif self.parsec == True:
+            init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, self.parsec)
         else:
             init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor)
         result = '# TEST # --- '
         try:
             if self.debian == True:
                 decode_std = pgbench(self.pgbench_cmd_deb)
+            elif self.parsec == True:
+                decode_std = pgbench(self.pgbench_cmd_parsec)
             else:
                 decode_std = pgbench(self.pgbench_cmd)
             out = os.linesep.join([s for s in decode_std[0].splitlines() if s])

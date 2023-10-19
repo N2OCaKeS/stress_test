@@ -106,13 +106,14 @@ def astra_version():
             return (version[0], 'orel')
     return version
 
-@pysnooper.snoop()
+#@pysnooper.snoop()
 def init_test_tables(database,
                      tablespace,
                      port,
                      t_scale_factor,
                      t_filling_factor,
-                     debian=False):
+                     debian=False,
+                     parsec=False):
 
     '''
         pgbench -i создаёт четыре таблицы
@@ -123,6 +124,8 @@ def init_test_tables(database,
                                                                                     ts=tablespace,                                                                                                    
                                                                                     s=t_scale_factor,
                                                                                     f=t_filling_factor))
+    elif parsec == True:
+        cmd(f"su -c 'pgbench -i -h localhost --macs -p {port} -s {t_scale_factor} -F {t_filling_factor} test_parsec' postgres")
     else:
         cmd("su -c 'pgbench -i -h localhost -p {p} --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
                                                                                                           ts=tablespace,
@@ -143,7 +146,7 @@ def upgrade_test_table(sql_script):
     cmd('su -c "psql -p 5432 -f {}" postgres'.format(sql_script))
     remove('/tmp/{}'.format(sql_script))
 
-@pysnooper.snoop()
+#@pysnooper.snoop()
 def pgbench(start_cmd):
     '''
         Запуск на стандартных транзакциях

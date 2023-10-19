@@ -147,6 +147,18 @@ parser.add_argument('-psql_aud',
                     help='auditoff arg',
                     dest='AUDIT_OFF')
 
+parser.add_argument('-parsec',
+                    action='store',
+                    required=False,
+                    help='parsec mode',
+                    dest='PARSEC')
+
+parser.add_argument('-sd',
+                    action='store',
+                    required=False,
+                    help='activate alternative SDA storage',
+                    dest='SD')
+
 args = parser.parse_args()
 
 
@@ -181,6 +193,11 @@ if not path.exists(REPORT_PATH):
 
 version = astra_version()
 print(args.NPAGE)
+
+if args.SD:
+    alt_storage = 'SDA'
+else: alt_storage = None
+
 if args.DB_PREPARE:
     '''
         Настроить машину, инициализировать тестовую БД
@@ -192,6 +209,10 @@ if args.DB_PREPARE:
                                                                                         aud_off='audit_off'),
                                                                                         shell=True,
                                                                                         stderr=subprocess.DEVNULL)
+    elif args.PARSEC:
+        subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_db_prep_stand{args.STAND}_parsec.sh {alt_storage}',
+                       shell=True,
+                       stderr=subprocess.DEVNULL)
     else:
         if 'debian' in args.NPAGE:
             subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {deb}'.format(dir=SCRIPT_DIR,
@@ -243,6 +264,12 @@ if args.TEST_LIST == 'base':
                             ths=threads,
                             cls=clients,
                             debian=True)
+            elif args.PARSEC:
+                test = Test(scale=scale_factor,
+                            trs=transactions,
+                            ths=threads,
+                            cls=clients,
+                            parsec=True)
             else: 
                 test = Test(scale=scale_factor,
                             trs=transactions,
@@ -318,185 +345,185 @@ if args.TEST_LIST == 'base':
                                     'psb_clients_tpsall_graph.png'])
             report.create_tar()
 
-    if args.MODE == 'extended':
-        '''
-            Проверка на втроенных сценариях.
-            Нахождение предельного коэффициента масштаба.
-        '''
-        report = open(REPORT_FILENAME, 'w')
-        report.close()
+    # if args.MODE == 'extended':
+    #     '''
+    #         Проверка на втроенных сценариях.
+    #         Нахождение предельного коэффициента масштаба.
+    #     '''
+    #     report = open(REPORT_FILENAME, 'w')
+    #     report.close()
 
-        scale_factor = SCALE_FACTOR
-        scale_factor_step = SCALE_FACTOR_STEP
-        limite_scale_factor = LIMITE_SCALE_FACTOR
-        max_scale_factor = 0
+    #     scale_factor = SCALE_FACTOR
+    #     scale_factor_step = SCALE_FACTOR_STEP
+    #     limite_scale_factor = LIMITE_SCALE_FACTOR
+    #     max_scale_factor = 0
 
-        while scale_factor < limite_scale_factor:
-            with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(str(scale_factor))
-            test = Test(scale=scale_factor)
-            result = test.run_test()
-            if result is False:
-                max_scale_factor = scale_factor
-                break
-            else:
-                max_scale_factor = scale_factor
-                scale_factor += scale_factor_step
-                print(result)
+    #     while scale_factor < limite_scale_factor:
+    #         with open(REPORT_FILENAME, 'a+') as report_file:
+    #             report_file.write(str(scale_factor))
+    #         test = Test(scale=scale_factor)
+    #         result = test.run_test()
+    #         if result is False:
+    #             max_scale_factor = scale_factor
+    #             break
+    #         else:
+    #             max_scale_factor = scale_factor
+    #             scale_factor += scale_factor_step
+    #             print(result)
 
-        # create report
-        report = Report(param_name='scale')
-        report.create_beauty_table('psb_scale_table.html')
-        report.create_psb_sc_la_graph()
-        report.create_psb_sc_tpsall_graph()
+    #     # create report
+    #     report = Report(param_name='scale')
+    #     report.create_beauty_table('psb_scale_table.html')
+    #     report.create_psb_sc_la_graph()
+    #     report.create_psb_sc_tpsall_graph()
 
-        '''
-            Проверка на втроенных сценариях.
-            Нахождение предельного числа транзакций.
-        '''
-        report = open(REPORT_FILENAME, 'w')
-        report.close()
+    #     '''
+    #         Проверка на втроенных сценариях.
+    #         Нахождение предельного числа транзакций.
+    #     '''
+    #     report = open(REPORT_FILENAME, 'w')
+    #     report.close()
 
-        transactions = TRANSACTIONS
-        transactions_step = TRANSACTIONS_STEP
-        limite_transactions = LIMITE_TRANSACTIONS
-        max_transactions_count = 0
+    #     transactions = TRANSACTIONS
+    #     transactions_step = TRANSACTIONS_STEP
+    #     limite_transactions = LIMITE_TRANSACTIONS
+    #     max_transactions_count = 0
 
-        while transactions < limite_transactions:
-            with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(str(transactions))
-            test = Test(trs=transactions)
-            result = test.run_test()
-            if result is False:
-                max_transactions_count = transactions
-                break
-            else:
-                max_transactions_count = transactions
-                transactions += transactions_step
-                print(result)
+    #     while transactions < limite_transactions:
+    #         with open(REPORT_FILENAME, 'a+') as report_file:
+    #             report_file.write(str(transactions))
+    #         test = Test(trs=transactions)
+    #         result = test.run_test()
+    #         if result is False:
+    #             max_transactions_count = transactions
+    #             break
+    #         else:
+    #             max_transactions_count = transactions
+    #             transactions += transactions_step
+    #             print(result)
 
-        # create report
-        report = Report(param_name='transactions')
-        report.create_beauty_table('psb_transactions_table.html')
-        report.create_psb_tr_la_graph()
-        report.create_psb_tr_tpsall_graph()
+    #     # create report
+    #     report = Report(param_name='transactions')
+    #     report.create_beauty_table('psb_transactions_table.html')
+    #     report.create_psb_tr_la_graph()
+    #     report.create_psb_tr_tpsall_graph()
 
-        '''
-            Проверка на втроенных сценариях.
-            Нахождение предельного числа потоков. 
-        '''
-        report = open(REPORT_FILENAME, 'w')
-        report.close()
+    #     '''
+    #         Проверка на втроенных сценариях.
+    #         Нахождение предельного числа потоков. 
+    #     '''
+    #     report = open(REPORT_FILENAME, 'w')
+    #     report.close()
 
-        threads = THREADS
-        threads_step = THREADS_STEP
-        limite_threads = LIMITE_THREADS
-        max_threads_count = 0
+    #     threads = THREADS
+    #     threads_step = THREADS_STEP
+    #     limite_threads = LIMITE_THREADS
+    #     max_threads_count = 0
 
-        while threads < limite_threads:
-            with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(str(threads))
-            test = Test(ths=threads)
-            result = test.run_test()
-            if result is False:
-                max_threads_count = threads
-                break
-            else:
-                max_threads_count = threads
-                threads += threads_step
-                print(result)
+    #     while threads < limite_threads:
+    #         with open(REPORT_FILENAME, 'a+') as report_file:
+    #             report_file.write(str(threads))
+    #         test = Test(ths=threads)
+    #         result = test.run_test()
+    #         if result is False:
+    #             max_threads_count = threads
+    #             break
+    #         else:
+    #             max_threads_count = threads
+    #             threads += threads_step
+    #             print(result)
 
-        # create report
-        report = Report(param_name='threads')
-        report.create_beauty_table('psb_threads_table.html')
-        report.create_psb_th_la_graph()
-        report.create_psb_th_tpsall_graph()
+    #     # create report
+    #     report = Report(param_name='threads')
+    #     report.create_beauty_table('psb_threads_table.html')
+    #     report.create_psb_th_la_graph()
+    #     report.create_psb_th_tpsall_graph()
 
-        '''
-            Проверка на втроенных сценариях.
-            Нахождение предельного числа клиентов. 
-        '''
-        report = open(REPORT_FILENAME, 'w')
-        report.close()
+    #     '''
+    #         Проверка на втроенных сценариях.
+    #         Нахождение предельного числа клиентов. 
+    #     '''
+    #     report = open(REPORT_FILENAME, 'w')
+    #     report.close()
 
-        clients = CLIENTS
-        clients_step = CLIENTS_STEP
-        limite_clients = LIMITE_CLIENTS
-        max_clients_count = 0
+    #     clients = CLIENTS
+    #     clients_step = CLIENTS_STEP
+    #     limite_clients = LIMITE_CLIENTS
+    #     max_clients_count = 0
 
-        while clients < limite_clients:
-            with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(str(clients))
-            test = Test(cls=clients)
-            result = test.run_test()
-            if result is False:
-                max_clients_count = clients
-                break
-            else:
-                max_clients_count = clients
-                clients += clients_step
-                print(result)
+    #     while clients < limite_clients:
+    #         with open(REPORT_FILENAME, 'a+') as report_file:
+    #             report_file.write(str(clients))
+    #         test = Test(cls=clients)
+    #         result = test.run_test()
+    #         if result is False:
+    #             max_clients_count = clients
+    #             break
+    #         else:
+    #             max_clients_count = clients
+    #             clients += clients_step
+    #             print(result)
 
-        # create report
-        report = Report(param_name='clients')
-        report.create_beauty_table('psb_clients_table.html')
-        report.create_psb_cl_la_graph()
-        report.create_psb_cl_tpsall_graph()
+    #     # create report
+    #     report = Report(param_name='clients')
+    #     report.create_beauty_table('psb_clients_table.html')
+    #     report.create_psb_cl_la_graph()
+    #     report.create_psb_cl_tpsall_graph()
 
-        print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
-        print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
-        print('# INFO # --- max threads count {}'.format(str(max_threads_count)))
-        print('# INFO # --- max clients count {}'.format(str(max_clients_count)))
+    #     print('# INFO # --- max scale factor {}'.format(str(max_scale_factor)))
+    #     print('# INFO # --- max transactions count {}'.format(str(max_transactions_count)))
+    #     print('# INFO # --- max threads count {}'.format(str(max_threads_count)))
+    #     print('# INFO # --- max clients count {}'.format(str(max_clients_count)))
 
-        '''
-            Запуск на максимально допустимых настройках
-        '''
-        report = open(REPORT_FILENAME, 'w')
-        report.close()
+    #     '''
+    #         Запуск на максимально допустимых настройках
+    #     '''
+    #     report = open(REPORT_FILENAME, 'w')
+    #     report.close()
 
-        scale_factor = SCALE_FACTOR
-        scale_factor_step = SCALE_FACTOR_STEP
-        transactions = TRANSACTIONS
-        transactions_step = TRANSACTIONS_STEP
-        threads = THREADS
-        threads_step = THREADS_STEP
-        clients = CLIENTS
-        clients_step = CLIENTS_STEP
+    #     scale_factor = SCALE_FACTOR
+    #     scale_factor_step = SCALE_FACTOR_STEP
+    #     transactions = TRANSACTIONS
+    #     transactions_step = TRANSACTIONS_STEP
+    #     threads = THREADS
+    #     threads_step = THREADS_STEP
+    #     clients = CLIENTS
+    #     clients_step = CLIENTS_STEP
 
-        while (scale_factor <= max_scale_factor) and \
-                (transactions <= max_transactions_count) and \
-                (threads <= max_threads_count) and \
-                (clients <= max_clients_count):
-            with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(str(scale_factor))
-                report_file.write(str(transactions))
-                report_file.write(str(threads))
-                report_file.write(str(clients))
-            test = Test(scale=scale_factor,
-                        trs=transactions,
-                        ths=threads,
-                        cls=clients)
-            print(test.run_test())
-            scale_factor += scale_factor_step
-            transactions += transactions_step
-            threads += threads_step
-            clients += clients_step
+    #     while (scale_factor <= max_scale_factor) and \
+    #             (transactions <= max_transactions_count) and \
+    #             (threads <= max_threads_count) and \
+    #             (clients <= max_clients_count):
+    #         with open(REPORT_FILENAME, 'a+') as report_file:
+    #             report_file.write(str(scale_factor))
+    #             report_file.write(str(transactions))
+    #             report_file.write(str(threads))
+    #             report_file.write(str(clients))
+    #         test = Test(scale=scale_factor,
+    #                     trs=transactions,
+    #                     ths=threads,
+    #                     cls=clients)
+    #         print(test.run_test())
+    #         scale_factor += scale_factor_step
+    #         transactions += transactions_step
+    #         threads += threads_step
+    #         clients += clients_step
 
-        report = Report(all_params=True)
-        report.create_beauty_table('psb_max_table.html')
-        report.merge(table_lst=['psb_scale_table.html',
-                                'psb_transactions_table.html',
-                                'psb_threads_table.html',
-                                'psb_clients_table.html',
-                                'psb_max_table.html'],
-                     graph_lst=['psb_scale_la_graph.png',
-                                'psb_scale_tpsall_graph.png',
-                                'psb_transactions_la_graph.png',
-                                'psb_transactions_tpsall_graph.png',
-                                'psb_threads_la_graph.png',
-                                'psb_threads_tpsall_graph.png',
-                                'psb_clients_la_graph.png',
-                                'psb_clients_tpsall_graph.png'])
+    #     report = Report(all_params=True)
+    #     report.create_beauty_table('psb_max_table.html')
+    #     report.merge(table_lst=['psb_scale_table.html',
+    #                             'psb_transactions_table.html',
+    #                             'psb_threads_table.html',
+    #                             'psb_clients_table.html',
+    #                             'psb_max_table.html'],
+    #                  graph_lst=['psb_scale_la_graph.png',
+    #                             'psb_scale_tpsall_graph.png',
+    #                             'psb_transactions_la_graph.png',
+    #                             'psb_transactions_tpsall_graph.png',
+    #                             'psb_threads_la_graph.png',
+    #                             'psb_threads_tpsall_graph.png',
+    #                             'psb_clients_la_graph.png',
+    #                             'psb_clients_tpsall_graph.png'])
 
 print('# INFO # --- создаем dump БД')
 dump()

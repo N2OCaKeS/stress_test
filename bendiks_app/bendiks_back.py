@@ -223,6 +223,7 @@ try:
                         pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
                         testnum = f'-testnum {i + 1}'
                         psql = '-ps psql'
+                        psql_parsec = '-psql-parsec'
                         psql_aud_off = '-psql_aud off'
                         ram_ovf = '-ovf ram'
                         sd_ovf = '-ovf sd'
@@ -238,6 +239,9 @@ try:
                         if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                        elif tests[dates_list[i][1]] == 'psql parsec':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_parsec}', shell=True)
                         elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)
@@ -283,6 +287,7 @@ try:
                     pp = f'-pp "{parent_page_list[__pt_version][tests[dates_list[i][1]]]}"'
                     testnum = f'-testnum {i + 1}'
                     psql = '-ps psql'
+                    psql_parsec = '-psql-parsec'
                     psql_aud_off = '-psql_aud off'
                     ram_ovf = '-ovf ram'
                     sd_ovf = '-ovf sd'
@@ -298,6 +303,9 @@ try:
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                    elif tests[dates_list[i][1]] == 'psql parsec':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_parsec}', shell=True)
                     elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)

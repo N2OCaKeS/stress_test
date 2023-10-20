@@ -203,10 +203,11 @@ if args.DB_PREPARE:
         Настроить машину, инициализировать тестовую БД
     '''
     if args.AUDIT_OFF:
-        subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {aud_off}'.format(dir=SCRIPT_DIR,
+        subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {aud_off} {ast}'.format(dir=SCRIPT_DIR,
                                                                                         stand=args.STAND,
                                                                                         init_file='psb_init.sql',
-                                                                                        aud_off='audit_off'),
+                                                                                        aud_off='audit_off',
+                                                                                        ast=alt_storage),
                                                                                         shell=True,
                                                                                         stderr=subprocess.DEVNULL)
     elif args.PARSEC:
@@ -222,9 +223,10 @@ if args.DB_PREPARE:
                                                                                         shell=True,
                                                                                         stderr=subprocess.DEVNULL)
         else:
-            subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file}'.format(dir=SCRIPT_DIR,
+            subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {ast}'.format(dir=SCRIPT_DIR,
                                                                                         stand=args.STAND,
-                                                                                        init_file='psb_init.sql'),
+                                                                                        init_file='psb_init.sql',
+                                                                                        ast=alt_storage),
                                                                                         shell=True,
                                                                                         stderr=subprocess.DEVNULL)
 

@@ -317,8 +317,7 @@ def create_args(page):
 
 def ssh_command(command, stand_ip):
     client = paramiko.SSHClient()
-    
-    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(stand_ip, port=port, username=user, password='1')
     stdin, stdout, stderr = client.exec_command(command)
     response = stdout.read().decode().strip()

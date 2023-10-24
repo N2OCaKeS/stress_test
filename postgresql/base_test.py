@@ -67,7 +67,7 @@ def test_run(clients, repeat):
         with open('result_testing.txt', 'r') as r:
             raw_results = r.read().split('\n')
             tps_values = np.array([int(float(x)) for x in raw_results if x.replace('.', '', 1).isdigit()])
-    else: print('Файл с результатами отсутствует')
+    else: print('Файл с результатами отсутствует'); exit(1)
     print(f'Общий список всех результатов:\n{tps_values}')
 
 

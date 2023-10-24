@@ -1,6 +1,7 @@
 #!/bin/python3
 import subprocess
 from os import path
+import argparse
 
 def cmd(command):
     subprocess.run(command, shell=True)
@@ -12,13 +13,39 @@ except (ImportError, ImportWarning):
     import numpy as np
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument('-db',
+                    action='store',
+                    choices=['psql',
+                             'tantor'],
+                    required=False,
+                    default='psql',
+                    help='choice database',
+                    dest='DB')
+
+parser.add_argument('-sd',
+                    action='store',
+                    required=False,
+                    help='choice storage device',
+                    dest='SD')
+
+parser.add_argument('-client',
+                    action='store',
+                    choices=['200',
+                             '800'],
+                    required=False,
+                    default='200',
+                    help='clients count',
+                    dest='CLIENT')
+
+args = parser.parse_args()
 
 def test_run(clients, repeat):
     repeat_list = [str(clients) for i in range(repeat)]
     repeat_str = ' '.join(repeat_list)
     
     #Создание и настройка БД
-    cmd(f'sudo bash default_base_up.sh "{repeat_str}"')
+    cmd(f'sudo bash default_base_up.sh "{repeat_str} {args.DB} {args.SD}"')
     cmd('sudo bash start_test.sh')
     cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
 
@@ -33,7 +60,7 @@ def test_run(clients, repeat):
     #Лимит группы по количеству элементов, принимаемой к расчетам, в %
     valid_values_percent = 50
     #Лимит погрешности, в %
-    percent_limit = 1.5
+    percent_limit = 2 #1.5
 
     def check_value(value, all_values, percent_limit):
         diffs = np.abs((all_values - value) / value * 100)
@@ -52,6 +79,6 @@ def test_run(clients, repeat):
         print('Нет подходящих групп значений для расчета среднего')
 
 
-test_run(200, 20)
+test_run(args.CLIENT, 20)
 
 

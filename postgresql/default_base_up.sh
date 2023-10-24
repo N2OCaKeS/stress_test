@@ -154,36 +154,34 @@ if [ "$2" == "tantor" ]; then
   apt-get update
 
   apt-get install tantor-se-server-15 -y
+  chown postgres.postgres /var/lib/postgresql/tantor-se-15/data/*
 
-  sed -i 's/.*max_connections.*/max_connections = 2000/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*shared_buffers.*/shared_buffers = 8GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*effective_cache_size.*/effective_cache_size = 24GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*maintenance_work_mem.*/maintenance_work_mem = 2GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*checkpoint_completion_target.*/checkpoint_completion_target = 0.9/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*wal_buffers.*/wal_buffers = 16MB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*default_statistics_target.*/default_statistics_target = 100/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*random_page_cost.*/random_page_cost = 1.1/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*min_wal_size.*/min_wal_size = 1GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*max_wal_size.*/max_wal_size = 4GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*max_worker_processes.*/max_worker_processes = 8/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 8/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-  sed -i 's/md5/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
+  sed -i 's/.*max_connections.*/max_connections = 2000/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*shared_buffers.*/shared_buffers = 8GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*effective_cache_size.*/effective_cache_size = 24GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*maintenance_work_mem.*/maintenance_work_mem = 2GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*checkpoint_completion_target.*/checkpoint_completion_target = 0.9/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*wal_buffers.*/wal_buffers = 16MB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*default_statistics_target.*/default_statistics_target = 100/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*random_page_cost.*/random_page_cost = 1.1/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*min_wal_size.*/min_wal_size = 1GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*max_wal_size.*/max_wal_size = 4GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*max_worker_processes.*/max_worker_processes = 8/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 8/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+  sed -i 's/md5/trust/g' /var/lib/postgresql/tantor-se-15/data/pg_hba.conf
 
   su -c "/opt/tantor/db/15/bin/initdb -D /var/lib/postgresql/tantor-se-15/data --no-instructions" postgres
   systemctl start tantor-se-server-15
-
-  for port in $(pg_lsclusters -h | gawk '{print $3}');
-  do
-    cp -r $MAIN_DIR/sql/$sql_script_add_user /tmp/$sql_script_add_user
-    cp -r $MAIN_DIR/sql/$sql_script_set_mac /tmp/$sql_script_set_mac
-    cd /tmp
-    chmod 644 /tmp/$sql_script_add_user
-    chmod 644 /tmp/$sql_script_set_mac
-    su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-    cd -
-  done
+  
+  sql_script_add_user=psb_add_user.sql
+  cp -r $MAIN_DIR/sql/$sql_script_add_user /tmp/$sql_script_add_user
+  cd /tmp
+  chmod 644 /tmp/$sql_script_add_user
+  su -c "psql -p 5432 -f /tmp/$sql_script_add_user" postgres
+  cd -
+  
 
   cat << EOF > start_test.sh
   #!/bin/bash

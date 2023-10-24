@@ -179,7 +179,7 @@ if [ "$2" == "tantor" ]; then
   cp -r $MAIN_DIR/sql/$sql_script_add_user /tmp/$sql_script_add_user
   cd /tmp
   chmod 644 /tmp/$sql_script_add_user
-  su -c "psql -p 5432 -f /tmp/$sql_script_add_user" postgres
+  su -c "/opt/tantor/db/15/bin/psql -p 5432 -f /tmp/$sql_script_add_user" postgres
   cd -
   
 
@@ -192,7 +192,7 @@ if [ "$2" == "tantor" ]; then
   for c in \$clients; do
       echo "pgbench_\${c}_\${t}.txt"
       echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
-      pgbench -h localhost -p 6000 -U postgres --random-seed=13 -T \$t -j \$c -c \$c test_parsec >> "\${dir}/pgbench_result.txt"
+      /opt/tantor/db/15/bin/pgbench -h localhost -p 5432 -U postgres --random-seed=13 -T \$t -j \$c -c \$c test_parsec >> "\${dir}/pgbench_result.txt"
       echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
   done
 EOF

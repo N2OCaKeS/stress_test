@@ -75,7 +75,7 @@ class Test:
         if self.debian == True:
             init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, self.debian)
         elif self.parsec == True:
-            init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, self.parsec)
+            init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, parsec=self.parsec)
         else:
             init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor)
         result = '# TEST # --- '

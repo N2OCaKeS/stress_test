@@ -171,7 +171,7 @@ if [ "$2" == "tantor" ]; then
   sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
   sed -i 's/md5/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
 
-  su -c "initdb -D /var/lib/postgresql/tantor-se-15/data --no-instructions 2> install.log" postgres
+  su -c "/opt/tantor/db/15/bin/initdb -D /var/lib/postgresql/tantor-se-15/data --no-instructions" postgres
   systemctl start tantor-se-server-15
 
   for port in $(pg_lsclusters -h | gawk '{print $3}');
@@ -185,7 +185,24 @@ if [ "$2" == "tantor" ]; then
     cd -
   done
 
+  cat << EOF > start_test.sh
+  #!/bin/bash
+  clients="$1"
+  t=30
+  dir=test
+  mkdir \$dir
+  for c in \$clients; do
+      echo "pgbench_\${c}_\${t}.txt"
+      echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
+      pgbench -h localhost -p 6000 -U postgres --random-seed=13 -T \$t -j \$c -c \$c test_parsec >> "\${dir}/pgbench_result.txt"
+      echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
+  done
+EOF
+
+  cat start_test.sh
+
   /opt/tantor/db/15/bin/pgbench -i --scale=4000 --foreign-keys -h localhost -p 5432 -U postgres test_parsec
+fi
 
 
 

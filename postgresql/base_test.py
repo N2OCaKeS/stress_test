@@ -45,7 +45,7 @@ def test_run(clients, repeat):
     repeat_str = ' '.join(repeat_list)
     
     #Создание и настройка БД
-    cmd(f'sudo bash default_base_up.sh "{repeat_str} {args.DB} {args.SD}"')
+    cmd(f'sudo bash default_base_up.sh "{repeat_str}" {args.DB} {args.SD}')
     cmd('sudo bash start_test.sh')
     cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
 

@@ -58,7 +58,10 @@ def test_run(clients, repeat):
     #Создание и настройка БД
     cmd(f'sudo bash default_base_up.sh "{repeat_str}" {args.DB} {args.SD} {args.STAND}')
     cmd('sudo bash start_test.sh')
-    cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
+    if args.DB == 'tantor':
+        cmd('cat test/pgbench_result.txt | grep tps | awk \'{print$3}\' >> result_testing.txt')
+    else:
+        cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
 
     if path.isfile('result_testing.txt'):
         with open('result_testing.txt', 'r') as r:

@@ -148,12 +148,17 @@ fi
 
 
 if [ "$2" == "tantor" ]; then
+  if [ "$5" == "astra" ]; then
+    wget --quiet -O - https://public.tantorlabs.ru/tantorlabs.ru.asc | apt-key add -
+    #echo "deb [arch=amd64] https://tantor.astra:FVC6adbPafmB9bRZ@nexus.tantorlabs.ru/repository/astra-smolensk-1.7 smolensk main" > /etc/apt/sources.list.d/tantorlabs.list
+    echo "deb [arch=amd64] https://nexus.tantorlabs.ru/repository/astra-smolensk-1.7 smolensk main" > /etc/apt/sources.list.d/tantorlabs.list
+    echo "machine nexus.tantorlabs.ru login tantor.astra password FVC6adbPafmB9bRZ" > /etc/apt/auth.conf
+    apt-get update
+    apt-get install tantor-se-server-15 -y
+  else
+    dpkg -i tantor-se-server-15_15.2.2_amd64.deb -y
+  fi
 
-  wget --quiet -O - https://public.tantorlabs.ru/tantorlabs.ru.asc | apt-key add -
-  echo "deb [arch=amd64] https://tantor.astra:FVC6adbPafmB9bRZ@nexus.tantorlabs.ru/repository/astra-smolensk-1.7 smolensk main" > /etc/apt/sources.list.d/tantorlabs.list
-  apt-get update
-
-  apt-get install tantor-se-server-15 -y
   chown postgres.postgres /var/lib/postgresql/tantor-se-15/data/*
   su -c "/opt/tantor/db/15/bin/initdb -D /var/lib/postgresql/tantor-se-15/data --no-instructions" postgres
   systemctl start tantor-se-server-15

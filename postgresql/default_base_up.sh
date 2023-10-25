@@ -156,7 +156,7 @@ if [ "$2" == "tantor" ]; then
     apt-get update
     apt-get install tantor-se-server-15 -y
   else
-    dpkg -i tantor-se-server-15_15.2.2_amd64.deb -y
+    dpkg -i tantor-se-server-15_15.2.2_amd64.deb
   fi
 
   chown postgres.postgres /var/lib/postgresql/tantor-se-15/data/*

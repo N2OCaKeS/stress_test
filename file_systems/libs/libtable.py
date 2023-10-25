@@ -356,7 +356,7 @@ class Report:
 
         if auto_normalize:
             scaler = preprocessing.MinMaxScaler()
-            normalized_data_2d_array = scaler.fit_transform(np.array([0]+ self.speed_lst + [4600])[:, np.newaxis])
+            normalized_data_2d_array = scaler.fit_transform(np.array([0]+ self.speed_lst + [96000])[:, np.newaxis]) #max vector 4600 changed to 96000
             # print('normalized_data_2d_array --', scaler.fit_transform(np.array(self.speed_lst)[:, np.newaxis]))
             normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
             # print('normalized_data_list --', [float(list(item)[0]) for item in list(normalized_data_2d_array)])

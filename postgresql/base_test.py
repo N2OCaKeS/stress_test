@@ -82,7 +82,7 @@ def test_run(clients, repeat):
 
     #Лимит группы по количеству элементов, принимаемой к расчетам, в %
     valid_values_percent = 50
-    #Лимит погрешности, в %
+    #Лимит отклонения, в %
     percent_limit = 2 #1.5
 
     def check_value(value, all_values, percent_limit):

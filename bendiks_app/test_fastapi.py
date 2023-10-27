@@ -1,7 +1,9 @@
 from fastapi import FastAPI
-from fastapi import Form, Request
+from fastapi import Form, Request, Body
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from typing import List
 from fastapi import HTTPException
 from time import sleep
 import socket
@@ -32,6 +34,14 @@ from libs.libbend import (index_page,
 app = FastAPI()
 templates = Jinja2Templates(directory='templates')
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+class RequestData(BaseModel):
+    stands: List[str] = Field(...)
+    rc: List[str] = Field(None)
+    releases_list: List[str] = Field(None)
+    kernels_list: List[str] = Field(None)
+    options: List[str] = Field(None)
+
 
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
@@ -87,8 +97,8 @@ async def index_mobile():
 
 @app.get(f'/{main_url}')
 @app.post(f'/{main_url}')
-async def index_main():
-    return await index_page('main')
+async def index_main(request: Request, data: RequestData = Body(...)):
+    return await index_page('main', data, request)
 
 # @app.get(f'/{brest_url}')
 # @app.post(f'/{brest_url}')

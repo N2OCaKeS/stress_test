@@ -90,21 +90,13 @@ def generate_random_string(length):
     return rand_string * 5
 
 
-async def index_page(general_page, ajax=None):
+async def index_page(general_page, data, request: Request, ajax=None):
     
-    if post_info_collector(general_page) == 'index':
-        return await info_collector(general_page)
+    if await post_info_collector(general_page, data, request) == 'index':
+        return await info_collector(general_page, request)
     elif ajax:
         return await info_collector_ajax(general_page)
-    else: return await info_collector(general_page)
-
-
-class RequestData(BaseModel):
-    stands: List[str] = Field(...)
-    rc: List[str] = Field(None)
-    releases_list: List[str] = Field(None)
-    kernels_list: List[str] = Field(None)
-    options: List[str] = Field(None)
+    else: return await info_collector(general_page, request)
 
 
 
@@ -264,7 +256,7 @@ async def info_collector_ajax(page: str):
 
 
 #@app.post("/info_collector/post/{page}")
-async def post_info_collector(page: str, data: RequestData, request: Request):
+async def post_info_collector(page: str, data, request: Request):
     options = {'main':main_options,
                'brest':brest_options,
                'mobile':main_options}

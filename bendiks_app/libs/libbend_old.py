@@ -36,11 +36,6 @@ import threading
 import asyncio
 import asyncssh
 import asyncpg
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import JSONResponse
-from fastapi import FastAPI, Request, HTTPException, Depends
-from pydantic import BaseModel, Field
-from typing import List
 
 
 main_options = sorted(main_tests)
@@ -82,7 +77,6 @@ process_list10 = []
 process_list11 = []
 process_list12 = []
 
-templates = Jinja2Templates(directory='templates')
 
 def generate_random_string(length):
     letters_and_digits = string.ascii_letters + string.digits
@@ -90,26 +84,15 @@ def generate_random_string(length):
     return rand_string * 5
 
 
-async def index_page(general_page, ajax=None):
+def index_page(general_page, ajax=None):
     
-    if post_info_collector(general_page) == 'index':
-        return info_collector(general_page)
-    elif ajax:
-        info_collector_ajax(general_page)
-    else: return info_collector(general_page)
+    if info_collector(general_page, ajax) == 'index':
+        return redirect(url_for(f'index_{general_page}'))
+    else: return info_collector(general_page, ajax)
 
 
-class RequestData(BaseModel):
-    stands: List[str] = Field(...)
-    rc: List[str] = Field(None)
-    releases_list: List[str] = Field(None)
-    kernels_list: List[str] = Field(None)
-    options: List[str] = Field(None)
+def info_collector(page, ajax=None):
 
-
-
-#@app.get("/info_collector/{page}")
-async def info_collector(page: str, request: Request):
     tests = []
     logs = {}
     progress_logs = {}
@@ -162,174 +145,88 @@ async def info_collector(page: str, request: Request):
                 progress_logs[f'progress_{stand}'] = ''
                 logs[f'{stand}_log'] = ''
     
-    
+    if ajax == True:
+        return jsonify({**status_logs,
+                        **logs,
+                        **status_gif_logs,
+                        **sett_logs,
+                        **progress_logs})    
+
     if page == 'mobile':
         test_list, releas_list, kernel_list = create_args('main')
     else: test_list, releas_list, kernel_list = create_args(page)
     
-    context = {
-        "request": request,
-        "options": options[page],
-        "test_list": test_list,
-        "releas_list": releas_list,
-        "kernel_list": kernel_list,
-        "releases": releases,
-        "kernels": kernels,
-        **status_logs,
-        **logs,
-        **status_gif_logs,
-        **sett_logs,
-        **progress_logs
-    }
+    if request.method == 'POST':
+        tr_stands = request.form.getlist('stands')
+        if tr_stands:
+            rc_part = request.form.getlist('rc')
+            releases_part = request.form.getlist('releaseslist')
+            kernel_part = request.form.getlist('kernelslist')
+            if rc_part:
+                test_run = ZefirTestRun(use_kernels=kernel_part,
+                                    stands=tr_stands,
+                                    release=releases_part,
+                                    rc=rc_part)
+            else:
+                test_run = ZefirTestRun(use_kernels=kernel_part,
+                                        stands=tr_stands,
+                                        release=releases_part)
+            test_run.creater()
+        else:
+            selected_options = request.form.getlist('options')
+            tests = [option for option in options[page] if option in selected_options]
+            if not tests:
+                tests = 'Тесты не выбраны'
+            
+            kernel = request.form.get('kernel')
+            with open(f'conf/{page}_kernel_args.conf', 'w') as w:
+                w.write(str(kernel))
+
+            releas = request.form.getlist('releas')
+            with open(f'conf/{page}_releas_args.conf', 'w') as w:
+                w.write(str(releas))
+            if not releas:
+                releas = 'Релиз не выбран'
+            
+            with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                w.write(str(tests))
+        
+        return 'index'
 
     if page == 'brest':
-        context['brest_url'] = brest_url
-    elif page in ['main', 'mobile']:
-        context.update({
-            "stands": test_run_stands,
-            "kernelslist": kernels,
-            "rc": rc_list,
-            "releaseslist": releases_list,
-            "main_url": main_url,
-            "mobile_url": mobile_url,
-            "brest_url": brest_url
-        })
+        return render_template(f'{page}.html', 
+                                options=options[page],
+                                test_list=test_list,
+                                releas_list=releas_list,
+                                kernel_list=kernel_list, 
+                                releases=releases, 
+                                kernels=kernels,
+                                brest_url=brest_url,
+                                **status_logs,
+                                **logs,
+                                **status_gif_logs,
+                                **sett_logs,
+                                **progress_logs)
     else:
-        raise HTTPException(status_code=404, detail='Нет такой страницы')
-
-    return templates.TemplateResponse(f'{page}.html', context)
-
-
-#@app.get("/info_collector/{page}/ajax")
-async def info_collector_ajax(page: str):
-    tests = []
-    logs = {}
-    progress_logs = {}
-    sett_logs = {}
-    status_gif_logs = {}
-    gif_mapping = {'Остановлен': red_gif, 
-                   'Запущен': green_gif, 
-                   'Готово': done_gif}
-    stands_dict = {'main':main_stands,
-                   'brest':brest_stands,
-                   'mobile':mobile_stands}
-    options = {'main':main_options,
-               'brest':brest_options,
-               'mobile':main_options}
-    status_logs = {f'status_{stand}':'-' for stand in stands_dict[page]}
-        
-    
-    for stand in stands_dict[page]:
-        try:
-            with open(f'conf/actual_log_path_{stand}.conf', 'r') as rl:
-                real_path = rl.read()
-            with open(real_path, 'r') as r:
-                #logs[f'{stand}_log'] = r.read()
-                logs[f'{stand}_log'] = '\n'.join(deque(r, maxlen=50))
-        except FileNotFoundError:
-            continue
-
-    for stand in stands_dict[page]:
-        try:
-            with open(f'conf/all_output_{stand}.log', 'r') as r:
-                progress_logs[f'progress_{stand}'] = r.read()
-        except FileNotFoundError:
-            progress_logs[f'progress_{stand}'] = ''
-
-    for stand in stands_dict[page]:
-        try:
-            with open(f'conf/status_output_{stand}.log', 'r') as rsc:
-                sett_logs[f'{stand}_sett'] = rsc.read()
-        except FileNotFoundError:
-            sett_logs[f'{stand}_sett'] = ''
-
-    for stand in stands_dict[page]:
-        with open(f'conf/work_status_{stand}.conf', 'r') as rs:
-            status = rs.read()
-            status_logs[f'status_{stand}'] = status
-            status_gif_logs[f'status_gif_{stand}'] = gif_mapping.get(status, ping_gif)
-            if status_gif_logs[f'status_gif_{stand}'] == ping_gif:
-                status_logs[f'status_{stand}'] = 'Нераспознан'
-            if status == 'Остановлен':
-                progress_logs[f'progress_{stand}'] = ''
-                logs[f'{stand}_log'] = ''
-    
-    return JSONResponse({**status_logs,
-                         **logs,
-                         **status_gif_logs,
-                         **sett_logs,
-                         **progress_logs})
-
-
-
-
-#@app.post("/info_collector/post/{page}")
-async def post_info_collector(page: str, data: RequestData, request: Request):
-    options = {'main':main_options,
-               'brest':brest_options,
-               'mobile':main_options}
-    
-    if data.stands:
-        if data.rc:
-            test_run = ZefirTestRun(use_kernels=data.kernels_list,
-                                    stands=data.stands,
-                                    release=data.releases_list,
-                                    rc=data.rc)
-        else:
-            test_run = ZefirTestRun(use_kernels=data.kernels_list,
-                                    stands=data.stands,
-                                    release=data.releases_list)
-        test_run.creater()
-    else:
-        tests = [option for option in options[page] if option in data.options]
-        if not tests:
-            tests = "Тесты не выбраны"
-
-        kernel = request.form.get('kernel')
-        with open(f'conf/{page}_kernel_args.conf', 'w') as w:
-            w.write(str(kernel))
-
-        releas = request.form.getlist('releas')
-        with open(f'conf/{page}_releas_args.conf', 'w') as w:
-            w.write(str(releas))
-        if not releas:
-            releas = 'Релиз не выбран'
-        
-        with open(f'conf/{page}_tests_args.conf', 'w') as w:
-            w.write(str(tests))
-                
-    return 'index'
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        return render_template(f'{page}.html', 
+                                options=options[page],
+                                stands=test_run_stands,
+                                kernelslist=kernels,
+                                rc=rc_list, 
+                                releaseslist=releases_list,
+                                test_list=test_list,
+                                releas_list=releas_list,
+                                kernel_list=kernel_list, 
+                                releases=releases, 
+                                kernels=kernels,
+                                **status_logs,
+                                **logs,
+                                **status_gif_logs,
+                                **sett_logs,
+                                **progress_logs,                                                        
+                                main_url=main_url,
+                                mobile_url=mobile_url,
+                                brest_url=brest_url)
 
 
 

@@ -93,10 +93,10 @@ def generate_random_string(length):
 async def index_page(general_page, ajax=None):
     
     if post_info_collector(general_page) == 'index':
-        return info_collector(general_page)
+        return await info_collector(general_page)
     elif ajax:
-        info_collector_ajax(general_page)
-    else: return info_collector(general_page)
+        return await info_collector_ajax(general_page)
+    else: return await info_collector(general_page)
 
 
 class RequestData(BaseModel):

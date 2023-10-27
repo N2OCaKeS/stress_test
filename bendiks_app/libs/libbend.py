@@ -33,7 +33,9 @@ from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
 import threading
-
+import asyncio
+import asyncssh
+import asyncpg
 
 
 main_options = sorted(main_tests)
@@ -324,6 +326,62 @@ def ssh_command(command, stand_ip):
     client.close()
     return response
 
+# async def ssh_command(command, stand_ip):
+#     async with asyncssh.connect(host=stand_ip, port=port, username=user, password='1', 
+#                                 known_hosts=None) as conn:
+#         result = await conn.run(command)
+#         return result.stdout
+
+
+# async def output_remote_load(stand):
+#     command = """
+#             top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
+#             printf "%s::%s::%s::", 100-$8 "%", $2 "%", $4 "%"}'; 
+#             free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
+#             """
+
+#     try:
+#         cpu_ram_output = await ssh_command(command, stands_ip[stand])
+#         cpu_ram_output = cpu_ram_output.split('::')
+#         output_cpu = cpu_ram_output[0]
+#         output_cpu_user = cpu_ram_output[1].replace(',', '.')
+#         output_cpu_system = cpu_ram_output[2].replace(',', '.')
+#         output_ram = cpu_ram_output[3].strip()
+#     except (OSError, asyncssh.Error):
+#         output_cpu = '-'
+#         output_ram = '-'
+#         output_cpu_user = '-'
+#         output_cpu_system = '-'
+#     except Exception as error:
+#         output_cpu = output_cpu_user = output_cpu_system = output_ram = str(error)
+
+#     conn = await asyncpg.connect(
+#                                 user=psyc['user'],
+#                                 password=psyc['password'],
+#                                 database=psyc['database'],
+#                                 host=psyc['host']
+#                                 )
+
+#     try:
+#         async with conn.transaction():
+#             await conn.execute(
+#                                 f"""
+#                                 UPDATE main_table SET 
+#                                 {stand}_cpu = $1,
+#                                 {stand}_cpu_user = $2,
+#                                 {stand}_cpu_system = $3,
+#                                 {stand}_ram = $4
+#                                 WHERE id = $5
+#                                 """,
+#                                 output_cpu,
+#                                 output_cpu_user,
+#                                 output_cpu_system,
+#                                 output_ram,
+#                                 1
+#                             )
+#     finally:
+#         await conn.close()
+
 
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -490,7 +548,12 @@ def background_task_main():
     while True:
         [output_remote_load(str(stand)) for stand in stands]
         sleep(3)
+# async def background_task_main():
+#     stands = main_stands
 
+#     while True:
+#         await asyncio.gather(*(output_remote_load(str(stand)) for stand in stands))
+#         await asyncio.sleep(3)
 
 def background_task_brest():
     stands = brest_stands
@@ -528,6 +591,28 @@ def get_kernels_from_rc(version_rc: str):
     return jsonify(test_list=version, 
                    releas_list=f'''Kernels: \'{" ".join(kernels).replace(" ", "', '")}\'''', 
                    kernel_list='')
+
+
+
+# class BackgroundTasks:
+#     def __init__(self, target):
+#         self.target_function = target
+#         self.working = False
+#         self.task = None
+
+#     def start(self):
+#         self.working = True
+#         if self.task is None or self.task.done(): 
+#             self.task = asyncio.create_task(self.run())
+
+#     def stop(self):
+#         if self.task:
+#             self.task.cancel()
+#         self.working = False
+
+#     async def run(self):
+#         while self.working:
+#             await self.target_function()
 
 
 

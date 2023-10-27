@@ -61,24 +61,6 @@ def restart_cpumeminfo():
     thread_storage_main.start()
     return 0
 
-# task_main = BackgroundTasks(background_task_main)
-# # task_brest = BackgroundTasks(background_task_brest)
-# storage_main = BackgroundTasks(background_stat_storage_main)
-# task_main.start()
-# # task_brest.start()
-# storage_main.start()
-
-# @app.route('/update_cpumeminfo', methods=['GET'])
-# async def restart_cpumeminfo():
-#     task_main.stop()
-#     # task_brest.stop()
-#     storage_main.stop()
-#     await asyncio.sleep(1)
-#     task_main.start()
-#     # task_brest.start()
-#     storage_main.start()
-#     return 0
-
 
 @app.route('/')
 def redirect_login():

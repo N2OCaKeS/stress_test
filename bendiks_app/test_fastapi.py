@@ -83,123 +83,123 @@ def get_login(req: Request):
 @app.get(f'/{mobile_url}')
 @app.post(f'/{mobile_url}')
 async def index_mobile():
-    return index_page('mobile')
+    return await index_page('mobile')
 
 @app.get(f'/{main_url}')
 @app.post(f'/{main_url}')
 async def index_main():
-    return index_page('main')
+    return await index_page('main')
 
-@app.get(f'/{brest_url}')
-@app.post(f'/{brest_url}')
-async def index_brest():
-    return index_page('brest')
+# @app.get(f'/{brest_url}')
+# @app.post(f'/{brest_url}')
+# async def index_brest():
+#     return index_page('brest')
 
-@app.post('/run-command-stand{num}')
-async def run_command(num):
-    return run_command_on_stand(num)
-
-
-@app.get('/update/{version}')
-async def update_stp(version):
-    """
-    Обновить состав тестового прогона
-    """
-    zefir_table = ZefirResultTable(test_cycle_version=str(version),
-                                   token=__conf_token,
-                                   basic_auth=__jira_token,
-                                   username=__username)
-    zefir_table
-
-    return index_page('main')
+# @app.post('/run-command-stand{num}')
+# async def run_command(num):
+#     return run_command_on_stand(num)
 
 
-@app.get('/api/load_info/{stand}')
-async def get_load_info(stand):
-    conn = psycopg2.connect(
-                            host=psyc['host'],
-                            database=psyc['database'],
-                            user=psyc['user'],
-                            password=psyc['password']
-                            )
+# @app.get('/update/{version}')
+# async def update_stp(version):
+#     """
+#     Обновить состав тестового прогона
+#     """
+#     zefir_table = ZefirResultTable(test_cycle_version=str(version),
+#                                    token=__conf_token,
+#                                    basic_auth=__jira_token,
+#                                    username=__username)
+#     zefir_table
 
-    id = 1
-    cursor = conn.cursor()
-    select_query = f"SELECT {stand}_cpu, {stand}_cpu_user, {stand}_cpu_system, {stand}_ram, {stand}_nvme, {stand}_sda, {stand}_temp_cpu FROM main_table WHERE id = %s"
-    cursor.execute(select_query, [id])
+#     return index_page('main')
 
-    result = cursor.fetchone()
-    if result is not None:
-        load_cpu = result[0]
-        load_cpu_user = result[1]
-        load_cpu_system = result[2]
-        temp_cpu = result[6]
-        load_ram = result[3]
-        load_nvme = result[4]
-        load_sda = result[5]
-    else:
-        load_cpu = '-'
-        load_cpu_user = '-'
-        load_cpu_system = '-'
-        temp_cpu = '-'
-        load_ram = '-'
-        load_nvme = '-'
-        load_sda = '-'
 
-    cursor.close()
-    conn.close()
+# @app.get('/api/load_info/{stand}')
+# async def get_load_info(stand):
+#     conn = psycopg2.connect(
+#                             host=psyc['host'],
+#                             database=psyc['database'],
+#                             user=psyc['user'],
+#                             password=psyc['password']
+#                             )
+
+#     id = 1
+#     cursor = conn.cursor()
+#     select_query = f"SELECT {stand}_cpu, {stand}_cpu_user, {stand}_cpu_system, {stand}_ram, {stand}_nvme, {stand}_sda, {stand}_temp_cpu FROM main_table WHERE id = %s"
+#     cursor.execute(select_query, [id])
+
+#     result = cursor.fetchone()
+#     if result is not None:
+#         load_cpu = result[0]
+#         load_cpu_user = result[1]
+#         load_cpu_system = result[2]
+#         temp_cpu = result[6]
+#         load_ram = result[3]
+#         load_nvme = result[4]
+#         load_sda = result[5]
+#     else:
+#         load_cpu = '-'
+#         load_cpu_user = '-'
+#         load_cpu_system = '-'
+#         temp_cpu = '-'
+#         load_ram = '-'
+#         load_nvme = '-'
+#         load_sda = '-'
+
+#     cursor.close()
+#     conn.close()
     
-    return {
-        f"load_cpu_{stand}":load_cpu,
-        f"load_cpu_user_{stand}":load_cpu_user,
-        f"load_cpu_system_{stand}":load_cpu_system,
-        f"temp_cpu_{stand}":temp_cpu,
-        f"load_ram_{stand}":load_ram,
-        f"load_nvme_{stand}":load_nvme,
-        f"load_sda_{stand}":load_sda
-    } 
+#     return {
+#         f"load_cpu_{stand}":load_cpu,
+#         f"load_cpu_user_{stand}":load_cpu_user,
+#         f"load_cpu_system_{stand}":load_cpu_system,
+#         f"temp_cpu_{stand}":temp_cpu,
+#         f"load_ram_{stand}":load_ram,
+#         f"load_nvme_{stand}":load_nvme,
+#         f"load_sda_{stand}":load_sda
+#     } 
 
 
-@app.get('/update_page_info_{page}')
-async def update(page: str):
-    return index_page(f'{page}', ajax=True)
+# @app.get('/update_page_info_{page}')
+# async def update(page: str):
+#     return index_page(f'{page}', ajax=True)
 
 
-@app.get("/update_power_status/{stand}")
-async def check_running_system(stand: str):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(0.5)   
-    try:
-        result = sock.connect_ex((stands_ip[stand], 22))
-        if result == 0:
-            return {"is_running": True}
-        else: 
-            return {"is_running": False}
-    except socket.timeout:
-        return {"is_running": False}
-    except Exception as e:
-        print(e)
-        return {"is_running": False}
-    finally:
-        sock.close()
+# @app.get("/update_power_status/{stand}")
+# async def check_running_system(stand: str):
+#     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#     sock.settimeout(0.5)   
+#     try:
+#         result = sock.connect_ex((stands_ip[stand], 22))
+#         if result == 0:
+#             return {"is_running": True}
+#         else: 
+#             return {"is_running": False}
+#     except socket.timeout:
+#         return {"is_running": False}
+#     except Exception as e:
+#         print(e)
+#         return {"is_running": False}
+#     finally:
+#         sock.close()
 
 
-@app.post('/reboot/{stand}')
-async def reboot(stand):
-    ssh_command('sudo reboot', 
-                stand_ip=stands_ip[stand])
+# @app.post('/reboot/{stand}')
+# async def reboot(stand):
+#     ssh_command('sudo reboot', 
+#                 stand_ip=stands_ip[stand])
    
-@app.post('/poweroff/{stand}')
-async def poweroff(stand):
-    ssh_command('sudo poweroff', 
-                stand_ip=stands_ip[stand])
+# @app.post('/poweroff/{stand}')
+# async def poweroff(stand):
+#     ssh_command('sudo poweroff', 
+#                 stand_ip=stands_ip[stand])
 
 
-@app.get('/update_block_{part}')
-@app.post('/update_block_{part}')
-def update_block(part):
-    if part == 'components':
-        return update_settings_block()
-    else:
-        return get_kernels_from_rc(part)
+# @app.get('/update_block_{part}')
+# @app.post('/update_block_{part}')
+# def update_block(part):
+#     if part == 'components':
+#         return update_settings_block()
+#     else:
+#         return get_kernels_from_rc(part)
     

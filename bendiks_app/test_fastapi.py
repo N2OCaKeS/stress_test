@@ -96,6 +96,9 @@ async def index_mobile():
     return await index_page('mobile')
 
 @app.get(f'/{main_url}')
+async def index_main():
+    return await index_page('main')
+
 @app.post(f'/{main_url}')
 async def index_main(request: Request, data: RequestData = Body(...)):
     return await index_page('main', data, request)

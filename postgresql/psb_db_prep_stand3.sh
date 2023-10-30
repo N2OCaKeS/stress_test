@@ -23,7 +23,10 @@ if [[ "$PG_VERSION" -eq "14" ]]; then
 fi
 
 if [[ $2 == "vanilla" ]]; then
-  dpkg -i /home/u/postgresql_vanilla/*.deb
+  dpkg -i /home/u/postgresql_vanilla/postgresql-11*.deb
+  apt-get install -fy
+  dpkg -i /home/u/postgresql_vanilla/libllvm7*.deb
+  dpkg -i /home/u/postgresql_vanilla/postgresql-11*.deb
 else
   apt-get install -y postgresql-${PG_VERSION}
   apt-get install -y postgresql-se-test-${PG_VERSION}

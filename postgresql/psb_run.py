@@ -153,6 +153,12 @@ parser.add_argument('-parsec',
                     help='parsec mode',
                     dest='PARSEC')
 
+parser.add_argument('-psql_van',
+                    action='store',
+                    required=False,
+                    help='postgresql vanilla',
+                    dest='PSQL_VANILLA')
+
 parser.add_argument('-sd',
                     action='store',
                     required=False,
@@ -212,6 +218,10 @@ if args.DB_PREPARE:
                                                                                         stderr=subprocess.DEVNULL)
     elif args.PARSEC:
         subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_db_prep_stand{args.STAND}_parsec.sh {alt_storage}',
+                       shell=True,
+                       stderr=subprocess.DEVNULL)
+    elif args.PSQL_VANILLA:
+        subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_db_prep_stand{args.STAND}.sh psb_init.sql vanilla {alt_storage}',
                        shell=True,
                        stderr=subprocess.DEVNULL)
     else:

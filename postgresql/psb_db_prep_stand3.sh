@@ -22,8 +22,12 @@ if [[ "$PG_VERSION" -eq "14" ]]; then
   apt update
 fi
 
-apt-get install -y postgresql-${PG_VERSION}
-apt-get install -y postgresql-se-test-${PG_VERSION}
+if [[ $2 == "vanilla" ]]; then
+  dpkg -i /home/u/postgresql_vanilla/*.deb
+else
+  apt-get install -y postgresql-${PG_VERSION}
+  apt-get install -y postgresql-se-test-${PG_VERSION}
+fi
 
 # Подготовка к выполнению тестов
 cd /usr/share/postgresql/${PG_VERSION}/test/pgacext/

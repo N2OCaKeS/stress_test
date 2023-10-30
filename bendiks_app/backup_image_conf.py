@@ -30,6 +30,7 @@ modes = {
 parent_page_list = {
     '1.7.5.9':{'postgresql':'1.7.5.9 ⬝ PostgreSQL',
              'psql parsec':'1.7.5.9 ⬝ PostgreSQL',
+             'psql vanilla':'1.7.5.9 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.5.9 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.5.9 ⬝ PostgreSQL',
              'XFS':'1.7.5.9 ⬝ Файловые системы',
@@ -104,6 +105,8 @@ parent_page_list = {
             },
     '1.7.5':{'postgresql':'1.7.5 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.5 ⬝ PostgreSQL',
+             'psql parsec':'1.7.5 ⬝ PostgreSQL',
+             'psql vanilla':'1.7.5 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.5 ⬝ PostgreSQL',
              'XFS':'1.7.5 ⬝ Файловые системы',
              'XFS parsec':'1.7.5 ⬝ Файловые системы',
@@ -121,6 +124,7 @@ parent_page_list = {
     '1.7.4.UU.1':{'postgresql':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'psql parsec':'1.7.4.UU.1 ⬝ PostgreSQL',
+                  'psql vanilla':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'postgresql-aud-off':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'XFS':'1.7.4.UU.1 ⬝ Файловые системы',
                   'XFS parsec':'1.7.4.UU.1 ⬝ Файловые системы',
@@ -138,6 +142,7 @@ parent_page_list = {
     '1.7.4':{'postgresql':'PostgreSQL',
              'postgresql-sm':'PostgreSQL',
              'psql parsec':'PostgreSQL',
+             'psql vanilla':'PostgreSQL',
              'postgresql-aud-off':'PostgreSQL',
              'XFS':'Файловые системы',
              'XFS parsec':'Файловые системы',
@@ -155,6 +160,7 @@ parent_page_list = {
     '1.7.2':{'postgresql':'1.7.2 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.2 ⬝ PostgreSQL',
              'psql parsec':'1.7.2 ⬝ PostgreSQL',
+             'psql vanilla':'1.7.2 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.2 ⬝ PostgreSQL',
              'auditd-p':'1.7.2 ⬝ Системные службы',
              'auditd-f':'1.7.2 ⬝ Системные службы',
@@ -172,6 +178,7 @@ parent_page_list = {
     '1.7.3':{'postgresql':'1.7.3 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.3 ⬝ PostgreSQL',
              'psql parsec':'1.7.3 ⬝ PostgreSQL',
+             'psql vanilla':'1.7.3 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.3 ⬝ PostgreSQL',
              'auditd-p':'1.7.3 ⬝ Системные службы',
              'auditd-f':'1.7.3 ⬝ Системные службы',
@@ -194,6 +201,7 @@ parent_page_list = {
                   'postgresql':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'psql parsec':'1.7.3.UU.2 ⬝ PostgreSQL',
+                  'psql vanilla':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'postgresql-aud-off':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'auditd-p':'1.7.3.UU.2 ⬝ Системные службы',
                   'auditd-f':'1.7.3.UU.2 ⬝ Системные службы',
@@ -206,6 +214,7 @@ parent_page_list = {
     '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.3 UU1 ⬝ PostgreSQL',
                   'psql parsec':'1.7.3 UU1 ⬝ PostgreSQL',
+                  'psql vanilla':'1.7.3 UU1 ⬝ PostgreSQL',
                   'postgresql-aud-off':'1.7.3 UU1 ⬝ PostgreSQL',
                   'XFS':'1.7.3 UU1 ⬝ Файловые системы',
                   'XFS parsec':'1.7.3 UU1 ⬝ Файловые системы',
@@ -223,6 +232,7 @@ parent_page_list = {
     '1.7.1':{'postgresql':'1.7.1 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.1 ⬝ PostgreSQL',
              'psql parsec':'1.7.1 ⬝ PostgreSQL',
+             'psql vanilla':'1.7.1 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.1 ⬝ PostgreSQL',
              'XFS':'1.7.1 ⬝ Файловые системы',
              'XFS parsec':'1.7.1 ⬝ Файловые системы',
@@ -249,6 +259,7 @@ branches = {
     'file system benchmark. XFS':'file_systems',
     'postgresql benchmark':'postgresql',
     'postgresql benchmark parsec':'postgresql',
+    'postgresql benchmark vanilla':'postgresql',
     'postgresql benchmark smol':'postgresql',
     'postgresql benchmark audit-off':'postgresql',
     'file system benchmark. OCFS2':'file_systems',
@@ -303,6 +314,7 @@ tests = {
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
     'postgresql benchmark parsec':'psql parsec',
+    'postgresql benchmark vanilla':'psql vanilla',
     'postgresql benchmark smol':'postgresql-sm',
     'postgresql benchmark audit-off':'postgresql-aud-off',
     'file system benchmark. OCFS2':'OCFS2',
@@ -340,7 +352,7 @@ psyc = {
 #Основной перечень тестов
 #################################################################################################################################################
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 
-              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec']
+              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla']
 
 
 
@@ -403,7 +415,7 @@ repo_path = {
 
 rc_list = ['1.7.5.4', '1.7.5.5', '1.7.5.6', '1.7.5.7', '1.7.5.9']
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5']
-testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'syslog-ng', 'unix']
+testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
 testcase_smolensk = ['postgresql-sm', 'psql parsec', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
 testcase_smolensk_stand2 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
@@ -414,6 +426,7 @@ tests_case_zefir_key = {
     'postgresql-aud-off':'BT-T9169',
     'postgresql-sm':'BT-T9106',
     'psql parsec':'BT-T9638',
+    'psql vanilla':'BT-T9673',
     'EXT4':'BT-T7562',
     'EXT4 parsec':'BT-T8822',
     'NTFS':'BT-T7564',

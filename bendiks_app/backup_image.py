@@ -128,6 +128,12 @@ parser.add_argument('-psql-parsec',
                     help='testlist',
                     dest='PSQL_PARSEC')
 
+parser.add_argument('-psql-vanilla',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='PSQL_VANILLA')
+
 parser.add_argument('-ovf',
                     action='store',
                     required=False,
@@ -173,12 +179,16 @@ pack_sql = '--package postgresql-11'
 testlist = f'--testlist {args.AUDIT}'
 psql_aud_off = '-psql_aud off'
 psql_parsec = '-parsec parsec'
+psql_vanilla = '-psql_van -pv'
 ovf = f'-ovf {args.OVF}'
 ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
 ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
+elif args.PSQL_VANILLA:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_vanilla}'
 elif args.PSQL_PARSEC:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_parsec}'

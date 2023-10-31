@@ -277,7 +277,7 @@ class ZefirStatusAPI:
                                 estimatedTime,testResultStatuses,testCaseCount,issueCount,status(id,name,i18nKey,color),
                                 customFieldValues,createdOn,createdBy,updatedOn,updatedBy,
                                 owner&query=testRun.projectId+IN+(11200)+AND+testRun.folderTreeId+IN+({self.__folder_tree_id})+ORDER+
-                                BY+testRun.name+ASC&maxResults=40&startAt=0&archived=false
+                                BY+testRun.name+ASC&maxResults=400&startAt=0&archived=false
                             '''
         response_list_test_cycles = requests.get(url_list_test_cycles, headers=self.headers)
         data = response_list_test_cycles.json()

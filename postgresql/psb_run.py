@@ -21,7 +21,8 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     SCALE_FACTOR, SCALE_FACTOR_STEP, LIMITE_SCALE_FACTOR, \
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
-    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME, \
+    TANTOR_VERSION
 from libs.libpsqltests import Test
 from libs.zefir import UploaderZC
 from libs.libpsb import astra_version, dump, upload_results_to_ftp
@@ -165,16 +166,22 @@ parser.add_argument('-sd',
                     help='activate alternative SDA storage',
                     dest='SD')
 
+parser.add_argument('-tantor_van',
+                    action='store',
+                    required=False,
+                    help='tantor vanilla',
+                    dest='TANTOR_VANILLA')
+
 args = parser.parse_args()
 
 
 uzs = UploaderZC(folder_tree_id=args.FTI,
-                        test_cycle_name=args.TCYC,
-                        test_case_name=args.TCAS,
-                        basic_auth=args.BA,
-                        test_cycle_version=args.TCV,
-                        token=args.TOKEN,
-                        username=args.USER)
+                test_cycle_name=args.TCYC,
+                test_case_name=args.TCAS,
+                basic_auth=args.BA,
+                test_cycle_version=args.TCV,
+                token=args.TOKEN,
+                username=args.USER)
 uzs.upload_test_cycle_status('progress')
 
 #
@@ -210,12 +217,12 @@ if args.DB_PREPARE:
     '''
     if args.AUDIT_OFF:
         subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {aud_off} {ast}'.format(dir=SCRIPT_DIR,
-                                                                                        stand=args.STAND,
-                                                                                        init_file='psb_init.sql',
-                                                                                        aud_off='audit_off',
-                                                                                        ast=alt_storage),
-                                                                                        shell=True,
-                                                                                        stderr=subprocess.DEVNULL)
+                                                                                                        stand=args.STAND,
+                                                                                                        init_file='psb_init.sql',
+                                                                                                        aud_off='audit_off',
+                                                                                                        ast=alt_storage),
+                                                                                                        shell=True,
+                                                                                                        stderr=subprocess.DEVNULL)
     elif args.PARSEC:
         subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_db_prep_stand{args.STAND}_parsec.sh {alt_storage}',
                        shell=True,
@@ -224,21 +231,25 @@ if args.DB_PREPARE:
         subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_db_prep_stand{args.STAND}.sh psb_init.sql vanilla {alt_storage}',
                        shell=True,
                        stderr=subprocess.DEVNULL)
+    elif args.TANTOR_VANILLA:
+        subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_tantordb_prep.sh tantor {args.STAND} {alt_storage}',
+                       shell=True,
+                       stderr=subprocess.DEVNULL)
     else:
         if 'debian' in args.NPAGE:
             subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {deb}'.format(dir=SCRIPT_DIR,
-                                                                                        stand=args.STAND,
-                                                                                        init_file='psb_init.sql',
-                                                                                        deb='debian'),
-                                                                                        shell=True,
-                                                                                        stderr=subprocess.DEVNULL)
+                                                                                                stand=args.STAND,
+                                                                                                init_file='psb_init.sql',
+                                                                                                deb='debian'),
+                                                                                                shell=True,
+                                                                                                stderr=subprocess.DEVNULL)
         else:
             subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {ast}'.format(dir=SCRIPT_DIR,
-                                                                                        stand=args.STAND,
-                                                                                        init_file='psb_init.sql',
-                                                                                        ast=alt_storage),
-                                                                                        shell=True,
-                                                                                        stderr=subprocess.DEVNULL)
+                                                                                                stand=args.STAND,
+                                                                                                init_file='psb_init.sql',
+                                                                                                ast=alt_storage),
+                                                                                                shell=True,
+                                                                                                stderr=subprocess.DEVNULL)
 
 if args.TEST_LIST == 'base':
     if args.MODE == 'default':
@@ -282,6 +293,12 @@ if args.TEST_LIST == 'base':
                             ths=threads,
                             cls=clients,
                             parsec=True)
+            elif args.TANTOR_VANILLA:
+                test = Test(scale=scale_factor,
+                            trs=transactions,
+                            ths=threads,
+                            cls=clients,
+                            tantor=True)
             else: 
                 test = Test(scale=scale_factor,
                             trs=transactions,
@@ -551,15 +568,25 @@ if args.CLEANER:
 lead_time = strftime("%H:%M:%S", gmtime(time() - start_time))
 print('lead time: {t}'.format(t=lead_time))
 
-# собрать системную информацию
-info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
-            subprocess.run('uname -r',
+# собрать системную информацию      
+if args.TANTOR_VANILLA:
+    info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+                subprocess.run('uname -r',
+                            shell=True,
+                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                subprocess.run("dpkg -l tantor-se-server-"+str(TANTOR_VERSION)+" | awk '{print $3}' | tail -n1",
                            shell=True,
                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
-            subprocess.run("dpkg -l postgresql-"+str(PG_VERSION)+" | awk '{print $3}' | tail -n1",
-                           shell=True,
-                           stdout=subprocess.PIPE).stdout.decode("utf-8"),
-            str(lead_time)]
+                str(lead_time)]
+else:
+    info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+                subprocess.run('uname -r',
+                            shell=True,
+                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                subprocess.run("dpkg -l postgresql-"+str(PG_VERSION)+" | awk '{print $3}' | tail -n1",
+                            shell=True,
+                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                str(lead_time)]
 
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)

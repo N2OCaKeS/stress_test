@@ -140,7 +140,14 @@ parser.add_argument('-ovf',
                     help='overflow',
                     dest='OVF')
 
+parser.add_argument('-tantor-vanilla',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='TANTOR_VANILLA')
+
 args = parser.parse_args()
+
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
 __conf_token = tokens['conf_token']
@@ -176,10 +183,12 @@ tcas = f'-tcas "{args.TCASE}"'
 ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
 pack_sql = '--package postgresql-11'
+tantor_pkg = '--package tantor-se-server-15'
 testlist = f'--testlist {args.AUDIT}'
 psql_aud_off = '-psql_aud off'
 psql_parsec = '-parsec parsec'
 psql_vanilla = '-psql_van pv'
+tantor_vanilla = '-tantor_van tv'
 ovf = f'-ovf {args.OVF}'
 ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
 ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
@@ -189,6 +198,9 @@ if args.PSQL:
 elif args.PSQL_VANILLA:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_vanilla}'
+elif args.TANTOR_VANILLA:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {tantor_pkg} {tantor_vanilla}'
 elif args.PSQL_PARSEC:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_parsec}'

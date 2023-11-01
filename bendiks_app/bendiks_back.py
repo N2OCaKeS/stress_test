@@ -226,6 +226,7 @@ try:
                         psql_parsec = '-psql-parsec parsec'
                         psql_aud_off = '-psql_aud off'
                         psql_vanilla = '-psql-vanilla pv'
+                        tantor_vanilla = '-tantor-vanilla tv'
                         ram_ovf = '-ovf ram'
                         sd_ovf = '-ovf sd'
                         if tests[dates_list[i][1]] == 'auditd-p':
@@ -246,6 +247,9 @@ try:
                         elif tests[dates_list[i][1]] == 'psql vanilla':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_vanilla}', shell=True)
+                        elif tests[dates_list[i][1]] == 'tantor vanilla':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla}', shell=True)
                         elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)
@@ -294,6 +298,7 @@ try:
                     psql_parsec = '-psql-parsec parsec'
                     psql_aud_off = '-psql_aud off'
                     psql_vanilla = '-psql-vanilla pv'
+                    tantor_vanilla = '-tantor-vanilla tv'
                     ram_ovf = '-ovf ram'
                     sd_ovf = '-ovf sd'
                     if tests[dates_list[i][1]] == 'auditd-p':
@@ -314,6 +319,9 @@ try:
                     elif tests[dates_list[i][1]] == 'psql vanilla':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_vanilla}', shell=True)
+                    elif tests[dates_list[i][1]] == 'tantor vanilla':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla}', shell=True)
                     elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)

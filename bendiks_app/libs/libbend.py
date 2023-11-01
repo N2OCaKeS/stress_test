@@ -11,7 +11,7 @@ from os import (path,
                 remove,  
                 setsid,
                 getcwd)
-from multiprocessing import Process
+from multiprocessing import Process, Pool
 import paramiko
 from paramiko import ssh_exception
 import socket
@@ -33,9 +33,9 @@ from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
 import threading
-import asyncio
-import asyncssh
-import asyncpg
+#import asyncio
+#import asyncssh
+#import asyncpg
 
 
 main_options = sorted(main_tests)
@@ -478,29 +478,55 @@ def remote_sysstat_available(stand):
                 stand_ip=stands_ip[stand])
    
 
+# def background_stat_storage_main():
+#     stands = main_stands
+
+#     while True:
+#         [remote_storage_load(str(stand)) for stand in stands]
+#         #remote_sysstat_available(stand)
+#         sleep(4)
+
+
+# def background_task_main():
+#     stands = main_stands
+
+#     while True:
+#         [output_remote_load(str(stand)) for stand in stands]
+#         sleep(3)
+
+
 def background_stat_storage_main():
     stands = main_stands
 
     while True:
-        [remote_storage_load(str(stand)) for stand in stands]
-        #remote_sysstat_available(stand)
-        sleep(4)
+        with Pool(4) as p:
+            p.map(remote_storage_load, [str(stand) for stand in stands])
+            sleep(4)
 
 
 def background_task_main():
     stands = main_stands
 
     while True:
-        [output_remote_load(str(stand)) for stand in stands]
-        sleep(3)
+        with Pool(4) as p:
+            p.map(output_remote_load, [str(stand) for stand in stands])
+            sleep(3)
 
 
 def background_task_brest():
     stands = brest_stands
 
     while True:
-        [output_remote_load(str(stand)) for stand in stands]
-        sleep(3)
+        with Pool(4) as p:
+            p.map(output_remote_load, [str(stand) for stand in stands])
+            sleep(3)
+
+# def background_task_brest():
+#     stands = brest_stands
+
+#     while True:
+#         [output_remote_load(str(stand)) for stand in stands]
+#         sleep(3)
 
 
 def update_settings_block():

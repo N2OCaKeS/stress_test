@@ -13,10 +13,6 @@ TABLESPACE_DEFAULT=$(cat psb_conf.py | grep 'TABLESPACE_DEFAULT_PATH =' | awk '{
 TABLESPACE_MAC=$(cat psb_conf.py | grep 'TABLESPACE_MAC_PATH =' | awk '{print $3}' | tr -d "'")
 EXT_REP=$(cat psb_conf.py | grep 'EXTREP' | tr -d 'EXTREP=' | tr -d "'")
 
-# Проверка прав суперпользователя
-if ["$UID" -ne "0"]; then
-   exit
-fi
 
 # подключить диск
 if [ "$3" == "SDA" ]; then

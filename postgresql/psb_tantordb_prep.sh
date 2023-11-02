@@ -43,7 +43,7 @@ systemctl start tantor-se-server-15
 
 if [ "$2" == "4" ]; then
     #sed -i 's/ac_enable_maclabels_on_files.*/ac_enable_maclabels_on_files = true/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-    sed -i 's/.*max_connections.*/max_connections = 200/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+    sed -i 's/.*max_connections.*/max_connections = 500/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/.*shared_buffers.*/shared_buffers = 32256MB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/.*effective_cache_size.*/effective_cache_size = 96768MB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/.*maintenance_work_mem.*/maintenance_work_mem = 2GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
@@ -60,7 +60,7 @@ if [ "$2" == "4" ]; then
     sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/md5/trust/g' /var/lib/postgresql/tantor-se-15/data/pg_hba.conf
 else
-    sed -i 's/.*max_connections.*/max_connections = 200/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
+    sed -i 's/.*max_connections.*/max_connections = 500/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/.*shared_buffers.*/shared_buffers = 8GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/.*effective_cache_size.*/effective_cache_size = 24GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/.*maintenance_work_mem.*/maintenance_work_mem = 2GB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf

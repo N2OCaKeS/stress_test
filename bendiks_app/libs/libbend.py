@@ -12,7 +12,7 @@ from os import (path,
                 setsid,
                 getcwd)
 from multiprocessing import Process
-import concurrent.futures
+#import concurrent.futures
 import paramiko
 from paramiko import ssh_exception
 import socket
@@ -479,29 +479,11 @@ def remote_sysstat_available(stand):
                 stand_ip=stands_ip[stand])
    
 
-# def background_stat_storage_main():
-#     stands = main_stands
-
-#     while True:
-#         [remote_storage_load(str(stand)) for stand in stands]
-#         #remote_sysstat_available(stand)
-#         sleep(4)
-
-
-# def background_task_main():
-#     stands = main_stands
-
-#     while True:
-#         [output_remote_load(str(stand)) for stand in stands]
-#         sleep(3)
-
-
 def background_stat_storage_main():
     stands = main_stands
 
     while True:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
-            executor.map(remote_storage_load, [str(stand) for stand in stands])
+        [remote_storage_load(str(stand)) for stand in stands]
         sleep(4)
 
 
@@ -509,25 +491,42 @@ def background_task_main():
     stands = main_stands
 
     while True:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
-            executor.map(output_remote_load, [str(stand) for stand in stands])
+        [output_remote_load(str(stand)) for stand in stands]
         sleep(3)
 
 
-def background_task_brest():
-    stands = brest_stands
+# def background_stat_storage_main():
+#     stands = main_stands
 
-    while True:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
-            executor.map(output_remote_load, [str(stand) for stand in stands])
-        sleep(3)
+#     while True:
+#         with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+#             executor.map(remote_storage_load, [str(stand) for stand in stands])
+#         sleep(4)
+
+
+# def background_task_main():
+#     stands = main_stands
+
+#     while True:
+#         with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+#             executor.map(output_remote_load, [str(stand) for stand in stands])
+#         sleep(3)
+
 
 # def background_task_brest():
 #     stands = brest_stands
 
 #     while True:
-#         [output_remote_load(str(stand)) for stand in stands]
+#         with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+#             executor.map(output_remote_load, [str(stand) for stand in stands])
 #         sleep(3)
+
+def background_task_brest():
+    stands = brest_stands
+
+    while True:
+        [output_remote_load(str(stand)) for stand in stands]
+        sleep(3)
 
 
 def update_settings_block():

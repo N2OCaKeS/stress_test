@@ -99,7 +99,7 @@ class Test:
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])
             self.logger.error(err)
 
-            if PG_VERSION == 14:
+            if PG_VERSION == 14 or self.tantor == True:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]
             else:
                 latency_average = re.search(r'(\d+\.\d+)', out).group(1) 

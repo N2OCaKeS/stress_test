@@ -11,7 +11,8 @@ from os import (path,
                 remove,  
                 setsid,
                 getcwd)
-from multiprocessing import Process, Pool
+from multiprocessing import Process
+import concurrent.futures
 import paramiko
 from paramiko import ssh_exception
 import socket
@@ -499,27 +500,27 @@ def background_stat_storage_main():
     stands = main_stands
 
     while True:
-        with Pool(4) as p:
-            p.map(remote_storage_load, [str(stand) for stand in stands])
-            sleep(4)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+            executor.map(remote_storage_load, [str(stand) for stand in stands])
+        sleep(4)
 
 
 def background_task_main():
     stands = main_stands
 
     while True:
-        with Pool(4) as p:
-            p.map(output_remote_load, [str(stand) for stand in stands])
-            sleep(3)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+            executor.map(output_remote_load, [str(stand) for stand in stands])
+        sleep(3)
 
 
 def background_task_brest():
     stands = brest_stands
 
     while True:
-        with Pool(4) as p:
-            p.map(output_remote_load, [str(stand) for stand in stands])
-            sleep(3)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+            executor.map(output_remote_load, [str(stand) for stand in stands])
+        sleep(3)
 
 # def background_task_brest():
 #     stands = brest_stands

@@ -12,6 +12,9 @@ sudo wget -P /home/u/modules ftp://10.177.103.10/modules/*
 sudo dpkg -i /home/u/modules/*.deb
 sudo apt install -fy
 
+sudo mkdir /home/u/postgresql_vanilla
+sudo wget -P /home/u/postgresql_vanilla ftp://10.177.103.10/postgresql/*
+
 # install python dependencies in venv
 #source venv/bin/activate
 python3 -m pip install --upgrade pip

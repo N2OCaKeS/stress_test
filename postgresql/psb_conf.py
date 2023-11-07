@@ -24,6 +24,7 @@ ACL_SQL_TRANSACTION = ''
 '''
     Параметры БД
 '''
+TANTOR_VERSION = 15
 PG_VERSION = 11
 STORAGE = 'sda'
 DATABASE_NAME = 'mtest'

@@ -23,8 +23,15 @@ if [[ "$PG_VERSION" -eq "14" ]]; then
   apt update
 fi
 
-apt-get install -y postgresql-${PG_VERSION}
-apt-get install -y postgresql-se-test-${PG_VERSION}
+if [[ $2 == "vanilla" ]]; then
+  dpkg -i /home/u/postgresql_vanilla/postgresql-11*.deb
+  apt-get install -fy
+  dpkg -i /home/u/postgresql_vanilla/libllvm7*.deb
+  dpkg -i /home/u/postgresql_vanilla/postgresql-11*.deb
+else
+  apt-get install -y postgresql-${PG_VERSION}
+  apt-get install -y postgresql-se-test-${PG_VERSION}
+fi
 
 # Подготовка к выполнению тестов
 cd /usr/share/postgresql/${PG_VERSION}/test/pgacext/
@@ -116,6 +123,7 @@ sed -i 's/.*max_worker_processes.*/max_worker_processes = 8/g' /etc/postgresql/$
 sed -i 's/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 8/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/md5/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
 if [[ $2 == "audit_off" ]]; then
@@ -192,18 +200,20 @@ pg_ctlcluster $PG_VERSION $PG_MAIN_CLUSTER stop
 pg_dropcluster $PG_VERSION $PG_MAIN_CLUSTER --stop
 rm -rf /etc/postgresql/$PG_VERSION/$PG_MAIN_CLUSTER
 
+
 # подключить диск
-# подключить диск
-lsblk | grep "${STORAGE}"
-if [ $? -eq 0 ]; then
-    lsblk | grep "${STORAGE}"
-    if [ $? -eq 0 ]; then
-        umount /var/lib/postgresql/11/
-        parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
-    fi
-    parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
-    mkfs -t xfs -f /dev/${STORAGE}1
-    mount /dev/${STORAGE}1 /var/lib/postgresql/11/
+if [ "$2" == "SDA" ] || [ "$3" == "SDA" ]; then
+  lsblk | grep "${STORAGE}"
+  if [ $? -eq 0 ]; then
+      lsblk | grep "${STORAGE}"
+      if [ $? -eq 0 ]; then
+          umount /var/lib/postgresql/11/
+          parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
+      fi
+      parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
+      mkfs -t xfs -f /dev/${STORAGE}1
+      mount /dev/${STORAGE}1 /var/lib/postgresql/11/
+  fi
 fi
 
 for port in $(pg_lsclusters -h | awk '{print $3}');

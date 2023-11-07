@@ -28,7 +28,9 @@ class Test:
                  trs=10,
                  cls=1,
                  mac_sql_trn=MAC_SQL_TRANSACTION,
-                 debian=False):
+                 debian=False,
+                 parsec=False,
+                 tantor=False):
 
         logging.basicConfig(filename=LOG_FILENAME,
                             filemode="a+",
@@ -45,22 +47,29 @@ class Test:
         self.clients = cls
         self.mac_sql_script = mac_sql_trn
         self.debian = debian
-        self.pgbench_cmd_deb = "su -c 'pgbench -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,                       
-                                                                                            t=self.transactions,
-                                                                                            j=self.threads,
-                                                                                            c=self.clients)
-        self.pgbench_cmd = "su -c 'pgbench -h localhost -p {p} -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
-                                                                                                           p=self.port,
-                                                                                                           t=self.transactions,
-                                                                                                           j=self.threads,
-                                                                                                           c=self.clients)
-        self.pgbench_cmd_custom = "su -c 'pgbench -h localhost -p {p} -t {t} -j {j} -c {c} -f {f}@2 {db}' postgres".format(db=self.db,
-                                                                                                                           p=self.port,
-                                                                                                                           t=self.transactions,
-                                                                                                                           j=self.threads,
-                                                                                                                           c=self.clients,
-                                                                                                                           f=self.mac_sql_script)
-    @pysnooper.snoop()
+        self.parsec = parsec
+        self.tantor = tantor
+        self.pgbench_cmd_deb = "su -c 'pgbench --random-seed=13 -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,                       
+                                                                                                            t=self.transactions,
+                                                                                                            j=self.threads,
+                                                                                                            c=self.clients)
+        self.pgbench_cmd = "su -c 'pgbench -h localhost -p {p} --random-seed=13 -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
+                                                                                                                            p=self.port,
+                                                                                                                            t=self.transactions,
+                                                                                                                            j=self.threads,
+                                                                                                                            c=self.clients)
+        self.pgbench_cmd_custom = "su -c 'pgbench -h localhost -p {p} --random-seed=13 -t {t} -j {j} -c {c} -f {f}@2 {db}' postgres".format(db=self.db,
+                                                                                                                                            p=self.port,
+                                                                                                                                            t=self.transactions,
+                                                                                                                                            j=self.threads,
+                                                                                                                                            c=self.clients,
+                                                                                                                                            f=self.mac_sql_script)
+        self.pgbench_cmd_parsec = f"su -c 'pgbench -h localhost --macs -p {self.port} --random-seed=13 -t {self.transactions} \
+                                    -j {self.threads} -c {self.clients} test_parsec' u_1"
+        self.pgbench_tantor_cmd = f"/opt/tantor/db/15/bin/pgbench -h localhost -p 5432 -U postgres --random-seed=13 -t {self.transactions} \
+                                     -j {self.threads} -c {self.clients} test_parsec"
+
+    #@pysnooper.snoop()
     def run_test(self):
         '''
             Запуск проверки на встроенных тестовых скриптах
@@ -69,12 +78,20 @@ class Test:
         '''
         if self.debian == True:
             init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, self.debian)
+        elif self.parsec == True:
+            init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, parsec=self.parsec)
+        elif self.tantor == True:
+            init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor, tantor=self.tantor)
         else:
             init_test_tables(self.db, self.tspace, self.port, self.scale_factor, self.filling_factor)
         result = '# TEST # --- '
         try:
             if self.debian == True:
                 decode_std = pgbench(self.pgbench_cmd_deb)
+            elif self.parsec == True:
+                decode_std = pgbench(self.pgbench_cmd_parsec)
+            elif self.tantor == True:
+                decode_std = pgbench(self.pgbench_tantor_cmd)
             else:
                 decode_std = pgbench(self.pgbench_cmd)
             out = os.linesep.join([s for s in decode_std[0].splitlines() if s])
@@ -82,7 +99,7 @@ class Test:
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])
             self.logger.error(err)
 
-            if PG_VERSION == 14:
+            if PG_VERSION == 14 or self.tantor == True:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]
             else:
                 latency_average = re.search(r'(\d+\.\d+)', out).group(1) 

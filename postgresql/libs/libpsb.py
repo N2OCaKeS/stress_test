@@ -106,13 +106,15 @@ def astra_version():
             return (version[0], 'orel')
     return version
 
-@pysnooper.snoop()
+#@pysnooper.snoop()
 def init_test_tables(database,
                      tablespace,
                      port,
                      t_scale_factor,
                      t_filling_factor,
-                     debian=False):
+                     debian=False,
+                     parsec=False,
+                     tantor=False):
 
     '''
         pgbench -i создаёт четыре таблицы
@@ -123,6 +125,10 @@ def init_test_tables(database,
                                                                                     ts=tablespace,                                                                                                    
                                                                                     s=t_scale_factor,
                                                                                     f=t_filling_factor))
+    elif parsec == True:
+        cmd(f"su -c 'pgbench -i -h localhost --macs -p {port} -s {t_scale_factor} -F {t_filling_factor} test_parsec' postgres")
+    elif tantor == True:
+        cmd(f"/opt/tantor/db/15/bin/pgbench -i -h localhost -s {t_scale_factor} -p 5432 -F {t_filling_factor} -U postgres test_parsec")
     else:
         cmd("su -c 'pgbench -i -h localhost -p {p} --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
                                                                                                           ts=tablespace,
@@ -130,9 +136,7 @@ def init_test_tables(database,
                                                                                                           s=t_scale_factor,
                                                                                                           f=t_filling_factor))
 
-    # TODO: Сделать вывод размера БД
-
-
+    
 def upgrade_test_table(sql_script):
     '''
         Функция донастройки после "pgbench -i"
@@ -143,7 +147,7 @@ def upgrade_test_table(sql_script):
     cmd('su -c "psql -p 5432 -f {}" postgres'.format(sql_script))
     remove('/tmp/{}'.format(sql_script))
 
-@pysnooper.snoop()
+#@pysnooper.snoop()
 def pgbench(start_cmd):
     '''
         Запуск на стандартных транзакциях
@@ -222,6 +226,6 @@ def response():
         life = requests.get('https://life.astralinux.ru').status_code
         return jira, life
     except Exception as e:
-        jira, life = str(type(e).__name__, e)
+        jira, life = str(type(e).__name__), str(e)
         return jira, life
 

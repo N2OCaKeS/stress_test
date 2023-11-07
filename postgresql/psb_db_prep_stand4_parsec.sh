@@ -10,32 +10,32 @@ MAIN_DIR=$(cat psb_conf.py | grep 'SCRIPT_DIR =' | awk '{print $3}' | tr -d "'")
 PG_SETEST_CLUSTER=$(cat psb_conf.py | grep 'PG_SETEST_CLUSTER =' | awk '{print $3}' | tr -d "'")
 PG_SETEST_PORT=$(cat psb_conf.py | grep 'PG_SETEST_PORT =' | awk '{print $3}')
 TABLESPACE_DEFAULT=$(cat psb_conf.py | grep 'TABLESPACE_DEFAULT_PATH =' | awk '{print $3}' | tr -d "'")
-#TABLESPACE_MAC=$(cat psb_conf.py | grep 'TABLESPACE_MAC_PATH =' | awk '{print $3}' | tr -d "'")
-#EXT_REP=$(cat psb_conf.py | grep 'EXTREP' | tr -d 'EXTREP=' | tr -d "'")
 
 
-# подключить диск
-lsblk | grep "${STORAGE}"
-if [ $? -eq 0 ]; then
-    lsblk | grep "${STORAGE}"
-    if [ $? -eq 0 ]; then
-        umount /var/lib/postgresql/11/
-        parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
-    fi
-    parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
-    mkfs -t xfs -f /dev/${STORAGE}1
-    mkdir /var/lib/postgresql
-    mount /dev/${STORAGE}1 /var/lib/postgresql
+
+if [ "$1" == "SDA" ]; then
+  # подключить диск
+  lsblk | grep "${STORAGE}"
+  if [ $? -eq 0 ]; then
+      lsblk | grep "${STORAGE}"
+      if [ $? -eq 0 ]; then
+          umount /var/lib/postgresql/11/
+          parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
+      fi
+      parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
+      mkfs -t xfs -f /dev/${STORAGE}1
+      mkdir /var/lib/postgresql
+      mount /dev/${STORAGE}1 /var/lib/postgresql
+  fi
 fi
 
 
 apt-get install -y postgresql-${PG_VERSION}
-#apt-get install -y postgresql-se-test-${PG_VERSION}
-
 
 #Создаем пользователя
-#sudo usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF postgres
-#usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC postgres
+useradd u_1 
+usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
+usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
 
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -83,11 +83,8 @@ sed -i 's/.*max_worker_processes.*/max_worker_processes = 32/g' /etc/postgresql/
 sed -i 's/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 32/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/md5/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-
-if [[ $2 == "audit_off" ]]; then
-  sed -i "s/ac_audit_mode.*/ac_audit_mode = 'none'/g" /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-fi
 
 
 
@@ -130,7 +127,6 @@ do
   chmod 644 /tmp/$sql_script_set_mac
   su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
   su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
-  #rm /tmp/$sql_script
   cd -
   #cd - &> /dev/null
 done
@@ -138,16 +134,11 @@ done
 
 
 
-#!/bin/bash
-# clients="800 800 800 800 800 800 800 800 800 800"
-# t=600
-# dir=test
-# mkdir /home/u/test
-# for c in $clients; do
-#     echo "pgbench_${c}_${t}.txt"
-#     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
-#     pgbench -h localhost -p 5432 -U postgres --random-seed=13 -c $c -j $c -T $t test >> "${dir}/pgbench_${c}.txt"
-#     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
+#astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && reboot
 
-# done
+cp /home/u/git/stress_test/postgresql/pgbench/pgbench /usr/bin/pgbench
+cp /home/u/git/stress_test/postgresql/pgbench/pgbench /bin/pgbench
+
+#pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
+#pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec
 

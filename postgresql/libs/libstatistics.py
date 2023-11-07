@@ -969,6 +969,10 @@ class PSQLStatistics2:
         tmp_data_for_gr_parsec, tmp_data_krnl_parsec, df_psql_parsec = build_dataframes(data_for_df=data_df_parsec, test_name="psql-parsec")
         create_graphs(data_for_df=data_df_parsec, test_name="psql-parsec", temp_data_for_graph=tmp_data_for_gr_parsec)
 
+        data_df_parsec = collect_data(test_name="psql vanilla")
+        tmp_data_for_gr_parsec, tmp_data_krnl_parsec, df_psql_parsec = build_dataframes(data_for_df=data_df_parsec, test_name="psql-vanilla")
+        create_graphs(data_for_df=data_df_parsec, test_name="psql-vanilla", temp_data_for_graph=tmp_data_for_gr_parsec)
+
         summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
         create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
 
@@ -1012,9 +1016,9 @@ class PSQLStatistics2:
             </span>
         """
 
-        image_list, images_list_smolensk, image_list_aud_off, image_list_parsec = [], [], [], []
-        table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off, table_with_data_list_parsec = [], [], [], []
-        table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off, table_with_mat_stat_list_parsec = [], [], [], []
+        image_list, images_list_smolensk, image_list_aud_off, image_list_parsec, image_list_vanilla = [], [], [], [], []
+        table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off, table_with_data_list_parsec, table_with_data_list_vanilla = [], [], [], [], []
+        table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off, table_with_mat_stat_list_parsec, table_with_mat_stat_list_vanilla = [], [], [], [], []
         # kernel_image_list = [[], [], []]
         
         # new_kernel_image_dict = {
@@ -1035,7 +1039,7 @@ class PSQLStatistics2:
 
         summ_graphs_list, summ_graphs_list_aud_on_off = [], []
 
-        header_orel, header_smolensk, header_parsec, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], [], []
+        header_orel, header_smolensk, header_parsec, header_vanilla, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], [], [], []
         
         for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
@@ -1054,6 +1058,9 @@ class PSQLStatistics2:
                 elif file.startswith("psql-parsec"):
                     image_list_parsec.append(img)
                     header_parsec.append(name_stand)
+                elif file.startswith("psql-vanilla"):
+                    image_list_vanilla.append(img)
+                    header_vanilla.append(name_stand)
                 else:
                     image_list.append(img)
                     header_orel.append(name_stand)
@@ -1070,6 +1077,8 @@ class PSQLStatistics2:
                     pass
                 elif file.startswith("psql-parsec"):
                     table_with_data_list_parsec.append(table)
+                elif file.startswith("psql-vanilla"):
+                    table_with_data_list_vanilla.append(table)
                 else:
                     table_with_data_list.append(table)
 
@@ -1085,6 +1094,8 @@ class PSQLStatistics2:
                     pass
                 elif file.startswith("psql-parsec"):
                     table_with_mat_stat_list_parsec.append(mat_stat_table)
+                elif file.startswith("psql-vanilla"):
+                    table_with_mat_stat_list_vanilla.append(mat_stat_table)
                 else:
                     table_with_mat_stat_list.append(mat_stat_table)
 
@@ -1139,7 +1150,7 @@ class PSQLStatistics2:
             </ul>
             </nav>
         """
-        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off, nav_lst_parsec = [], [], [], [], [], []
+        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off, nav_lst_parsec, nav_lst_vanilla = [], [], [], [], [], [], []
         nav_body = '''
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orel">Orel</a>
                 <ul>
@@ -1170,7 +1181,12 @@ class PSQLStatistics2:
                 <ul>
                     {list_parsec}
                 </ul>
-            </li> 
+            </li>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Vanilla">Vanilla</a>
+                <ul>
+                    {list_vanilla}
+                </ul>
+            </li>  
         '''
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
@@ -1252,8 +1268,18 @@ class PSQLStatistics2:
                 html_list.append(image_list_parsec[ind])
                 html_list.append(item)
                 html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_parsec[ind])
+        
+        if len(table_with_data_list_vanilla) > 0:
+            html_list.append('<h1 style="text-align: center;">Vanilla</h1>')
+            for ind, item in enumerate(table_with_data_list_vanilla):
+                grade = self.get_grade(header_vanilla[ind])
+                nav_lst_vanilla.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_vanilla[ind]}.6">{grade}_{header_vanilla[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_vanilla[ind]}</h1>")
+                html_list.append(image_list_vanilla[ind])
+                html_list.append(item)
+                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_vanilla[ind])
 
-        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_parsec="".join(nav_lst_parsec), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
+        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_parsec="".join(nav_lst_parsec), list_vanilla="".join(nav_lst_vanilla), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
 
         html_list.insert(0, nav)
 

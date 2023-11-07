@@ -920,7 +920,10 @@ class PSQLStatistics2:
                 ax.set_title(f"Сравнительная диаграмма значений рейтингов PSQL {legend[0]}/{legend[1]}.\n{grade}_{df['Стенд'].mode()[0]}")
                 # ax.grid(True, alpha=.3)
                 ax.set_ylabel("Значение рейтинга")
-                ax.set_ylim([0, max(df['rating_2_x'].fillna(0)) + max(df['rating_2_x'].fillna(0)) * 0.2])
+                if max(df['rating_2_x'].fillna(0)) > max(df['rating_2_y'].fillna(0)):
+                    ax.set_ylim([0, max(df['rating_2_x'].fillna(0)) + max(df['rating_2_x'].fillna(0)) * 0.2])
+                else:
+                    ax.set_ylim([0, max(df['rating_2_y'].fillna(0)) + max(df['rating_2_y'].fillna(0)) * 0.2])
                 df['version'] = df['Релиз'] + "_" + df['Ядро']
                 shcala_x = np.array([x for x in range(len(df['Релиз']))])
                 
@@ -984,6 +987,9 @@ class PSQLStatistics2:
         summ_df_orel_and_orel_aud_off = create_summary_table(dfs1=df_psql, dfs2=df_psql_audit_off)
         create_summary_graph(merged_df=summ_df_orel_and_orel_aud_off, legend=["Orel", "Orel-audit-off"])
 
+        summ_df_orel_and_parsec = create_summary_table(dfs1=df_psql, dfs2=df_psql_parsec)
+        create_summary_graph(merged_df=summ_df_orel_and_parsec, legend=["Orel", "Parsec"])
+
         create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
 
@@ -1042,9 +1048,9 @@ class PSQLStatistics2:
         
         lst_all_stands_stat_kernel = []
 
-        summ_graphs_list, summ_graphs_list_aud_on_off = [], []
+        summ_graphs_list, summ_graphs_list_aud_on_off, summ_graphs_list_orel_and_parsec  = [], [], []
 
-        header_orel, header_smolensk, header_parsec, header_vanilla, header_tantor_vanilla, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], [], [], [], []
+        header_orel, header_smolensk, header_parsec, header_vanilla, header_tantor_vanilla, header_orel_vs_smolensk, header_aud_off, header_orel_and_parsec, header_aud_on_vs_off = [], [], [], [], [], [], [], [], []
         
         for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
@@ -1147,6 +1153,10 @@ class PSQLStatistics2:
                                                                            img_png=file))
                     header_aud_on_vs_off.append(name_stand)
                     # print(header_aud_on_vs_off)
+                elif file.startswith("Orel-Parsec"):
+                    summ_graphs_list_orel_and_parsec.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
+                                                                                img_png=file))
+                    header_orel_and_parsec.append(name_stand)
                 else:
                     pass                            
                 
@@ -1162,7 +1172,7 @@ class PSQLStatistics2:
             </ul>
             </nav>
         """
-        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off, nav_lst_parsec, nav_lst_vanilla, nav_lst_tantor_vanilla = [], [], [], [], [], [], [], []
+        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off, nav_lst_parsec, nav_lst_vanilla, nav_lst_tantor_vanilla, nav_lst_orel_and_parsec = [], [], [], [], [], [], [], [], []
         nav_body = '''
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orel">Orel</a>
                 <ul>
@@ -1202,6 +1212,11 @@ class PSQLStatistics2:
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Tantorvanilla">Tantor vanilla</a>
                 <ul>
                     {list_tantor_vanilla}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsParsec">Orel vs Parsec</a>
+                <ul>
+                    {list_orel_vs_parsec}
                 </ul>
             </li>   
         '''
@@ -1306,7 +1321,16 @@ class PSQLStatistics2:
                 html_list.append(item)
                 html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_tantor_vanilla[ind])
 
-        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_parsec="".join(nav_lst_parsec), list_vanilla="".join(nav_lst_vanilla), list_tantor_vanilla="".join(nav_lst_tantor_vanilla), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
+        if len(summ_graphs_list_orel_and_parsec) > 0:
+            html_list.append('<h1 style="text-align: center;">Orel vs Parsec</h1>')
+            for ind, item in enumerate(summ_graphs_list_orel_and_parsec):
+                grade = self.get_grade(header_orel_and_parsec[ind])
+                nav_lst_orel_and_parsec.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel_and_parsec[ind]}.8">{grade}_{header_orel_and_parsec[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_orel_and_parsec[ind]}</h1>")
+                html_list.append(item)
+
+
+        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_parsec="".join(nav_lst_parsec), list_vanilla="".join(nav_lst_vanilla), list_tantor_vanilla="".join(nav_lst_tantor_vanilla), list_orel_vs_parsec="".join(nav_lst_orel_and_parsec), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
 
         html_list.insert(0, nav)
 

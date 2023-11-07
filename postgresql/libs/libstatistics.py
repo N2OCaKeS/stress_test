@@ -965,6 +965,10 @@ class PSQLStatistics2:
         tmp_data_for_gr_audit_off, tmp_data_krnl_audit_off, df_psql_audit_off = build_dataframes(data_for_df=data_df_orel_audit_off, test_name="postgresql-aud-off")
         create_graphs(data_for_df=data_df_orel_audit_off, test_name='postgresql-aud-off', temp_data_for_graph=tmp_data_for_gr_audit_off)
 
+        data_df_parsec = collect_data(test_name="psql parsec")
+        tmp_data_for_gr_parsec, tmp_data_krnl_parsec, df_psql_parsec = build_dataframes(data_for_df=data_df_parsec, test_name="psql-parsec")
+        create_graphs(data_for_df=data_df_parsec, test_name="psql-parsec", temp_data_for_graph=tmp_data_for_gr_parsec)
+
         summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
         create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])
 
@@ -1008,9 +1012,9 @@ class PSQLStatistics2:
             </span>
         """
 
-        image_list, images_list_smolensk, image_list_aud_off = [], [], []
-        table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off = [], [], []
-        table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off = [], [], []
+        image_list, images_list_smolensk, image_list_aud_off, image_list_parsec = [], [], [], []
+        table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off, table_with_data_list_parsec = [], [], [], []
+        table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off, table_with_mat_stat_list_parsec = [], [], [], []
         # kernel_image_list = [[], [], []]
         
         # new_kernel_image_dict = {
@@ -1031,7 +1035,7 @@ class PSQLStatistics2:
 
         summ_graphs_list, summ_graphs_list_aud_on_off = [], []
 
-        header_orel, header_smolensk, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], []
+        header_orel, header_smolensk, header_parsec, header_orel_vs_smolensk, header_aud_off, header_aud_on_vs_off = [], [], [], [], [], []
         
         for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
@@ -1047,6 +1051,9 @@ class PSQLStatistics2:
                     header_aud_off.append(name_stand)
                 elif file.startswith("postgresql-vo"):
                     pass
+                elif file.startswith("psql-parsec"):
+                    image_list_parsec.append(img)
+                    header_parsec.append(name_stand)
                 else:
                     image_list.append(img)
                     header_orel.append(name_stand)
@@ -1061,6 +1068,8 @@ class PSQLStatistics2:
                     table_with_data_list_aud_off.append(table)
                 elif file.startswith("postgresql-vo"):
                     pass
+                elif file.startswith("psql-parsec"):
+                    table_with_data_list_parsec.append(table)
                 else:
                     table_with_data_list.append(table)
 
@@ -1074,6 +1083,8 @@ class PSQLStatistics2:
                     table_with_mat_stat_list_aud_off.append(mat_stat_table)
                 elif file.startswith("postgresql-vo"):
                     pass
+                elif file.startswith("psql-parsec"):
+                    table_with_mat_stat_list_parsec.append(mat_stat_table)
                 else:
                     table_with_mat_stat_list.append(mat_stat_table)
 
@@ -1128,7 +1139,7 @@ class PSQLStatistics2:
             </ul>
             </nav>
         """
-        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off = [], [], [], [], []
+        nav_lst_orel, nav_lst_smolensk, nav_lst_orel_vs_smolensk, nav_lst_aud_off, nav_lst_aud_on_off, nav_lst_parsec = [], [], [], [], [], []
         nav_body = '''
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Orel">Orel</a>
                 <ul>
@@ -1153,6 +1164,11 @@ class PSQLStatistics2:
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsOrelauditoff">Orel vs Orel audit off</a>
                 <ul>
                     {list_aud_on_off}
+                </ul>
+            </li>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Parsec">Parsec</a>
+                <ul>
+                    {list_parsec}
                 </ul>
             </li> 
         '''
@@ -1226,8 +1242,18 @@ class PSQLStatistics2:
                 nav_lst_aud_on_off.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_aud_on_vs_off[ind]}.4">{grade}_{header_aud_on_vs_off[ind]}</a></li>')
                 html_list.append(f"<hr/><h1>{grade}_{header_aud_on_vs_off[ind]}</h1>")
                 html_list.append(item)
+        
+        if len(table_with_data_list_parsec) > 0:
+            html_list.append('<h1 style="text-align: center;">Parsec</h1>')
+            for ind, item in enumerate(table_with_data_list_parsec):
+                grade = self.get_grade(header_parsec[ind])
+                nav_lst_parsec.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_parsec[ind]}.5">{grade}_{header_parsec[ind]}</a></li>')
+                html_list.append(f"<hr/><h1>{grade}_{header_parsec[ind]}</h1>")
+                html_list.append(image_list_parsec[ind])
+                html_list.append(item)
+                html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list_parsec[ind])
 
-        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
+        nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_parsec="".join(nav_lst_parsec), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
 
         html_list.insert(0, nav)
 

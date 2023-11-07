@@ -969,9 +969,10 @@ class PSQLStatistics2:
         tmp_data_for_gr_parsec, tmp_data_krnl_parsec, df_psql_parsec = build_dataframes(data_for_df=data_df_parsec, test_name="psql-parsec")
         create_graphs(data_for_df=data_df_parsec, test_name="psql-parsec", temp_data_for_graph=tmp_data_for_gr_parsec)
 
-        data_df_parsec = collect_data(test_name="psql vanilla")
-        tmp_data_for_gr_parsec, tmp_data_krnl_parsec, df_psql_parsec = build_dataframes(data_for_df=data_df_parsec, test_name="psql-vanilla")
-        create_graphs(data_for_df=data_df_parsec, test_name="psql-vanilla", temp_data_for_graph=tmp_data_for_gr_parsec)
+        data_df_vanilla = collect_data(test_name="psql vanilla")
+        tmp_data_for_gr_vanilla, tmp_data_krnl_vanilla, df_psql_vanilla = build_dataframes(data_for_df=data_df_vanilla, test_name="psql-vanilla")
+        create_graphs(data_for_df=data_df_vanilla, test_name="psql-vanilla", temp_data_for_graph=tmp_data_for_gr_vanilla)
+
 
         summ_df = create_summary_table(dfs1=df_psql, dfs2=df_psql_sm)
         create_summary_graph(merged_df=summ_df, legend=["Orel", "Smolensk"])

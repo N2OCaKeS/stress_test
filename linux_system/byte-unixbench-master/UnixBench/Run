@@ -99,6 +99,10 @@ my $RESULTDIR = getDir('UB_RESULTDIR', $FindBin::Bin . "/results");
 # Directory where the tests are executed.
 my $TESTDIR = getDir('UB_TESTDIR', $FindBin::Bin . "/testdir");
 
+# Working directory to run with parsec
+my $PARSEC_DIR = "";
+my $PARSEC_BIN = "";
+my @PARSEC_USE = ("fstime");
 
 ############################################################################
 # TEST SPECIFICATIONS
@@ -923,6 +927,8 @@ sub parseArgs {
                 $params->{'copies'} = [ ];
             }
             push(@{$params->{'copies'}}, shift(@words));
+        } elsif ($word eq "-M") {
+            push(@{$params->{'parsec_dir'}}, shift(@words));
         } else {
             die("Run: unknown option $word\n");
         }
@@ -1336,6 +1342,20 @@ sub runBenchmark {
     # Make up the command string based on the parameters.
     my $prog = $params->{'prog'} || $BINDIR . "/" . $bench;
     my $command = sprintf "\"%s\" %s", $prog, $params->{'options'};
+
+    # Some tests must use folder with MAC-label set
+    if ($PARSEC_DIR ne "") {
+        foreach (@PARSEC_USE) {
+            # Executable supports -M option?
+            if (rindex($prog, "/".$_) >= 0) {
+                $command = $command." -M \"".$PARSEC_DIR."\"";
+                last;
+            }
+        }
+    }
+    printf "prog: %s\n", $prog;
+    printf "command: %s\n", $command;
+
     $command .= " < \"" . $params->{'stdin'} . "\"" if ($params->{'stdin'});
     $command .= " 2>&1";
     $command .= $params->{'stdout'} ? (" >> \"" . $logFile . "\"") : " > /dev/null";
@@ -1890,6 +1910,13 @@ sub main {
         $shortIterCount = 1 if ($shortIterCount < 1);
     }
 
+    # Check if -M working directory specified
+    if ($params->{'parsec_dir'}) {
+        # working directory specified
+        $PARSEC_DIR = $params->{'parsec_dir'}[0];
+        $PARSEC_BIN = $PARSEC_DIR . "/bin";
+    }
+    
     # If no benchmark units have be specified, do "index".
     my $tests = $params->{'tests'};
     if ($#$tests < 0) {
@@ -1901,6 +1928,32 @@ sub main {
     createDirrectoriesIfNotExists(@creatingDirectories);
 
     preChecks();
+
+    # Here all binaries are built.
+    # Making copy of binaries into labeled dir if specified.
+    if ($PARSEC_BIN ne "") {
+        # Get label of $PARSEC_BIN
+        my $label = `pdp-ls -Mdn $PARSEC_BIN | cut -d \" \" -f 6 | cut -d : -f 1,2,3`;
+        $label =~ s/[\r\n]+//g;
+        # Making copy of binaries in the $PARSEC_BIN
+        system("cp $BINDIR/* $PARSEC_BIN/");
+        system("chown `stat -c %U:%G $PARSEC_BIN` $PARSEC_BIN/*");
+        # Propagating label to copied binaries
+        foreach my $file (split /[\r\n]+/, `ls -d1 $PARSEC_BIN/*`) {
+            system("pdpl-file $label:0 $file");
+        }
+        # Replacing $BINDIR with $PARSEC_BIN
+        $BINDIR = $PARSEC_BIN;
+        # Replacing binary paths with $PARSEC_BIN in test definitions
+        foreach my $bench (keys(%$testParams)) {
+            my $params = $testParams->{$bench};
+            my $prog = $params->{'prog'};
+            if (defined($prog)) {
+                $params->{'prog'} = $PARSEC_BIN . substr($prog, rindex($prog, '/'));
+            }
+        }
+    }
+
     my $systemInfo = getSystemInfo();
 
     # If the number of copies to run was not set, set it to 1

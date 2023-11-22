@@ -28,6 +28,42 @@ modes = {
 #Симлинки на страницы с местами хранения результатов
 #################################################################################################################################################
 parent_page_list = {
+    '1.8.0.1':{'postgresql':'1.8.0.1 ⬝ PostgreSQL',
+             'psql parsec':'1.8.0.1 ⬝ PostgreSQL',
+             'psql vanilla':'1.8.0.1 ⬝ PostgreSQL',
+             'postgresql-sm':'1.8.0.1 ⬝ PostgreSQL',
+             'postgresql-aud-off':'1.8.0.1 ⬝ PostgreSQL',
+             'XFS':'1.8.0.1 ⬝ Файловые системы',
+             'EXT4':'1.8.0.1 ⬝ Файловые системы',
+             'EXT4 parsec':'1.8.0.1 ⬝ Файловые системы',
+             'NTFS':'1.8.0.1 ⬝ Файловые системы',
+             'XFS parsec':'1.8.0.1 ⬝ Файловые системы',
+             'auditd-p':'1.8.0.1 ⬝ Системные службы',
+             'auditd-f':'1.8.0.1 ⬝ Системные службы',
+             'auditd-u':'1.8.0.1 ⬝ Системные службы',
+             'syslog-ng':'1.8.0.1 ⬝ Системные службы',
+             'RAM-overflow':'1.8.0.1 ⬝ Системные службы',
+             'SD-overflow':'1.8.0.1 ⬝ Системные службы',
+             'unix':'1.8.0.1 ⬝ UnixBench'
+            },
+    '1.8.0':{'postgresql':'1.8.0 ⬝ PostgreSQL',
+             'psql parsec':'1.8.0 ⬝ PostgreSQL',
+             'psql vanilla':'1.8.0 ⬝ PostgreSQL',
+             'postgresql-sm':'1.8.0 ⬝ PostgreSQL',
+             'postgresql-aud-off':'1.8.0 ⬝ PostgreSQL',
+             'XFS':'1.8.0 ⬝ Файловые системы',
+             'EXT4':'1.8.0 ⬝ Файловые системы',
+             'EXT4 parsec':'1.8.0 ⬝ Файловые системы',
+             'NTFS':'1.8.0 ⬝ Файловые системы',
+             'XFS parsec':'1.8.0 ⬝ Файловые системы',
+             'auditd-p':'1.8.0 ⬝ Системные службы',
+             'auditd-f':'1.8.0 ⬝ Системные службы',
+             'auditd-u':'1.8.0 ⬝ Системные службы',
+             'syslog-ng':'1.8.0 ⬝ Системные службы',
+             'RAM-overflow':'1.8.0 ⬝ Системные службы',
+             'SD-overflow':'1.8.0 ⬝ Системные службы',
+             'unix':'1.8.0 ⬝ UnixBench'
+            },
     '1.7.5.9':{'postgresql':'1.7.5.9 ⬝ PostgreSQL',
              'psql parsec':'1.7.5.9 ⬝ PostgreSQL',
              'psql vanilla':'1.7.5.9 ⬝ PostgreSQL',
@@ -302,7 +338,9 @@ cycle_tree_index = {
     '1.7.5.5':'3760',
     '1.7.5.6':'4455',
     '1.7.5.7':'4619',
-    '1.7.5.9':'4715'
+    '1.7.5.9':'4715',
+    '1.8.0':'5443',
+    '1.8.0.1':'5444'
 }
 
 
@@ -368,7 +406,7 @@ brest_tests = ['apache-graph']
 #################################################################################################################################################
 #Доступные релизы (следует указывать при наличии снимка в Clonezilla)
 #################################################################################################################################################
-releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.4', '1.7.5.5', '1.7.5.7', '1.7.5.9']
+releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.4', '1.7.5.5', '1.7.5.7', '1.7.5.9', '1.8.0.1']
 
 
 
@@ -395,8 +433,12 @@ brest_stands = ['stand10', 'stand11', 'stand12']
 #Перечень настроек, используемых для создания тестовых прогонов
 #################################################################################################################################################
 repo_path = {
-    'pkg_path_testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/Release',
+    'pkg_path_18testing':'http://qa111.devos.astralinux.ru/astra/testing/1.8-testing/installation/dists/1.8_x86-64/main/binary-amd64/Packages',
+    'vers_path_18testing':'http://qa111.devos.astralinux.ru/astra/testing/1.8-testing/installation/dists/1.8_x86-64/Release',
+    'pkg_path_17testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages',
+    'vers_path_17testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/Release',
+    'vers_path_175':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-5/dists/1.7_x86-64/Release',
+    'pkg_path_175':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-5/dists/1.7_x86-64/main/binary-amd64/Packages',
     'vers_path_174UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4.1/dists/1.7_x86-64/Release',
     'pkg_path_174UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4.1/dists/1.7_x86-64/main/binary-amd64/Packages',
     'vers_path_174':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4/dists/1.7_x86-64/Release',
@@ -415,8 +457,8 @@ repo_path = {
     'pkg_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/main/binary-amd64/Packages'
 }
 
-rc_list = ['1.7.5.4', '1.7.5.5', '1.7.5.6', '1.7.5.7', '1.7.5.9']
-releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5']
+rc_list = ['1.7.5.4', '1.7.5.5', '1.7.5.6', '1.7.5.7', '1.7.5.9', '1.8.0.1']
+releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.8.0']
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
 testcase_smolensk = ['postgresql-sm', 'psql parsec', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']

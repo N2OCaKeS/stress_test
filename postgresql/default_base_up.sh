@@ -175,7 +175,7 @@ if [ "$2" == "tantor" ]; then
   su -c "/opt/tantor/db/15/bin/initdb -D /var/lib/postgresql/tantor-se-15/data --no-instructions" postgres
   systemctl start tantor-se-server-15
 
-  if [ "$4" == "4" ]; then
+  if [ "$4" == "4" ] && [ "$4" == "3" ]; then
     #sed -i 's/ac_enable_maclabels_on_files.*/ac_enable_maclabels_on_files = true/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
     sed -i 's/.*max_connections.*/max_connections = 2000/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf
     sed -i 's/.*shared_buffers.*/shared_buffers = 32256MB/g' /var/lib/postgresql/tantor-se-15/data/postgresql.conf

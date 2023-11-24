@@ -264,23 +264,23 @@ parent_page_list = {
                   'SD-overflow':'1.7.3 UU1 ⬝ Системные службы',
                   'unix':'1.7.3.UU.1 ⬝ UnixBench'
                  },
-    '1.7.1':{'postgresql':'1.7.1 ⬝ PostgreSQL',
-             'postgresql-sm':'1.7.1 ⬝ PostgreSQL',
-             'psql parsec':'1.7.1 ⬝ PostgreSQL',
-             'psql vanilla':'1.7.1 ⬝ PostgreSQL',
-             'postgresql-aud-off':'1.7.1 ⬝ PostgreSQL',
-             'tantor vanilla':'1.7.1 ⬝ PostgreSQL',
-             'XFS':'1.7.1 ⬝ Файловые системы',
-             'XFS parsec':'1.7.1 ⬝ Файловые системы',
-             'NTFS':'1.7.1 ⬝ Файловые системы',
-             'EXT4':'1.7.1 ⬝ Файловые системы',
-             'EXT4 parsec':'1.7.1 ⬝ Файловые системы',
-             'syslog-ng':'Системные службы',
-             'auditd-p':'Системные службы',
-             'auditd-f':'Системные службы',
-             'auditd-u':'Системные службы',
-             'RAM-overflow':'Системные службы',
-             'SD-overflow':'Системные службы',
+    '1.7.1':{'postgresql':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'postgresql-sm':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'psql parsec':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'psql vanilla':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'postgresql-aud-off':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'tantor vanilla':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'XFS':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
+             'XFS parsec':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
+             'NTFS':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
+             'EXT4':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
+             'EXT4 parsec':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
+             'syslog-ng':'1.7.1 ⬝ Системные службы',
+             'auditd-p':'1.7.1 ⬝ Системные службы',
+             'auditd-f':'1.7.1 ⬝ Системные службы',
+             'auditd-u':'1.7.1 ⬝ Системные службы',
+             'RAM-overflow':'1.7.1 ⬝ Системные службы',
+             'SD-overflow':'1.7.1 ⬝ Системные службы',
              'unix':'1.7.1 ⬝ UnixBench'
             }
 }
@@ -415,7 +415,7 @@ releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7
 #################################################################################################################################################
 kernels = ['5.10.0-1045-generic', '5.10.0-1057-generic', '5.10.142-1-generic', '5.15.0-33-generic', '5.15.0-33-lowlatency', 
            '5.10.176-1-generic', '5.15.0-70-generic', '5.15.0-70-lowlatency', '5.10.190-1-generic',
-           '5.15.0-83-generic', '5.15.0-83-lowlatency','6.1.50-1-generic']
+           '5.15.0-83-generic', '5.15.0-83-lowlatency', '6.1.50-1-generic']
 
 
 

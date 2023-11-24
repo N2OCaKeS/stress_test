@@ -42,14 +42,14 @@ class Public:
                  'cpu':'Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz',
                  'ram':'32GB',
                  'storage':'SSD 512GB\sdb SSD 2TB'},
-            '3':{'grade':'middle(151)',
-                 'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
-                 'ram':'64GB',
-                 'storage':'Patriot Burst El 960GB'},
-            '4':{'grade':'high(150)',
+            '3':{'grade':'LowServer(150)',
                  'cpu':'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz',
                  'ram':'128GB',
-                 'storage':'nvme0n1'}
+                 'storage':'SAS SSD 3.8Tb'},
+            '4':{'grade':'MiddleServer(151)',
+                 'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
+                 'ram':'256GB',
+                 'storage':'SAS SSD 3.8Tb'}
         }
 
     def preset_publish(self, c_pp, c_np):

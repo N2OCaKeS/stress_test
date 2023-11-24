@@ -470,6 +470,7 @@ class ZefirTestRun:
             self.release = ''.join(release)
         if rc != False:
             self.rc = ''.join(rc)
+        else: self.rc = rc
         #self.kernel_vers = kernel_vers
         #self.kernel_repo = kernel_repo
         self.use_kernels = use_kernels

@@ -459,11 +459,17 @@ repo_path = {
 
 rc_list = ['1.7.5.4', '1.7.5.5', '1.7.5.6', '1.7.5.7', '1.7.5.9', '1.8.0.1']
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.8.0']
+
+testcase_orel_low_stand3 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix']
+testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
+testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla']
+testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec']
+
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
 testcase_smolensk = ['postgresql-sm', 'psql parsec', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
 testcase_smolensk_stand2 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
-test_run_stands = [f'stand{x}' for x in range(1, 5, 1)]
+test_run_stands = [f'stand{x}' for x in range(3, 5, 1)]
 test_run_modes = ['orel', 'smolensk']
 tests_case_zefir_key = {
     'postgresql':'BT-T7555',

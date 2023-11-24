@@ -38,7 +38,10 @@ char SCCSid[] = "@(#) @(#)fstime.c:3.5 -- 5/15/91 19:30:19";
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/time.h>
+#include <sys/param.h>
+#include <parsec/pdp.h>
 
 #define SECONDS 10
 
@@ -48,8 +51,8 @@ char SCCSid[] = "@(#) @(#)fstime.c:3.5 -- 5/15/91 19:30:19";
 #define COUNTSIZE 256
 #define HALFCOUNT (COUNTSIZE/2)         /* Half of COUNTSIZE */
 
-#define FNAME0  "dummy0"
-#define FNAME1  "dummy1"
+char FNAME0[] = "dummy0-XXXXXXXXXX";
+char FNAME1[] = "dummy1-XXXXXXXXXX";
 
 int w_test(int timeSecs);
 int r_test(int timeSecs);
@@ -94,6 +97,69 @@ int                     i;
 void                    stop_count();
 void                    clean_up();
 int                     sigalarm = 0;
+char                    *working_dir = NULL;
+size_t                  working_dir_len = 0;
+char                    fname_buff[1024];
+
+static const char *make_file_name(const char *file) {
+    if(!working_dir_len)
+        return file;
+    memcpy(fname_buff, working_dir, working_dir_len);
+    fname_buff[working_dir_len] = '/';
+    strcpy(fname_buff + working_dir_len + 1, file);
+    return fname_buff;
+}
+
+static char *get_working_dir_label_text() {
+    PDPL_T *label = pdp_get_path(working_dir);
+    if (!label) {
+        fprintf(stderr, "Unable to get label for: %s\n", working_dir);
+        return NULL;
+    }
+    char *text = pdpl_get_text(label, 0);
+    pdpl_put(label);
+    if (!text) {
+        fprintf(stderr, "Unable to get label text for: %s\n", working_dir);
+        return NULL;
+    }
+
+    return text;
+}
+
+static int set_file_mac_label(const char *path) {
+    if (!working_dir)
+        return 0;       /* Lable not required */
+
+    int ret = 1;
+    char *text = get_working_dir_label_text();
+    if (!text)
+        return ret;
+
+    PDPL_T *label = NULL;
+    /* Cut last part ot the label */
+    char *p = strrchr(text, ':');
+    if (!p) {
+        fprintf(stderr, "Wrong label format: %s\n", text);
+        goto done;
+    }
+    *p = '\0';
+
+    /* Convert label text to binary representation */
+    label = pdpl_get_from_text(text);
+    if (!label) {
+        fprintf(stderr, "Unable to convert label text: %s\n", text);
+        goto done;
+    }
+
+    /* Set file label  */
+    ret = pdp_set_path(path, label);
+
+done:
+    if(label)
+        pdpl_put(label);
+    free(text);
+    return ret;
+}
 
 /******************** MAIN ****************************/
 
@@ -133,12 +199,29 @@ char    *argv[];
                         exit(1);
                     }
                     break;
+                case 'M':
+                    /* Working directory mast be specified with -M */
+                    if (++i == argc) {
+                        fprintf(stderr, "fstime: no working directory specified\n");
+                        exit(1);
+                    }
+                    working_dir = argv[i];
+                    working_dir_len = strlen(working_dir);
+                    /* Remove slashes at the end*/
+                    while (working_dir_len && '/' == working_dir[working_dir_len - 1])
+                        --working_dir_len;
+                    /* Buffer must be large enought to hold folder/filename\0 */
+                    if (working_dir_len + 1 + MAX(sizeof(FNAME0), sizeof(FNAME1)) + 1 > sizeof(fname_buff)) {
+                        fprintf(stderr, "fstime: working directory path is too big\n");
+                        exit(1);
+                    }
+                    break;
                 default:
-                    fprintf(stderr, "Usage: fstime [-c|-r|-w] [-b <bufsize>] [-m <max_blocks>] [-t <seconds>]\n");
+                    fprintf(stderr, "Usage: fstime [-c|-r|-w] [-b <bufsize>] [-m <max_blocks>] [-t <seconds>] [-M <working dir>]\n");
                     exit(2);
             }
         } else {
-            fprintf(stderr, "Usage: fstime [-c|-r|-w] [-b <bufsize>] [-m <max_blocks>] [-t <seconds>]\n");
+            fprintf(stderr, "Usage: fstime [-c|-r|-w] [-b <bufsize>] [-m <max_blocks>] [-t <seconds>] [-M <working dir>]\n");
             exit(2);
         }
     }
@@ -170,23 +253,31 @@ char    *argv[];
     }
     */
 
-    if((f = creat(FNAME0, 0600)) == -1) {
+    int pid = getpid();
+    snprintf(FNAME0 + sizeof("dummy0"), sizeof(FNAME0) - sizeof("dummy0"), "%d", pid);
+    snprintf(FNAME1 + sizeof("dummy1"), sizeof(FNAME1) - sizeof("dummy1"), "%d", pid);
+
+    const char *fname = make_file_name(FNAME0);
+    if((f = creat(fname, 0600)) == -1) {
             perror("fstime: creat");
             exit(1);
     }
     close(f);
+    set_file_mac_label(fname);
 
-    if((g = creat(FNAME1, 0600)) == -1) {
+    fname = make_file_name(FNAME1);
+    if((g = creat(fname, 0600)) == -1) {
             perror("fstime: creat");
             exit(1);
     }
     close(g);
+    set_file_mac_label(fname);
 
-    if( (f = open(FNAME0, 2)) == -1) {
+    if( (f = open(make_file_name(FNAME0), 2)) == -1) {
             perror("fstime: open");
             exit(1);
     }
-    if( ( g = open(FNAME1, 2)) == -1 ) {
+    if( ( g = open(make_file_name(FNAME1), 2)) == -1 ) {
             perror("fstime: open");
             exit(1);
     }

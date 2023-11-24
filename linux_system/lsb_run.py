@@ -32,6 +32,12 @@ parser.add_argument('-m', '--mode',
                     help='help me',
                     dest='MODE')
 
+parser.add_argument('-p', '--parsec',
+                    action='store',
+                    required=False,
+                    help='run test with parsec',
+                    dest='PARSEC')
+
 parser.add_argument('-u', '--username',
                     action='store',
                     required=True,
@@ -149,6 +155,11 @@ def main():
 
         # Засечь время выполнения скрипта
         start_time = time()
+        
+        if not args.PARSEC:
+            RUN = "Run"
+        else:
+            RUN = "RunWithParsec"
 
         '''
             stand1
@@ -160,7 +171,7 @@ def main():
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
             #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND1_UPPER_LIMIT}')
+            cmd(f'./{RUN} -c {STAND1_UPPER_LIMIT}')
 
             # выгрузить результаты
             upload_result(current_dir)
@@ -183,7 +194,7 @@ def main():
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
             #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND2_UPPER_LIMIT}')
+            cmd(f'./{RUN} -c {STAND2_UPPER_LIMIT}')
 
             # выгрузить результаты
             upload_result(current_dir)
@@ -206,7 +217,7 @@ def main():
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
             #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND3_UPPER_LIMIT}')
+            cmd(f'./{RUN} -c {STAND3_UPPER_LIMIT}')
 
             # выгрузить результаты
             upload_result(current_dir)
@@ -229,7 +240,7 @@ def main():
             # запустить тест
             chdir(current_dir + '/byte-unixbench-master/UnixBench/')
             #cmd('./Run ' + cmd_parallel_processes)
-            cmd(f'./Run -c {STAND4_UPPER_LIMIT}')
+            cmd(f'./{RUN} -c {STAND4_UPPER_LIMIT}')
 
             # выгрузить результаты
             upload_result(current_dir)

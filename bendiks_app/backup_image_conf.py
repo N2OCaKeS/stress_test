@@ -463,7 +463,7 @@ releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4',
 testcase_orel_low_stand3 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla']
-testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec']
+testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
 
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']

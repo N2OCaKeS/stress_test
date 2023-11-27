@@ -25,7 +25,7 @@ fi
 
 if [[ $2 == "vanilla" ]]; then
   dpkg -i /home/u/postgresql_vanilla/postgresql*.deb
-  apt purge postgresql-11
+  apt-get purge postgresql-11
   apt-get install -fy
   dpkg -i /home/u/postgresql_vanilla/libllvm7*.deb
   dpkg -i /home/u/postgresql_vanilla/postgresql*.deb

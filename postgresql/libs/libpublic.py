@@ -18,7 +18,8 @@ class Public:
                  conf_new_page_name=None,
                  grade_stand=None,
                  package=None,
-                 test_cycle_version=None):
+                 test_cycle_version=None,
+                 storage=False):
     
         self.username=username
         self.token=token
@@ -28,25 +29,47 @@ class Public:
         self.grade_stand = grade_stand
         self.package=package
         self.tcv = test_cycle_version
+        self.storage = storage
 
-        self.stands = {
-            '1':{'grade':'low(141)',
-                 'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
-                 'ram':'32GB',
-                 'storage':'Samsung NVME 970 EVO 2Тб'},
-            '2':{'grade':'low(129)',
-                 'cpu':'Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz',
-                 'ram':'32GB',
-                 'storage':'SSD 512GB\sdb SSD 2TB'},
-            '3':{'grade':'LowServer(150)',
-                 'cpu':'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz',
-                 'ram':'128GB',
-                 'storage':'SAS SSD 3.8Tb'},
-            '4':{'grade':'MiddleServer(151)',
-                 'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
-                 'ram':'256GB',
-                 'storage':'SAS SSD 3.8Tb'}
-        }
+        if self.storage == True:
+            self.stands = {
+                '1':{'grade':'low(141)',
+                    'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
+                    'ram':'32GB',
+                    'storage':'Samsung NVME 970 EVO 2Тб'},
+                '2':{'grade':'low(129)',
+                    'cpu':'Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz',
+                    'ram':'32GB',
+                    'storage':'SSD 512GB\sdb SSD 2TB'},
+                '3':{'grade':'LowServer(150)',
+                    'cpu':'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz',
+                    'ram':'128GB',
+                    'storage':'NVME0n1 3.2Tb'},
+                '4':{'grade':'MiddleServer(151)',
+                    'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
+                    'ram':'256GB',
+                    'storage':'NVME0n1 3.2Tb'}
+            }
+        else:
+            self.stands = {
+                '1':{'grade':'low(141)',
+                    'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
+                    'ram':'32GB',
+                    'storage':'Samsung NVME 970 EVO 2Тб'},
+                '2':{'grade':'low(129)',
+                    'cpu':'Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz',
+                    'ram':'32GB',
+                    'storage':'SSD 512GB\sdb SSD 2TB'},
+                '3':{'grade':'LowServer(150)',
+                    'cpu':'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz',
+                    'ram':'128GB',
+                    'storage':'SAS SSD 3.8Tb'},
+                '4':{'grade':'MiddleServer(151)',
+                    'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
+                    'ram':'256GB',
+                    'storage':'SAS SSD 3.8Tb'}
+            }
+
 
     def preset_publish(self, c_pp, c_np):
 

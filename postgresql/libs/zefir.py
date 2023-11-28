@@ -33,7 +33,8 @@ class UploaderZC(Public, PSQLStatistics2):
                  grade_stand=None,
                  package=None,
                  public=False,
-                 statistics=False):
+                 statistics=False,
+                 storage=False):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -49,6 +50,7 @@ class UploaderZC(Public, PSQLStatistics2):
         self.PKG = package
         self.public = public
         self.statistics = statistics
+        self.storage = storage
 
     def test_cycle_status_changer(self, status):
 
@@ -60,7 +62,8 @@ class UploaderZC(Public, PSQLStatistics2):
                             conf_new_page_name=self.CNPN,
                             grade_stand=self.GS,
                             package=self.PKG,
-                            test_cycle_version=self.TCV)
+                            test_cycle_version=self.TCV,
+                            storage=self.storage)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,

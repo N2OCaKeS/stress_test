@@ -17,7 +17,8 @@ uzs = UploaderZC(folder_tree_id=public_args['folder_tree_id'],
                  grade_stand=public_args['grade_stand'],
                  package=public_args['package'],
                  public=True,
-                 statistics=True)
+                 statistics=True,
+                 storage=public_args['storage'])
 
 uzs.upload_test_cycle_status(zefir_status='pass')
 

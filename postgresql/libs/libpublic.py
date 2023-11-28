@@ -31,7 +31,7 @@ class Public:
         self.tcv = test_cycle_version
         self.storage = storage
 
-        if self.storage == True:
+        if self.storage == 'True':
             self.stands = {
                 '1':{'grade':'low(141)',
                     'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',

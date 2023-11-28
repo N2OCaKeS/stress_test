@@ -500,6 +500,8 @@ def grub_default(kernel, host):
     kernel_conf = client_command("sudo cat /boot/grub/grub.cfg | grep menuentry_id | \
                                     awk '{{print $17}}' | grep {} | tr -d \"'\"".format(kernel)).rstrip('\n')
     client_command(f'''sudo sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT={kernel_conf}/' /etc/default/grub''')
+    if args.AUDIT_OFF:
+        client_command('''sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT=.*\)"/\\1 audit=0"/' /etc/default/grub''')
     client_command('sudo update-grub')
     logging.debug(client_command('cat /etc/default/grub | grep GRUB_DEFAULT'))
     return 0

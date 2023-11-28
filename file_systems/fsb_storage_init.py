@@ -73,16 +73,16 @@ if cmd('lsblk | grep {device}'.format(device=STORAGE_NAME)) == 0:
         cmd('parted -s /dev/{device} select && parted -s /dev/{device} rm 1'.format(device=STORAGE_NAME))
 
 if args.FS == 'fat':
-    cmd('parted -s /dev/{device} mklabel msdos mkpart primary fat32 0% 100%'.format(device=STORAGE_NAME))
+    cmd('parted -s /dev/{device} mklabel gpt mkpart primary fat32 0% 100%'.format(device=STORAGE_NAME))
     cmd("mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 elif args.FS == 'ntfs':
-    cmd('strace -o strace_ntfs_parted.log parted -s /dev/{device} mklabel msdos mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
+    cmd('strace -o strace_ntfs_parted.log parted -s /dev/{device} mklabel gpt mkpart primary ntfs 0% 100%'.format(device=STORAGE_NAME))
     cmd("strace -o strace_ntfs_mkfs.log mkfs -t {fs} -I /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 elif args.FS == 'xfs':
-    cmd('parted -s /dev/{device} mklabel msdos mkpart primary xfs 0% 100%'.format(device=STORAGE_NAME))
+    cmd('parted -s /dev/{device} mklabel gpt mkpart primary xfs 0% 100%'.format(device=STORAGE_NAME))
     cmd("mkfs -t {fs} -f /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 else:
-    cmd('parted -s /dev/{device} mklabel msdos mkpart primary {fs} 0% 100%'.format(fs=args.FS ,device=STORAGE_NAME))
+    cmd('parted -s /dev/{device} mklabel gpt mkpart primary {fs} 0% 100%'.format(fs=args.FS ,device=STORAGE_NAME))
     cmd("mkfs -t {fs} {ic} -F /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME, ic=INODE_COUNT))
 
 cmd("mount /dev/{device}1 {mount_dir}".format(device=STORAGE_NAME, mount_dir=STORAGE_MOUNT_DIR))

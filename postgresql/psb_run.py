@@ -617,7 +617,7 @@ if args.SD:
         'test_case_name':args.TCAS,
         'basic_auth':args.BA,
         'test_cycle_version':args.TCV,
-        'storage':'False'
+        'storage':'sas'
     }
 else:
     public_args = {
@@ -633,7 +633,7 @@ else:
         'test_case_name':args.TCAS,
         'basic_auth':args.BA,
         'test_cycle_version':args.TCV,
-        'storage':'True'
+        'storage':'nvme'
     }
 with open('psb_public_args.json', 'w') as w:
     json.dump(public_args, w)

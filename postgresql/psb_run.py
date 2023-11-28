@@ -603,37 +603,27 @@ upload_results_to_ftp(args.TCV, f'{REPORT_FILENAME}', f'postgresql_{args.TCYC}_{
 
 # public.run_publish()
 
+
+public_args = {
+        'username':args.USER,
+        'token':args.TOKEN,
+        'conf_space':args.SPACE,
+        'conf_parent_page':args.PPAGE,
+        'conf_new_page_name':args.NPAGE,
+        'grade_stand':args.STAND,
+        'package':args.PACKAGE,
+        'folder_tree_id':args.FTI,
+        'test_cycle_name':args.TCYC,
+        'test_case_name':args.TCAS,
+        'basic_auth':args.BA,
+        'test_cycle_version':args.TCV
+    }
+
 if args.SD:
-    public_args = {
-        'username':args.USER,
-        'token':args.TOKEN,
-        'conf_space':args.SPACE,
-        'conf_parent_page':args.PPAGE,
-        'conf_new_page_name':args.NPAGE,
-        'grade_stand':args.STAND,
-        'package':args.PACKAGE,
-        'folder_tree_id':args.FTI,
-        'test_cycle_name':args.TCYC,
-        'test_case_name':args.TCAS,
-        'basic_auth':args.BA,
-        'test_cycle_version':args.TCV,
-        'storage':'sas'
-    }
+    public_args['storage'] = 'sas'
 else:
-    public_args = {
-        'username':args.USER,
-        'token':args.TOKEN,
-        'conf_space':args.SPACE,
-        'conf_parent_page':args.PPAGE,
-        'conf_new_page_name':args.NPAGE,
-        'grade_stand':args.STAND,
-        'package':args.PACKAGE,
-        'folder_tree_id':args.FTI,
-        'test_cycle_name':args.TCYC,
-        'test_case_name':args.TCAS,
-        'basic_auth':args.BA,
-        'test_cycle_version':args.TCV,
-        'storage':'nvme'
-    }
+    public_args['storage'] = 'nvme'
+
+    
 with open('psb_public_args.json', 'w') as w:
     json.dump(public_args, w)

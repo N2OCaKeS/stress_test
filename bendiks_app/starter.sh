@@ -17,7 +17,7 @@ dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y
 
 #Клонируем репозиторий, удаляем старый, если есть
 cd /home/u/git
-./git_clone.py
+python3 git_clone.py
 
 #Подключаем нужную ветку с проектом
 cd "$git_directory"
@@ -25,6 +25,6 @@ git checkout $1
 
 #Настраиваем окружение и запускаем тест
 cd $1
-./prepare.sh
-./run.py -n $2
+bash prepare.sh
+python3 run.py -n $2
 

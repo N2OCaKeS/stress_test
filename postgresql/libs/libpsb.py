@@ -289,5 +289,5 @@ class BaseTest:
             return int(mean_cleaned)
         else:
             print('Нет подходящих групп значений для расчета среднего')
-            return 'Нет подходящих групп значений для расчета среднего'
+            return 'NaN'
         

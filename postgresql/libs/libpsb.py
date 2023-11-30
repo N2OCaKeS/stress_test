@@ -9,6 +9,7 @@ import requests
 from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME
 import pysnooper
 import numpy as np
+import pandas as pd
 
 
 if not path.isdir(REPORT_PATH):
@@ -225,16 +226,18 @@ def response():
 
 class BaseTest:
     def __init__(self,
+                 file_name,
                  database=None,
                  storage_device=None,
                  stand_number=None,
-                 prepare=True
+                 prepare=True,
                  ):
         
         self.database = database
         self.storage_device = storage_device
         self.stand_number = stand_number
         self.prepare = prepare
+        self.file_name = file_name
 
     def __cmd(self, command):
         subprocess.run(command, shell=True)
@@ -283,3 +286,18 @@ class BaseTest:
             print('Нет подходящих групп значений для расчета среднего')
             return 'NaN'
         
+    def check_conditions(self):
+        results = pd.read_csv(self.file_name, delimiter=',')
+        print(f'Прочитано из файла:\n{results}')
+
+        diff_percent = 0.2
+        results['tps_diff'] = results['tps'].pct_change()
+        results['conditions'] = results['tps_diff'] > diff_percent
+        print(f'Результат проверки:\n{results}')
+        check_conditions = results['conditions'].iloc[1:].all()
+        print(f'Итог проверки: {check_conditions}')
+        results.to_html(f'{REPORT_PATH}/kernel_check.html', index=False)
+
+        return check_conditions
+
+

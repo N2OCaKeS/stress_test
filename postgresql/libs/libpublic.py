@@ -19,7 +19,8 @@ class Public:
                  grade_stand=None,
                  package=None,
                  test_cycle_version=None,
-                 storage=False):
+                 storage=False,
+                 kernel_check=False):
     
         self.username=username
         self.token=token
@@ -30,6 +31,7 @@ class Public:
         self.package=package
         self.tcv = test_cycle_version
         self.storage = storage
+        self.kernel_check = kernel_check
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -94,25 +96,31 @@ class Public:
                                                     lead_time=info_lst[3])
             
         #создание страницы отчета
-        rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
-        with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
-            rating_temp = template.read()
-            rating = rating_temp.format(r=str(rep.get_total_rating()))
+        if self.kernel_check:
+            with open(f'{REPORT_PATH}/kernel_check.html', 'r') as file:
+                kernel_table = file.read()
 
-        with open('{}/psb_report_table.html'.format(REPORT_PATH), 'r') as file:
-            main_table = file.read()
+            html_page = '\n'.join([header_table, kernel_table])
+        else:
+            rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
+            with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
+                rating_temp = template.read()
+                rating = rating_temp.format(r=str(rep.get_total_rating()))
 
-        with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
-            images_lst = []
-            img_temp = template.read()
-            for file in os.listdir(REPORT_PATH):
-                if file.endswith('png'):
-                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
-                                                     img_png=file,
-                                                     description=GRAPH_DESCRIPTIONS[file]))
-            images = '\n'.join(images_lst)
+            with open('{}/psb_report_table.html'.format(REPORT_PATH), 'r') as file:
+                main_table = file.read()
 
-        html_page = '\n'.join([header_table, rating, main_table, images])
+            with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
+                images_lst = []
+                img_temp = template.read()
+                for file in os.listdir(REPORT_PATH):
+                    if file.endswith('png'):
+                        images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
+                                                        img_png=file,
+                                                        description=GRAPH_DESCRIPTIONS[file]))
+                images = '\n'.join(images_lst)
+
+            html_page = '\n'.join([header_table, rating, main_table, images])
 
         #выкладываем информацию на страницу
         confluence_report.update_confluence_page(self.c_space, c_np, html_page)

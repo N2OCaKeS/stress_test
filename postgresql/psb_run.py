@@ -1,10 +1,3 @@
-# -*- coding: UTF-8 -*-
-
-# ;===========================================================
-# ; Author: rkuznetsov@astralinux.ru
-# ; Date: 2022
-# ;===========================================================
-
 import argparse
 import os
 import subprocess

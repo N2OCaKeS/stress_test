@@ -1,11 +1,3 @@
-#!venv/bin/python
-# -*- coding: UTF-8 -*-
-
-# ;===========================================================
-# ; Author: rkuznetsov@astralinux.ru
-# ; Date: 2022
-# ;===========================================================
-
 import re
 import os
 import logging

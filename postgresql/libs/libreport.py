@@ -1,10 +1,3 @@
-# -*- coding: UTF-8 -*-
-
-# ;===========================================================
-# ; Author: rkuznetsov@astralinux.ru
-# ; Date: 2022
-# ;===========================================================
-
 from shutil import unpack_archive
 from atlassian import Confluence
 from atlassian import Jira

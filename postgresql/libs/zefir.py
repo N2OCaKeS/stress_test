@@ -180,7 +180,6 @@ class ZefirStatusAPI:
             'X-Requested-With': 'XMLHttpRequest',
             'jira-project-id': '11200',
             'Connection': 'keep-alive',
-            #'Cookie': '_ga=GA1.2.1097806090.1675253155; _ym_uid=1675343686577278045; _ym_d=1675343686; ajs_user_id=fc7aec5884ea4e02056a8ce8f996001f49ce373e; ajs_anonymous_id=cf669b37-814c-498d-a98c-8e36022b80b9; _gid=GA1.2.366592657.1683015166; INGRESSCOOKIE=1128ad0bc2c3007521086fda6d56670d|99e0851c823ae836b8f684b10f61e1b8; crowd.token_key=A2xWy4WrFlZg-50YPj8yJQAAAAABBoABZHRpbW9uaW4; JSESSIONID=2F8197402877646EA13D49452656855F; atlassian.xsrf.token=BCF3-299N-BY94-II8F_3a78239741b52a11e8873fd208433d4794b07b95_lin; seraph.rememberme.cookie=91479%3Aad54b720c0af146e9da927247f4dbe0f33f429ce',
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'same-origin',
@@ -197,30 +196,6 @@ class ZefirStatusAPI:
                             index,issueCount,$lastTestResult
                         '''
         self.response_test_cycle = requests.get(self.url_test_cycle, headers=self.headers)
-
-        # t = {"total":1,
-        #      "testRunItems":[{"index":0,
-        #                   "id":1059609,
-        #                   "$lastTestResult":{"environmentId":325,
-        #                                      "id":1086632,
-        #                                      "assignedTo":"JIRAUSER38882",
-        #                                      "userKey":"JIRAUSER38882",
-        #                                      "testCase":{"componentId":"11124",
-        #                                                  "name":"postgresql benchmark",
-        #                                                  "precondition":"Более подробная информация <a href=\"https://wiki.astralinux.ru/display/qa/Stress-test.+postgresql_benchmark\">здесь</a><br />Внести в конфигурационный файл <strong>psb_conf.py </strong>необходимые данные",
-        #                                                  "id":9854,
-        #                                                  "majorVersion":1,
-        #                                                  "projectId":11200,
-        #                                                  "key":"BT-T7555",
-        #                                                  "folderId":2281,
-        #                                                  "priorityId":104,
-        #                                                  "objective":"Произвести нагрузочное тестирование БД PostgreSQL с помощью набора скриптов <strong>postgresql_benchmark</strong>."
-        #                                                  },
-        #                                     "testResultStatusId":91
-        #                                     },"issueCount":0
-        #                     }],
-        #  "testRunItemsWithNoPermission":0
-        # }
 
         test_case_id = [self.response_test_cycle.json()['testRunItems'][x]['$lastTestResult']['id'] for x \
                         in range(len(self.response_test_cycle.json()['testRunItems']))]
@@ -250,7 +225,6 @@ class ZefirStatusAPI:
             'jira-project-id': '11200',
             'Origin': 'https://jira.astralinux.ru',
             'Connection': 'keep-alive',
-            #'Cookie': '_ga=GA1.2.1097806090.1675253155; _ym_uid=1675343686577278045; _ym_d=1675343686; ajs_user_id=fc7aec5884ea4e02056a8ce8f996001f49ce373e; ajs_anonymous_id=cf669b37-814c-498d-a98c-8e36022b80b9; _gid=GA1.2.366592657.1683015166; INGRESSCOOKIE=1128ad0bc2c3007521086fda6d56670d|99e0851c823ae836b8f684b10f61e1b8; crowd.token_key=YSx8wZ-ooDdVIOnv8HyUqQAAAAABBoABZHRpbW9uaW4; JSESSIONID=4D2E62E6FC8E90D1821B702723E10B38; atlassian.xsrf.token=BCF3-299N-BY94-II8F_05e76f3ef04efbf6fd1d219fe74aef7ba313b8b2_lin; seraph.rememberme.cookie=91744%3A1cc82d680915e49453fb80ba5c55bd6e44a504f7',
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'same-origin',
@@ -288,34 +262,6 @@ class ZefirStatusAPI:
         self.logger.info(data)
         self.logger.info('------' * 30)
 
-        # z = {'total': 3, 
-        #  'maxResults': 40, 
-        #  'results': [{'owner': 'JIRAUSER38882', 
-        #               'estimatedTime': 9000000, 
-        #               'updatedBy': 'JIRAUSER38882', 
-        #               'userKeys': ['JIRAUSER38882'], 
-        #               'environmentIds': [325.0], 
-        #               'updatedOn': '2023-04-26T16:43:47.419Z', 
-        #               'createdOn': '2023-04-19T19:28:05.070Z', 
-        #               'issueCount': 0, 'plannedEndDate': 
-        #               '2023-04-19T16:27:22.881Z', 
-        #               'folderId': 2773, 
-        #               'executionTime': 0, 
-        #               'testCaseCount': 1, 
-        #               'plannedStartDate': '2023-04-19T16:27:22.881Z', 
-        #               'customFieldValues': [], 
-        #               'createdBy': 'JIRAUSER38882', 
-        #               'name': '1.7.4_orel_5.10.176-1-generic_stand1', 
-        #               'id': 2370, 
-        #               'testResultStatuses': {'90': 1.0}, 
-        #               'key': 'BT-C2317', 
-        #               'status': {'color': '#f0ad4e', 
-        #                          'i18nKey': 'TEST_RUN.STATUS.IN_PROGRESS', 
-        #                          'name': 'In Progress', 
-        #                          'id': 101
-        #                          }
-        #              }]}
-
         test_cycle = {}
         test_cycle['test_cycle_id'] = [data['results'][i]['id'] for i in range(len(data['results']))]
         test_cycle['test_cycle_name'] = [data['results'][i]['name'] for i in range(len(data['results']))]
@@ -329,17 +275,6 @@ class ZefirStatusAPI:
             self.test_cycle_dates[x]['test_case_name'] = self.test_case_dates(self.test_cycle_dates[x]['test_cycle_id'])[1]
             self.test_cycle_dates[x]['test_case_result_status'] = self.test_case_dates(self.test_cycle_dates[x]['test_cycle_id'])[2]
 
-        # {'test_cycle_id': 2215, 
-        #  'test_cycle_name': '1.7.3.UU.1_orel_5.10.142-1-generic_stand1', 
-        #  'test_case_id': [997555, 997558, 997556, 997557, 997559, 997560, 997561], 
-        #  'test_case_name': ['linux_system_benchmark. UnixBench', 
-        #                     'file system benchmark. EXT4', 
-        #                     'syslog-ng benchmark', 
-        #                     'postgresql benchmark', 
-        #                     'file system benchmark. NTFS', 
-        #                     'file system benchmark. OCFS2', 
-        #                     'file system benchmark. XFS'], 
-        #  'test_case_result_status': [89, 91, 91, 91, 91, 91, 91]}
         self.logger.info(self.test_cycle_dates)
         self.logger.info('------' * 30)
         return self.test_cycle_dates

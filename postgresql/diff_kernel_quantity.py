@@ -1,5 +1,5 @@
 import argparse
-from libs.libpsb import BaseTest
+from libs.libpsb import BaseTest, info_list
 from libs.zefir import UploaderZC
 import pandas as pd
 from os import path
@@ -88,14 +88,11 @@ parser.add_argument('-pack', '--package',
                     help='test package',
                     dest='PACKAGE')
 
-parser.add_argument('-sn', '--stand-num',
+parser.add_argument('-tcv', '--test-cycle-version',
                     action='store',
-                    choices=['1',
-                             '3',
-                             '4'],
                     required=True,
-                    help='stand num',
-                    dest='STAND')
+                    help='test-cycle-version',
+                    dest='TCV')
 
 args = parser.parse_args()
 
@@ -113,14 +110,20 @@ def dates_prepare():
 
     return data
 
+
+uzs = UploaderZC(folder_tree_id=args.FTI,
+                test_cycle_name=args.TCYC,
+                test_case_name=args.TCAS,
+                basic_auth=args.BA,
+                test_cycle_version=args.TCV,
+                token=args.TOKEN,
+                username=args.USER,
+                grade_stand=args.STAND,
+                conf_space=args.SPACE,
+                conf_parent_page=args.PPAGE,
+                conf_new_page_name=args.NPAGE,
+                package=args.PACKAGE)
 if args.SF == 'begin':
-    uzs = UploaderZC(folder_tree_id=args.FTI,
-                    test_cycle_name=args.TCYC,
-                    test_case_name=args.TCAS,
-                    basic_auth=args.BA,
-                    test_cycle_version=args.TCV,
-                    token=args.TOKEN,
-                    username=args.USER)
     uzs.upload_test_cycle_status('progress')
 
 
@@ -139,13 +142,9 @@ else:
 
 
 if args.SF == 'end':
-    uzs.conf_space = args.SPACE
-    uzs.conf_parent_page = args.PPAGE
-    uzs.conf_new_page_name = args.NPAGE
-    uzs.grade_stand = args.STAND
-    uzs.package = args.PACKAGE
     uzs.public = True
     uzs.kernel_check = True
+    info_list()
     if test.check_conditions():
         uzs.upload_test_cycle_status(zefir_status='pass')
     else:

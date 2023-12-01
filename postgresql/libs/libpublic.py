@@ -99,8 +99,9 @@ class Public:
         if self.kernel_check:
             with open(f'{REPORT_PATH}/kernel_check.html', 'r') as file:
                 kernel_table = file.read()
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
 
-            html_page = '\n'.join([header_table, kernel_table])
+            html_page = '\n'.join([header_table, head_row, kernel_table])
         else:
             rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:

@@ -1783,7 +1783,7 @@ function updateInfo() {
       type: 'get',
       dataType: 'json',
       success: function(data) {
-          [1, 2, 3, 4].forEach((standNum) => {
+          [1, 2, 3, 4, 5].forEach((standNum) => {
               $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
               if (prevStatusGifs[standNum-1] !== data['status_gif_stand' + standNum]) {
                   $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);

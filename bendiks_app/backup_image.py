@@ -653,9 +653,9 @@ def db_kernel_changer(cpu_count, position=None):
 
     if position == 'begin':
         create_remote_file('/home/u/git/stress_test/bendiks_app/starter.sh', '/home/u/starter.sh')
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} kernel')
     else: 
-        send_remote_command(f'sudo python3 /home/u/git/stress_test/{branch}/run.py -n {dates_name}')
+        send_remote_command(f'sudo python3 /home/u/git/stress_test/{branch}/run.py -n {dates_name} -kn kernel')
         
     write_status(done)    
 

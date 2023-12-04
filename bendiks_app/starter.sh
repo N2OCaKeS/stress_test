@@ -26,5 +26,10 @@ git checkout $1
 #Настраиваем окружение и запускаем тест
 cd $1
 bash prepare.sh
-python3 run.py -n $2
+
+if [ $3 == "kernel" ]; then
+    python3 run.py -n $2 -kn $3
+else
+    python3 run.py -n $2
+fi
 

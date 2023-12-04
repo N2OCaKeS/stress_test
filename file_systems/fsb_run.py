@@ -12,7 +12,7 @@ import subprocess
 from sys import exit
 from time import sleep, time, strftime, gmtime, ctime
 from os import getuid, path, mkdir
-from fabric import Connection
+#from fabric import Connection
 from libs.libfsb import astra_version, upload_results_to_ftp
 from libs.zefir import UploaderZC
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
@@ -192,19 +192,19 @@ def cmd(command):
                    stderr=subprocess.DEVNULL)
 
 
-def host_is_available(node):
-    try:
-        if args.VIRTUAL:  # вирт. стенд
-            with Connection(host='127.0.0.1',
-                            port=HOSTS[node]['port'],
-                            user=USER,
-                            connect_kwargs={"password": PASSWORD}) as node_client:
-                if str(node_client.run('uptime')):
-                    return True
-        else:
-            pass
-    except Exception:
-        return False
+# def host_is_available(node):
+#     try:
+#         if args.VIRTUAL:  # вирт. стенд
+#             with Connection(host='127.0.0.1',
+#                             port=HOSTS[node]['port'],
+#                             user=USER,
+#                             connect_kwargs={"password": PASSWORD}) as node_client:
+#                 if str(node_client.run('uptime')):
+#                     return True
+#         else:
+#             pass
+#     except Exception:
+#         return False
 
 
 start_time = time()

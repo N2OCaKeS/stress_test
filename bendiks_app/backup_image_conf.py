@@ -210,6 +210,7 @@ parent_page_list = {
     '1.7.3':{'postgresql':'PostgreSQL',
              'postgresql-sm':'PostgreSQL',
              'psql parsec':'PostgreSQL',
+             'psql kernels':'PostgreSQL',
              'psql vanilla':'PostgreSQL',
              'postgresql-aud-off':'PostgreSQL',
              'tantor vanilla':'PostgreSQL',

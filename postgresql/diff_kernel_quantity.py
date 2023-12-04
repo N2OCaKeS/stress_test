@@ -13,7 +13,7 @@ parser.add_argument('-q',
                     help='kernels quantity',
                     dest='KERNELS_QUANTITY')
 
-parser.add_argument('-st',
+parser.add_argument('-sn',
                     action='store',
                     required=True,
                     help='stand number',

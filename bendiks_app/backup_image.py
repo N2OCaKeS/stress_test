@@ -253,6 +253,33 @@ logging.basicConfig(
 logging.error('\n\n\nStart logging\n')
 logging.error(f'{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}\n\n\n')
 
+
+class GrubCommand:
+    def __init__(self,
+                 hostname=stand_ip,
+                 username=user,
+                 password=password,
+                 port=port
+                 ):
+        
+        self.hostname = hostname
+        self.username = username
+        self.password = password
+        self.port = port
+
+
+    def ex_command(self, grubcommand):
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=self.hostname, username=self.username, password=self.password, port=self.port)
+        stdin, stdout, stderr = client.exec_command(grubcommand)
+        data_out = stdout.read().decode('utf-8') 
+        data_err = stderr.read().decode('utf-8')
+        logging.error(data_err)
+        client.close()
+        return data_out
+
+
 #@pysnooper.snoop()
 #def main():
 with open(f'conf/actual_log_path_{args.STAND}.conf', 'w') as w:
@@ -727,28 +754,5 @@ with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
 
 
 
-class GrubCommand:
-    def __init__(self,
-                 hostname=stand_ip,
-                 username=user,
-                 password=password,
-                 port=port
-                 ):
-        
-        self.hostname = hostname
-        self.username = username
-        self.password = password
-        self.port = port
 
-
-    def ex_command(self, grubcommand):
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(hostname=self.hostname, username=self.username, password=self.password, port=self.port)
-        stdin, stdout, stderr = client.exec_command(grubcommand)
-        data_out = stdout.read().decode('utf-8') 
-        data_err = stderr.read().decode('utf-8')
-        logging.error(data_err)
-        client.close()
-        return data_out
     

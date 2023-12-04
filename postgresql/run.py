@@ -13,6 +13,12 @@ parser.add_argument('-n',
                     help='dates name',
                     dest='NAME')
 
+parser.add_argument('-kn',
+                    action='store',
+                    required=False,
+                    help='kernel mode',
+                    dest='KERNEL')
+
 args = parser.parse_args()
 
 if not path.isdir(REPORT_PATH):

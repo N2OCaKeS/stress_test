@@ -134,6 +134,14 @@ parser.add_argument('-psql-vanilla',
                     help='testlist',
                     dest='PSQL_VANILLA')
 
+parser.add_argument('-db-kernels',
+                    action='store',
+                    choices=['psql',
+                             'tantor'],
+                    required=False,
+                    help='testlist',
+                    dest='DB_KERNELS')
+
 parser.add_argument('-ovf',
                     action='store',
                     required=False,
@@ -591,6 +599,41 @@ def send_remote_command_ansible(command):
 #             logging.error(err_output)
 #     ssh.close()
 
+def db_kernel_changer(cpu_count, position=None):
+    grub = GrubCommand()
+    set_count = f'''sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT=.*\)"/\\1 maxcpus={cpu_count}"/' /etc/default/grub'''
+    update = 'sudo update-grub'
+    test_args = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+                   {sn} {fti} {tcyc} {tcas} {ba} {tcv} {pack_sql} -q {cpu_count}'
+    begin_args = test_args + ' -sf begin'
+    end_args = test_args + ' -sf end'
+
+    if position == 'begin':
+        dates = begin_args
+    elif position == 'end':
+        dates = end_args
+    else: dates = test_args
+    
+    with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
+        w.write(dates)
+    
+    grub.ex_command(set_count)
+    grub.ex_command(update)
+    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
+    socket_available()
+    create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
+
+    if position == 'begin':
+        create_remote_file('/home/u/git/stress_test/bendiks_app/starter.sh', '/home/u/starter.sh')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
+    else: 
+        send_remote_command(f'sudo python3 /home/u/stress_test/{branch}/run.py -n {dates_name}')
+        
+    write_status(done)    
+
+
+
 with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Запущен')
 write_status(in_prog)
@@ -669,6 +712,10 @@ if read_status() == success:
                             TCV=args.RELEASE, 
                             status='pass')
         write_status(done)
+    elif args.DB_KERNELS == 'psql':
+        db_kernel_changer(4, position='begin')
+        db_kernel_changer(6)
+        db_kernel_changer(8, position='end')
     else:    
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
         write_status(done)
@@ -677,3 +724,31 @@ with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Готово')
 
 #main()
+
+
+
+class GrubCommand:
+    def __init__(self,
+                 hostname=stand_ip,
+                 username=user,
+                 password=password,
+                 port=port
+                 ):
+        
+        self.hostname = hostname
+        self.username = username
+        self.password = password
+        self.port = port
+
+
+    def ex_command(self, grubcommand):
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=self.hostname, username=self.username, password=self.password, port=self.port)
+        stdin, stdout, stderr = client.exec_command(grubcommand)
+        data_out = stdout.read().decode('utf-8') 
+        data_err = stderr.read().decode('utf-8')
+        logging.error(data_err)
+        client.close()
+        return data_out
+    

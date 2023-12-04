@@ -294,6 +294,7 @@ branches = {
     'file system benchmark. EXT4':'file_systems',
     'file system benchmark. XFS':'file_systems',
     'postgresql benchmark':'postgresql',
+    'postgresql benchmark kernels':'postgresql',
     'postgresql benchmark parsec':'postgresql',
     'postgresql benchmark vanilla':'postgresql',
     'postgresql benchmark smol':'postgresql',
@@ -352,6 +353,7 @@ tests = {
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
+    'postgresql benchmark kernels':'psql kernels',
     'postgresql benchmark parsec':'psql parsec',
     'postgresql benchmark vanilla':'psql vanilla',
     'postgresql benchmark smol':'postgresql-sm',
@@ -392,7 +394,8 @@ psyc = {
 #Основной перечень тестов
 #################################################################################################################################################
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
-              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla']
+              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
+              'psql kernels']
 
 
 
@@ -462,7 +465,7 @@ releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4',
 
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
-testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla']
+testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels']
 testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
 
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
@@ -473,6 +476,7 @@ test_run_stands = [f'stand{x}' for x in range(3, 5, 1)]
 test_run_modes = ['orel', 'smolensk']
 tests_case_zefir_key = {
     'postgresql':'BT-T7555',
+    'psql kernels':'BT-T13230',
     'postgresql-aud-off':'BT-T9169',
     'postgresql-sm':'BT-T9106',
     'psql parsec':'BT-T9638',

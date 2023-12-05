@@ -171,6 +171,7 @@ parent_page_list = {
             },
     '1.7.5':{'postgresql':'1.7.5 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.5 ⬝ PostgreSQL',
+             'psql kernels':'1.7.5 ⬝ PostgreSQL',
              'psql parsec':'1.7.5 ⬝ PostgreSQL',
              'psql vanilla':'1.7.5 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.5 ⬝ PostgreSQL',

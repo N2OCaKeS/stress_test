@@ -245,6 +245,11 @@ class BaseTest:
     def test_run(self, clients, repeat):
         repeat_list = [str(clients) for i in range(repeat)]
         repeat_str = ' '.join(repeat_list)
+
+        if path.isfile('result_testing.txt'):
+            remove('result_testing.txt')
+        if path.isfile('test/pgbench_result.txt'):
+            remove('test/pgbench_result.txt')
         
         #Создание и настройка БД
         if self.prepare:

@@ -740,9 +740,10 @@ if read_status() == success:
                             status='pass')
         write_status(done)
     elif args.DB_KERNELS == 'psql':
-        db_kernel_changer(4, position='begin')
-        db_kernel_changer(6)
-        db_kernel_changer(8, position='end')
+        db_kernel_changer(8, position='begin')
+        db_kernel_changer(16)
+        db_kernel_changer(24)
+        db_kernel_changer(32, position='end')
     else:    
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
         write_status(done)

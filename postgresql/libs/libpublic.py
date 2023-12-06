@@ -79,21 +79,33 @@ class Public:
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:
             info_lst = info.read().split('\n')
-        with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
-            header_table_temp = file.read()
-            header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],
-                                                    package_name=self.package,
-                                                    package_vers=info_lst[2],
-                                                    param_scale=str(DEFAULT_SCALE_FACTOR),
-                                                    param_tr=str(DEFAULT_TRANSACTIONS),
-                                                    param_th=str(DEFAULT_THREADS),
-                                                    param_cl='{}-{}/{}'.format(CLIENTS, LIMITE_CLIENTS, CLIENTS_STEP),
-                                                    arm_num=self.stands[self.grade_stand]['grade'],
-                                                    arm_proc=self.stands[self.grade_stand]['cpu'],
-                                                    arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'],
-                                                    lead_time=info_lst[3])
+        if self.kernel_check:
+            with open('{}/header_table_template_kernel.html'.format(TEMPLATE_PATH), 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        package_name=self.package,
+                                                        package_vers=info_lst[2],
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
+        else:
+            with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        package_name=self.package,
+                                                        package_vers=info_lst[2],
+                                                        param_scale=str(DEFAULT_SCALE_FACTOR),
+                                                        param_tr=str(DEFAULT_TRANSACTIONS),
+                                                        param_th=str(DEFAULT_THREADS),
+                                                        param_cl='{}-{}/{}'.format(CLIENTS, LIMITE_CLIENTS, CLIENTS_STEP),
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'],
+                                                        lead_time=info_lst[3])
             
         #создание страницы отчета
         if self.kernel_check:

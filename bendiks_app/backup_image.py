@@ -631,25 +631,25 @@ def db_kernel_changer(cpu_count, database, position=None):
     set_count = f'''sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT=.*\)"/\\1 maxcpus={cpu_count}"/' /etc/default/grub'''
     update = 'sudo update-grub'
     test_args = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-                   {sn} {fti} {tcyc} {tcas} {ba} {tcv} {pack_sql} -q {cpu_count}'
+                   {sn} {fti} {tcyc} {tcas} {ba} {tcv} -q {cpu_count}'
     begin_args = test_args + ' -sf begin'
     end_args = test_args + ' -sf end'
 
     if position == 'begin':
         if database == 'tantor':
-            dates = begin_args + ' -db tantor'
+            dates = begin_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = begin_args
+            dates = begin_args + pack_sql
     elif position == 'end':
         if database == 'tantor':
-            dates = end_args + ' -db tantor'
+            dates = end_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = end_args
+            dates = end_args + pack_sql
     else:
         if database == 'tantor':
-            dates = test_args + ' -db tantor'
+            dates = test_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = test_args 
+            dates = test_args + pack_sql
     
     with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
         w.write(dates)

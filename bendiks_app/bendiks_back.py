@@ -228,6 +228,7 @@ try:
                         psql_aud_off = '-psql_aud off'
                         psql_vanilla = '-psql-vanilla pv'
                         tantor_vanilla = '-tantor-vanilla tv'
+                        tantor_kern = '-db-kernels tantor'
                         ram_ovf = '-ovf ram'
                         sd_ovf = '-ovf sd'
                         if tests[dates_list[i][1]] == 'auditd-p':
@@ -251,6 +252,9 @@ try:
                         elif tests[dates_list[i][1]] == 'psql kernels':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_kern}', shell=True)
+                        elif tests[dates_list[i][1]] == 'tantor kernels':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_kern}', shell=True)
                         elif tests[dates_list[i][1]] == 'tantor vanilla':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla}', shell=True)
@@ -304,6 +308,7 @@ try:
                     psql_aud_off = '-psql_aud off'
                     psql_vanilla = '-psql-vanilla pv'
                     tantor_vanilla = '-tantor-vanilla tv'
+                    tantor_kern = '-db-kernels tantor'
                     ram_ovf = '-ovf ram'
                     sd_ovf = '-ovf sd'
                     if tests[dates_list[i][1]] == 'auditd-p':
@@ -327,6 +332,9 @@ try:
                     elif tests[dates_list[i][1]] == 'psql kernels':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_kern}', shell=True)
+                    elif tests[dates_list[i][1]] == 'tantor kernels':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_kern}', shell=True)
                     elif tests[dates_list[i][1]] == 'tantor vanilla':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla}', shell=True)

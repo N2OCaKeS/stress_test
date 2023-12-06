@@ -626,7 +626,7 @@ def send_remote_command_ansible(command):
 #             logging.error(err_output)
 #     ssh.close()
 
-def db_kernel_changer(cpu_count, position=None):
+def db_kernel_changer(cpu_count, database, position=None):
     grub = GrubCommand()
     set_count = f'''sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT=.*\)"/\\1 maxcpus={cpu_count}"/' /etc/default/grub'''
     update = 'sudo update-grub'
@@ -636,10 +636,20 @@ def db_kernel_changer(cpu_count, position=None):
     end_args = test_args + ' -sf end'
 
     if position == 'begin':
-        dates = begin_args
+        if database == 'tantor':
+            dates = begin_args + ' -db tantor'
+        elif database == 'psql':
+            dates = begin_args
     elif position == 'end':
-        dates = end_args
-    else: dates = test_args
+        if database == 'tantor':
+            dates = end_args + ' -db tantor'
+        elif database == 'psql':
+            dates = end_args
+    else:
+        if database == 'tantor':
+            dates = test_args + ' -db tantor'
+        elif database == 'psql':
+            dates = test_args 
     
     with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
         w.write(dates)
@@ -739,11 +749,11 @@ if read_status() == success:
                             TCV=args.RELEASE, 
                             status='pass')
         write_status(done)
-    elif args.DB_KERNELS == 'psql':
-        db_kernel_changer(8, position='begin')
-        db_kernel_changer(16)
-        db_kernel_changer(24)
-        db_kernel_changer(32, position='end')
+    elif args.DB_KERNELS == 'psql' or args.DB_KERNELS == 'tantor':
+        db_kernel_changer(8, args.DB_KERNELS, position='begin')
+        db_kernel_changer(16, args.DB_KERNELS)
+        db_kernel_changer(24, args.DB_KERNELS)
+        db_kernel_changer(32, args.DB_KERNELS, position='end')
     else:    
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
         write_status(done)

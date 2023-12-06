@@ -1,5 +1,5 @@
 import argparse
-from libs.libpsb import BaseTest, info_list
+from libs.libpsb import BaseTest
 from libs.zefir import UploaderZC
 import pandas as pd
 from os import path
@@ -94,9 +94,18 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     help='test-cycle-version',
                     dest='TCV')
 
+parser.add_argument('-db',
+                    action='store',
+                    choices=['psql',
+                             'tantor'],
+                    required=False,
+                    default='psql',
+                    help='choice database',
+                    dest='DATABASE')
+
 args = parser.parse_args()
 
-test = BaseTest(database='psql',
+test = BaseTest(database=args.DATABASE,
                 storage_device='NVME',
                 stand_number=args.STAND,
                 file_name=file_name)
@@ -144,7 +153,7 @@ else:
 if args.SF == 'end':
     uzs.public = True
     uzs.kernel_check = True
-    info_list()
+    test.info_list()
     if test.check_conditions():
         uzs.upload_test_cycle_status(zefir_status='pass')
     else:

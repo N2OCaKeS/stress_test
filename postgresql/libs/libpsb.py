@@ -6,7 +6,7 @@ from os.path import exists
 from shutil import copy2
 import ftplib
 import requests
-from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME, INFO_FILENAME, PG_VERSION
+from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME, INFO_FILENAME, PG_VERSION, TANTOR_VERSION
 import pysnooper
 import numpy as np
 import pandas as pd
@@ -306,19 +306,30 @@ class BaseTest:
         return check_conditions
 
 
-def info_list():
-    if path.exists(INFO_FILENAME):
-        report = open(INFO_FILENAME, 'w')
-        report.close()
+    def info_list(self):
+        if path.exists(INFO_FILENAME):
+            report = open(INFO_FILENAME, 'w')
+            report.close()
 
-    info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
-                subprocess.run('uname -r',
-                            shell=True,
-                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
-                subprocess.run("dpkg -l postgresql-"+str(PG_VERSION)+" | awk '{print $3}' | tail -n1",
-                            shell=True,
-                            stdout=subprocess.PIPE).stdout.decode("utf-8"),
-                str('Err')]
+        if self.database == 'psql':
+            info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+                        subprocess.run('uname -r',
+                                        shell=True,
+                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                        subprocess.run("dpkg -l postgresql-"+str(PG_VERSION)+" | awk '{print $3}' | tail -n1",
+                                        shell=True,
+                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                        str('-')]
+        elif self.database == 'tantor':
+            info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
+                        subprocess.run('uname -r',
+                                        shell=True,
+                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                        subprocess.run("dpkg -l tantor-se-server-"+str(TANTOR_VERSION)+" | awk '{print $3}' | tail -n1",
+                                        shell=True,
+                                        stdout=subprocess.PIPE).stdout.decode("utf-8"),
+                        str('-')]
 
-    with open(INFO_FILENAME, 'a+') as info:
-        info.writelines(info_lst)
+        with open(INFO_FILENAME, 'a+') as info:
+            info.writelines(info_lst)
+

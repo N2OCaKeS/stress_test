@@ -639,17 +639,17 @@ def db_kernel_changer(cpu_count, database, position=None):
         if database == 'tantor':
             dates = begin_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = begin_args + pack_sql
+            dates = begin_args + f' {pack_sql}'
     elif position == 'end':
         if database == 'tantor':
             dates = end_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = end_args + pack_sql
+            dates = end_args + f' {pack_sql}'
     else:
         if database == 'tantor':
             dates = test_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = test_args + pack_sql
+            dates = test_args + f' {pack_sql}'
     
     with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
         w.write(dates)

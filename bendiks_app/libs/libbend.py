@@ -29,7 +29,9 @@ from backup_image_conf import (psyc,
                                test_run_stands,
                                rc_list,
                                releases_list,
-                               repo_path)
+                               repo_path,
+                               LowServer_group,
+                               MiddleServer_group)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -38,7 +40,8 @@ import threading
 #import asyncssh
 #import asyncpg
 
-
+ls_group = sorted(LowServer_group)
+ms_group = sorted(MiddleServer_group)
 main_options = sorted(main_tests)
 brest_options = sorted(brest_tests)
 
@@ -189,8 +192,15 @@ def info_collector(page, ajax=None):
             if not releas:
                 releas = 'Релиз не выбран'
             
-            with open(f'conf/{page}_tests_args.conf', 'w') as w:
-                w.write(str(tests))
+            if tests == '_LowServer group':
+                with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                    w.write(str(ls_group))
+            elif tests == '_MiddleServer group':
+                with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                    w.write(str(ms_group))
+            else:
+                with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                    w.write(str(tests))
         
         return 'index'
 

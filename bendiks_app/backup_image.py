@@ -226,6 +226,9 @@ elif args.TEST == 'EXT4 parsec' or args.TEST == 'XFS parsec':
 elif args.TEST == 'syslog-ng' or args.TEST == 'unix':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
+elif args.TEST == 'unix parsec':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} -p parsec'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

@@ -30,6 +30,7 @@ modes = {
 parent_page_list = {
     '1.8.0.1':{'postgresql':'1.8.0.1 ⬝ PostgreSQL',
              'psql parsec':'1.8.0.1 ⬝ PostgreSQL',
+             'psql kernels':'1.8.0.1 ⬝ PostgreSQL',
              'psql vanilla':'1.8.0.1 ⬝ PostgreSQL',
              'postgresql-sm':'1.8.0.1 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.8.0.1 ⬝ PostgreSQL',
@@ -46,10 +47,12 @@ parent_page_list = {
              'syslog-ng':'1.8.0.1 ⬝ Системные службы',
              'RAM-overflow':'1.8.0.1 ⬝ Системные службы',
              'SD-overflow':'1.8.0.1 ⬝ Системные службы',
-             'unix':'1.8.0.1 ⬝ UnixBench'
+             'unix':'1.8.0.1 ⬝ UnixBench',
+             'unix parsec':'1.8.0.1 ⬝ UnixBench'
             },
     '1.8.0':{'postgresql':'1.8.0 ⬝ PostgreSQL',
              'psql parsec':'1.8.0 ⬝ PostgreSQL',
+             'psql kernels':'1.8.0 ⬝ PostgreSQL',
              'psql vanilla':'1.8.0 ⬝ PostgreSQL',
              'postgresql-sm':'1.8.0 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.8.0 ⬝ PostgreSQL',
@@ -66,7 +69,8 @@ parent_page_list = {
              'syslog-ng':'1.8.0 ⬝ Системные службы',
              'RAM-overflow':'1.8.0 ⬝ Системные службы',
              'SD-overflow':'1.8.0 ⬝ Системные службы',
-             'unix':'1.8.0 ⬝ UnixBench'
+             'unix':'1.8.0 ⬝ UnixBench',
+             'unix parsec':'1.8.0 ⬝ UnixBench'
             },
     '1.7.5.UU.1.1':{'postgresql':'1.7.5.UU.1.1 ⬝ PostgreSQL',
                 'psql parsec':'1.7.5.UU.1.1 ⬝ PostgreSQL',
@@ -87,7 +91,8 @@ parent_page_list = {
                 'syslog-ng':'1.7.5.UU.1.1 ⬝ Системные службы',
                 'RAM-overflow':'1.7.5.UU.1.1 ⬝ Системные службы',
                 'SD-overflow':'1.7.5.UU.1.1 ⬝ Системные службы',
-                'unix':'1.7.5.UU.1.1 ⬝ UnixBench'
+                'unix':'1.7.5.UU.1.1 ⬝ UnixBench',
+                'unix parsec':'1.7.5.UU.1.1 ⬝ UnixBench'
             },
     '1.7.5.UU.1':{'postgresql':'1.7.5.UU.1 ⬝ PostgreSQL',
                 'psql parsec':'1.7.5.UU.1 ⬝ PostgreSQL',
@@ -108,7 +113,8 @@ parent_page_list = {
                 'syslog-ng':'1.7.5.UU.1 ⬝ Системные службы',
                 'RAM-overflow':'1.7.5.UU.1 ⬝ Системные службы',
                 'SD-overflow':'1.7.5.UU.1 ⬝ Системные службы',
-                'unix':'UnixBench'
+                'unix':'UnixBench',
+                'unix parsec':'UnixBench'
             },
     '1.7.5':{'postgresql':'1.7.5 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.5 ⬝ PostgreSQL',
@@ -129,14 +135,17 @@ parent_page_list = {
              'syslog-ng':'1.7.5 ⬝ Системные службы',
              'RAM-overflow':'1.7.5 ⬝ Системные службы',
              'SD-overflow':'1.7.5 ⬝ Системные службы',
-             'unix':'1.7.5 ⬝ UnixBench'
+             'unix':'1.7.5 ⬝ UnixBench',
+             'unix parsec':'1.7.5 ⬝ UnixBench'
             },
     '1.7.4.UU.1':{'postgresql':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.4.UU.1 ⬝ PostgreSQL',
+                  'psql kernels':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'psql parsec':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'psql vanilla':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'postgresql-aud-off':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'tantor vanilla':'1.7.4.UU.1 ⬝ PostgreSQL',
+                  'tantor kernels':'1.7.4.UU.1 ⬝ PostgreSQL',
                   'XFS':'1.7.4.UU.1 ⬝ Файловые системы',
                   'XFS parsec':'1.7.4.UU.1 ⬝ Файловые системы',
                   'NTFS':'1.7.4.UU.1 ⬝ Файловые системы',
@@ -148,14 +157,17 @@ parent_page_list = {
                   'syslog-ng':'1.7.4.UU.1 ⬝ Системные службы',
                   'RAM-overflow':'1.7.4.UU.1 ⬝ Системные службы',
                   'SD-overflow':'1.7.4.UU.1 ⬝ Системные службы',
-                  'unix':'1.7.4.UU.1 ⬝ UnixBench'
+                  'unix':'1.7.4.UU.1 ⬝ UnixBench',
+                  'unix parsec':'1.7.4.UU.1 ⬝ UnixBench'
                  },
     '1.7.4':{'postgresql':'PostgreSQL',
              'postgresql-sm':'PostgreSQL',
+             'psql kernels':'PostgreSQL',
              'psql parsec':'PostgreSQL',
              'psql vanilla':'PostgreSQL',
              'postgresql-aud-off':'PostgreSQL',
              'tantor vanilla':'PostgreSQL',
+             'tantor kernels':'PostgreSQL',
              'XFS':'Файловые системы',
              'XFS parsec':'Файловые системы',
              'NTFS':'Файловые системы',
@@ -167,14 +179,17 @@ parent_page_list = {
              'syslog-ng':'1.7.4 ⬝ Системные службы',
              'RAM-overflow':'1.7.4 ⬝ Системные службы',
              'SD-overflow':'1.7.4 ⬝ Системные службы',
-             'unix':'UnixBench'
+             'unix':'UnixBench',
+             'unix parsec':'UnixBench'
             },
     '1.7.2':{'postgresql':'1.7.2 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.2 ⬝ PostgreSQL',
+             'psql kernels':'1.7.2 ⬝ PostgreSQL',
              'psql parsec':'1.7.2 ⬝ PostgreSQL',
              'psql vanilla':'1.7.2 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.2 ⬝ PostgreSQL',
              'tantor vanilla':'1.7.2 ⬝ PostgreSQL',
+             'tantor kernels':'1.7.2 ⬝ PostgreSQL',
              'auditd-p':'1.7.2 ⬝ Системные службы',
              'auditd-f':'1.7.2 ⬝ Системные службы',
              'auditd-u':'1.7.2 ⬝ Системные службы',
@@ -186,7 +201,8 @@ parent_page_list = {
              'EXT4 parsec':'1.7.2 ⬝ Файловые системы',
              'RAM-overflow':'1.7.2 ⬝ Системные службы',
              'SD-overflow':'1.7.2 ⬝ Системные службы',
-             'unix':'1.7.2 ⬝ UnixBench'
+             'unix':'1.7.2 ⬝ UnixBench',
+             'unix parsec':'1.7.2 ⬝ UnixBench'
             },
     '1.7.3':{'postgresql':'PostgreSQL',
              'postgresql-sm':'PostgreSQL',
@@ -195,6 +211,7 @@ parent_page_list = {
              'psql vanilla':'PostgreSQL',
              'postgresql-aud-off':'PostgreSQL',
              'tantor vanilla':'PostgreSQL',
+             'tantor kernels':'PostgreSQL',
              'auditd-p':'1.7.3 ⬝ Системные службы',
              'auditd-f':'1.7.3 ⬝ Системные службы',
              'auditd-u':'1.7.3 ⬝ Системные службы',
@@ -206,7 +223,8 @@ parent_page_list = {
              'EXT4 parsec':'Файловые системы',
              'RAM-overflow':'1.7.3 ⬝ Системные службы',
              'SD-overflow':'1.7.3 ⬝ Системные службы',
-             'unix':'1.7.3 ⬝ UnixBench'
+             'unix':'1.7.3 ⬝ UnixBench',
+             'unix parsec':'1.7.3 ⬝ UnixBench'
             },
     '1.7.3.UU.2':{'XFS':'1.7.3.UU.2 ⬝ Файловые системы',
                   'XFS parsec':'1.7.3.UU.2 ⬝ Файловые системы',
@@ -215,17 +233,20 @@ parent_page_list = {
                   'EXT4 parsec':'1.7.3.UU.2 ⬝ Файловые системы',
                   'postgresql':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.3.UU.2 ⬝ PostgreSQL',
+                  'psql kernels':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'psql parsec':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'psql vanilla':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'postgresql-aud-off':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'tantor vanilla':'1.7.3.UU.2 ⬝ PostgreSQL',
+                  'tantor kernels':'1.7.3.UU.2 ⬝ PostgreSQL',
                   'auditd-p':'1.7.3.UU.2 ⬝ Системные службы',
                   'auditd-f':'1.7.3.UU.2 ⬝ Системные службы',
                   'auditd-u':'1.7.3.UU.2 ⬝ Системные службы',
                   'syslog-ng':'1.7.3.UU.2 ⬝ Системные службы',
                   'RAM-overflow':'1.7.3.UU.2 ⬝ Системные службы',
                   'SD-overflow':'1.7.3.UU.2 ⬝ Системные службы',
-                  'unix':'1.7.3.UU.2 ⬝ UnixBench'
+                  'unix':'1.7.3.UU.2 ⬝ UnixBench',
+                  'unix parsec':'1.7.3.UU.2 ⬝ UnixBench'
                  },
     '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',
                   'postgresql-sm':'1.7.3 UU1 ⬝ PostgreSQL',
@@ -251,10 +272,12 @@ parent_page_list = {
                  },
     '1.7.1':{'postgresql':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
              'postgresql-sm':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'psql kernels':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
              'psql parsec':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
              'psql vanilla':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
              'postgresql-aud-off':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
              'tantor vanilla':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
+             'tantor kernels':'1.7.1 ⬝ 1.7.1 ⬝ PostgreSQL',
              'XFS':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
              'XFS parsec':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
              'NTFS':'1.7.1 ⬝ 1.7.1 ⬝ Файловые системы',
@@ -266,7 +289,8 @@ parent_page_list = {
              'auditd-u':'1.7.1 ⬝ Системные службы',
              'RAM-overflow':'1.7.1 ⬝ Системные службы',
              'SD-overflow':'1.7.1 ⬝ Системные службы',
-             'unix':'1.7.1 ⬝ UnixBench'
+             'unix':'1.7.1 ⬝ UnixBench',
+             'unix parsec':'1.7.1 ⬝ UnixBench'
             }
 }
 

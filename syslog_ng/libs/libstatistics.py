@@ -121,6 +121,20 @@ class FileSystemStatistics:
             os.mkdir("statistics")
         if not "statistics_rc" in os.listdir():
             os.mkdir("statistics_rc")
+    
+    @staticmethod
+    def get_grade(stand):
+            if stand == "stand1":
+                grade = "Test-WorkStation"
+            elif stand == "stand2":
+                grade = "Test-WorkStation"
+            elif stand == "stand3":
+                grade = "LowServer"
+            elif stand == "stand4":
+                grade = "MiddleServer"
+            else:
+                grade = stand
+            return grade
 
     def get_list_required_pages(self):
         """
@@ -191,6 +205,7 @@ class FileSystemStatistics:
             stat_dir = "statistics"
 
         def build_main_dataframe(fs_type, data_fs, stand):
+            grage = self.get_grade(stand)
             columns = ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг', 'Рейтинг2']
             df = pd.DataFrame(data=data_fs, columns=columns)
 
@@ -201,13 +216,14 @@ class FileSystemStatistics:
             df = df.drop('Рейтинг2', axis=1)
             
             table = df.to_html(escape=False, index=False)
-            f_ext4 = open(f"{stat_dir}/fs_{fs_type}_{stand}_1.html", 'w')
-            f_ext4.writelines(f"<h2>Сводная таблица результатов тестирования {fs_type} {stand}</h2> {table}")
+            f_ext4 = open(f"{stat_dir}/fs_{fs_type}_{grage}_1.html", 'w')
+            f_ext4.writelines(f"<h2>Сводная таблица результатов тестирования {fs_type} {grage}</h2> {table}")
             f_ext4.close()
 
             return panda_series.tolist(), df['Релиз'] + '_' + df['Ядро']
         
         def build_mat_stat_dataframe(fs_type, data_fs, stand):
+            grage = self.get_grade(stand)
             min_znach = min(data_fs)
             max_znach = max(data_fs)
             mean = round(np.mean(data_fs), 3)
@@ -235,11 +251,12 @@ class FileSystemStatistics:
                 Строим вторую HTML таблицу
             """
             mat_stat_table_html = df_mat_stat.to_html(index=False)
-            new_file_html = open(f"{stat_dir}/fs_{fs_type}_{stand}_2.html", 'w')
-            new_file_html.write(f'<h2>Таблица основных статистических параметров {fs_type} {stand}</h2> {mat_stat_table_html}')
+            new_file_html = open(f"{stat_dir}/fs_{fs_type}_{grage}_2.html", 'w')
+            new_file_html.write(f'<h2>Таблица основных статистических параметров {fs_type} {grage}</h2> {mat_stat_table_html}')
             new_file_html.close()
 
         def build_graph(fs_type, stand, rating_fg, shcala_txt):
+            grage = self.get_grade(stand)
             colors = []
             
             for temp in rating_fg:
@@ -263,7 +280,7 @@ class FileSystemStatistics:
             ax.grid(False)
             # ax.set_xlabel("Порядковый номер теста")
             ax.set_ylabel("Значение рейтинга")
-            ax.set_title(f"{fs_type}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {stand}")
+            ax.set_title(f"{fs_type}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grage}")
             for i, val in enumerate(rating_fg):
                 try:
                     val = int(val)
@@ -274,9 +291,10 @@ class FileSystemStatistics:
             green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
             yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
             ax.legend(handles=[red_patch, green_patch, yellow_patch])
-            fig.savefig(f"{stat_dir}/fs_{fs_type}_{stand}_1.png")
+            fig.savefig(f"{stat_dir}/fs_{fs_type}_{grage}_1.png")
         
         def build_summary_graph(stand, rating1, rating2, shcala_txt):
+            grage = self.get_grade(stand)
             shcala_x = [x for x in range(1, len(shcala_txt) + 1, 1)]
             fig, ax = plt.subplots(figsize=(16, 9))
 
@@ -287,7 +305,7 @@ class FileSystemStatistics:
             else:
                 ax.set_ylim([0, max(rating2) + max(rating2) * 0.15])
             ax.set_xticks(shcala_x)
-            ax.set_title(f"EXT4 и EXT4 с PARSEC.\nСравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {stand}")
+            ax.set_title(f"EXT4 и EXT4 с PARSEC.\nСравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grage}")
             ax.set_ylabel("Значение рейтинга")
             plt.gca().set_xticklabels(shcala_txt, rotation=20, horizontalalignment='right')
             for i, val in enumerate(rating1):
@@ -305,10 +323,11 @@ class FileSystemStatistics:
                 if val != 0:
                     plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
             ax.legend(['EXT4', 'EXT4 with parsec'])
-            fig.savefig(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{stand}_a.png")
+            fig.savefig(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{grage}_a.png")
 
 
         def create_summary_table(fs_data=[], stand=None):
+            grage = self.get_grade(stand)
             columns = [
                     ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг_ext4', 'Рейтинг2_ext4'], 
                     ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг_ext4_parsec', 'Рейтинг2_ext4_parsec']
@@ -331,8 +350,8 @@ class FileSystemStatistics:
             df_merge= df_merge.drop(['Рейтинг2_ext4', "Рейтинг2_ext4_parsec"], axis=1)
 
             table = df_merge.to_html(escape=False, index=False)
-            file = open(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{stand}_a.html", 'w')
-            file.writelines(f"<h2>Сводная таблица результатов тестирования EXT4 и EXT4 с parsec {stand}</h2> {table}")
+            file = open(f"{stat_dir}/fs_EXT4_and_EXT4_with_parsec_{grage}_a.html", 'w')
+            file.writelines(f"<h2>Сводная таблица результатов тестирования EXT4 и EXT4 с parsec {grage}</h2> {table}")
             file.close()
             return rating.to_list(), rating_parsec.to_list(), df_merge['Релиз'] + '_' + df_merge['Ядро']
 

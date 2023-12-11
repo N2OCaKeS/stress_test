@@ -2,7 +2,7 @@ import subprocess
 
 
 def cmd(command):
-    return subprocess(command, shell=True)
+    return subprocess.run(command, shell=True)
 
 box_url = 'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json'
 box_name = 'smolensk-vanilla-gui/1.8.0.2'

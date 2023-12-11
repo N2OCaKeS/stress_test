@@ -192,10 +192,10 @@ def info_collector(page, ajax=None):
             if not releas:
                 releas = 'Релиз не выбран'
             
-            if tests == "['_LowServer group']":
+            if str(tests) == "['_LowServer group']":
                 with open(f'conf/{page}_tests_args.conf', 'w') as w:
                     w.write(str(ls_group))
-            elif tests == "['_MiddleServer group']":
+            elif str(tests) == "['_MiddleServer group']":
                 with open(f'conf/{page}_tests_args.conf', 'w') as w:
                     w.write(str(ms_group))
             else:

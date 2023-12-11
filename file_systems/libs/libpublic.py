@@ -135,7 +135,9 @@ class Public:
             cnp = '_'.join([release_version if release_version in rare_cnp[i] else rare_cnp[i] for i in range(len(rare_cnp))])
 
             self.preset_publish(self.c_pp, self.c_np)
+            print(f'1st page----- {self.c_pp, self.c_np}')
             self.preset_publish(cpp, cnp)
+            print(f'2nd page----- {cpp, cnp}')
 
         else:
             self.preset_publish(self.c_pp, self.c_np)

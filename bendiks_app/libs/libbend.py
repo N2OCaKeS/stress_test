@@ -31,7 +31,8 @@ from backup_image_conf import (psyc,
                                releases_list,
                                repo_path,
                                LowServer_group,
-                               MiddleServer_group)
+                               MiddleServer_group,
+                               group_tests)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -42,7 +43,7 @@ import threading
 
 ls_group = sorted(LowServer_group)
 ms_group = sorted(MiddleServer_group)
-main_options = sorted(main_tests)
+main_options = group_tests + sorted(main_tests)
 brest_options = sorted(brest_tests)
 
 #main_url = generate_random_string(60)

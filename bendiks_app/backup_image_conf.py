@@ -403,9 +403,10 @@ psyc = {
 #################################################################################################################################################
 #Основной перечень тестов
 #################################################################################################################################################
+group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
-              'psql kernels', 'tantor kernels', '_LowServer group', '_MiddleServer group', 'unix parsec']
+              'psql kernels', 'tantor kernels', 'unix parsec']
 
 
 

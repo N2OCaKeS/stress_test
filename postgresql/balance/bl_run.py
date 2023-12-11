@@ -9,6 +9,6 @@ box_name = 'smolensk-vanilla-gui/1.8.0.2'
 
 cmd('sudo bash bl_prepare.sh')
 cmd(f'vagrant box add {box_url} --force')
-cmd(f'UPDATE={box_name} vagrant up')
+cmd(f'UPDATE={box_name} vagrant up --provider=virtualbox')
 
 

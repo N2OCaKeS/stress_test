@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from bs4 import BeautifulSoup
 from atlassian import Confluence
+from functools import reduce
 
 
 class ConfluencePage:
@@ -485,13 +486,13 @@ class PSQLStatistics2:
     @staticmethod
     def get_grade(stand):
             if stand == "stand1":
-                grade = "low"
+                grade = "Test-WorkStation"
             elif stand == "stand2":
-                grade = "low"
+                grade = "Test-WorkStation"
             elif stand == "stand3":
-                grade = "middle"
+                grade = "LowServer"
             elif stand == "stand4":
-                grade = "high"
+                grade = "MiddleServer"
             else:
                 grade = stand
             return grade
@@ -827,7 +828,7 @@ class PSQLStatistics2:
                 # ax.set_xlabel("Порядковый номер теста")
                 ax.set_ylabel("Значение рейтинга")
                 grade = self.get_grade(key)
-                ax.set_title(f"PostgreSQL. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}")
+                ax.set_title(f"Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}\n{test_name}")
                 for i, val in enumerate(data_ratings.get("rating")):
                     try:
                         val = int(val)
@@ -849,7 +850,7 @@ class PSQLStatistics2:
                     if data_kernel.empty:
                         continue
                     grade = self.get_grade(list(data_kernel['Стенд'])[0])
-                    ax.set_title(f"PostgreSQL. Сводная диаграмма сравнения по ядрам.\n{grade}_{list(data_kernel['Стенд'])[0]} - {kernel}")
+                    ax.set_title(f"Сводная диаграмма сравнения по ядрам.\n{grade}_{list(data_kernel['Стенд'])[0]} - {kernel}\n{test_name}")
                     for i, val in enumerate(data_kernel['rating_2']):
                         try:
                             val = int(val)
@@ -857,7 +858,27 @@ class PSQLStatistics2:
                             pass
                         plt.text(i, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
                     fig.savefig(f"{stat_dir}/{test_name}_statistics_{list(data_kernel['Стенд'])[0]}_{kernel}.jpg")
-        
+            
+
+        def create_comparison_kernel_line_graph(temp_data_kernel, test_name):
+            dataframes = [p[0] for p in temp_data_kernel.values()]
+            merged_df = reduce(lambda left, right: pd.merge(left, right, on=["Релиз", "Стенд"], how='outer'), dataframes)
+            ratings_for_plt_graph = merged_df.iloc[::, 3::2]
+            fig, ax = plt.subplots(figsize=(12.8, 7.2))
+            ax.grid(True, alpha=.6)
+            ax.set_title(f"Линейная диаграмма сравнения по ядрам.\n{test_name}")
+            colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
+            for index in range(ratings_for_plt_graph.shape[1]):
+                ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
+            plt.legend(temp_data_kernel.keys())
+
+            # Lighten borders
+            plt.gca().spines["top"].set_alpha(.0)
+            plt.gca().spines["bottom"].set_alpha(.3)
+            plt.gca().spines["right"].set_alpha(.0)
+            plt.gca().spines["left"].set_alpha(.3)
+
+            plt.savefig(f"{stat_dir}/{test_name}_statistics_kernels_all.jpg")
 
         def create_comparison_kernel_and_stand_graph(temp_data_kernel, test_name):
             df_merged = pd.DataFrame()
@@ -994,7 +1015,8 @@ class PSQLStatistics2:
         create_summary_graph(merged_df=summ_df_orel_and_vanilla, legend=["Orel", "Vanilla"])
 
         create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
-        create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+        # create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+        create_comparison_kernel_line_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
 
 
     """
@@ -1139,7 +1161,11 @@ class PSQLStatistics2:
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 # kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                 #                                                 img_png=file))
-            if file.endswith("kernel.jpg"):
+            # if file.endswith("kernel.jpg"):
+            #     confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
+            #     lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
+            #                                                           img_png=file))
+            if file.endswith("kernels_all.jpg"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                                       img_png=file))

@@ -16,8 +16,10 @@ sudo apt install libqt5printsupport5 -y
 sudo apt install libsdl1.2debian -y
 sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb 
 sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
+sudo apt install psmisc -y
 sudo dpkg -i virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
-sudo apt install policykit-1
+sudo apt install pkexec -y
+sudo apt install policykit-1 -y
 sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
 
 #vagrant

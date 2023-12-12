@@ -9,6 +9,10 @@ ugroups=(\
   scanner astra-console astra-admin
 )
 
+db1="192.168.60.110"
+db2="192.168.60.111"
+db3="192.168.60.112"
+
 if id "$main_user" >/dev/null 2>&1; then
     echo "$main_user:$pass" | chpasswd 2>/dev/null
     chfn -f "" "$main_user"
@@ -19,11 +23,11 @@ else
 fi
 
 if [ "$1" = "db1" ]; then
-    ip="192.168.60.10"
+    ip=$db1
 elif [ "$1" = "db2" ]; then
-    ip="192.168.60.11"
+    ip=$db2
 elif [ "$1" = "db3" ]; then
-    ip="192.168.60.12"
+    ip=$db3
 fi
 
 cat << EOF > /etc/network/interfaces
@@ -34,5 +38,5 @@ iface eth1 inet static
     gateway 192.168.60.1
 EOF
 
-sudo ifdown eth1 && sudo ifup eth1
+sudo systemctl restart networking
 

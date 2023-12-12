@@ -16,8 +16,8 @@ def cmd(command):
     return subprocess.run(command, shell=True)
 
 def vm_port(vm_name):
-    bash_command = f"""sudo vboxmanage showvminfo {vm_name} | grep 'Rule' 
-                    | awk -F',' '{{for(i=1;i<=NF;i++) if ($i ~ /host port/) print $i}}' 
+    bash_command = f"""sudo vboxmanage showvminfo {vm_name} | grep 'Rule' \
+                    | awk -F',' '{{for(i=1;i<=NF;i++) if ($i ~ /host port/) print $i}}' \
                     | awk '{{print $NF}}'"""
     return check_output_command(bash_command)
 
@@ -41,6 +41,7 @@ cmd(f'UPDATE={box_name_174} vagrant up --provider=virtualbox')
 #Задать интерфейсу vboxnet0 ip адрес
 cmd('VBoxManage hostonlyif ipconfig vboxnet0 --ip 192.168.60.1')
 
-vm_ports = {name:vm_port(name) for name in VMs}
-print(vm_ports)
+vm_ports = {name:f'ssh u@localhost -p {vm_port(name)}' for name in VMs}
+for item in vm_ports.items():
+    print(item)
 

@@ -27,12 +27,12 @@ elif [ "$1" = "db3" ]; then
 fi
 
 cat << EOF > /etc/network/interfaces
-auto eth0 
-iface eth0 inet static
+auto eth1 
+iface eth1 inet static
     address $ip
     netmask 255.255.255.0
     gateway 192.168.60.1
 EOF
 
-sudo ifdown eth0 && sudo ifup eth0
+sudo ifdown eth1 && sudo ifup eth1
 

@@ -7,7 +7,7 @@ all:
       hosts:
         domain:
           ansible_host: 192.168.60.100
-          domain_name: dc_freeipa
+          domain_name: dcfreeipa
 
       children:
         web_servers:

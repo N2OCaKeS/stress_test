@@ -1,8 +1,8 @@
 - name: Create local virtual machines
   import_playbook: environments/local_vm.yml
 
-- name: Configure Brest VMs
-  import_playbook: environments/brest.yml
+#- name: Configure Brest VMs
+#  import_playbook: environments/brest.yml
 
 - name: Configure all machines
   hosts: all

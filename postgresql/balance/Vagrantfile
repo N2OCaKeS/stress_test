@@ -9,7 +9,7 @@ Vagrant.configure("2") do |config|
     { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "2" },
     { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "2" },
     { :name => "pgpool", :hostname => "pgpool.balance.rbt", :args => "pgpool", :cpus => "4" },
-    { :name => "dc_freeipa", :hostname => "dc_freeipa.balance.rbt", :args => "dc_freeipa", :cpus => "4" }
+    { :name => "dcfreeipa", :hostname => "dcfreeipa.balance.rbt", :args => "dcfreeipa", :cpus => "4" }
   ]
 
   vms.each do |vm|

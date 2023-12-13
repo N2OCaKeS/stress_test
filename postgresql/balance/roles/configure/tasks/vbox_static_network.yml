@@ -1,0 +1,73 @@
+- vars:
+    ansible_host: '{{ hostvars.localhost.vbox_temp_ip[inventory_hostname] }}'
+  block:
+    - name: Check if network-manager is available
+      command: |
+        nmcli
+      register: nmcli
+      changed_when: false
+      failed_when: false
+
+    - name: Configure static interface for virtualbox with network-manager
+      become: yes
+      block:
+        - name: Configure static network interface
+          shell: |
+            nmcli con mod "Проводное соединение 1" \
+                  ipv4.method manual ipv4.addresses {{ hostvars[inventory_hostname].true_ansible_host }}/24
+
+        - name: Restart static network interface
+          async: 10
+          poll: 0
+          command: |
+            nmcli device reapply eth0
+
+      when: nmcli.rc == 0
+
+    - name: Configure static interface for virtualbox directly
+      become: yes
+      block:
+        - name: Create interfaces.d
+          file:
+            path: /etc/network/interfaces.d/
+            state: directory
+
+        - name: Create static network interface config
+          blockinfile:
+            path: /etc/network/interfaces.d/eth0.cfg
+            create: yes
+            block: |
+              # The static network interface
+              allow-hotplug eth0
+              iface eth0 inet static
+                address {{ hostvars[inventory_hostname].true_ansible_host }}
+                netmask 24
+
+        - name: Restart static network interface
+          async: 10
+          poll: 0
+          shell: |
+            ifdown eth0; sleep 1; ifup eth0
+
+      when: nmcli.rc != 0
+
+- name: Set ansible_hosts
+  delegate_to: localhost
+  add_host:
+    hostname: '{{ item }}'
+    ansible_host: '{{ hostvars[item].true_ansible_host }}'
+  when: hostvars[item].true_ansible_host is defined
+  loop: '{{ groups.all }}'
+
+- name: Remove host from known for SSH
+  delegate_to: localhost
+  command: |
+    ssh-keygen -f "~/.ssh/known_hosts" -R {{ hostvars[inventory_hostname].true_ansible_host }}
+  register: res
+  changed_when: false
+  failed_when: 'res.rc != 0 and "exists" not in res.stderr'
+
+- name: Wait for SSH
+  wait_for_connection:
+    timeout: 900
+    sleep: 2

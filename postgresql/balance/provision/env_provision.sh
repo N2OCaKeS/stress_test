@@ -16,7 +16,7 @@ lbdb1="192.168.60.120"
 lbdb2="192.168.60.121"
 lbdb3="192.168.60.122"
 pgpool="192.168.60.130"
-dc_freeipa="192.168.60.100"
+dcfreeipa="192.168.60.100"
 
 if id "$main_user" >/dev/null 2>&1; then
     echo "$main_user:$pass" | chpasswd 2>/dev/null
@@ -41,8 +41,8 @@ elif [ "$1" = "lbdb3" ]; then
     ip=$lbdb3
 elif [ "$1" = "pgpool" ]; then
     ip=$pgpool
-elif [ "$1" = "dc_freeipa" ]; then
-    ip=$dc_freeipa
+elif [ "$1" = "dcfreeipa" ]; then
+    ip=$dcfreeipa
 fi
 
 cat << EOF > /etc/network/interfaces

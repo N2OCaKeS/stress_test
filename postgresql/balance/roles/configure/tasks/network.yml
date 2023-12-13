@@ -1,0 +1,40 @@
+- name: Configure static network interface for virtualbox VM
+  include_tasks: vbox_static_network.yml
+  when: >-
+    contrprimer.env == "virtualbox" and
+    hostvars.localhost.get('vbox_configure_static_net', {}).get(inventory_hostname, False)
+
+- name: Check internet connection and name resolution
+  command: |
+    ping -c 3 yandex.ru
+  register: ping_name
+  changed_when: ping_name.rc != 0
+  failed_when: false
+
+- name: Configure internet connection for local VM
+  include_tasks: local_vm_network.yml
+  when: 'ping_name.rc != 0 and contrprimer.env in ("qemu", "virtualbox")'
+
+# # TODO: Not so good. Maybe do something about it.
+- name: Configure name resolution for local VM
+  include_tasks: dns/local_vm.yml
+  when: contrprimer.env in ("qemu", "virtualbox")
+
+- name: Configure name resolution for Yandex Cloud
+  include_tasks: dns/yandex.yml
+  when: contrprimer.env == 'yandex'
+
+- name: Configure name resolution for Brest
+  include_tasks: dns/brest.yml
+  when: contrprimer.env == 'brest'
+# # #
+
+- name: Configure /etc/hosts
+  become: yes
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^{{ hostvars[inventory_hostname].ansible_host }}'
+    line: >
+      {{ hostvars[inventory_hostname].ansible_host }}
+      {{ hostvars[inventory_hostname].domain_name }}.{{ astra_domain }}
+      {{ hostvars[inventory_hostname].domain_name }}

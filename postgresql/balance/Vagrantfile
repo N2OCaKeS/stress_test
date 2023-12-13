@@ -5,9 +5,9 @@ Vagrant.configure("2") do |config|
     { :name => "database1", :hostname => "database1.balance.rbt", :args => "database1", :cpus => "2" },
     { :name => "database2", :hostname => "database2.balance.rbt", :args => "database2", :cpus => "2" },
     { :name => "database3", :hostname => "database3.balance.rbt", :args => "database3", :cpus => "2" },
-    { :name => "lb-db-1", :hostname => "lb-db-1.balance.rbt", :args => "lb-db-1", :cpus => "2" },
-    { :name => "lb-db-2", :hostname => "lb-db-2.balance.rbt", :args => "lb-db-2", :cpus => "2" },
-    { :name => "lb-db-3", :hostname => "lb-db-3.balance.rbt", :args => "lb-db-3", :cpus => "2" },
+    { :name => "lbdb1", :hostname => "lbdb1.balance.rbt", :args => "lbdb1", :cpus => "2" },
+    { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "2" },
+    { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "2" },
     { :name => "pgpool", :hostname => "pgpool.balance.rbt", :args => "pgpool", :cpus => "4" },
     { :name => "dc_freeipa", :hostname => "dc_freeipa.balance.rbt", :args => "dc_freeipa", :cpus => "4" }
   ]

@@ -36,15 +36,15 @@ all:
           hosts:
             lb_db:
               ansible_host: 192.168.60.120
-              domain_name: lb-db-1
+              domain_name: lbdb1
 
             lb_db_2:
               ansible_host: 192.168.60.121
-              domain_name: lb-db-2
+              domain_name: lbdb2
 
             lb_db_3:
               ansible_host: 192.168.60.122
-              domain_name: lb-db-3
+              domain_name: lbdb3
 
     clients:
       hosts:

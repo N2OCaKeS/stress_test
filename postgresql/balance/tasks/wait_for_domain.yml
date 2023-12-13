@@ -1,0 +1,17 @@
+- name: Check existing domain
+  delegate_to: domain
+  command: |
+    ipactl status
+  register: domain_exist
+  changed_when: domain_exist.rc != 0
+  failed_when: false
+
+- name: Wait for '{{ signal }}' signal
+  delegate_to: localhost
+  become: no
+  wait_for:
+    path: signals/{{ signal }}.txt
+    search_regex: "is ready"
+    timeout: 5000
+    delay: 1
+  when: domain_exist.rc != 0

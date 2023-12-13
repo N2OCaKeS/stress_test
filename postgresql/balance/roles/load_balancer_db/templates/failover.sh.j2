@@ -1,0 +1,79 @@
+#! /bin/bash
+
+# failover - Повышение standby ноды до master и перенастройка других standby нод на новый master
+
+#failover_command = 'failover.sh %m %H %R %r %d %h %p %D %M %P %N %S'
+# [1]  %m = new master node id
+# [2]  %H = new master node hostname
+# [3]  %R = new master database cluster path
+# [4]  %r = new master port number
+
+# [5]  %d = failed node id
+# [6]  %h = failed node host name
+# [7]  %p = failed node port number
+# [8]  %D = failed node database cluster path
+
+# [9]  %M = old master node id
+# [10] %P = old primary node id
+# [11] %N = old primary node hostname
+# [12] %S = old primary node port number
+
+#%d	DB node ID of the attached node
+#%h	Hostname of the attached node
+#%p	Port number of the attached node
+#%D	Database cluster directory of the attached node
+#%m	New master node ID
+#%H	Hostname of the new master node
+#%M	Old master node ID
+#%P	Old primary node ID
+#%r	Port number of the new master node
+#%R	Database cluster directory of the new master node
+#%N	Hostname of the old primary node (Pgpool-II 4.1 or after)
+#%S	Port number of the old primary node (Pgpool-II 4.1 or after)
+#%%	'%' character
+
+NEW_MASTER_ID=$1
+NEW_MASTER_HOST=$2
+NEW_MASTER_DATA=$3
+#NEW_MASTER_PORT=$4
+
+FAILED_NODE_ID=$5
+FAILED_HOST=$6
+#FAILED_PORT=$7
+#FAILED_DATA=$8
+
+OLD_MASTER_ID=${10}
+OLD_MASTER_HOST=${11}
+#OLD_MASTER_PORT=${12}
+
+SSHPASS="sshpass -p {{ ansible_ssh_pass }}"
+SSH="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m -o GlobalKnownHostsFile=/dev/null \
+     -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no {{ ansible_ssh_user }}@$NEW_MASTER_HOST"
+
+echo "!!! FAILOVER START !!!"
+echo "ВНИМАНИЕ: потеряна связь с $FAILED_HOST [id:$FAILED_NODE_ID]"
+echo "Старый ведущий сервер $OLD_MASTER_HOST [id:$OLD_MASTER_ID]"
+echo "Новый ведущий сервер $NEW_MASTER_HOST [id:$NEW_MASTER_ID]"
+
+# Если старый и новый ведущий сервер совпадают, значит отключилась второстепенная нода - ничего делать не нужно
+# Если старый и новый ведущий сервер отличаются, значит отключился мастер - нужно вызвать promote PostgreSQL
+if [ $OLD_MASTER_ID -ne $NEW_MASTER_ID ] && [ $NEW_MASTER_ID -ge 0 ]; then
+    echo "Повышение ожидающей ноды до мастера..."
+    $SSH sudo touch $NEW_MASTER_DATA/failover
+
+{% set databases = groups.databases | map('extract', hostvars, 'domain_name') | list %}
+    for node in {{ databases | product([astra_domain]) | map('join', '.') | join(' ') }} ; do
+        echo "Настраиваем ноду $node"
+        SSH_NODE="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m -o GlobalKnownHostsFile=/dev/null \
+                  -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no {{ ansible_ssh_user }}@$node"
+        # 'standby.signal' on $NEW_MASTER_HOST will be deleted by promotion to master
+        $SSH_NODE sudo sed -i "s/host=.*{{ astra_domain.split('.')[1] }}/host=$NEW_MASTER_HOST/" $NEW_MASTER_DATA/postgresql.auto.conf
+        if [ $node != $OLD_MASTER_HOST ] && [ $node != $NEW_MASTER_HOST ]; then
+          $SSH_NODE "sudo -u postgres psql -p {{ server.pg.port }} -c 'SELECT pg_reload_conf();'"
+        fi
+        # the lost previous master node needs to be brought up manually (pcp_recovery_node can do this, if host is alive)
+    done
+fi
+
+echo "!!! FAILOVER FINISH !!!"
+exit 0

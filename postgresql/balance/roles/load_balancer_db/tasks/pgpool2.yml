@@ -1,0 +1,148 @@
+- name: Set fail scripts path
+  set_fact:
+    fail_scripts_path: "{{ server.pg.load_balancing.fail_scripts_path.rstrip('/') }}"
+
+- name: Set config values
+  set_fact:
+    pgpool_conf:
+      # TODO: categorize settings with comments
+      - ['listen_addresses', '*']
+      - ['port', '{{ server.pg.port }}']
+      - ['enable_pool_hba', 'on']
+      - ['replicate_select', 'on']
+      - ['load_balance_mode', 'on']
+      - ['backend_clustering_mode', 'streaming_replication']
+      - ['health_check_user', "'{{ server.pg.load_balancing.health_check_user }}'"]
+      - ['sr_check_period', '3']
+      - ['sr_check_user', "'{{ server.pg.replication.user }}'"]
+      - ['sr_check_database', "'postgres'"]
+      - ['health_check_max_retries', '3']
+      - ['health_check_retry_delay', '5']
+      - ['connect_timeout', '30000']
+      - ['use_watchdog', 'on'] # necessary for delegate_ip
+      - ['arping_path', "'/usr/bin'"]
+      - ['arping_cmd', "'/usr/bin/sudo /usr/bin/arping -U $_IP_$ -w 1 -I eth0'"]
+      - ['pool_passwd', "'pool_passwd'"]
+      - ['failover_command', "'{{ fail_scripts_path }}/failover.sh %m %H %R %r %d %h %p %D %M %P %N %S'"]
+      - ['auto_failback', 'on']
+      - ['recovery_user', 'postgres']
+      - ['recovery_1st_stage_command', 'online_recovery']
+      - ['delegate_IP', "'{{ delegate_ip }}'"]
+      - ['log_error_verbosity', 'default']
+      - ['log_min_messages', 'warning']
+      - ['connection_cache', 'on']
+      - ['num_init_children', '32']
+      - ['max_pool', '4']
+      - ['reset_query_list', "'ABORT; DISCARD ALL;'"]
+      - ['pcp_listen_addresses ', "'*'"]
+      - ['failover_on_backend_shutdown ', 'off']
+      - ['detach_false_primary ', 'on']
+      - ['wd_remove_shutdown_nodes ', 'on']
+      - ['wd_lost_node_removal_timeout ', '120']
+
+- name: Stop pgpool2
+  service:
+    name: pgpool2
+    state: stopped
+
+# version 4.3.3
+- name: Configure pgpool.conf
+  block:
+    - name: Configure contrprimer
+      lineinfile:
+        path: /etc/pgpool2/pgpool.conf
+        regexp: '^{{ item.0 }}'
+        line: '{{ item.0 }} = {{ item.1 }}'
+        insertafter: '^#.*{{ item.0 }}.*\n'
+        firstmatch: yes
+      loop: '{{ pgpool_conf }}'
+
+    - name: Configure db nodes
+      blockinfile:
+        path: /etc/pgpool2/pgpool.conf
+        marker: '{mark}'
+        marker_begin: '# - Backend Connection Settings -'
+        marker_end: '# - Authentication -'
+        block: '{{ lookup("template", "pgpool2/db_nodes.conf.j2") }}'
+
+    - name: Configure heartbeat
+      blockinfile:
+        path: /etc/pgpool2/pgpool.conf
+        marker: '{mark}'
+        marker_begin: '# -- heartbeat mode --'
+        marker_end: '# -- query mode --'
+        block: '{{ lookup("template", "pgpool2/heartbeat.conf.j2") }}'
+
+    - name: Configure watchdog nodes
+      blockinfile:
+        path: /etc/pgpool2/pgpool.conf
+        marker: '{mark}'
+        marker_begin: '# - Watchdog communication Settings -'
+        marker_end: '# - Virtual IP control Setting -'
+        block: '{{ lookup("template", "pgpool2/wd_nodes.conf.j2") }}'
+
+- name: Configure pool_hba.conf
+  lineinfile:
+    path: /etc/pgpool2/pool_hba.conf
+    regexp: .*trust.*
+    state: absent
+
+- name: Configure pool_hba.conf
+  lineinfile:
+    path: /etc/pgpool2/pool_hba.conf
+    line: >-
+      host all all {{ hostvars[inventory_hostname].ansible_host }}/24 {{ item.0 }}
+    state: '{{ item.1 }}'
+  loop:
+    - ['trust', "{{ 'present' if debian_linux else 'absent' }}"]
+    - ['trust', "{{ 'absent' if debian_linux else 'present' }}"]  # TODO: change 'trust'
+
+- name: Configure pcp.conf
+  lineinfile:
+    path: /etc/pgpool2/pcp.conf
+    create: yes
+    line: '{{ domain.admin }}:{{ domain.admin_password | hash("md5") }}'
+
+- name: Create pgpool_node_id
+  lineinfile:
+    path: /etc/pgpool2/pgpool_node_id
+    create: yes
+    line: '{{ groups.load_balancers_db.index(inventory_hostname) }}'
+
+- name: Configure parsec privileges
+  lineinfile:
+    path: /usr/lib/systemd/system/pgpool2.service
+    insertafter: \[Service\]
+    regexp: ^CapabilitiesParsec
+    line: CapabilitiesParsec=PARSEC_CAP_PRIV_SOCK PARSEC_CAP_MAC_SOCK
+
+- name: Do not use pgpool_status file
+  lineinfile:
+    path: /usr/lib/systemd/system/pgpool2.service
+    regexp: 'ExecStart.*bin/pgpool.*'
+    line: ExecStart=/usr/sbin/pgpool -n --discard-status
+
+- name: Create folder for scripts
+  file:
+    path: '{{ fail_scripts_path }}'
+    state: directory
+    owner: postgres
+    group: postgres
+
+- name: Copy failover script
+  template:
+    src: 'failover.sh.j2'
+    dest: '{{ fail_scripts_path }}/failover.sh'
+    owner: postgres
+    group: postgres
+    mode: 'u=rwx,g=rx,o=rx'
+
+- name: Allow the postgres user to manipulate virtual ip
+  become: yes
+  community.general.sudoers:
+    name: allow-virtual-ip
+    user: postgres
+    nopassword: yes
+    commands:
+      - /sbin/ip
+      - /usr/bin/arping

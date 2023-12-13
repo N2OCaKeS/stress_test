@@ -1,0 +1,21 @@
+- name: List all networks
+  virt_net:
+    command: list_nets
+  register: all_networks
+
+- name: Remove virtual network
+  virt_net:
+    state: absent
+    name: astra-network
+  when: 'virtual_network.recreate and (virtual_network.name in all_networks.list_nets)'
+
+- name: Create virtual network
+  virt_net:
+    command: define
+    name: '{{ virtual_network.name }}'
+    xml: "{{ lookup('template', 'astra-network.xml.j2') }}"
+
+- name: Start virtual network
+  virt_net:
+    state: active
+    name: '{{ virtual_network.name }}'

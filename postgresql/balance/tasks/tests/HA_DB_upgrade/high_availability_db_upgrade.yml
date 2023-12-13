@@ -1,0 +1,165 @@
+- name: Cleanup
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove signals
+      file:
+        path: signals/
+        state: absent
+
+
+# TODO: delete when installation will be done from repository
+- name: Upload custom .deb files
+  hosts: databases
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Create dir
+      file:
+        path: /usr/share/custom_pg15_upgrade
+        state: directory
+
+    - name: Upload .deb file
+      synchronize:
+        src: '{{ playbook_dir }}/custom_pg15_upgrade'
+        dest: /usr/share
+        recursive: yes
+        archive: no
+        rsync_opts:
+          - "-L --include=*.deb"
+        use_ssh_args: yes
+
+
+- name: High availability database upgrade
+  hosts: '{{ groups.databases[-1] }}, {{ groups.load_balancers_db[0] }}'
+  strategy: free
+  gather_facts: no
+  vars_files: ../../../vars.yml
+  tasks:
+    - name: Continuous client connections
+      vars:
+        scale_factor: 1
+        virtual_domain_name: '{{ hostvars[groups.load_balancers_db.0].virtual_domain_name }}'
+      block:
+        # TODO: add authentication for pgpool
+
+        - name: Set permissions
+          postgresql_query:
+            login_host: '{{ virtual_domain_name }}.{{ astra_domain }}'
+            login_user: postgres
+            port: '{{ server.pg.port }}'
+            db: '{{ server.pg.db_name }}'
+            # query: GRANT ALL ON SCHEMA public TO {{ domain.user_template }}0  # ac_enable_grant_options is false by default
+            query: ALTER SCHEMA public OWNER TO {{ domain.user_template }}0
+
+        - name: Create testing script
+          become: yes
+          template:
+            src: clients.py.j2
+            dest: /usr/share/contrprimer/clients.py
+            mode: u=rwx,g=rx,o=rx
+
+        - name: Pgbench init
+          command: >-
+            pgbench -U {{ domain.user_template }}0 -h {{ virtual_domain_name }}.{{ astra_domain }}
+            -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} {{ server.pg.db_name }}
+
+        - name: Set signal that pgbench has started
+          vars:
+            signal: pgbench_started
+          import_tasks: '{{ playbook_dir }}/../../set_file_signal.yml'
+
+        - name: Start continuous client connections
+          shell: |
+            time python3 /usr/share/contrprimer/clients.py
+          register: pgbench_results
+      when: inventory_hostname == groups.databases[-1]
+
+
+    - name: Parallel database upgrade
+      block:
+        - name: Database nodes statuses
+          expect:
+            command: /usr/sbin/pcp_node_info -U {{ domain.admin }} -h {{ virtual_domain_name }}.{{ astra_domain }}
+            responses:
+              'Password:': '{{ domain.admin_password }}'
+              'Пароль:': '{{ domain.admin_password }}'
+          register: db_nodes
+          changed_when: false
+
+        - set_fact:
+            databases: "{{ groups.databases | map('extract', hostvars, 'domain_name') | list }}"
+            primary_db: "{{ (((db_nodes.stdout_lines | select('search', 'primary')).0 | split()).0 | split('.')).0 }}"
+        - set_fact:
+            primary_db_index: '{{ databases.index(primary_db) }}'
+
+        - name: Temporarily disable auto_failback
+          vars:
+            parameter: auto_failback
+            value: off
+          import_tasks: set_pgpool_param.yml
+
+        - name: Wait for pgbench start
+          vars:
+            signal: pgbench_started
+          import_tasks: '{{ playbook_dir }}/../../wait_for_file_signal.yml'
+        - name: Wait a few seconds more
+          wait_for:
+            timeout: 3
+
+        - debug: var=primary_db
+        - debug: var=primary_db_index
+
+        - name: Upgrade standby databases
+          vars:
+            db_index: '{{ item }}'
+          include_tasks: upgrade_standby.yml
+          loop: '{{ range(databases | length) | difference([primary_db_index | int]) }}'
+
+        - name: Promote new master with switchover
+          vars:
+            new_primary_db_index: '{{ (range(databases | length) | difference([primary_db_index | int])).0 }}'
+          expect:
+            command: >-
+              /usr/sbin/pcp_promote_node -v --switchover -U {{ domain.admin }}
+              -h {{ virtual_domain_name }}.{{ astra_domain }} {{ new_primary_db_index }}
+            responses:
+              'Password:': '{{ domain.admin_password }}'
+              'Пароль:': '{{ domain.admin_password }}'
+        - name: Wait a few seconds
+          wait_for:
+            timeout: 3
+
+        - name: Upgrade old primary node
+          vars:
+            db_index: '{{ primary_db_index }}'
+          import_tasks: upgrade_standby.yml
+
+        - name: Enable auto_failback
+          vars:
+            parameter: auto_failback
+            value: on
+          import_tasks: set_pgpool_param.yml
+      when: inventory_hostname == groups.load_balancers_db[0]
+
+
+    - name: Results
+      block:
+        - name: Manual "pgbench" results
+          debug:
+            var: pgbench_results.stdout
+
+        - name: Manual "pgbench" taken time
+          debug:
+            var: pgbench_results.stderr
+      when: inventory_hostname == groups.databases[-1]
+
+
+- name: Cleanup
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove signals
+      file:
+        path: signals/
+        state: absent

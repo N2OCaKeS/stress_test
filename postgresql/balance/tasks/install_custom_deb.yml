@@ -1,0 +1,39 @@
+# deb_name - название пакета
+# deb_packages - реальные имена файлов (пакетов) для установки (или "базовое" название, если нужно указать версию)
+# deb_version - версия пакетов, которая подставится к именам в deb_packages
+# no_purge - удалять ли пакеты перед установкой (не удалять, если True)
+
+- name: Install xz
+  apt:
+    name:
+      - xz-utils
+      - psmisc
+
+- name: Stop {{ deb_name }}
+  command: >-
+    killall {{ deb_name }}
+  failed_when: false
+
+- name: Purge {{ deb_name }}
+  shell: DEBIAN_FRONTEND=noninteractive dpkg --purge {{ deb_packages | join(' ') }}
+  register: res
+  failed_when: res.rc != 0 and 'не удаляется' not in res.stderr
+  when: no_purge is not defined
+
+- name: Upload .deb files
+  synchronize:
+    src: '{{ role_path }}/files/custom_{{ deb_name }}'
+    dest: /usr/share
+    recursive: yes
+    archive: no
+    rsync_opts:
+      - "-L --include=*.deb"
+    use_ssh_args: yes
+
+- name: Install custom {{ deb_name }}
+  vars:
+    dir: /usr/share/custom_{{ deb_name }}
+    ver: "{{ '_' + deb_version if deb_version is defined and deb_version != '' else '' }}"
+  command: >-
+    apt-get install -y --allow-downgrades 
+    {{ deb_packages | map('regex_replace', '^(.*)$', dir ~ '/\1' ~ ver ~ '.deb') | join(' ') }}

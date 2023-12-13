@@ -1,0 +1,76 @@
+import threading
+from random import choice, randint
+
+import psycopg2
+
+N_ACCOUNTS = 100000
+
+# # # Change parameters accordingly
+# Database connection parameters
+db_params = {
+    "dbname": "{{ server.pg.db_name }}",
+    "user": "{{ domain.user_template }}0",
+    "host": "{{ virtual_domain_name }}.{{ astra_domain }}",
+    "port": "{{ server.pg.port }}"
+}
+
+# Number of clients/threads to simulate
+num_clients = 5
+
+# Number of transactions per client
+num_transactions = 13500  # ~3-4 minutes
+
+scale_factor = 1
+# # #
+
+
+# SQL queries to execute
+queries = [
+    "SELECT abalance FROM pgbench_accounts WHERE aid = %s;",
+    "UPDATE pgbench_accounts SET abalance = abalance + %s WHERE aid = %s;",
+    "DELETE FROM pgbench_accounts WHERE aid = %s;"
+]
+
+# Dictionary to store the results
+results = {'success': 0, 'fail': 0}
+
+
+def run_pgbench():
+    global results
+    for _ in range(num_transactions):
+        try:
+            with psycopg2.connect(**db_params) as conn:
+                cur = conn.cursor()
+
+                query = choice(queries)
+                if query.startswith('UPDATE'):
+                    cur.execute(query, (randint(-5000, 5000), randint(1, N_ACCOUNTS * scale_factor)))
+                else:
+                    cur.execute(query, [randint(1, N_ACCOUNTS * scale_factor)])
+
+                conn.commit()
+                results['success'] += 1
+        except (psycopg2.InterfaceError, psycopg2.OperationalError):
+            results['fail'] += 1
+
+def main():
+    threads = []
+    for i in range(num_clients):
+        t = threading.Thread(target=run_pgbench)
+        threads.append(t)
+        t.start()
+
+    # Wait for all threads to finish
+    for t in threads:
+        t.join()
+
+    # Process and print results
+    all_queries = num_transactions * num_clients
+    print(f"Number of successful queries: {results['success']}")
+    print(f"Number of failed queries: {results['fail']}")
+    print(f"Percent of failed queries: {(results['fail'] / all_queries) * 100:.2f}% "
+          f"({results['fail']} / {all_queries})")
+
+
+if __name__ == '__main__':
+    main()

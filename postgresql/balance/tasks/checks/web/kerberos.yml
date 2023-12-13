@@ -1,0 +1,23 @@
+- name: Check load balancers status
+  hosts: load_balancers_web,web_servers
+  gather_facts: no
+  become: yes
+  tasks:
+    - block:
+        - name: Read http keytab
+          command: klist -kte /etc/apache2/http.keytab
+          register: http
+
+        - debug:
+            var: http.stdout_lines
+      when: inventory_hostname in groups.web_servers
+
+
+    - block:
+        - name: Read haproxy keytab
+          command: klist -kte /etc/haproxy/krb5.keytab
+          register: haproxy
+
+        - debug:
+            var: haproxy.stdout_lines
+      when: inventory_hostname in groups.load_balancers_web

@@ -1,0 +1,93 @@
+# db_index - index of standby database that needs to be upgraded
+# primary_index - index of primary database (needs to be converted to 'int')
+
+- delegate_to: '{{ groups.databases[db_index | int] }}'
+  block:
+    - debug: var=db_index
+
+    - block:
+        - name: Temporarily disable node from load balancing
+          vars:
+            parameter: backend_weight{{ db_index }}
+            value: 0
+          import_tasks: set_pgpool_param.yml
+
+        - name: Wait a few seconds
+          wait_for:
+            timeout: 10
+
+    - name: Get current database.{{ db_index }} version
+      command: |
+        /usr/lib/postgresql/{{ server.pg.version }}/bin/postgres --version
+      changed_when: false
+      register: db_version_old
+    - debug:
+        msg: 'Current database.{{ db_index }} version: {{ db_version_old.stdout }} {{ "-" * 50 }}'
+
+    - name: Detach database.{{ db_index }} from pgpool cluster
+      delegate_to: '{{ groups.load_balancers_db[0] }}'
+      expect:
+        command: |
+          /usr/sbin/pcp_detach_node -U {{ domain.admin }} -h {{ virtual_domain_name }}.{{ astra_domain }} {{ db_index }}
+        responses:
+          'Password:': '{{ domain.admin_password }}'
+          'Пароль:': '{{ domain.admin_password }}'
+    - name: Wait a few seconds
+      wait_for:
+        timeout: 3
+
+    - name: Stop database.{{ db_index }}
+      become: yes
+      command: |
+        pg_ctlcluster {{ server.pg.version }} {{ server.pg.db_name }} stop
+      failed_when: false
+
+    # TODO: change to installation from custom repository
+    - name: Install new custom postgresql-15
+      become: yes
+      shell: |
+        dpkg -i /usr/share/custom_pg15_upgrade/*.deb
+
+    - delegate_to: '{{ groups.load_balancers_db[0] }}'
+      block:
+#        - name: Enable verbose log on primary node
+#          delegate_to: '{{ groups.databases[primary_index | int] }}'
+#          become: yes
+#          become_user: postgres
+#          postgresql_set:
+#            port: '{{ server.pg.port }}'
+#            name: log_min_messages
+#            value: debug1
+
+        # Pgpool will start it with online_recovery script and won't disconnect clients
+        - name: Online recovery of database.{{ db_index }} to pgpool cluster
+          expect:
+            command: |
+              /usr/sbin/pcp_recovery_node -U {{ domain.admin }} -h {{ virtual_domain_name }}.{{ astra_domain }} {{ db_index }}
+            responses:
+              'Password:': '{{ domain.admin_password }}'
+              'Пароль:': '{{ domain.admin_password }}'
+
+#        - name: Disable verbose log on primary node
+#          delegate_to: '{{ groups.databases[primary_index | int] }}'
+#          become: yes
+#          become_user: postgres
+#          postgresql_set:
+#            port: '{{ server.pg.port }}'
+#            name: log_min_messages
+#            value: default
+
+    - name: Enable node load balancing
+      vars:
+        parameter: backend_weight{{ db_index }}
+        value: 1
+      import_tasks: set_pgpool_param.yml
+
+    - name: Get new database.{{ db_index }} version
+      command: |
+        /usr/lib/postgresql/{{ server.pg.version }}/bin/postgres --version
+      changed_when: false
+      register: db_version_new
+    - debug:
+        msg: 'New database.{{ db_index }} version: {{ db_version_new.stdout }} {{ "-" * 50 }}'
+

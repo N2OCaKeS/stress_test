@@ -26,17 +26,19 @@ box_url_18 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json'
 box_name_18 = 'smolensk-vanilla-gui/1.8.0.2'
 box_url_174 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json'
 box_name_174 = 'smolensk-vanilla-gui/1.7.4'
+box_url_175 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json'
+box_name_175 = 'smolensk-vanilla-gui/1.7.5'
 
-VMs = ['db1', 'db2', 'db3']
+VMs = ['database1', 'database2', 'database3', 'lb-db-1', 'lb-db-2', 'lb-db-1', 'pgpool', 'dc_freeipa']
 
 cmd('sudo bash bl_prepare.sh')
-cmd(f'vagrant box add {box_url_174} --force')
+cmd(f'vagrant box add {box_url_175} --force')
 
 #Создать интерфейс vboxnet0 в Vbox
 cmd('VBoxManage hostonlyif create')
 
 #Создать ВМ
-cmd(f'UPDATE={box_name_174} vagrant up --provider=virtualbox')
+cmd(f'UPDATE={box_name_175} vagrant up --provider=virtualbox')
 
 #Задать интерфейсу vboxnet0 ip адрес
 cmd('VBoxManage hostonlyif ipconfig vboxnet0 --ip 192.168.60.1')

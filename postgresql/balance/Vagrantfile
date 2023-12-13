@@ -2,9 +2,14 @@ Vagrant.configure("2") do |config|
   config.vm.box = ENV['UPDATE']
   
   vms = [
-    { :name => "db1", :hostname => "db1.balance.rbt", :script_args => "db1" },
-    { :name => "db2", :hostname => "db2.balance.rbt", :script_args => "db2" },
-    { :name => "db3", :hostname => "db3.balance.rbt", :script_args => "db3" }
+    { :name => "database1", :hostname => "database1.balance.rbt", :args => "database1", :cpus => "2" },
+    { :name => "database2", :hostname => "database2.balance.rbt", :args => "database2", :cpus => "2" },
+    { :name => "database3", :hostname => "database3.balance.rbt", :args => "database3", :cpus => "2" },
+    { :name => "lb-db-1", :hostname => "lb-db-1.balance.rbt", :args => "lb-db-1", :cpus => "2" },
+    { :name => "lb-db-2", :hostname => "lb-db-2.balance.rbt", :args => "lb-db-2", :cpus => "2" },
+    { :name => "lb-db-3", :hostname => "lb-db-3.balance.rbt", :args => "lb-db-3", :cpus => "2" },
+    { :name => "pgpool", :hostname => "pgpool.balance.rbt", :args => "pgpool", :cpus => "4" },
+    { :name => "dc_freeipa", :hostname => "dc_freeipa.balance.rbt", :args => "dc_freeipa", :cpus => "4" }
   ]
 
   vms.each do |vm|
@@ -14,13 +19,13 @@ Vagrant.configure("2") do |config|
         vb.check_guest_additions = false
         vb.name = vm[:name]
         vb.memory = "4096"
-        vb.cpus = "2"
+        vb.cpus = vm[:cpus]
         vb.customize ["modifyvm", :id, "--usb", "off"]
         vb.customize ["modifyvm", :id, "--usbehci", "off"]
         vb.customize ["modifyvm", :id, "--nic1", "nat"]
         vb.customize ["modifyvm", :id, "--nic2", "hostonly", "--hostonlyadapter2", "vboxnet0"]
       end
-      machine.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:script_args]]
+      machine.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args]]
     end
   end
 end

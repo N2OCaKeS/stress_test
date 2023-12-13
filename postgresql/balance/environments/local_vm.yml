@@ -1,0 +1,31 @@
+- name: Create local virtual machines
+  hosts: localhost
+  gather_facts: no
+  vars_files: ../vars.yml
+  tasks:
+    - block:
+        - name: Check if vm needs to be recreated
+          vars:
+            rv: "{{ groups.all | map('extract', hostvars, 'recreate_vm') }}"
+            rv_2: "{{ groups.all | map('extract', hostvars, '2_recreate_vm') }}"
+            rv_1: "{{ groups.all | map('extract', hostvars, '1_recreate_vm') }}"
+            rv_0: "{{ groups.all | map('extract', hostvars, '0_recreate_vm') }}"
+          set_fact:
+            recreate_vm: >
+              {{ dict(recreate_vm | default({})) | combine({item: rv_0[i] or rv_1[i] or rv_2[i] or rv[i]}) }}
+          loop: '{{ groups.all }}'
+          loop_control:
+            index_var: i
+
+        - name: Perform checks for virtualbox
+          include_tasks: tasks/virtualbox/checks.yml
+          when: contrprimer.env == 'virtualbox'
+
+        - name: Create virtual network
+          include_role:
+            name: virtual_network
+
+        - name: Create VMs
+          include_role:
+            name: create_vms
+      when: contrprimer.env in ('qemu', 'virtualbox')

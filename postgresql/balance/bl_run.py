@@ -32,13 +32,14 @@ VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'pgpool
 vbox_nat = 'QANetwork'
 
 cmd('sudo bash bl_prepare.sh')
-cmd(f'vagrant box add {box_url_175} --force')
 
 #Создать интерфейс vboxnet0 в Vbox
 #cmd('VBoxManage hostonlyif create')
 cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
+cmd('vboxmanage natnetwork list')
 
 #Создать ВМ
+cmd(f'vagrant box add {box_url_175} --force')
 cmd(f'UPDATE={box_name_175} vagrant up --provider=virtualbox')
 
 #Задать интерфейсу vboxnet0 ip адрес

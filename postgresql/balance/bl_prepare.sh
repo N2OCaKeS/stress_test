@@ -5,6 +5,7 @@ sudo apt update -y
 
 #ansible
 sudo apt-get install ansible -y
+sudo apt-get install sshpass -y
 
 #python
 sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2

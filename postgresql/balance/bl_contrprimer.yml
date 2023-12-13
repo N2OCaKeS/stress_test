@@ -1,15 +1,15 @@
-- name: Create local virtual machines
-  import_playbook: environments/local_vm.yml
+#- name: Create local virtual machines
+#  import_playbook: environments/local_vm.yml
 
 #- name: Configure Brest VMs
 #  import_playbook: environments/brest.yml
 
-- name: Configure all machines
-  hosts: all
-  gather_facts: no
-  vars_files: vars.yml
-  roles:
-    - configure
+#- name: Configure all machines
+#  hosts: all
+#  gather_facts: no
+#  vars_files: vars.yml
+#  roles:
+#    - configure
 
 - name: Cleanup
   hosts: localhost

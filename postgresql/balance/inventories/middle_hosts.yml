@@ -1,6 +1,7 @@
 all:
   vars:
     astra_domain: astra.domain
+     debian_linux: false
   children:
 
     servers:

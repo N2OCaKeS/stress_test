@@ -102,10 +102,10 @@ fi
 if [ "$2" = "network" ]; then
     sudo nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
     sudo nmcli connection modify "${net_name}" gw4 $vbox_gateway
-    sudo nmcli connection modify "${net_name}" ipv4.dns $dns
+    sudo nmcli connection modify "${net_name}" ipv4.dns "$dns"
 #    nmcli connection down "${net_name}"
 #    nmcli connection up "${net_name}"
-    sudo reboot
+#    sudo poweroff
 else
     if id "$main_user" >/dev/null 2>&1; then
         echo "$main_user:$pass" | chpasswd 2>/dev/null

@@ -1,5 +1,45 @@
 import subprocess
 import os
+from time import sleep
+
+
+box_url_18 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json'
+box_name_18 = 'smolensk-vanilla-gui/1.8.0.2'
+box_url_174 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json'
+box_name_174 = 'smolensk-vanilla-gui/1.7.4'
+box_url_175 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json'
+box_name_175 = 'smolensk-vanilla-gui/1.7.5'
+VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'pgpool', 'dcfreeipa']
+vbox_nat = 'QANetwork'
+vbox_nat_ip = '10.0.0.0'
+vbox_subnet_mask = '19'
+
+vm_dates = {
+        'database1':{'host-port':'2021',
+                     'ip':'10.0.0.11',
+                     'sshnum':''},
+        'database2':{'host-port':'2022',
+                     'ip':'10.0.0.12',
+                     'sshnum':'1'},
+        'database3':{'host-port':'2025',
+                     'ip':'10.0.0.13',
+                     'sshnum':'2'},
+        'lbdb1':{'host-port':'2024',
+                 'ip':'10.0.0.41',
+                 'sshnum':'3'},
+        'lbdb2':{'host-port':'2023',
+                 'ip':'10.0.0.42',
+                 'sshnum':'4'},
+        'lbdb3':{'host-port':'2026',
+                 'ip':'10.0.0.43',
+                 'sshnum':'5'},
+        'pgpool':{'host-port':'2027',
+                  'ip':'10.0.0.31',
+                  'sshnum':'6'},
+        'dcfreeipa':{'host-port':'2029',
+                     'ip':'10.0.0.10',
+                     'sshnum':'7'}
+}
 
 
 def check_output_command(command: str):
@@ -22,39 +62,49 @@ def vm_port(vm_name):
     return check_output_command(bash_command)
 
 def set_network(vm, nat_name):
-    cmd(f'vboxmanage modifyvm {vm} --nic1 natnetwork')
-    cmd(f'vboxmanage modifyvm {vm} --natnetwork1 {nat_name}')
+    try:
+        cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
+        if check_output_command("vboxmanage natnetwork list | grep Name | awk '{print$2}'") != vbox_nat:
+            cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "{vbox_nat_ip}/{vbox_subnet_mask}" --enable')
+        cmd(f'vboxmanage modifyvm {vm} --nic1 natnetwork')
+        cmd(f'vboxmanage modifyvm {vm} --natnetwork1 {nat_name}')
+        cmd(f'vboxmanage modifyvm "{vm}" --nic1 natnetwork --nat-network1 {nat_name}')
+        cmd(f'''vboxmanage natnetwork modify --netname {nat_name} --port-forward-4 \
+            "ssh{vm_dates[vm]['sshnum']}:tcp:[]:{vm_dates[vm]['host-port']}:[{vm_dates[vm]['ip']}]:22"''')
+        cmd(f'vboxmanage startvm {vm} --type headless')
+    except Exception as e:
+        print(f'Type:{str(type.__name__(e))},\nError: {str(e)}')
 
 def check_vm_list():
     return check_output_command('vboxmanage list vms')
 
 
-box_url_18 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json'
-box_name_18 = 'smolensk-vanilla-gui/1.8.0.2'
-box_url_174 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json'
-box_name_174 = 'smolensk-vanilla-gui/1.7.4'
-box_url_175 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json'
-box_name_175 = 'smolensk-vanilla-gui/1.7.5'
-VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'pgpool', 'dcfreeipa']
-vbox_nat = 'QANetwork'
 
 cmd('sudo bash bl_prepare.sh')
 
 #Создать интерфейс vboxnet0 в Vbox
 #cmd('VBoxManage hostonlyif create')
 
-
 #Создать ВМ
 cmd(f'vagrant box add {box_url_175} --force')
 cmd(f'UPDATE={box_name_175} BOX_URL={box_url_175} vagrant up --provider=virtualbox')
 
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
+#cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "{vbox_nat_ip}/{vbox_subnet_mask}" --enable')
 [set_network(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
 cmd('vboxmanage natnetwork list')
 #Задать интерфейсу vboxnet0 ip адрес
 #cmd('VBoxManage hostonlyif ipconfig vboxnet0 --ip 192.168.60.1')
 
 vm_ports = {name:f'ssh u@localhost -p {vm_port(name)}' for name in VMs}
+[cmd(f'ssh-keygen -R [127.0.0.1]:{port}') for port in vm_ports.keys()]
 for item in vm_ports.items():
     print(item)
+
+
+
+#sudo vboxmanage showvminfo database3
+#sudo vboxmanage startvm database3 --type headless
+#VBoxManage controlvm database3 poweroff
+#ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@localhost -p 2200
 

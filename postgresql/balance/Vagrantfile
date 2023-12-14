@@ -4,18 +4,19 @@ Vagrant.configure("2") do |config|
   
   vms = [
     { :name => "database1", :hostname => "database1.balance.rbt", :args => "database1", :cpus => "2", :port => "2021" },
-    { :name => "database2", :hostname => "database2.balance.rbt", :args => "database2", :cpus => "2", :port => "2022" },
-    { :name => "database3", :hostname => "database3.balance.rbt", :args => "database3", :cpus => "2", :port => "2023" },
-    { :name => "lbdb1", :hostname => "lbdb1.balance.rbt", :args => "lbdb1", :cpus => "2", :port => "2024" },
-    { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "2", :port => "2025" },
-    { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "2", :port => "2026" },
-    { :name => "pgpool", :hostname => "pgpool.balance.rbt", :args => "pgpool", :cpus => "4", :port => "2027" },
-    { :name => "dcfreeipa", :hostname => "dcfreeipa.balance.rbt", :args => "dcfreeipa", :cpus => "4", :port => "2028" }
+#    { :name => "database2", :hostname => "database2.balance.rbt", :args => "database2", :cpus => "2", :port => "2022" },
+#    { :name => "database3", :hostname => "database3.balance.rbt", :args => "database3", :cpus => "2", :port => "2023" },
+#    { :name => "lbdb1", :hostname => "lbdb1.balance.rbt", :args => "lbdb1", :cpus => "2", :port => "2024" },
+#    { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "2", :port => "2025" },
+#    { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "2", :port => "2026" },
+#    { :name => "pgpool", :hostname => "pgpool.balance.rbt", :args => "pgpool", :cpus => "4", :port => "2027" },
+#    { :name => "dcfreeipa", :hostname => "dcfreeipa.balance.rbt", :args => "dcfreeipa", :cpus => "4", :port => "2028" }
   ]
 
   vms.each do |vm|
     config.vm.define vm[:name] do |machine|
       machine.vm.hostname = vm[:hostname]
+#      machine.vm.network "forwarded_port", guest: 80, host: 2028
       machine.vm.provider "virtualbox" do |vb|
         vb.check_guest_additions = false
         vb.name = vm[:name]
@@ -34,7 +35,7 @@ Vagrant.configure("2") do |config|
       #  vb.customize ["modifyvm", :id, "--nic1", "natnetwork", "--nat-network1", "QANetwork"]
       #  vb.customize ["modifyvm", :id, "--natpf1", "guesthttp,tcp,,#{vm[:port]},,80"]
       #end
-      #machine.vm.provision "shell", path:"provision/env_provision.sh", args: "network"
+      machine.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args], "network"]
     end
   end
 end

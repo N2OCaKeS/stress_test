@@ -1,6 +1,9 @@
 #!/bin/bash
 
+set -vx
+
 main_user=u
+users63=(root u)
 pass=1
 
 # groups for 'u' user
@@ -40,14 +43,6 @@ declare -A lbdb3=(     [ip]=10.0.0.43 [server-port]=3431 [forward-port]=2026 [ma
 declare -A pgpool=(    [ip]=10.0.0.31 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0) 
 declare -A dcfreeipa=( [ip]=10.0.0.10 [server-port]=3434 [forward-port]=2029 [mac]=08:00:27:D3:CB:DD [net]=int0)
 
-if id "$main_user" >/dev/null 2>&1; then
-    echo "$main_user:$pass" | chpasswd 2>/dev/null
-    chfn -f "" "$main_user"
-    for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
-else
-    useradd -m $main_user -s /bin/bash && echo "$main_user:$pass" | chpasswd 2>/dev/null
-    for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
-fi
 
 # if [ "$1" = "database1" ]; then
 #     ip=$database1
@@ -104,11 +99,28 @@ elif [ "$1" = "dcfreeipa" ]; then
 fi
 
 
-if [ "$1" = "network" ]; then
-    nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
-    nmcli connection modify "${net_name}" gw4 $vbox_gateway
-    nmcli connection modify "${net_name}" ipv4.dns $dns
-    nmcli connection down "${net_name}"
-    nmcli connection up "${net_name}"
+if [ "$2" = "network" ]; then
+    sudo nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
+    sudo nmcli connection modify "${net_name}" gw4 $vbox_gateway
+    sudo nmcli connection modify "${net_name}" ipv4.dns $dns
+#    nmcli connection down "${net_name}"
+#    nmcli connection up "${net_name}"
+    sudo reboot
+else
+    if id "$main_user" >/dev/null 2>&1; then
+        echo "$main_user:$pass" | chpasswd 2>/dev/null
+        chfn -f "" "$main_user"
+        for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
+    else
+        useradd -m $main_user -s /bin/bash && echo "$main_user:$pass" | chpasswd 2>/dev/null
+        for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
+    fi
+
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+    echo "root:$pass" | chpasswd 2>/dev/null
+
+    for user in ${users63[*]}; do
+        pdpl-user $user -i 63
+    done
 fi
 

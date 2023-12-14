@@ -21,6 +21,13 @@ def vm_port(vm_name):
                     | awk '{{print $NF}}'"""
     return check_output_command(bash_command)
 
+def set_network(vm, nat_name):
+    cmd(f'vboxmanage modifyvm {vm} --nic1 natnetwork')
+    cmd(f'vboxmanage modifyvm {vm} --natnetwork1 {nat_name}')
+
+def check_vm_list():
+    return check_output_command('vboxmanage list vms')
+
 
 box_url_18 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json'
 box_name_18 = 'smolensk-vanilla-gui/1.8.0.2'
@@ -42,6 +49,7 @@ cmd(f'vagrant box add {box_url_175} --force')
 cmd(f'UPDATE={box_name_175} BOX_URL={box_url_175} vagrant up --provider=virtualbox')
 
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
+[set_network(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
 cmd('vboxmanage natnetwork list')
 #Задать интерфейсу vboxnet0 ip адрес
 #cmd('VBoxManage hostonlyif ipconfig vboxnet0 --ip 192.168.60.1')

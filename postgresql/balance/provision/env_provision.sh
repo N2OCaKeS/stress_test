@@ -96,11 +96,11 @@ elif [ "$1" = "dcfreeipa" ]; then
 fi
 
 
-
-nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
-nmcli connection modify "${net_name}" gw4 $vbox_gateway
-nmcli connection modify "${net_name}" ipv4.dns $dns
-nmcli connection down "${net_name}"
-nmcli connection up "${net_name}"
-
+if [ "$1" = "network" ]; then
+    nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
+    nmcli connection modify "${net_name}" gw4 $vbox_gateway
+    nmcli connection modify "${net_name}" ipv4.dns $dns
+    nmcli connection down "${net_name}"
+    nmcli connection up "${net_name}"
+fi
 

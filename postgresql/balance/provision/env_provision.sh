@@ -43,33 +43,6 @@ declare -A lbdb3=(     [ip]=10.0.0.43 [server-port]=3431 [forward-port]=2026 [ma
 declare -A pgpool=(    [ip]=10.0.0.31 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0) 
 declare -A dcfreeipa=( [ip]=10.0.0.10 [server-port]=3434 [forward-port]=2029 [mac]=08:00:27:D3:CB:DD [net]=int0)
 
-
-# if [ "$1" = "database1" ]; then
-#     ip=$database1
-# elif [ "$1" = "database2" ]; then
-#     ip=$database2
-# elif [ "$1" = "database3" ]; then
-#     ip=$database3
-# elif [ "$1" = "lbdb1" ]; then
-#     ip=$lbdb1
-# elif [ "$1" = "lbdb2" ]; then
-#     ip=$lbdb2
-# elif [ "$1" = "lbdb3" ]; then
-#     ip=$lbdb3
-# elif [ "$1" = "pgpool" ]; then
-#     ip=$pgpool
-# elif [ "$1" = "dcfreeipa" ]; then
-#     ip=$dcfreeipa
-# fi
-
-# cat << EOF > /etc/network/interfaces
-# auto eth1 
-# iface eth1 inet static
-#     address $ip
-#     netmask 255.255.255.0
-#     gateway 192.168.60.1
-# EOF
-
 # sudo systemctl restart networking
 
 if [ "$1" = "database1" ]; then
@@ -98,29 +71,24 @@ elif [ "$1" = "dcfreeipa" ]; then
     dns="${dcfreeipa_br[dns]}"
 fi
 
+sudo nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
+sudo nmcli connection modify "${net_name}" gw4 $vbox_gateway
+sudo nmcli connection modify "${net_name}" ipv4.dns "$dns"
 
-if [ "$2" = "network" ]; then
-    sudo nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
-    sudo nmcli connection modify "${net_name}" gw4 $vbox_gateway
-    sudo nmcli connection modify "${net_name}" ipv4.dns "$dns"
-#    nmcli connection down "${net_name}"
-#    nmcli connection up "${net_name}"
-#    sudo poweroff
+if id "$main_user" >/dev/null 2>&1; then
+    echo "$main_user:$pass" | chpasswd 2>/dev/null
+    chfn -f "" "$main_user"
+    for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
 else
-    if id "$main_user" >/dev/null 2>&1; then
-        echo "$main_user:$pass" | chpasswd 2>/dev/null
-        chfn -f "" "$main_user"
-        for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
-    else
-        useradd -m $main_user -s /bin/bash && echo "$main_user:$pass" | chpasswd 2>/dev/null
-        for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
-    fi
-
-    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-    echo "root:$pass" | chpasswd 2>/dev/null
-
-    for user in ${users63[*]}; do
-        pdpl-user $user -i 63
-    done
+    useradd -m $main_user -s /bin/bash && echo "$main_user:$pass" | chpasswd 2>/dev/null
+    for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
 fi
+
+sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+echo "root:$pass" | chpasswd 2>/dev/null
+
+for user in ${users63[*]}; do
+    pdpl-user $user -i 63
+done
+
 

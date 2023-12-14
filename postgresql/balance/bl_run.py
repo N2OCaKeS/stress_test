@@ -10,6 +10,7 @@ box_name_174 = 'smolensk-vanilla-gui/1.7.4'
 box_url_175 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json'
 box_name_175 = 'smolensk-vanilla-gui/1.7.5'
 VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'pgpool', 'dcfreeipa']
+no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 vbox_nat = 'QANetwork'
 vbox_nat_ip = '10.0.0.0'
 vbox_subnet_mask = '19'
@@ -79,25 +80,24 @@ def check_vm_list():
     return check_output_command('vboxmanage list vms')
 
 
-
+# # #Prepare
 cmd('sudo bash bl_prepare.sh')
 
-#Создать интерфейс vboxnet0 в Vbox
-#cmd('VBoxManage hostonlyif create')
-
-#Создать ВМ
+# # # Создать ВМ
 cmd(f'vagrant box add {box_url_175} --force')
 cmd(f'UPDATE={box_name_175} BOX_URL={box_url_175} vagrant up --provider=virtualbox')
 
+# # # Network set
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
-#cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "{vbox_nat_ip}/{vbox_subnet_mask}" --enable')
 [set_network(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
 cmd('vboxmanage natnetwork list')
-#Задать интерфейсу vboxnet0 ip адрес
-#cmd('VBoxManage hostonlyif ipconfig vboxnet0 --ip 192.168.60.1')
+cmd('vboxmanage list vms')
 
-vm_ports = {name:f'ssh u@localhost -p {vm_port(name)}' for name in VMs}
-[cmd(f'ssh-keygen -R [127.0.0.1]:{port}') for port in vm_ports.keys()]
+
+# # # SSH connect info
+#vm_ports = {name:f'ssh u@localhost -p {vm_port(name)}' for name in VMs}
+vm_ports = {name:f'sshpass -v -p 1 ssh {no_fprint} u@localhost -p {vm_dates[name]["host-port"]}' for name in VMs}
+#[cmd(f'ssh-keygen -R [127.0.0.1]:{port}') for port in vm_ports.keys()]
 for item in vm_ports.items():
     print(item)
 

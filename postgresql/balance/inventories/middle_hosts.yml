@@ -7,7 +7,8 @@ all:
     servers:
       hosts:
         domain:
-          ansible_host: 192.168.60.100
+          ansible_host: 127.0.0.1
+          ansible_port: 2029
           domain_name: dcfreeipa
 
       children:
@@ -19,32 +20,39 @@ all:
         databases:
           hosts:
             database:
-              ansible_host: 192.168.60.110
+              ansible_host: 127.0.0.1
+              ansible_port: 2021
               domain_name: database1
 
             database_2:
-              ansible_host: 192.168.60.111
+              ansible_host: 127.0.0.1
+              ansible_port: 2022
               domain_name: database2
 
             database_3:
-              ansible_host: 192.168.60.112
+              ansible_host: 127.0.0.1
+              ansible_port: 2025
               domain_name: database3
 
         load_balancers_db:
           vars:
             virtual_domain_name: pgpool
-            delegate_ip: 192.168.60.130
+            delegate_ip: 127.0.0.1
+            ansible_port: 2027
           hosts:
             lb_db:
-              ansible_host: 192.168.60.120
+              ansible_host: 127.0.0.1
+              ansible_port: 2024
               domain_name: lbdb1
 
             lb_db_2:
-              ansible_host: 192.168.60.121
+              ansible_host: 127.0.0.1
+              ansible_port: 2023
               domain_name: lbdb2
 
             lb_db_3:
-              ansible_host: 192.168.60.122
+              ansible_host: 127.0.0.1
+              ansible_port: 2026
               domain_name: lbdb3
 
     clients:

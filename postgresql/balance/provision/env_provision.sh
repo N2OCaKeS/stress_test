@@ -9,28 +9,36 @@ ugroups=(\
   scanner astra-console astra-admin
 )
 
-# database1="192.168.60.110"
-# database2="192.168.60.111"
-# database3="192.168.60.112"
-# lbdb1="192.168.60.120"
-# lbdb2="192.168.60.121"
-# lbdb3="192.168.60.122"
-# pgpool="192.168.60.130"
-# dcfreeipa="192.168.60.100"
 
+vbox_machines=(\
+  database1 database2 database3
+  lbdb1 lbdb2 lbdb3
+  pgpool dcfreeipa
+)
 
 net_name="Проводное соединение 1"
 vbox_subnet_mask=19
 vbox_gateway=10.0.0.1
+vbox_nat=QANetwork
+vbox_nat_ip=10.0.0.0
 
-declare -A database1=( [ip]=10.0.10.11 [domain]=database1.balance.rbt [host]=database1 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A database2=( [ip]=10.0.10.12 [domain]=database2.balance.rbt [host]=database2 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A database3=( [ip]=10.0.10.13 [domain]=database3.balance.rbt [host]=database3 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A lbdb1=( [ip]=10.0.10.21 [domain]=lbdb1.balance.rbt [host]=lbdb1 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A lbdb2=( [ip]=10.0.10.21 [domain]=lbdb2.balance.rbt [host]=lbdb2 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A lbdb3=( [ip]=10.0.10.21 [domain]=lbdb3.balance.rbt [host]=lbdb3 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A pgpool=( [ip]=10.0.10.31 [domain]=pgpool.balance.rbt [host]=pgpool [dns]="10.0.0.21, 8.8.8.8" )
-declare -A dcfreeipa=( [ip]=10.0.10.10 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.0.0.21, 8.8.8.8" )
+declare -A database1_br=( [ip]=10.0.0.11 [domain]=database1.balance.rbt [host]=database1 [dns]="10.0.0.21, 8.8.8.8" )
+declare -A database2_br=( [ip]=10.0.0.12 [domain]=database2.balance.rbt [host]=database2 [dns]="10.0.0.21, 8.8.8.8" )
+declare -A database3_br=( [ip]=10.0.0.13 [domain]=database3.balance.rbt [host]=database3 [dns]="10.0.0.21, 8.8.8.8" )
+declare -A lbdb1_br=( [ip]=10.0.0.41 [domain]=lbdb1.balance.rbt [host]=lbdb1 [dns]="10.0.0.21, 8.8.8.8" )
+declare -A lbdb2_br=( [ip]=10.0.0.42 [domain]=lbdb2.balance.rbt [host]=lbdb2 [dns]="10.0.0.21, 8.8.8.8" )
+declare -A lbdb3_br=( [ip]=10.0.0.43 [domain]=lbdb3.balance.rbt [host]=lbdb3 [dns]="10.0.0.21, 8.8.8.8" )
+declare -A pgpool_br=( [ip]=10.0.0.31 [domain]=pgpool.balance.rbt [host]=pgpool [dns]="10.0.0.21, 8.8.8.8" )
+declare -A dcfreeipa_br=( [ip]=10.0.0.10 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.0.0.21, 8.8.8.8" )
+
+declare -A database1=( [ip]=10.0.0.11 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0) 
+declare -A database2=( [ip]=10.0.0.12 [server-port]=3422 [forward-port]=2022 [mac]=08:00:27:64:AF:57 [net]=int0)
+declare -A database3=( [ip]=10.0.0.13 [server-port]=3423 [forward-port]=2025 [mac]=08:00:27:35:FB:4D [net]=int0)
+declare -A lbdb1=(     [ip]=10.0.0.41 [server-port]=3424 [forward-port]=2024 [mac]=08:00:27:93:D3:2B [net]=int0)
+declare -A lbdb2=(     [ip]=10.0.0.42 [server-port]=3425 [forward-port]=2023 [mac]=08:00:27:73:E5:1C [net]=int0)
+declare -A lbdb3=(     [ip]=10.0.0.43 [server-port]=3431 [forward-port]=2026 [mac]=08:00:27:15:29:EA [net]=int0)
+declare -A pgpool=(    [ip]=10.0.0.31 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0) 
+declare -A dcfreeipa=( [ip]=10.0.0.10 [server-port]=3434 [forward-port]=2029 [mac]=08:00:27:D3:CB:DD [net]=int0)
 
 if id "$main_user" >/dev/null 2>&1; then
     echo "$main_user:$pass" | chpasswd 2>/dev/null
@@ -70,29 +78,29 @@ fi
 # sudo systemctl restart networking
 
 if [ "$1" = "database1" ]; then
-    ip=${database1[ip]}
-    dns="${database1[dns]}"
+    ip=${database1_br[ip]}
+    dns="${database1_br[dns]}"
 elif [ "$1" = "database2" ]; then
-    ip=${database2[ip]}
-    dns="${database2[dns]}"
+    ip=${database2_br[ip]}
+    dns="${database2_br[dns]}"
 elif [ "$1" = "database3" ]; then
-    ip=${database3[ip]}
-    dns="${database3[dns]}"
+    ip=${database3_br[ip]}
+    dns="${database3_br[dns]}"
 elif [ "$1" = "lbdb1" ]; then
-    ip=${lbdb1[ip]}
-    dns="${lbdb1[dns]}"
+    ip=${lbdb1_br[ip]}
+    dns="${lbdb1_br[dns]}"
 elif [ "$1" = "lbdb2" ]; then
-    ip=${lbdb2[ip]}
-    dns="${lbdb2[dns]}"
+    ip=${lbdb2_br[ip]}
+    dns="${lbdb2_br[dns]}"
 elif [ "$1" = "lbdb3" ]; then
-    ip=${lbdb3[ip]}
-    dns="${lbdb3[dns]}"
+    ip=${lbdb3_br[ip]}
+    dns="${lbdb3_br[dns]}"
 elif [ "$1" = "pgpool" ]; then
-    ip=${pgpool[ip]}
-    dns="${pgpool[dns]}"
+    ip=${pgpool_br[ip]}
+    dns="${pgpool_br[dns]}"
 elif [ "$1" = "dcfreeipa" ]; then
-    ip=${dcfreeipa[ip]}
-    dns="${dcfreeipa[dns]}"
+    ip=${dcfreeipa_br[ip]}
+    dns="${dcfreeipa_br[dns]}"
 fi
 
 

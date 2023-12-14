@@ -35,13 +35,14 @@ cmd('sudo bash bl_prepare.sh')
 
 #Создать интерфейс vboxnet0 в Vbox
 #cmd('VBoxManage hostonlyif create')
-cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
-cmd('vboxmanage natnetwork list')
+
 
 #Создать ВМ
 cmd(f'vagrant box add {box_url_175} --force')
-cmd(f'UPDATE={box_name_175} vagrant up --provider=virtualbox')
+cmd(f'UPDATE={box_name_175} BOX_URL={box_url_175} vagrant up --provider=virtualbox')
 
+#cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
+cmd('vboxmanage natnetwork list')
 #Задать интерфейсу vboxnet0 ip адрес
 #cmd('VBoxManage hostonlyif ipconfig vboxnet0 --ip 192.168.60.1')
 

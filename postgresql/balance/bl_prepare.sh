@@ -32,7 +32,7 @@ wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/va
 sudo dpkg -i vagrant_2.2.19_x86_64.deb
 
 
-source "provision/env_provision.sh"
+#source "provision/env_provision.sh"
 
 # uid check
 #if test $(id -u) == 0; then
@@ -176,23 +176,23 @@ if test ! "$(groups | grep vboxusers)"; then
   exit 1
 fi
 
-# create NAT network for vbox
-if test ! "$(vboxmanage natnetwork list | grep $vbox_nat)"; then
-  vboxmanage natnetwork add --netname "$vbox_nat" \
-  --network "$vbox_nat_ip/$vbox_subnet_mask" --enable --dhcp on
+# # create NAT network for vbox
+# if test ! "$(vboxmanage natnetwork list | grep $vbox_nat)"; then
+#   vboxmanage natnetwork add --netname "$vbox_nat" \
+#   --network "$vbox_nat_ip/$vbox_subnet_mask" --enable --dhcp on
 
-  if [ $? != 0 ]; then
-    >&2 echo -e "\e[91mERROR (!) Can't create NAT - '$vbox_nat' network\e[0m"
-    exit 1
-  fi
-fi
+#   if [ $? != 0 ]; then
+#     >&2 echo -e "\e[91mERROR (!) Can't create NAT - '$vbox_nat' network\e[0m"
+#     exit 1
+#   fi
+# fi
 
-# create forwarding rules for NAT network
-for dom in ${vbox_machines[*]}; do
-  declare -n vm_hash=$dom
-  vboxmanage natnetwork modify --netname $vbox_nat --port-forward-4 \
-  "$dom:tcp:[127.0.0.1]:${vm_hash[forward-port]}:[${vm_hash[ip]}]:22" 2>/dev/null
-done
+# # create forwarding rules for NAT network
+# for dom in ${vbox_machines[*]}; do
+#   declare -n vm_hash=$dom
+#   vboxmanage natnetwork modify --netname $vbox_nat --port-forward-4 \
+#   "$dom:tcp:[127.0.0.1]:${vm_hash[forward-port]}:[${vm_hash[ip]}]:22" 2>/dev/null
+# done
 
 
 

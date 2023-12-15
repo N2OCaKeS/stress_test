@@ -84,8 +84,8 @@ def check_vm_list():
 cmd('sudo bash bl_prepare.sh')
 
 # # # Создать ВМ
-cmd(f'vagrant box add {box_url_175} --force')
-cmd(f'UPDATE={box_name_175} BOX_URL={box_url_175} vagrant up --provider=virtualbox')
+cmd(f'vagrant box add {box_url_174} --force')
+cmd(f'UPDATE={box_name_174} BOX_URL={box_url_174} vagrant up --provider=virtualbox')
 
 # # # Network set
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
@@ -102,8 +102,8 @@ for item in vm_ports.items():
     print(item)
 
 
-cmd('ansible-playbook bl_contrprimer.yml')
-cmd('ansible-playbook tasks/checks/db/replication.yml')
+cmd('sudo -u u ansible-playbook bl_contrprimer.yml')
+cmd('sudo -u u ansible-playbook tasks/checks/db/replication.yml')
 
 
 #sudo vboxmanage showvminfo database3

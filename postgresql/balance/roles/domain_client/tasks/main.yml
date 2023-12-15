@@ -1,0 +1,83 @@
+- name: Setup freeipa client
+  become: yes
+  block:
+    - name: Set hostname
+      shell: |
+        hostname
+        hostnamectl set-hostname '{{ hostvars[inventory_hostname].domain_name }}.{{ astra_domain }}'
+      register: hostname
+      changed_when: 'hostvars[inventory_hostname].domain_name + "." + astra_domain not in hostname.stdout'
+
+    - name: Configure /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^{{ hostvars.domain.ansible_host }}'
+        line: >
+          {{ hostvars.domain.ansible_host }}
+          {{ hostvars.domain.domain_name }}.{{ astra_domain }}
+          {{ hostvars.domain.domain_name }}
+
+    - name: Install freeipa client
+      apt:
+        name: '{{ "astra-freeipa-client" if not debian_linux else "freeipa-client" }}'
+      register: result
+      until: result is not failed
+
+    - name: Patch Debian
+      include_tasks: patch_debian.yml
+      when: debian_linux
+
+    - name: Check existing domain
+      command: |
+        ipa
+      register: client_exist
+      changed_when: client_exist.stderr == "IPA client is not configured on this system"
+      failed_when: false
+
+    - block:
+        - name: Setup astra freeipa client
+          command: |
+            astra-freeipa-client -d {{ astra_domain }} -u {{ domain.admin }} -p {{ domain.admin_password }} -y --par "--force-join"
+          when: not debian_linux
+
+        - name: Setup freeipa client
+          command: |
+            ipa-client-install -p {{ domain.admin }} -w {{ domain.admin_password }} -U --force-join
+          when: debian_linux
+      when: client_exist.stderr == "IPA client is not configured on this system"
+
+    - name: Ensure dns record is present
+      ipa_dnsrecord:
+        ipa_host: '{{ hostvars.domain.domain_name }}.{{ astra_domain }}'
+        ipa_pass: '{{ domain.admin_password }}'
+        zone_name: '{{ astra_domain }}'
+        record_name: '{{ hostvars[inventory_hostname].domain_name }}'
+        record_type: A
+        record_value: '{{ hostvars[inventory_hostname].ansible_host }}'
+        record_ttl: 3600
+      register: res
+      until: res is not failed
+      failed_when: res.msg is defined and 'no modifications to be performed' not in res.msg
+
+    - name: Ensure chrony is synced with domain server
+      lineinfile:
+        path: /etc/chrony/chrony.conf
+        regexp: '^server'
+        line: 'server {{ hostvars.domain.domain_name }}.{{ astra_domain }} iburst'
+      register: chrony_config
+
+    - name: Restart chrony service
+      service:
+        name: chrony
+        state: restarted
+      when: chrony_config.changed
+
+    - name: Chrony makestep
+      command: |
+        chronyc -a makestep
+      changed_when: false
+
+    - name: Set flag to restart VM
+      set_fact:
+        restart_domain_client: true
+      when: client_exist.stderr == "IPA client is not configured on this system"

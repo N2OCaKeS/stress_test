@@ -1,12 +1,12 @@
 - name: Setup freeipa domain
   become: yes
   block:
-    - name: Set hostname
-      shell: |
-        hostname
-        hostnamectl set-hostname {{ hostvars.domain.domain_name }}.{{ astra_domain }}
-      register: hostname
-      changed_when: 'hostvars.domain.domain_name +"."+ astra_domain not in hostname.stdout'
+    # - name: Set hostname
+    #   shell: |
+    #     hostname
+    #     hostnamectl set-hostname {{ hostvars.domain.domain_name }}.{{ astra_domain }}
+    #   register: hostname
+    #   changed_when: 'hostvars.domain.domain_name +"."+ astra_domain not in hostname.stdout'
 
     - name: Install freeipa server
       apt:

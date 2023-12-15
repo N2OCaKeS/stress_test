@@ -1,21 +1,21 @@
 - name: Setup freeipa client
   become: yes
   block:
-    - name: Set hostname
-      shell: |
-        hostname
-        hostnamectl set-hostname '{{ hostvars[inventory_hostname].domain_name }}.{{ astra_domain }}'
-      register: hostname
-      changed_when: 'hostvars[inventory_hostname].domain_name + "." + astra_domain not in hostname.stdout'
+    # - name: Set hostname
+    #   shell: |
+    #     hostname
+    #     hostnamectl set-hostname '{{ hostvars[inventory_hostname].domain_name }}.{{ astra_domain }}'
+    #   register: hostname
+    #   changed_when: 'hostvars[inventory_hostname].domain_name + "." + astra_domain not in hostname.stdout'
 
-    - name: Configure /etc/hosts
-      lineinfile:
-        path: /etc/hosts
-        regexp: '^{{ hostvars.domain.ansible_host }}'
-        line: >
-          {{ hostvars.domain.ansible_host }}
-          {{ hostvars.domain.domain_name }}.{{ astra_domain }}
-          {{ hostvars.domain.domain_name }}
+    # - name: Configure /etc/hosts
+    #   lineinfile:
+    #     path: /etc/hosts
+    #     regexp: '^{{ hostvars.domain.ansible_host }}'
+    #     line: >
+    #       {{ hostvars.domain.ansible_host }}
+    #       {{ hostvars.domain.domain_name }}.{{ astra_domain }}
+    #       {{ hostvars.domain.domain_name }}
 
     - name: Install freeipa client
       apt:

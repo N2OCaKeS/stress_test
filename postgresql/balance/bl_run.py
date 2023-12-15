@@ -102,8 +102,8 @@ for item in vm_ports.items():
     print(item)
 
 
-cmd('sudo -u u ansible-playbook bl_contrprimer.yml')
-cmd('sudo -u u ansible-playbook tasks/checks/db/replication.yml')
+cmd('su -c "ansible-playbook bl_contrprimer.yml" u')
+cmd('su -c "ansible-playbook tasks/checks/db/replication.yml" u')
 
 
 #sudo vboxmanage showvminfo database3

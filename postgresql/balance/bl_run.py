@@ -102,6 +102,9 @@ for item in vm_ports.items():
     print(item)
 
 
+cmd('ansible-playbook bl_contrprimer.yml')
+cmd('ansible-playbook tasks/checks/db/replication.yml')
+
 
 #sudo vboxmanage showvminfo database3
 #sudo vboxmanage startvm database3 --type headless

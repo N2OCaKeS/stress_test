@@ -3,7 +3,7 @@
     version: '{{ server.pg.load_balancing.debian_pgpool_version }}'
   apt:
     name:
-      - libpgpool0{{ '='+version if version else '' }}
+      - libpgpool2{{ '='+version if version else '' }}
       - pgpool2{{ '='+version if version else '' }}
     allow_downgrade: yes
   when: debian_linux

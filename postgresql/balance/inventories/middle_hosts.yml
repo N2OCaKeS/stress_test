@@ -1,7 +1,9 @@
 all:
   vars:
-    astra_domain: astra.domain
-    debian_linux: false
+    astra_domain: balance.rbt
+    debian_linux: true
+    ansible_ssh_pass: 1
+    ansible_ssh_user: u
   children:
 
     servers:

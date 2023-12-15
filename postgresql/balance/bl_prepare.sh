@@ -14,7 +14,7 @@ sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
 #virtualbox
 wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/virtualbox
 wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1n-0+deb10u6_amd64.deb
-sudo apt install gcc make perl -y
+sudo apt install gcc make perl rsync -y
 sudo apt install libopus0 -y
 sudo apt install libqt5opengl5 -y 
 sudo apt install libqt5printsupport5 -y

@@ -74,7 +74,7 @@ def set_network(vm, nat_name):
             "ssh{vm_dates[vm]['sshnum']}:tcp:[]:{vm_dates[vm]['host-port']}:[{vm_dates[vm]['ip']}]:22"''')
         cmd(f'vboxmanage startvm {vm} --type headless')
     except Exception as e:
-        print(f'Type:{str(type.__name__(e))},\nError: {str(e)}')
+        print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
 
 def check_vm_list():
     return check_output_command('vboxmanage list vms')
@@ -102,8 +102,8 @@ for item in vm_ports.items():
     print(item)
 
 
-cmd('su -c "ansible-playbook bl_contrprimer.yml" u')
-cmd('su -c "ansible-playbook tasks/checks/db/replication.yml" u')
+cmd('ansible-playbook bl_contrprimer.yml')
+cmd('ansible-playbook tasks/checks/db/replication.yml')
 
 
 #sudo vboxmanage showvminfo database3

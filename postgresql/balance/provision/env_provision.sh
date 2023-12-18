@@ -27,14 +27,14 @@ vbox_gateway=10.0.0.1
 vbox_nat=QANetwork
 vbox_nat_ip=10.0.0.0
 
-declare -A database1_br=( [ip]=10.0.0.11 [domain]=database1.balance.rbt [host]=database1 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A database2_br=( [ip]=10.0.0.12 [domain]=database2.balance.rbt [host]=database2 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A database3_br=( [ip]=10.0.0.13 [domain]=database3.balance.rbt [host]=database3 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A lbdb1_br=( [ip]=10.0.0.41 [domain]=lbdb1.balance.rbt [host]=lbdb1 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A lbdb2_br=( [ip]=10.0.0.42 [domain]=lbdb2.balance.rbt [host]=lbdb2 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A lbdb3_br=( [ip]=10.0.0.43 [domain]=lbdb3.balance.rbt [host]=lbdb3 [dns]="10.0.0.21, 8.8.8.8" )
-declare -A pgpool_br=( [ip]=10.0.0.31 [domain]=pgpool.balance.rbt [host]=pgpool [dns]="10.0.0.21, 8.8.8.8" )
-declare -A dcfreeipa_br=( [ip]=10.0.0.10 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.0.0.21, 8.8.8.8" )
+declare -A database1_br=( [ip]=10.0.0.11 [domain]=database1.balance.rbt [host]=database1 [dns]="10.0.0.10, 8.8.8.8" )
+declare -A database2_br=( [ip]=10.0.0.12 [domain]=database2.balance.rbt [host]=database2 [dns]="10.0.0.10, 8.8.8.8" )
+declare -A database3_br=( [ip]=10.0.0.13 [domain]=database3.balance.rbt [host]=database3 [dns]="10.0.0.10, 8.8.8.8" )
+declare -A lbdb1_br=( [ip]=10.0.0.41 [domain]=lbdb1.balance.rbt [host]=lbdb1 [dns]="10.0.0.10, 8.8.8.8" )
+declare -A lbdb2_br=( [ip]=10.0.0.42 [domain]=lbdb2.balance.rbt [host]=lbdb2 [dns]="10.0.0.10, 8.8.8.8" )
+declare -A lbdb3_br=( [ip]=10.0.0.43 [domain]=lbdb3.balance.rbt [host]=lbdb3 [dns]="10.0.0.10, 8.8.8.8" )
+declare -A pgpool_br=( [ip]=10.0.0.31 [domain]=pgpool.balance.rbt [host]=pgpool [dns]="10.0.0.10, 8.8.8.8" )
+declare -A dcfreeipa_br=( [ip]=10.0.0.10 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.0.0.10, 8.8.8.8" )
 
 declare -A database1=( [ip]=10.0.0.11 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0) 
 declare -A database2=( [ip]=10.0.0.12 [server-port]=3422 [forward-port]=2022 [mac]=08:00:27:64:AF:57 [net]=int0)

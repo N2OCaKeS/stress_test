@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# v4.3.3
+DEST_NODE_HOST="$1"
+#DEST_NODE_PGDATA="$2"
+#
+
+SSHPASS="sshpass -p {{ ansible_ssh_pass }}"
+SSH="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m -o GlobalKnownHostsFile=/dev/null \
+     -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no {{ ansible_ssh_user }}@$DEST_NODE_HOST"
+
+{% set databases = groups.databases | map('extract', hostvars, 'domain_name') | list %}
+DATABASES=('{{ databases | product([astra_domain]) | map('join', '.') | join("' '") }}')
+
+
+echo "!!! STARTING DB START !!!"
+echo "Включаем ноду $DEST_NODE_HOST и создаём слоты репликации \"на будущее\""
+
+if [ "{{ server.pg.replication.enabled }}" == "True" ]; then
+  $SSH sudo pg_ctlcluster {{ server.pg.version }} {{ server.pg.db_name }} start
+  if [ $? -ne 0 ]; then
+      echo ERROR: pgpool_remote_start: ${DEST_NODE_HOST} PostgreSQL start failed.
+      exit 1
+  fi
+
+  for host in "${DATABASES[@]}"; do
+    if [ "$DEST_NODE_HOST" != "$host" ]; then
+      $SSH "sudo -u postgres psql -p {{ server.pg.port }} -c \"SELECT * FROM pg_create_physical_replication_slot('${host//\./_}');\""
+    fi
+  done
+fi
+
+echo "!!! STARTING DB FINISH !!"
+exit 0

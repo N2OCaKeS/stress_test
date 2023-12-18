@@ -1,0 +1,22 @@
+- name: Configure Apache site
+  template:
+    src: "{{ 'apache.conf.j2' if not debian_linux else 'debian_apache.conf.j2' }}"
+    dest: /etc/apache2/sites-available/contrprimer.conf
+
+- name: Disable the Apache2 module authnz_pam
+  apache2_module:
+    name: authnz_pam
+    state: absent
+
+- name: Enable needed Apache2 modules
+  apache2_module:
+    name: '{{ item }}'
+    state: present
+  loop: ['headers', 'cgi']
+
+- name: Disable the Apache2 default sites and enable contrprimer
+  shell: |
+    a2dissite 000-default
+    a2dissite default-ssl
+    a2ensite contrprimer
+  changed_when: false

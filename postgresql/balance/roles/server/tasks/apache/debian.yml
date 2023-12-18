@@ -1,0 +1,57 @@
+- vars:
+    base_dir: /var/www/html/contrprimer/
+    files:
+      - contrprimer.py
+      - contrprimer_django/__init__.py
+      - contrprimer_flask/__init__.py
+      - document.py
+    python_all: '{{ [base_dir] | product(files) | map("join") }}'
+    python_part: '{{ [base_dir] | product(files[:-1]) | map("join") }}'
+    python_cgi: '{{ base_dir }}{{ files[0] }}'
+    python_django: '{{ base_dir }}{{ files[1] }}'
+    python_flask: '{{ base_dir }}{{ files[2] }}'
+    python_doc: '{{ base_dir }}{{ files[3] }}'
+    php: "{{ base_dir + 'contrprimer.php' }}"
+  block:
+    - name: Replace 'session_maclabel' to const value in scripts
+      replace:
+        path: '{{ item }}'
+        regexp: '.SELECT SESSION_MACLABEL;.'
+        replace: >-
+          "SELECT '{7,7}';"
+      loop: '{{ [php] + python_part }}'
+
+    - name: Edit maclabel column in select query
+      replace:
+        path: '{{ item }}'
+        regexp: 'SELECT maclabel, \*'
+        replace: SELECT \'{{7,7}}\' as fake_maclabel, *
+      loop: '{{ [php] + python_all }}'
+
+    - name: Edit db connection string [Python]
+      replace:
+        path: '{{ python_cgi }}'
+        regexp: 'os\.environ\[.CONTRPRIMER_DB_CONNECT.\].*'
+        replace: >-
+          os.environ['CONTRPRIMER_DB_CONNECT'] + ' user='+os.environ['REMOTE_USER']
+      loop: '{{ [python_cgi, python_doc] }}'
+
+    - name: Edit db connection string [Django]
+      replace:
+        path: '{{ python_django }}'
+        regexp: '\(DB_CONNECT'
+        replace: (DB_CONNECT + ' user='+request.META['REMOTE_USER']
+
+    - name: Edit db connection string [Flask]
+      replace:
+        path: '{{ python_flask }}'
+        regexp: '\(DB_CONNECT'
+        replace: (DB_CONNECT + ' user='+request.environ['REMOTE_USER']
+
+    - name: Edit db connection string [PHP]
+      replace:
+        path: '{{ php }}'
+        regexp: 'getenv\(.CONTRPRIMER_DB_CONNECT.\).*'
+        replace: >-
+          getenv('CONTRPRIMER_DB_CONNECT') . ' user='.getenv('REMOTE_USER');
+

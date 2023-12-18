@@ -1,0 +1,133 @@
+- name: Stop pgpool2
+  delegate_to: '{{ item }}'
+  become: yes
+  service:
+    name: pgpool2
+    state: stopped
+  loop: '{{ groups.load_balancers_db }}'
+  when: >-
+    inventory_hostname == groups.databases.0 and
+    (server.pg.replication.enabled and groups.load_balancers_db.0 not in ansible_play_hosts_all)
+
+- name: Database nodes availability
+  vars:
+    nodes: '{{ ansible_play_hosts | intersect(groups.databases) }}'
+  fail:
+    msg: "Not all database nodes are up! (only {{ nodes }})"
+  when: >-
+    nodes|length < groups.databases|length and server.pg.load_balancing.enabled
+
+- name: Install postgresql
+  import_tasks: install.yml
+
+- name: Create /usr/share/contrprimer folder
+  file:
+    path: /usr/share/contrprimer
+    state: directory
+
+- name: Copy contrprimer sql
+  template:
+    src: "{{ item }}"
+    dest: /usr/share/contrprimer/{{ item | basename | replace('.j2', '') }}
+    owner: '{{ ansible_ssh_user }}'
+    group: postgres
+    directory_mode: u=rwx,g=rx,o=rx
+    mode: u=rwx,g=rx,o=rx
+  with_fileglob:
+    - "{{ role_path }}/templates/sql/*.sql.j2"
+  loop_control:
+    index_var: index
+    label: '{{ "sql-#" | replace("#", index) }}'
+
+- name: Check whether cluster exists
+  command: |
+    pg_lsclusters
+  register: db_clusters
+  changed_when: false
+
+- name: Check whether data folder exists
+  stat:
+    path: /var/lib/postgresql/{{ server.pg.version }}/{{ server.pg.db_name }}
+    get_checksum: no
+    get_mime: no
+  register: db_data
+
+- name: Check whether data folder is not empty
+  find:
+    path: /var/lib/postgresql/{{ server.pg.version }}/{{ server.pg.db_name }}
+    file_type: any
+  register: db_data_contents
+
+- name: Create contrprimer cluster
+  shell: |
+    pg_dropcluster --stop {{ server.pg.version }} {{ server.pg.db_name }}
+    pg_createcluster --port {{ server.pg.port }} {{ server.pg.version }} {{ server.pg.db_name }}
+  register: result
+  failed_when: result.rc != 0 and "exist" not in result.stderr
+  when: >-
+    server.pg.recreate.cluster or server.pg.db_name not in db_clusters.stdout or
+    not db_data.stat.exists or db_data_contents.matched < 3
+
+- name: Start contrprimer cluster
+  command: pg_ctlcluster {{ server.pg.version }} {{ server.pg.db_name }} start
+  changed_when: false
+
+- become_user: postgres
+  block:
+    - name: Check whether database exists
+      postgresql_info:
+        db: postgres
+        port: '{{ server.pg.port }}'
+        filter: 'databases'
+      register: db_db
+
+    - block:
+        - name: Remove contrprimer database
+          postgresql_db:
+            port: '{{ server.pg.port }}'
+            name: '{{ server.pg.db_name }}'
+            state: absent
+
+        - name: Create contrprimer database
+          postgresql_db:
+            port: '{{ server.pg.port }}'
+            name: '{{ server.pg.db_name }}'
+      when: server.pg.recreate.database or server.pg.db_name not in db_db.databases
+
+    - name: Check whether schemas exist
+      check_mode: yes
+      postgresql_schema:
+        db: '{{ server.pg.db_name }}'
+        port: '{{ server.pg.port }}'
+        name: '{{ server.pg.schema_template | replace("#", item) }}'
+      loop: ['1', '2', '3', '4']
+      loop_control:
+        label: '{{ server.pg.schema_template | replace("#", item) }}'
+      register: db_schemas
+
+    - name: Check whether tables exist
+      check_mode: yes
+      postgresql_table:
+        db: '{{ server.pg.db_name }}'
+        port: '{{ server.pg.port }}'
+        name: '{{ server.pg.table_template| replace("#", item.item) }}'
+      loop: "{{ db_schemas.results | selectattr('changed', '==', False) }}"
+      loop_control:
+        label: '{{ server.pg.table_template | replace("#", item.item) }}'
+      register: db_tables
+
+    - name: Create contrprimer tables
+      command: |
+        psql -p {{ server.pg.port }} -b -f /usr/share/contrprimer/contrprimer.sql
+      when: >-
+        server.pg.recreate.tables or db_tables.skipped or
+        (db_tables.results | selectattr('changed', '==', True) | length > 0)
+  when: inventory_hostname == groups.databases.0 or not server.pg.replication.enabled
+
+- name: Configure PostgreSQL
+  import_tasks: configure.yml
+
+# Only restart service and do not reboot a machine if it exists
+- name: Set signal to restart database
+  set_fact:
+    restart_database: '{{ server.pg.db_name in db_clusters.stdout }}'

@@ -1,0 +1,86 @@
+- block:
+    - name: Create physical replication slot
+      become: yes
+      become_user: postgres
+      postgresql_query:
+        port: '{{ server.pg.port }}'
+        query: >
+          SELECT * FROM pg_create_physical_replication_slot
+          ('{{ hostvars[item].domain_name }}_{{ astra_domain | replace(".", "_") }}')
+      failed_when: false
+      loop: '{{ groups.databases | difference([inventory_hostname]) }}'
+
+    - name: Clean some files
+      file:
+        path: '{{ pg_data_path + "/failover" }}'
+        state: absent
+
+    - name: Restart master database
+      command: |
+        pg_ctlcluster {{ server.pg.version }} {{ server.pg.db_name }} restart
+      when: inventory_hostname == groups.databases.0
+
+    - name: Set signal that master replica database is ready to replicate
+      vars:
+        signal: db_master_replica_ready_to_replicate
+      import_tasks: '{{ playbook_dir }}/tasks/set_file_signal.yml'
+
+    - name: Wait until all standby replicas are backed up
+      vars:
+        signal: db_standby_replica_{{ item }}_backed_up
+      include_tasks: '{{ playbook_dir }}/tasks/wait_for_file_signal.yml'
+      loop: '{{ groups.databases | difference([inventory_hostname]) }}'
+  when: inventory_hostname == groups.databases.0
+
+
+- block:
+    - name: Stop postgresql server
+      command: |
+        pg_ctlcluster {{ server.pg.version }} {{ server.pg.db_name }} stop
+
+    - name: Remove pg_data
+      file:
+        path: '{{ pg_data_path }}'
+        state: absent
+
+    - name: Wait until master replica database will be ready to replicate
+      vars:
+        signal: db_master_replica_ready_to_replicate
+      import_tasks: '{{ playbook_dir }}/tasks/wait_for_file_signal.yml'
+
+    - name: Take base backup from master
+      become: yes
+      become_user: postgres
+      command: >-
+        pg_basebackup -D {{ pg_data_path }} -h {{ hostvars[groups.databases.0].ansible_host }}
+                      -p {{ server.pg.port }} -U {{ server.pg.replication.user }} -w
+                      -X stream --checkpoint=fast --no-estimate-size --write-recovery-conf
+                      --slot='{{ hostvars[inventory_hostname].domain_name }}_{{ astra_domain | replace(".", "_") }}'
+
+    - name: Replace IP with hostname
+      replace:
+        path: '{{ pg_data_path }}/postgresql.auto.conf'
+        regexp: '{{ hostvars[groups.databases.0].ansible_host }}'
+        replace: '{{ hostvars[groups.databases.0].domain_name }}.{{ astra_domain }}'
+
+    - name: Set signal that standby replica database has done base backup
+      vars:
+        signal: db_standby_replica_{{ inventory_hostname }}_backed_up
+      import_tasks: '{{ playbook_dir }}/tasks/set_file_signal.yml'
+
+    - name: Start postgresql server
+      command: |
+        pg_ctlcluster {{ server.pg.version }} {{ server.pg.db_name }} start
+
+    # If 'primary_slot_name' is set, but actually doesn't exist, than replication is not going to work
+    - name: Create physical replication slot
+      become: yes
+      become_user: postgres
+      postgresql_query:
+        port: '{{ server.pg.port }}'
+        query: >
+          SELECT * FROM pg_create_physical_replication_slot
+          ('{{ hostvars[item].domain_name }}_{{ astra_domain | replace(".", "_") }}');
+      failed_when: false
+      loop: '{{ groups.databases | difference([inventory_hostname]) }}'
+  when: inventory_hostname != groups.databases.0

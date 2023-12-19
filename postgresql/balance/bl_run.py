@@ -3,6 +3,20 @@ import os
 from time import sleep
 
 
+def check_output_command(command: str):
+    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    output, errors = result.communicate()
+    output = os.linesep.join([s for s in output.splitlines() if s])
+    errors = os.linesep.join([s for s in errors.splitlines() if s])
+    if errors == "":
+        return output
+    else:
+        return errors
+
+def cmd(command):
+    return subprocess.run(command, shell=True)
+
+
 box_url_18 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json'
 box_name_18 = 'smolensk-vanilla-gui/1.8.0.2'
 box_url_174 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json'
@@ -18,6 +32,7 @@ vbox_subnet_mask = '19'
 vbox_bridge_network = '10.177.103.0'
 vbox_bridge_ip = '10.177.103.1'
 vbox_bridge_mask = '255.255.224.0'
+bridge_iface = check_output_command('vboxmanage list bridgedifs | grep Name | awk "{print$2}" | head -n 1')
 
 vm_dates = {
         'database1':{'host-port':'2021',
@@ -54,19 +69,6 @@ vm_dates = {
                      'ip_bridge':'10.177.103.110'}
 }
 
-
-def check_output_command(command: str):
-    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    output, errors = result.communicate()
-    output = os.linesep.join([s for s in output.splitlines() if s])
-    errors = os.linesep.join([s for s in errors.splitlines() if s])
-    if errors == "":
-        return output
-    else:
-        return errors
-
-def cmd(command):
-    return subprocess.run(command, shell=True)
 
 def vm_port(vm_name):
     bash_command = f"""sudo vboxmanage showvminfo {vm_name} | grep 'Rule' \
@@ -118,15 +120,20 @@ def set_hostonly_network(vm, adapter_name):
 
 def set_bridge_network(vm, adapter_name):
     try:
+        if vm == 'dcfreeipa':
+            num_interface = '1'
+        else: num_interface = '2'
+
         cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
-        cmd(f'vboxmanage modifyvm {vm} --nic2 bridged')
-        cmd(f'vboxmanage modifyvm {vm} --bridgeadapter2 {adapter_name}')
+        cmd(f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
+        cmd(f'vboxmanage modifyvm {vm} --bridgeadapter{num_interface} {adapter_name}')
         cmd(f'vboxmanage startvm {vm} --type headless')
     except Exception as e:
         print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
 
 def check_vm_list():
     return check_output_command('vboxmanage list vms')
+
 
 
 # # #Prepare
@@ -137,9 +144,10 @@ cmd(f'vagrant box add {box_url_174} --force')
 cmd(f'UPDATE={box_name_174} BOX_URL={box_url_174} vagrant up --provider=virtualbox')
 
 # # # Network set
+print(f'Bridge interface found as: {colors(bridge_iface, "yellow")}')
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
 [set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
-[set_bridge_network(vm, 'eno1') for vm in VMs if vm in check_vm_list()]
+[set_bridge_network(vm, bridge_iface) for vm in VMs if vm in check_vm_list()]
 cmd('vboxmanage natnetwork list')
 cmd('vboxmanage list hostonlyifs')
 cmd('vboxmanage list bridgedifs')
@@ -165,5 +173,6 @@ for key, value in vm_creds.items():
 #sudo vboxmanage showvminfo database3
 #sudo vboxmanage startvm database3 --type headless
 #VBoxManage controlvm database3 poweroff
+#VBoxManage unregistervm --delete "VM name"
 #ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@localhost -p 2200
 

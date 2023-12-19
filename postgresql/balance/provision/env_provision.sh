@@ -127,16 +127,18 @@ elif [ "$1" = "dcfreeipa" ]; then
     dns="${dcfreeipa[dns]}"
 fi
 
-sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
-sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_gateway
-sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns"
-sudo nmcli connection add type ethernet con-name "${bridge_net_name}" ifname eth1
-sudo nmcli connection modify "${bridge_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
-sudo nmcli connection modify "${bridge_net_name}" gw4 $vbox_bridge_gateway
-sudo nmcli connection modify "${bridge_net_name}" ipv4.dns "$dns_br"
 if [ "$1" = "dcfreeipa" ]; then
-    sudo ip link set eth0 down
-    sudo nmcli con modify "${nat_net_name}" connection.autoconnect no
+    sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
+    sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
+    sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
+else
+    sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
+    sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_gateway
+    sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns"
+    sudo nmcli connection add type ethernet con-name "${bridge_net_name}" ifname eth1
+    sudo nmcli connection modify "${bridge_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
+    sudo nmcli connection modify "${bridge_net_name}" gw4 $vbox_bridge_gateway
+    sudo nmcli connection modify "${bridge_net_name}" ipv4.dns "$dns_br"
 fi
 nmcli connection show
 

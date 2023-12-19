@@ -16,7 +16,7 @@ Vagrant.configure("2") do |config|
   vms.each do |vm|
     config.vm.define vm[:name] do |machine|
       machine.vm.hostname = vm[:hostname]
-      machine.vm.network "public_network", ip: vm[:ip]
+      #machine.vm.network "public_network", ip: vm[:ip]
       machine.vm.provider "virtualbox" do |vb|
         vb.check_guest_additions = false
         vb.name = vm[:name]

@@ -12,8 +12,12 @@ box_name_175 = 'smolensk-vanilla-gui/1.7.5'
 VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'pgpool', 'dcfreeipa']
 no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 vbox_nat = 'QANetwork'
+vbox_std_name_interface = 'vboxnet0'
 vbox_nat_ip = '10.0.0.0'
 vbox_subnet_mask = '19'
+vbox_bridge_network = '10.177.103.0'
+vbox_bridge_ip = '10.177.103.1'
+vbox_bridge_mask = '255.255.224.0'
 
 vm_dates = {
         'database1':{'host-port':'2021',
@@ -83,7 +87,7 @@ def colors(text, color:str) -> str:
     elif color == 'red':
         return f'{red}{text}{reset}'
 
-def set_network(vm, nat_name):
+def set_natnetwork(vm, nat_name):
     try:
         cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
         if check_output_command("vboxmanage natnetwork list | grep Name | awk '{print$2}'") != vbox_nat:
@@ -97,31 +101,48 @@ def set_network(vm, nat_name):
     except Exception as e:
         print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
 
+def set_bridge_network(vm, adapter_name):
+    try:
+        cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
+        if adapter_name not in check_output_command("vboxmanage list hostonlyifs | grep Name | awk '{print $2}'"):
+            cmd(f'vboxmanage hostonlyif create')
+            cmd(f'vboxmanage hostonlyif ipconfig {adapter_name} --ip {vbox_bridge_ip} --netmask {vbox_bridge_mask}')
+        cmd(f'vboxmanage modifyvm {vm} --nic1 hostonly')
+        cmd(f'vboxmanage modifyvm {vm} --hostonlyadapter1 {adapter_name}')
+        cmd(f'vboxmanage startvm {vm} --type headless')
+    except Exception as e:
+        print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
+
 def check_vm_list():
     return check_output_command('vboxmanage list vms')
 
 
 # # #Prepare
-cmd('sudo bash bl_prepare.sh')
+cmd('sudo bash bl_prepare_vbox.sh')
 
 # # # Создать ВМ
 cmd(f'vagrant box add {box_url_174} --force')
 cmd(f'UPDATE={box_name_174} BOX_URL={box_url_174} vagrant up --provider=virtualbox')
 
 # # # Network set
+with open('/etc/vbox/networks.conf', 'w') as wr:
+    wr.write(f'* {vbox_bridge_network}/{vbox_subnet_mask} {vbox_std_name_interface}')
+cmd('systemctl restart vboxdrv vboxballoonctrl-service vboxautostart-service vboxweb-service')
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
-#[set_network(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
+#[set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
+[set_bridge_network(vm, vbox_std_name_interface) for vm in VMs if vm in check_vm_list()]
 cmd('vboxmanage natnetwork list')
+cmd('vboxmanage list hostonlyifs')
 cmd('vboxmanage list vms')
 
 
 # # # SSH connect info
 #vm_ports = {name:f'ssh u@localhost -p {vm_port(name)}' for name in VMs}
 #vm_ports = {name:f'sshpass -v -p 1 ssh {no_fprint} u@localhost -p {vm_dates[name]["host-port"]}' for name in VMs}
-vm_creds = {colors(name, 'yellow'):f'sshpass -v -p 1 ssh {no_fprint} u@{vm_dates[name]["ip_bridge"]}' for name in VMs}
+vm_creds = {name:f'sshpass -v -p 1 ssh {no_fprint} u@{vm_dates[name]["ip_bridge"]}' for name in VMs}
 #[cmd(f'ssh-keygen -R [127.0.0.1]:{port}') for port in vm_ports.keys()]
-for item in vm_creds.items():
-    print(item)
+for key, value in vm_creds.items():
+    print(colors(key, 'yellow'), value)
 
 
 #cmd('ansible-playbook bl_contrprimer.yml')

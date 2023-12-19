@@ -22,9 +22,9 @@ vbox_machines=(\
 )
 
 net_name="Проводное соединение 1"
-#vbox_subnet_mask=19
-vbox_subnet_mask=24
+vbox_subnet_mask=19
 vbox_gateway=10.0.0.1
+vbox_bridge_gateway=10.177.103.1
 vbox_nat=QANetwork
 vbox_nat_ip=10.0.0.0
 
@@ -110,7 +110,7 @@ elif [ "$1" = "dcfreeipa" ]; then
 fi
 
 sudo nmcli connection modify "${net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
-#sudo nmcli connection modify "${net_name}" gw4 $vbox_gateway
+sudo nmcli connection modify "${net_name}" gw4 $vbox_bridge_gateway
 sudo nmcli connection modify "${net_name}" ipv4.dns "$dns"
 
 if id "$main_user" >/dev/null 2>&1; then

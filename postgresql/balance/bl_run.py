@@ -101,14 +101,26 @@ def set_natnetwork(vm, nat_name):
     except Exception as e:
         print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
 
-def set_bridge_network(vm, adapter_name):
+def set_hostonly_network(vm, adapter_name):
     try:
+        with open('/etc/vbox/networks.conf', 'w') as wr:
+            wr.write(f'* {vbox_bridge_network}/{vbox_subnet_mask} {vbox_std_name_interface}')
+        cmd('systemctl restart vboxdrv vboxballoonctrl-service vboxautostart-service vboxweb-service')
         cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
         if adapter_name not in check_output_command("vboxmanage list hostonlyifs | grep Name | awk '{print $2}'"):
             cmd(f'vboxmanage hostonlyif create')
             cmd(f'vboxmanage hostonlyif ipconfig {adapter_name} --ip {vbox_bridge_ip} --netmask {vbox_bridge_mask}')
         cmd(f'vboxmanage modifyvm {vm} --nic1 hostonly')
         cmd(f'vboxmanage modifyvm {vm} --hostonlyadapter1 {adapter_name}')
+        cmd(f'vboxmanage startvm {vm} --type headless')
+    except Exception as e:
+        print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
+
+def set_bridge_network(vm, adapter_name):
+    try:
+        cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
+        cmd(f'vboxmanage modifyvm {vm} --nic2 bridged')
+        cmd(f'vboxmanage modifyvm {vm} --bridgeadapter2 {adapter_name}')
         cmd(f'vboxmanage startvm {vm} --type headless')
     except Exception as e:
         print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
@@ -125,22 +137,23 @@ cmd(f'vagrant box add {box_url_174} --force')
 cmd(f'UPDATE={box_name_174} BOX_URL={box_url_174} vagrant up --provider=virtualbox')
 
 # # # Network set
-with open('/etc/vbox/networks.conf', 'w') as wr:
-    wr.write(f'* {vbox_bridge_network}/{vbox_subnet_mask} {vbox_std_name_interface}')
-cmd('systemctl restart vboxdrv vboxballoonctrl-service vboxautostart-service vboxweb-service')
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
-#[set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
-[set_bridge_network(vm, vbox_std_name_interface) for vm in VMs if vm in check_vm_list()]
+[set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
+[set_bridge_network(vm, 'eno1') for vm in VMs if vm in check_vm_list()]
 cmd('vboxmanage natnetwork list')
 cmd('vboxmanage list hostonlyifs')
+cmd('vboxmanage list bridgedifs')
 cmd('vboxmanage list vms')
 
 
 # # # SSH connect info
 #vm_ports = {name:f'ssh u@localhost -p {vm_port(name)}' for name in VMs}
-#vm_ports = {name:f'sshpass -v -p 1 ssh {no_fprint} u@localhost -p {vm_dates[name]["host-port"]}' for name in VMs}
+vm_ports = {name:f'sshpass -v -p 1 ssh {no_fprint} u@localhost -p {vm_dates[name]["host-port"]}' for name in VMs}
 vm_creds = {name:f'sshpass -v -p 1 ssh {no_fprint} u@{vm_dates[name]["ip_bridge"]}' for name in VMs}
 #[cmd(f'ssh-keygen -R [127.0.0.1]:{port}') for port in vm_ports.keys()]
+print('\n***--------- Connecting credentials ---------***\n')
+for key, value in vm_ports.items():
+    print(colors(key, 'green'), value)
 for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 

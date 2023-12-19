@@ -9,8 +9,7 @@ all:
     servers:
       hosts:
         domain:
-          ansible_host: 127.0.0.1
-          ansible_port: 2029
+          ansible_host: 10.177.103.110
           domain_name: dcfreeipa
 
       children:
@@ -22,42 +21,100 @@ all:
         databases:
           hosts:
             database:
-              ansible_host: 127.0.0.1
-              ansible_port: 2021
+              ansible_host: 10.177.103.111
               domain_name: database1
 
             database_2:
-              ansible_host: 127.0.0.1
-              ansible_port: 2022
+              ansible_host: 10.177.103.112
               domain_name: database2
 
             database_3:
-              ansible_host: 127.0.0.1
-              ansible_port: 2025
+              ansible_host: 10.177.103.113
               domain_name: database3
 
         load_balancers_db:
           vars:
             virtual_domain_name: pgpool
-            delegate_ip: 127.0.0.1
-            ansible_port: 2027
+            delegate_ip: 10.177.103.131
           hosts:
             lb_db:
-              ansible_host: 127.0.0.1
-              ansible_port: 2024
+              ansible_host: 10.177.103.141
               domain_name: lbdb1
 
             lb_db_2:
-              ansible_host: 127.0.0.1
-              ansible_port: 2023
+              ansible_host: 10.177.103.142
               domain_name: lbdb2
 
             lb_db_3:
-              ansible_host: 127.0.0.1
-              ansible_port: 2026
+              ansible_host: 10.177.103.143
               domain_name: lbdb3
 
     clients:
       hosts:
     development:
+    
+
+
+# all:
+#   vars:
+#     astra_domain: balance.rbt
+#     debian_linux: false
+#     ansible_ssh_pass: 1
+#     ansible_ssh_user: u
+#   children:
+
+#     servers:
+#       hosts:
+#         domain:
+#           ansible_host: 127.0.0.1
+#           ansible_port: 2029
+#           domain_name: dcfreeipa
+
+#       children:
+#         web_servers:
+#           hosts:
+#         load_balancers_web:
+#           hosts:
+
+#         databases:
+#           hosts:
+#             database:
+#               ansible_host: 127.0.0.1
+#               ansible_port: 2021
+#               domain_name: database1
+
+#             database_2:
+#               ansible_host: 127.0.0.1
+#               ansible_port: 2022
+#               domain_name: database2
+
+#             database_3:
+#               ansible_host: 127.0.0.1
+#               ansible_port: 2025
+#               domain_name: database3
+
+#         load_balancers_db:
+#           vars:
+#             virtual_domain_name: pgpool
+#             delegate_ip: 127.0.0.1
+#             ansible_port: 2027
+#           hosts:
+#             lb_db:
+#               ansible_host: 127.0.0.1
+#               ansible_port: 2024
+#               domain_name: lbdb1
+
+#             lb_db_2:
+#               ansible_host: 127.0.0.1
+#               ansible_port: 2023
+#               domain_name: lbdb2
+
+#             lb_db_3:
+#               ansible_host: 127.0.0.1
+#               ansible_port: 2026
+#               domain_name: lbdb3
+
+#     clients:
+#       hosts:
+#     development:
     

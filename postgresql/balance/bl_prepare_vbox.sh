@@ -1,7 +1,7 @@
 #!/bin/bash
 
-sudo echo deb ftp://10.177.5.111/astra/testing/1.8.0.2/devel 1.8_x86-64 main contrib non-free >> /etc/apt/sources.list
-sudo apt update -y
+#sudo echo deb ftp://10.177.5.111/astra/testing/1.8.0.2/devel 1.8_x86-64 main contrib non-free >> /etc/apt/sources.list
+#sudo apt update -y
 
 
 #ansible
@@ -12,8 +12,8 @@ sudo apt-get install sshpass -y
 sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
 
 #virtualbox
-#wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/virtualbox
-wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
+wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/virtualbox
+#wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
 wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1n-0+deb10u6_amd64.deb
 sudo apt install gcc make perl rsync -y
 sudo apt install libopus0 -y

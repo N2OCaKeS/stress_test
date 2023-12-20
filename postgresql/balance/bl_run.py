@@ -32,7 +32,6 @@ vbox_subnet_mask = '19'
 vbox_bridge_network = '10.177.103.0'
 vbox_bridge_ip = '10.177.103.1'
 vbox_bridge_mask = '255.255.224.0'
-bridge_iface = check_output_command('vboxmanage list bridgedifs | grep Name | awk "{print$2}" | head -n 1')
 
 vm_dates = {
         'database1':{'host-port':'2021',
@@ -144,6 +143,7 @@ cmd(f'vagrant box add {box_url_174} --force')
 cmd(f'UPDATE={box_name_174} BOX_URL={box_url_174} vagrant up --provider=virtualbox')
 
 # # # Network set
+bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
 print(f'Bridge interface found as: {colors(bridge_iface, "yellow")}')
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
 [set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]

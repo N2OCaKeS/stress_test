@@ -12,7 +12,8 @@ sudo apt-get install sshpass -y
 sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
 
 #virtualbox
-wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/virtualbox
+#wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/virtualbox
+wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
 wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1n-0+deb10u6_amd64.deb
 sudo apt install gcc make perl rsync -y
 sudo apt install libopus0 -y
@@ -22,10 +23,10 @@ sudo apt install libsdl1.2debian -y
 sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb 
 sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
 sudo apt install psmisc -y
-sudo dpkg -i virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
+sudo dpkg -i virtualbox-*.deb
 sudo apt install pkexec -y
 sudo apt install policykit-1 -y
-sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
+sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-*.vbox-extpack
 
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
@@ -41,37 +42,37 @@ sudo dpkg -i vagrant_2.2.19_x86_64.deb
 #fi
 
 # install virtualbox-6.1 & ext.pack
-if test ! "$(dpkg -l | awk '{print $2}' | grep ^virtualbox-6.1$)"; then
-  wget -r -nH --cut-dirs=3 --no-parent \
-  ftp://qa111.devos.astralinux.ru/packages/virtualbox 2>/dev/null
+# if test ! "$(dpkg -l | awk '{print $2}' | grep ^virtualbox-6.1$)"; then
+#   wget -r -nH --cut-dirs=3 --no-parent \
+#   ftp://qa111.devos.astralinux.ru/packages/virtualbox 2>/dev/null
 
-  if [ $? != 0 ]; then
-    >&2 echo -e "\e[91mERROR (!) Package vbox import\e[0m"
-    exit 1
-  fi
+#   if [ $? != 0 ]; then
+#     >&2 echo -e "\e[91mERROR (!) Package vbox import\e[0m"
+#     exit 1
+#   fi
 
-  sudo apt install gcc make perl -y
-  sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
-  sudo dpkg -i virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
-  if [ $? != 0 ]; then
-    >&2 echo -e "\e[91mERROR (!) VirtualBox package installation\e[0m"
-    exit 1
-  fi
+  # sudo apt install gcc make perl -y
+  # sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
+  # sudo dpkg -i virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
+  # if [ $? != 0 ]; then
+  #   >&2 echo -e "\e[91mERROR (!) VirtualBox package installation\e[0m"
+  #   exit 1
+  # fi
 
-  sudo yes | VBoxManage extpack install Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
-  if [ $? != 0 ]; then
-    >&2 echo -e "\e[91mERROR (!) VirtualBox Extension Pack installation\e[0m"
-    exit 1
-  fi
-  if test ! "$(vboxmanage list extpacks | awk '{print $2}' | grep 6.1.36$)"; then
-    >&2 echo -e "\e[91mERROR (!) wrong install VirtualBox Extension Pack\e[0m"
-    exit 1
-  fi
+#   sudo yes | VBoxManage extpack install Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
+#   if [ $? != 0 ]; then
+#     >&2 echo -e "\e[91mERROR (!) VirtualBox Extension Pack installation\e[0m"
+#     exit 1
+#   fi
+#   if test ! "$(vboxmanage list extpacks | awk '{print $2}' | grep 6.1.36$)"; then
+#     >&2 echo -e "\e[91mERROR (!) wrong install VirtualBox Extension Pack\e[0m"
+#     exit 1
+#   fi
 
-  sudo rm libvpx5_1.7.0-3+deb10u1_amd64.deb
-  sudo rm virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
-  sudo rm Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
-fi
+#   sudo rm libvpx5_1.7.0-3+deb10u1_amd64.deb
+#   sudo rm virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
+#   sudo rm Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
+# fi
 
 if test ! "$(dpkg -l | awk '{print $2}' | grep ^vagrant$)"; then
   # vagrant package download

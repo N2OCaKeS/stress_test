@@ -3,6 +3,9 @@ import os
 from time import sleep
 
 
+set_box = '1803'
+
+
 def check_output_command(command: str):
     result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     output, errors = result.communicate()
@@ -17,12 +20,19 @@ def cmd(command):
     return subprocess.run(command, shell=True)
 
 
-box_url_18 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json'
-box_name_18 = 'smolensk-vanilla-gui/1.8.0.2'
-box_url_174 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json'
-box_name_174 = 'smolensk-vanilla-gui/1.7.4'
-box_url_175 = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json'
-box_name_175 = 'smolensk-vanilla-gui/1.7.5'
+
+vagrant_boxes = {'1803':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
+                         'name':'smolensk-vanilla-gui/1.8.0.3'},
+                 '1802':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json',
+                         'name':'smolensk-vanilla-gui/1.8.0.2'},
+                 '174':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json',
+                        'name':'smolensk-vanilla-gui/1.7.4'},
+                 '175':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json',
+                        'name':'smolensk-vanilla-gui/1.7.5'}       
+                 }
+
+box_url = vagrant_boxes[set_box]['url']
+box_name = vagrant_boxes[set_box]['name']
 VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'pgpool', 'dcfreeipa']
 no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 vbox_nat = 'QANetwork'
@@ -139,8 +149,8 @@ def check_vm_list():
 cmd('sudo bash bl_prepare_vbox.sh')
 
 # # # Создать ВМ
-cmd(f'vagrant box add {box_url_174} --force')
-cmd(f'UPDATE={box_name_174} BOX_URL={box_url_174} vagrant up --provider=virtualbox')
+cmd(f'vagrant box add {box_url} --force')
+cmd(f'UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
 
 # # # Network set
 bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")

@@ -3,7 +3,7 @@ import os
 from time import sleep
 
 
-set_box = '175'
+set_box = '174'
 
 
 def check_output_command(command: str):
@@ -129,9 +129,10 @@ def set_hostonly_network(vm, adapter_name):
 
 def set_bridge_network(vm, adapter_name):
     try:
-        if vm == 'dcfreeipa':
-            num_interface = '1'
-        else: num_interface = '2'
+        # if vm == 'dcfreeipa':
+        #     num_interface = '1'
+        # else: num_interface = '2'
+        num_interface = '1'
 
         cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
         cmd(f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
@@ -156,8 +157,9 @@ cmd(f'UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
 bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
 print(f'Bridge interface found as: {colors(bridge_iface, "yellow")}')
 #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
-[set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
+#[set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
 [set_bridge_network(vm, bridge_iface) for vm in VMs if vm in check_vm_list()]
+[cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"') for vm in VMs if vm in check_vm_list()]
 cmd('vboxmanage natnetwork list')
 cmd('vboxmanage list hostonlyifs')
 cmd('vboxmanage list bridgedifs')
@@ -166,12 +168,12 @@ cmd('vboxmanage list vms')
 
 # # # SSH connect info
 #vm_ports = {name:f'ssh u@localhost -p {vm_port(name)}' for name in VMs}
-vm_ports = {name:f'sshpass -v -p 1 ssh {no_fprint} u@localhost -p {vm_dates[name]["host-port"]}' for name in VMs}
+#vm_ports = {name:f'sshpass -v -p 1 ssh {no_fprint} u@localhost -p {vm_dates[name]["host-port"]}' for name in VMs}
 vm_creds = {name:f'sshpass -v -p 1 ssh {no_fprint} u@{vm_dates[name]["ip_bridge"]}' for name in VMs}
 #[cmd(f'ssh-keygen -R [127.0.0.1]:{port}') for port in vm_ports.keys()]
 print('\n***--------- Connecting credentials ---------***\n')
-for key, value in vm_ports.items():
-    print(colors(key, 'green'), value)
+#for key, value in vm_ports.items():
+#    print(colors(key, 'green'), value)
 for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
@@ -186,3 +188,8 @@ for key, value in vm_creds.items():
 #VBoxManage unregistervm --delete "VM name"
 #ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@localhost -p 2200
 
+#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage controlvm "$vm" poweroff; done
+#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage snapshot "$vm" restore 'snapshot_1'; done
+#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage startvm "$vm" --type headless; done
+
+#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage showvminfo "$vm" | grep State; done

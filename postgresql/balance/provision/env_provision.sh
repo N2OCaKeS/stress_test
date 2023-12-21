@@ -127,19 +127,22 @@ elif [ "$1" = "dcfreeipa" ]; then
     dns="${dcfreeipa[dns]}"
 fi
 
-if [ "$1" = "dcfreeipa" ]; then
-    sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
-    sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
-    sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
-else
-    sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
-    sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_gateway
-    #sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns"
-    sudo nmcli connection add type ethernet con-name "${bridge_net_name}" ifname eth1
-    sudo nmcli connection modify "${bridge_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
-    sudo nmcli connection modify "${bridge_net_name}" gw4 $vbox_bridge_gateway
-    sudo nmcli connection modify "${bridge_net_name}" ipv4.dns "$dns_br"
-fi
+# if [ "$1" = "dcfreeipa" ]; then
+#     sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
+#     sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
+#     sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
+# else
+#     sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
+#     sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_gateway
+#     #sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns"
+#     sudo nmcli connection add type ethernet con-name "${bridge_net_name}" ifname eth1
+#     sudo nmcli connection modify "${bridge_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
+#     sudo nmcli connection modify "${bridge_net_name}" gw4 $vbox_bridge_gateway
+#     sudo nmcli connection modify "${bridge_net_name}" ipv4.dns "$dns_br"
+# fi
+sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
+sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
+sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
 nmcli connection show
 
 if id "$main_user" >/dev/null 2>&1; then

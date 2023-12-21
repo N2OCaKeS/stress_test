@@ -3,7 +3,7 @@ import os
 from time import sleep
 
 
-set_box = '174'
+set_box = '175'
 
 
 def check_output_command(command: str):
@@ -188,8 +188,8 @@ for key, value in vm_creds.items():
 #VBoxManage unregistervm --delete "VM name"
 #ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@localhost -p 2200
 
-#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage controlvm "$vm" poweroff; done
-#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage snapshot "$vm" restore 'snapshot_1'; done
-#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage startvm "$vm" --type headless; done
+backup_VMs = '''for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage controlvm "$vm" poweroff; done \
+              for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage snapshot "$vm" restore 'snapshot_1'; done \
+              for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage startvm "$vm" --type headless; done'''
 
 #for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage showvminfo "$vm" | grep State; done

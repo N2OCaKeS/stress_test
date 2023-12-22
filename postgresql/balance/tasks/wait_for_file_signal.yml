@@ -4,5 +4,5 @@
   wait_for:
     path: signals/{{ signal }}.txt
     search_regex: "is ready"
-    timeout: 1000 #5000
+    timeout: 600 #5000
     delay: 1

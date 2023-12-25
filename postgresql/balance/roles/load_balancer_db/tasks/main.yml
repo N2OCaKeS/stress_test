@@ -53,9 +53,9 @@
     #   when: server.pg.replication.enabled and server.pg.load_balancing.wait_for_replicas
 
     - name: Wait for a database replicas are restarted of time
-      pause:
-        minutes: 3
+      command: sleep 180
       when: server.pg.replication.enabled and server.pg.load_balancing.wait_for_replicas
+      run_once: true
 
     - name: Reboot machines and restart services
       import_tasks: reboot.yml

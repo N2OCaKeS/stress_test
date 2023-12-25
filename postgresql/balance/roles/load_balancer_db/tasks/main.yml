@@ -46,10 +46,15 @@
       failed_when: res.msg is defined and 'no modifications to be performed' not in res.msg
       when: inventory_hostname == groups.load_balancers_db.0
 
-    - name: Wait until standby database replicas are restarted
-      vars:
-        signal: db_standby_replicas_restart
-      import_tasks: '{{ playbook_dir }}/tasks/wait_for_file_signal.yml'
+    # - name: Wait until standby database replicas are restarted
+    #   vars:
+    #     signal: db_standby_replicas_restart
+    #   import_tasks: '{{ playbook_dir }}/tasks/wait_for_file_signal.yml'
+    #   when: server.pg.replication.enabled and server.pg.load_balancing.wait_for_replicas
+
+    - name: Wait for a database replicas are restarted of time
+      pause:
+        minutes: 3
       when: server.pg.replication.enabled and server.pg.load_balancing.wait_for_replicas
 
     - name: Reboot machines and restart services

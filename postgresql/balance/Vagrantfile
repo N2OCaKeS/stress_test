@@ -9,7 +9,7 @@ Vagrant.configure("2") do |config|
     { :name => "lbdb1", :hostname => "lbdb1.balance.rbt", :args => "lbdb1", :cpus => "4", :memory => "16384", :ip => "10.177.103.141" },
     { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "4", :memory => "16384", :ip => "10.177.103.142" },
     { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "4", :memory => "16384", :ip => "10.177.103.143" },
-    { :name => "pgpool", :hostname => "pgpool.balance.rbt", :args => "pgpool", :cpus => "4", :memory => "16384", :ip => "10.177.103.131" },
+    #{ :name => "pgpool", :hostname => "pgpool.balance.rbt", :args => "pgpool", :cpus => "4", :memory => "16384", :ip => "10.177.103.131" },
     { :name => "dcfreeipa", :hostname => "dcfreeipa.balance.rbt", :args => "dcfreeipa", :cpus => "8", :memory => "65536", :ip => "10.177.103.110" },
     { :name => "test", :hostname => "test.balance.rbt", :args => "test", :cpus => "2", :memory => "2048", :ip => "10.177.103.116" }
   ]

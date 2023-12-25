@@ -109,9 +109,9 @@ ${database3_br[ip]} ${database3_br[domain]} ${database3_br[host]}
 ${lbdb1_br[ip]} ${lbdb1_br[domain]} ${lbdb1_br[host]}
 ${lbdb2_br[ip]} ${lbdb2_br[domain]} ${lbdb2_br[host]}
 ${lbdb3_br[ip]} ${lbdb3_br[domain]} ${lbdb3_br[host]}
-${pgpool_br[ip]} ${pgpool_br[domain]} ${pgpool_br[host]}
 ${dcfreeipa_br[ip]} ${dcfreeipa_br[domain]} ${dcfreeipa_br[host]}
 EOF
+#${pgpool_br[ip]} ${pgpool_br[domain]} ${pgpool_br[host]}
 
 if [ "$1" = "dcfreeipa" ]; then
     echo 127.0.0.1   localhost.localdomain >> /etc/hosts

@@ -3,7 +3,7 @@ import os
 from time import sleep
 
 
-set_box = '175'
+set_box = '174'
 
 
 def check_output_command(command: str):

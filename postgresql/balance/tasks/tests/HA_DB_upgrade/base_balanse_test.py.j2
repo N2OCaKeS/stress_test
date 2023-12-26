@@ -17,14 +17,14 @@ except (ImportError, ImportWarning):
 
 script = """
 #!/bin/bash
-clients="200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200"
+clients="$1"
 t=30
 dir=test
 mkdir $dir
 for c in $clients; do
     echo "pgbench_${c}_${t}.txt"
     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
-    pgbench -h localhost -p 5440 -U user0 --random-seed=13 -T $t -j $c -c $c test_parsec >> "${dir}/pgbench_result.txt"
+    pgbench -h pgpool.balance.rbt -p 5440 -U user0 --random-seed=13 -T $t -j $c -c $c contrprimer >> "${dir}/pgbench_result.txt"
     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
 done
 """
@@ -38,7 +38,7 @@ def test_run(clients, repeat):
     with open('start_test.sh', 'w') as test_script:
         test_script.write(script)
     chmod('start_test.sh', 0o755)
-    cmd('sudo bash start_test.sh')
+    cmd(f'sudo bash start_test.sh {repeat_str}')
     cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')
 
     if path.isfile('result_testing.txt'):

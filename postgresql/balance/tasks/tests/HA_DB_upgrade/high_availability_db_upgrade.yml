@@ -9,25 +9,25 @@
 
 
 # TODO: delete when installation will be done from repository
-# - name: Upload custom .deb files
-#   hosts: databases
-#   gather_facts: no
-#   become: yes
-#   tasks:
-#     - name: Create dir
-#       file:
-#         path: /usr/share/custom_pg15_upgrade
-#         state: directory
+- name: Upload custom .deb files
+  hosts: databases
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Create dir
+      file:
+        path: /usr/share/custom_pg15_upgrade
+        state: directory
 
-#     - name: Upload .deb file
-#       synchronize:
-#         src: '{{ playbook_dir }}/custom_pg15_upgrade'
-#         dest: /usr/share
-#         recursive: yes
-#         archive: no
-#         rsync_opts:
-#           - "-L --include=*.deb"
-#         use_ssh_args: yes
+    - name: Upload .deb file
+      synchronize:
+        src: '{{ playbook_dir }}/custom_pg15_upgrade'
+        dest: /usr/share
+        recursive: yes
+        archive: no
+        rsync_opts:
+          - "-L --include=*.deb"
+        use_ssh_args: yes
 
 
 - name: High availability database upgrade
@@ -38,7 +38,7 @@
   tasks:
     - name: Continuous client connections
       vars:
-        scale_factor: 1
+        scale_factor: 500
         virtual_domain_name: '{{ hostvars[groups.load_balancers_db.0].virtual_domain_name }}'
       block:
         # TODO: add authentication for pgpool
@@ -62,7 +62,7 @@
         - name: Pgbench init
           command: >-
             pgbench -U {{ domain.user_template }}0 -h {{ virtual_domain_name }}.{{ astra_domain }}
-            -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} {{ server.pg.db_name }}
+            -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} - F 100 {{ server.pg.db_name }}
 
         - name: Set signal that pgbench has started
           vars:

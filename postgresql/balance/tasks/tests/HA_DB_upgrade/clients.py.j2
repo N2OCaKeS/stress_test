@@ -3,7 +3,7 @@ from random import choice, randint
 
 import psycopg2
 
-N_ACCOUNTS = 100000
+N_ACCOUNTS = 1000000
 
 # # # Change parameters accordingly
 # Database connection parameters
@@ -15,12 +15,12 @@ db_params = {
 }
 
 # Number of clients/threads to simulate
-num_clients = 5
+num_clients = 200
 
 # Number of transactions per client
-num_transactions = 13500  # ~3-4 minutes
+num_transactions = 20000  # ~3-6 minutes
 
-scale_factor = 1
+scale_factor = 500
 # # #
 
 

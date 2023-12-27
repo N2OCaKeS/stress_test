@@ -21,7 +21,9 @@ def cmd(command):
 
 
 
-vagrant_boxes = {'1803':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
+vagrant_boxes = {'1804':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
+                         'name':'smolensk-vanilla-gui/1.8.0.4'},
+                 '1803':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
                          'name':'smolensk-vanilla-gui/1.8.0.3'},
                  '1802':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json',
                          'name':'smolensk-vanilla-gui/1.8.0.2'},
@@ -188,8 +190,8 @@ for key, value in vm_creds.items():
 #VBoxManage unregistervm --delete "VM name"
 #ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@localhost -p 2200
 
-backup_VMs = '''for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage controlvm "$vm" poweroff; done \
-              for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage snapshot "$vm" restore 'snapshot_1'; done \
-              for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage startvm "$vm" --type headless; done'''
+backup_VMs = '''for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage controlvm "$vm" poweroff; done \
+              for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage snapshot "$vm" restore 'snapshot_1'; done \
+              for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage startvm "$vm" --type headless; done'''
 
 #for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage showvminfo "$vm" | grep State; done

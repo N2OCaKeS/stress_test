@@ -62,7 +62,7 @@
         - name: Pgbench init
           command: >-
             pgbench -U {{ domain.user_template }}0 -h {{ virtual_domain_name }}.{{ astra_domain }}
-            -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} - F 100 {{ server.pg.db_name }}
+            -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} -F 100 {{ server.pg.db_name }}
 
         - name: Set signal that pgbench has started
           vars:

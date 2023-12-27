@@ -36,6 +36,18 @@ test "$(grep 1.8.0 /etc/astra_version)" && 18repo_test
 sudo apt-get update
 sudo apt-get install rsync -y
 
+
+#mount second storage
+sudo mkfs -t xfs -f /dev/sdb
+while [[ -z "$sdb_uuid" ]]; do sleep 1; sdb_uuid=$(sudo blkid -s UUID -o value /dev/sdb); done
+sudo mkdir -p /var/lib/postgresql
+sudo mount /dev/sdb /var/lib/postgresql
+#echo "UUID=$sdb_uuid /var/lib/postgresql xfs defaults 0 2" | sudo tee -a /etc/fstab
+cat << EOF >> /etc/fstab
+UUID=$sdb_uuid /var/lib/postgresql xfs defaults 0 2
+EOF
+
+
 main_user=u
 users63=(root u)
 pass=1

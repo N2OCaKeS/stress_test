@@ -190,6 +190,16 @@ for key, value in vm_creds.items():
 #VBoxManage unregistervm --delete "VM name"
 #ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@localhost -p 2200
 
+#VBoxManage controlvm test poweroff
+#VBoxManage clonehd "box-disk001.vmdk" "box-disk001.vdi" --format vdi
+#VBoxManage modifymedium disk "box-disk001.vdi" --resize 50000
+#rm box-disk001.vmdk
+#VBoxManage clonehd "box-disk001.vdi" "box-disk002.vmdk" --format vmdk
+#rm box-disk001.vmdk
+#mv box-disk002.vmdk box-disk001.vmdk
+#vboxmanage startvm test --type headless
+
+
 backup_VMs = '''for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage controlvm "$vm" poweroff; done \
               for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage snapshot "$vm" restore 'snapshot_1'; done \
               for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage startvm "$vm" --type headless; done'''

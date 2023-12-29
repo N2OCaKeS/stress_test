@@ -187,26 +187,34 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
-for command in ansible_commands:
-    print(colors(f'Begin task: {command}', 'yellow'))
-    result_code = cmd(command)
-    print(f'\nResult code: {result_code}\n')
-    if command == ansible_commands[-1] and result_code == 0:
-        print('Ansible commands cycle is fully executed')
-    if result_code != 0:
-        print(f'\nResult code: {colors(result_code, "red")}\n')
-        negotive_attempt = 0
-        while negotive_attempt < 5:
-            result_code = cmd(command)
-            print(f'\nResult code: {result_code}\n')
-            if result_code == 0:
-                break
-            else: 
-                negotive_attempt += 1
+#TODO: Добавить в цикл восстановление снимков после 5 неудачных попыток negotive_attempt.
+#Использовать для полного подсчета attempts_count. 
+#Если феил на первой команде плейбука, то сразу восстановить снимки и начать заново,
+#добавить эту проверку в блок while negotive_attempt < 5.
+while attempts_count < 5:
+    for command in ansible_commands:
+        print(colors(f'Begin task: {command}', 'yellow'))
+        result_code = cmd(command)
+        print(f'\nResult code: {result_code}\n')
+        if command == ansible_commands[-1] and result_code == 0:
+            print('Ansible commands cycle is fully executed')
+        if result_code != 0:
+            print(f'\nResult code: {colors(result_code, "red")}\n')
+            negotive_attempt = 0
+            while negotive_attempt < 5:
+                result_code = cmd(command)
+                print(f'\nResult code: {result_code}\n')
+                if result_code == 0:
+                    break
+                else: 
+                    negotive_attempt += 1
+                    #attempts_count += 1
+                    print(f'\nResult code: {colors(result_code, "red")}\n')
+            if negotive_attempt > 5:
                 attempts_count += 1
-                print(f'\nResult code: {colors(result_code, "red")}\n')
-        if negotive_attempt > 5:
-            break
+                break
+    else:
+        break
 
 print(f'Attempts count was: {attempts_count + 1}')
 

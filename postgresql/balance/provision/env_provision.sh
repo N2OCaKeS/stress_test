@@ -35,6 +35,7 @@ test "$(grep 1.7.6 /etc/astra_version)" && 17repo_test
 test "$(grep 1.8.0 /etc/astra_version)" && 18repo_test
 sudo apt-get update
 sudo apt-get install rsync -y
+sudo apt-get install htop -y
 
 
 #mount second storage

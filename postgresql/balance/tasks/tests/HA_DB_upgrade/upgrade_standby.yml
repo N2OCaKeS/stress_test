@@ -67,6 +67,7 @@
             responses:
               'Password:': '{{ domain.admin_password }}'
               'Пароль:': '{{ domain.admin_password }}'
+            timeout: 120
 
 #        - name: Disable verbose log on primary node
 #          delegate_to: '{{ groups.databases[primary_index | int] }}'

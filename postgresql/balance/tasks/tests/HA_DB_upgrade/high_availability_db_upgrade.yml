@@ -38,7 +38,7 @@
   tasks:
     - name: Continuous client connections
       vars:
-        scale_factor: 500
+        scale_factor: 100
         virtual_domain_name: '{{ hostvars[groups.load_balancers_db.0].virtual_domain_name }}'
       block:
         # TODO: add authentication for pgpool
@@ -152,6 +152,14 @@
         - name: Manual "pgbench" taken time
           debug:
             var: pgbench_results.stderr
+      when: inventory_hostname == groups.databases[-1]
+
+
+    - name: Fetch output file
+      fetch:
+        src: /home/u/results_balance.txt 
+        dest: /home/u/git/stress_test/postgresql/balance/
+        flat: yes
       when: inventory_hostname == groups.databases[-1]
 
 

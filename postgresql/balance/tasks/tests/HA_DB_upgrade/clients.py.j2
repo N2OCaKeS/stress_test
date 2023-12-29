@@ -3,7 +3,7 @@ from random import choice, randint
 
 import psycopg2
 
-N_ACCOUNTS = 1000000
+N_ACCOUNTS = 100000
 
 # # # Change parameters accordingly
 # Database connection parameters
@@ -15,12 +15,12 @@ db_params = {
 }
 
 # Number of clients/threads to simulate
-num_clients = 200
+num_clients = 20
 
 # Number of transactions per client
-num_transactions = 20000  # ~3-6 minutes
+num_transactions = 10000  # ~3-6 minutes
 
-scale_factor = 500
+scale_factor = 100
 # # #
 
 
@@ -66,10 +66,19 @@ def main():
 
     # Process and print results
     all_queries = num_transactions * num_clients
-    print(f"Number of successful queries: {results['success']}")
-    print(f"Number of failed queries: {results['fail']}")
-    print(f"Percent of failed queries: {(results['fail'] / all_queries) * 100:.2f}% "
-          f"({results['fail']} / {all_queries})")
+    success_quer = f"Number of successful queries: {results['success']}"
+    failed_quer = f"Number of failed queries: {results['fail']}"
+    failed_quer_perc = f"Percent of failed queries: {(results['fail'] / all_queries) * 100:.2f}% " \
+                       f"({results['fail']} / {all_queries})"
+    
+    with open('results_balance.txt', 'w') as results_file:
+        results_file.write(success_quer + '\n')
+        results_file.write(failed_quer + '\n')
+        results_file.write(failed_quer_perc + '\n')
+
+    print(success_quer)
+    print(failed_quer)
+    print(failed_quer_perc)
 
 
 if __name__ == '__main__':

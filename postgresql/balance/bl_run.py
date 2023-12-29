@@ -17,7 +17,7 @@ def check_output_command(command: str):
         return errors
 
 def cmd(command):
-    return subprocess.run(command, shell=True)
+    return subprocess.run(command, shell=True).returncode
 
 
 
@@ -44,6 +44,13 @@ vbox_subnet_mask = '19'
 vbox_bridge_network = '10.177.103.0'
 vbox_bridge_ip = '10.177.103.1'
 vbox_bridge_mask = '255.255.224.0'
+attempts_count = 0
+ansible_commands = [
+    'sudo -u u ansible-playbook bl_contrprimer.yml',
+    'sudo -u u ansible-playbook tasks/checks/db/replication.yml',
+    'sudo -u u ansible-playbook tasks/checks/db/load_balancing.yml',
+    'sudo -u u ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
+]
 
 vm_dates = {
         'database1':{'host-port':'2021',
@@ -180,8 +187,28 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
-#cmd('ansible-playbook bl_contrprimer.yml')
-#cmd('ansible-playbook tasks/checks/db/replication.yml')
+for command in ansible_commands:
+    print(colors(f'Begin task: {command}', 'yellow'))
+    result_code = cmd(command)
+    print(f'\nResult code: {result_code}\n')
+    if command == ansible_commands[-1] and result_code == 0:
+        print('Ansible commands cycle is fully executed')
+    if result_code != 0:
+        print(f'\nResult code: {colors(result_code, "red")}\n')
+        negotive_attempt = 0
+        while negotive_attempt < 5:
+            result_code = cmd(command)
+            print(f'\nResult code: {result_code}\n')
+            if result_code == 0:
+                break
+            else: 
+                negotive_attempt += 1
+                attempts_count += 1
+                print(f'\nResult code: {colors(result_code, "red")}\n')
+        if negotive_attempt > 5:
+            break
+
+print(f'Attempts count was: {attempts_count + 1}')
 
 
 #sudo vboxmanage showvminfo database3
@@ -204,4 +231,4 @@ backup_VMs = '''for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'l
               for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage snapshot "$vm" restore 'snapshot_1'; done \
               for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage startvm "$vm" --type headless; done'''
 
-#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'pgpool' 'dcfreeipa'; do sudo vboxmanage showvminfo "$vm" | grep State; done
+#for vm in 'database1' 'database2' 'database3' 'lbdb1' 'lbdb2' 'lbdb3' 'dcfreeipa'; do sudo vboxmanage showvminfo "$vm" | grep State; done

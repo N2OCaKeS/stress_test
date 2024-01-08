@@ -15,27 +15,28 @@ Vagrant.configure("2") do |config|
   ]
 
   vms.each do |vm|
-    config.vm.define vm[:name] do |machine|
-      machine.vm.hostname = vm[:hostname]
-      #machine.vm.network "public_network", ip: vm[:ip]
-      machine.vm.provider "virtualbox" do |vb|
-        vb.check_guest_additions = false
-        vb.name = vm[:name]
-        vb.memory = vm[:memory]
-        vb.cpus = vm[:cpus]
-        vb.customize ["modifyvm", :id, "--usb", "off"]
-        vb.customize ["modifyvm", :id, "--usbehci", "off"]
+    if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
+      config.vm.define vm[:name] do |machine|
+        machine.vm.hostname = vm[:hostname]
+        #machine.vm.network "public_network", ip: vm[:ip]
+        machine.vm.provider "virtualbox" do |vb|
+          vb.check_guest_additions = false
+          vb.name = vm[:name]
+          vb.memory = vm[:memory]
+          vb.cpus = vm[:cpus]
+          vb.customize ["modifyvm", :id, "--usb", "off"]
+          vb.customize ["modifyvm", :id, "--usbehci", "off"]
 
-        unless File.exist?("/root/VirtualBox VMs/#{vm[:name]}/#{vm[:name]}_disk.vdi")
-          vb.customize ['createhd', '--filename', "./#{vm[:name]}_disk.vdi", '--size', 40960 ]
-          vb.customize ['storagectl', :id, '--name', "SATA Controller #{vm[:name]}", '--add', 'sata']
-          vb.customize ['storageattach', :id,  '--storagectl', "SATA Controller #{vm[:name]}", '--port', 1, '--device', 0, '--type', 'hdd', '--medium', "./#{vm[:name]}_disk.vdi"]
+          unless File.exist?("/root/VirtualBox VMs/#{vm[:name]}/#{vm[:name]}_disk.vdi")
+            vb.customize ['createhd', '--filename', "./#{vm[:name]}_disk.vdi", '--size', 40960 ]
+            vb.customize ['storagectl', :id, '--name', "SATA Controller #{vm[:name]}", '--add', 'sata']
+            vb.customize ['storageattach', :id,  '--storagectl', "SATA Controller #{vm[:name]}", '--port', 1, '--device', 0, '--type', 'hdd', '--medium', "./#{vm[:name]}_disk.vdi"]
+          end
+
         end
-
+        #machine.vm.provision "shell", path:"bl_sources.sh"
+        machine.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args]]
       end
-      #machine.vm.provision "shell", path:"bl_sources.sh"
-      machine.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args]]
-    end
   end
 end
 

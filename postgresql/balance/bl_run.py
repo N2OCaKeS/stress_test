@@ -160,6 +160,14 @@ def backup_vms_snapshots():
     status_code += [cmd(f'sudo vboxmanage startvm {vm} --type headless') for vm in VMs]
     return sum(i > 0 for i in status_code)
 
+def check_ping():
+    def create_vm(vm):
+        cmd(f'sudo vboxmanage controlvm {vm} poweroff')
+        cmd(f'sudo vboxmanage  unregistervm --delete {vm}')
+        cmd(f'UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox')
+
+    [create_vm(vm) for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip']}") != 0]
+
 
 # # #Prepare
 cmd('sudo bash bl_prepare_vbox.sh')
@@ -193,7 +201,7 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
-while attempts_count < 5:
+while attempts_count < 10:
     for command in ansible_commands:
         print(colors(f'Begin task: {command}', 'yellow'))
         result_code = cmd(command)
@@ -205,7 +213,9 @@ while attempts_count < 5:
             negotive_attempt = 0
             while negotive_attempt < 5:
                 if command == ansible_commands[0]:
-                    if backup_vms_snapshots() != 0:
+                    if backup_vms_snapshots() == 0:
+                        check_ping()
+                    else:
                         print('При восстановлении снимков произошла ошибка')
                         negotive_attempt += 1
                         break
@@ -218,7 +228,9 @@ while attempts_count < 5:
                     print(f'\nResult code: {colors(result_code, "red")}\n')
             if negotive_attempt >= 5:
                 attempts_count += 1
-                if backup_vms_snapshots() != 0:
+                if backup_vms_snapshots() == 0:
+                    check_ping()
+                else:
                     print('При восстановлении снимков произошла ошибка')
                 break
     else:

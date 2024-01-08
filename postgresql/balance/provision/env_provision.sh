@@ -207,4 +207,9 @@ for user in ${users63[*]}; do
     pdpl-user $user -i 63
 done
 
+ip a
+for vm in database1_br database2_br database3_br lbdb1_br lbdb2_br lbdb3_br dcfreeipa_br; do
+    declare -n view=$vm
+    ping -c 1 "${view[ip]}"
+done
 

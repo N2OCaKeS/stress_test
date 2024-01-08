@@ -161,16 +161,20 @@ def backup_vms_snapshots():
     return sum(i > 0 for i in status_code)
 
 def check_ping():
+    task_code = 0
+
     def create_vm(vm: str):
         vm_list = [vm, 'test'] #добавление ВМ 'test' устраняет баг с некорректным импортом репозитория
         [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in vm_list]
         [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in vm_list]
         [cmd(f'UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox') for vm in vm_list]
         cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
-        colors(cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}"), "yellow")
+        colors("Result reinstall VM:\n", "yellow")
+        if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0:
+            task_code += 1
 
     [create_vm(vm) for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
-
+    return task_code
 
 # # #Prepare
 cmd('sudo bash bl_prepare_vbox.sh')
@@ -190,6 +194,16 @@ cmd('vboxmanage natnetwork list')
 cmd('vboxmanage list hostonlyifs')
 cmd('vboxmanage list bridgedifs')
 cmd('vboxmanage list vms')
+
+if check_ping() != 0:
+    check_count = 0
+    while check_count < 10:
+        if check_ping() != 0:
+            check_count += 1
+        else: break
+    if check_count >= 10:
+        print('Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)')
+        exit(1)
 
 
 # # # SSH connect info
@@ -217,7 +231,8 @@ while attempts_count < 10:
             while negotive_attempt < 5:
                 if command == ansible_commands[0]:
                     if backup_vms_snapshots() == 0:
-                        check_ping()
+                        if check_ping() != 0:
+                            negotive_attempt += 1
                     else:
                         print('При восстановлении снимков произошла ошибка')
                         negotive_attempt += 1
@@ -232,7 +247,8 @@ while attempts_count < 10:
             if negotive_attempt >= 5:
                 attempts_count += 1
                 if backup_vms_snapshots() == 0:
-                    check_ping()
+                    if check_ping() != 0:
+                        negotive_attempt += 1
                 else:
                     print('При восстановлении снимков произошла ошибка')
                 break

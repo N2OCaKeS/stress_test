@@ -37,6 +37,7 @@ Vagrant.configure("2") do |config|
         #machine.vm.provision "shell", path:"bl_sources.sh"
         machine.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args]]
       end
+    end
   end
 end
 

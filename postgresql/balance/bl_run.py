@@ -161,12 +161,15 @@ def backup_vms_snapshots():
     return sum(i > 0 for i in status_code)
 
 def check_ping():
-    def create_vm(vm):
-        cmd(f'sudo vboxmanage controlvm {vm} poweroff')
-        cmd(f'sudo vboxmanage  unregistervm --delete {vm}')
-        cmd(f'UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox')
+    def create_vm(vm: str):
+        vm_list = [vm, 'test'] #добавление ВМ 'test' устраняет баг с некорректным импортом репозитория
+        [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in vm_list]
+        [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in vm_list]
+        [cmd(f'UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox') for vm in vm_list]
+        cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
+        colors(cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}"), "yellow")
 
-    [create_vm(vm) for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip']}") != 0]
+    [create_vm(vm) for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
 
 
 # # #Prepare

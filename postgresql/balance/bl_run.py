@@ -35,7 +35,7 @@ vagrant_boxes = {'1804':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/s
 
 box_url = vagrant_boxes[set_box]['url']
 box_name = vagrant_boxes[set_box]['name']
-VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'pgpool', 'dcfreeipa']
+VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 vbox_nat = 'QANetwork'
 vbox_std_name_interface = 'vboxnet0'
@@ -153,6 +153,12 @@ def set_bridge_network(vm, adapter_name):
 def check_vm_list():
     return check_output_command('vboxmanage list vms')
 
+def backup_vms_snapshots():
+    status_code = []
+    status_code += [cmd(f'sudo vboxmanage controlvm {vm} poweroff') for vm in VMs]
+    status_code += [cmd(f"sudo vboxmanage snapshot {vm} restore 'snapshot_1'") for vm in VMs]
+    status_code += [cmd(f'sudo vboxmanage startvm {vm} --type headless') for vm in VMs]
+    return sum(i > 0 for i in status_code)
 
 
 # # #Prepare
@@ -187,10 +193,6 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
-#TODO: Добавить в цикл восстановление снимков после 5 неудачных попыток negotive_attempt.
-#Использовать для полного подсчета attempts_count. 
-#Если феил на первой команде плейбука, то сразу восстановить снимки и начать заново,
-#добавить эту проверку в блок while negotive_attempt < 5.
 while attempts_count < 5:
     for command in ansible_commands:
         print(colors(f'Begin task: {command}', 'yellow'))
@@ -202,21 +204,28 @@ while attempts_count < 5:
             print(f'\nResult code: {colors(result_code, "red")}\n')
             negotive_attempt = 0
             while negotive_attempt < 5:
+                if command == ansible_commands[0]:
+                    if backup_vms_snapshots() != 0:
+                        print('При восстановлении снимков произошла ошибка')
+                        negotive_attempt += 1
+                        break
                 result_code = cmd(command)
                 print(f'\nResult code: {result_code}\n')
                 if result_code == 0:
                     break
                 else: 
                     negotive_attempt += 1
-                    #attempts_count += 1
                     print(f'\nResult code: {colors(result_code, "red")}\n')
-            if negotive_attempt > 5:
+            if negotive_attempt >= 5:
                 attempts_count += 1
+                if backup_vms_snapshots() != 0:
+                    print('При восстановлении снимков произошла ошибка')
                 break
     else:
+        attempts_count += 1
         break
 
-print(f'Attempts count was: {attempts_count + 1}')
+print(f'Attempts count was: {attempts_count}')
 
 
 #sudo vboxmanage showvminfo database3

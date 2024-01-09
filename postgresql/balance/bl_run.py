@@ -155,26 +155,28 @@ def check_vm_list():
 
 def backup_vms_snapshots():
     status_code = []
-    status_code += [cmd(f'sudo vboxmanage controlvm {vm} poweroff') for vm in VMs]
-    status_code += [cmd(f"sudo vboxmanage snapshot {vm} restore 'snapshot_1'") for vm in VMs]
-    status_code += [cmd(f'sudo vboxmanage startvm {vm} --type headless') for vm in VMs]
+    status_code += [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in VMs]
+    status_code += [cmd(f"vboxmanage snapshot {vm} restore 'snapshot_1'") for vm in VMs]
+    status_code += [cmd(f'vboxmanage startvm {vm} --type headless') for vm in VMs]
     return sum(i > 0 for i in status_code)
 
 def check_ping():
-    task_code = 0
+    task_code = [0]
 
     def create_vm(vm: str):
         vm_list = [vm, 'test'] #добавление ВМ 'test' устраняет баг с некорректным импортом репозитория
         [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in vm_list]
         [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in vm_list]
         [cmd(f'UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox') for vm in vm_list]
+        cmd(f'vboxmanage controlvm {vm} poweroff')
+        cmd(f'vboxmanage startvm {vm} --type headless')
         cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
         colors("Result reinstall VM:\n", "yellow")
         if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0:
-            task_code += 1
+            task_code[0] += 1
 
     [create_vm(vm) for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
-    return task_code
+    return int(task_code[0])
 
 # # #Prepare
 cmd('sudo bash bl_prepare_vbox.sh')

@@ -1,6 +1,7 @@
 import threading
 from random import choice, randint
-
+from os.path import exists
+import subprocess
 import psycopg2
 
 N_ACCOUNTS = 100000
@@ -53,6 +54,58 @@ def run_pgbench():
         except (psycopg2.InterfaceError, psycopg2.OperationalError):
             results['fail'] += 1
 
+
+def astra_version():
+    version = ['null', 'null']
+   
+    if exists("/etc/astra_version"):
+        with open("/etc/astra_version", "r") as file:
+            astra_update_version = file.read()
+        version[0] = astra_update_version.strip('\n')
+
+    if exists("/etc/astra_license"):
+        with open("/etc/astra_license", "r") as file:
+                    astra_license = file.read()
+                    if "orel" in astra_license:
+                        version[1] = "orel"
+                    elif "smolensk" in astra_license:
+                        version[1] = "smolensk"
+                    elif "voronezh" in astra_license:
+                        version[1] = "voronezh"
+                    else:
+                        print("Version of distribution not found")
+
+    return version
+
+
+def info_list():
+    def cmd(command):
+        return subprocess.run(command,
+                              shell=True,
+                              stdout=subprocess.PIPE).stdout.decode("utf-8")
+
+    av = astra_version()
+    if av[0].startswith('1.7'):
+         psql_version = 'postgresql-11'
+    elif av[0].startswith('1.8'):
+         psql_version = 'postgresql-15'
+
+    info_lst = [f'{av[0]}({av[1]})\n',
+                cmd('uname -r'),
+                cmd(f"apt-cache show {psql_version} | grep Version | awk '{{print$2}}'"),
+                cmd("apt-cache show pgpool2 | grep Version | awk '{print$2}'"),
+                psql_version,
+                'pgpool2']
+    
+    with open('psb_info.txt', 'a+') as info:
+            info.writelines(info_lst)
+
+    with open('available_packages.txt', 'a') as file:
+         pkgs = cmd('apt list postgresql*')
+         file.write('\n2nd iteration:\n')
+         file.write(pkgs)
+
+
 def main():
     threads = []
     for i in range(num_clients):
@@ -79,6 +132,7 @@ def main():
     print(success_quer)
     print(failed_quer)
     print(failed_quer_perc)
+    info_list()
 
 
 if __name__ == '__main__':

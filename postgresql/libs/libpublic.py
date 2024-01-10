@@ -20,18 +20,20 @@ class Public:
                  package=None,
                  test_cycle_version=None,
                  storage=False,
-                 kernel_check=False):
+                 kernel_check=False,
+                 balance=False):
     
-        self.username=username
-        self.token=token
+        self.username = username
+        self.token = token
         self.c_space = conf_space
         self.c_pp = conf_parent_page
         self.c_np = conf_new_page_name
         self.grade_stand = grade_stand
-        self.package=package
+        self.package = package
         self.tcv = test_cycle_version
         self.storage = storage
         self.kernel_check = kernel_check
+        self.balance = balance
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -90,6 +92,19 @@ class Public:
                                                         arm_proc=self.stands[self.grade_stand]['cpu'],
                                                         arm_mem=self.stands[self.grade_stand]['ram'],
                                                         arm_st=self.stands[self.grade_stand]['storage'])
+        elif self.balance:
+            with open('{}/header_table_template_balance.html'.format(TEMPLATE_PATH), 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        package_name_psql=info_lst[4],
+                                                        package_vers_psql=info_lst[2],
+                                                        package_name_pgpool=info_lst[3],
+                                                        package_vers_pgpool=info_lst[5],
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
         else:
             with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                 header_table_temp = file.read()
@@ -112,8 +127,12 @@ class Public:
             with open(f'{REPORT_PATH}/kernel_check.html', 'r') as file:
                 kernel_table = file.read()
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-
             html_page = '\n'.join([header_table, head_row, kernel_table])
+        elif self.balance:
+            with open(f'{REPORT_PATH}/results_balance.html', 'r') as file:
+                balance_table = file.read()
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            html_page = '\n'.join([header_table, head_row, balance_table])
         else:
             rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:

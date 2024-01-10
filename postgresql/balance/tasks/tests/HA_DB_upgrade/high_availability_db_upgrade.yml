@@ -155,11 +155,15 @@
       when: inventory_hostname == groups.databases[-1]
 
 
-    - name: Fetch output file
+    - name: Fetch output files
       fetch:
-        src: /home/u/results_balance.txt 
-        dest: /home/u/git/stress_test/postgresql/balance/
+        src: "/home/u/{{ item }}"
+        dest: /home/u/git/stress_test/postgresql/
         flat: yes
+      with_items:
+        - results_balance.txt
+        - psb_info.txt
+        - available_packages.txt
       when: inventory_hostname == groups.databases[-1]
 
 

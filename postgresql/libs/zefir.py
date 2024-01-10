@@ -35,7 +35,8 @@ class UploaderZC(Public, PSQLStatistics2):
                  public=False,
                  statistics=False,
                  storage=False,
-                 kernel_check=False):
+                 kernel_check=False,
+                 balance=False):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -53,6 +54,7 @@ class UploaderZC(Public, PSQLStatistics2):
         self.statistics = statistics
         self.storage = storage
         self.kernel_check = kernel_check
+        self.balance = balance
 
     def test_cycle_status_changer(self, status):
 
@@ -66,7 +68,8 @@ class UploaderZC(Public, PSQLStatistics2):
                             package=self.PKG,
                             test_cycle_version=self.TCV,
                             storage=self.storage,
-                            kernel_check=self.kernel_check)
+                            kernel_check=self.kernel_check,
+                            balance=self.balance)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,
@@ -435,7 +438,8 @@ class ZefirResultTable:
                             'storage drive overflow':'SD_overflow', 'ram overflow':'RAM_overflow', 'file system benchmark. XFS parsec':'FS_XFS_parsec',
                             'postgresql benchmark parsec':'PSQL_parsec', 'postgresql benchmark vanilla':'PSQL_vanilla',
                             'tantor benchmark vanilla':'Tantor_vanilla', 'postgresql benchmark kernels':'PSQL_kernels',
-                            'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec'}
+                            'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
+                            'postgresql benchmark balance':'PSQL_balance'}
         for k, v in testname_columns.items():
             self.new_tab.rename(columns={k:v}, inplace=True)
         for name in self.new_tab.columns:

@@ -213,3 +213,4 @@ ip a
 #    ping -c 1 "${view[ip]}"
 #done
 
+apt list postgresql* > /home/u/available_packages.txt

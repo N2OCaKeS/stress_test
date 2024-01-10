@@ -248,14 +248,14 @@ parent_page_list = {
                   'unix':'1.7.3.UU.2 ⬝ UnixBench',
                   'unix parsec':'1.7.3.UU.2 ⬝ UnixBench'
                  },
-    '1.7.3.UU.1':{'postgresql':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'postgresql-sm':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'psql kernels':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'psql parsec':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'psql vanilla':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'postgresql-aud-off':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'tantor vanilla':'1.7.3 UU1 ⬝ PostgreSQL',
-                  'tantor kernels':'1.7.3 UU1 ⬝ PostgreSQL',
+    '1.7.3.UU.1':{'postgresql':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
+                  'postgresql-sm':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
+                  'psql kernels':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
+                  'psql parsec':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
+                  'psql vanilla':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
+                  'postgresql-aud-off':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
+                  'tantor vanilla':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
+                  'tantor kernels':'STRESS 1.7.3.UU.1 ⬝ PostgreSQL',
                   'XFS':'1.7.3 UU1 ⬝ Файловые системы',
                   'XFS parsec':'1.7.3 UU1 ⬝ Файловые системы',
                   'NTFS':'1.7.3 UU1 ⬝ Файловые системы',
@@ -303,6 +303,7 @@ branches = {
     'file system benchmark. EXT4':'file_systems',
     'file system benchmark. XFS':'file_systems',
     'postgresql benchmark':'postgresql',
+    'postgresql benchmark balance':'postgresql',
     'postgresql benchmark kernels':'postgresql',
     'postgresql benchmark parsec':'postgresql',
     'postgresql benchmark vanilla':'postgresql',
@@ -361,6 +362,7 @@ tests = {
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
+    'postgresql benchmark balance':'psql balance',
     'postgresql benchmark kernels':'psql kernels',
     'postgresql benchmark parsec':'psql parsec',
     'postgresql benchmark vanilla':'psql vanilla',
@@ -406,7 +408,7 @@ psyc = {
 group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
-              'psql kernels', 'tantor kernels', 'unix parsec']
+              'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance']
 
 
 
@@ -476,7 +478,8 @@ releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4',
 
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
-testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels']
+testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels',
+                               'psql balance']
 testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
@@ -509,6 +512,7 @@ tests_case_zefir_key = {
     'auditd-f':'BT-T8215',
     'auditd-p':'BT-T8213',
     'auditd-u':'BT-T8214',
-    'syslog-ng':'BT-T8119'
+    'syslog-ng':'BT-T8119',
+    'psql balance':'BT-T13362'
 }
 

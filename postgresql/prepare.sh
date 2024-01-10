@@ -17,6 +17,11 @@ sudo wget -P /home/u/postgresql_vanilla ftp://10.177.103.10/postgresql/*
 
 # install python dependencies in venv
 #source venv/bin/activate
-python3 -m pip install --upgrade pip
 #pip3 install -r req.txt
-python3 -m pip install -r req.txt
+if [ "$1" = "1.8" ]; then
+    python3 -m pip install --upgrade pip --break-system-packages
+    python3 -m pip install -r req.txt --break-system-packages
+else
+    python3 -m pip install --upgrade pip
+    python3 -m pip install -r req.txt
+fi

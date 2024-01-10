@@ -145,10 +145,10 @@ vbox_bridge_ip = '10.177.103.1'
 vbox_bridge_mask = '255.255.224.0'
 attempts_count = 0
 ansible_commands = [
-    'sudo -u u ansible-playbook bl_contrprimer.yml',
-    'sudo -u u ansible-playbook tasks/checks/db/replication.yml',
-    'sudo -u u ansible-playbook tasks/checks/db/load_balancing.yml',
-    'sudo -u u ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
+    'sudo -u u ansible-playbook balance/bl_contrprimer.yml',
+    'sudo -u u ansible-playbook balance/tasks/checks/db/replication.yml',
+    'sudo -u u ansible-playbook balance/tasks/checks/db/load_balancing.yml',
+    'sudo -u u ansible-playbook balance/tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
 ]
 
 vm_dates = {
@@ -294,7 +294,7 @@ uzs.upload_test_cycle_status('progress')
 
 
 # # #Prepare
-cmd('sudo bash bl_prepare_vbox.sh')
+cmd('sudo bash balance/bl_prepare_vbox.sh')
 
 # # # Создать ВМ 
 # TODO добавить выбор ядра для ВМ
@@ -315,11 +315,12 @@ cmd('vboxmanage list vms')
 
 if check_ping() != 0:
     check_count = 0
-    while check_count < 5:
+    while check_count < 3:
         if check_ping() != 0:
             check_count += 1
+            print('Check count: ' + str(check_count))
         else: break
-    if check_count >= 5:
+    if check_count >= 3:
         print('Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)')
         uzs.upload_test_cycle_status(zefir_status='fail')
         exit(1)
@@ -337,7 +338,7 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
-while attempts_count < 5:
+while attempts_count < 3:
     for command in ansible_commands:
         print(colors(f'Begin task: {command}', 'yellow'))
         result_code = cmd(command)
@@ -347,7 +348,7 @@ while attempts_count < 5:
         if result_code != 0:
             print(f'\nResult code: {colors(result_code, "red")}\n')
             negotive_attempt = 0
-            while negotive_attempt < 5:
+            while negotive_attempt < 3:
                 if command == ansible_commands[0]:
                     if backup_vms_snapshots() == 0:
                         if check_ping() != 0:
@@ -363,7 +364,7 @@ while attempts_count < 5:
                 else: 
                     negotive_attempt += 1
                     print(f'\nResult code: {colors(result_code, "red")}\n')
-            if negotive_attempt >= 5:
+            if negotive_attempt >= 3:
                 attempts_count += 1
                 if backup_vms_snapshots() == 0:
                     if check_ping() != 0:

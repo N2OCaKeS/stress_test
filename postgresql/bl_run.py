@@ -259,10 +259,20 @@ def backup_vms_snapshots():
     status_code += [cmd(f'vboxmanage startvm {vm} --type headless') for vm in VMs]
     return sum(i > 0 for i in status_code)
 
-def check_ping():
-    task_code = [0]
 
-    def create_vm(vm: str):
+class CheckVMs():
+
+    def __init__(self,
+                 rebuild=False):
+        
+        self.rebuild = rebuild
+        self.task_code = [0]
+
+    def check_ping():
+        bad_vms = [vm for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
+        return bad_vms
+
+    def create_vm(self, vm: str):
         vm_list = [vm, 'test'] #добавление ВМ 'test' устраняет баг с некорректным импортом репозитория
         [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in vm_list]
         [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in vm_list]
@@ -272,12 +282,35 @@ def check_ping():
         cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
         colors("Result reinstall VM:\n", "yellow")
         if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0:
-            task_code[0] += 1
+            self.task_code[0] += 1
+        return int(self.task_code[0])
 
-    [create_vm(vm) for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
-    return int(task_code[0])
+    def build_all_vms(self):
+        # TODO добавить выбор ядра для ВМ
+
+        if self.rebuild == True:
+            if os.path.exists('/root/.vagrant.d/boxes/'):
+                cmd('rm -r /root/.vagrant.d/boxes/*')
+            if os.path.exists('/root/VirtualBox\ VMs/'):
+                cmd('rm -r /root/VirtualBox\ VMs/*')
+
+        cmd(f'cd balance && vagrant box add {box_url} --force')
+        cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
+
+        # # # Network set
+        bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
+        print(f'Bridge interface found as: {colors(bridge_iface, "yellow")}')
+        #cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
+        #[set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
+        [set_bridge_network(vm, bridge_iface) for vm in VMs if vm in check_vm_list()]
+        [cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"') for vm in VMs if vm in check_vm_list()]
+        cmd('vboxmanage natnetwork list')
+        cmd('vboxmanage list hostonlyifs')
+        cmd('vboxmanage list bridgedifs')
+        cmd('vboxmanage list vms')
 
 
+vm = CheckVMs()
 uzs = UploaderZC(folder_tree_id=args.FTI,
                 test_cycle_name=args.TCYC,
                 test_case_name=args.TCAS,
@@ -297,27 +330,16 @@ uzs.upload_test_cycle_status('progress')
 cmd('sudo bash balance/bl_prepare_vbox.sh')
 
 # # # Создать ВМ 
-# TODO добавить выбор ядра для ВМ
-cmd(f'cd balance && vagrant box add {box_url} --force')
-cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
-
-# # # Network set
-bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
-print(f'Bridge interface found as: {colors(bridge_iface, "yellow")}')
-#cmd(f'vboxmanage natnetwork add --netname {vbox_nat} --network "10.0.0.0/19" --enable --dhcp on')
-#[set_natnetwork(vm, vbox_nat) for vm in VMs if vm in check_vm_list()]
-[set_bridge_network(vm, bridge_iface) for vm in VMs if vm in check_vm_list()]
-[cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"') for vm in VMs if vm in check_vm_list()]
-cmd('vboxmanage natnetwork list')
-cmd('vboxmanage list hostonlyifs')
-cmd('vboxmanage list bridgedifs')
-cmd('vboxmanage list vms')
+vm.build_all_vms()
 
 check_count = 0
-if check_ping() != 0:
+if vm.check_ping():
+    vm.rebuild = True
+    vm.build_all_vms()
     check_count += 1
     while check_count < 1:
-        if check_ping() != 0:
+        if vm.check_ping():
+            vm.build_all_vms()
             check_count += 1
             print('Check count: ' + str(check_count))
         else: break
@@ -351,10 +373,7 @@ while attempts_count < 3:
             negotive_attempt = 0
             while negotive_attempt < 3:
                 if command == ansible_commands[0]:
-                    if backup_vms_snapshots() == 0:
-                        if check_ping() != 0:
-                            negotive_attempt += 1
-                    else:
+                    if backup_vms_snapshots() != 0:
                         print('При восстановлении снимков произошла ошибка')
                         negotive_attempt += 1
                         break
@@ -367,11 +386,6 @@ while attempts_count < 3:
                     print(f'\nResult code: {colors(result_code, "red")}\n')
             if negotive_attempt >= 3:
                 attempts_count += 1
-                if backup_vms_snapshots() == 0:
-                    if check_ping() != 0:
-                        negotive_attempt += 1
-                else:
-                    print('При восстановлении снимков произошла ошибка')
                 break
     else:
         attempts_count += 1

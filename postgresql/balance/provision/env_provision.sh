@@ -83,6 +83,7 @@ declare -A lbdb2_br=( [ip]=10.177.103.142 [domain]=lbdb2.balance.rbt [host]=lbdb
 declare -A lbdb3_br=( [ip]=10.177.103.143 [domain]=lbdb3.balance.rbt [host]=lbdb3 [dns]="10.177.103.110, 10.177.128.198" )
 declare -A pgpool_br=( [ip]=10.177.103.131 [domain]=pgpool.balance.rbt [host]=pgpool [dns]="10.177.103.110, 10.177.128.198" )
 declare -A dcfreeipa_br=( [ip]=10.177.103.110 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.177.103.110, 10.177.128.198" )
+declare -A test_br=( [ip]=10.177.103.170 [domain]=test.balance.rbt [host]=test [dns]="10.177.103.110, 10.177.128.198" )
 
 declare -A database1=( [ip]=10.0.0.11 [domain]=database1.balance.rbt [host]=database1 [dns]="10.0.0.10, 8.8.8.8" )
 declare -A database2=( [ip]=10.0.0.12 [domain]=database2.balance.rbt [host]=database2 [dns]="10.0.0.10, 8.8.8.8" )
@@ -92,6 +93,7 @@ declare -A lbdb2=( [ip]=10.0.0.42 [domain]=lbdb2.balance.rbt [host]=lbdb2 [dns]=
 declare -A lbdb3=( [ip]=10.0.0.43 [domain]=lbdb3.balance.rbt [host]=lbdb3 [dns]="10.0.0.10, 8.8.8.8" )
 declare -A pgpool=( [ip]=10.0.0.31 [domain]=pgpool.balance.rbt [host]=pgpool [dns]="10.0.0.10, 8.8.8.8" )
 declare -A dcfreeipa=( [ip]=10.0.0.10 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.0.0.10, 8.8.8.8" )
+declare -A test=( [ip]=10.0.0.10 [domain]=test.balance.rbt [host]=test [dns]="10.0.0.10, 8.8.8.8" )
 
 # declare -A database1_br=( [ip_br]=10.177.103.111 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0) 
 # declare -A database2_br=( [ip_br]=10.177.103.112 [server-port]=3422 [forward-port]=2022 [mac]=08:00:27:64:AF:57 [net]=int0)
@@ -171,6 +173,11 @@ elif [ "$1" = "dcfreeipa" ]; then
     dns_br="${dcfreeipa_br[dns]}"
     ip=${dcfreeipa[ip]}
     dns="${dcfreeipa[dns]}"
+elif [ "$1" = "test" ]; then
+    ip_br=${test_br[ip]}
+    dns_br="${test_br[dns]}"
+    ip=${test[ip]}
+    dns="${test[dns]}"
 fi
 
 # if [ "$1" = "dcfreeipa" ]; then

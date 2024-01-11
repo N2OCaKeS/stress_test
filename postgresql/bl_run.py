@@ -145,10 +145,10 @@ vbox_bridge_ip = '10.177.103.1'
 vbox_bridge_mask = '255.255.224.0'
 attempts_count = 0
 ansible_commands = [
-    'sudo -u u ansible-playbook balance/bl_contrprimer.yml',
-    'sudo -u u ansible-playbook balance/tasks/checks/db/replication.yml',
-    'sudo -u u ansible-playbook balance/tasks/checks/db/load_balancing.yml',
-    'sudo -u u ansible-playbook balance/tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
+    'cd balance && sudo -u u ansible-playbook bl_contrprimer.yml',
+    'cd balance && sudo -u u ansible-playbook tasks/checks/db/replication.yml',
+    'cd balance && sudo -u u ansible-playbook tasks/checks/db/load_balancing.yml',
+    'cd balance && sudo -u u ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
 ]
 
 vm_dates = {
@@ -266,7 +266,7 @@ def check_ping():
         vm_list = [vm, 'test'] #добавление ВМ 'test' устраняет баг с некорректным импортом репозитория
         [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in vm_list]
         [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in vm_list]
-        [cmd(f'UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox') for vm in vm_list]
+        [cmd(f'cd balance &&  UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox') for vm in vm_list]
         cmd(f'vboxmanage controlvm {vm} poweroff')
         cmd(f'vboxmanage startvm {vm} --type headless')
         cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
@@ -298,8 +298,8 @@ cmd('sudo bash balance/bl_prepare_vbox.sh')
 
 # # # Создать ВМ 
 # TODO добавить выбор ядра для ВМ
-cmd(f'vagrant box add {box_url} --force')
-cmd(f'UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
+cmd(f'cd balance && vagrant box add {box_url} --force')
+cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
 
 # # # Network set
 bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")

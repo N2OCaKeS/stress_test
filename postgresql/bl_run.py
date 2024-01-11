@@ -315,12 +315,12 @@ cmd('vboxmanage list vms')
 
 if check_ping() != 0:
     check_count = 0
-    while check_count < 3:
+    while check_count < 1:
         if check_ping() != 0:
             check_count += 1
             print('Check count: ' + str(check_count))
         else: break
-    if check_count >= 3:
+    if check_count >= 1:
         print('Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)')
         uzs.upload_test_cycle_status(zefir_status='fail')
         exit(1)

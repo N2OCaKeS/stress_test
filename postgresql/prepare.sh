@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ "$1" = "1.8" ]; then
+    sudo echo deb ftp://10.177.5.111/astra/testing/1.8.0.2/devel 1.8_x86-64 main contrib non-free >> /etc/apt/sources.list
+    sudo apt update 
+fi
+
 # create venv in script_dir
 sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev
 sudo apt-get install -y python3-numpy python3-scipy python3-matplotlib python3-lxml python3-bs4 python3-prettytable

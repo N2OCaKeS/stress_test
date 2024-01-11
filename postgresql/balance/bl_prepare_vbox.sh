@@ -1,7 +1,7 @@
 #!/bin/bash
 
-sudo echo deb ftp://10.177.5.111/astra/testing/1.8.0.2/devel 1.8_x86-64 main contrib non-free >> /etc/apt/sources.list
-sudo apt update -y
+#sudo echo deb ftp://10.177.5.111/astra/testing/1.8.0.2/devel 1.8_x86-64 main contrib non-free >> /etc/apt/sources.list
+#sudo apt update -y
 
 
 #ansible

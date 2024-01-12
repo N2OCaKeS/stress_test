@@ -268,7 +268,7 @@ class CheckVMs():
         self.rebuild = rebuild
         self.task_code = [0]
 
-    def check_ping():
+    def check_ping(self):
         bad_vms = [vm for vm in VMs if cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
         return bad_vms
 
@@ -286,6 +286,7 @@ class CheckVMs():
         return int(self.task_code[0])
 
     def build_all_vms(self):
+
         # TODO добавить выбор ядра для ВМ
 
         if self.rebuild == True:
@@ -329,15 +330,16 @@ uzs.upload_test_cycle_status('progress')
 # # #Prepare
 cmd('sudo bash balance/bl_prepare_vbox.sh')
 
-# # # Создать ВМ 
+# # # Create VMs 
 vm.build_all_vms()
 
+check_trys = 1
 check_count = 0
 if vm.check_ping():
     vm.rebuild = True
     vm.build_all_vms()
     check_count += 1
-    while check_count < 1:
+    while check_count < check_trys:
         if vm.check_ping():
             vm.build_all_vms()
             check_count += 1
@@ -361,7 +363,7 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
-while attempts_count < 3:
+while attempts_count < 5:
     for command in ansible_commands:
         print(colors(f'Begin task: {command}', 'yellow'))
         result_code = cmd(command)
@@ -385,8 +387,11 @@ while attempts_count < 3:
                     negotive_attempt += 1
                     print(f'\nResult code: {colors(result_code, "red")}\n')
             if negotive_attempt >= 3:
+                if command == ansible_commands[0]:
+                    vm.rebuild = True
+                    vm.build_all_vms()
                 attempts_count += 1
-                break
+                #break
     else:
         attempts_count += 1
         break

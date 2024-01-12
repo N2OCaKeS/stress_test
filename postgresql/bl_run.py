@@ -290,10 +290,16 @@ class CheckVMs():
         # TODO добавить выбор ядра для ВМ
 
         if self.rebuild == True:
-            if os.path.exists('/root/.vagrant.d/boxes/'):
-                cmd('rm -r /root/.vagrant.d/boxes/*')
-            if os.path.exists('/root/VirtualBox\ VMs/'):
-                cmd('rm -r /root/VirtualBox\ VMs/*')
+            def dir_is_empty(path):
+                return len(os.listdir(path)) == 0
+
+            boxes_path = '/root/.vagrant.d/boxes/'
+            vms_path = '/root/VirtualBox\ VMs/'
+
+            if os.path.isdir(boxes_path) and not dir_is_empty(boxes_path):
+                cmd(f'rm -r {boxes_path}*')
+            if os.path.isdir(vms_path) and not dir_is_empty(vms_path):
+                cmd(f'rm -r {vms_path}*')
 
         cmd(f'cd balance && vagrant box add {box_url} --force')
         cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
@@ -309,6 +315,27 @@ class CheckVMs():
         cmd('vboxmanage list hostonlyifs')
         cmd('vboxmanage list bridgedifs')
         cmd('vboxmanage list vms')
+
+    def check_available_vms(self):
+        attempt_count = 1
+        check_count = 0
+        if vm.check_ping():
+            vm.rebuild = True
+            vm.build_all_vms()
+            check_count += 1
+            while check_count < attempt_count:
+                if vm.check_ping():
+                    vm.build_all_vms()
+                    check_count += 1
+                    print('Check count: ' + str(check_count))
+                else: 
+                    print(colors('All vms is available', 'green'))
+                    break
+            if check_count >= 1:
+                print(colors('Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)', 'red'))
+                uzs.upload_test_cycle_status(zefir_status='fail')
+                exit(1)
+        else: print(colors('All vms is available', 'green'))
 
 
 vm = CheckVMs()
@@ -327,28 +354,13 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
 uzs.upload_test_cycle_status('progress')
 
 
+
 # # #Prepare
 cmd('sudo bash balance/bl_prepare_vbox.sh')
 
 # # # Create VMs 
 vm.build_all_vms()
-
-check_trys = 1
-check_count = 0
-if vm.check_ping():
-    vm.rebuild = True
-    vm.build_all_vms()
-    check_count += 1
-    while check_count < check_trys:
-        if vm.check_ping():
-            vm.build_all_vms()
-            check_count += 1
-            print('Check count: ' + str(check_count))
-        else: break
-    if check_count >= 1:
-        print(colors('Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)', 'red'))
-        uzs.upload_test_cycle_status(zefir_status='fail')
-        exit(1)
+vm.check_available_vms()
 
 
 # # # SSH connect info
@@ -369,7 +381,7 @@ while attempts_count < 5:
         result_code = cmd(command)
         print(f'\nResult code: {result_code}\n')
         if command == ansible_commands[-1] and result_code == 0:
-            print('Ansible commands cycle is fully executed')
+            print(colors('Ansible commands cycle is fully executed', 'green'))
         if result_code != 0:
             print(f'\nResult code: {colors(result_code, "red")}\n')
             negotive_attempt = 0
@@ -386,10 +398,13 @@ while attempts_count < 5:
                 else: 
                     negotive_attempt += 1
                     print(f'\nResult code: {colors(result_code, "red")}\n')
+                    if command == ansible_commands[0]:
+                        vm.check_available_vms()
             if negotive_attempt >= 3:
                 if command == ansible_commands[0]:
                     vm.rebuild = True
                     vm.build_all_vms()
+                    vm.check_available_vms()
                 attempts_count += 1
                 #break
     else:

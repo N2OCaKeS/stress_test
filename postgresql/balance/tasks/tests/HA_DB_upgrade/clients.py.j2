@@ -1,6 +1,7 @@
 import threading
 from random import choice, randint
-from os.path import exists
+from os.path import exists, isfile
+from os import chmod, chown
 import subprocess
 import psycopg2
 
@@ -79,10 +80,16 @@ def astra_version():
 
 
 def info_list():
-    def cmd(command):
-        return subprocess.run(command,
-                              shell=True,
-                              stdout=subprocess.PIPE).stdout.decode("utf-8")
+    import re
+
+    def cmd(command, regex=False):
+        output = subprocess.run(command, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
+        
+        if regex:
+            match = re.search(r'Version: (\S+)', output)
+            return match.group(1) if match else "N/A"
+
+        return output    
 
     av = astra_version()
     if av[0].startswith('1.7'):
@@ -92,14 +99,18 @@ def info_list():
 
     info_lst = [f'{av[0]}({av[1]})\n',
                 cmd('uname -r'),
-                cmd(f"apt-cache show {psql_version} | grep Version | awk '{{print$2}}'"),
-                cmd("apt-cache show pgpool2 | grep Version | awk '{print$2}'"),
-                psql_version,
+                cmd(f'apt-cache show {psql_version}', regex=True) + '\n',
+                cmd('apt-cache show pgpool2', regex=True) + '\n',
+                psql_version + '\n',
                 'pgpool2']
     
     with open('psb_info.txt', 'a+') as info:
             info.writelines(info_lst)
 
+    if isfile('available_packages.txt'):
+        cmd('sudo chown $USER:$USER available_packages.txt')
+        #chown('available_packages.txt', 1001, 1002)
+        #chmod('available_packages.txt', 0o777)
     with open('available_packages.txt', 'a') as file:
          pkgs = cmd('apt list postgresql*')
          file.write('\n2nd iteration:\n')

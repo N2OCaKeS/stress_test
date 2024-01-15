@@ -27,9 +27,11 @@ git checkout $1
 cd $1
 bash prepare.sh
 
-if [ $3 == "kernel" ]; then
-    python3 run.py -n $2 -kn $3
+if [ "$3" == "kernel" ]; then
+    python3 run.py -n "$2" -kn "$3"
+elif [ "$3" == "balance" ]; then
+    python3 run.py -n "$2" -bl "$3"
 else
-    python3 run.py -n $2
+    python3 run.py -n "$2"
 fi
 

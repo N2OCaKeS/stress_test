@@ -134,6 +134,12 @@ parser.add_argument('-psql-vanilla',
                     help='testlist',
                     dest='PSQL_VANILLA')
 
+parser.add_argument('-psql-bl',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='PSQL_BALANCE')
+
 parser.add_argument('-db-kernels',
                     action='store',
                     choices=['psql',
@@ -190,6 +196,7 @@ tcyc = f'-tcyc {args.TCYCLE}'
 tcas = f'-tcas "{args.TCASE}"'
 ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
+balance_vbox = f"-vbox {tcyc.split('_')[0]}"
 pack_sql = '--package postgresql-11'
 tantor_pkg = '--package tantor-se-server-15'
 testlist = f'--testlist {args.AUDIT}'
@@ -209,6 +216,9 @@ elif args.PSQL_VANILLA:
 elif args.TANTOR_VANILLA:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {tantor_pkg} {tantor_vanilla}'
+elif args.PSQL_BALANCE:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox}'
 elif args.PSQL_PARSEC:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_parsec}'
@@ -690,7 +700,7 @@ if read_status() == success:
     comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
     sleep(3)
-    if args.RELEASE not in systems:
+    if args.RELEASE not in systems and not args.PSQL_BALANCE:
         holder = 0
         while holder == 0:
             try:
@@ -707,7 +717,7 @@ if read_status() == success:
             comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
     write_status(success)
 
-if args.RELEASE not in systems:
+if args.RELEASE not in systems and not args.PSQL_BALANCE:
     if read_status() == success:
         write_status(in_prog)
         comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -761,6 +771,8 @@ if read_status() == success:
         db_kernel_changer(16, args.DB_KERNELS)
         db_kernel_changer(24, args.DB_KERNELS)
         db_kernel_changer(32, args.DB_KERNELS, position='end')
+    elif args.PSQL_BALANCE:
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} balance')
     else:    
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
         write_status(done)

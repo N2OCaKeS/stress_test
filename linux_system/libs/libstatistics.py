@@ -127,13 +127,13 @@ class UnixBenchStatistics:
     @staticmethod
     def get_grade(stand):
             if stand == "stand1":
-                grade = "low"
+                grade = "Test-WorkStation"
             elif stand == "stand2":
-                grade = "low"
+                grade = "Test-WorkStation"
             elif stand == "stand3":
-                grade = "middle"
+                grade = "LowServer"
             elif stand == "stand4":
-                grade = "high"
+                grade = "MiddleServer"
             else:
                 grade = stand
             return grade
@@ -393,7 +393,7 @@ class UnixBenchStatistics:
                 fig.savefig(f"{stat_dir}/{test_name}_statistics_{key}.png")
 
         data_df_orel = collect_data(test_name="unix")
-        print(data_df_orel)
+        # print(data_df_orel)
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="unix")
         create_graphs(data_for_df=data_df_orel, test_name="unix", temp_data_for_graph=tmp_data_for_gr)
 

@@ -447,6 +447,10 @@ def socket_available():
         except ssh_exception.NoValidConnectionsError:
             sleep(30)
             continue
+        except ssh_exception.SSHException:  
+            logging.error('Error reading SSH protocol banner')
+            sleep(30)
+            continue
 
 def check_running_system():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

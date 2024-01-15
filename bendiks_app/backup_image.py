@@ -197,7 +197,7 @@ tcyc = f'-tcyc {args.TCYCLE}'
 tcas = f'-tcas "{args.TCASE}"'
 ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
-balance_vbox = f"-vbox {tcyc.split('_')[0]}"
+balance_vbox = f"-vbox {args.TCYCLE.split('_')[0]}"
 pack_sql = '--package postgresql-11'
 tantor_pkg = '--package tantor-se-server-15'
 testlist = f'--testlist {args.AUDIT}'
@@ -721,6 +721,8 @@ if read_status() == success:
         if modes[args.MODE] == '2':
             comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
             comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
+    elif args.PSQL_BALANCE:
+        socket_available()
     write_status(success)
 
 if args.RELEASE not in systems and not args.PSQL_BALANCE:

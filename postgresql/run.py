@@ -19,6 +19,12 @@ parser.add_argument('-kn',
                     help='kernel mode',
                     dest='KERNEL')
 
+parser.add_argument('-bl',
+                    action='store',
+                    required=False,
+                    help='balance mode',
+                    dest='BALANCE')
+
 args = parser.parse_args()
 
 if not path.isdir(REPORT_PATH):
@@ -29,6 +35,8 @@ with open(f'/home/u/{args.NAME}', 'r') as r:
 
 if args.KERNEL:
     subprocess.run(f'sudo python3 diff_kernel_quantity.py {dates}', shell=True)
+elif args.BALANCE:
+     subprocess.run(f'sudo python3 bl_run.py {dates}', shell=True)
 else:
     #subprocess.run(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}', shell=True)
     subprocess.run(f'sudo python3 psb_run.py {dates}', shell=True)

@@ -176,6 +176,7 @@ user = 'u'
 password = '1'
 port = 22
 clonezilla_command = cz_comm[args.STAND][args.RELEASE]
+clonezilla_command_balance = cz_comm[args.STAND]['1.8.0.2']
 branch = args.BRANCH
 parent_page = args.PARP
 systems = ['debian10', 'debian10-5.15', 'altlinux-5.10']
@@ -691,9 +692,14 @@ def db_kernel_changer(cpu_count, database, position=None):
 with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Запущен')
 write_status(in_prog)
-if comm_and_log(clonezilla_command) == 0:
-    write_status(success)
-else: write_status(fail)
+if args.PSQL_BALANCE:
+    if comm_and_log(clonezilla_command_balance) == 0:
+        write_status(success)
+    else: write_status(fail)
+else:
+    if comm_and_log(clonezilla_command) == 0:
+        write_status(success)
+    else: write_status(fail)
 
 if read_status() == success:
     write_status(in_prog)

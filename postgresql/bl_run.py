@@ -134,6 +134,7 @@ vagrant_boxes = {'1804':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/s
 
 box_url = vagrant_boxes[args.SET_BOX]['url']
 box_name = vagrant_boxes[args.SET_BOX]['name']
+kernel = str(args.TCYC).split('_')
 VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 vbox_nat = 'QANetwork'
@@ -276,7 +277,7 @@ class CheckVMs():
         vm_list = [vm, 'test'] #добавление ВМ 'test' устраняет баг с некорректным импортом репозитория
         [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in vm_list]
         [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in vm_list]
-        [cmd(f'cd balance &&  UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} vagrant up --provider=virtualbox') for vm in vm_list]
+        [cmd(f'cd balance &&  UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} KERNEL={kernel} vagrant up --provider=virtualbox') for vm in vm_list]
         cmd(f'vboxmanage controlvm {vm} poweroff')
         cmd(f'vboxmanage startvm {vm} --type headless')
         cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
@@ -286,9 +287,6 @@ class CheckVMs():
         return int(self.task_code[0])
 
     def build_all_vms(self):
-
-        # TODO добавить выбор ядра для ВМ
-
         if self.rebuild == True:
             def dir_is_empty(path):
                 return len(os.listdir(path)) == 0
@@ -302,7 +300,7 @@ class CheckVMs():
                 cmd(f'rm -r {vms_path}*')
 
         cmd(f'cd balance && vagrant box add {box_url} --force')
-        cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox')
+        cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} vagrant up --provider=virtualbox')
 
         # # # Network set
         bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")

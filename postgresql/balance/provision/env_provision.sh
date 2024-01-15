@@ -221,3 +221,11 @@ ip a
 #done
 
 apt list postgresql* > /home/u/available_packages.txt
+
+
+kernel="$2"
+kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")
+sudo sed -i "s/GRUB_DEFAULT=.*/GRUB_DEFAULT=$kernel_conf/" /etc/default/grub
+sudo update-grub
+cat /etc/default/grub | grep GRUB_DEFAULT
+

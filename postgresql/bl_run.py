@@ -120,16 +120,18 @@ def cmd(command):
 
 
 
-vagrant_boxes = {'1804':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
+vagrant_boxes = {'1.8.0.4':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
                          'name':'smolensk-vanilla-gui/1.8.0.4'},
-                 '1803':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
+                 '1.8.0.3':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
                          'name':'smolensk-vanilla-gui/1.8.0.3'},
-                 '1802':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json',
+                 '1.8.0.2':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json',
                          'name':'smolensk-vanilla-gui/1.8.0.2'},
-                 '174':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json',
-                        'name':'smolensk-vanilla-gui/1.7.4'},
-                 '175':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json',
-                        'name':'smolensk-vanilla-gui/1.7.5'}       
+                 '1.7.5':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json',
+                         'name':'smolensk-vanilla-gui/1.7.5'},
+                 '1.7.4':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json',
+                         'name':'smolensk-vanilla-gui/1.7.4'},
+                 '1.7.3.UU.1':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.3.UU1.json',
+                               'name':'smolensk-vanilla-gui/1.7.3'}                        
                  }
 
 box_url = vagrant_boxes[args.SET_BOX]['url']

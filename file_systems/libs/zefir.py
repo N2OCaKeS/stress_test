@@ -598,7 +598,7 @@ class ZefirResultTable:
                     confluence.update_page(page_id=page_id, title=name_page, body=body)
                 
 
-        upload_page('DEVQA', 'Состав тестового прогона', self.__pt_version, table)
+        upload_page('DEVQA', 'Состав тестового прогона', f'STRESS_stp ⬝ {self.__pt_version}', table)
 
         if path.isfile('res.html'):
             remove('res.html')

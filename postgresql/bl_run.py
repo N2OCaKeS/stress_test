@@ -130,7 +130,7 @@ vagrant_boxes = {'1.8.0.4':{'url':'http://qa111.devos.astralinux.ru/vault/vagran
 
 box_url = vagrant_boxes[args.SET_BOX]['url']
 box_name = vagrant_boxes[args.SET_BOX]['name']
-kernel = str(args.TCYC).split('_')
+kernel = str(args.TCYC).split('_')[2]
 VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 vbox_nat = 'QANetwork'

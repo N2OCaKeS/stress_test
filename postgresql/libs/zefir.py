@@ -340,7 +340,7 @@ class ZefirResultTable:
         self.__token = token
         self.__username = username
         self.__basic = basic_auth
-        self.__pt_version = f'STRESS_stp ⬝ {test_cycle_version}'
+        self.__pt_version = test_cycle_version
 
         check_len_version = self.__pt_version.split('.')
         if len(check_len_version) == 4 and check_len_version[3] != 'UU':
@@ -535,7 +535,7 @@ class ZefirResultTable:
                     confluence.update_page(page_id=page_id, title=name_page, body=body)
                 
 
-        upload_page('DEVQA', 'Состав тестового прогона', self.__pt_version, table)
+        upload_page('DEVQA', 'Состав тестового прогона', f'STRESS_stp ⬝ {self.__pt_version}', table)
 
         if path.isfile('res.html'):
             remove('res.html')

@@ -177,7 +177,7 @@ password = '1'
 port = 22
 clonezilla_command = cz_comm[args.STAND][args.RELEASE]
 if args.PSQL_BALANCE:
-    clonezilla_command_balance = cz_comm[args.STAND]['1.8.0.2']
+    clonezilla_command_balance = cz_comm['stand4']['1.8.0.5']
 branch = args.BRANCH
 parent_page = args.PARP
 systems = ['debian10', 'debian10-5.15', 'altlinux-5.10']

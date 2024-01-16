@@ -27,13 +27,11 @@ modes = {
 #################################################################################################################################################
 #Симлинки на страницы с местами хранения результатов
 #################################################################################################################################################
-tests_list = {
-  'PostgreSQL':['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
-                 'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels'],
-  'Файловые системы':['XFS', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec'],
-  'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
-  'UnixBench':['unix', 'unix parsec']
-}
+tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
+                                  'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels'],
+              'Файловые системы':['XFS', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec'],
+              'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
+              'UnixBench':       ['unix', 'unix parsec']}
 
 release_version = ['1.8.0.1', 
                    '1.8.0',
@@ -49,7 +47,7 @@ release_version = ['1.8.0.1',
                    '1.7.1']
 
 parent_page_list = {
-    key:{value:f'STRESS {key} ⬝ {topic}' for topic in tests_list for value in tests_list[topic]}  
+    key:{value:f'STRESS_report {key} ⬝ {topic}' for topic in tests_list for value in tests_list[topic]}  
                      for key in release_version
                     }
 

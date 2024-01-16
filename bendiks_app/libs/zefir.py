@@ -240,7 +240,7 @@ class ZefirResultTable:
         self.__token = token
         self.__username = username
         self.__basic = basic_auth
-        self.__pt_version = test_cycle_version
+        self.__pt_version = f'STRESS_stp ⬝ {test_cycle_version}'
 
         check_len_version = self.__pt_version.split('.')
         if len(check_len_version) == 4 and check_len_version[3] != 'UU':

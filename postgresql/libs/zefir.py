@@ -497,7 +497,7 @@ class ZefirResultTable:
                         name_page:str, 
                         body):
             
-            check_len_version = name_page.split('.')
+            check_len_version = self.__pt_version.split('.')
             if len(check_len_version) == 4 and check_len_version[3] != 'UU':
                 release_version = '.'.join(check_len_version[:3])
                 rc_version = self.__pt_version

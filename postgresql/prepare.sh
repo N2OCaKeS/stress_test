@@ -6,7 +6,7 @@ sudo echo deb ftp://10.177.5.111/astra/testing/1.8.0.2/devel 1.8_x86-64 main con
 sudo apt update   
 }
 
-test "$(grep -E '1.8.*' /etc/astra_version)" && repo
+#test "$(grep -E '1.8.*' /etc/astra_version)" && repo
 
 
 # create venv in script_dir

@@ -84,12 +84,6 @@ parser.add_argument('-cnp', '--confluence-new-page',
                     help='confluence new page',
                     dest='NPAGE')
 
-parser.add_argument('-pack', '--package',
-                    action='store',
-                    required=True,
-                    help='test package',
-                    dest='PACKAGE')
-
 parser.add_argument('-tcv', '--test-cycle-version',
                     action='store',
                     required=True,
@@ -349,8 +343,7 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 grade_stand=args.STAND,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
-                conf_new_page_name=args.NPAGE,
-                package=args.PACKAGE)
+                conf_new_page_name=args.NPAGE)
 uzs.upload_test_cycle_status('progress')
 
 

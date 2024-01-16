@@ -14,5 +14,10 @@ sudo apt install -fy
 
 # install python dependencies in venv
 #source venv/bin/activate
-python3 -m pip install --upgrade pip
-pip3 install -r req.txt
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+    python3 -m pip install --upgrade pip --break-system-packages
+    python3 -m pip install -r req.txt --break-system-packages
+else
+    python3 -m pip install --upgrade pip
+    python3 -m pip install -r req.txt
+fi

@@ -418,14 +418,13 @@ def ssh_command(command, stand_ip=stand_ip):
     return response
 
 #@pysnooper.snoop()
-def socket_available():
+def socket_available(reboot_counter=0, max_reboot_attempts=3):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = sock.connect_ex((stand_ip, 22))
     if result == 0:
         logging.debug('port is open')
     else: 
         logging.error('port is closed')
-        
 
     while True:
         try:
@@ -435,10 +434,18 @@ def socket_available():
                 sock.close()
                 return True
             elif system_status == 'degraded':
-                logging.error(f'Some modules is not loaded: {system_status}')
-                ssh_command('sudo reboot')
-                sock.close()
-                socket_available()
+                not_load_module = ssh_command("systemctl --state=failed --no-legend | awk '{print $2}'")
+                logging.error(f'Some modules is not loaded: {system_status}: {not_load_module}')
+                if not_load_module == 'astra-mount-lock.service':
+                    return True
+                else:
+                    if reboot_counter >= max_reboot_attempts:
+                        logging.error("Maximum reboot attempts reached. Check the system.")
+                        return False
+                    ssh_command('sudo reboot')
+                    sleep(60)
+                    sock.close()
+                    return socket_available(reboot_counter = reboot_counter + 1)
             else:
                 logging.error(f'System is not fully loaded yet: {system_status}')
                 sleep(30)

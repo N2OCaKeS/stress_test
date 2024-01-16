@@ -61,7 +61,7 @@ class Public:
         #создать страницу confluence
         def name_page(arg):
             top_page = f'STRESS ⬝ {str(arg).split("_")[1][:3]}'
-            version_page = f'STRESS ⬝ {str(arg).split("_")[1]}'
+            version_page = f'STRESS_report ⬝ {str(arg).split("_")[1]}'
             return top_page, version_page
 
         if release_pp and release_np:

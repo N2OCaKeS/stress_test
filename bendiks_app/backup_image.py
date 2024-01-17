@@ -593,6 +593,50 @@ def send_remote_command(command):
     ssh.close()
 
 
+
+class BootOrder:
+    def __init__(self,
+                 stand=None,
+                 boottype='PXE'):
+        
+        self.stand = stand
+        self.boot_type = boottype
+        self.show_config = 'show /system1/bootconfig1/oemhp_uefibootsource'
+        self.set_new_config = 'set /system1/bootconfig1/oemhp_uefibootsource{} bootorder=1'
+        self.old_mode_key = '-oKexAlgorithms=+diffie-hellman-group1-sha1'
+        self.no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+        self.slot_count = 5
+        if os.path.isfile('/home/u/ilo.json'):
+            with open('/home/u/ilo.json', 'r') as ilocfg:
+                self.ilo = json.load(ilocfg)
+
+    def cmd(cmd):
+        output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
+        return output
+
+    def set_boot_order(self):
+        login = self.ilo[self.stand]['username']
+        password = self.ilo[self.stand]['password']
+        address = self.ilo[self.stand]['ip']
+        ssh_command = f'sshpass -p "{password}" ssh {self.no_fprint} {self.old_mode_key} -l {login} {address}'
+        
+        try:
+            for i in range(0, self.slot_count + 1, 1):
+                answer = self.cmd(f'{ssh_command} {self.show_config}{i}')
+                if self.boot_type in answer and i == 1:
+                    print(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
+                    break
+                elif self.boot_type in answer and i != 1:
+                    print(f'\033[93m{answer}\033[0m')
+                    result = self.cmd(f'{ssh_command} {self.set_new_config}'.format(i))
+                    if 'Bootorder being set' in result:
+                        print(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
+                    break
+        except Exception as e:
+            print(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+
+
+
 class ResultCallback(CallbackBase):
     def __init__(self, *args, **kwargs):
         super(ResultCallback, self).__init__(*args, **kwargs)
@@ -704,6 +748,10 @@ def db_kernel_changer(cpu_count, database, position=None):
 with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Запущен')
 write_status(in_prog)
+
+bo = BootOrder(stand=args.STAND)
+bo.set_boot_order()
+
 if args.PSQL_BALANCE:
     if comm_and_log(clonezilla_command_balance) == 0:
         write_status(success)

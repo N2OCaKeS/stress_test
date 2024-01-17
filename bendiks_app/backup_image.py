@@ -624,16 +624,16 @@ class BootOrder:
             for i in range(0, self.slot_count + 1, 1):
                 answer = self.cmd(f'{ssh_command} {self.show_config}{i}')
                 if self.boot_type in answer and i == 1:
-                    print(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
+                    logging.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
                     break
                 elif self.boot_type in answer and i != 1:
-                    print(f'\033[93m{answer}\033[0m')
+                    logging.debug(f'\033[93m{answer}\033[0m')
                     result = self.cmd(f'{ssh_command} {self.set_new_config}'.format(i))
                     if 'Bootorder being set' in result:
-                        print(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
+                        logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
                     break
         except Exception as e:
-            print(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+            logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
 
 
 

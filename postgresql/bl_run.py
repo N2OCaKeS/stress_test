@@ -149,9 +149,9 @@ attempts_count = 0
 # ]
 ansible_commands = [
     'cd balance && ansible-playbook bl_contrprimer.yml -vvv',
-    'cd balance && ansible-playbook tasks/checks/db/replication.yml',
-    'cd balance && ansible-playbook tasks/checks/db/load_balancing.yml',
-    'cd balance && ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
+    'cd balance && ansible-playbook tasks/checks/db/replication.yml -vv',
+    'cd balance && ansible-playbook tasks/checks/db/load_balancing.yml -vv',
+    'cd balance && ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml -vv'
 ]
 
 vm_dates = {

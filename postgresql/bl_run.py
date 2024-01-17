@@ -141,11 +141,17 @@ vbox_bridge_network = '10.177.103.0'
 vbox_bridge_ip = '10.177.103.1'
 vbox_bridge_mask = '255.255.224.0'
 attempts_count = 0
+# ansible_commands = [
+#     'cd balance && sudo -u u ansible-playbook bl_contrprimer.yml -v',
+#     'cd balance && sudo -u u ansible-playbook tasks/checks/db/replication.yml',
+#     'cd balance && sudo -u u ansible-playbook tasks/checks/db/load_balancing.yml',
+#     'cd balance && sudo -u u ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
+# ]
 ansible_commands = [
-    'cd balance && sudo -u u ansible-playbook bl_contrprimer.yml -v',
-    'cd balance && sudo -u u ansible-playbook tasks/checks/db/replication.yml',
-    'cd balance && sudo -u u ansible-playbook tasks/checks/db/load_balancing.yml',
-    'cd balance && sudo -u u ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
+    'cd balance && ansible-playbook bl_contrprimer.yml -vvv',
+    'cd balance && ansible-playbook tasks/checks/db/replication.yml',
+    'cd balance && ansible-playbook tasks/checks/db/load_balancing.yml',
+    'cd balance && ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml'
 ]
 
 vm_dates = {

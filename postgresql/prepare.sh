@@ -12,8 +12,14 @@ sudo apt update
 # create venv in script_dir
 sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev
 sudo apt-get install -y python3-numpy python3-scipy python3-matplotlib python3-lxml python3-bs4 python3-prettytable
-sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
-sudo apt-get install -y linux-tools-5.15*-lowlatency
+
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+    sudo apt-get install -y linux-tools-6.1*-generic
+else
+    sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
+    sudo apt-get install -y linux-tools-5.15*-lowlatency
+fi
+
 #python3-pandas
 #python3 -m venv venv
 sudo mkdir /home/u/modules

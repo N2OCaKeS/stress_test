@@ -5,6 +5,7 @@ from libs.zefir import UploaderZC
 from psb_conf import REPORT_PATH
 import pandas
 import argparse
+import json
 
 
 """
@@ -113,19 +114,15 @@ def cmd(command):
     return subprocess.run(command, shell=True).returncode
 
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+vbox_path = os.path.join(current_dir, 'balance', 'vbox.json')
+with open(vbox_path, 'r') as vbox:
+    vagrant_boxes = json.load(vbox)
 
-vagrant_boxes = {'1.8.0.5':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
-                         'name':'smolensk-vanilla-gui/1.8.0.5'},
-                 '1.7.5':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json',
-                         'name':'smolensk-vanilla-gui/1.7.5'},
-                 '1.7.4':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json',
-                         'name':'smolensk-vanilla-gui/1.7.4'},
-                 '1.7.3.UU.1':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.3.UU1.json',
-                               'name':'smolensk-vanilla-gui/1.7.3'}                        
-                 }
-
-box_url = vagrant_boxes[args.SET_BOX]['url']
-box_name = vagrant_boxes[args.SET_BOX]['name']
+set_box = args.SET_BOX + '.s'
+box = [i for i in vagrant_boxes['vagrant_box'] if set_box in i]
+box_url = box[0][set_box][1]
+box_name = box[0][set_box][0]
 kernel = str(args.TCYC).split('_')[2]
 VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

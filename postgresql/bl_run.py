@@ -114,12 +114,8 @@ def cmd(command):
 
 
 
-vagrant_boxes = {'1.8.0.4':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
-                         'name':'smolensk-vanilla-gui/1.8.0.4'},
-                 '1.8.0.3':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
-                         'name':'smolensk-vanilla-gui/1.8.0.3'},
-                 '1.8.0.2':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json',
-                         'name':'smolensk-vanilla-gui/1.8.0.2'},
+vagrant_boxes = {'1.8.0.5':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json',
+                         'name':'smolensk-vanilla-gui/1.8.0.5'},
                  '1.7.5':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json',
                          'name':'smolensk-vanilla-gui/1.7.5'},
                  '1.7.4':{'url':'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json',
@@ -279,7 +275,7 @@ class CheckVMs():
         vm_list = [vm, 'test'] #добавление ВМ 'test' устраняет баг с некорректным импортом репозитория
         [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in vm_list]
         [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in vm_list]
-        [cmd(f'cd balance &&  UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} KERNEL={kernel} vagrant up --provider=virtualbox') for vm in vm_list]
+        [cmd(f'cd balance &&  UPDATE={box_name} BOX_URL={box_url} VM_NAME={vm} KERNEL={kernel} RC={args.SET_BOX} vagrant up --provider=virtualbox') for vm in vm_list]
         cmd(f'vboxmanage controlvm {vm} poweroff')
         cmd(f'vboxmanage startvm {vm} --type headless')
         cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
@@ -302,7 +298,7 @@ class CheckVMs():
                 cmd(f'rm -r {vms_path}*')
 
         cmd(f'cd balance && vagrant box add {box_url} --force')
-        cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} vagrant up --provider=virtualbox')
+        cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={args.SET_BOX} vagrant up --provider=virtualbox')
 
         # # # Network set
         bridge_iface = check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")

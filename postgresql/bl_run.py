@@ -289,14 +289,23 @@ class CheckVMs():
             boxes_path = '/root/.vagrant.d/boxes/'
             vms_path = '/root/VirtualBox\ VMs/'
 
-            if os.path.isdir(boxes_path) and not dir_is_empty(boxes_path):
+            # if os.path.isdir(boxes_path) and not dir_is_empty(boxes_path):
+            #     cmd(f'rm -r {boxes_path}*')
+            #     print(f'*** {boxes_path} cleared')
+            # else: print(f'Some problem with remove {boxes_path}')
+            # if os.path.isdir(vms_path) and not dir_is_empty(vms_path):
+            #     cmd(f'rm -r {vms_path}*')
+            #     print(f'*** {vms_path} cleared')
+            # else: print(f'Some problem with remove {vms_path}')
+
+            try:
                 cmd(f'rm -r {boxes_path}*')
                 print(f'*** {boxes_path} cleared')
-            else: print(f'Some problem with remove {boxes_path}')
-            if os.path.isdir(vms_path) and not dir_is_empty(vms_path):
                 cmd(f'rm -r {vms_path}*')
                 print(f'*** {vms_path} cleared')
-            else: print(f'Some problem with remove {vms_path}')
+            except Exception as e:
+                print(str(e))
+                print(f'Some problem with remove')
 
         cmd(f'cd balance && vagrant box add {box_url} --force')
         cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={args.SET_BOX} vagrant up --provider=virtualbox')

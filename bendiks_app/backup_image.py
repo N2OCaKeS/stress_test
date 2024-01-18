@@ -610,7 +610,7 @@ class BootOrder:
             with open('/home/u/ilo.json', 'r') as ilocfg:
                 self.ilo = json.load(ilocfg)
 
-    def cmd(cmd):
+    def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
         return output
 

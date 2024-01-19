@@ -10,7 +10,7 @@ sudo apt update
 
 
 # create venv in script_dir
-sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev python3-joblib
+sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev
 sudo apt-get install -y python3-numpy python3-scipy python3-matplotlib python3-lxml python3-bs4 python3-prettytable
 
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then

@@ -15,7 +15,6 @@ sudo apt install -fy
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
     python3 -m pip install --upgrade pip --break-system-packages
     python3 -m pip install -r req.txt --break-system-packages
-    python3 -m pip install scikit-learn --break-system-packages
 else
     python3 -m pip install --upgrade pip
     python3 -m pip install -r req.txt

@@ -298,6 +298,9 @@ class CheckVMs():
             #     print(f'*** {vms_path} cleared')
             # else: print(f'Some problem with remove {vms_path}')
 
+            [cmd(f'vboxmanage controlvm {vm} poweroff') for vm in VMs]
+            [cmd(f'vboxmanage  unregistervm --delete {vm}') for vm in VMs]
+
             try:
                 cmd(f'rm -r {boxes_path}*')
                 print(f'*** {boxes_path} cleared')

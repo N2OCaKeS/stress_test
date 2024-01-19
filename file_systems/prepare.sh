@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # create venv in script_dir
-sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev strace
+sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev strace python3-joblib
 sudo apt-get install -y python3-numpy python3-scipy python3-matplotlib python3-lxml python3-prettytable python3-bs4
 #python3-pandas
 #python3 -m venv venv

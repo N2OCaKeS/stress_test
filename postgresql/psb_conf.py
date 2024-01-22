@@ -25,7 +25,11 @@ ACL_SQL_TRANSACTION = ''
     Параметры БД
 '''
 TANTOR_VERSION = 15
-PG_VERSION = 11
+with open('/etc/astra_version', 'r') as av:
+    os_version = av.read()
+if '1.8' in os_version:
+    PG_VERSION = 14
+else: PG_VERSION = 11
 STORAGE = 'sda'
 DATABASE_NAME = 'mtest'
 TABLESPACE_DEFAULT_PATH = '/var/lib/postgresql/'+ str(PG_VERSION) +'/pg_default'

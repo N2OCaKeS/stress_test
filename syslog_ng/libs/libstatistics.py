@@ -136,11 +136,11 @@ class FileSystemStatistics:
                 grade = stand
             return grade
 
-    def get_list_required_pages(self):
+    def get_list_required_pages(self, id_root_page):
         """
             Получаем дочерние страницы 1.7: 1.7.1; 1.7.2; 1.7.n...
         """
-        children_main_page = self.CP.get_child_page_as_html(id="156339086", by_title=False)
+        children_main_page = self.CP.get_child_page_as_html(id=id_root_page, by_title=False)
         required_pages, required_pages_rc = [], []
         test_dict_rc = {}
         """
@@ -571,8 +571,10 @@ class FileSystemStatistics:
 
 
     def update_statistics(self):
-        pages, rc_pages = self.get_list_required_pages()
-        print(rc_pages)
+        pages_17, rc_pages_17 = self.get_list_required_pages(id_root_page="156339086")
+        pages_18, rc_pages_18 = self.get_list_required_pages(id_root_page="244154033")
+        pages = pages_17 + pages_18
+        rc_pages = {**rc_pages_17, **rc_pages_18}
         self.get_info_from_pages(pages=pages)
         for key, value in rc_pages.items():
             if value:

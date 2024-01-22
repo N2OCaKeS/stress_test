@@ -247,7 +247,7 @@ def run_command_on_stand(num):
     process_list = globals()[f'process_list{num}']
     command = request.form.get(f'command{num}')
     kernel = None
-    if num == '1' or num == '2' or num =='3' or num == '4':
+    if num == '1' or num == '2' or num =='3' or num == '4' or num == '5':
         prefix = 'main'
     elif num == '10' or num =='11' or num == '12':
         prefix = 'brest'
@@ -420,7 +420,7 @@ def remote_storage_load(stand):
         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone1/temp'
     elif stand == 'stand3':
         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
-    elif stand == 'stand4':
+    elif stand == 'stand4' or stand == 'stand5':
         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
 
     try:
@@ -468,7 +468,7 @@ def remote_storage_load(stand):
         else:
             if stand == 'stand1' or stand == 'stand2':
                 data = (output_nvme, output_sda, f'{int(float(temp_cpu) / 1000)}°', id)
-            elif stand == 'stand3' or stand == 'stand4':
+            elif stand == 'stand3' or stand == 'stand4' or stand == 'stand5':
                 temp_cpu = temp_cpu.split('\n')
                 data = (output_nvme, output_sda, f'{int(float(temp_cpu[0]) / 1000)}° | {int(float(temp_cpu[1]) / 1000)}°', id)
         cursor.execute(update_query, data)

@@ -6,9 +6,10 @@ stands_ip = {
     'stand2':'10.177.103.202',
     'stand3':'10.177.103.204',
     'stand4':'10.177.103.203',
-    'stand10':'10.177.102.249', #KD
-    'stand11':'10.177.102.200', #фронт бреста
-    'stand12':'10.177.102.233'  #сервер для нагрузки
+    'stand5':'10.177.103.205',
+    #'stand10':'10.177.102.249', #KD
+    #'stand11':'10.177.102.200', #фронт бреста
+    #'stand12':'10.177.102.233'  #сервер для нагрузки
 }
 
 
@@ -219,8 +220,8 @@ kernels = ['5.10.0-1045-generic', '5.10.0-1057-generic', '5.10.142-1-generic', '
 #################################################################################################################################################
 #Перечень стендов, отображаемых на разных страницах
 #################################################################################################################################################
-main_stands = ['stand1', 'stand2', 'stand3', 'stand4']
-mobile_stands = ['stand1', 'stand2', 'stand3', 'stand4']
+main_stands = ['stand1', 'stand2', 'stand3', 'stand4', 'stand5']
+mobile_stands = ['stand1', 'stand2', 'stand3', 'stand4', 'stand5']
 brest_stands = ['stand10', 'stand11', 'stand12']
 
 
@@ -270,7 +271,7 @@ testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psq
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
 testcase_smolensk = ['postgresql-sm', 'psql parsec', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
 testcase_smolensk_stand2 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
-test_run_stands = [f'stand{x}' for x in range(3, 5, 1)]
+test_run_stands = [f'stand{x}' for x in range(3, 6, 1)]
 test_run_modes = ['orel', 'smolensk']
 tests_case_zefir_key = {
     'postgresql':'BT-T7555',

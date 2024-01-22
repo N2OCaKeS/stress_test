@@ -5,7 +5,7 @@ set -vx
 export PG_MAIN_CLUSTER=main
 export PG_MAIN_PORT=5432
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-PG_VERSION=14
+PG_VERSION=15
 else
 PG_VERSION=11
 fi

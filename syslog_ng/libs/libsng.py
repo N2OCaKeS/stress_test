@@ -23,13 +23,15 @@ def astra_version():
         version.append("1.6")
     elif "1.7" in astra_digit_version:
         version.append("1.7")
+    elif "1.8" in astra_digit_version:
+        version.append("1.8")
     elif "4.7" in astra_digit_version:
         version.append("4.7")
     elif "8.1" in astra_digit_version:
         version.append("8.1")
     else:
         print("Version of distribution not found")
-        exit(2)
+        #exit(2)
     try:
         with open("/etc/astra_license", "r") as file:
             astra_license = file.read()
@@ -41,7 +43,7 @@ def astra_version():
                 version.append("voronezh")
             else:
                 print("Version of distribution not found")
-                exit(2)
+                #exit(2)
     except IOError:
         with open("/etc/astra_version", "r") as file:
             astra_version = file.read()
@@ -55,7 +57,7 @@ def astra_version():
                 version.append("orel")
             else:
                 print("Version of distribution not found")
-                exit(2)
+                #exit(2)
     
     astra_full_digit_version = subprocess.run("cat /etc/astra_version",
                                          shell=True,

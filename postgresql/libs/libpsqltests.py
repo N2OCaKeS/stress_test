@@ -87,9 +87,9 @@ class Test:
             else:
                 decode_std = pgbench(self.pgbench_cmd)
             out = os.linesep.join([s for s in decode_std[0].splitlines() if s])
-            self.logger.info(out)
+            print(out)
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])
-            self.logger.error(err)
+            print(err)
 
             if PG_VERSION == 15 or self.tantor == True:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]

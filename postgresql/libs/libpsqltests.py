@@ -123,8 +123,8 @@ class Test:
         except Exception as exception:
             with open(REPORT_FILENAME, 'a+') as report_file:
                 report_file.write(' 0 0 0 0 0\n')
-            self.logger.error('Тестирование завершилось исключением:\n')
-            self.logger.error(exception)
+            print('Тестирование завершилось исключением:\n')
+            print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
             return False
         return result
 

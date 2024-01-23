@@ -29,7 +29,7 @@ from libs.libsng import (astra_version,
 from libs.zefir import UploaderZC
 from libs.libpublic import Public
 from libs.libstatistics import FileSystemStatistics
-from sng_conf import SERVICE_COUNT, TIME_EXEC, TIME_EXEC_ST3_ST4, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME
+from sng_conf import SERVICE_COUNT, TIME_EXEC, TIME_EXEC_ST3_ST4, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME, VENV_PATH
 
 
 TIME_START_SCRIPT = datetime.now()
@@ -192,7 +192,7 @@ if __name__ == '__main__':
                 'Restart=always\n',
                 'WorkingDirectory={}/\n'.format(dir),
                 'OOMScoreAdjust = -100\n', # Prohibition on the use of the out-of-memory service and the OOM trigger mechanism
-                'ExecStart=/usr/bin/python3 /tmp/dirtylogger{}.py\n'.format(service_num),
+                f'ExecStart={VENV_PATH} /tmp/dirtylogger{service_num}.py\n',
                 'TimeoutSec=1\n',
                 '[Install]\n',
                 'WantedBy = multi - user.target\n']

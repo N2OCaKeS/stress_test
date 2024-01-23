@@ -79,7 +79,7 @@ class Report:
             Получить рейтинг
         '''
         added_value = 100
-        y_new = y.append(pd.Series(added_value))
+        y_new = y._append(pd.Series(added_value))
         scaler = preprocessing.MinMaxScaler()
         normalized_data_2d_array = scaler.fit_transform(np.array(y_new)[:, np.newaxis])
         normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[0:-1])]

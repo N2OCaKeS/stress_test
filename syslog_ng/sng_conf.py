@@ -7,6 +7,7 @@ REPORT_FILENAME = 'main_report.html'
 TEMPLATE_PATH = "{}/templates".format(SCRIPT_DIR)
 IMAGE_WIDTH = 23 # 23
 IMAGE_HEIGHT = 16 # 16
+VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 INFO_FILENAME = '{}/sng_info.txt'.format(REPORT_PATH)
 

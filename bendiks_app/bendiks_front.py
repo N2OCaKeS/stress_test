@@ -34,7 +34,7 @@ from libs.libbend import (index_page,
 
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'srv_2113'
+app.config['SECRET_KEY'] = 'srv_2413'
 
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)

@@ -2,7 +2,7 @@
 
 import subprocess
 import argparse
-from psb_conf import LOG_FILENAME, REPORT_PATH, RUN_LOG
+from psb_conf import LOG_FILENAME, REPORT_PATH, RUN_LOG, VENV_PATH
 from os import path, mkdir
 
 
@@ -34,11 +34,11 @@ with open(f'/home/u/{args.NAME}', 'r') as r:
         dates = r.read()
 
 if args.KERNEL:
-    subprocess.run(f'sudo python3 diff_kernel_quantity.py {dates}', shell=True)
+    subprocess.run(f'sudo {VENV_PATH} diff_kernel_quantity.py {dates}', shell=True)
 elif args.BALANCE:
-     subprocess.run(f'sudo python3 bl_run.py {dates}', shell=True)
+     subprocess.run(f'sudo {VENV_PATH} bl_run.py {dates}', shell=True)
 else:
     #subprocess.run(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}', shell=True)
-    subprocess.run(f'sudo python3 psb_run.py {dates}', shell=True)
-    subprocess.run('sudo python3 psb_public.py', shell=True)
+    subprocess.run(f'sudo {VENV_PATH} psb_run.py {dates}', shell=True)
+    subprocess.run(f'sudo {VENV_PATH} psb_public.py', shell=True)
 

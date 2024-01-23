@@ -9,6 +9,7 @@ REPORT_SYSMON_FILENAME = '{}/psb_sysmon_report.txt'.format(REPORT_PATH)
 DATA_SYSMON_FILENAME = '{}/psb_data_sysmon.txt'.format(REPORT_PATH)
 TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
 INFO_FILENAME = '{}/psb_info.txt'.format(SCRIPT_DIR)
+VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 '''
    Названия скриптов из папки sql.

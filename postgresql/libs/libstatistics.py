@@ -731,9 +731,9 @@ class PSQLStatistics2:
                         max_add_digit_value = df_sort_by_minor_version['additional_digits'].max()
                         df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version[df_sort_by_minor_version['additional_digits'] == max_add_digit_value]
                         df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version_and_add_digit.drop(['numeric_version', 'additional_digits', 'kernel_type', 'minor_version'], axis=1)
-                        new_df_temp = new_df_temp.append(df_sort_by_minor_version_and_add_digit)
+                        new_df_temp = new_df_temp._append(df_sort_by_minor_version_and_add_digit)
                     if "1.7" not in df_for_each_version['Релиз'].iloc[0]:
-                        new_df_temp = new_df_temp.append(df_for_each_version)
+                        new_df_temp = new_df_temp._append(df_for_each_version)
                 # ###
                 df = new_df_temp
                 df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
@@ -1147,17 +1147,17 @@ class PSQLStatistics2:
                     new_kernel_image_dict[stand_name_temp_for_key] = []
             templ_img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), img_png=file)    
             if file.endswith("5.10.jpg"):  
-                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
+                new_kernel_image_dict[stand_name_temp_for_key]._append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 # kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                 #                                                 img_png=file))
             if file.endswith("5.15-gen.jpg"):
-                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
+                new_kernel_image_dict[stand_name_temp_for_key]._append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 # kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                 #                                                 img_png=file))
             if file.endswith("5.15-ll.jpg"):
-                new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
+                new_kernel_image_dict[stand_name_temp_for_key]._append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 # kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                 #                                                 img_png=file))

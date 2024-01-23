@@ -1,5 +1,11 @@
-atlassian-python-api == 3.28.1
-pretty-html-table == 0.9.16
-pandas == 1.3.5
-pysnooper == 1.1.1
-scikit-learn == 1.3.2
+atlassian-python-api 
+pretty-html-table 
+pandas 
+pysnooper
+scikit-learn 
+requests
+numpy
+matplotlib
+lxml
+bs4
+prettytable

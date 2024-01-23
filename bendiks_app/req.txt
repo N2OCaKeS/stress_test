@@ -16,6 +16,8 @@ asyncpg
 psycopg2
 selenium
 uvicorn
+gunicorn
 flask
 pysnooper
 ansible
+paramiko

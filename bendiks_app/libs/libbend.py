@@ -17,7 +17,8 @@ import paramiko
 from paramiko import ssh_exception
 import socket
 import psycopg2
-from backup_image_conf import (psyc,
+from backup_image_conf import (VENV_PATH,
+                               psyc,
                                stands_ip,
                                main_tests,
                                brest_tests,
@@ -266,8 +267,8 @@ def run_command_on_stand(num):
             with open(f'conf/{prefix}_kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        command_to_run = f'python3 bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}"'
-        command_to_run_kernel = f'python3 bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}"'
+        command_to_run = f'{VENV_PATH} bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}"'
+        command_to_run_kernel = f'{VENV_PATH} bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}"'
 
         def run_command_and_log(command):
             with open(f'front_stand{num}.log', 'a') as cpu_ram_output:

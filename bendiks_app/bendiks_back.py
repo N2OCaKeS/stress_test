@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/home/u/python/Python-3.12.1/venv/bin/python3.12
 
 import subprocess
 from backup_image_conf import branches, cycle_tree_index, tests, parent_page_list

@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/home/u/python/Python-3.12.1/venv/bin/python3.12
 
 import subprocess
 import os
@@ -737,9 +737,9 @@ def db_kernel_changer(cpu_count, database, position=None):
     else: 
         if database == 'tantor':
             send_remote_command('sudo systemctl restart tantor-se-server-15.service')
-            send_remote_command(f'cd /home/u/git/stress_test/{branch}/ && sudo python3 run.py -n {dates_name} -kn kernel')
+            send_remote_command(f'cd /home/u/git/stress_test/{branch}/ && sudo {VENV_PATH} run.py -n {dates_name} -kn kernel')
         else:
-            send_remote_command(f'cd /home/u/git/stress_test/{branch}/ && sudo python3 run.py -n {dates_name} -kn kernel')
+            send_remote_command(f'cd /home/u/git/stress_test/{branch}/ && sudo {VENV_PATH} run.py -n {dates_name} -kn kernel')
         
     write_status(done)    
 

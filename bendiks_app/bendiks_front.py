@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/home/u/python/Python-3.12.1/venv/bin/python3.12
 
 from flask import (Flask, 
                    render_template, 

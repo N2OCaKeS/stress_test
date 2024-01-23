@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/home/u/python/Python-3.12.1/venv/bin/python3.12
 
 import json
 import logging
@@ -314,7 +314,7 @@ class ZefirResultTable:
                 data['Ядро'] = [dates_list[iter][0][2]]
                 data['Режим'] = [dates_list[iter][0][1]]
                 data['№ стенда'] = [dates_list[iter][0][3]]
-                self.new_tab = self.new_tab.append(data, ignore_index=True)
+                self.new_tab = self.new_tab._append(data, ignore_index=True)
                 if dates_list[iter][1] in self.new_tab.columns:
                    self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
                 else:

@@ -17,7 +17,7 @@ from libs.libfsb import astra_version, upload_results_to_ftp
 from libs.zefir import UploaderZC
 from fsb_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
     HOSTS, USER, PASSWORD, SCRIPT_DIR, LOG_FILENAME, REPORT_PATH, STORAGE_MOUNT_DIR, \
-    INFO_FILENAME, PACKAGES, REPORT_FILENAME
+    INFO_FILENAME, PACKAGES, REPORT_FILENAME, VENV_PATH
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -146,7 +146,6 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     dest='TCV')
 
 args = parser.parse_args()
-venv_path = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 
 uzs = UploaderZC(folder_tree_id=args.FTI,
@@ -304,7 +303,7 @@ else: # физ. стенд
         Запустить скрипт настройки тестовой машины.
     '''
     try:
-        cmd(run_storage_init.format(venv_path=venv_path,
+        cmd(run_storage_init.format(venv_path=VENV_PATH,
                                     dir=SCRIPT_DIR,
                                     fs=args.FS,
                                     host=args.HOST))
@@ -330,22 +329,22 @@ else: # физ. стенд
     try:
         if args.PARSEC:
             if args.FS == 'ext4' and args.STAND == '4':
-                cmd(run_test_parsec_ext4_st4.format(venv_path=venv_path,
+                cmd(run_test_parsec_ext4_st4.format(venv_path=VENV_PATH,
                                                     dir=SCRIPT_DIR,
                                                     ts=args.TS,
                                                     sn=args.STAND))
             else:
-                cmd(run_test_parsec.format(venv_path=venv_path,
+                cmd(run_test_parsec.format(venv_path=VENV_PATH,
                                            dir=SCRIPT_DIR,
                                            ts=args.TS))
         else:
             if args.FS == 'ext4' and args.STAND == '4':
-                cmd(run_test_ext4_st4.format(venv_path=venv_path,
+                cmd(run_test_ext4_st4.format(venv_path=VENV_PATH,
                                              dir=SCRIPT_DIR,
                                              ts=args.TS,
                                              sn=args.STAND))
             else:
-                cmd(run_test.format(venv_path=venv_path,
+                cmd(run_test.format(venv_path=VENV_PATH,
                                     dir=SCRIPT_DIR,
                                     ts=args.TS))             
     except Exception as exception:

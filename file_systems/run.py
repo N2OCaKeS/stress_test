@@ -2,6 +2,7 @@
 
 import subprocess
 import argparse
+from fsb_conf import VENV_PATH
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-n',
@@ -10,9 +11,8 @@ parser.add_argument('-n',
                     help='dates name',
                     dest='NAME')
 args = parser.parse_args()
-venv_path = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 with open(f'/home/u/{args.NAME}', 'r') as r:
     dates = r.read()
 
-subprocess.run(f'sudo {venv_path} fsb_run.py {dates}', shell=True)
+subprocess.run(f'sudo {VENV_PATH} fsb_run.py {dates}', shell=True)

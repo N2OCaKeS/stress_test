@@ -33,6 +33,7 @@ REPORT_FILENAME = 'fsb_report.txt'
 REPORT_PATH = '{}/report'.format(SCRIPT_DIR)
 TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
 INFO_FILENAME = 'fsb_info.txt'
+VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 PACKAGES = {'ext2': 'e2fsprogs',
             'ext3': 'e2fsprogs',

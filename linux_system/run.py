@@ -2,6 +2,7 @@
 
 import subprocess
 import argparse
+from lsb_conf import VENV_PATH
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-n',
@@ -14,4 +15,4 @@ args = parser.parse_args()
 with open(f'/home/u/{args.NAME}', 'r') as r:
     dates = r.read()
 
-subprocess.run(f'sudo python3 lsb_run.py {dates}', shell=True)
+subprocess.run(f'sudo {VENV_PATH} lsb_run.py {dates}', shell=True)

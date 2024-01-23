@@ -1,5 +1,11 @@
-fabric == 2.6.0
-atlassian-python-api == 3.28.1
-pretty-html-table == 0.9.16
+fabric
+atlassian-python-api
+pretty-html-table
 pandas
 scikit-learn
+requests
+numpy
+matplotlib
+lxml
+prettytable
+bs4

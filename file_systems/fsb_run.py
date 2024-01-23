@@ -167,11 +167,11 @@ uzs.upload_test_cycle_status('progress')
 '''
     main
 '''
-run_storage_init = 'sudo python3 {dir}/fsb_storage_init.py --fs {fs}'
-run_test_ext4_st4 = 'sudo python3 {dir}/fsb_test.py --test-set {ts} -sn {sn}'
-run_test_parsec_ext4_st4 = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
-run_test = 'sudo python3 {dir}/fsb_test.py --test-set {ts}'
-run_test_parsec = 'sudo python3 {dir}/fsb_test.py --test-set {ts} --parsec'
+run_storage_init = 'sudo venv/bin/python3.12 {dir}/fsb_storage_init.py --fs {fs}'
+run_test_ext4_st4 = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts} -sn {sn}'
+run_test_parsec_ext4_st4 = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
+run_test = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts}'
+run_test_parsec = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts} --parsec'
 
 # '''
 #     VirtualBox

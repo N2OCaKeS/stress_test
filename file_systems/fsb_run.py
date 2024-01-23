@@ -146,6 +146,7 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     dest='TCV')
 
 args = parser.parse_args()
+venv_path = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 
 uzs = UploaderZC(folder_tree_id=args.FTI,
@@ -167,11 +168,11 @@ uzs.upload_test_cycle_status('progress')
 '''
     main
 '''
-run_storage_init = 'sudo venv/bin/python3.12 {dir}/fsb_storage_init.py --fs {fs}'
-run_test_ext4_st4 = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts} -sn {sn}'
-run_test_parsec_ext4_st4 = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
-run_test = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts}'
-run_test_parsec = 'sudo venv/bin/python3.12 {dir}/fsb_test.py --test-set {ts} --parsec'
+run_storage_init = 'sudo {venv_path} {dir}/fsb_storage_init.py --fs {fs}'
+run_test_ext4_st4 = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts} -sn {sn}'
+run_test_parsec_ext4_st4 = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
+run_test = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts}'
+run_test_parsec = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts} --parsec'
 
 # '''
 #     VirtualBox
@@ -303,7 +304,8 @@ else: # физ. стенд
         Запустить скрипт настройки тестовой машины.
     '''
     try:
-        cmd(run_storage_init.format(dir=SCRIPT_DIR,
+        cmd(run_storage_init.format(venv_path=venv_path,
+                                    dir=SCRIPT_DIR,
                                     fs=args.FS,
                                     host=args.HOST))
     except Exception as exception:
@@ -328,19 +330,23 @@ else: # физ. стенд
     try:
         if args.PARSEC:
             if args.FS == 'ext4' and args.STAND == '4':
-                cmd(run_test_parsec_ext4_st4.format(dir=SCRIPT_DIR,
+                cmd(run_test_parsec_ext4_st4.format(venv_path=venv_path,
+                                                    dir=SCRIPT_DIR,
                                                     ts=args.TS,
                                                     sn=args.STAND))
             else:
-                cmd(run_test_parsec.format(dir=SCRIPT_DIR,
+                cmd(run_test_parsec.format(venv_path=venv_path,
+                                           dir=SCRIPT_DIR,
                                            ts=args.TS))
         else:
             if args.FS == 'ext4' and args.STAND == '4':
-                cmd(run_test_ext4_st4.format(dir=SCRIPT_DIR,
+                cmd(run_test_ext4_st4.format(venv_path=venv_path,
+                                             dir=SCRIPT_DIR,
                                              ts=args.TS,
                                              sn=args.STAND))
             else:
-                cmd(run_test.format(dir=SCRIPT_DIR,
+                cmd(run_test.format(venv_path=venv_path,
+                                    dir=SCRIPT_DIR,
                                     ts=args.TS))             
     except Exception as exception:
         print("\033[91m Тестирование завершилось исключением.\033[0m")

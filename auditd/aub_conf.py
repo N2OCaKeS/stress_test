@@ -17,6 +17,7 @@ INFO_FILENAME = 'aub_info.txt'
 LOG_DIR = '{}/log'.format(SCRIPT_DIR)
 REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
 TEMPLATE_DIR = '{}/templates'.format(SCRIPT_DIR)
+VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 """
     Полный путь до файлов

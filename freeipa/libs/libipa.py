@@ -5,7 +5,7 @@ import paramiko
 from paramiko.ssh_exception import NoValidConnectionsError
 from time import sleep
 from fabric import Connection
-from ipa_conf import USER, PASSWORD, PASSWORD_DOCKER_CONT, HOSTS
+from ipa_conf import USER, PASSWORD, HOSTS
 
 def cmd(command):
     ret_code = subprocess.run(command, shell=True).returncode
@@ -41,15 +41,18 @@ def remote_cmd(command, host, user=USER, passwd=PASSWORD , port=22):
         stdin, stdout, stderr = client.exec_command(f'{command}')
         data = stdout.read().decode("utf-8") + stderr.read().decode("utf-8")
         client.close()
-    except paramiko.SSHException:
+    except paramiko.SSHException as err:
         pass
     return data
 
-def remote_put_file(host, remote_path, local_path, port=22, user=USER, passwd=PASSWORD):
+def remote_put_file(host, remote_path, local_path, port=22, user=USER, passwd=PASSWORD, local_to_remote=True):
     transport = paramiko.Transport((host, port))
     transport.connect(username=user, password=passwd)
     sftp = paramiko.SFTPClient.from_transport(transport)
-    sftp.put(localpath=local_path, remotepath=remote_path)
+    if local_to_remote:
+        sftp.put(localpath=local_path, remotepath=remote_path)
+    else:
+        sftp.get(localpath=local_path, remotepath=remote_path)
     sftp.close()
     transport.close()
 

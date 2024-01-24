@@ -4,36 +4,35 @@ import subprocess
 
 # from libs.libipa import cmd
 from time import sleep
-from ipa_conf import DOGTAG, DC_PASSWORD, HOSTS, DOMAIN, EXT_REPO
+from ipa_conf import REPLICA, DC_PASSWORD, HOSTS, DOMAIN #EXT_REPO
 
 
-def cmd(command):
-    ret_code = subprocess.run(command, shell=True).returncode
-    return ret_code
+def cmd(command, ret_c=True):
+    if ret_c:
+        ret_code = subprocess.run(command, shell=True).returncode
+        return ret_code
+    else:
+        output = subprocess.run(command, 
+                                shell=True, 
+                                stdout=subprocess.PIPE, 
+                                encoding='utf-8').stdout.strip('\n')
+        return output
 
-def initialization_freeipa_replica():
+def change_defualt_kernel():
+    command_search = "sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep 5.15 | tr -d \"'\" | grep generic"
+    
+    kernel_search = cmd(command=command_search, ret_c=False)
+    command_change = f"sudo sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT={kernel_search}/' /etc/default/grub && sudo update-grub"
+    kernel_change = cmd(command=command_change)
+
+def initialization_freeipa_client():
 
     """
-        Добавление расширенного репозитория
-    """
-    with open("/etc/apt/sources.list", "a") as file_sl:
-        file_sl.write(f'{EXT_REPO} \n')
-        # for line in file_sl:
-        #     if "base" in line:
-        #         template_repo = line.replace('base', 'extended')
-        #         file_sl.write(template_repo)
-    """
-        Обновление списка пакетов
+        Обновление списка пакетов и установка клиента фриипы
     """    
     cmd("apt update")
     
-    """
-        Установка пакета dogtag-pki
-    """
-    cmd("apt install resolvconf dogtag-pki astra-freeipa-client astra-freeipa-server -y")    
-    # inst_dogtag = cmd("apt install dogtag-pki -y")
-    # if inst_dogtag is not 0:
-    #     cmd("aptitude install dogtag-pki -y")
+    cmd("apt install -y astra-freeipa-client")
     
     """
         Костыль для временной замены записей DNS (Чтобы не перезагружая ввести в домен)
@@ -93,19 +92,14 @@ def initialization_freeipa_replica():
         Ввод клиента в домен
     """
     cmd(f"astra-freeipa-client -y -p {DC_PASSWORD}")
-    sleep(10)
-    
-    """
-        Инициализация реплики
-    """
-    cmd(f"echo -e yes | astra-freeipa-replica --dogtag -p {DC_PASSWORD}")
-    
     """
         Перезапуск контроллера домена
     """
-    print("\033[92mПЕРЕЗАПУСК реплики...\033[0m")
+    print("\033[92mПЕРЕЗАПУСК клиента333...\033[0m")
+    sleep(10)
     cmd("reboot")
 
 
 if __name__ == "__main__":
-    initialization_freeipa_replica()
+    change_defualt_kernel()
+    initialization_freeipa_client()

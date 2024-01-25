@@ -1,19 +1,45 @@
-import random
+import os
+from os import path
+# import random
 from time import time, sleep
-from concurrent.futures import ThreadPoolExecutor
-from paramiko import SSHException
+# from concurrent.futures import ThreadPoolExecutor
+# from paramiko import SSHException
 
-from libs.libipa import remote_cmd
-from ipa_conf import HOSTS, REPORT_PATH #, LOWER_LIMITE_CLIENTS, STEP_CLIENTS, UPPER_LIMITE_CLIENTS, USERS_COUNT, 
+from libs.libipa import remote_cmd, remote_put_file, remote_exec
+from ipa_conf import USER, HOSTS, REPORT_PATH #, LOWER_LIMITE_CLIENTS, STEP_CLIENTS, UPPER_LIMITE_CLIENTS, USERS_COUNT, 
 # from ipa_init_client_enroll import presettings_on_hosts_for_ipa_clients, create_centos_cont, init_ipa_client, delete_clients_from_dc, delete_docker_cont, check_qty_clients
 
 
 class AutentificationTest():
     def create_users(self):
-        pass
+        """
+            Создание пользователей
+        """
+        remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_user_add.py', "ipa_user_add.py")
+        remote_exec("python3 ipa_user_add.py", 'server')
+        remote_cmd("python3 ipa_user_add.py", HOSTS['server']['ip'])    
         
     def run(self):
-        pass
+        """
+            Перекидываем тест и запускаем
+        """
+        remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_auth_2.py', "ipa_auth_2.py")
+        remote_exec("ulimit -n 100000 && python3 ipa_auth_2.py", 'clients')
+        
+        """
+        Забираем файл с результатами
+        """
+        if not path.exists(REPORT_PATH):
+            os.mkdir(REPORT_PATH, mode=0o755)
+        remote_put_file(host=HOSTS['clients']['ip'],
+                        remote_path=f'/home/{USER}/ipa_report.txt',
+                        local_path=f"{REPORT_PATH}/ipa_report.txt",
+                        local_to_remote=False)
+    
+        remote_put_file(host=HOSTS['clients']['ip'],
+                        remote_path=f'/home/{USER}/ipa_report_error.txt',
+                        local_path=f"{REPORT_PATH}/ipa_report_error.txt",
+                        local_to_remote=False)
 
 
 # class EnrollementTest():

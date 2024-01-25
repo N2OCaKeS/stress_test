@@ -1,14 +1,11 @@
-import os
 from time import sleep
-from os import path
 from argparse import ArgumentParser
 from libs.libtable import Report
-from libs.libipa import remote_exec, remote_put_file, host_is_available, cmd, remote_cmd
-from ipa_conf import HOSTS, USER, REPORT_PATH, DOMAIN
+from libs.libipa import remote_exec, remote_put_file, host_is_available, remote_cmd
+from ipa_conf import HOSTS, USER
 
 # from libs.libpublic import Public
-
-# from ipa_tests import AutentificationTest
+from ipa_tests import AutentificationTest
 
 parser = ArgumentParser()
 
@@ -60,37 +57,13 @@ if __name__ == "__main__":
     remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
     remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_init_client.py', "ipa_init_client.py")
     remote_exec("sudo python3 ipa_init_client.py", 'clients')
-     
+    """
+        Запускаем тест
+    """
 
-    """
-        Создание пользователей
-    """
-    remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_user_add.py', "ipa_user_add.py")
-    remote_exec("python3 ipa_user_add.py", 'server')
-    remote_cmd("python3 ipa_user_add.py", HOSTS['server']['ip'])
-
-    """
-        Перекидываем тест и запускаем
-    """
-    remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_auth_2.py', "ipa_auth_2.py")
-    remote_exec("ulimit -n 100000 && python3 ipa_auth_2.py", 'clients')
-
-
-    """
-        Забираем файл с результатами
-    """
-    if not path.exists(REPORT_PATH):
-        os.mkdir(REPORT_PATH, mode=0o755)
-    remote_put_file(host=HOSTS['clients']['ip'], 
-                    remote_path=f'/home/{USER}/ipa_report.txt', 
-                    local_path=f"{REPORT_PATH}/ipa_report.txt", 
-                    local_to_remote=False)
-    
-    remote_put_file(host=HOSTS['clients']['ip'], 
-                    remote_path=f'/home/{USER}/ipa_report_error.txt', 
-                    local_path=f"{REPORT_PATH}/ipa_report_error.txt", 
-                    local_to_remote=False)
-
+    auth_test = AutentificationTest()
+    auth_test.create_users()
+    auth_test.run()
     # TODO Дописать info файл
 
     """

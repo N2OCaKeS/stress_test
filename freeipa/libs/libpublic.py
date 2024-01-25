@@ -2,7 +2,7 @@ import os
 import re
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
-from ipa_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH
+from ipa_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH, MAX_USERS_AUTH
 
 class Public:
     '''
@@ -109,8 +109,7 @@ class Public:
                                                     kernel=info_lst[1],
                                                     package_name='astra-freeipa-server',
                                                     package_vers=info_lst[2],
-                                                    param_time_exec=TIME_EXEC,
-                                                    param_service_count=SERVICE_COUNT,
+                                                    param_service_count=MAX_USERS_AUTH,
                                                     arm_num=self.stands[self.grade_stand]['grade'],
                                                     arm_proc=self.stands[self.grade_stand]['cpu'],
                                                     arm_mem=self.stands[self.grade_stand]['ram'],

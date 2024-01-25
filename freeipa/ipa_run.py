@@ -1,15 +1,16 @@
 from time import sleep
+from datetime import datetime
 from argparse import ArgumentParser
 from libs.libtable import Report
-from libs.libipa import remote_exec, remote_put_file, host_is_available, remote_cmd
-from ipa_conf import HOSTS, USER
+from libs.libipa import remote_exec, remote_put_file, host_is_available, remote_cmd, put_system_info_in_file
+from ipa_conf import HOSTS, USER, INFO_FILENAME
 
-# from libs.libpublic import Public
 from ipa_tests import AutentificationTest
 
 parser = ArgumentParser()
 
 if __name__ == "__main__":
+    time_start_script = datetime.now()
     print("Hello")
     """
         Ининциализация КД
@@ -95,5 +96,6 @@ if __name__ == "__main__":
     rating_last_values = report.get_rating(report.user_count, report.value_for_last_proc_delay, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
     total_rating = report.get_total_rating([rating_sr_znach, rating_proc_errors, rating_last_values])
     print(total_rating)
+    put_system_info_in_file(time_start_script, INFO_FILENAME)
 
         

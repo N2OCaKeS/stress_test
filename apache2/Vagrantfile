@@ -1,0 +1,125 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+
+def repo_configure(machine)
+    machine.vm.provision "shell", inline:<<-SHELL
+        echo -n "\ndeb http://releases.devos.astralinux.ru/frozen/1.7/1.7.5/1.7.5.14/base-repository/ 1.7_x86-64 main contrib non-free" >> /etc/apt/sources.list
+    SHELL
+end
+  
+def upgrade(machine)
+    machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+        # fix networking
+        sed -i "s/^allow-hotplug.*/auto eth0\\n&/" /etc/network/interfaces
+        systemctl restart networking.service
+        # fix grub-pc update
+        debconf-set-selections <<< "grub-pc grub-pc/install_devices multiselect /dev/sda"
+        # update
+        apt update
+        DEBIAN_FRONTEND=noninteractive apt -yq install astra-update
+        LC_ALL=C astra-update -A -r -T
+    SHELL
+end
+
+Vagrant.configure("2") do |config|
+    config.vm.box = "alse-vanilla-max/1.7.5"
+    config.vm.box_url = "https://dl.astralinux.ru/vagrant/alse-vanilla-max%2F1.7.5"
+    config.vm.guest = :debian
+  
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+
+    config.vm.provider "virtualbox" do |v|
+        v.memory = 2048
+        v.cpus = 2
+        v.customize ["storagectl", :id, "--name", "SATA Controller", "--hostiocache", "on"]
+        v.customize ["modifyvm", :id, "--groups", "/BT-45228"]
+    end
+
+    config.vm.define "node" do |node|
+        node.vm.provider "virtualbox" do |vb|
+            vb.name = "node_rp"
+        end
+
+        repo_configure(node)
+        upgrade(node)
+
+        node.vm.provision "shell", inline:<<-SHELL
+            apt update
+            apt -y install apache2 golang mc curl
+
+
+            a2enmod proxy
+            a2enmod proxy_http
+            a2enmod proxy_balancer
+            a2enmod lbmethod_byrequests
+            a2enmod headers
+
+            cat <<EOF > /etc/apache2/sites-available/revers_proxy.conf
+<VirtualHost *:80>
+ServerName localhost
+
+RequestHeader set X-Remote-User expr=%{REMOTE_USER}
+
+ProxyPreserveHost On
+ProxyRequests Off
+
+ProxyPass / "balancer://mycluster/"
+ProxyPassReverse / "balancer://mycluster/"
+
+<Proxy "balancer://mycluster/">
+        BalancerMember "http://127.0.0.1:8096"
+        BalancerMember "http://127.0.0.1:8097"
+</Proxy>
+</VirtualHost>
+EOF
+
+            echo "AstraMode off" >> /etc/apache2/apache2.conf
+
+            for i in 96 97; do
+            cat <<EOF > main$i.go
+package main
+
+import (
+    "log"
+    "fmt"
+    "net/http"
+)
+
+const (
+    SERVERPORT = ":80$i"
+)
+
+func hello(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Hello, world!")
+}
+
+func main() {
+    http.HandleFunc("/hello/", hello)
+    http.HandleFunc("/", hello)
+    if err := http.ListenAndServe(SERVERPORT, nil); err != nil {
+        log.Fatal(err)
+    }
+}
+EOF
+
+    go build -o "go_test$i" "main$i.go"
+    mv "go_test$i" /usr/local/bin/
+    /usr/local/bin/"go_test$i" &
+
+    done
+
+    a2ensite revers_proxy.conf
+    a2dissite 000-default.conf
+    systemctl restart apache2
+
+    echo "=> "
+    curl  http://localhost:80/
+    echo "=>"
+
+    ab -n 10000 http://localhost:80/
+        SHELL
+    end
+end

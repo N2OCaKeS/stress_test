@@ -1,21 +1,22 @@
 CC=gcc
-CFLAGS=-fPIC -Wall -Wextra -O2
-LDFLAGS=-shared -lcurl
+CFLAGS=-Wall -Wextra -O2
+LDFLAGS=-lcurl -pthread
 RM=rm -f
-TARGET_LIB=load_parsec.so
+TARGET=load_parsec
 
 SRCS=load_parsec.c
 OBJS=$(SRCS:.c=.o)
 
 .PHONY: all
-all: ${TARGET_LIB}
+all: ${TARGET}
 
-$(TARGET_LIB): $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OBJS): $(SRCS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean:
-	-$(RM) ${TARGET_LIB} $(OBJS)
+	-$(RM) $(TARGET) $(OBJS)
+

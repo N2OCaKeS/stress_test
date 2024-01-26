@@ -7,17 +7,18 @@ import numpy as np
 #Количество запусков бенчмарка
 repetitions_counter = 30
 #Запросы
-requests = 20000
+requests = 50000
 #Потоки
-concurrency = 20
+concurrency = 500
 #Лимит группы по количеству элементов, принимаемой к расчетам, в %
 valid_values_percent = 50
 #Лимит отклонения, в %
-percent_limit = 15
+percent_limit = 5
 
 
 ip = check_output_command("hostname -I | awk '{print $1}'"); print(ip)
-modules = ['proxy', 'proxy_http', 'proxy_balancer', 'lbmethod_byrequests', 'headers']
+modules = ['proxy', 'proxy_http', 'proxy_balancer', 'lbmethod_byrequests', 'headers', 'mpm_event']
+sites = ['000-default.conf', '001-member-8096.conf', '002-member-8097.conf']
 
 html_page = """<!DOCTYPE html>
 <html>
@@ -79,10 +80,10 @@ with open('/etc/apache2/sites-available/001-member-8096.conf', 'w') as member_1:
 with open('/etc/apache2/sites-available/002-member-8097.conf', 'w') as member_2:
     member_2.write(proxy_member_sett_2)     
 
+command('sudo systemctl stop apache2')
+command('sudo a2dismod mpm_prefork')
 [command(f'sudo a2enmod {module}') for module in modules]
-command('sudo a2ensite 000-default.conf')
-command('sudo a2ensite 001-member-8096.conf')
-command('sudo a2ensite 002-member-8097.conf')
+[command(f'sudo a2ensite {site}') for site in sites]
 command('sudo systemctl restart apache2')
 
 if os.path.isfile('result.txt'):

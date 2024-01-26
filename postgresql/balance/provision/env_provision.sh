@@ -43,6 +43,8 @@ sudo apt-get update
 sudo astra-update -A -T -r
 sudo apt-get install rsync -y
 sudo apt-get install htop -y
+sudo apt-get install linux-[5-6].*-generic -y
+sudo apt-get install linux-[5-6].*-lowlatency -y
 
 
 #mount second storage

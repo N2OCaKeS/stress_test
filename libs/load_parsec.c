@@ -53,13 +53,16 @@ int main(int argc, char ** argv)
     nworkers = atoi(argv[2]);
     nloop = atoi(argv[3]);
 
-
-    tcbs = calloc(sizeof(*tcbs), 1);
+    tcbs = calloc(nworkers, sizeof(*tcbs));
     for (i = 0; i < nworkers; i++) {
         pthread_create(&tcbs[i], NULL, thread_function,
                 (void *)(intptr_t)nloop);
     }
-    pthread_exit(0);
+
+    for (i=0; i < nworkers; i++) {
+        pthread_join(tcbs[i], NULL);
+    }
+    
     printf("END\n");
     return 0;
 }

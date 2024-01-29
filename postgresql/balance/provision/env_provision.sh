@@ -43,6 +43,7 @@ sudo apt-get update
 sudo astra-update -A -T -r
 sudo apt-get install rsync -y
 sudo apt-get install htop -y
+sudo apt-get install -y gcc make perl
 sudo apt-get install linux-[5-6].*-generic -y
 sudo apt-get install linux-[5-6].*-lowlatency -y
 
@@ -234,6 +235,9 @@ apt list postgresql* > /home/u/available_packages.txt
 
 kernel="$2"
 kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")
+if ! grep -q '^GRUB_DEFAULT=' /etc/default/grub; then
+    echo 'GRUB_DEFAULT=0' | sudo tee -a /etc/default/grub
+fi
 sudo sed -i "s/GRUB_DEFAULT=.*/GRUB_DEFAULT=$kernel_conf/" /etc/default/grub
 sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT

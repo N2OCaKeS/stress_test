@@ -2,7 +2,7 @@
 
 # create venv in script_dir
 sudo apt update
-sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
+sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo apt-get install -y libffi-dev strace 
 sudo apt-get install -y libcurl4-gnutls-dev
 sudo apt-get install -y rustc cargo

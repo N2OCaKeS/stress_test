@@ -2,9 +2,9 @@ CC=gcc
 CFLAGS=-Wall -Wextra -O2
 LDFLAGS=-lcurl -pthread
 RM=rm -f
-TARGET=load_parsec
+TARGET=load_test
 
-SRCS=load_parsec.c
+SRCS=load_test.c
 OBJS=$(SRCS:.c=.o)
 
 .PHONY: all

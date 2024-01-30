@@ -3,13 +3,17 @@ from libs.libparsec import (check_output_command,
 
 
 #количество создаваемых потоков 
-concurrency = 1
+concurrency = 10
 #количество циклов для каждого потока
 counter = 1000
 
-load_command = f'cd libs && time ./load_parsec /tmp {concurrency} {counter}'
+load_command = f'cd libs && sudo perf record -a -g -F 99 time ./load_test /tmp {concurrency} {counter}'
 load_rare_results = check_output_command(load_command)
 find_args = ['real', 'user', 'sys']
+
+command('cd libs && sudo perf script -i perf.data > out.perf')
+command('cd libs && sudo perl libstackcollapse-perf.pl out.perf > out.folded')
+command('sudo perl libs/libflamegraph.pl libs/out.folded > result_flamegraph.svg')
 
 print(load_rare_results)
 

@@ -10,7 +10,7 @@ concurrency = 100
 #количество циклов для каждого потока
 counter = 1000
 
-load_dir = '/tmp/x'
+load_dir = '/tmp/test_dir'
 perf_report_name = 'perf_report.txt'
 shared_object_name = 'kernel.kallsyms'
 flamegraph_name = 'result_flamegraph.svg'

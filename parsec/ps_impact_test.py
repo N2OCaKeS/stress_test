@@ -9,11 +9,12 @@ concurrency = 100
 #количество циклов для каждого потока
 counter = 1000
 
+load_dir = '/tmp'
 perf_report_name = 'perf_report.txt'
 shared_object_name = 'kernel.kallsyms'
 flamegraph_name = 'result_flamegraph.svg'
 load_rare_results_name = 'load_rare_results.txt'
-load_command = f'cd libs && {{ time sudo perf record -a -g -F 99 ./load_test /tmp \
+load_command = f'cd libs && {{ time sudo perf record -a -g -F 99 ./load_test {load_dir} \
     {concurrency} {counter} ; }} 2> {load_rare_results_name}'
 find_args = ['real', 'user', 'sys']
 found_functions = f"cat libs/{perf_report_name} | grep {shared_object_name} | awk '{{print $6}}'"
@@ -28,6 +29,7 @@ command(f'cd libs && sudo perf report > {perf_report_name}')
 command('cd libs && sudo perf script -i perf.data > out.perf')
 command('cd libs && sudo perl libstackcollapse-perf.pl out.perf > out.folded')
 command(f'sudo perl libs/libflamegraph.pl libs/out.folded > {flamegraph_name}')
+print(f'\nUsed dir: {load_dir}\n')
 
 if isfile(f'libs/{load_rare_results_name}'):
     with open(f'libs/{load_rare_results_name}', 'r') as r:

@@ -5,7 +5,7 @@ from re import findall
 
 
 #количество создаваемых потоков 
-concurrency = 10
+concurrency = 100
 #количество циклов для каждого потока
 counter = 1000
 

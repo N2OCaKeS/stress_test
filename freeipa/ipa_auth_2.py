@@ -1,6 +1,6 @@
 import time
 import ldap
-from ldap.asyncsearch import AsyncSearchHandler, List, Dict
+from ldap.asyncsearch import List
 from multiprocessing import Process, Barrier, Value, Manager, Array
 
 def auth(user_id, array_for_ldap_error):
@@ -24,9 +24,34 @@ def auth(user_id, array_for_ldap_error):
 def auth_out(ldap_obj):
     ldap_obj.unbind_s()
 
-def _a_search(ldap_obj, **kwargs):
-    # TODO Попробовать реализовать и посмотреть разницу
-    pass
+def async_ldap_search(ldap_obj, **kwargs):
+    """
+        Асинхронный search
+    """
+    if 'attrlist' in kwargs:
+        attr_list = kwargs['attrlist']
+    else:
+        attr_list = None
+    s = ldap.asyncsearch.List(ldap_obj)
+    s.startSearch(
+        kwargs['base'],
+        kwargs['scope'],
+        kwargs['search_filter'],
+        attr_list
+    )
+    try:
+        partial = s.processResults()
+    except ldap.SIZELIMIT_EXCEEDED as err:
+        return False, err
+    except ldap.LDAPError as err:
+        return False, err
+
+    if len(s.allResults) > 0:
+        allres = []
+        for result in s.allResults:
+            allres.append(result[1])
+        return True, allres
+    return True, s.allResults
 
 def _ldap_search(ldap_obj, base, scope, search_filter, attrlist=None):
     # TODO прокинуть сюда array с ошибками

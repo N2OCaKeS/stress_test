@@ -1,6 +1,6 @@
 import subprocess
 import os
-
+import requests
 
 
 def command(command):
@@ -19,4 +19,12 @@ def check_output_command(command):
         return errors
     
 
+def response():
+    try:
+        jira = requests.get('https://jira.astralinux.ru').status_code
+        life = requests.get('https://life.astralinux.ru').status_code
+        return jira, life
+    except Exception as e:
+        jira, life = str(type(e).__name__), str(e)
+        return jira, life
 

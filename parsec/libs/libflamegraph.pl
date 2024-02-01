@@ -10,7 +10,7 @@ use open qw(:std :utf8);
 # tunables
 my $encoding;
 my $fonttype = "Verdana";
-my $imagewidth = 1200;          # max width, pixels
+my $imagewidth = 2200;          # max width, pixels
 my $frameheight = 16;           # max height is dynamic
 my $fontsize = 12;              # base text size
 my $fontwidth = 0.59;           # avg width relative to fontsize

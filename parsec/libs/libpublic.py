@@ -114,9 +114,7 @@ class Public:
         with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
             header_table_temp = file.read()
             header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],
-                                                    package_name=self.package,
-                                                    package_vers=info_lst[2],
+                                                    kernel=info_lst[1],                                                    
                                                     concurency=CONC,
                                                     counter=COUNTER,
                                                     fs=FILE_SYSTEM,

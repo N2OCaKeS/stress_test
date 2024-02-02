@@ -15,7 +15,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME, \
-    TANTOR_VERSION
+    TANTOR_VERSION, VENV_PATH
 from libs.libpsqltests import Test
 from libs.zefir import UploaderZC
 from libs.libpsb import astra_version, dump, upload_results_to_ftp
@@ -268,7 +268,7 @@ if args.TEST_LIST == 'base':
         print('# INFO # --- max clients count {}'.format(str(limite_clients)))
 
         if args.SYSMON:
-            sysmon = subprocess.Popen("python3 psb_sysmon.py", shell=True)
+            sysmon = subprocess.Popen(f"{VENV_PATH} psb_sysmon.py", shell=True)
 
         while clients <= limite_clients:
             print('# INFO # --- clients count {}'.format(str(clients)))

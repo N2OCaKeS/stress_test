@@ -1,0 +1,54 @@
+- name: Cleanup
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove signals
+      file:
+        path: signals/
+        state: absent
+
+
+- name: Reboot load balancers for databases
+  hosts: load_balancers_db
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Temporarily disable pgpool service
+      become: yes
+      service:
+        name: pgpool2
+        state: stopped
+        enabled: no
+
+    - name: Reboot
+      reboot:
+        post_reboot_delay: 5
+
+    - name: Set signal that host has been rebooted
+      vars:
+        signal: '{{ inventory_hostname }}_rebooted'
+      import_tasks: '{{ playbook_dir }}/../set_file_signal.yml'
+
+    # Sync service starting
+    - name: Wait for other pgpool nodes
+      vars:
+        signal: '{{ item }}_rebooted'
+      include_tasks: '{{ playbook_dir }}/../wait_for_file_signal.yml'
+      loop: '{{ groups.load_balancers_db | difference([inventory_hostname]) }}'
+
+    - name: Enable pgpool service
+      become: yes
+      service:
+        name: pgpool2
+        state: started
+        enabled: yes
+
+
+- name: Cleanup
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove signals
+      file:
+        path: signals/
+        state: absent

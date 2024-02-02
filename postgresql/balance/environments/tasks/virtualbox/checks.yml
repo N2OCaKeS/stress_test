@@ -1,0 +1,38 @@
+- name: Perform checks for virtualbox
+  include_tasks: vm_exists.yml
+  loop: '{{ groups.all }}'
+  loop_control:
+    loop_var: host
+
+- name: Check any host-only network exists
+  shell:
+    cmd: vboxmanage list hostonlyifs
+  changed_when: false
+  register: hostonlyifs
+
+- name: Check host-only interface is set to domain vm
+  vars:
+    vm_name: "{{ hostvars.domain.vm_name | regex_escape('posix_basic') }}"
+  shell: |
+    vboxmanage showvminfo "{{ vm_name }}" | awk '/.*MAC:.*Host-only.*/ {print $8}' | tr -d "',"
+  changed_when: false
+  failed_when: false
+  register: ho_nic
+  when: vbox_vm_exist.domain and hostonlyifs.stdout | length > 0
+
+- name: Save ifname
+  set_fact:
+    vbox_hostonly_ifname: "{{ ho_nic.stdout if ho_nic.rc is defined and ho_nic.rc == 0 else '' }}"
+
+- name: Check if vm is needed to configure static IP
+  vars:
+    csi: "{{ groups.all | map('extract', hostvars, 'configure_static_ip') }}"
+    csi_2: "{{ groups.all | map('extract', hostvars, '2_configure_static_ip') }}"
+    csi_1: "{{ groups.all | map('extract', hostvars, '1_configure_static_ip') }}"
+    csi_0: "{{ groups.all | map('extract', hostvars, '0_configure_static_ip') }}"
+  set_fact:
+    vbox_configure_static_ip: >
+      {{ dict(vbox_configure_static_ip | default({})) | combine({item: csi_0[i] or csi_1[i] or csi_2[i] or csi[i]}) }}
+  loop: '{{ groups.all }}'
+  loop_control:
+    index_var: i

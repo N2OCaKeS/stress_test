@@ -1,4 +1,4 @@
-#!/bin/python3
+
 
 import json
 import logging
@@ -35,7 +35,8 @@ class UploaderZC(Public, PSQLStatistics2):
                  public=False,
                  statistics=False,
                  storage=False,
-                 kernel_check=False):
+                 kernel_check=False,
+                 balance=False):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -53,6 +54,7 @@ class UploaderZC(Public, PSQLStatistics2):
         self.statistics = statistics
         self.storage = storage
         self.kernel_check = kernel_check
+        self.balance = balance
 
     def test_cycle_status_changer(self, status):
 
@@ -66,7 +68,8 @@ class UploaderZC(Public, PSQLStatistics2):
                             package=self.PKG,
                             test_cycle_version=self.TCV,
                             storage=self.storage,
-                            kernel_check=self.kernel_check)
+                            kernel_check=self.kernel_check,
+                            balance=self.balance)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,
@@ -411,7 +414,7 @@ class ZefirResultTable:
                 data['Ядро'] = [dates_list[iter][0][2]]
                 data['Режим'] = [dates_list[iter][0][1]]
                 data['№ стенда'] = [dates_list[iter][0][3]]
-                self.new_tab = self.new_tab.append(data, ignore_index=True)
+                self.new_tab = self.new_tab._append(data, ignore_index=True)
                 if dates_list[iter][1] in self.new_tab.columns:
                    self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
                 else:
@@ -435,7 +438,8 @@ class ZefirResultTable:
                             'storage drive overflow':'SD_overflow', 'ram overflow':'RAM_overflow', 'file system benchmark. XFS parsec':'FS_XFS_parsec',
                             'postgresql benchmark parsec':'PSQL_parsec', 'postgresql benchmark vanilla':'PSQL_vanilla',
                             'tantor benchmark vanilla':'Tantor_vanilla', 'postgresql benchmark kernels':'PSQL_kernels',
-                            'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec'}
+                            'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
+                            'postgresql benchmark balance':'PSQL_balance'}
         for k, v in testname_columns.items():
             self.new_tab.rename(columns={k:v}, inplace=True)
         for name in self.new_tab.columns:
@@ -493,16 +497,16 @@ class ZefirResultTable:
                         name_page:str, 
                         body):
             
-            check_len_version = name_page.split('.')
+            check_len_version = self.__pt_version.split('.')
             if len(check_len_version) == 4 and check_len_version[3] != 'UU':
                 release_version = '.'.join(check_len_version[:3])
                 rc_version = self.__pt_version
-                if not confluence.page_exists(space=space, title=release_version):
+                if not confluence.page_exists(space=space, title=f'STRESS_stp ⬝ {release_version}'):
                     parent_id = confluence.get_page_id(space=space, title=title)
-                    confluence.create_page(space=space, parent_id=parent_id, title=release_version, body='')
+                    confluence.create_page(space=space, parent_id=parent_id, title=f'STRESS_stp ⬝ {release_version}', body='')
                     
                 if not confluence.page_exists(space=space, title=rc_version):
-                    parent_id = confluence.get_page_id(space=space, title=release_version)
+                    parent_id = confluence.get_page_id(space=space, title=f'STRESS_stp ⬝ {release_version}')
                     confluence.create_page(space=space, parent_id=parent_id, title=rc_version, body=body)
                 else: 
                     page_id = confluence.get_page_id(space=space, title=rc_version)
@@ -511,12 +515,12 @@ class ZefirResultTable:
             elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
                 release_version = '.'.join(check_len_version[:5])
                 rc_version = self.__pt_version
-                if not confluence.page_exists(space=space, title=release_version):
+                if not confluence.page_exists(space=space, title=f'STRESS_stp ⬝ {release_version}'):
                     parent_id = confluence.get_page_id(space=space, title=title)
-                    confluence.create_page(space=space, parent_id=parent_id, title=release_version, body='')
+                    confluence.create_page(space=space, parent_id=parent_id, title=f'STRESS_stp ⬝ {release_version}', body='')
                     
                 if not confluence.page_exists(space=space, title=rc_version):
-                    parent_id = confluence.get_page_id(space=space, title=release_version)
+                    parent_id = confluence.get_page_id(space=space, title=f'STRESS_stp ⬝ {release_version}')
                     confluence.create_page(space=space, parent_id=parent_id, title=rc_version, body=body)
                 else: 
                     page_id = confluence.get_page_id(space=space, title=rc_version)
@@ -531,7 +535,7 @@ class ZefirResultTable:
                     confluence.update_page(page_id=page_id, title=name_page, body=body)
                 
 
-        upload_page('DEVQA', 'Состав тестового прогона', self.__pt_version, table)
+        upload_page('DEVQA', 'Состав тестового прогона', f'STRESS_stp ⬝ {self.__pt_version}', table)
 
         if path.isfile('res.html'):
             remove('res.html')

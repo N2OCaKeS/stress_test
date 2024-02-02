@@ -1,0 +1,31 @@
+# var: 'debian_repo' - url to a repo (or a list or urls)
+# var: 'debian_keyring' - url to a keyring
+
+- name: Add postgresql debian repo
+  block:
+    - name: Install packages for debian
+      apt:
+        name:
+          - gpg
+          - python3-apt
+
+    - name: Add an apt signing key
+      apt_key:
+        url: '{{ debian_keyring }}'
+        state: present
+      when: debian_keyring is defined
+
+    - name: Add repos list
+      vars:
+        repos: '{{ debian_repo if debian_repo|type_debug == "list" else [debian_repo] }}'
+      apt_repository:
+        repo: '{{ item }}'
+      register: repos
+      loop: '{{ repos }}'
+
+    - name: Update apt sources
+      apt:
+        update_cache: yes
+      register: result
+      until: result is not failed
+      when: repos.changed

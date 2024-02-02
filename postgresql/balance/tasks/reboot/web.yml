@@ -1,0 +1,8 @@
+- name: Reboot web servers
+  hosts: web_servers
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Reboot
+      reboot:
+        post_reboot_delay: 5

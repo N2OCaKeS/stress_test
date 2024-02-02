@@ -1,0 +1,10 @@
+- name: Get ipalib path
+  command: >-
+    python3 -c "import ipalib,os; print(os.path.dirname(ipalib.__file__))"
+  register: ipalib
+
+- name: Patch constants.py
+  lineinfile:
+    path: '{{ ipalib.stdout }}/constants.py'
+    regexp: '^NAME_REGEX = '
+    line: NAME_REGEX = r'[a-z][_a-z0-9\-]*[a-z0-9]$|[a-z]$'

@@ -1,0 +1,47 @@
+- name: Check if network-manager is available
+  command: |
+    nmcli
+  register: nmcli
+  changed_when: false
+  failed_when: false
+
+- name: Configure network-manager
+  become: yes
+  block:
+    - name: Add domain controller to dns
+      shell: >
+        nmcli con mod "Проводное соединение 1" ipv4.dns "{{ hostvars.domain.ansible_host }}"
+                                               ipv4.dns-search "{{ astra_domain }}"
+                                               ipv4.dns-priority 10
+                                               ipv4.dns-options "timeout:1 rotate"
+
+    - name: Restart network-manager
+      service:
+        name: network-manager
+        state: restarted
+  when: nmcli.rc == 0
+
+- name: Configure network interface directly
+  become: yes
+  block:
+    - become: yes
+      block:
+        - name: Get info about internet network interface
+          setup:
+            gather_subset: '!all,!min,dns'
+
+        - name: Add domain controller to dns
+          lineinfile:
+            path: /etc/dhcp/dhclient.conf
+            regexp: '^supersede domain-name-servers'
+            line: >
+              supersede domain-name-servers
+              {{ hostvars.domain.ansible_host }},
+              {{ ansible_dns.nameservers[-1] }};
+          register: dns
+
+        - name: Restart network interfaces
+          shell: |
+            ifdown --exclude=lo -a; sleep 1; ifup eth0; ifup eth1
+          when: dns.changed
+  when: nmcli.rc != 0

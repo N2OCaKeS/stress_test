@@ -1,0 +1,68 @@
+contrprimer:
+  env: virtualbox  # qemu, virtualbox, brest, yandex
+  repo_version: "1.7.5/uu/1"  # или просто "1.7.X"
+
+
+virtual_network:
+  name: astra-network
+  recreate: no
+
+
+vm:
+  # For virtualbox set full paths
+  images_base_paths:
+    vanilla: "/home/u/Downloads/MG/alse-vanilla-1.7.1-virtualbox-mg7.0.0.ova"
+    vanilla_gui: "/home/u/Downloads/MG/alse-vanilla-gui-1.7.1-virtualbox-mg7.0.0.ova"
+
+  vbox:
+    folder: "{{ lookup('env', 'HOME') }}/VirtualBox VMs/"
+
+
+debian:
+  pg:
+    keyring: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    repo: http://apt.postgresql.org/pub/repos/apt
+    repo_template: deb {} {}-pgdg main
+
+
+domain:
+  admin: admin
+  user_template: user
+  num_of_users: 4
+  admin_password: 12345678
+  users_password: 12345678
+
+
+server:
+  apache_postgres_together: no
+
+  apache:
+    wait_for_lb_services: yes
+    load_balancing:
+      enabled: yes
+
+  pg:
+    version: 15
+    port: 5440
+    db_name: contrprimer
+    schema_template: s#
+    table_template: s#.t#
+    recreate:
+      cluster: no
+      database: no
+      tables: no
+    replication:
+      enabled: yes
+      max_num_replicas: 10
+      wal_keep_size: 1024
+      user: postgres
+    load_balancing:
+      enabled: yes
+      health_check_user: postgres
+      fail_scripts_path: /usr/share/pgpool2
+      wait_for_replicas: yes
+      debian_pgpool_version: ''
+
+client:
+  RDP:
+    enabled: no

@@ -87,11 +87,11 @@ class Test:
             else:
                 decode_std = pgbench(self.pgbench_cmd)
             out = os.linesep.join([s for s in decode_std[0].splitlines() if s])
-            self.logger.info(out)
+            print(out)
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])
-            self.logger.error(err)
+            print(err)
 
-            if PG_VERSION == 14 or self.tantor == True:
+            if PG_VERSION == 15 or self.tantor == True:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]
             else:
                 latency_average = re.search(r'(\d+\.\d+)', out).group(1) 
@@ -123,8 +123,8 @@ class Test:
         except Exception as exception:
             with open(REPORT_FILENAME, 'a+') as report_file:
                 report_file.write(' 0 0 0 0 0\n')
-            self.logger.error('Тестирование завершилось исключением:\n')
-            self.logger.error(exception)
+            print('Тестирование завершилось исключением:\n')
+            print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
             return False
         return result
 

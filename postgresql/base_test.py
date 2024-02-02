@@ -1,7 +1,8 @@
-#!/bin/python3
+
 import subprocess
 from os import path
 import argparse
+from psb_conf import VENV_PATH
 
 def cmd(command):
     subprocess.run(command, shell=True)
@@ -9,7 +10,7 @@ def cmd(command):
 try:
     import numpy as np
 except (ImportError, ImportWarning):
-    cmd('sudo apt-get install -y python3-numpy')
+    cmd(f'{VENV_PATH} -m pip install numpy')
     import numpy as np
 
 

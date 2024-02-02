@@ -1,0 +1,33 @@
+- name: Check load balancers status
+  hosts: all
+  gather_facts: no
+  vars_files: ../../vars.yml
+  tasks:
+    - name: Ping some host
+      ignore_errors: yes
+      command: >-
+        ping -c 1 {{ hostvars[(ansible_play_hosts | difference([inventory_hostname, 'domain'])
+                      | shuffle(seed=inventory_hostname)).0].domain_name }}.{{ astra_domain }}
+      register: ping
+      changed_when: false
+
+    - name: Read first line of resolv.conf
+      command: |
+        cat /etc/resolv.conf
+      register: resolv
+      changed_when: false
+
+    - debug:
+        var: ping.cmd[-1]
+      ignore_errors: yes
+      failed_when: ping.failed
+
+    - debug:
+        var: resolv.stdout_lines.0
+      failed_when: (resolv.stdout_lines.0 | split()).1 != hostvars.domain.ansible_host
+      when: contrprimer.env != 'yandex'
+
+    - debug:
+        var: resolv.stdout_lines.2
+      failed_when: (resolv.stdout_lines.2 | split()).1 != hostvars.domain.ansible_host
+      when: contrprimer.env == 'yandex'

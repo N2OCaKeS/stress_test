@@ -77,7 +77,7 @@ def astra_version():
                     version.append("voronezh")
                 else:
                     print("Version of distribution not found")
-                    exit(2)
+                    #exit(2)
         except IOError:
             with open("/etc/astra_version", "r") as file:
                 astra_version = file.read()
@@ -91,7 +91,7 @@ def astra_version():
                     version.append("orel")
                 else:
                     print("Version of distribution not found")
-                exit(2)
+                #exit(2)
     else:
         if exists("/etc/debian_version"):
             with open("/etc/debian_version", "r") as file:

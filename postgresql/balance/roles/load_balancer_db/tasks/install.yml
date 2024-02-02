@@ -1,0 +1,49 @@
+- name: Install pgpool for Debian
+  vars:
+    version: '{{ server.pg.load_balancing.debian_pgpool_version }}'
+  apt:
+    name:
+      - libpgpool2{{ '='+version if version else '' }}
+      - pgpool2{{ '='+version if version else '' }}
+    allow_downgrade: yes
+  when: debian_linux
+
+- block:
+    - name: Custom packages
+      block:
+        - name: Install custom postgresql common
+          vars:
+            deb_name: pg_common
+            deb_packages:
+              - postgresql-client-common
+              - postgresql-common
+            deb_version: 246astra1+ci3_all
+          import_tasks: '{{ playbook_dir }}/tasks/install_custom_deb.yml'
+
+        - name: Install custom postgresql client
+          vars:
+            deb_name: postgresql_client_15
+            deb_packages:
+              - libpq5
+              - postgresql-client-15
+            deb_version: 15.2-astra.se1_amd64
+          import_tasks: '{{ playbook_dir }}/tasks/install_custom_deb.yml'
+
+    - name: Install necessary components
+      apt:
+        name:
+          - iputils-arping                            # needed to acquire delegate ip
+          # - postgresql-client-{{ server.pg.version }} # needed for fail* scripts  # TODO: переделать потом на установку из репозитория
+          - sshpass                                   # needed for fail* scripts
+      register: result
+      until: result is not failed
+
+    # TODO: переделать потом на установку из репозитория
+    - name: Install custom pgpool2
+      vars:
+        deb_name: pgpool2_4.3.3
+        deb_packages:
+          - libpgpool2
+          - pgpool2
+      import_tasks: '{{ playbook_dir }}/tasks/install_custom_deb.yml'
+  when: not debian_linux

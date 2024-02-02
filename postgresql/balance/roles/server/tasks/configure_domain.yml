@@ -1,0 +1,51 @@
+- name: Create HTTP freeipa service
+  ipa_service:
+    force: yes
+    name: HTTP/{{ hostvars[inventory_hostname].domain_name }}.{{ astra_domain }}
+    ipa_host: '{{ hostvars.domain.domain_name }}.{{ astra_domain }}'
+    ipa_pass: '{{ domain.admin_password }}'
+    state: '{{ item }}'
+  loop: "{{ ['absent', 'present'] if server.apache.load_balancing.enabled else ['present'] }}"
+  when: >-
+    inventory_hostname in groups.web_servers or
+    (server.apache_postgres_together and inventory_hostname in groups.databases)
+
+- name: Create postgres freeipa service
+  ipa_service:
+    force: yes
+    name: postgres/{{ hostvars[inventory_hostname].domain_name }}.{{ astra_domain }}
+    ipa_host: '{{ hostvars.domain.domain_name }}.{{ astra_domain }}'
+    ipa_pass: '{{ domain.admin_password }}'
+  when: 'inventory_hostname in groups.databases'
+
+- block:
+    - name: Set users list
+      set_fact:
+        users_list: "{{ [domain.user_template] | product(range(domain.num_of_users)) | map('join') }}"
+
+    - name: Create freeipa users
+      ipa_user:
+        name: '{{ item }}'
+        givenname: 'n{{ item }}'
+        sn: 'f{{ item }}'
+        password: '{{ domain.users_password }}'
+        ipa_host: '{{ hostvars.domain.domain_name }}.{{ astra_domain }}'
+        ipa_pass: '{{ domain.admin_password }}'
+        update_password: on_create
+      loop: '{{ users_list }}'
+
+    - name: Update freeipa users astra specific configuration
+      vars:
+        users_levels_list: >-
+          {{ users_list | zip_longest((0,)*domain.num_of_users, (0,)*domain.num_of_users, range(domain.num_of_users)) }}
+      command: |
+        ipa user-mod {{ item.0 }} --miclevel={{ item.1 }} --macmin={{ item.2 }} --macmax={{ item.3 }}
+      register: users
+      changed_when: >-
+        users.rc != 0 and ("отсутствуют изменения для выполнения" not in users.stderr or
+        "no modifications to be performed" not in users.stderr)
+      failed_when: >-
+        users.rc != 0 and not ("отсутствуют изменения для выполнения" in users.stderr or
+        "no modifications to be performed" in users.stderr)
+      loop: '{{ [(domain.admin, 63, 0, 3)] + users_levels_list }}'
+  when: 'inventory_hostname == groups.databases.0' # run_once with the free strategy is not currently supported

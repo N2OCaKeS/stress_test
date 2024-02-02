@@ -1,0 +1,17 @@
+- become: yes
+  block:
+    - name: Configure resolv.conf
+      lineinfile:
+        path: /etc/resolv.conf
+        regexp: '^nameserver {{ hostvars.domain.ansible_host }}'
+        line: nameserver {{ hostvars.domain.ansible_host }}
+        insertbefore: '^(.*)\n'
+        firstmatch: yes
+
+    - name: Edit crontab to update resolv.conf at startup
+      cron:
+        name: Edit resolv.conf
+        special_time: reboot
+        job: >-
+          sleep 3 &&
+          sed -i '1s/^/nameserver {{ hostvars.domain.ansible_host }}\n/' /etc/resolv.conf

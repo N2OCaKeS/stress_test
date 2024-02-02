@@ -1,0 +1,23 @@
+- name: Create qemu VMs
+  include_tasks: qemu.yml
+  vars:
+    instance: '{{ dict(hostvars[host]) | combine({"role": host}) }}'
+  loop_control:
+    loop_var: host
+  loop: '{{ groups.all }}'
+  when: contrprimer.env == 'qemu'
+
+- name: Create virtualbox VMs
+  block:
+    - name: Create virtualbox VMs
+      include_tasks: virtualbox/main.yml
+      loop_control:
+        loop_var: host
+      loop: '{{ groups.all }}'
+
+    - name: Set temporal ansible_hosts for virtualbox VMs
+      include_tasks: virtualbox/static_network.yml
+      loop_control:
+        loop_var: host
+      loop: '{{ groups.all }}'
+  when: contrprimer.env == 'virtualbox'

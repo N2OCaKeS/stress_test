@@ -1,0 +1,19 @@
+<!--
+Шаблон для создания виртуальной сети
+-->
+<network>
+  <name>{{ virtual_network.name }}</name>
+  <bridge name='astra-virbr' stp='on' delay='0'/>
+  <ip address='{{ astra_network_ip }}.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='{{ astra_network_ip }}.110' end='{{ astra_network_ip }}.254'/>
+      {% for host in hostvars %}
+        <host mac  = '{{ hostvars[host].mac }}'
+              name = '{{ hostvars[host].vm_name }}'
+              ip   = '{{ hostvars[host].ansible_host }}'>
+          <lease expiry='0' unit='hours'/> <!-- Infinite time -->
+        </host>
+      {% endfor %}
+    </dhcp>
+  </ip>
+</network>

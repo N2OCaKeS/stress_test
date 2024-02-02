@@ -1,0 +1,78 @@
+- name: Cleanup
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove signals
+      file:
+        path: signals/
+        state: absent
+
+
+
+- name: High availability database 
+  hosts: '{{ groups.databases[-1] }}, {{ groups.load_balancers_db[0] }}'
+  strategy: free
+  gather_facts: no
+  vars_files: ../../../vars.yml
+  tasks:
+    - name: Continuous client connections
+      vars:
+        scale_factor: 500
+        virtual_domain_name: '{{ hostvars[groups.load_balancers_db.0].virtual_domain_name }}'
+      block:
+        # TODO: add authentication for pgpool
+
+        - name: Set permissions
+          postgresql_query:
+            login_host: '{{ virtual_domain_name }}.{{ astra_domain }}'
+            login_user: postgres
+            port: '{{ server.pg.port }}'
+            db: '{{ server.pg.db_name }}'
+            # query: GRANT ALL ON SCHEMA public TO {{ domain.user_template }}0  # ac_enable_grant_options is false by default
+            query: ALTER SCHEMA public OWNER TO {{ domain.user_template }}0
+
+        - name: Create testing script
+          become: yes
+          template:
+            src: base_balanse_test.py.j2
+            dest: /usr/share/contrprimer/base_balanse_test.py
+            mode: u=rwx,g=rx,o=rx
+
+        - name: Pgbench init
+          command: >-
+            pgbench -U {{ domain.user_template }}0 -h {{ virtual_domain_name }}.{{ astra_domain }}
+            -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} -F 100 {{ server.pg.db_name }}
+
+        - name: Set signal that pgbench has started
+          vars:
+            signal: pgbench_started
+          import_tasks: '{{ playbook_dir }}/../../set_file_signal.yml'
+
+        - name: Start continuous client connections
+          shell: |
+            time python3 /usr/share/contrprimer/base_balanse_test.py
+          register: pgbench_results
+      when: inventory_hostname == groups.databases[-1]
+
+
+
+    - name: Results
+      block:
+        - name: Manual "pgbench" results
+          debug:
+            var: pgbench_results.stdout
+
+        - name: Manual "pgbench" taken time
+          debug:
+            var: pgbench_results.stderr
+      when: inventory_hostname == groups.databases[-1]
+
+
+- name: Cleanup
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove signals
+      file:
+        path: signals/
+        state: absent

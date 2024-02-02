@@ -1,0 +1,11 @@
+- name: Check load balancers kerberos tickets
+  hosts: load_balancers_db
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Read keytab
+      command: klist -kte /etc/pgpool2/krb5.keytab
+      register: keytab
+
+    - debug:
+        var: keytab.stdout_lines

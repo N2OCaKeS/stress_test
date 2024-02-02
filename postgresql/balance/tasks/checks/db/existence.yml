@@ -1,0 +1,50 @@
+- name: Check load balancers kerberos tickets
+  hosts: databases
+  gather_facts: no
+  vars_files: ../../../vars.yml
+  become: yes
+  tasks:
+    - name: Check whether cluster exists
+      command: |
+        pg_lsclusters
+      register: db_clusters
+      changed_when: false
+
+    - become_user: postgres
+      block:
+        - name: Check whether database exists
+          postgresql_info:
+            db: postgres
+            port: '{{ server.pg.port }}'
+            filter: 'databases'
+          register: db_db
+
+        - name: Check whether schemas exist
+          check_mode: yes
+          postgresql_schema:
+            db: '{{ server.pg.db_name }}'
+            port: '{{ server.pg.port }}'
+            name: '{{ server.pg.schema_template | replace("#", item) }}'
+          loop: ['1', '2', '3', '4']
+          loop_control:
+            label: '{{ server.pg.schema_template | replace("#", item) }}'
+          register: db_schemas
+
+        # If exists "t1", we assume others exist too
+        - name: Check whether tables exist
+          check_mode: yes
+          postgresql_table:
+            db: '{{ server.pg.db_name }}'
+            port: '{{ server.pg.port }}'
+            name: '{{ server.pg.table_template | replace("#", item.item) }}'
+          loop: "{{ db_schemas.results | selectattr('changed', '==', False) }}"
+          loop_control:
+            label: '{{ server.pg.table_template | replace("#", item.item) }}'
+          register: db_tables
+
+    - name: Existing objects
+      block:
+        - debug:
+            var: db_clusters.stdout_lines
+        - debug:
+            var: db_db.databases.keys()

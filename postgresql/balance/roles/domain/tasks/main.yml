@@ -1,0 +1,66 @@
+- name: Setup freeipa domain
+  become: yes
+  block:
+    # - name: Set hostname
+    #   shell: |
+    #     hostname
+    #     hostnamectl set-hostname {{ hostvars.domain.domain_name }}.{{ astra_domain }}
+    #   register: hostname
+    #   changed_when: 'hostvars.domain.domain_name +"."+ astra_domain not in hostname.stdout'
+
+    - name: Install freeipa server
+      apt:
+        name: astra-freeipa-server
+      register: result
+      until: result is not failed
+
+    - name: Check existing domain
+      command: |
+        ipactl status
+      register: domain_exist
+      changed_when: domain_exist.rc != 0
+      failed_when: false
+
+    - name: Get number of network interfaces
+      find:
+        path: /sys/class/net
+      register: net
+
+    # Assuming static network interface is eth0
+    - name: Setup freeipa domain
+      command: |
+        astra-freeipa-server -o
+      args:
+        stdin: |
+          {{ '1\ny' if net.examined > 2 else 'y' }}
+          {{ domain.admin_password }}
+          {{ domain.admin_password }}
+      when: domain_exist.rc != 0
+
+    - name: Ensure chrony is set to server mode
+      lineinfile:
+        path: /etc/chrony/chrony.conf
+        regexp: '^allow'
+        line: 'allow'
+      register: chrony_config
+
+    - name: Restart chrony service
+      service:
+        name: chrony
+        state: restarted
+      when: chrony_config.changed
+
+    - name: Chrony makestep
+      command: |
+        chronyc -a makestep
+      changed_when: false
+
+    - name: Reboot
+      reboot:
+        post_reboot_delay: 5
+      when: domain_exist.rc != 0
+
+- name: Set signal that domain controller is ready
+  vars:
+    signal: domain
+  import_tasks: '{{ playbook_dir }}/tasks/set_file_signal.yml'

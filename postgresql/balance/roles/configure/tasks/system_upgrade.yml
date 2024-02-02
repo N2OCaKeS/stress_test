@@ -1,0 +1,34 @@
+- become: yes
+  block:
+    - name: Copy sources.list
+      template:
+        src: sources.list.j2
+        dest: /etc/apt/sources.list # важно, чтобы удалить extended репозиторий
+        owner: root
+        group: root
+        mode: 0644
+      when: not debian_linux
+
+    - name: Change repo domain
+      replace:
+        path: /etc/apt/sources.list
+        regexp: 'deb\.debian\.org'
+        replace: 'ftp.debian.ru'
+      when: debian_linux
+
+    - name: Update apt sources
+      apt:
+        update_cache: yes
+      register: result
+      until: result is not failed
+
+    - block:
+        - name: Upgrade packets
+          apt:
+            upgrade: safe
+            force_apt_get: yes
+
+        - name: Upgrade distribution
+          apt:
+            upgrade: dist
+      when: not dont_upgrade_packets

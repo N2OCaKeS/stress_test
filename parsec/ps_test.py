@@ -36,7 +36,7 @@ class ParsecImpactTest:
         'parsec_current_getsecid_subj', 'pdpl_or_type', 'faud_dup', 'parsec_oracle_check_dentry',
         'inode_use_init_xattrs.isra.0', 'I_LBL_UPD', 'parsec_aud_task_get', 'pdpl_inherit_secrecy']
 
-    def impact(self):
+    def parsec_impact_by_fs_load(self):
         if not isdir(self.load_dir):
             mkdir(self.load_dir, 0o777)
             command(f'sudo mount -t {FILE_SYSTEM} -o size=100M test_dir {self.load_dir}')

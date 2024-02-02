@@ -665,6 +665,9 @@ class PSQLStatistics2:
                             Выдергиваем значение рейтинга из html страницы
                         """
                         try:
+                            if test_name == "psql balance":
+                                num_failed_queries = soup.find(string='Number of failed queries').next_element.next_element.text
+                                perc_failed_queries = soup.find(string='Percent of failed queries').next_element.next_element.text.split("%")[0]
                             rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
                         except:
                             rating = 0
@@ -684,7 +687,11 @@ class PSQLStatistics2:
                         if stand == "stand3":
                             data_for_df["stand3"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
                         if stand == "stand4":
-                            data_for_df["stand4"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
+                            if test_name == "psql balance":
+                                data_for_df['stand4']['data'].append([astra_version, kernel, sec_mode, stand, num_failed_queries, perc_failed_queries])
+                            else:
+                                data_for_df["stand4"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
+
             return data_for_df
 
         def build_dataframes(data_for_df, test_name):
@@ -974,7 +981,43 @@ class PSQLStatistics2:
                 ax.legend(legend)
                 plt.savefig(f"{stat_dir}/{legend[0]}-{legend[1]}_graph_{df['Стенд'].mode()[0]}_summ.jpg")
                 
-            
+        
+        def create_balance_graph(data_for_df, index, column):
+            temp_data_for_graph = {}
+            for key, data in data_for_df.items():
+                if len(data.get("data")) == 0:
+                    continue
+                old_df = pd.DataFrame(data=data.get("data"),
+                                      columns=['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Количество неудачных запросов', 'Процент неудачных запросов'], 
+                                      index=np.arange(1, len(data.get("data")) + 1))
+                df = old_df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                temp_data_for_graph[key] = (df['Релиз'] + "_" + df['Ядро'])
+                fig, ax = plt.subplots(figsize=(16, 9))
+                ax.grid(True, alpha=.6)
+                ax.set_title(f"Линейная диаграмма сравнения неудачных запросов {index+1}.\n")
+                ax.set_ylabel(column)
+                df[column] = pd.to_numeric(df[column], errors='coerce')
+                min_val = min(df[column])
+                max_val = max(df[column])
+                # print(max_val, max_val + max_val * 0.01)
+                # print(min_val, min_val - min_val * 0.01)
+                ax.set_ylim([min_val - min_val * 0.2, max_val + max_val * 0.2])
+                shcala_text = temp_data_for_graph[key]
+                shcala = [x for x in range(1, len(df) + 1, 1)]
+                ax.plot(shcala, df[column], "o-", color='#ea5c76')
+                ax.set_xticks(shcala)
+                plt.gca().set_xticklabels(shcala_text, rotation=20, horizontalalignment='right')
+                # Lighten borders
+                plt.gca().spines["top"].set_alpha(.0)
+                plt.gca().spines["bottom"].set_alpha(.3)
+                plt.gca().spines["right"].set_alpha(.0)
+                plt.gca().spines["left"].set_alpha(.3)
+                
+                fig.savefig(f"{stat_dir}/balance_{index+1}_statistics_{key}.png")
+                
+                
+
+                
         
         data_df_orel = collect_data(test_name="postgresql")
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="postgresql")
@@ -1017,6 +1060,12 @@ class PSQLStatistics2:
         create_comparison_kernel_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         # create_comparison_kernel_and_stand_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
         create_comparison_kernel_line_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
+                
+        data_df_balance = collect_data(test_name="psql balance")
+        for ind, column in enumerate(['Количество неудачных запросов', 'Процент неудачных запросов']):
+            create_balance_graph(data_for_df=data_df_balance, index=ind, column=column)
+
+        
 
 
     """
@@ -1052,7 +1101,7 @@ class PSQLStatistics2:
             </span>
         """
 
-        image_list, images_list_smolensk, image_list_aud_off, image_list_parsec, image_list_vanilla, image_list_tantor_vanilla = [], [], [], [], [], []
+        image_list, images_list_smolensk, image_list_aud_off, image_list_parsec, image_list_vanilla, image_list_tantor_vanilla, image_list_balance = [], [], [], [], [], [], []
         table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off, table_with_data_list_parsec, table_with_data_list_vanilla, table_with_data_list_tantor_vanilla = [], [], [], [], [], []
         table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off, table_with_mat_stat_list_parsec, table_with_mat_stat_list_vanilla, table_with_mat_stat_list_tantor_vanilla = [], [], [], [], [], []
         # kernel_image_list = [[], [], []]
@@ -1075,7 +1124,7 @@ class PSQLStatistics2:
 
         summ_graphs_list, summ_graphs_list_aud_on_off, summ_graphs_list_orel_and_parsec, summ_graphs_list_orel_and_vanilla  = [], [], [], []
 
-        header_orel, header_smolensk, header_parsec, header_vanilla, header_tantor_vanilla, header_orel_vs_smolensk, header_aud_off, header_orel_and_parsec, header_orel_and_vanilla, header_aud_on_vs_off = [], [], [], [], [], [], [], [], [], []
+        header_orel, header_smolensk, header_parsec, header_vanilla, header_tantor_vanilla, header_orel_vs_smolensk, header_aud_off, header_orel_and_parsec, header_orel_and_vanilla, header_aud_on_vs_off, header_balance = [], [], [], [], [], [], [], [], [], [], []
         
         for file in sorted(os.listdir(f"{stat_dir}")):
             if file.endswith("png"):
@@ -1100,6 +1149,9 @@ class PSQLStatistics2:
                 elif file.startswith("tantor-vanilla"):
                     image_list_tantor_vanilla.append(img)
                     header_tantor_vanilla.append(name_stand)
+                elif file.startswith("balance"):
+                    image_list_balance.append(img)
+                    header_balance.append(name_stand)
                 else:
                     image_list.append(img)
                     header_orel.append(name_stand)
@@ -1269,7 +1321,8 @@ class PSQLStatistics2:
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Vanilla">Vanilla</a></li>
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-Tantorvanilla">Tantor vanilla</a></li>
             <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsParsec">Orel vs Parsec</a></li>
-            <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsVanilla">Orel vs Vanilla</a></li>    
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-OrelvsVanilla">Orel vs Vanilla</a></li>
+            <li><a href="#id-Статистика.{rc_title}PostgreSQL-Balance">Balance</a></li>    
         '''
 
         html_list.append('<hr/><h1 style="text-align: center;">Orel</h1>')
@@ -1386,6 +1439,12 @@ class PSQLStatistics2:
                 grade = self.get_grade(header_orel_and_vanilla[ind])
                 # nav_lst_orel_and_vanilla.append(f'<li><a href="#id-Статистика.{page_rc_title}PostgreSQL-{grade}_{header_orel_and_vanilla[ind]}.9">{grade}_{header_orel_and_vanilla[ind]}</a></li>')
                 html_list.append(f"<hr/><h1>{grade}_{header_orel_and_vanilla[ind]}</h1>")
+                html_list.append(item)
+                
+        if len(image_list_balance) > 0:
+            html_list.append('<h1 style="text-align: center;">Balance</h1>')
+            for ind, item in enumerate(image_list_balance):
+                # grade = self.get_grade(header_balance[ind])
                 html_list.append(item)
 
 

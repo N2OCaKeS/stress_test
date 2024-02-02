@@ -1,7 +1,7 @@
 import os
 from libs.libreport import ReportToConfluence
 from ps_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, FILE_SYSTEM, CONC, COUNTER, \
-                    REPORT_FILENAME, FLAMEGRAPH_NAME, TIMEDF_NAME, TOTALDF_NAME
+                    REPORT_FILENAME, FLAMEGRAPH_NAME, TIMEDF_NAME, TOTALDF_NAME, DETAILDF_NAME
 
 
 
@@ -124,15 +124,14 @@ class Public:
                                                     arm_st=self.stands[self.grade_stand]['storage'])
             
         #создание страницы отчета
-        with open(f'{TEMPLATE_PATH}/{TIMEDF_NAME}', 'r') as file:
+        with open(f'{TIMEDF_NAME}', 'r') as file:
             impact_table_time = file.read()
-        with open(f'{TEMPLATE_PATH}/{TOTALDF_NAME}', 'r') as file:
+        with open(f'{TOTALDF_NAME}', 'r') as file:
             impact_table_total = file.read()
-        with open(f'{REPORT_PATH}/{FLAMEGRAPH_NAME}', 'r') as file:
-            flamegraph_table = file.read()
+        with open(f'{DETAILDF_NAME}', 'r') as file:
+            impact_table_detail = file.read()
         head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-        head_row_fg = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Flamegraph on load_test:</b></h2></p>'
-        html_page = '\n'.join([header_table, head_row, impact_table_time, impact_table_total, head_row_fg, flamegraph_table])
+        html_page = '\n'.join([header_table, head_row, impact_table_time, impact_table_total, impact_table_detail])
         
 
         #выкладываем информацию на страницу

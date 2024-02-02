@@ -1,10 +1,11 @@
 from libs.libparsec import (check_output_command,
-                            command)
+                            command,
+                            info_list)
 from os.path import isfile, isdir
 from os import mkdir
 from re import findall
 from ps_conf import REPORT_PATH, CONC, COUNTER, FILE_SYSTEM, FLAMEGRAPH_NAME, REPORT_FILENAME, \
-                    TIMEDF_NAME, TOTALDF_NAME
+                    TIMEDF_NAME, TOTALDF_NAME, DETAILDF_NAME
 from json import dumps, loads
 import pandas as pd
 
@@ -104,7 +105,8 @@ class ParsecImpactTest:
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as tr_write:
             tr_write.write(dumps({'time':load_results,
-                                  'total':{'%':{'Total used by parsec func':total_used}}
+                                  'total':{'%':{'Total used by parsec func':total_used}},
+                                  'detail':{'%':used_cpu_dict}
                                   }, indent=4))
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'r') as tr_read:
@@ -112,7 +114,10 @@ class ParsecImpactTest:
 
         time_df = pd.DataFrame(dates['time'])
         total_df = pd.DataFrame(dates['total'])
+        detail_df = pd.DataFrame(dates['detail'])
         time_df.to_html(TIMEDF_NAME)
         total_df.to_html(TOTALDF_NAME)
+        detail_df.to_html(DETAILDF_NAME)
+        info_list()
 
 

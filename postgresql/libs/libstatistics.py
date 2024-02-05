@@ -688,7 +688,9 @@ class PSQLStatistics2:
                             data_for_df["stand3"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
                         if stand == "stand4":
                             if test_name == "psql balance":
-                                data_for_df['stand4']['data'].append([astra_version, kernel, sec_mode, stand, num_failed_queries, perc_failed_queries])
+                                num_failed_queries_with_link = f'<a href="{link}">{num_failed_queries}</a>'
+                                perc_failed_queries_with_link = f'<a href="{link}">{perc_failed_queries}</a>'
+                                data_for_df['stand4']['data'].append([astra_version, kernel, sec_mode, stand, num_failed_queries, perc_failed_queries, num_failed_queries_with_link, perc_failed_queries_with_link])
                             else:
                                 data_for_df["stand4"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
 
@@ -992,13 +994,14 @@ class PSQLStatistics2:
                 if len(data.get("data")) == 0:
                     continue
                 old_df = pd.DataFrame(data=data.get("data"),
-                                      columns=['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Количество неудачных запросов', 'Процент неудачных запросов'], 
+                                      columns=['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Количество неудачных запросов 1', 'Процент неудачных запросов 1', 'Количество неудачных запросов', 'Процент неудачных запросов'], 
                                       index=np.arange(1, len(data.get("data")) + 1))
                 df = old_df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
                 """
                     Строим HTML
                 """
-                statistics_table_html = df.to_html(escape=False, index=False)
+                df_for_table = df.drop(['Количество неудачных запросов 1', 'Процент неудачных запросов 1'], axis=1)
+                statistics_table_html = df_for_table.to_html(escape=False, index=False)
                 file_html = open(f"{stat_dir}/table_balance_{key}_1.html", "w")
                 file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 file_html.writelines(f"<h1>Сводная таблица результатов тестирования</h1> {statistics_table_html}")
@@ -1075,7 +1078,7 @@ class PSQLStatistics2:
         create_comparison_kernel_line_graph(temp_data_kernel=tmp_data_krnl, test_name="postgresql")
                 
         data_df_balance = collect_data(test_name="psql balance")
-        for ind, column in enumerate(['Количество неудачных запросов', 'Процент неудачных запросов']):
+        for ind, column in enumerate(['Количество неудачных запросов 1', 'Процент неудачных запросов 1']):
             create_balance_graph(data_for_df=data_df_balance, index=ind, column=column)
 
         

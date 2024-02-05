@@ -242,10 +242,10 @@ class PSQLStatistics:
             df_5_10 = df[df["Ядро"].str.contains('5.10', case=False)]
             df_5_10['Ядро'] = '5.10'
             temp_data_kernel['5.10'].append(df_5_10[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
-            df_5_15_gen = df[df["Ядро"].str.contains('5.15\\S*generic', case=False, regex=True)]
+            df_5_15_gen = df[df["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]
             df_5_15_gen['Ядро'] = '5.15-gen'
             temp_data_kernel["5.15-gen"].append(df_5_15_gen[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
-            df_5_15_ll = df[df["Ядро"].str.contains('5.15\\S*low', case=False, regex=True)]
+            df_5_15_ll = df[df["Ядро"].str.contains('5.15\S*low', case=False, regex=True)]
             df_5_15_ll['Ядро'] = '5.15-ll'
             temp_data_kernel["5.15-ll"].append(df_5_15_ll[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
 
@@ -498,11 +498,11 @@ class PSQLStatistics2:
             return grade
 
 
-    def get_list_required_pages(self, id_root_page):
+    def get_list_required_pages(self):
         """
             Получаем дочерние страницы 1.7: 1.7.1; 1.7.2; 1.7.n...
         """
-        children_main_page = self.CP.get_child_page_as_html(id=id_root_page, by_title=False)
+        children_main_page = self.CP.get_child_page_as_html(id="156339086", by_title=False)
         # print(children_main_page)
         """
             required_page - ID родительской страницы в каждой версии, в которой находится список отчетов
@@ -720,10 +720,10 @@ class PSQLStatistics2:
                 new_df_temp = pd.DataFrame()
                 for uniq_vers in unique_versions:
                     df_for_each_version = old_df.loc[old_df['Релиз'] == f'{uniq_vers}']
-                    df_sort_5_10_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.10\\S*generic', case=False, regex=True)]
-                    df_sort_5_15_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\\S*generic', case=False, regex=True)]
-                    df_sort_5_15_ll = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\\S*low', case=False, regex=True)]
-                    df_sort_6_1_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('6.1\\S*generic', case=False, regex=True)]
+                    df_sort_5_10_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.10\S*generic', case=False, regex=True)]
+                    df_sort_5_15_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]
+                    df_sort_5_15_ll = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\S*low', case=False, regex=True)]
+                    df_sort_6_1_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('6.1\S*generic', case=False, regex=True)]
                     dfs = [df_sort_5_10_gen, df_sort_5_15_gen, df_sort_5_15_ll, df_sort_6_1_gen]
                     for df_with_one_kernel in dfs:
                         try:
@@ -738,9 +738,9 @@ class PSQLStatistics2:
                         max_add_digit_value = df_sort_by_minor_version['additional_digits'].max()
                         df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version[df_sort_by_minor_version['additional_digits'] == max_add_digit_value]
                         df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version_and_add_digit.drop(['numeric_version', 'additional_digits', 'kernel_type', 'minor_version'], axis=1)
-                        new_df_temp = new_df_temp._append(df_sort_by_minor_version_and_add_digit)
+                        new_df_temp = new_df_temp.append(df_sort_by_minor_version_and_add_digit)
                     if "1.7" not in df_for_each_version['Релиз'].iloc[0]:
-                        new_df_temp = new_df_temp._append(df_for_each_version)
+                        new_df_temp = new_df_temp.append(df_for_each_version)
                 # ###
                 df = new_df_temp
                 df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
@@ -750,10 +750,10 @@ class PSQLStatistics2:
                 df_5_10 = df[df["Ядро"].str.startswith('5.10')]
                 df_5_10['Ядро'] = '5.10'
                 temp_data_kernel['5.10'].append(df_5_10[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
-                df_5_15_gen = df[df["Ядро"].str.contains('5.15\\S*generic', case=False, regex=True)]
+                df_5_15_gen = df[df["Ядро"].str.contains('5.15\S*generic', case=False, regex=True)]
                 df_5_15_gen['Ядро'] = '5.15-gen'
                 temp_data_kernel["5.15-gen"].append(df_5_15_gen[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
-                df_5_15_ll = df[df["Ядро"].str.contains('5.15\\S*low', case=False, regex=True)]
+                df_5_15_ll = df[df["Ядро"].str.contains('5.15\S*low', case=False, regex=True)]
                 df_5_15_ll['Ядро'] = '5.15-ll'
                 temp_data_kernel["5.15-ll"].append(df_5_15_ll[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
 
@@ -983,6 +983,10 @@ class PSQLStatistics2:
                 
         
         def create_balance_graph(data_for_df, index, column):
+            title_graph = {
+                1: "Линейная диаграмма сравнения неудачных запросов (количество)",
+                2: "Линейная диаграмма сравнения неудачных запросов (проценты)"
+            }
             temp_data_for_graph = {}
             for key, data in data_for_df.items():
                 if len(data.get("data")) == 0:
@@ -991,10 +995,19 @@ class PSQLStatistics2:
                                       columns=['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Количество неудачных запросов', 'Процент неудачных запросов'], 
                                       index=np.arange(1, len(data.get("data")) + 1))
                 df = old_df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                """
+                    Строим HTML
+                """
+                statistics_table_html = df.to_html(escape=False, index=False)
+                file_html = open(f"{stat_dir}/table_balance_{key}_1.html", "w")
+                file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+                file_html.writelines(f"<h1>Сводная таблица результатов тестирования</h1> {statistics_table_html}")
+                file_html.close()
+
                 temp_data_for_graph[key] = (df['Релиз'] + "_" + df['Ядро'])
                 fig, ax = plt.subplots(figsize=(16, 9))
                 ax.grid(True, alpha=.6)
-                ax.set_title(f"Линейная диаграмма сравнения неудачных запросов {index+1}.\n")
+                ax.set_title(f"{title_graph[index + 1]}\n")
                 ax.set_ylabel(column)
                 df[column] = pd.to_numeric(df[column], errors='coerce')
                 min_val = min(df[column])
@@ -1102,7 +1115,7 @@ class PSQLStatistics2:
         """
 
         image_list, images_list_smolensk, image_list_aud_off, image_list_parsec, image_list_vanilla, image_list_tantor_vanilla, image_list_balance = [], [], [], [], [], [], []
-        table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off, table_with_data_list_parsec, table_with_data_list_vanilla, table_with_data_list_tantor_vanilla = [], [], [], [], [], []
+        table_with_data_list, table_with_data_list_smolensk, table_with_data_list_aud_off, table_with_data_list_parsec, table_with_data_list_vanilla, table_with_data_list_tantor_vanilla, table_balance_data_list = [], [], [], [], [], [], []
         table_with_mat_stat_list, table_with_mat_stat_list_smolensk, table_with_mat_stat_list_aud_off, table_with_mat_stat_list_parsec, table_with_mat_stat_list_vanilla, table_with_mat_stat_list_tantor_vanilla = [], [], [], [], [], []
         # kernel_image_list = [[], [], []]
         
@@ -1172,6 +1185,8 @@ class PSQLStatistics2:
                     table_with_data_list_vanilla.append(table)
                 elif file.startswith("tantor-vanilla"):
                     table_with_data_list_tantor_vanilla.append(table)
+                elif file.startswith("table_balance"):
+                    table_balance_data_list.append(table)
                 else:
                     table_with_data_list.append(table)
 
@@ -1446,6 +1461,9 @@ class PSQLStatistics2:
             for ind, item in enumerate(image_list_balance):
                 # grade = self.get_grade(header_balance[ind])
                 html_list.append(item)
+        if len(table_balance_data_list) > 0:
+            for ind, item in enumerate(table_balance_data_list):
+                html_list.append(item)
 
 
         # nav = nav_start + nav_body.format(rc_title=page_rc_title, list_orel="".join(nav_lst_orel), list_smolensk="".join(nav_lst_smolensk), list_orel_vs_smolensk="".join(nav_lst_orel_vs_smolensk), list_aud_off="".join(nav_lst_aud_off), list_parsec="".join(nav_lst_parsec), list_vanilla="".join(nav_lst_vanilla), list_tantor_vanilla="".join(nav_lst_tantor_vanilla), list_orel_vs_parsec="".join(nav_lst_orel_and_parsec), list_orel_vs_vanilla="".join(nav_lst_orel_and_vanilla), list_aud_on_off="".join(nav_lst_aud_on_off)) + nav_end
@@ -1458,11 +1476,8 @@ class PSQLStatistics2:
         confluence_stat.update_confluence_page(page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}", page_body=html_page)
 
     def update_statistics(self):
-        pages_17, rc_pages_17 = self.get_list_required_pages(id_root_page="156339086")
-        pages_18, rc_pages_18 = self.get_list_required_pages(id_root_page="244154033")
-        pages = pages_17 + pages_18
-        rc_pages = {**rc_pages_17, **rc_pages_18}
-        
+        pages, rc_pages = self.get_list_required_pages()
+        print(rc_pages)
         columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "Рейтинг", 'rating_2']
 
         self.get_info_from_pages(pages=pages, columns_df=columns)

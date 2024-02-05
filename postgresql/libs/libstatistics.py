@@ -1011,7 +1011,7 @@ class PSQLStatistics2:
                 fig, ax = plt.subplots(figsize=(16, 9))
                 ax.grid(True, alpha=.6)
                 ax.set_title(f"{title_graph[index + 1]}\n")
-                ax.set_ylabel(column)
+                ax.set_ylabel(column.strip(" 1"))
                 df[column] = pd.to_numeric(df[column], errors='coerce')
                 min_val = min(df[column])
                 max_val = max(df[column])

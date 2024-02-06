@@ -16,8 +16,8 @@ with open('key.conf', 'r') as r:
 bot = Bot(API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-path_stand3 = '/home/u/telegrambot/results_stand3.txt'
-path_stand4 = '/home/u/telegrambot/results_stand4.txt'
+path_stand3 = '/home/u/git/stress_test/bendiks_app/telegrambot/results_stand3.txt'
+path_stand4 = '/home/u/git/stress_test/bendiks_app/telegrambot/results_stand4.txt'
 chat_id = '-1002121821530'
 fotos = [
 'https://sun9-24.userapi.com/impg/IZ8aU4agpRfx6mw2oPo8GodBU_XvtKiwe-FeUA/mjmDRavXZPs.jpg?size=1280x1119&quality=95&sign=\

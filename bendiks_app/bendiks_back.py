@@ -48,7 +48,7 @@ __pt_version = args.RELEASE
 __stand = args.STAND
 #__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix']
 __test_list = eval(args.TESTS)
-bot_file = f'/home/u/telegrambot/results_{args.STAND}.txt'
+bot_file = f'/home/u/git/stress_test/bendiks_app/telegrambot/results_{args.STAND}.txt'
 total_start_time = datetime.datetime.now().replace(microsecond=0) 
 
 

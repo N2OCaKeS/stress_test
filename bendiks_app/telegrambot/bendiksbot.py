@@ -11,7 +11,7 @@ from os import remove
 
 
 
-with open('key.conf', 'r') as r:
+with open('/home/u/key.conf', 'r') as r:
     API_TOKEN = r.read().strip()
 bot = Bot(API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()

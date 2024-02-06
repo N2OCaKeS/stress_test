@@ -21,4 +21,4 @@ with open('/home/u/url_brest', 'w') as w:
 subprocess.run('sudo systemctl daemon-reload', shell=True)
 subprocess.run('sudo systemctl restart bendiks.service', shell=True)
 subprocess.run('sudo systemctl restart nginx.service', shell=True)
-
+subprocess.run('sudo systemctl restart bot_bendiks.service', shell=True)

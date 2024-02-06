@@ -69,10 +69,10 @@ async def test_cycle_check():
             elif stand4_results:
                 await send_message_to_group(chat_id, stand4_results)
                 remove(path_stand4)
-            await asyncio.sleep(10)
+            await asyncio.sleep(100)
         except Exception as e:
             print(str(e))
-            await asyncio.sleep(10)
+            await asyncio.sleep(100)
             
 
 @dp.message(Command('id'))

@@ -48,6 +48,8 @@ __pt_version = args.RELEASE
 __stand = args.STAND
 #__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix']
 __test_list = eval(args.TESTS)
+bot_file = f'/home/u/telegrambot/results_{args.STAND}.txt'
+total_start_time = datetime.datetime.now().replace(microsecond=0) 
 
 
 check_len_version = __pt_version.split('.')
@@ -111,6 +113,10 @@ with open(f'conf/all_output_{args.STAND}.log', 'w') as w:
 def save_all_output(output):
     with open(f'conf/all_output_{args.STAND}.log', 'a') as w:
         w.write(output)
+
+def bot_results(output):
+     with open(bot_file, 'a') as bf:
+          bf.write(output)
 
 
 #dates_list = [[['1.7.4', 'orel', '5.10.176-1-generic', 'stand1'], 'postgresql benchmark', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'file system benchmark. EXT4', 'NOT_EXECUTED'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'file system benchmark. XFS', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-generic', 'stand1'], 'postgresql benchmark', 'PASS'], [['1.7.4', 'orel', '5.15.0-70-lowlatency', 'stand1'], 'postgresql benchmark', 'PASS']]
@@ -186,6 +192,27 @@ else:
  ------------------------------------
  ------------------------------------
 ''')
+
+if args.KERNEL:
+    bot_head = f'''
+ --------------------------------
+| Параметры запуска:
+| Выбран релиз: {__pt_version} 
+| Выбран стенд: {__stand} 
+| Выбрано ядро: {args.KERNEL}                                                                            
+| Выбраны тесты: {__test_list}                                                                    
+ --------------------------------
+'''
+else:
+    bot_head = f'''
+ --------------------------------
+| Параметры запуска:
+| Выбран релиз: {__pt_version}
+| Выбран стенд: {__stand}                                                                         
+| Выбраны тесты: {__test_list}                                                                   
+ --------------------------------
+'''
+    
 
 try:          
     for i in range(0, len(dates_list)):  
@@ -377,12 +404,19 @@ try:
             save_all_output(f'Cтенд: {dates_list[i][0][3]} игнорируется\n')
             print(f'Cтенд: {dates_list[i][0][3]} игнорируется')
     #sleep(30)
+    total_end_time = datetime.datetime.now().replace(microsecond=0)
     save_all_output(f'\nDONE\n')
     print(f'\n\033[95mDone\033[0m\n')
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
             wr.write('Готово')
+    bot_results('Прогон завершен\n')
+    bot_results(bot_head)
+    bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
 except Exception as e:
     print(e)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Остановлен')
+    bot_results('Прогон завершен исключением\n')
+    bot_results(bot_head)
+    bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
 

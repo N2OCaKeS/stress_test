@@ -8,6 +8,7 @@ import aiofiles
 from random import randrange
 from os.path import isfile
 from os import remove
+from json import dumps, loads
 
 
 
@@ -16,6 +17,8 @@ with open('/home/u/key.conf', 'r') as r:
 bot = Bot(API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
+path_chlog = '/home/u/git/stress_test/bendiks_app/ChangeLog'
+path_tgbot_conf = '/home/u/telegrambotconf.json'
 path_stand3 = '/home/u/git/stress_test/bendiks_app/telegrambot/results_stand3.txt'
 path_stand4 = '/home/u/git/stress_test/bendiks_app/telegrambot/results_stand4.txt'
 chat_id = '-1002121821530'
@@ -60,7 +63,6 @@ async def is_file_body(path):
 async def test_cycle_check():
     while True:
         try:
-        
             stand3_results = await is_file_body(path_stand3)
             stand4_results = await is_file_body(path_stand4)
             if stand3_results:
@@ -73,7 +75,34 @@ async def test_cycle_check():
         except Exception as e:
             print(str(e))
             await asyncio.sleep(100)
+
+
+async def changelog_check():
+    while True:
+        try:
+            if isfile(path_chlog):
+                async with aiofiles.open(path_chlog, 'r') as r:
+                    text = await r.readlines()
+                    ch_text = ''.join(text[1:3]).strip()
+                    vers_text = ''.join(text[:1]).strip()
+            if isfile(path_tgbot_conf):
+                async with aiofiles.open(path_tgbot_conf, 'r') as r:
+                    chlog_text = loads(await r.read())
+                    line1 = chlog_text['changelog']['line1']
             
+            if vers_text != line1.strip():
+                uphtg = '#update'
+                bhtg = '#Bendiks_update'
+                upd_text = f'Вышло обновление!\n\n{vers_text}\n{ch_text}\n\n{uphtg}\n{bhtg}'
+                await send_message_to_group(chat_id, upd_text)
+                chlog_text['changelog']['line1'] = vers_text
+                async with aiofiles.open(path_tgbot_conf, 'w') as w:
+                    await w.write(dumps(chlog_text, indent=4))
+            await asyncio.sleep(100)
+        except Exception as e:
+            print(str(e))
+            await asyncio.sleep(100)
+
 
 @dp.message(Command('id'))
 async def get_my_updates(message: types.Message):
@@ -150,9 +179,10 @@ async def get_message(message: types.Message):
 
 async def main():
     task1 = asyncio.create_task(test_cycle_check())
-    task2 = asyncio.create_task(dp.start_polling(bot))
+    task2 = asyncio.create_task(changelog_check())
+    task3 = asyncio.create_task(dp.start_polling(bot))
 
-    await asyncio.gather(task1, task2)
+    await asyncio.gather(task1, task2, task3)
 
 if __name__ == "__main__":
     asyncio.run(main())

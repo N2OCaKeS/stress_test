@@ -129,9 +129,11 @@ async def log_server(message: types.Message):
 async def process_callback(query: types.CallbackQuery):
     if query.data == 'LowServer_log':
         server_id = '3'
+        choose = 'Выбран LowServer:\n'
     elif query.data == 'MiddleServer_log':
         server_id = '4'
-    await query.message.reply(log_output(server_id))
+        choose = 'Выбран MiddleServer:\n'
+    await query.message.reply(f'{choose}{log_output(server_id)}')
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
@@ -146,9 +148,11 @@ async def status_server(message: types.Message):
 async def process_callback(query: types.CallbackQuery):
     if query.data == 'LowServer_status':
         server_id = '3'
+        choose = 'Выбран LowServer:\n'
     elif query.data == 'MiddleServer_status':
         server_id = '4'
-    await query.message.reply(status_output(server_id))
+        choose = 'Выбран MiddleServer:\n'
+    await query.message.reply(f'{choose}{status_output(server_id)}')
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
@@ -166,11 +170,11 @@ async def get_message(message: types.Message):
         if message.reply_to_message.from_user.username == "BendiksDEVQAbot":
             if 'help' in message.text.lower():
                 await message.reply(help_text)
-        else: 
-            await bot.send_photo(chat_id=message.chat.id, 
-                                photo=random_pics(), 
-                                caption='Oops! Команда не идентифицирована \nНапиши мне help, если нужна помощь', 
-                                reply_to_message_id=message.message_id)
+            else: 
+                await bot.send_photo(chat_id=message.chat.id, 
+                                    photo=random_pics(), 
+                                    caption='Oops! Команда не идентифицирована \nНапиши мне help, если нужна помощь', 
+                                    reply_to_message_id=message.message_id)
         
 
 

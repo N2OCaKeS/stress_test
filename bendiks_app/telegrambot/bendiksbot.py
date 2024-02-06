@@ -32,7 +32,8 @@ fotos = [
 63e981b3b1d9f96e861dab158190c314&c_uniq_tag=LC62h939btYyDEUpTwBfnzEcFfg7yAJGoOdKhHVqqcg&type=album'
 ]
 
-help_text = """/log - получить прогресс выполнения прогона
+help_text = """Доступные команды:
+/log - получить прогресс выполнения прогона
 /status - узнать статус прогона
 /id - узнать ID чата
 """
@@ -93,7 +94,7 @@ async def changelog_check():
             if vers_text != line1.strip():
                 uphtg = '#update'
                 bhtg = '#Bendiks_update'
-                upd_text = f'Вышло обновление!\n\n{vers_text}\n{ch_text}\n\n{uphtg}\n{bhtg}'
+                upd_text = f'Вышло обновление!\n\n{vers_text}\nChangeLog:\n{ch_text}\n\n{uphtg}\n{bhtg}'
                 await send_message_to_group(chat_id, upd_text)
                 chlog_text['changelog']['line1'] = vers_text
                 async with aiofiles.open(path_tgbot_conf, 'w') as w:
@@ -129,11 +130,11 @@ async def log_server(message: types.Message):
 async def process_callback(query: types.CallbackQuery):
     if query.data == 'LowServer_log':
         server_id = '3'
-        choose = 'Выбран LowServer:\n'
+        choose = 'Выбран LowServer:\nСтатус:'
     elif query.data == 'MiddleServer_log':
         server_id = '4'
-        choose = 'Выбран MiddleServer:\n'
-    await query.message.reply(f'{choose}{log_output(server_id)}')
+        choose = 'Выбран MiddleServer:\nСтатус:'
+    await query.message.reply(f'{choose} {log_output(server_id)}')
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
@@ -148,11 +149,11 @@ async def status_server(message: types.Message):
 async def process_callback(query: types.CallbackQuery):
     if query.data == 'LowServer_status':
         server_id = '3'
-        choose = 'Выбран LowServer:\n'
+        choose = 'Выбран LowServer:\nСтатус:'
     elif query.data == 'MiddleServer_status':
         server_id = '4'
-        choose = 'Выбран MiddleServer:\n'
-    await query.message.reply(f'{choose}{status_output(server_id)}')
+        choose = 'Выбран MiddleServer:\nСтатус:'
+    await query.message.reply(f'{choose} {status_output(server_id)}')
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
@@ -164,7 +165,7 @@ async def get_message(message: types.Message):
         else: 
             await bot.send_photo(chat_id=message.chat.id, 
                                 photo=random_pics(), 
-                                caption='Oops! Команда не идентифицирована \nНапиши мне help, если нужна помощь', 
+                                caption='Oops! Команда не идентифицирована.\nНапиши мне help, если нужна помощь', 
                                 reply_to_message_id=message.message_id)
     elif message.reply_to_message and message.reply_to_message.from_user:
         if message.reply_to_message.from_user.username == "BendiksDEVQAbot":
@@ -173,7 +174,7 @@ async def get_message(message: types.Message):
             else: 
                 await bot.send_photo(chat_id=message.chat.id, 
                                     photo=random_pics(), 
-                                    caption='Oops! Команда не идентифицирована \nНапиши мне help, если нужна помощь', 
+                                    caption='Oops! Команда не идентифицирована.\nНапиши мне help, если нужна помощь', 
                                     reply_to_message_id=message.message_id)
         
 

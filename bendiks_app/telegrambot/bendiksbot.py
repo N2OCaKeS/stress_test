@@ -102,7 +102,8 @@ async def process_callback(query: types.CallbackQuery):
         server_id = '3'
     elif query.data == 'MiddleServer_log':
         server_id = '4'
-    await bot.send_message(query.from_user.id, log_output(server_id))
+    await query.message.reply(log_output(server_id))
+    await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
 @dp.message(Command('status'))
@@ -118,7 +119,8 @@ async def process_callback(query: types.CallbackQuery):
         server_id = '3'
     elif query.data == 'MiddleServer_status':
         server_id = '4'
-    await bot.send_message(query.from_user.id, status_output(server_id))
+    await query.message.reply(status_output(server_id))
+    await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
 @dp.message(F.text)

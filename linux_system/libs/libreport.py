@@ -61,7 +61,6 @@ class ReportToConfluence():
         <ac:parameter ac:name="all">true</ac:parameter>
         </ac:structured-macro>
         '''
-        
         page_body = page_body + macro_body
         if not self.__confluence.page_exists(space=page_space, title=page_title):
             if self.__confluence.create_page(space=page_space,

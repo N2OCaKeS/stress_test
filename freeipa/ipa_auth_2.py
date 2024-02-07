@@ -1,14 +1,14 @@
 import time
 import ldap
 from ldap.asyncsearch import List
-from ipa_conf import MAX_USERS_AUTH, USERS_AUTH_STEP
+from ipa_conf import MAX_USERS_AUTH, USERS_AUTH_STEP, DOMAIN
 from multiprocessing import Process, Barrier, Value, Manager, Array
 
 def auth(user_id, array_for_ldap_error):
     try:
-        l = ldap.initialize("ldap://stand-1-i711700-32-low.stress-testing.local")
+        l = ldap.initialize(f"ldap://stand-1-i711700-32-low.{DOMAIN}")
         l.protocol_version = ldap.VERSION3
-        username = f"uid=user{user_id},cn=users,cn=compat,dc=stress-testing,dc=local" # введите DN (Distinguished Name) пользователя
+        username = f"uid=user{user_id},cn=users,cn=compat,dc={DOMAIN.split('.')[0]},dc={DOMAIN.split('.')[1]}" # введите DN (Distinguished Name) пользователя
         password  = "password" # введите пароль пользователя
         l.simple_bind_s(username, password)
         # l.search_s()

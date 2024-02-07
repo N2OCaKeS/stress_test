@@ -46,7 +46,13 @@ class ReportToConfluence():
                                page_space,
                                parent_page_title,
                                page_title,
-                               page_body='this page was automatically created',):
+                               page_body='this page was automatically created<br/><br/>Content:<br/>',):
+        macro_body = '''
+        <ac:structured-macro ac:name="children">
+        <ac:parameter ac:name="all">true</ac:parameter>
+        </ac:structured-macro>
+        '''
+        page_body = page_body + macro_body
         if not self.__confluence.page_exists(space=page_space, title=page_title):
             if self.__confluence.create_page(space=page_space,
                                              title=page_title,

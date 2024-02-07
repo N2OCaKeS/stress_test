@@ -6,5 +6,6 @@ scikit-learn
 requests
 numpy
 matplotlib
-atlassian-python-api
-pretty_html_table
+lxml
+bs4
+prettytable

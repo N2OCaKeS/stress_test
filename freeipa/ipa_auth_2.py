@@ -1,6 +1,7 @@
 import time
 import ldap
 from ldap.asyncsearch import List
+from ipa_conf import MAX_USERS_AUTH, USERS_AUTH_STEP
 from multiprocessing import Process, Barrier, Value, Manager, Array
 
 def auth(user_id, array_for_ldap_error):
@@ -304,7 +305,7 @@ if __name__ == "__main__":
     f = open("ipa_report_error.txt", 'w')
     f.close()
 
-    for user_count in range(500, 3500, 500):
+    for user_count in range(500, MAX_USERS_AUTH + USERS_AUTH_STEP, USERS_AUTH_STEP):
         barr = Barrier(user_count)
         array = Array("d", user_count)
         value_for_last_proc_delay = Value("d")

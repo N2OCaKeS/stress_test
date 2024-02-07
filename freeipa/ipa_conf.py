@@ -1,4 +1,4 @@
-SCRIPT_DIR = '/home/ivelikanov/git/stress_test/freeipa'
+SCRIPT_DIR = '/home/u/git/stress_test/freeipa'
 LOG_FILENAME = f'{SCRIPT_DIR}/ipa_log'
 REPORT_PATH = f'{SCRIPT_DIR}/report'
 INFO_FILENAME = f"{SCRIPT_DIR}/ipa_info.txt"
@@ -27,6 +27,7 @@ HOSTS = {
 }
 
 MAX_USERS_AUTH = 3000
+USERS_AUTH_STEP = 500
 
 '''
     Описание для графиков отчета

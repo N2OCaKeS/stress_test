@@ -25,7 +25,7 @@ class AutentificationTest():
             Перекидываем тест и запускаем
         """
         remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_auth_2.py', "ipa_auth_2.py")
-        remote_exec(f"ulimit -n 100000 && python3 ipa_auth_2.py -h {out_hostname_server}", 'clients')
+        remote_exec(f"ulimit -n 100000 && python3 ipa_auth_2.py -H {out_hostname_server}", 'clients')
         
         """
         Забираем файл с результатами

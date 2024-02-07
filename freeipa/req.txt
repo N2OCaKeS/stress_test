@@ -4,3 +4,4 @@ numpy
 pandas
 matplotlib
 atlassian-python-api
+pretty_html_table

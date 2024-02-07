@@ -3,8 +3,7 @@
 import time
 import subprocess
 from python_freeipa import ClientMeta
-import warnings
-warnings.filterwarnings('ignore', 'Unverified HTTPS request')
+from ipa_conf import MAX_USERS_AUTH, USERS_AUTH_STEP
 
 # hostname = 'stand-1-i711700-32-low.stress-testing.local'
 hostname = subprocess.run('hostname', 
@@ -22,7 +21,7 @@ client.login(admin_username, admin_password)
 
 time_start_create_users = time.time()
 
-for id in range(0, 10001):
+for id in range(0, MAX_USERS_AUTH + USERS_AUTH_STEP):
     response = client.user_add(
         a_uid=f'user{id}',
         o_givenname='User',

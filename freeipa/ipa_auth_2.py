@@ -1,13 +1,28 @@
 import time
 import ldap
+import argparse
 from ldap.asyncsearch import List
+from ipa_conf import MAX_USERS_AUTH, USERS_AUTH_STEP, DOMAIN
 from multiprocessing import Process, Barrier, Value, Manager, Array
+
+
+DESCRIPTION = ""
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('-h', '--hostname',
+                    action='store',
+                    required=True,
+                    help='hostname dc',
+                    dest='HOSTNAME')
+
+args = parser.parse_args()
+
+HOSTNAME_SERVER = args.HOSTNAME
 
 def auth(user_id, array_for_ldap_error):
     try:
-        l = ldap.initialize("ldap://stand-1-i711700-32-low.stress-testing.local")
+        l = ldap.initialize(f"ldap://{HOSTNAME_SERVER}")
         l.protocol_version = ldap.VERSION3
-        username = f"uid=user{user_id},cn=users,cn=compat,dc=stress-testing,dc=local" # введите DN (Distinguished Name) пользователя
+        username = f"uid=user{user_id},cn=users,cn=compat,dc={DOMAIN.split('.')[0]},dc={DOMAIN.split('.')[1]}" # введите DN (Distinguished Name) пользователя
         password  = "password" # введите пароль пользователя
         l.simple_bind_s(username, password)
         # l.search_s()
@@ -304,7 +319,7 @@ if __name__ == "__main__":
     f = open("ipa_report_error.txt", 'w')
     f.close()
 
-    for user_count in range(500, 3500, 500):
+    for user_count in range(500, MAX_USERS_AUTH + USERS_AUTH_STEP, USERS_AUTH_STEP):
         barr = Barrier(user_count)
         array = Array("d", user_count)
         value_for_last_proc_delay = Value("d")

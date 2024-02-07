@@ -19,6 +19,9 @@ def cmd(command, ret_c=True):
         return output
 
 def change_defualt_kernel():
+    """
+        TODO Добавить аргумент выбора ядра
+    """
     command_search = "sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep 5.15 | tr -d \"'\" | grep generic"
     
     kernel_search = cmd(command=command_search, ret_c=False)

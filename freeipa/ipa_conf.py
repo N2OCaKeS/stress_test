@@ -27,6 +27,7 @@ HOSTS = {
 }
 
 MAX_USERS_AUTH = 3000
+USERS_AUTH_STEP = 500
 
 '''
     Описание для графиков отчета

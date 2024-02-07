@@ -4,6 +4,8 @@ import time
 import subprocess
 from python_freeipa import ClientMeta
 from ipa_conf import MAX_USERS_AUTH, USERS_AUTH_STEP
+import warnings
+warnings.filterwarnings('ignore', 'Unverified HTTPS request')
 
 # hostname = 'stand-1-i711700-32-low.stress-testing.local'
 hostname = subprocess.run('hostname', 

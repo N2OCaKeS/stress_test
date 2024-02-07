@@ -8,7 +8,7 @@ from multiprocessing import Process, Barrier, Value, Manager, Array
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
-parser.add_argument('-h', '--hostname',
+parser.add_argument('-H', '--hostname',
                     action='store',
                     required=True,
                     help='hostname dc',

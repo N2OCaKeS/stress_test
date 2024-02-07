@@ -379,7 +379,10 @@ class UnixBenchStatistics:
                 # ax.set_xlabel("Порядковый номер теста")
                 ax.set_ylabel("Значение рейтинга")
                 grade = self.get_grade(key)
-                ax.set_title(f"UnixBench. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}")
+                if test_name == "unix":
+                    ax.set_title(f"UnixBench. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}")
+                if test_name == "unix parsec":
+                    ax.set_title(f"UnixBench parsec. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}")
                 for i, val in enumerate(data_ratings.get("rating")):
                     try:
                         val = int(val)
@@ -396,6 +399,10 @@ class UnixBenchStatistics:
         # print(data_df_orel)
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="unix")
         create_graphs(data_for_df=data_df_orel, test_name="unix", temp_data_for_graph=tmp_data_for_gr)
+
+        data_df_parsec = collect_data(test_name="unix parsec")
+        tmp_data_for_gr_parsec, tmp_data_krnl_parsec, df_unix_parsec = build_dataframes(data_for_df=data_df_parsec, test_name="unix parsec")
+        create_graphs(data_for_df=data_df_parsec, test_name="unix parsec", temp_data_for_graph=tmp_data_for_gr_parsec)
 
     """
         Создаем итоговую html страницу для life
@@ -435,7 +442,7 @@ class UnixBenchStatistics:
         table_with_data_list = []
         table_with_mat_stat_list = []
 
-        for file in sorted(os.listdir(f"{stat_dir}")):
+        for file in sorted(os.listdir(f"{stat_dir}"))[::-1]:
             if file.endswith("png"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),

@@ -5,6 +5,9 @@ from ipa_conf import MAX_USERS_AUTH, USERS_AUTH_STEP, DOMAIN
 from multiprocessing import Process, Barrier, Value, Manager, Array
 
 def auth(user_id, array_for_ldap_error):
+    """
+        TODO Добавить аргумент hostname кд
+    """
     try:
         l = ldap.initialize(f"ldap://stand-1-i711700-32-low.{DOMAIN}")
         l.protocol_version = ldap.VERSION3

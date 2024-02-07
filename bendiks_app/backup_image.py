@@ -745,6 +745,17 @@ def db_kernel_changer(cpu_count, database, position=None):
 
 
 
+def freeipa_authentication_test():
+    git_path = '/home/u/freeipa_test/gitipa'
+    all_path = '/home/u/freeipa_test/gitipa/stress_test/freeipa'
+
+    comm_and_log(f'cd {git_path} && {VENV_PATH} git_clone.py')
+    comm_and_log(f'cd {git_path}/stress_test && git checkout freeipa')
+
+    write_status(done)
+
+
+
 with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Запущен')
 write_status(in_prog)

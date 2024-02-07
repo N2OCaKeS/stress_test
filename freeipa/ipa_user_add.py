@@ -3,6 +3,8 @@
 import time
 import subprocess
 from python_freeipa import ClientMeta
+import warnings
+warnings.filterwarnings('ignore', 'Unverified HTTPS request')
 
 # hostname = 'stand-1-i711700-32-low.stress-testing.local'
 hostname = subprocess.run('hostname', 
@@ -11,6 +13,8 @@ hostname = subprocess.run('hostname',
                           encoding='utf-8').stdout.strip('\n')
 admin_username = 'admin'
 admin_password = '12345678'
+
+print('Создаются пользователи\n')
 
 client = ClientMeta(hostname, verify_ssl=False)
 

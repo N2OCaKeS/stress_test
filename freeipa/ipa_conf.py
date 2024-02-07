@@ -1,4 +1,4 @@
-SCRIPT_DIR = '/home/ivelikanov/git/stress_test/freeipa'
+SCRIPT_DIR = '/home/u/freeipa_test/gitipa/stress_test/freeipa'
 LOG_FILENAME = f'{SCRIPT_DIR}/ipa_log'
 REPORT_PATH = f'{SCRIPT_DIR}/report'
 INFO_FILENAME = f"{SCRIPT_DIR}/ipa_info.txt"

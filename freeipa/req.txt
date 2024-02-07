@@ -1,6 +1,11 @@
-fabric
-scipy
+atlassian-python-api 
+pretty-html-table 
+pandas 
+pysnooper
+scikit-learn 
+requests
 numpy
-pandas
 matplotlib
-atlassian-python-api
+lxml
+bs4
+prettytable

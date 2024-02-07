@@ -94,7 +94,7 @@ async def changelog_check():
             if vers_text != line1.strip():
                 uphtg = '#update'
                 bhtg = '#Bendiks_update'
-                upd_text = f'Вышло обновление!\n\n{vers_text}\nChangeLog:\n{ch_text}\n\n{uphtg}\n{bhtg}'
+                upd_text = f'Вышло обновление!\n\n{vers_text}\nChangelog:\n{ch_text}\n\n{uphtg}\n{bhtg}'
                 await send_message_to_group(chat_id, upd_text)
                 chlog_text['changelog']['line1'] = vers_text
                 async with aiofiles.open(path_tgbot_conf, 'w') as w:

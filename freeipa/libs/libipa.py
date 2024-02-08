@@ -152,7 +152,7 @@ def put_system_info_in_file(start, file):
     print('lead time: {t}'.format(t=lead_time))
 
     # собрать системную информацию
-    info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[2], mode=astra_version()[1]),
+    info_lst = ['{digit_v}({mode})\n'.format(digit_v=remote_cmd('cat /etc/astra_version', HOSTS['server']['ip']).strip("\n"), mode=remote_cmd("cat /etc/astra_license | grep DESCRIPTION | sed -n -e 's/^.*(\(.*\)).*$/\1/p'", HOSTS['server']['ip'])),
                 remote_cmd('uname -r', HOSTS['server']['ip']),
                 remote_cmd("dpkg -l astra-freeipa-server | awk '{print $3}' | tail -n1", HOSTS['server']['ip']),
                 str(lead_time)]

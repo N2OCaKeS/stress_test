@@ -160,6 +160,12 @@ parser.add_argument('-tantor-vanilla',
                     help='testlist',
                     dest='TANTOR_VANILLA')
 
+parser.add_argument('-ipa-auth ipa',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='FREEIPA_AUTH')
+
 args = parser.parse_args()
 
 with open('/home/u/tokens.json', 'r') as r:
@@ -241,6 +247,9 @@ elif args.TEST == 'syslog-ng' or args.TEST == 'unix':
 elif args.TEST == 'unix parsec':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -p parsec'
+elif args.FREEIPA_AUTH:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
@@ -637,6 +646,75 @@ class BootOrder:
 
 
 
+class TestRunProvision(BootOrder):
+    def __init__(self, 
+                 stand=None, 
+                 boottype='PXE',
+                 bootorder=True,
+                 clonezilla=True,
+                 stand_ip=stand_ip,
+                 kernel=args.KERNEL,
+                 modes=True):
+        super().__init__(stand, boottype)
+
+        self.bootorder = bootorder
+        self.clonezilla = clonezilla
+        self.stand_ip = stand_ip
+        self.kernel = kernel
+        self.modes = modes
+
+        if self.bootorder:
+            self.set_boot_order()
+
+    def provision(self):
+        if self.clonezilla:
+            if args.PSQL_BALANCE:
+                if comm_and_log(clonezilla_command_balance) == 0:
+                    write_status(success)
+                else: write_status(fail)
+            else:
+                if comm_and_log(clonezilla_command) == 0:
+                    write_status(success)
+                else: write_status(fail)
+
+        if read_status() == success:
+            write_status(in_prog)
+            comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
+                        -o UserKnownHostsFile=/dev/null u@' + self.stand_ip + ' sudo reboot')
+            sleep(3)
+            if args.RELEASE not in systems and not args.PSQL_BALANCE:
+                holder = 0
+                while holder == 0:
+                    try:
+                        if grub_default(self.kernel, self.stand_ip) == 0:
+                            holder += 1
+                        else: sleep(60)
+                    except Exception as e:
+                        logging.error(str(e))
+                        sleep(60)
+                if self.modes:
+                    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                                u@' + self.stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
+                    if modes[args.MODE] == '2':
+                        comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
+                        comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
+            elif args.PSQL_BALANCE:
+                socket_available()
+            write_status(success)
+
+        if args.RELEASE not in systems and not args.PSQL_BALANCE:
+            if read_status() == success:
+                write_status(in_prog)
+                comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                            u@' + self.stand_ip + ' sudo reboot')
+                sleep(3)
+                socket_available()
+                write_status(success)
+        else: 
+            socket_available()
+
+
+
 class ResultCallback(CallbackBase):
     def __init__(self, *args, **kwargs):
         super(ResultCallback, self).__init__(*args, **kwargs)
@@ -743,16 +821,26 @@ def db_kernel_changer(cpu_count, database, position=None):
         
     write_status(done)    
 
-
-
 def freeipa_authentication_test():
     git_path = '/home/u/freeipa_test/gitipa'
     all_path = '/home/u/freeipa_test/gitipa/stress_test/freeipa'
+    clients_ip = '10.177.103.201'
+    kernel = '5.15.0-83-generic'
 
+    comm_and_log(cz_comm['stand1']['1.7.5'])
+    run_provision.bootorder = False
+    run_provision.clonezilla = False
+    run_provision.stand_ip = clients_ip
+    run_provision.kernel = kernel
+    run_provision.modes = False
+    run_provision.provision()
     comm_and_log(f'cd {git_path} && {VENV_PATH} git_clone.py')
     comm_and_log(f'cd {git_path}/stress_test && git checkout freeipa')
+    comm_and_log(f'cd {all_path} && {VENV_PATH} ipa_run.py {dates}')
 
     write_status(done)
+
+
 
 
 
@@ -760,53 +848,8 @@ with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Запущен')
 write_status(in_prog)
 
-bo = BootOrder(stand=args.STAND)
-bo.set_boot_order()
-
-if args.PSQL_BALANCE:
-    if comm_and_log(clonezilla_command_balance) == 0:
-        write_status(success)
-    else: write_status(fail)
-else:
-    if comm_and_log(clonezilla_command) == 0:
-        write_status(success)
-    else: write_status(fail)
-
-if read_status() == success:
-    write_status(in_prog)
-    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
-                -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
-    sleep(3)
-    if args.RELEASE not in systems and not args.PSQL_BALANCE:
-        holder = 0
-        while holder == 0:
-            try:
-                if grub_default(args.KERNEL, stand_ip) == 0:
-                    holder += 1
-                else: sleep(60)
-            except Exception as e:
-                logging.error(e)
-                sleep(60)
-        comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                    u@' + stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
-        if modes[args.MODE] == '2':
-            comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
-            comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
-    elif args.PSQL_BALANCE:
-        socket_available()
-    write_status(success)
-
-if args.RELEASE not in systems and not args.PSQL_BALANCE:
-    if read_status() == success:
-        write_status(in_prog)
-        comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                    u@' + stand_ip + ' sudo reboot')
-        sleep(3)
-        socket_available()
-        write_status(success)
-else: 
-    socket_available()
-
+run_provision = TestRunProvision(stand=args.STAND)
+run_provision.provision()
 
 #dates.conf
 create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
@@ -852,6 +895,8 @@ if read_status() == success:
         db_kernel_changer(32, args.DB_KERNELS, position='end')
     elif args.PSQL_BALANCE:
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} balance')
+    elif args.FREEIPA_AUTH:
+        freeipa_authentication_test()
     else:    
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name}')
         write_status(done)

@@ -84,7 +84,7 @@ async def changelog_check():
             if isfile(path_chlog):
                 async with aiofiles.open(path_chlog, 'r') as r:
                     text = await r.readlines()
-                    ch_text = ''.join(text[1:3]).strip()
+                    ch_text = ''.join(text[1:5]).strip()
                     vers_text = ''.join(text[:1]).strip()
             if isfile(path_tgbot_conf):
                 async with aiofiles.open(path_tgbot_conf, 'r') as r:

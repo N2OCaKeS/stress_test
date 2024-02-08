@@ -39,7 +39,8 @@ tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', '
                                   'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels'],
               'Файловые системы':['XFS', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec'],
               'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
-              'UnixBench':       ['unix', 'unix parsec']}
+              'UnixBench':       ['unix', 'unix parsec'],
+              'FreeIPA':         ['FreeIPA auth']}
 
 release_version = ['1.8.0.6',
                    '1.8.0.5', 

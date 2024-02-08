@@ -259,6 +259,7 @@ try:
                         tantor_kern = '-db-kernels tantor'
                         ram_ovf = '-ovf ram'
                         sd_ovf = '-ovf sd'
+                        ipa_auth = '-ipa-auth ipa'
                         if tests[dates_list[i][1]] == 'auditd-p':
                             testlist = f'-aud psaud'
                         elif tests[dates_list[i][1]] == 'auditd-f':
@@ -298,6 +299,9 @@ try:
                         elif tests[dates_list[i][1]] == 'SD-overflow':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {testnum} {sd_ovf}', shell=True)
+                        elif tests[dates_list[i][1]] == 'FreeIPA auth':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {ipa_auth}', shell=True)
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
@@ -343,6 +347,7 @@ try:
                     tantor_kern = '-db-kernels tantor'
                     ram_ovf = '-ovf ram'
                     sd_ovf = '-ovf sd'
+                    ipa_auth = '-ipa-auth ipa'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -382,6 +387,9 @@ try:
                     elif tests[dates_list[i][1]] == 'SD-overflow':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                     {tcas} {branch} {cti} {pp} {testnum} {sd_ovf}', shell=True)
+                    elif tests[dates_list[i][1]] == 'FreeIPA auth':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {ipa_auth}', shell=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
@@ -409,14 +417,14 @@ try:
     print(f'\n\033[95mDone\033[0m\n')
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
             wr.write('Готово')
-    bot_results('Прогон завершен\n')
+    bot_results('Прогон завершен')
     bot_results(bot_head)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
 except Exception as e:
     print(e)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Остановлен')
-    bot_results('Прогон завершен исключением\n')
+    bot_results('Прогон завершен исключением')
     bot_results(bot_head)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
 

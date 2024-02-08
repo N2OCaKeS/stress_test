@@ -1,10 +1,26 @@
+bendiks_app - v2.8.0
+*  Rebuild provision functional
+*  Add class TestRunProvision
+*  Add new test Freeipa Authentication
+*  Add start settings to new test
+
+
 bendiks_app - v2.7.15
 *  improved text some bot answer
+
+
+
+
 
 bendiks_app - v2.7.14
 *  fix bot answer to another user
 *  add choose server print
 
+
+
+
 bendiks_app - v2.7.13
 *  add changelog
 *  add bot notification
+
+

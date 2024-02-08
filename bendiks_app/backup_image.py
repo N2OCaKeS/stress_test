@@ -676,6 +676,7 @@ class TestRunProvision(BootOrder):
                 if comm_and_log(clonezilla_command) == 0:
                     write_status(success)
                 else: write_status(fail)
+            print('Clonezilla block done\n')
 
         if read_status() == success:
             write_status(in_prog)
@@ -701,6 +702,7 @@ class TestRunProvision(BootOrder):
             elif args.PSQL_BALANCE:
                 socket_available()
             write_status(success)
+            print('Grub block done\n')
 
         if args.RELEASE not in systems and not args.PSQL_BALANCE:
             if read_status() == success:
@@ -827,7 +829,8 @@ def freeipa_authentication_test():
     clients_ip = '10.177.103.201'
     kernel = '5.15.0-83-generic'
 
-    comm_and_log(cz_comm['stand1']['1.7.5'])
+    if comm_and_log(cz_comm['stand1']['1.7.5']) == 0:
+        write_status(success)
     run_provision.bootorder = False
     run_provision.clonezilla = False
     run_provision.stand_ip = clients_ip

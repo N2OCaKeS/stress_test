@@ -90,6 +90,7 @@ parent_page_list = {
 #Ветки проектов в git
 #################################################################################################################################################
 branches = {
+    'freeipa authentication test':'freeipa',
     'file system benchmark. EXT4':'file_systems',
     'file system benchmark. XFS':'file_systems',
     'postgresql benchmark':'postgresql',
@@ -150,6 +151,7 @@ cycle_tree_index = {
 #Конвертируемый перечень тестов
 #################################################################################################################################################
 tests = {
+    'freeipa authentication test':'FreeIPA auth',
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
@@ -199,7 +201,7 @@ psyc = {
 group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
-              'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance']
+              'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth']
 
 
 
@@ -267,13 +269,13 @@ repo_path = {
 rc_list = ['1.7.5.UU.1.1', '1.8.0.5', '1.8.0.6']
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.UU.1', '1.8.0']
 
-testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
+testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'FreeIPA auth'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels',
                                'psql balance']
 testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
 
-LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
+LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'FreeIPA auth']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels', 'postgresql-sm',
                       'psql balance']
 
@@ -305,6 +307,7 @@ tests_case_zefir_key = {
     'auditd-p':'BT-T8213',
     'auditd-u':'BT-T8214',
     'syslog-ng':'BT-T8119',
-    'psql balance':'BT-T13362'
+    'psql balance':'BT-T13362',
+    'FreeIPA auth':'BT-T13481'
 }
 

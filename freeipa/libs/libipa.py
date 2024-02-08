@@ -1,12 +1,13 @@
 import os
 import subprocess
 import paramiko
-
+import requests
 from datetime import datetime
 from paramiko.ssh_exception import NoValidConnectionsError
 from time import sleep
 from fabric import Connection
 from ipa_conf import USER, PASSWORD, HOSTS
+import ftplib
 
 def astra_version():
     version = []
@@ -159,3 +160,28 @@ def put_system_info_in_file(start, file):
 
     with open(file, 'a+') as info:
         info.writelines(info_lst)
+
+
+def response():
+    try:
+        jira = requests.get('https://jira.astralinux.ru').status_code
+        life = requests.get('https://life.astralinux.ru').status_code
+        return jira, life
+    except Exception as e:
+        jira, life = str(type(e).__name__), str(e)
+        return jira, life
+    
+
+def upload_results_to_ftp(rc_name, path_to_file, file_name):
+    ftp = ftplib.FTP('10.177.103.10')
+    ftp.login()
+    ftp.cwd('stress_test')
+    try:
+        ftp.mkd(rc_name)
+    except ftplib.error_perm:
+        pass
+    #ftp.sendcmd('SITE CHMOD 777 ' + rc_name)
+    ftp.cwd(rc_name)
+    with open(path_to_file, 'rb') as rf:
+        ftp.storbinary('STOR ' + file_name, rf)
+    ftp.quit()

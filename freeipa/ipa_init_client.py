@@ -90,6 +90,9 @@ def initialization_freeipa_client():
     file_hosts = open("/etc/hosts", "w")
     file_hosts.writelines(temp)
     file_hosts.close()
+    
+    with open('/etc/hosts', 'a') as hosts_fd:
+        hosts_fd.write('10.177.5.111\tqa111.devos.astralinux.ru\tqa111')
 
     """
         Ввод клиента в домен

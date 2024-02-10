@@ -103,7 +103,7 @@ class Report:
         for item_rating in list_rating:
             # print(item_rating)
             total_rating += c_weiht * item_rating
-        return total_rating
+        return round(total_rating * 1000, 2) #временное решение
 
 
     def create_beauty_table(self, path=REPORT_PATH, table_name='ipa_auth_report_table.html'):

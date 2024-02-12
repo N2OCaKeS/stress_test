@@ -3,12 +3,14 @@ import subprocess
 import paramiko
 import requests
 from datetime import datetime
+from json import dumps
 from paramiko.ssh_exception import NoValidConnectionsError
 from time import sleep
 from fabric import Connection
 from ipa_conf import USER, PASSWORD, HOSTS
 import ftplib
 import re
+
 
 def astra_version():
     version = []
@@ -152,18 +154,28 @@ def put_system_info_in_file(start, file):
     
     lead_time = get_duration((datetime.now() - start).total_seconds())
     print('lead time: {t}'.format(t=lead_time))
+    
+    astra_version = remote_cmd('cat /etc/astra_version', HOSTS['server']['ip']).strip("\n").replace("\x01","")
     astra_mode_tmp = remote_cmd("cat /etc/astra_license | grep DESCRIPTION", HOSTS['server']['ip'])
-    astra_mode = re.search('\((.*?)\)', astra_mode_tmp).group(1)
-    # собрать системную информацию
-    info_lst = [
-            '{digit_v}({mode})\n'.format(digit_v=remote_cmd('cat /etc/astra_version', HOSTS['server']['ip']).strip("\n").replace("\x01",""), mode=astra_mode),
-            remote_cmd('uname -r', HOSTS['server']['ip']).replace("\x01","").strip() + '\n',
-            remote_cmd("dpkg -l astra-freeipa-server | awk '{print $3}' | tail -n1", HOSTS['server']['ip']).replace("\x01","").strip() + '\n',
-            str(lead_time)
-        ]
+    astra_mode = re.search(r'\((.*?)\)', astra_mode_tmp).group(1)
+    kernel_version = remote_cmd('uname -r', HOSTS['server']['ip']).replace("\x01","").strip()
+    package_version = remote_cmd("dpkg -l astra-freeipa-server | awk '{print $3}' | tail -n1", HOSTS['server']['ip']).replace("\x01","").strip()
+    # info_lst = [
+    #         '{digit_v}({mode})\n'.format(digit_v=remote_cmd('cat /etc/astra_version', HOSTS['server']['ip']).strip("\n").replace("\x01",""), mode=astra_mode),
+    #         remote_cmd('uname -r', HOSTS['server']['ip']).replace("\x01","").strip() + '\n',
+    #         remote_cmd("dpkg -l astra-freeipa-server | awk '{print $3}' | tail -n1", HOSTS['server']['ip']).replace("\x01","").strip() + '\n',
+    #         str(lead_time)
+    #     ]
+    info_dct = dict(
+        astra_version=astra_version,
+        astra_mode=astra_mode,
+        kernel_version=kernel_version,
+        package_version= package_version,
+        lead_time=str(lead_time)
+    )
 
     with open(file, 'a+') as info:
-        info.writelines(info_lst)
+        info.write(dumps(info_dct, indent=4))
 
 
 def response():

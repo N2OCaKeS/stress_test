@@ -1,5 +1,6 @@
 import os
 import re
+from json import loads
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
 from ipa_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH, MAX_USERS_AUTH
@@ -99,22 +100,23 @@ class Public:
             
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:
-            info_lst = info.read().split('\n')
+            # info_lst = info.read().split('\n')
+            info_dct = loads(info.read())
 
         # TODO дописать параметры
         # TODO Дописать info файл
         with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
             header_table_temp = file.read()
-            header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],
+            header_table = header_table_temp.format(av=f"{info_dct.get("astra_version")}({info_dct.get("astra_mode")})",
+                                                    kernel=info_dct.get("kernel_version"),
                                                     package_name='astra-freeipa-server',
-                                                    package_vers=info_lst[2],
+                                                    package_vers=info_dct.get("package_version"),
                                                     param_service_count=MAX_USERS_AUTH,
                                                     arm_num=self.stands[self.grade_stand]['grade'],
                                                     arm_proc=self.stands[self.grade_stand]['cpu'],
                                                     arm_mem=self.stands[self.grade_stand]['ram'],
                                                     arm_st=self.stands[self.grade_stand]['storage'],
-                                                    lead_time=info_lst[3])       
+                                                    lead_time=info_dct.get("lead_time"))       
    
         with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
             rating_temp = template.read()

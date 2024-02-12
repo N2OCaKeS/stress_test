@@ -1,7 +1,7 @@
 SCRIPT_DIR = '/home/u/freeipa_test/gitipa/stress_test/freeipa'
 LOG_FILENAME = f'{SCRIPT_DIR}/ipa_log'
 REPORT_PATH = f'{SCRIPT_DIR}/report'
-INFO_FILENAME = f"{SCRIPT_DIR}/ipa_info.txt"
+INFO_FILENAME = f"{SCRIPT_DIR}/ipa_info.json"
 TEMPLATE_PATH = f'{SCRIPT_DIR}/templates'
 
 USER = "u"

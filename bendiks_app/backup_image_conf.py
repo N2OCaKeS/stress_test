@@ -270,15 +270,14 @@ repo_path = {
 rc_list = ['1.7.5.UU.1.1', '1.8.0.5', '1.8.0.6']
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.UU.1', '1.8.0']
 
-testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'FreeIPA auth'] #, 'NTFS']
+testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels',
-                               'psql balance']
+                               'psql balance', 'FreeIPA auth']
 testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
 
-LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'FreeIPA auth']
-MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels', 'postgresql-sm',
-                      'psql balance']
+LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
+MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth']
 
 testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
 testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']

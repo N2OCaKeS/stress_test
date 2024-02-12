@@ -9,3 +9,5 @@ matplotlib
 lxml
 bs4
 prettytable
+paramiko
+fabric

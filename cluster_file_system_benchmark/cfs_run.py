@@ -112,8 +112,8 @@ pm_off = ''
 
 ssh_keygen = 'ssh-keygen -f "/home/$USER/.ssh/known_hosts" -R {ip}'
 add_nodes_in_ssh_scrt = "sed -i '3s/.*/ips=({nodes} {host})/' /home/$USER/git/stress_test/cluster_file_system_benchmark/ssh_key.sh"
-run_storage_init = 'sudo {dir}/venv/bin/python {dir}/cfs_storage_init.py --fs {fs} --host-storage {st_host} --nodes {hosts}'
-run_test_cmd = 'sudo {dir}/venv/bin/python {dir}/{file} --test-set {ts}'
+run_storage_init = 'sudo python3.11 {dir}/cfs_storage_init.py --fs {fs} --host-storage {st_host} --nodes {hosts}'
+run_test_cmd = 'sudo python3.11 {dir}/{file} --test-set {ts}'
 
 
 def host_is_available(node):

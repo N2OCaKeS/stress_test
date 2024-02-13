@@ -57,7 +57,7 @@ HOSTS = { 'sudcm': { 'ip': '10.0.0.21',
 SCRIPT_DIR = '/media/sf_git/stress_test/cluster_file_system_benchmark'
 #SCRIPT_DIR = '/home/u/git/stress_test/cluster_file_system_benchmark'
 
-LOCAL_SCRIPT_DIR = '/home/u/git/stress_test/cluster_file_system_benchmark'
+LOCAL_SCRIPT_DIR = '/home/timonin/git/stress_test/cluster_file_system_benchmark'
 LOG_FILENAME = 'cfs_log'
 LOG_PATH ='{}/log/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 INFO_FILENAME = 'cfs_info.txt'
@@ -78,9 +78,9 @@ STORAGE_NAME = 'sdb'
 #
 STORAGE_MOUNT_DIR = '/mnt'
 #
-MACHINE_POSTFIX = 'osse'
+MACHINE_POSTFIX = 'osse18'
 #
-SNAPSHOT_NAME = '1.7.3.s.5.15'
+SNAPSHOT_NAME = '1.8.0.8'
 #
 PORT = '7777'
 #

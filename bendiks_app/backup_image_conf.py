@@ -40,7 +40,8 @@ tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', '
               'Файловые системы':['XFS', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec'],
               'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
               'UnixBench':       ['unix', 'unix parsec'],
-              'FreeIPA':         ['FreeIPA auth']}
+              'FreeIPA':         ['FreeIPA auth'],
+              'Parsec':          ['parsec impact-fs']}
 
 release_version = ['1.8.0.6',
                    '1.8.0.5', 
@@ -119,7 +120,8 @@ branches = {
     'linux_system_benchmark. UnixBench':'linux_system',
     'linux_system_benchmark. UnixBench parsec':'linux_system',
     'ram overflow':'overflow',
-    'storage drive overflow':'overflow'
+    'storage drive overflow':'overflow',
+    'Parsec impact fs benchmark':'parsec'
 }
 
 
@@ -154,6 +156,7 @@ cycle_tree_index = {
 #Конвертируемый перечень тестов
 #################################################################################################################################################
 tests = {
+    'Parsec impact fs benchmark':'parsec impact-fs',
     'freeipa authentication test':'FreeIPA auth',
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
@@ -204,7 +207,7 @@ psyc = {
 group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
-              'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth']
+              'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs']
 
 
 
@@ -274,18 +277,19 @@ rc_list = ['1.7.5.UU.1.1', '1.8.0.5', '1.8.0.6', '1.7.5.UU.1.7',]
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.UU.1', '1.8.0']
 
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
-testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
+testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels',
                                'psql balance', 'FreeIPA auth']
 testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
 
-LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec']
+LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
+                   'parsec impact-fs']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth']
 
-testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
-testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
-testcase_smolensk = ['postgresql-sm', 'psql parsec', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
-testcase_smolensk_stand2 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
+#testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
+#testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
+#testcase_smolensk = ['postgresql-sm', 'psql parsec', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
+#testcase_smolensk_stand2 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
 test_run_stands = [f'stand{x}' for x in range(3, 6, 1)]
 test_run_modes = ['orel', 'smolensk']
 tests_case_zefir_key = {
@@ -311,6 +315,7 @@ tests_case_zefir_key = {
     'auditd-u':'BT-T8214',
     'syslog-ng':'BT-T8119',
     'psql balance':'BT-T13362',
-    'FreeIPA auth':'BT-T13481'
+    'FreeIPA auth':'BT-T13481',
+    'parsec impact-fs':'BT-T13486'
 }
 

@@ -166,6 +166,12 @@ parser.add_argument('-ipa-auth ipa',
                     help='testlist',
                     dest='FREEIPA_AUTH')
 
+parser.add_argument('-parsec-impact',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='PARSEC_IMPACT')
+
 args = parser.parse_args()
 
 with open('/home/u/tokens.json', 'r') as r:
@@ -248,6 +254,9 @@ elif args.TEST == 'unix parsec':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -p parsec'
 elif args.FREEIPA_AUTH:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
+elif args.PARSEC_IMPACT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 else: 

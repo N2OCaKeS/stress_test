@@ -260,6 +260,7 @@ try:
                         ram_ovf = '-ovf ram'
                         sd_ovf = '-ovf sd'
                         ipa_auth = '-ipa-auth ipa'
+                        parsec_impact = '-parsec-impact impact'
                         if tests[dates_list[i][1]] == 'auditd-p':
                             testlist = f'-aud psaud'
                         elif tests[dates_list[i][1]] == 'auditd-f':
@@ -302,6 +303,9 @@ try:
                         elif tests[dates_list[i][1]] == 'FreeIPA auth':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {ipa_auth}', shell=True)
+                        elif tests[dates_list[i][1]] == 'parsec impact-fs':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {parsec_impact}', shell=True)    
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
@@ -348,6 +352,7 @@ try:
                     ram_ovf = '-ovf ram'
                     sd_ovf = '-ovf sd'
                     ipa_auth = '-ipa-auth ipa'
+                    parsec_impact = '-parsec-impact impact'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -390,6 +395,9 @@ try:
                     elif tests[dates_list[i][1]] == 'FreeIPA auth':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {ipa_auth}', shell=True)
+                    elif tests[dates_list[i][1]] == 'parsec impact-fs':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {parsec_impact}', shell=True)
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)

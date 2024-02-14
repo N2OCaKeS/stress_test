@@ -22,7 +22,7 @@
 - prettytable
 
 #### Проведение тестирования
-Тестирование проводится в автоматическом режиме с помощью орекстратора Bendiks.
+Тестирование проводится в автоматическом режиме с помощью оркестратора Bendiks.
 
 - [Bendiks](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
 

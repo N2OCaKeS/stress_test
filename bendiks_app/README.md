@@ -23,11 +23,9 @@
 -  Проект находится в ветке /git/stress_test/bendiks_app
    
 #### В файле **"templates/main.html"** в блок "dropdown >Обновить СТП<" добавить строку:
-{panel}
 ```html
     <li><a class="dropdown-item" href="javascript:update('1.7.5.4')">1.7.5.4</a></li>
 ```
-{panel}
 
 #### В файл **"backup_image_command.py"** добавить в словари команду запуска восстановления снимка:
 ```python

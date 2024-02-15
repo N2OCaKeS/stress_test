@@ -1,6 +1,6 @@
 # Bendiks
 Проект является веб-приложением выполняющим функции оркестратора, интегрированного в среду нагрузочного тестирования **DEVQA**.  
-[Доступен по адресу](http://bendiks.devos.astralinux.ru)
+Доступен по адресу: [http://bendiks.devos.astralinux.ru](http://bendiks.devos.astralinux.ru)
 
 ## Основные возможности
 -  Позволяет администрировать группу из 5 серверов (вариативно).
@@ -14,5 +14,5 @@
 -  [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)
 
 ## Визуальное представление
-![Bendiks](static/bendiks.jpg)
+![Bendiks](static/bendiks.png)
 

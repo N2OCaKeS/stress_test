@@ -14,5 +14,5 @@
 -  [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)
 
 ## Визуальное представление
-![Bendiks](/static/bendiks.jpg)
+![Bendiks](static/bendiks.jpg)
 

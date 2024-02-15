@@ -23,14 +23,30 @@
 -  Проект находится в ветке /git/stress_test/bendiks_app
    
 ###### В файле **"templates/main.html"** в блок "dropdown >Обновить СТП<" добавить строку:
-{code:html/xml}
+```html
     <li><a class="dropdown-item" href="javascript:update('1.7.5.4')">1.7.5.4</a></li>
-{code}
+```
 
-###### В файл "backup_image_command.py" добавить в словари команду запуска восстановления снимка:
-{code:python}
-    'stand2':{
-            '1.7.5.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.202" \
-            -l ru_RU.UTF-8 startdisk restore stand-2-qa-team-13-1754 nvme0n1'
-            }
-{code}
+###### В файл **"backup_image_command.py"** добавить в словари команду запуска восстановления снимка:
+```python
+'stand2':{
+        '1.7.5.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.202" \
+        -l ru_RU.UTF-8 startdisk restore stand-2-qa-team-13-1754 nvme0n1'
+         }
+```
+
+###### В файл **"backup_image_conf.py"** добавить:
+###### Tree_ID
+```python
+cycle_tree_index = {
+                    '1.7.5.4':'3056'
+                   }
+```
+
+###### Версию RC
+```python
+releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.4']
+```
+   
+###### При необходимости, отредактировать другие настройки, такие как ядра, наименования теста и т.д.
+

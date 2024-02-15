@@ -1,41 +1,33 @@
-# Нагрузочное тестирование.
-## Syslog-NG_benchmark
-Система нагрузочного тестирования Syslog-NG. После проведения тестирования автоматически генерируется архив с отчётом.
+# Syslog-NG_benchmark
+Система нагрузочного тестирования Syslog-NG.   
 
-### Зависимости
-- numpy==1.21.6
-- pandas==1.3.5
-- Pillow==9.2.0
-- scipy==1.7.3
-- matplotlib==3.5.3
-- atlassian-python-api==3.28.1
 
-### Настройка тестовой машины
-Для настройки стендовой машины перед проведение тестирования необходимо склонировать сей проект.  
-Далее необходимо создать виртуальное окружение.  
-cd syslog_ng_benchmark && bash sng_prep.sh
+### Test 1
+### Syslog-NG
+Создается нагрузка посредством генерации различных событий демонами ...      
+Выполняется в режиме **орел**.   
 
-### Запуск
-Запуск теста производить от суперпользователя (root):  
-cd syslog_ng_benchmark  
-venv/bin/python sng_run.py -sc 4800 -t 1440 
-- -sc - В случае необходимости изменения количества "грязных" логеров
-- -t  - В случае необходимости изменения времени выполнения в минутах
-- -rp - В случае необходимости изменения директории для отчета
-- -iw - В случае необходимости изменения ширины изображений
-- -ih - в случае необходимости изменения высоты изображений
 
-### Проведение тестирования
-Во время проведения тестирования в терминал ничего не выводится.
+#### Зависимости
 
-### Обработка результатов
-После прохождения теста в папке /home/u/git/stress_test/syslog_ng_benchmark/report создается .tar с результатами тестирования в виде графиков. Общий отчет собран в файле main_report.html
+-  atlassian-python-api
+-  pandas 
+-  scikit-learn 
+-  requests
+-  numpy
+-  matplotlib
+-  lxml
+-  bs4
 
-### Поддерживаемые версии ОС
-- 1.7.2 
 
-### Git
-branch: syslog-ng
+#### Проведение тестирования
+Тестирование проводится в автоматическом режиме с помощью оркестратора Bendiks.
 
-url: https://git.astralinux.ru/projects/QA/repos/stress_test/browse/syslog_ng_benchmark?at=refs%2Fheads%2Fsyslog-ng
-> ssh://git@git.astralinux.ru:7999/qa/stress_test.git
+- [Bendiks](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
+
+#### Обработка результатов
+Результаты обрабатываются и выкладываются в пространстве нагрузочного тестирования confluence 
+с помощью орекстратора Bendiks в автоматическом режиме.
+
+- [Пространство](https://life.astralinux.ru/pages/viewpage.action?pageId=140673304&src=contextnavpagetreemode)
+- [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)

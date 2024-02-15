@@ -120,6 +120,11 @@ with open(vbox_path, 'r') as vbox:
     vagrant_boxes = json.load(vbox)
 
 set_box = args.SET_BOX + '.s'
+check_len_version = set_box.split('.')
+if len(check_len_version) == 7 and check_len_version[3] == 'UU':
+    set_box = '.'.join(check_len_version[:5]) + '.s'
+elif len(check_len_version) == 5 and check_len_version[3] != 'UU':
+    set_box = '.'.join(check_len_version[:3]) + '.s'
 box = [i for i in vagrant_boxes['vagrant_box'] if set_box in i]
 box_url = box[0][set_box][1]
 box_name = box[0][set_box][0]

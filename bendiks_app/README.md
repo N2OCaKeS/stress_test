@@ -23,14 +23,14 @@
 -  Проект находится в ветке /git/stress_test/bendiks_app
    
 ###### В файле **"templates/main.html"** в блок "dropdown >Обновить СТП<" добавить строку:
-```html
+{code:html/xml}
     <li><a class="dropdown-item" href="javascript:update('1.7.5.4')">1.7.5.4</a></li>
-```
+{code}
 
 ###### В файл "backup_image_command.py" добавить в словари команду запуска восстановления снимка:
-```python
-'stand2':{
-        '1.7.5.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.202" \
-        -l ru_RU.UTF-8 startdisk restore stand-2-qa-team-13-1754 nvme0n1'
-         }
-```
+{code:python}
+    'stand2':{
+            '1.7.5.4':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.202" \
+            -l ru_RU.UTF-8 startdisk restore stand-2-qa-team-13-1754 nvme0n1'
+            }
+{code}

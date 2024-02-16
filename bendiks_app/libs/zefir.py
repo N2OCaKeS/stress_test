@@ -18,7 +18,8 @@ from backup_image_conf import(test_run_stands,
                               testcase_orel_low_stand3,
                               testcase_orel_middle_stand4,
                               testcase_smolensk_low_stand3,
-                              testcase_smolensk_middle_stand4)
+                              testcase_smolensk_middle_stand4,
+                              testname_columns)
 
 
 
@@ -323,20 +324,7 @@ class ZefirResultTable:
         columns = ['Версия', 'Ядро', 'Режим', '№ стенда']
         for col in columns:
             self.new_tab[col] = self.new_tab[col].astype(str).str.replace(r'\[|\]|\'', '', regex=True)
-        testname_columns = {'file system benchmark. EXT4':'FS_EXT4', 'file system benchmark. XFS':'FS_XFS', 
-                            'file system benchmark. OCFS2':'FS_OCFS2', 'file system benchmark. NTFS':'FS_NTFS',
-                            'auditd benchmark. psaud':'Auditd_psaud', 'linux_system_benchmark. UnixBench':'UnixBench',
-                            'file system benchmark. EXT3':'FS_EXT3', 'file system benchmark. EXT2':'FS_EXT2',
-                            'file system benchmark. Fat32':'FS_Fat32', 'syslog-ng benchmark':'Syslog-NG', 'postgresql benchmark':'PostgreSQL',
-                            'file system benchmark. EXT4 parsec':'FS_EXT4_parsec', 'auditd benchmark. fileaud':'Auditd_fileaud',
-                            'auditd benchmark. useraud':'Auditd_useraud', 'file system benchmark. OCFS2 parsec':'FS_OCFS2_parsec',
-                            'postgresql benchmark smol':'PostgreSQL_smol', 'postgresql benchmark audit-off':'PSQL_audit-off',
-                            'storage drive overflow':'SD_overflow', 'ram overflow':'RAM_overflow', 'file system benchmark. XFS parsec':'FS_XFS_parsec',
-                            'postgresql benchmark parsec':'PSQL_parsec', 'postgresql benchmark vanilla':'PSQL_vanilla',
-                            'tantor benchmark vanilla':'Tantor_vanilla', 'postgresql benchmark kernels':'PSQL_kernels',
-                            'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
-                            'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
-                            'Parsec impact fs benchmark':'Parsec_impact-fs'}
+        
         for k, v in testname_columns.items():
             self.new_tab.rename(columns={k:v}, inplace=True)
         for name in self.new_tab.columns:

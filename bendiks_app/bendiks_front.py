@@ -6,7 +6,8 @@ from flask import (Flask,
                    send_from_directory, 
                    redirect, 
                    url_for, 
-                   jsonify)
+                   jsonify,
+                   send_file)
 import socket
 from libs.zefir import ZefirResultTable
 import psycopg2
@@ -31,6 +32,7 @@ from libs.libbend import (index_page,
                           psyc,
                           stands_ip,
                           user_app)
+from backup_image_conf import testname_columns
 
 
 app = Flask(__name__)
@@ -227,6 +229,25 @@ def update_block(part):
         return update_settings_block()
     else:
         return get_kernels_from_rc(part)
+
+
+@app.route('/rest/api/get-testname-columns', methods=['GET'])
+def get_testname_columns():
+    return jsonify(testname_columns)
+
+
+@app.route('/rest/api/get-times', methods=['GET'])
+def get_file():
+    return send_file('./templates/times.html', as_attachment=True)
+
+
+@app.route('/rest/api/get-stand', methods=['GET'])
+def get_file():
+    return send_file('./templates/stand.html', as_attachment=True)
+
+
+
+
 
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)

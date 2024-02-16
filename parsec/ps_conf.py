@@ -10,7 +10,7 @@ INFO_FILENAME = 'ps_info.txt'
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 #количество создаваемых потоков 
-CONC = 100
+CONC = 35
 #количество циклов для каждого потока
 COUNTER = 100000
 

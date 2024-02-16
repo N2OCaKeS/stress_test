@@ -343,7 +343,7 @@ testname_columns = {
                     'tantor benchmark vanilla':'Tantor_vanilla', 'postgresql benchmark kernels':'PSQL_kernels',
                     'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
                     'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
-                    'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_impact-fs-aud-off'
+                    'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off'
                     }
 
 

@@ -172,6 +172,12 @@ parser.add_argument('-parsec-impact',
                     help='testlist',
                     dest='PARSEC_IMPACT')
 
+parser.add_argument('-parsec-impact-ao',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='PARSEC_IMPACT_AO')
+
 args = parser.parse_args()
 
 with open('/home/u/tokens.json', 'r') as r:
@@ -256,7 +262,7 @@ elif args.TEST == 'unix parsec':
 elif args.FREEIPA_AUTH:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
-elif args.PARSEC_IMPACT:
+elif args.PARSEC_IMPACT or args.PARSEC_IMPACT_AO:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 else: 
@@ -579,7 +585,7 @@ def grub_default(kernel, host):
     kernel_conf = client_command("sudo cat /boot/grub/grub.cfg | grep menuentry_id | \
                                     awk '{{print $17}}' | grep {} | tr -d \"'\"".format(kernel)).rstrip('\n')
     client_command(f'''sudo sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT={kernel_conf}/' /etc/default/grub''')
-    if args.AUDIT_OFF:
+    if args.AUDIT_OFF or args.PARSEC_IMPACT_AO:
         client_command('''sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT=.*\)"/\\1 audit=0"/' /etc/default/grub''')
     client_command('sudo update-grub')
     logging.debug(client_command('cat /etc/default/grub | grep GRUB_DEFAULT'))

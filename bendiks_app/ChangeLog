@@ -1,3 +1,10 @@
+bendiks_app - v2.11.0
+Add REST API to:
+* TestCase zefir names in STP
+* Times templates
+* Stands templates
+
+
 bendiks_app - v2.10.0
 * Add dinamic generator list STP
 

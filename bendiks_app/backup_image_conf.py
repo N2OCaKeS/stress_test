@@ -121,7 +121,8 @@ branches = {
     'linux_system_benchmark. UnixBench parsec':'linux_system',
     'ram overflow':'overflow',
     'storage drive overflow':'overflow',
-    'Parsec impact fs benchmark':'parsec'
+    'Parsec impact fs benchmark':'parsec',
+    'Parsec impact fs benchmark audit-off':'parsec'
 }
 
 
@@ -156,6 +157,7 @@ cycle_tree_index = {
 #Конвертируемый перечень тестов
 #################################################################################################################################################
 tests = {
+    'Parsec impact fs benchmark audit-off':'parsec impact-fs aud-off',
     'Parsec impact fs benchmark':'parsec impact-fs',
     'freeipa authentication test':'FreeIPA auth',
     'file system benchmark. EXT4':'EXT4',
@@ -207,7 +209,7 @@ psyc = {
 group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
-              'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs']
+              'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off']
 
 
 
@@ -278,13 +280,14 @@ releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4',
 STP_VERSION = sorted(list(set(rc_list + releases_list)))
 
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
-testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs']
+testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
+                                'parsec impact-fs aud-off']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'tantor vanilla', 'psql kernels', 'tantor kernels',
                                'psql balance', 'FreeIPA auth']
 testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
-                   'parsec impact-fs']
+                   'parsec impact-fs', 'parsec impact-fs aud-off']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth']
 
 #testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
@@ -317,7 +320,8 @@ tests_case_zefir_key = {
     'syslog-ng':'BT-T8119',
     'psql balance':'BT-T13362',
     'FreeIPA auth':'BT-T13481',
-    'parsec impact-fs':'BT-T13486'
+    'parsec impact-fs':'BT-T13486',
+    'parsec impact-fs aud-off':'BT-T13489'
 }
 
 
@@ -339,7 +343,7 @@ testname_columns = {
                     'tantor benchmark vanilla':'Tantor_vanilla', 'postgresql benchmark kernels':'PSQL_kernels',
                     'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
                     'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
-                    'Parsec impact fs benchmark':'Parsec_impact-fs'
+                    'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_impact-fs-aud-off'
                     }
 
 

@@ -131,7 +131,9 @@ class Public:
         with open(f'{DETAILDF_NAME}', 'r') as file:
             impact_table_detail = file.read()
         head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-        html_page = '\n'.join([header_table, head_row, impact_table_time, impact_table_total, impact_table_detail])
+        head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты утилизации CPU утилитой "time":</b></h3></p>'
+        head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции модуля Parsec:</b></h3></p>'
+        html_page = '\n'.join([header_table, head_row, impact_table_total, head_row2, impact_table_time, head_row3, impact_table_detail])
         
 
         #выкладываем информацию на страницу

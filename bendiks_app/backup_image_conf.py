@@ -273,8 +273,9 @@ repo_path = {
     'pkg_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/main/binary-amd64/Packages'
 }
 
-rc_list = ['1.7.5.UU.1.1', '1.8.0.5', '1.8.0.6', '1.7.5.UU.1.7',]
+rc_list = ['1.7.5.UU.1.1', '1.8.0.5', '1.8.0.6', '1.8.0.9', '1.7.5.UU.1.7',]
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.UU.1', '1.8.0']
+STP_VERSION = sorted(list(set(rc_list + releases_list)))
 
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs']

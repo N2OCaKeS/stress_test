@@ -18,6 +18,7 @@ from paramiko import ssh_exception
 import socket
 import psycopg2
 from backup_image_conf import (VENV_PATH,
+                               STP_VERSION,
                                psyc,
                                stands_ip,
                                main_tests,
@@ -239,7 +240,8 @@ def info_collector(page, ajax=None):
                                 **progress_logs,                                                        
                                 main_url=main_url,
                                 mobile_url=mobile_url,
-                                brest_url=brest_url)
+                                brest_url=brest_url,
+                                stp_versions=STP_VERSION)
 
 
 

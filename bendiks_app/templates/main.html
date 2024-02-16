@@ -39,19 +39,9 @@
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Обновить СТП</a>
     <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="javascript:update('1.7.1')">1.7.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.2')">1.7.2</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.3')">1.7.3</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.3.UU.1')">1.7.3.UU.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.3.UU.2')">1.7.3.UU.2</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.4')">1.7.4</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.4.UU.1')">1.7.4.UU.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.5')">1.7.5</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.5.UU.1')">1.7.5.UU.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.5.UU.1.1')">1.7.5.UU.1.1</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.7.5.UU.1.7')">1.7.5.UU.1.7</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.8.0.5')">1.8.0.5</a></li>
-      <li><a class="dropdown-item" href="javascript:update('1.8.0.6')">1.8.0.6</a></li>
+      {% for version in stp_versions %}
+      <li><a class="dropdown-item" href="javascript:update('{{version}}')">{{version}}</a></li>
+      {% endfor %}
     </ul>
   </li>
   <li class="nav-item dropdown">

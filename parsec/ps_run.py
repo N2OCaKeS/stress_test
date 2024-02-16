@@ -87,7 +87,7 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 conf_new_page_name=args.NPAGE)
 
 
-uzs.upload_test_cycle_status('progress')
+uzs.upload_test_cycle_status(zefir_status='progress')
 test.parsec_impact_by_fs_load()
 uzs.public = True
 #uzs.statistics = True

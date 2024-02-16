@@ -429,7 +429,7 @@ class ZefirResultTable:
         testname_columns_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-testname-columns'
         response_columns = requests.get(testname_columns_url)
         if response_columns.status_code == 200:
-            testname_columns = response.json()
+            testname_columns = response_columns.json()
         else:
             testname_columns = {}
             print(f'Failed to get data from {testname_columns_url}:', response_columns.status_code)  

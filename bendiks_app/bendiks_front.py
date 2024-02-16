@@ -237,12 +237,12 @@ def get_testname_columns():
 
 
 @app.route('/rest/api/get-times', methods=['GET'])
-def get_file():
+def get_times():
     return send_file('./templates/times.html', as_attachment=True)
 
 
 @app.route('/rest/api/get-stand', methods=['GET'])
-def get_file():
+def get_stand():
     return send_file('./templates/stand.html', as_attachment=True)
 
 

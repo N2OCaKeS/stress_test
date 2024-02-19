@@ -18,7 +18,7 @@ class ParsecImpactTest:
         self.shared_object_name = 'kernel.kallsyms'
         self.flamegraph_name = FLAMEGRAPH_NAME
         self.load_rare_results_name = 'load_rare_results.txt'
-        self.load_command = f'cd libs && {{ time sudo perf record -a -g ./load_test {self.load_dir} \
+        self.load_command = f'cd libs && {{ time sudo perf record -a -g -F 99 ./load_test {self.load_dir} \
             {CONC} {COUNTER} ; }} 2> {self.load_rare_results_name}'
         self.find_args = ['real', 'user', 'sys']
         self.found_functions = f"cat libs/{self.perf_report_name} | grep {self.shared_object_name} | awk '{{print $6}}'"

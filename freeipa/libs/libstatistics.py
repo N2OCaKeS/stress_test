@@ -360,19 +360,19 @@ class FreeipaStatistics:
             for key, data_ratings in data_for_df.items():
                 if len(data_ratings.get("rating")) == 0:
                     continue
-                colors = []
-                for temp in data_ratings.get('rating'):
-                    #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
-                    if temp < np.mean(data_ratings.get('rating')) - 1.5 * np.std(data_ratings.get('rating')):
-                        colors.append("#ea5c76")
-                    elif temp > np.mean(data_ratings.get('rating')) + 1.5 * np.std(data_ratings.get('rating')):
-                        colors.append("#ffc322")
-                    else:
-                        colors.append("#c7d84c")
+                colors = ['#ea5c76']
+                # for temp in data_ratings.get('rating'):
+                #     #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
+                #     if temp < np.mean(data_ratings.get('rating')) - 1.5 * np.std(data_ratings.get('rating')):
+                #         colors.append("#ea5c76")
+                #     elif temp > np.mean(data_ratings.get('rating')) + 1.5 * np.std(data_ratings.get('rating')):
+                #         colors.append("#ffc322")
+                #     else:
+                #         colors.append("#c7d84c")
                 shcala_text = temp_data_for_graph[key]
                 shcala = [x for x in range(1, len(data_ratings.get('rating')) + 1, 1)]
                 fig, ax = plt.subplots(figsize=(16, 9))
-                ax.bar(shcala, data_ratings.get('rating'), color=colors)
+                ax.plot(shcala, data_ratings.get('rating'), '-o', color='red', )
                 ax.set_xticks(shcala)
                 ax.set_ylim([0, max(data_ratings.get('rating')) + max(data_ratings.get('rating')) * 0.15])
                 plt.gca().set_xticklabels(shcala_text, rotation=20, horizontalalignment= 'right')
@@ -380,16 +380,16 @@ class FreeipaStatistics:
                 ax.set_ylabel("Значение рейтинга")
                 grade = self.get_grade(key)
                 ax.set_title(f"FreeIPA. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}")
-                for i, val in enumerate(data_ratings.get("rating")):
-                    try:
-                        val = int(val)
-                    except ValueError:
-                        pass
-                    plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
-                red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину x1.5 превышающую стандартное отклонение')
-                green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
-                yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
-                ax.legend(handles=[red_patch, green_patch, yellow_patch])
+                # for i, val in enumerate(data_ratings.get("rating")):
+                #     try:
+                #         val = int(val)
+                #     except ValueError:
+                #         pass
+                #     plt.text(i + 1, val * 0.5, val, horizontalalignment='center', verticalalignment='bottom', fontdict={'fontweight':500})
+                # red_patch = mpatches.Patch(color='#ea5c76', label='Рейтинг ниже мат. ожидания на величину x1.5 превышающую стандартное отклонение')
+                # green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
+                # yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
+                # ax.legend(handles=[red_patch, green_patch, yellow_patch])
                 fig.savefig(f"{stat_dir}/{test_name}_statistics_{key}.png")
 
         data_df_orel = collect_data(test_name="FreeIPA auth")

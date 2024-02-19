@@ -41,7 +41,7 @@ tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', '
               'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
               'UnixBench':       ['unix', 'unix parsec'],
               'FreeIPA':         ['FreeIPA auth'],
-              'Parsec':          ['parsec impact-fs']}
+              'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off']}
 
 release_version = ['1.8.0.6',
                    '1.8.0.5', 

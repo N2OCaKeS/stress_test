@@ -25,6 +25,40 @@ class ParsecImpactTest:
         self.load_rare_results = 'real\t0m0,000s\nuser\t0m0,000s\nsys\t0m0,000s'
         self.parsec_function = check_output_command('nm /usr/lib/modules/`uname -r`/misc/parsec.ko | grep -i " t " | \
                                                      awk \'{print $3}\'').split('\n')
+        
+    def filter_by_parsec_function(self):
+        with open('./libs/out_rare.perf', 'r') as r:
+            text = r.readlines()
+
+        final_list = []
+        temp_list = []
+
+        for line in text:
+            stripped_line = line.strip()
+            if stripped_line:
+                temp_list.append(stripped_line)
+            elif temp_list:
+                final_list.append(temp_list)
+                temp_list = []
+
+        if temp_list:
+            final_list.append(temp_list)
+        print(final_list)
+
+        with open('./libs/out.perf', 'w') as w:
+            w.write('')
+        with open('./libs/out.perf', 'a') as w:
+            for i in final_list:
+                for j in i[0]:
+                    w.writelines(f'{j}')
+                w.writelines('\n')
+                for j in i[1:]:
+                    w.writelines(f'\t\t{j}\n')
+                    #print(j.split(' ')[1])
+                    if j.split(' ')[1] in self.parsec_function:
+                        break
+                w.writelines('\n')
+
 
     def parsec_impact_by_fs_load(self):
         if not isdir(self.load_dir):
@@ -36,7 +70,8 @@ class ParsecImpactTest:
 
         command(self.load_command)
         command(f'cd libs && sudo perf report > {self.perf_report_name}')
-        command('cd libs && sudo perf script -i perf.data > out.perf')
+        command('cd libs && sudo perf script -i perf.data > out_rare.perf')
+        self.filter_by_parsec_function()
         command('cd libs && sudo perl libstackcollapse-perf.pl out.perf > out.folded')
         command(f'sudo perl libs/libflamegraph.pl libs/out.folded > {REPORT_PATH}/{self.flamegraph_name}')
         print(f'\nUsed dir: {self.load_dir}\n')

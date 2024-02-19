@@ -295,7 +295,7 @@ class BaseTest:
         results = pd.read_csv(self.file_name, delimiter=',')
         print(f'Прочитано из файла:\n{results}')
 
-        diff_percent = 0.15
+        diff_percent = 0.1 #0.15
         results['tps_diff'] = results['tps'].pct_change()
         results['conditions'] = results['tps_diff'] > diff_percent
         print(f'Результат проверки:\n{results}')

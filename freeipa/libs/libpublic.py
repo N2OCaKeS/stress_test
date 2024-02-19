@@ -122,6 +122,9 @@ class Public:
             rating_temp = template.read()
             rating = rating_temp.format(r=self.total_rating)
         
+        with open(f"{REPORT_PATH}/ipa_auth_report_table.html") as report_table:
+            r_table = report_table.read()
+        
         #TODO Дописать описание графов
         with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
             images_lst = []
@@ -133,7 +136,7 @@ class Public:
                                                     description=GRAPH_DESCRIPTIONS[file]))
             images = '\n'.join(images_lst)
 
-        html_page = '\n'.join([header_table, rating, images]) 
+        html_page = '\n'.join([header_table, rating, r_table, images]) 
 
         #выкладываем информацию на страницу
         if release_pp and release_np:

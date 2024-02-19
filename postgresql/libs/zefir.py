@@ -427,20 +427,15 @@ class ZefirResultTable:
         columns = ['Версия', 'Ядро', 'Режим', '№ стенда']
         for col in columns:
             self.new_tab[col] = self.new_tab[col].astype(str).str.replace(r'\[|\]|\'', '', regex=True)
-        testname_columns = {'file system benchmark. EXT4':'FS_EXT4', 'file system benchmark. XFS':'FS_XFS', 
-                            'file system benchmark. OCFS2':'FS_OCFS2', 'file system benchmark. NTFS':'FS_NTFS',
-                            'auditd benchmark. psaud':'Auditd_psaud', 'linux_system_benchmark. UnixBench':'UnixBench',
-                            'file system benchmark. EXT3':'FS_EXT3', 'file system benchmark. EXT2':'FS_EXT2',
-                            'file system benchmark. Fat32':'FS_Fat32', 'syslog-ng benchmark':'Syslog-NG', 'postgresql benchmark':'PostgreSQL',
-                            'file system benchmark. EXT4 parsec':'FS_EXT4_parsec', 'auditd benchmark. fileaud':'Auditd_fileaud',
-                            'auditd benchmark. useraud':'Auditd_useraud', 'file system benchmark. OCFS2 parsec':'FS_OCFS2_parsec',
-                            'postgresql benchmark smol':'PostgreSQL_smol', 'postgresql benchmark audit-off':'PSQL_audit-off',
-                            'storage drive overflow':'SD_overflow', 'ram overflow':'RAM_overflow', 'file system benchmark. XFS parsec':'FS_XFS_parsec',
-                            'postgresql benchmark parsec':'PSQL_parsec', 'postgresql benchmark vanilla':'PSQL_vanilla',
-                            'tantor benchmark vanilla':'Tantor_vanilla', 'postgresql benchmark kernels':'PSQL_kernels',
-                            'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
-                            'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
-                            'Parsec impact fs benchmark':'Parsec_impact-fs'}
+        
+        testname_columns_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-testname-columns'
+        response_columns = requests.get(testname_columns_url)
+        if response_columns.status_code == 200:
+            testname_columns = response_columns.json()
+        else:
+            testname_columns = {}
+            print(f'Failed to get data from {testname_columns_url}:', response_columns.status_code)  
+
         for k, v in testname_columns.items():
             self.new_tab.rename(columns={k:v}, inplace=True)
         for name in self.new_tab.columns:
@@ -455,6 +450,27 @@ class ZefirResultTable:
         self.new_tab.to_html('res.html', index=False)
 
         #Создаем новую html страницу
+        html_string = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>{text}</b></h3></p>'
+        times_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-times'
+        stand_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-stand'
+        response_times = requests.get(times_url)
+        response_stand = requests.get(stand_url)
+        
+        if response_times.status_code == 200:
+            with open('./templates/times.html', 'wb') as tfb:
+                tfb.write(response_times.content)
+        else:
+            with open('./templates/times.html', 'w') as f:
+                err_text = f'Failed to get file from {times_url}: {response_times.status_code}'
+                f.write(html_string.format(text=err_text))
+        if response_stand.status_code == 200:
+            with open('./templates/stand.html', 'wb') as sfb:
+                sfb.write(response_stand.content)
+        else:
+            with open('./templates/stand.html', 'w') as f:
+                err_text = f'Failed to get file from {stand_url}: {response_stand.status_code}'
+                f.write(html_string.format(text=err_text))
+
         with open('res.html', 'r') as r:
             html_table = r.readlines()
         with open('./templates/stand.html', 'r') as r:

@@ -32,9 +32,13 @@ sudo wget -P /home/u/modules ftp://10.177.103.10/modules/*
 sudo dpkg -i /home/u/modules/*.deb
 sudo apt install -fy
 
-sudo mkdir /home/u/postgresql_vanilla
-sudo wget -P /home/u/postgresql_vanilla ftp://10.177.103.10/postgresql/*
-
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+    sudo mkdir /home/u/postgresql_vanilla/16
+    sudo wget -P /home/u/postgresql_vanilla/16 ftp://10.177.103.10/postgresql/16/*
+else
+    sudo mkdir /home/u/postgresql_vanilla/11
+    sudo wget -P /home/u/postgresql_vanilla/11 ftp://10.177.103.10/postgresql/11/*
+fi
 
 
 

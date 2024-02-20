@@ -43,7 +43,7 @@ class ParsecImpactTest:
 
         if temp_list:
             final_list.append(temp_list)
-        print(final_list)
+        #print(final_list)
 
         with open('./libs/out.perf', 'w') as w:
             w.write('')
@@ -55,7 +55,7 @@ class ParsecImpactTest:
                 for j in i[1:]:
                     w.writelines(f'\t\t{j}\n')
                     #print(j.split(' ')[1])
-                    if j.split(' ')[1] in self.parsec_function:
+                    if j.split(' ')[1].split('+')[0] in self.parsec_function:
                         break
                 w.writelines('\n')
 

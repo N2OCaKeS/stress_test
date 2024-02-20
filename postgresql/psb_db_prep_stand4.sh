@@ -31,8 +31,13 @@ if [[ $2 == "vanilla" ]]; then
   dpkg -i /home/u/postgresql_vanilla/lib*.deb
   dpkg -i /home/u/postgresql_vanilla/postgresql-client-common*.deb
   dpkg -i /home/u/postgresql_vanilla/postgresql-common*.deb
-  DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/postgresql-client-11*.deb
-  DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/postgresql-11*.deb
+  if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+    DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/postgresql-client-16*.deb
+    DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/postgresql-16*.deb
+  else
+    DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/postgresql-client-11*.deb
+    DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/postgresql-11*.deb
+  fi
 else
   apt-get install -y postgresql-${PG_VERSION}
   apt-get install -y postgresql-se-test-${PG_VERSION}

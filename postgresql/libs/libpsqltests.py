@@ -41,23 +41,19 @@ class Test:
         self.debian = debian
         self.parsec = parsec
         self.tantor = tantor
-        self.pgbench_cmd_deb = "su -c 'pgbench --random-seed=13 -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,                       
-                                                                                                            t=self.transactions,
-                                                                                                            j=self.threads,
-                                                                                                            c=self.clients)
-        self.pgbench_cmd = "su -c 'pgbench -h localhost -p {p} --random-seed=13 -t {t} -j {j} -c {c} {db}' postgres".format(db=self.db,
-                                                                                                                            p=self.port,
-                                                                                                                            t=self.transactions,
-                                                                                                                            j=self.threads,
-                                                                                                                            c=self.clients)
-        self.pgbench_cmd_custom = "su -c 'pgbench -h localhost -p {p} --random-seed=13 -t {t} -j {j} -c {c} -f {f}@2 {db}' postgres".format(db=self.db,
-                                                                                                                                            p=self.port,
-                                                                                                                                            t=self.transactions,
-                                                                                                                                            j=self.threads,
-                                                                                                                                            c=self.clients,
-                                                                                                                                            f=self.mac_sql_script)
-        self.pgbench_cmd_parsec = f"su -c 'pgbench -h localhost --macs -p {self.port} --random-seed=13 -t {self.transactions} \
-                                    -j {self.threads} -c {self.clients} test_parsec' u_1"
+        # self.pgbench_cmd_deb = f"su -c 'pgbench --random-seed=13 -t {self.transactions} -j {self.threads} -c {self.clients} {self.db}' postgres"
+        # self.pgbench_cmd = f"su -c 'pgbench -h localhost -p {self.port} --random-seed=13 -t {self.transactions} -j {self.threads} -c {self.clients} \
+        #                     {self.db}' postgres"
+        # self.pgbench_cmd_custom = f"su -c 'pgbench -h localhost -p {self.port} --random-seed=13 -t {self.transactions} -j {self.threads} -c {self.clients} \
+        #                             -f {self.mac_sql_script}@2 {self.db}' postgres"
+        # self.pgbench_cmd_parsec = f"su -c 'pgbench -h localhost --macs -p {self.port} --random-seed=13 -t {self.transactions} \
+        #                             -j {self.threads} -c {self.clients} test_parsec' u_1"
+        self.pgbench_cmd_deb = f'pgbench --random-seed=13 -U postgres -t {self.transactions} -j {self.threads} -c {self.clients} {self.db}'
+        self.pgbench_cmd = f'pgbench -h localhost -p {self.port} -U postgres --random-seed=13 -t {self.transactions} -j {self.threads} -c {self.clients} {self.db}'
+        self.pgbench_cmd_custom = f'pgbench -h localhost -p {self.port} -U postgres --random-seed=13 -t {self.transactions} -j {self.threads} -c {self.clients} \
+                                    -f {self.mac_sql_script}@2 {self.db}'
+        self.pgbench_cmd_parsec = f'pgbench -h localhost --macs -p {self.port} -U u_1 --random-seed=13 -t {self.transactions} \
+                                    -j {self.threads} -c {self.clients} test_parsec'
         self.pgbench_tantor_cmd = f"/opt/tantor/db/15/bin/pgbench -h localhost -p 5432 -U postgres --random-seed=13 -t {self.transactions} \
                                      -j {self.threads} -c {self.clients} test_parsec"
 

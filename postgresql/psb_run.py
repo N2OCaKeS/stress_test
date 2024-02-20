@@ -15,7 +15,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     TRANSACTIONS, TRANSACTIONS_STEP, LIMITE_TRANSACTIONS, \
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME, \
-    TANTOR_VERSION, VENV_PATH
+    TANTOR_VERSION, VENV_PATH, PG_VERSION_18
 from libs.libpsqltests import Test
 from libs.zefir import UploaderZC
 from libs.libpsb import astra_version, dump, upload_results_to_ftp
@@ -561,7 +561,13 @@ if args.CLEANER:
 lead_time = strftime("%H:%M:%S", gmtime(time() - start_time))
 print('lead time: {t}'.format(t=lead_time))
 
-# собрать системную информацию      
+# собрать системную информацию   
+al_version = astra_version()[0] 
+if str(al_version).startswith('1.8'):
+    psql_version = PG_VERSION_18
+elif str(al_version).startswith('1.7'):
+    psql_version = PG_VERSION
+else: psql_version = PG_VERSION
 if args.TANTOR_VANILLA:
     info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
                 subprocess.run('uname -r',
@@ -576,7 +582,7 @@ else:
                 subprocess.run('uname -r',
                             shell=True,
                             stdout=subprocess.PIPE).stdout.decode("utf-8"),
-                subprocess.run("dpkg -l postgresql-"+str(PG_VERSION)+" | awk '{print $3}' | tail -n1",
+                subprocess.run("dpkg -l postgresql-"+str(psql_version)+" | awk '{print $3}' | tail -n1",
                             shell=True,
                             stdout=subprocess.PIPE).stdout.decode("utf-8"),
                 str(lead_time)]

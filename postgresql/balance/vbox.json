@@ -223,8 +223,8 @@
             ]
         },
         {
-            "1.8.0.5.s": [
-                "smolensk-vanilla-gui/1.8.0.5",
+            "1.8.0.9.s": [
+                "smolensk-vanilla-gui/1.8.0.9",
                 "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json"
             ]
         }

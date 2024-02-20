@@ -4,8 +4,8 @@ import logging
 
 from psb_conf import LOG_FILENAME, DATABASE_NAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
-    TABLESPACE_DEFAULT, REPORT_FILENAME, PG_SETEST_PORT, PG_VERSION
-from libs.libpsb import init_test_tables, upgrade_test_table, pgbench, pgbench_custom
+    TABLESPACE_DEFAULT, REPORT_FILENAME, PG_SETEST_PORT, PG_VERSION, PG_VERSION_18
+from libs.libpsb import init_test_tables, upgrade_test_table, pgbench, pgbench_custom, astra_version
 import pysnooper
 
 
@@ -91,7 +91,14 @@ class Test:
             err = os.linesep.join([s for s in decode_std[1].splitlines() if s])
             print(err)
 
-            if PG_VERSION == 15 or self.tantor == True:
+            al_version = astra_version()[0] 
+            if str(al_version).startswith('1.8'):
+                psql_version = PG_VERSION_18
+            elif str(al_version).startswith('1.7'):
+                psql_version = PG_VERSION
+            else: psql_version = PG_VERSION
+
+            if psql_version == 15 or self.tantor == True:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]
             else:
                 latency_average = re.search(r'(\d+\.\d+)', out).group(1) 
@@ -123,7 +130,7 @@ class Test:
         except Exception as exception:
             with open(REPORT_FILENAME, 'a+') as report_file:
                 report_file.write(' 0 0 0 0 0\n')
-            print('Тестирование завершилось исключением:\n')
+            print('\nТестирование завершилось исключением:')
             print(f'Type: {type(exception).__name__}, Message: {str(exception)}')
             return False
         return result

@@ -115,20 +115,13 @@ def init_test_tables(database,
         pgbench_accounts, pgbench_branches, pgbench_history и pgbench_tellers
     '''
     if debian == True:
-        cmd("su -c 'pgbench -i --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
-                                                                                    ts=tablespace,                                                                                                    
-                                                                                    s=t_scale_factor,
-                                                                                    f=t_filling_factor))
+        cmd(f'pgbench -i -U postgres --tablespace={tablespace} -s {t_scale_factor} -F {t_filling_factor} {database}')
     elif parsec == True:
-        cmd(f"su -c 'pgbench -i -h localhost --macs -p {port} -s {t_scale_factor} -F {t_filling_factor} test_parsec' postgres")
+        cmd(f'pgbench -i -U postgres -h localhost --macs -p {port} -s {t_scale_factor} -F {t_filling_factor} test_parsec')
     elif tantor == True:
-        cmd(f"/opt/tantor/db/15/bin/pgbench -i -h localhost -s {t_scale_factor} -p 5432 -F {t_filling_factor} -U postgres test_parsec")
+        cmd(f'/opt/tantor/db/15/bin/pgbench -i -h localhost -s {t_scale_factor} -p 5432 -F {t_filling_factor} -U postgres test_parsec')
     else:
-        cmd("su -c 'pgbench -i -h localhost -p {p} --tablespace={ts} -s {s} -F {f} {db}' postgres".format(db=database,
-                                                                                                          ts=tablespace,
-                                                                                                          p=port,
-                                                                                                          s=t_scale_factor,
-                                                                                                          f=t_filling_factor))
+        cmd(f'pgbench -i -U postgres -h localhost -p {port} --tablespace={tablespace} -s {t_scale_factor} -F {t_filling_factor} {database}')
 
     
 def upgrade_test_table(sql_script):

@@ -38,6 +38,7 @@ apt-get install -y postgresql-${PG_VERSION}
 
 #Создаем пользователя
 useradd u_1 
+pdpl-user -i 63 u_1
 usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
 usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
 

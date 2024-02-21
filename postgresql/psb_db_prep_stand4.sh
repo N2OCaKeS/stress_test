@@ -34,6 +34,7 @@ if [[ $2 == "vanilla" ]]; then
     dpkg -i /home/u/postgresql_vanilla/16/postgresql-common*.deb
     DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/16/postgresql-client-16*.deb
     DEBIAN_FRONTEND=noninteractive dpkg -i /home/u/postgresql_vanilla/16/postgresql-16*.deb
+    PG_VERSION=16
   else
     dpkg -i /home/u/postgresql_vanilla/11/lib*.deb
     dpkg -i /home/u/postgresql_vanilla/11/postgresql-client-common*.deb
@@ -192,6 +193,7 @@ pg_ctlcluster $PG_VERSION $PG_SETEST_CLUSTER restart
 # pg_ctlcluster $PG_VERSION $PG_FILES_CLUSTER restart
 
 # Настройка необходимых прав пользователю postgres
+pdpl-user -i 63 postgres
 setfacl -m u:postgres:rx /etc/parsec/macdb
 setfacl -m u:postgres:rx /etc/parsec/capdb
 setfacl -d -m u:postgres:r /etc/parsec/macdb

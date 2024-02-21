@@ -96,8 +96,10 @@ class Test:
 
             if psql_version == 15 or self.tantor == True:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]
+            elif psql_version == 11:
+                latency_average = re.search(r'(\d+\.\d+)', out).group(1)
             else:
-                latency_average = re.search(r'(\d+\.\d+)', out).group(1) 
+                latency_average = re.findall(r'(\d+\.\d+)', out)[2]
             
             completed_transactions = re.search(r'(\d+)/', out).group(1)
             expected_transactions = re.search(r'/(\d+)', out).group(1)

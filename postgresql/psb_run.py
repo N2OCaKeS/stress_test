@@ -564,7 +564,9 @@ print('lead time: {t}'.format(t=lead_time))
 # собрать системную информацию   
 al_version = astra_version()[0] 
 if str(al_version).startswith('1.8'):
-    psql_version = PG_VERSION_18
+    if args.PSQL_VANILLA:
+        psql_version = 16
+    else: psql_version = PG_VERSION_18
 elif str(al_version).startswith('1.7'):
     psql_version = PG_VERSION
 else: psql_version = PG_VERSION

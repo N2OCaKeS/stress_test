@@ -9,7 +9,7 @@ sudo apt-get install ansible -y
 sudo apt-get install sshpass -y
 
 #python
-sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
+#sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
 
 #virtualbox
 #wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/virtualbox

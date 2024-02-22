@@ -46,6 +46,9 @@ sudo apt-get install htop -y
 sudo apt-get install -y gcc make perl
 sudo apt-get install linux-[5-6].*-generic -y
 sudo apt-get install linux-[5-6].*-lowlatency -y
+sudo apt-get install -y python3-pip
+python3 -m pip install --upgrade pip
+python3 -m pip install psycopg2-binary
 
 
 #mount second storage

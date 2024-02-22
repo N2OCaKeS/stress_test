@@ -58,7 +58,7 @@
 - name: Install necessary components
   apt:
     name:
-      - python3-psycopg2 # for 'postgresql_*' ansible modules
+      #- python3-psycopg2 # for 'postgresql_*' ansible modules
       - sshpass          # for online_recovery script
   register: result
   until: result is not failed

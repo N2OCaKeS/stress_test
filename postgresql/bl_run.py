@@ -292,7 +292,7 @@ class CheckVMs():
                 return len(os.listdir(path)) == 0
 
             boxes_path = '/root/.vagrant.d/boxes/'
-            vms_path = '/root/VirtualBox\ VMs/'
+            vms_path = '/root/VirtualBox\\ VMs/'
 
             # if os.path.isdir(boxes_path) and not dir_is_empty(boxes_path):
             #     cmd(f'rm -r {boxes_path}*')

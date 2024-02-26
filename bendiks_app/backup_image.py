@@ -218,6 +218,7 @@ ba = f'-ba "{__jira_token}"'
 tcv = f'-tcv {args.RELEASE}'
 balance_vbox = f"-vbox {args.TCYCLE.split('_')[0]}"
 pack_sql = '--package postgresql-11'
+psql_version = '--package postgresql-'
 tantor_pkg = '--package tantor-se-server-15'
 testlist = f'--testlist {args.AUDIT}'
 psql_aud_off = '-psql_aud off'
@@ -804,17 +805,17 @@ def db_kernel_changer(cpu_count, database, position=None):
         if database == 'tantor':
             dates = begin_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = begin_args + f' {pack_sql}'
+            dates = begin_args + f' {psql_version}'
     elif position == 'end':
         if database == 'tantor':
             dates = end_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = end_args + f' {pack_sql}'
+            dates = end_args + f' {psql_version}'
     else:
         if database == 'tantor':
             dates = test_args + f' {tantor_pkg} -db tantor'
         elif database == 'psql':
-            dates = test_args + f' {pack_sql}'
+            dates = test_args + f' {psql_version}'
     
     with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
         w.write(dates)

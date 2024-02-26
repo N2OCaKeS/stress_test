@@ -1,44 +1,38 @@
-# Нагрузочное тестирование.
-## Apache stress-test
-Система нагрузочного тестирования Apache2. После проведения тестирования автоматически генерируется архив с отчётом.
+# Apache_benchmark
 
-### Зависимости
-#### python
-- fabric == 2.6.0
-- paramiko == 2.9.2
-- invoke == 1.7.0
-- atlassian-python-api==3.28.1
-#### linux
-- gnuplot
-- apache2-utils
+Комплекс нагрузочного тестирования, направленный на тестирование различных компонентов Apache2.
 
-### Настройка тестового окружения
-В тесте используется конфигурация из 3 машин: 
-- рабочая станция - откуда будет запускаться проект (можно использовать виртуалку, либо свою рабочую станцию)
-- клиент - машина на которую будет установлен apache-benchmark (используйте виртуалку)
-- тестовый сервер - машина на которой будет установлен apache2
 
-### Необходимые условия
-Для настройки и запуска используется библиотека fabric (paramiko), поэтому машины должны быть доступны по сети.
-Клиент и тестовый сервер должны быть в одной подсети (если запускаются тесты для смолкенска)
-Если используются большие значения MAX_CONCURRENCY, MAX_REQUESTS, возможна нехватка оперативной памяти на клиенте
+### Test 1
+### Apache_RP
+Нагрузочное тестирование веб сервера Apache2 с Reverse Proxy, посредством Apache Benchmark
+Выполняется в режиме **смоленск**.  
 
-### Запуск
-Запуск теста производить от пользователя: 
 
-```
-cd apache2
-bash apa_prep.sh
-venv/bin/python apa_run.py -r full-run-smol
-```
 
-venv/bin/python apa_run.py  
+#### Зависимости
 
-### Обработка результатов
-После прохождения теста в папке $HOME/git/apache2/report создаются директории с результатами тестирования в виде графиков.
+- atlassian-python-api 
+- pretty-html-table 
+- pandas 
+- pysnooper
+- scikit-learn 
+- requests
+- numpy
+- matplotlib
+- lxml
+- bs4
+- prettytable
 
-### Поддерживаемые версии ОС
-- 1.7
+#### Проведение тестирования
+Тестирование проводится в автоматическом режиме с помощью оркестратора Bendiks.
 
-### Git
-branch: apache2
+- [Bendiks](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
+
+#### Обработка результатов
+Результаты обрабатываются и выкладываются в пространстве нагрузочного тестирования confluence 
+с помощью орекстратора Bendiks в автоматическом режиме.
+
+- [Пространство](https://life.astralinux.ru/pages/viewpage.action?pageId=140673304&src=contextnavpagetreemode)
+- [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)
+

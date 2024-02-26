@@ -1,8 +1,9 @@
 import argparse
-from libs.libpsb import BaseTest
+from libs.libpsb import BaseTest, astra_version
 from libs.zefir import UploaderZC
 import pandas as pd
 from os import path
+from psb_conf import PG_VERSION, PG_VERSION_18
 
 
 file_name = 'results.csv'
@@ -119,6 +120,12 @@ def dates_prepare():
 
     return data
 
+al_version = astra_version()[0] 
+if str(al_version).startswith('1.8'):
+    psql_version = PG_VERSION_18
+elif str(al_version).startswith('1.7'):
+    psql_version = PG_VERSION
+else: psql_version = PG_VERSION
 
 uzs = UploaderZC(folder_tree_id=args.FTI,
                 test_cycle_name=args.TCYC,
@@ -131,7 +138,7 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
                 conf_new_page_name=args.NPAGE,
-                package=args.PACKAGE)
+                package=args.PACKAGE + psql_version)
 if args.SF == 'begin':
     uzs.upload_test_cycle_status('progress')
 

@@ -264,7 +264,7 @@ class BaseTest:
         if self.prepare:
             self.__cmd(f'sudo bash default_base_up.sh "{repeat_str}" {self.database} {self.storage_device} {self.stand_number} astra')
         self.__cmd('sudo bash start_test.sh')
-        if self.database == 'tantor':
+        if self.database == 'tantor' or str(astra_version[0]).startswith('1.8'):
             self.__cmd('cat test/pgbench_result.txt | grep tps | awk \'{print$3}\' >> result_testing.txt')
         else:
             self.__cmd('cat test/pgbench_result.txt | grep including | awk \'{print$3}\' >> result_testing.txt')

@@ -92,6 +92,14 @@ class Public:
             confluence_report.create_confluence_page(self.c_space,
                                                      c_pp,
                                                      c_np)
+            #прикрепить файлы к странице confluence
+            for file in os.listdir(REPORT_PATH):
+                confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
+                                                self.c_space,
+                                                release_np)
+                confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
+                                                self.c_space,
+                                                c_np)
         else:
             confluence_report.create_confluence_page(self.c_space,
                                                      name_page(c_np)[0],
@@ -101,15 +109,12 @@ class Public:
                                                      c_pp)
             confluence_report.create_confluence_page(self.c_space,
                                                      c_pp,
-                                                     c_np)
-
-            
-        
-        #прикрепить файлы к странице confluence
-        for file in os.listdir(REPORT_PATH):
-            confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
-                                            self.c_space,
-                                            c_np)
+                                                     c_np)     
+            #прикрепить файлы к странице confluence
+            for file in os.listdir(REPORT_PATH):
+                confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
+                                                self.c_space,
+                                                c_np)
             
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:

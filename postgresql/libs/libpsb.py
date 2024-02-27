@@ -333,7 +333,7 @@ class BaseTest:
                         subprocess.run('uname -r',
                                         shell=True,
                                         stdout=subprocess.PIPE).stdout.decode("utf-8"),
-                        subprocess.run("dpkg -l postgresql-"+str(PG_VERSION)+" | awk '{print $3}' | tail -n1",
+                        subprocess.run("dpkg -l postgresql-"+str(psql_version)+" | awk '{print $3}' | tail -n1",
                                         shell=True,
                                         stdout=subprocess.PIPE).stdout.decode("utf-8"),
                         str('-')]

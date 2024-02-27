@@ -6,7 +6,8 @@ from os.path import exists
 from shutil import copy2
 import ftplib
 import requests
-from psb_conf import SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME, INFO_FILENAME, PG_VERSION, TANTOR_VERSION
+from psb_conf import (SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME,
+                      INFO_FILENAME, PG_VERSION, TANTOR_VERSION, PG_VERSION_18)
 import pysnooper
 import numpy as np
 import pandas as pd
@@ -319,6 +320,13 @@ class BaseTest:
         if path.exists(INFO_FILENAME):
             report = open(INFO_FILENAME, 'w')
             report.close()
+
+        al_version = astra_version()[0] 
+        if str(al_version).startswith('1.8'):
+            psql_version = PG_VERSION_18
+        elif str(al_version).startswith('1.7'):
+            psql_version = PG_VERSION
+        else: psql_version = PG_VERSION
 
         if self.database == 'psql':
             info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),

@@ -44,9 +44,42 @@
           - postgresql-15-pgpool2
       include_tasks: '{{ playbook_dir }}/tasks/install_custom_deb.yml'
       when: server.pg.load_balancing.enabled
-  when: not debian_linux and server.pg.version == 15
+  when: not debian_linux and not repo_pakages and server.pg.version == 15
 
-# TODO: удалить потом установку кастомных пакетов или добавить вариативности в настройки баз данных
+
+- name: Repo packages
+  block:
+    - name: Install postgresql common
+      apt:
+        name:
+          - postgresql-client-common
+          - postgresql-common
+      register: result
+      until: result is not failed
+
+    - name: Install postgresql
+      apt:
+        name:
+          - libpgtypes3
+          - libpq5
+          - libecpg6
+          - libecpg-compat3
+          - postgresql-client-15
+          - postgresql-15
+      register: result
+      until: result is not failed
+
+    - name: Install postgresql-15-pgpool2
+      apt:
+        name:
+          - libpgpool2
+          - postgresql-15-pgpool2
+      register: result
+      until: result is not failed
+      when: server.pg.load_balancing.enabled
+  when: repo_pakages
+
+
 #- name: Install necessary components
 #  apt:
 #    name:

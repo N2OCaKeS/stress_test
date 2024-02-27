@@ -138,7 +138,7 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
                 conf_new_page_name=args.NPAGE,
-                package=args.PACKAGE + psql_version)
+                package=args.PACKAGE + str(psql_version))
 if args.SF == 'begin':
     uzs.upload_test_cycle_status('progress')
 

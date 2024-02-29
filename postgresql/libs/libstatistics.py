@@ -741,7 +741,7 @@ class PSQLStatistics2:
                         df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version[df_sort_by_minor_version['additional_digits'] == max_add_digit_value]
                         df_sort_by_minor_version_and_add_digit = df_sort_by_minor_version_and_add_digit.drop(['numeric_version', 'additional_digits', 'kernel_type', 'minor_version'], axis=1)
                         new_df_temp = new_df_temp._append(df_sort_by_minor_version_and_add_digit)
-                    if "1.7" not in df_for_each_version['Релиз'].iloc[0]:
+                    if "1.7" not in df_for_each_version['Релиз'].iloc[0] and "1.8" not in df_for_each_version['Релиз'].iloc[0]:
                         new_df_temp = new_df_temp._append(df_for_each_version)
                 # ###
                 df = new_df_temp

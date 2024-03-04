@@ -705,7 +705,8 @@ class PSQLStatistics2:
             temp_data_kernel = {
                 '5.10': [],
                 '5.15-gen': [],
-                '5.15-ll': []
+                '5.15-ll': [],
+                '6.1-gen': []
             }
             for key, data in data_for_df.items():
                 if len(data.get("data")) == 0:
@@ -725,7 +726,7 @@ class PSQLStatistics2:
                     df_sort_5_10_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.10\\S*generic', case=False, regex=True)]
                     df_sort_5_15_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\\S*generic', case=False, regex=True)]
                     df_sort_5_15_ll = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\\S*low', case=False, regex=True)]
-                    df_sort_6_1_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('6.1\\S*generic', case=False, regex=True)]
+                    df_sort_6_1_gen = df_for_each_version[df_for_each_version["Ядро"].str.startswith('6.1')]
                     dfs = [df_sort_5_10_gen, df_sort_5_15_gen, df_sort_5_15_ll, df_sort_6_1_gen]
                     for df_with_one_kernel in dfs:
                         try:
@@ -752,12 +753,20 @@ class PSQLStatistics2:
                 df_5_10 = df[df["Ядро"].str.startswith('5.10')]
                 df_5_10['Ядро'] = '5.10'
                 temp_data_kernel['5.10'].append(df_5_10[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
+
                 df_5_15_gen = df[df["Ядро"].str.contains('5.15\\S*generic', case=False, regex=True)]
                 df_5_15_gen['Ядро'] = '5.15-gen'
                 temp_data_kernel["5.15-gen"].append(df_5_15_gen[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
+
                 df_5_15_ll = df[df["Ядро"].str.contains('5.15\\S*low', case=False, regex=True)]
                 df_5_15_ll['Ядро'] = '5.15-ll'
                 temp_data_kernel["5.15-ll"].append(df_5_15_ll[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
+
+                df_6_1_gen = df[df["Ядро"].str.startswith('6.1')]
+                df_6_1_gen['Ядро'] = '6.1-gen'
+                temp_data_kernel["6.1-gen"].append(df_6_1_gen[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
+
+                
 
                 df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])
 
@@ -871,13 +880,17 @@ class PSQLStatistics2:
 
         def create_comparison_kernel_line_graph(temp_data_kernel, test_name):
             dataframes = [p[0] for p in temp_data_kernel.values()]
-            merged_df = reduce(lambda left, right: pd.merge(left, right, on=["Релиз", "Стенд"], how='outer'), dataframes)
+            sfx_tuple = ("x", "y", "z", "w")
+            sfx_iter = iter(sfx_tuple)
+            merged_df = reduce(lambda left, right: pd.merge(left, right, on=["Релиз", "Стенд"], how='outer', suffixes=(f'_{next(sfx_iter)}', '')), dataframes)
+            # print(merged_df)
             ratings_for_plt_graph = merged_df.iloc[::, 3::2]
             fig, ax = plt.subplots(figsize=(12.8, 7.2))
             ax.grid(True, alpha=.6)
             ax.set_title(f"Линейная диаграмма сравнения по ядрам.\n{test_name}")
             colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
             for index in range(ratings_for_plt_graph.shape[1]):
+                # print(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index])
                 ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
             plt.legend(temp_data_kernel.keys())
 

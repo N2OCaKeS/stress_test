@@ -604,8 +604,7 @@ upload_results_to_ftp(args.TCV, f'{REPORT_FILENAME}', f'postgresql_{args.TCYC}_{
 
 # public.run_publish()
 
-if str(args.PACKAGE).endswith('-11'):
-    package_name = 'postgresql-' + str(psql_version)
+package_name = 'postgresql-' + str(psql_version)
 
 public_args = {
         'username':args.USER,

@@ -43,7 +43,8 @@ tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', '
               'FreeIPA':         ['FreeIPA auth'],
               'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off']}
 
-release_version = ['1.8.0.10',
+release_version = ['1.8.0.11',
+                   '1.8.0.10',
                    '1.8.0.9',
                    '1.8.0.6',
                    '1.8.0.5', 
@@ -152,7 +153,8 @@ cycle_tree_index = {
     '1.8.0.5':'5444',
     '1.8.0.6':'5887',
     '1.8.0.9':'6044',
-    '1.8.0.10':'6160'
+    '1.8.0.10':'6160',
+    '1.8.0.11':'6256'
 }
 
 
@@ -228,7 +230,7 @@ brest_tests = ['apache-graph']
 #Доступные релизы (следует указывать при наличии снимка в Clonezilla)
 #################################################################################################################################################
 releases = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.8.0.5', '1.7.5.UU.1.1', '1.8.0.6',
-            '1.7.5.UU.1.7', '1.8.0.9', '1.8.0.10']
+            '1.7.5.UU.1.7', '1.8.0.9', '1.8.0.10', '1.8.0.11']
 
 
 
@@ -279,7 +281,7 @@ repo_path = {
     'pkg_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/main/binary-amd64/Packages'
 }
 
-rc_list = ['1.7.5.UU.1.1', '1.8.0.5', '1.8.0.6', '1.8.0.9', '1.8.0.10', '1.7.5.UU.1.7',]
+rc_list = ['1.7.5.UU.1.1', '1.8.0.5', '1.8.0.6', '1.8.0.9', '1.8.0.10', '1.8.0.11', '1.7.5.UU.1.7',]
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.5.UU.1', '1.8.0']
 STP_VERSION = sorted(list(set(rc_list + releases_list)))
 
@@ -288,11 +290,12 @@ testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd
                                 'parsec impact-fs aud-off']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels',
                                'psql balance', 'FreeIPA auth'] #'tantor vanilla', 'tantor kernels'
-testcase_smolensk_middle_stand4 = ['postgresql-sm'] #, 'psql parsec']
+testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
                    'parsec impact-fs', 'parsec impact-fs aud-off']
-MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth']
+MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth',
+                      'psql parsec']
 
 #testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
 #testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']

@@ -1,5 +1,24 @@
 from fabric import Connection
 
+SCRIPT_DIR = '/home/u/git/stress_test/apache2'
+REPORT_PATH = f'{SCRIPT_DIR}/report'
+TEMPLATE_PATH = f'{SCRIPT_DIR}/templates'
+REPORT_FILENAME = 'report.txt'
+INFO_FILENAME = 'ap_info.txt'
+VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
+
+
+#Количество запусков бенчмарка
+REPETITIONS_COUNTER = 30
+#Запросы
+REQUESTS = 50000
+#Потоки
+CONCURRENCY = 500
+#Лимит группы по количеству элементов, принимаемой к расчетам, в %
+VALID_VALUES_PERCENT = 50
+#Лимит отклонения, в %
+PERCENT_LIMIT = 5
+
 
 # ip address of tested server with apache2
 TESTED_SERVER_IP = "10.0.20.23"

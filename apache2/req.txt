@@ -1,4 +1,14 @@
-fabric == 2.6.0
-paramiko == 2.9.2
-invoke == 1.7.0
-atlassian-python-api == 3.28.1
+fabric
+paramiko
+invoke
+atlassian-python-api 
+pretty-html-table 
+pandas 
+pysnooper
+scikit-learn 
+requests
+numpy
+matplotlib
+lxml
+bs4
+prettytable

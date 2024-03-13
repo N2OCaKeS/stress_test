@@ -12,6 +12,9 @@
 
 #### Зависимости
 
+- fabric
+- paramiko
+- invoke
 - atlassian-python-api 
 - pretty-html-table 
 - pandas 
@@ -23,6 +26,7 @@
 - lxml
 - bs4
 - prettytable
+
 
 #### Проведение тестирования
 Тестирование проводится в автоматическом режиме с помощью оркестратора Bendiks.

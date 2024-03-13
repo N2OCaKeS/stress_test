@@ -1,5 +1,3 @@
-from fabric import Connection
-
 SCRIPT_DIR = '/home/u/git/stress_test/apache2'
 REPORT_PATH = f'{SCRIPT_DIR}/report'
 TEMPLATE_PATH = f'{SCRIPT_DIR}/templates'
@@ -55,49 +53,5 @@ CONCURRENCY_STEP = 25
 MAX_REQUESTS = 2500
 
 
-class ApacheNode:
-    admin = Connection(
-            host=TESTED_SERVER_IP, 
-            user=TESTED_SERVER_ADMIN_USER, 
-            connect_kwargs=TESTED_SERVER_ADMIN_CREDS, 
-            port=TESTED_SERVER_SSH_PORT)
-    
-    qa0_login = Connection(host=TESTED_SERVER_IP,
-                           user=TESTED_QA_USER,
-                           connect_kwargs=TESTED_SERVER_QA_CREDS,
-                           port=TESTED_SERVER_SSH_PORT)
 
-
-    qa1_login = Connection(host=TESTED_SERVER_IP,
-                           user=TESTED_QA_USER_MAC,
-                           connect_kwargs=TESTED_SERVER_QA_CREDS,
-                           port=TESTED_SERVER_SSH_PORT)
-
-    qa2_login = Connection(host=TESTED_SERVER_IP,
-                           user=TESTED_QA_USER_MAC_CAT,
-                           connect_kwargs=TESTED_SERVER_QA_CREDS,
-                           port=TESTED_SERVER_SSH_PORT)
-
-class ClientNode:
-    admin = Connection(
-            host=CLIENT_IP, 
-            user=CLIENT_ADMIN_USER, 
-            connect_kwargs=CLIENT_ADMIN_CREDS, 
-            port=CLIENT_SSH_PORT)
-    
-    qa0_login = Connection(host=CLIENT_IP,
-                           user=TESTED_QA_USER,
-                           connect_kwargs=TESTED_SERVER_QA_CREDS,
-                           port=CLIENT_SSH_PORT)
-
-
-    qa1_login = Connection(host=CLIENT_IP,
-                           user=TESTED_QA_USER_MAC,
-                           connect_kwargs=TESTED_SERVER_QA_CREDS,
-                           port=CLIENT_SSH_PORT)
-
-    qa2_login = Connection(host=CLIENT_IP,
-                           user=TESTED_QA_USER_MAC_CAT,
-                           connect_kwargs=TESTED_SERVER_QA_CREDS,
-                           port=CLIENT_SSH_PORT)
 

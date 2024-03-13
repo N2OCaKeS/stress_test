@@ -129,10 +129,10 @@ if __name__ == "__main__":
     # Ждем пока КД перезагрузится
     while host_is_available("server") == False:
         print("\033[91mКД пока не доступен по ssh!\033[0m")
-        sleep(1)
+        sleep(300)
     
     if host_is_available("clients") == False:
-        sleep(60)
+        sleep(120)
         if host_is_available('clients') == False:
             print("\033[91mКлиент не доступен по ssh!\033[0m")
             exit()

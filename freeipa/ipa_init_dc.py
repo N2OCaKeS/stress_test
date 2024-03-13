@@ -17,7 +17,7 @@ def initialization_freeipa_server():
     """    
     cmd("sudo apt update -y")
     cmd("sudo apt install python3-pip -y")
-    cmd("sudo pip3 install python-freeipa")
+    cmd("sudo pip3 install python-freeipa --break-system-packages")
     """
         Установка пакетов astra-freeipa-server
     """    

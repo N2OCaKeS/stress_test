@@ -3,6 +3,7 @@
 import argparse
 from libs.zefir import UploaderZC
 from apache_tests import ApacheBenchReverseProxy
+from libs.libapa import info_list
 
 
 test = ApacheBenchReverseProxy()
@@ -91,6 +92,7 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
 
 uzs.upload_test_cycle_status(zefir_status='progress')
 test.run()
+info_list()
 uzs.public = True
 #uzs.statistics = True
 uzs.upload_test_cycle_status(zefir_status='pass')

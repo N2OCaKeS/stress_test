@@ -9,13 +9,13 @@ VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 #Количество запусков бенчмарка
 REPETITIONS_COUNTER = 30
 #Запросы
-REQUESTS = 50000
+REQUESTS = 300000
 #Потоки
-CONCURRENCY = 500
+CONCURRENCY = 200
 #Лимит группы по количеству элементов, принимаемой к расчетам, в %
 VALID_VALUES_PERCENT = 50
 #Лимит отклонения, в %
-PERCENT_LIMIT = 10
+PERCENT_LIMIT = 7
 
 
 # ip address of tested server with apache2

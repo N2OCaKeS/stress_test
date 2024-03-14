@@ -120,6 +120,6 @@ class ApacheBenchReverseProxy:
             print('Нет подходящих групп значений для расчета среднего')
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as w:
-            w.write(mean_cleaned)
+            w.write(str(mean_cleaned))
     
 

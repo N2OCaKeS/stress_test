@@ -15,7 +15,7 @@ CONCURRENCY = 500
 #Лимит группы по количеству элементов, принимаемой к расчетам, в %
 VALID_VALUES_PERCENT = 50
 #Лимит отклонения, в %
-PERCENT_LIMIT = 5
+PERCENT_LIMIT = 10
 
 
 # ip address of tested server with apache2

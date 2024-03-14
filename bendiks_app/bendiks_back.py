@@ -311,7 +311,7 @@ try:
                         elif tests[dates_list[i][1]] == 'parsec impact-fs aud-off':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {parsec_impact_ao}', shell=True) 
-                        elif tests[dates_list[i][1]] == 'apache_rp':
+                        elif tests[dates_list[i][1]] == 'apache-rp':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {apache_rp}', shell=True) 
                         elif tests[dates_list[i][1]].startswith('auditd'):
@@ -411,7 +411,7 @@ try:
                     elif tests[dates_list[i][1]] == 'parsec impact-fs aud-off':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {parsec_impact_ao}', shell=True)
-                    elif tests[dates_list[i][1]] == 'apache_rp':
+                    elif tests[dates_list[i][1]] == 'apache-rp':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {apache_rp}', shell=True) 
                     elif tests[dates_list[i][1]].startswith('auditd'):

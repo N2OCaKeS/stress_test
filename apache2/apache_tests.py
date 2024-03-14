@@ -113,8 +113,12 @@ class ApacheBenchReverseProxy:
         print('Отсеянные значения:', novalid_values)
 
         if len(valid_values) >= len(ab_values) * self.valid_values_percent / 100:
-            mean_cleaned = round(np.mean(valid_values))
-            print(f"Среднее значение без учета аномалий: {int(mean_cleaned)}")
+            if not np.isnan(np.mean(valid_values)):
+                mean_cleaned = round(np.mean(valid_values))
+                print(f"Среднее значение без учета аномалий: {int(mean_cleaned)}")
+            else:
+                mean_cleaned = 'NaN'
+                print(f"Не удалось получить значение: {mean_cleaned}")
         else:
             mean_cleaned = 'NaN'
             print('Нет подходящих групп значений для расчета среднего')

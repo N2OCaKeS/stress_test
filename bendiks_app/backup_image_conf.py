@@ -42,7 +42,7 @@ tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', '
               'UnixBench':       ['unix', 'unix parsec'],
               'FreeIPA':         ['FreeIPA auth'],
               'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off'],
-              'Apache':          ['apache_rp']}
+              'Apache':          ['apache-rp']}
 
 release_version = ['1.8.0.11',
                    '1.8.0.10',
@@ -195,7 +195,7 @@ tests = {
     'linux_system_benchmark. UnixBench parsec':'unix parsec',
     'storage drive overflow':'SD-overflow',
     'ram overflow':'RAM-overflow',
-    'Apache_ReverseProxy':'apache_rp'
+    'Apache_ReverseProxy':'apache-rp'
 }
 
 
@@ -219,7 +219,7 @@ group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache_rp']
+              'apache-rp']
 
 
 
@@ -291,13 +291,13 @@ STP_VERSION = sorted(list(set(rc_list + releases_list)))
 
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
-                                'parsec impact-fs aud-off', 'apache_rp']
+                                'parsec impact-fs aud-off', 'apache-rp']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels',
                                'psql balance', 'FreeIPA auth'] #'tantor vanilla', 'tantor kernels'
 testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
-                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache_rp']
+                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth',
                       'psql parsec']
 
@@ -333,7 +333,7 @@ tests_case_zefir_key = {
     'FreeIPA auth':'BT-T13481',
     'parsec impact-fs':'BT-T13486',
     'parsec impact-fs aud-off':'BT-T13489',
-    'apache_rp':'BT-T13621'
+    'apache-rp':'BT-T13621'
 }
 
 

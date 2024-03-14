@@ -113,7 +113,7 @@ class ApacheBenchReverseProxy:
         print('Отсеянные значения:', novalid_values)
 
         if len(valid_values) >= len(ab_values) * self.valid_values_percent / 100:
-            mean_cleaned = np.mean(valid_values)
+            mean_cleaned = round(np.mean(valid_values))
             print(f"Среднее значение без учета аномалий: {int(mean_cleaned)}")
         else:
             mean_cleaned = 'NaN'

@@ -210,19 +210,27 @@ class FreeipaStatistics:
 
                 'stand1': {
                     "data": [],
-                    "rating": []
+                    "rating": [],
+                    "sr_znach": [],
+                    "proc_errors": []
                 }, 
                 'stand2': {
                     "data": [],
-                    "rating": []
+                    "rating": [],
+                    "sr_znach": [],
+                    "proc_errors": []
                 },
                 'stand3': {
                     "data": [],
-                    "rating": []
+                    "rating": [],
+                    "sr_znach": [],
+                    "proc_errors": []
                 },
                 'stand4': {
                     "data": [],
-                    "rating": []
+                    "rating": [],
+                    "sr_znach": [],
+                    "proc_errors": []
                 }
 
             }  
@@ -252,6 +260,27 @@ class FreeipaStatistics:
                             rating = soup.find(string=re.compile("[Tt]otal rating")).strip().split(" ")[2]
                         except:
                             rating = 0
+
+                        data_table = []
+                        try:
+                            table = soup.find_all("table")[1]
+                            # пройдемся по всем строкам таблицы, кроме заголовка
+                            for row in table.find_all('tr')[1:]:
+                                cols = row.find_all('td')  # найдем все столбцы
+                                cols = [col.text.strip() for col in cols]  # очистим от лишних пробелов
+                                data_table.append(cols)  # добавим в итоговый список
+                        except:
+                            pass
+                        ####
+                        try:
+                            sr_znach_max_users = data_table[-1][2]
+                            proc_errors_max_users = data_table[-1][1]
+                        except IndexError:
+                            sr_znach_max_users = None
+                            proc_errors_max_users = None
+
+                        # print(sr_znach_max_users, proc_errors_max_users)
+                        ####
                         """
                             Генерируем ссылку на отчет
                         """
@@ -265,9 +294,15 @@ class FreeipaStatistics:
                         if stand == "stand2":
                             data_for_df["stand2"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
                         if stand == "stand3":
-                            data_for_df["stand3"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
+                            if sr_znach_max_users and proc_errors_max_users:
+                                data_for_df["stand3"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(sr_znach_max_users), float(proc_errors_max_users), float(rating)])
+                            else:
+                                 data_for_df["stand3"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
                         if stand == "stand4":
-                            data_for_df["stand4"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
+                            if sr_znach_max_users and proc_errors_max_users:
+                                data_for_df["stand4"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(sr_znach_max_users), float(proc_errors_max_users), float(rating)])
+                            else:
+                                 data_for_df["stand4"]["data"].append([astra_version, kernel, sec_mode, stand, rating_with_link, float(rating)])
             return data_for_df
         
         def build_dataframes(data_for_df, test_name):
@@ -289,7 +324,9 @@ class FreeipaStatistics:
                 
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()
-                
+                data_for_df[key]['sr_znach'] = df['Задержка аутен. и авториз. при макс. кол-ве пользователей'].tolist()
+                data_for_df[key]['proc_errors'] = df['Число (в %) непройденных аутен. и авториз. в секунду при макс. кол-ве пользователей'].tolist()
+                # print(data, "data2")
                 df_5_10 = df[df["Ядро"].str.startswith('5.10')]
                 # print(df_5_10)
                 df_5_10['Ядро'] = '5.10'
@@ -353,14 +390,19 @@ class FreeipaStatistics:
 
             return temp_data_for_graph, temp_data_kernel, dataframes_for_summary_graph
         
-        def create_graphs(data_for_df, test_name, temp_data_for_graph):
+        def create_graphs(data_for_df, test_name, temp_data_for_graph, ind, y_val, color_p):
             """
                 Cтроим графики
             """
             for key, data_ratings in data_for_df.items():
-                if len(data_ratings.get("rating")) == 0:
+                if len(data_ratings.get(y_val)) == 0:
                     continue
                 colors = ['#ea5c76']
+                titles = {
+                    'rating': "FreeIPA. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования.\n",
+                    'sr_znach': "FreeIPA. Сравнительная диаграмма значений задержки аутентификации и авторизации сервиса при максимальном количестве пользователей, \nвычисленных на основании результатов нагрузочного тестирования.\n",
+                    'proc_errors': "FreeIPA. Сравнительная диаграмма значений ошибок (в %) непройденных аутентиф. и авториз. в секунду при максимальном количетсве пользователей, \nвычисленных на основании результатов нагрузочного тестирования. \n"
+                }
                 # for temp in data_ratings.get('rating'):
                 #     #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
                 #     if temp < np.mean(data_ratings.get('rating')) - 1.5 * np.std(data_ratings.get('rating')):
@@ -370,16 +412,16 @@ class FreeipaStatistics:
                 #     else:
                 #         colors.append("#c7d84c")
                 shcala_text = temp_data_for_graph[key]
-                shcala = [x for x in range(1, len(data_ratings.get('rating')) + 1, 1)]
+                shcala = [x for x in range(1, len(data_ratings.get(y_val)) + 1, 1)]
                 fig, ax = plt.subplots(figsize=(16, 9))
-                ax.plot(shcala, data_ratings.get('rating'), '-o', color='red', )
+                ax.plot(shcala, data_ratings.get(y_val), '-o', color=color_p)
                 ax.set_xticks(shcala)
-                ax.set_ylim([0, max(data_ratings.get('rating')) + max(data_ratings.get('rating')) * 0.15])
+                ax.set_ylim([0, max(data_ratings.get(y_val)) + max(data_ratings.get(y_val)) * 0.15])
                 plt.gca().set_xticklabels(shcala_text, rotation=20, horizontalalignment= 'right')
                 # ax.set_xlabel("Порядковый номер теста")
                 ax.set_ylabel("Значение рейтинга")
                 grade = self.get_grade(key)
-                ax.set_title(f"FreeIPA. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования. \n {grade}_{key}")
+                ax.set_title(titles.get(y_val))
                 # for i, val in enumerate(data_ratings.get("rating")):
                 #     try:
                 #         val = int(val)
@@ -390,12 +432,23 @@ class FreeipaStatistics:
                 # green_patch = mpatches.Patch(color='#c7d84c', label='Рейтинг соответвует доверительному интервалу')
                 # yellow_patch = mpatches.Patch(color='#ffc322', label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
                 # ax.legend(handles=[red_patch, green_patch, yellow_patch])
-                fig.savefig(f"{stat_dir}/{test_name}_statistics_{key}.png")
+                
+
+                fig.savefig(f"{stat_dir}/{test_name}_{ind}_{y_val}_statistics_{key}.png")
 
         data_df_orel = collect_data(test_name="FreeIPA auth")
-        # print(data_df_orel)
         tmp_data_for_gr, tmp_data_krnl, df_psql = build_dataframes(data_for_df=data_df_orel, test_name="FreeIPA")
-        create_graphs(data_for_df=data_df_orel, test_name="FreeIPA", temp_data_for_graph=tmp_data_for_gr)
+
+        dct_of_criteria = {
+            3: ['rating', 'red'],
+            2: ['sr_znach', 'blue'],
+            1: ['proc_errors', 'black']
+        }
+        # create_graphs(data_for_df=data_df_orel, test_name="FreeIPA", temp_data_for_graph=tmp_data_for_gr, y_val='rating', color_p="red")
+        # create_graphs(data_for_df=data_df_orel, test_name="FreeIPA", temp_data_for_graph=tmp_data_for_gr, y_val='sr_znach', color_p="blue")
+        # create_graphs(data_for_df=data_df_orel, test_name="FreeIPA", temp_data_for_graph=tmp_data_for_gr, y_val='proc_errors', color_p="black")
+        for ind, lst_of_criteria in dct_of_criteria.items():
+            create_graphs(data_for_df=data_df_orel, test_name="FreeIPA", temp_data_for_graph=tmp_data_for_gr, ind=ind, y_val=lst_of_criteria[0], color_p=lst_of_criteria[1])
     
     """
         Создаем итоговую html страницу для life
@@ -437,6 +490,7 @@ class FreeipaStatistics:
 
         for file in sorted(os.listdir(f"{stat_dir}"))[::-1]:
             if file.endswith("png"):
+                # print(file)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
                                                     img_png=file)
@@ -454,9 +508,13 @@ class FreeipaStatistics:
                 table_with_mat_stat_list.append(mat_stat_table)
             
         html_list = []
+        
+        for item_img in image_list:
+            html_list.append(item_img)
+
         for ind, item in enumerate(table_with_data_list):
             # grade = self.get_grade(header_orel[ind])
-            html_list.append(image_list[ind])
+            # html_list.append(image_list[ind])
             html_list.append(item)
             html_list.append("<h1>Таблица основных статистических параметров.</h1>" + "<br/>" + table_with_mat_stat_list[ind])
         
@@ -469,7 +527,7 @@ class FreeipaStatistics:
         pages_18, rc_pages_18 = self.get_list_required_pages(id_root_page="244154033")
         pages = pages_17 + pages_18
         rc_pages = {**rc_pages_17, **rc_pages_18}
-        columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "Рейтинг", 'rating_2']
+        columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "Рейтинг", "Задержка аутен. и авториз. при макс. кол-ве пользователей", "Число (в %) непройденных аутен. и авториз. в секунду при макс. кол-ве пользователей",'rating_2']
         self.get_info_from_pages(pages=pages, columns_df=columns)
         for key, value in rc_pages.items():
             if value:

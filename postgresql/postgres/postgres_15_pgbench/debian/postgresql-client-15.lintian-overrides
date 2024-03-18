@@ -1,3 +1,0 @@
-# We ship binaries and libs in subdirs of /usr/lib/postgresql
-executable-in-usr-lib
-repeated-path-segment lib *

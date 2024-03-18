@@ -1,8 +1,0 @@
-- name: Reboot load balancers for databases
-  hosts: databases
-  gather_facts: no
-  become: yes
-  tasks:
-    - name: Reboot
-      reboot:
-        post_reboot_delay: 5

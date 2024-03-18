@@ -1,8 +1,0 @@
-- name: Reboot load balancer for web servers
-  hosts: load_balancers_web
-  gather_facts: no
-  become: yes
-  tasks:
-    - name: Reboot
-      reboot:
-        post_reboot_delay: 5

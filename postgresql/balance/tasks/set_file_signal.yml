@@ -1,7 +1,0 @@
-- name: Set '{{ signal }}' signal
-  delegate_to: localhost
-  become: no
-  lineinfile:
-    path: signals/{{ signal }}.txt
-    create: yes
-    line: "is ready"

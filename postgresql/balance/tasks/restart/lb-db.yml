@@ -1,9 +1,0 @@
-- name: Restart database load balancer services
-  hosts: load_balancers_db
-  gather_facts: no
-  become: yes
-  tasks:
-    - name: Restart
-      service:
-        name: pgpool2
-        state: restarted

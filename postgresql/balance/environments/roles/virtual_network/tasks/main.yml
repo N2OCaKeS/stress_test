@@ -1,7 +1,0 @@
-- name: Create qemu virtual network
-  include_tasks: qemu.yml
-  when: contrprimer.env == 'qemu'
-
-- name: Create virtualbox virtual network
-  include_tasks: virtualbox.yml
-  when: contrprimer.env == 'virtualbox'

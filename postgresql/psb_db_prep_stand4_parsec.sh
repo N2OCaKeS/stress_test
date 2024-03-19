@@ -126,13 +126,16 @@ rm -rf /etc/postgresql/$PG_VERSION/$PG_MAIN_CLUSTER
 
 for port in $(pg_lsclusters -h | gawk '{print $3}');
 do
+  echo "Выполняется настройка базы данных (add_user, parsec)"
   cp -r $MAIN_DIR/sql/$sql_script_add_user /tmp/$sql_script_add_user
   cp -r $MAIN_DIR/sql/$sql_script_set_mac /tmp/$sql_script_set_mac
   cd /tmp
   chmod 644 /tmp/$sql_script_add_user
   chmod 644 /tmp/$sql_script_set_mac
-  su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
+  sudo -u postgres psql -p $port -f /tmp/$sql_script_add_user
+  sudo -u postgres psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac
+  #su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
+  #su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
   cd -
   #cd - &> /dev/null
 done

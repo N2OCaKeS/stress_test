@@ -1,7 +1,7 @@
 #!/bin/bash
 
-apt-get install libvirt libvirt-kvm libvirt-qemu 
-apt-get install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virtinst 
+#apt-get install libvirt libvirt-kvm libvirt-qemu 
+apt-get install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virtinst -y
 
 
 if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then

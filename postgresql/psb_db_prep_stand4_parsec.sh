@@ -39,6 +39,7 @@ apt-get install -y postgresql-${PG_VERSION}
 #Создаем пользователя
 useradd u_1 
 pdpl-user -i 63 u_1
+pdpl-user -i 63 postgres
 usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
 usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
 
@@ -145,8 +146,8 @@ done
 
 #astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && reboot
 
-cp /home/u/git/stress_test/postgresql/pgbench/pgbench /usr/bin/pgbench
-cp /home/u/git/stress_test/postgresql/pgbench/pgbench /bin/pgbench
+#cp /home/u/git/stress_test/postgresql/pgbench/pgbench /usr/bin/pgbench
+#cp /home/u/git/stress_test/postgresql/pgbench/pgbench /bin/pgbench
 
 #pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
 #pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec

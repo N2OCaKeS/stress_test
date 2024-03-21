@@ -46,3 +46,25 @@ systemctl restart postgresql.service
 pgbench -i -h localhost -p 6000 -U postgres -s 100 $DB_NAME
 #pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test
 
+
+# TODO: Возможно стоит дополнить тесты проверкой 
+# Способ проверки записей в auditd относительно количества транзакций
+# date && pgbench -h localhost -p 6000 -U postgres -t 10 -j 200 -c 200 test && date
+# Чт 21 мар 2024 20:11:08 MSK
+# pgbench (15.4 (Debian 15.4-astra.se8))
+# starting vacuum...end.
+# transaction type: <builtin: TPC-B (sort of)>
+# scaling factor: 100
+# query mode: simple
+# number of clients: 200
+# number of threads: 200
+# maximum number of tries: 1
+# number of transactions per client: 10
+# number of transactions actually processed: 2000/2000
+# number of failed transactions: 0 (0.000%)
+# latency average = 47.683 ms
+# initial connection time = 156.416 ms
+# tps = 4194.358169 (without initial connection time)
+# Чт 21 мар 2024 20:11:09 MSK
+# ausearch -i -ts "20:11:08" -te "20:11:09" -m user_avc | less | wc -l
+# 10042

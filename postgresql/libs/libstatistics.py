@@ -9,6 +9,7 @@ import matplotlib.patches as mpatches
 from bs4 import BeautifulSoup
 from atlassian import Confluence
 from functools import reduce
+from distutils.version import LooseVersion
 
 
 class ConfluencePage:
@@ -746,7 +747,12 @@ class PSQLStatistics2:
                         new_df_temp = new_df_temp._append(df_for_each_version)
                 # ###
                 df = new_df_temp
-                df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+
+                df['Sort'] = df['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+                df.sort_values(by='Sort', inplace=True)
+                df.drop(columns='Sort', inplace=True)
+                df.reset_index(drop=True, inplace=True)
+
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()
                 
@@ -884,7 +890,13 @@ class PSQLStatistics2:
             sfx_iter = iter(sfx_tuple)
             merged_df = reduce(lambda left, right: pd.merge(left, right, on=["Релиз", "Стенд"], how='outer', suffixes=(f'_{next(sfx_iter)}', '')), dataframes)
             # print(merged_df)
+            merged_df['Sort'] = merged_df['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+            merged_df.sort_values(by='Sort', inplace=True)
+            merged_df.drop(columns='Sort', inplace=True)
+            merged_df.reset_index(drop=True, inplace=True)
+
             ratings_for_plt_graph = merged_df.iloc[::, 3::2]
+            
             fig, ax = plt.subplots(figsize=(12.8, 7.2))
             ax.grid(True, alpha=.6)
             ax.set_title(f"Линейная диаграмма сравнения по ядрам.\n{test_name}")
@@ -950,6 +962,12 @@ class PSQLStatistics2:
             for stand, df in dfs2.items():
                 if stand in dfs1.keys():
                     df_temp = pd.merge(dfs1[stand], dfs2[stand], how='outer', left_on=["Релиз", "Ядро", "Стенд"], right_on=["Релиз", "Ядро", "Стенд"])
+
+                    df_temp['Sort'] = df_temp['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+                    df_temp.sort_values(by='Sort', inplace=True)
+                    df_temp.drop(columns='Sort', inplace=True)
+                    df_temp.reset_index(drop=True, inplace=True)
+
                     merged_dataframes.append(df_temp)
             return merged_dataframes
         

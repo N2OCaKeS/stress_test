@@ -39,6 +39,7 @@ apt-get install -y postgresql-${PG_VERSION}
 #Создаем пользователя
 useradd u_1 
 pdpl-user -i 63 u_1
+pdpl-user -i 63 postgres
 usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
 usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
 
@@ -126,13 +127,16 @@ rm -rf /etc/postgresql/$PG_VERSION/$PG_MAIN_CLUSTER
 
 for port in $(pg_lsclusters -h | gawk '{print $3}');
 do
+  echo "Выполняется настройка базы данных (add_user, parsec)"
   cp -r $MAIN_DIR/sql/$sql_script_add_user /tmp/$sql_script_add_user
   cp -r $MAIN_DIR/sql/$sql_script_set_mac /tmp/$sql_script_set_mac
   cd /tmp
   chmod 644 /tmp/$sql_script_add_user
   chmod 644 /tmp/$sql_script_set_mac
-  su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
-  su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
+  sudo -u postgres psql -p $port -f /tmp/$sql_script_add_user
+  sudo -u postgres psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac
+  #su -c "psql -p $port -f /tmp/$sql_script_add_user" postgres
+  #su -c "psql -p $port -d test_parsec -f /tmp/$sql_script_set_mac" postgres
   cd -
   #cd - &> /dev/null
 done
@@ -142,8 +146,8 @@ done
 
 #astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && reboot
 
-cp /home/u/git/stress_test/postgresql/pgbench/pgbench /usr/bin/pgbench
-cp /home/u/git/stress_test/postgresql/pgbench/pgbench /bin/pgbench
+#cp /home/u/git/stress_test/postgresql/pgbench/pgbench /usr/bin/pgbench
+#cp /home/u/git/stress_test/postgresql/pgbench/pgbench /bin/pgbench
 
 #pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
 #pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec

@@ -52,7 +52,7 @@ class Test:
         self.pgbench_cmd = f'pgbench -h localhost -p {self.port} -U postgres --random-seed=13 -t {self.transactions} -j {self.threads} -c {self.clients} {self.db}'
         self.pgbench_cmd_custom = f'pgbench -h localhost -p {self.port} -U postgres --random-seed=13 -t {self.transactions} -j {self.threads} -c {self.clients} \
                                     -f {self.mac_sql_script}@2 {self.db}'
-        self.pgbench_cmd_parsec = f'pgbench -h localhost --macs -p {self.port} -U postgres --random-seed=13 -t {self.transactions} \
+        self.pgbench_cmd_parsec = f'pgbench -h localhost --macs -p {self.port} -U u_1 --random-seed=13 -t {self.transactions} \
                                     -j {self.threads} -c {self.clients} test_parsec'
         self.pgbench_tantor_cmd = f"/opt/tantor/db/15/bin/pgbench -h localhost -p 5432 -U postgres --random-seed=13 -t {self.transactions} \
                                      -j {self.threads} -c {self.clients} test_parsec"

@@ -40,7 +40,7 @@ apt-get install -y postgresql-${PG_VERSION}
 useradd u_1 
 pdpl-user -i 63 u_1
 pdpl-user -i 63 postgres
-usermac -m 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
+pdpl-user -l 0:255 -c 0:0xFFFFFFFFFFFFFFFF u_1
 usercaps -m PARSEC_CAP_CHMAC:PARSEC_CAP_SETMAC u_1
 
 

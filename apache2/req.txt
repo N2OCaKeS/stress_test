@@ -12,3 +12,4 @@ matplotlib
 lxml
 bs4
 prettytable
+setuptools

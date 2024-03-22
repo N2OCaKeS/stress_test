@@ -6,3 +6,4 @@ numpy
 matplotlib
 lxml
 bs4
+setuptools

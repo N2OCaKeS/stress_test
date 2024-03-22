@@ -8,6 +8,7 @@ import matplotlib.patches as mpatches
 
 from bs4 import BeautifulSoup
 from atlassian import Confluence
+from distutils.version import LooseVersion
 
 
 class ConfluencePage:
@@ -209,7 +210,11 @@ class FileSystemStatistics:
             columns = ['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Рейтинг', 'Рейтинг2']
             df = pd.DataFrame(data=data_fs, columns=columns)
 
-            df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+            # df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+            df['Sort'] = df['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+            df.sort_values(by='Sort', inplace=True)
+            df.drop(columns='Sort', inplace=True)
+            df.reset_index(drop=True, inplace=True)
             
             panda_series = df['Рейтинг2']
             df.insert(0, "№", [x for x in range(1, len(panda_series.tolist()) + 1, 1)])

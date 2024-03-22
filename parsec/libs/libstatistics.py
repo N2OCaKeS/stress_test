@@ -10,7 +10,7 @@ import matplotlib.patches as mpatches
 from bs4 import BeautifulSoup
 from atlassian import Confluence
 from functools import reduce
-
+from distutils.version import LooseVersion
 
 class ConfluencePage:
     __url = 'https://life.astralinux.ru'
@@ -295,7 +295,11 @@ class ParsecStatistics:
                 if len(data.get("data")) == 0:
                     continue
                 df = pd.DataFrame(data=data.get("data"), columns=columns_df, index=np.arange(1, len(data.get("data")) + 1))
-                df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                # df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                df['Sort'] = df['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+                df.sort_values(by='Sort', inplace=True)
+                df.drop(columns='Sort', inplace=True)
+                df.reset_index(drop=True, inplace=True)
                 
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()
@@ -415,7 +419,13 @@ class ParsecStatistics:
                 old_df = pd.DataFrame(data=data.get("data"),
                                       columns=['Релиз', 'Ядро', 'Режим защищенности', 'Стенд', 'Total used by parsec func 1', "Total used by parsec func"], 
                                       index=np.arange(1, len(data.get("data")) + 1))
-                df = old_df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                # df = old_df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                df = old_df
+                df['Sort'] = df['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+                df.sort_values(by='Sort', inplace=True)
+                df.drop(columns='Sort', inplace=True)
+                df.reset_index(drop=True, inplace=True)
+                
                 temp_data_for_graph[key] = (df['Релиз'] + "_" + df['Ядро'])
                 fig, ax = plt.subplots(figsize=(16, 9))
                 ax.grid(True, alpha=.6)
@@ -440,6 +450,11 @@ class ParsecStatistics:
             
             # print(merged_df)
             # print(merged_df.columns)
+            merged_df['Sort'] = merged_df['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+            merged_df.sort_values(by='Sort', inplace=True)
+            merged_df.drop(columns='Sort', inplace=True)
+            merged_df.reset_index(drop=True, inplace=True)
+            
             ratings_for_plt_graph = merged_df.iloc[::, 4::2]
             fig, ax = plt.subplots(figsize=(16, 9))
             ax.grid(True, alpha=.6)

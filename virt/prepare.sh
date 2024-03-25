@@ -1,7 +1,15 @@
 #!/bin/bash
 
-#apt-get install libvirt libvirt-kvm libvirt-qemu 
-apt-get install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virtinst -y
+#ansible
+sudo apt-get install ansible -y
+sudo apt-get install sshpass -y
+
+#lvirt
+apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
+
+#vagrant
+wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
+sudo dpkg -i vagrant_2.2.19_x86_64.deb
 
 
 if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
@@ -11,3 +19,10 @@ else
 fi
 
 sudo adduser $USER libvirt
+
+for group in kvm libvirt libvirt-qemu libvirt-admin; do
+  if test ! "$(groups | grep ${group})"; then
+    sudo usermod -aG ${group} $USER 
+  fi
+done
+

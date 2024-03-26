@@ -8,6 +8,8 @@
 #define TEST_EXEC_SECS          30      // in seconds
 #define LOOPS_APPROX_RATE       1000000
 
+// This test produces a CPU load with simple operations
+
 static inline void cpuid(unsigned int _eax, unsigned int _ecx)
 {
         unsigned int regs[4] = {_eax, 0, _ecx, 0};
@@ -42,9 +44,14 @@ int main(int argc, char* argv[])
 {
         double approx_rate, rate;
         int loops;
+        FILE *file;
+
+        file = fopen("result.txt", "w");
 
         /* First we detect approximate CPUIDs rate. */
         approx_rate = cpuid_rate_loops(LOOPS_APPROX_RATE);
+
+        printf("Approximate CPUIDs rate is %.2f", approx_rate);
 
         /*
          * How many loops there should be in order to run the test for
@@ -56,6 +63,8 @@ int main(int argc, char* argv[])
         rate = cpuid_rate_loops(loops);
 
         printf( "CPUID instructions rate: %f instructions/second\n", rate);
+        fprintf(file, "%.2f", rate);
+        fclose(file);
 
         return 0;
 }

@@ -10,14 +10,6 @@ apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 sudo dpkg -i vagrant_2.2.19_x86_64.deb
-
-
-if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
-    echo "supports hardware virtualization is ok"
-else 
-    echo "system does not supports hardware virtualization" 
-fi
-
 sudo adduser $USER libvirt
 
 for group in kvm libvirt libvirt-qemu libvirt-admin; do
@@ -36,4 +28,11 @@ for plugin in vagrant-vbguest; do
     [ $? != 0 ] && exit 1
   fi
 done
+
+
+if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
+    echo "supports hardware virtualization is ok"
+else 
+    echo "system does not supports hardware virtualization" 
+fi
 

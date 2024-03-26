@@ -1,6 +1,7 @@
 Vagrant.configure("2") do |config|
     config.vm.box = ENV['UPDATE']
     config.vm.box_url = ENV['BOX_URL']
+    config.vm.synced_folder "./", "/vagrant", disabled: true
     
     vms = [
       { :name => "testvm1", :hostname => "testvm1.stress.rbt", :args => "testvm1", :cpus => "4", :memory => "4096", :ip => "10.177.103.151" },
@@ -8,7 +9,7 @@ Vagrant.configure("2") do |config|
       { :name => "testvm3", :hostname => "testvm3.stress.rbt", :args => "testvm3", :cpus => "4", :memory => "4096", :ip => "10.177.103.153" },
     ]
   
-    vms.each do |vm|
+    vms.each do |machine|
       config.vm.define machine[:name] do |node|
         node.vm.hostname = machine[:hostname]
         node.vm.provider :libvirt do |v|
@@ -21,5 +22,5 @@ Vagrant.configure("2") do |config|
     end
   end
 
-  config.vm.synced_folder "./", "/vagrant", disabled: true
+  
 

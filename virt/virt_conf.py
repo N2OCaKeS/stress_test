@@ -1,0 +1,1 @@
+TEST_MASHINES = ['testvm1', 'testvm2', 'testvm3']

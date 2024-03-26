@@ -1,5 +1,8 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
+#include <unistd.h>
 
 /* #define CPUID_EAX            0x80000002 */
 #define CPUID_EAX               0x29a
@@ -7,6 +10,8 @@
 
 #define TEST_EXEC_SECS          30      // in seconds
 #define LOOPS_APPROX_RATE       1000000
+
+#define RESULTS_FILE            "result.txt"
 
 // This test produces a CPU load with simple operations
 
@@ -40,32 +45,68 @@ double cpuid_rate_loops(int loops_num)
         return rate;
 }
 
+void *steal_time_function(void *vargp)
+{
+    char buff[128];
+    FILE *fs;
+    FILE *file;
+
+    file = fopen(RESULTS_FILE, "a");
+
+    if (file == NULL) {
+        printf("Failed to open the file\n");
+        return NULL;
+    }
+
+    while(1) {
+        fs = popen("top -b -n 1 | awk '/%Cpu/{print $10}'", "r");
+
+        if (fgets(buff, 127, fs) != NULL) {
+            fprintf(file, "Steal Time: %s", buff);
+        }
+
+        pclose(fs);
+        sleep(1);
+    }
+
+    fclose(file);
+    return NULL;
+}
+
+
 int main(int argc, char* argv[])
 {
-        double approx_rate, rate;
-        int loops;
-        FILE *file;
+    /* Add a thread to keep track of the steal time*/
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, steal_time_function, NULL);
 
-        file = fopen("result.txt", "w");
+    double approx_rate, rate;
+    int loops;
+    FILE *file;
 
-        /* First we detect approximate CPUIDs rate. */
-        approx_rate = cpuid_rate_loops(LOOPS_APPROX_RATE);
+    file = fopen(RESULTS_FILE, "a");
 
-        printf("Approximate CPUIDs rate is %.2f", approx_rate);
+    /* First we detect approximate CPUIDs rate. */
+    approx_rate = cpuid_rate_loops(LOOPS_APPROX_RATE);
 
-        /*
-         * How many loops there should be in order to run the test for
-         * TEST_EXEC_SECS seconds?
-         */
-        loops = (int)(approx_rate * TEST_EXEC_SECS);
+    printf("Approximate CPUIDs rate is %.2f \n", approx_rate);
 
-        /* Get the precise instructions rate. */
-        rate = cpuid_rate_loops(loops);
+    /*
+     * How many loops there should be in order to run the test for
+     * TEST_EXEC_SECS seconds?
+     */
+    loops = (int)(approx_rate * TEST_EXEC_SECS);
 
-        printf( "CPUID instructions rate: %f instructions/second\n", rate);
-        fprintf(file, "%.2f", rate);
-        fclose(file);
+    /* Get the precise instructions rate. */
+    rate = cpuid_rate_loops(loops);
 
-        return 0;
+    printf("CPUID instructions rate: %f instructions/second\n", rate);
+    fprintf(file, "CPUID instructions rate: %.2f instructions/second", rate);
+    fclose(file);
+
+    sleep(1);
+    pthread_cancel(thread_id);
+
+    return 0;
 }
 

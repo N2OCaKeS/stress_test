@@ -10,6 +10,7 @@ from threading import Thread
 vms = TEST_MASHINES
 box_name = 'smolensk-vanilla-gui/1.8.0.14'
 box_url = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json'
+rc_name = '1.8.0.14'
 check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
 set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
 run_test = 'cd /home/{} && sudo ./cpu_load'
@@ -21,7 +22,7 @@ cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
 cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
 # create_vm
-cmd(f'UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=libvirt')
+cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={rc_name} vagrant up --provider=libvirt')
 
 vm_dates = {
     vm: {
@@ -78,7 +79,7 @@ for vm in vms:
 try: 
     [
         get_remote_file(remote_file_path=f'/home/{user}/result.txt',
-                        local_file_path=f'./result_{user}.txt',
+                        local_file_path=f'./result_{vm}.txt',
                         ip=vm_dates[vm]['ip'], 
                         user=user, 
                         password=password) 

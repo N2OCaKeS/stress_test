@@ -15,11 +15,14 @@ def check_output_command(command, out=None):
     else:
         return errors
 
+
 def silens_cmd(command, err=subprocess.DEVNULL, out=subprocess.DEVNULL):
     subprocess.run(command, shell=True, stderr=err, stdout=out)
 
+
 def cmd(command):
     subprocess.run(command, shell=True)
+
 
 def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     client = paramiko.SSHClient()
@@ -29,6 +32,7 @@ def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     files = ftp.put(local_file_path, remote_file_path)
     ftp.close()
     client.close()
+
 
 def send_remote_command(command, ip, user, password):
     ssh = paramiko.SSHClient()
@@ -40,9 +44,12 @@ def send_remote_command(command, ip, user, password):
     chanel.exec_command(command)
     output = chanel.makefile().read().decode('utf-8')
     err_output = chanel.makefile_stderr().read().decode('utf-8')
-    print(f'debug {output}')
-    print(f'error {err_output}')
+    if output != '':
+        print(f'STDOUT:\n{output}')
+    if err_output != '':
+        print(f'STDERR:\n{err_output}')
     ssh.close()
+
 
 def get_remote_file(remote_file_path, local_file_path, ip, user, password):
     client = paramiko.SSHClient()

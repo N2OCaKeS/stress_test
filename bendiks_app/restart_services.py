@@ -9,9 +9,9 @@ import json
 
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
-__jira_token = tokens['jira_token']
+__git_token = tokens['git_token']
 current_directory = os.getcwd()
-get_aqs_json(current_directory, __jira_token)
+get_aqs_json(current_directory, __git_token)
 
 
 def generate_random_string(length):

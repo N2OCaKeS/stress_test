@@ -4,9 +4,11 @@ import random
 import subprocess
 import os
 from libs.libbend import get_aqs_json
-from backup_image import tokens
+import json
 
 
+with open('/home/u/tokens.json', 'r') as r:
+    tokens = json.load(r)
 __jira_token = tokens['jira_token']
 current_directory = os.getcwd()
 get_aqs_json(current_directory, __jira_token)

@@ -109,7 +109,7 @@ int main(int argc, char* argv[])
     rate = cpuid_rate_loops(loops);
 
     printf("CPUID instructions rate: %f instructions/second\n", rate);
-    fprintf(file, "CPUID instructions rate: %.2f instructions/second", rate);
+    fprintf(file, "CPUID instructions rate: %.2f instructions/second\n", rate);
     fclose(file);
 
     sleep(1);

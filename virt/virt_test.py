@@ -133,7 +133,7 @@ except Exception as e:
 def vms_off():
     try:
         [
-            cmd(power_off.format(vm_name) for vm_name in vms)
+            cmd(power_off.format(vm_name)) for vm_name in vms
         ]
     except Exception as e:
         print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')

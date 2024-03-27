@@ -1,3 +1,10 @@
+bendiks_app - v2.14.0
+*  Add new version logrotate
+*  Add load astra-config.json
+*  Add API to astra-config.json
+*  Add 1.8.0.14
+
+
 bendiks_app - v2.13.5
 *  Add rotate bendiks logging
 

@@ -39,9 +39,9 @@ from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
 import threading
-#import asyncio
-#import asyncssh
-#import asyncpg
+import requests
+
+
 
 ls_group = sorted(LowServer_group)
 ms_group = sorted(MiddleServer_group)
@@ -594,4 +594,14 @@ class BackgroundTasks:
     def run(self):
         while self.working:
             self.target_function()
+
+
+def get_aqs_json(path):
+    url = 'https://git.astralinux.ru/projects/QA/repos/astra-qa-stand/browse/astra-config.json'
+    response = requests.get(url)
+
+    assert response.status_code == 200, f'Request astra-config.json failed with status {response.status_code}'
+
+    with open(f'{path}/astra-config.json', 'wb') as f:
+        f.write(response.content)
 

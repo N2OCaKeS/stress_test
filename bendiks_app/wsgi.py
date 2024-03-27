@@ -50,8 +50,9 @@ def run_app():
     app.run(threaded=True)
 
 
-task1 = threading.Thread(target=run_app, daemon=True)    
-task2 = threading.Thread(target=logrotate, daemon=True)
+task1 = threading.Thread(target=logrotate, daemon=True)
+task2 = threading.Thread(target=run_app, daemon=True)    
+
 
 
 if __name__ == '__main__':

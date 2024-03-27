@@ -246,6 +246,10 @@ def get_stand():
     return send_file('./templates/stand.html', as_attachment=True)
 
 
+@app.route('/rest/api/get-astra-config', methods=['GET'])
+def get_astra_config():
+    return send_file('./astra-config.json', as_attachment=True)
+
 
 
 

@@ -2,6 +2,12 @@
 import string
 import random
 import subprocess
+import os
+from libs.libbend import get_aqs_json
+
+
+current_directory = os.getcwd()
+get_aqs_json(current_directory)
 
 
 def generate_random_string(length):

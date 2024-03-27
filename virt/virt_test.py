@@ -17,7 +17,7 @@ if response_ac.status_code == 200:
 else:
     print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
 
-vms = TEST_MASHINES
+vms = [f'testvm{number}' for number in range(1, TEST_MASHINES + 1)]
 box_name = 'smolensk-vanilla-gui/1.8.0.14'
 box_url = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json'
 rc_name = '1.8.0.14'
@@ -76,12 +76,19 @@ except Exception as e:
 
 def load_host_monitor():
     global stop_host_monitor
+    results = []
+
+    def __check_cpu_load():
+            comm = """top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); printf "%s", 100-$8 "%"}'"""
+            result = check_output_command(comm)
+            #print(result)
+            return result
+    
     while not stop_host_monitor:
-        comm = """top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); printf "%s", 100-$8 "%"}'"""
-        results = check_output_command(comm)
-        print(results)
-        with open(f'{TESTDIR}/host_results.txt', 'w') as w:
-            w.write(results)
+        results.append(__check_cpu_load())
+             
+    with open(f'{TESTDIR}/host_results.txt', 'w') as w:
+        w.write(f'{results}\n')
 
 
 def run_vm_test(vm):
@@ -135,5 +142,5 @@ def vms_off():
         print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
 
-#vms_off()
+vms_off()
         

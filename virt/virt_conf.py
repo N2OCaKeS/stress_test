@@ -1,6 +1,6 @@
 import os
 
-TEST_MASHINES = ['testvm1', 'testvm2', 'testvm3']
+TEST_MASHINES = 5                                       # count
 TESTDIR = f'{os.getcwd()}/test_results'
 
 

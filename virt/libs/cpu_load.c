@@ -59,8 +59,7 @@ void *steal_time_function(void *vargp)
     }
 
     while(1) {
-        // fs = popen("top -b -n 1 | awk '/%Cpu/{print $10}'", "r");
-        fs = popen("iostat -c | awk 'NR==4{print $5}'", "r");
+        fs = popen("iostat -c 1 2 | awk 'NR==4{print $5}'", "r");
 
         if (fgets(buff, 127, fs) != NULL) {
             fprintf(file, "Steal Time: %s", buff);

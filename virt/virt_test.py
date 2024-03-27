@@ -3,9 +3,19 @@ from libs.virtlib import (check_output_command,
                           send_remote_command,
                           create_remote_file,
                           get_remote_file)
-from virt_conf import TEST_MASHINES
+from virt_conf import TEST_MASHINES, TESTDIR
 from threading import Thread
+import requests
+import os
 
+
+astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
+response_ac = requests.get(astra_config_url)
+if response_ac.status_code == 200:
+    with open('astra-config.json', 'wb') as acb:
+        acb.write(response_ac.content)
+else:
+    print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
 
 vms = TEST_MASHINES
 box_name = 'smolensk-vanilla-gui/1.8.0.14'
@@ -14,8 +24,13 @@ rc_name = '1.8.0.14'
 check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
 set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
 run_test = 'cd /home/{} && sudo ./cpu_load'
+power_off = 'virsh shutdown {}'
 user = 'vagrant'
 password = 'vagrant'
+stop_host_monitor = False
+
+if not os.path.isdir(TESTDIR):
+    os.mkdir(TESTDIR)
 
 # add_box
 cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
@@ -59,6 +74,16 @@ except Exception as e:
     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
 
+def load_host_monitor():
+    global stop_host_monitor
+    while not stop_host_monitor:
+        comm = "iostat -c 1 2 | awk 'NR==4{print $5}'"
+        results = check_output_command(comm)
+        print(results)
+        with open(f'{TESTDIR}/host_results.txt', 'w') as w:
+            w.write(results)
+
+
 def run_vm_test(vm):
     try:
         send_remote_command(command=run_test.format(user),
@@ -68,18 +93,24 @@ def run_vm_test(vm):
     except Exception as e:
         print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
+thread_monitor = Thread(target=load_host_monitor)
+thread_monitor.start()
+
 threads = []
 for vm in vms:
     thread = Thread(target=run_vm_test, args=(vm,))
     thread.start()
     threads.append(thread)
 [thread.join() for thread in threads]
+
+if thread_monitor.is_alive():
+    thread_monitor.join()
     
 
 try: 
     [
         get_remote_file(remote_file_path=f'/home/{user}/result.txt',
-                        local_file_path=f'./result_{vm}.txt',
+                        local_file_path=f'{TESTDIR}/result_{vm}.txt',
                         ip=vm_dates[vm]['ip'], 
                         user=user, 
                         password=password) 
@@ -89,4 +120,19 @@ except Exception as e:
     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
 
+# Run before end general test, else every VM will shutdown 300 sec before reboot
+def vms_off():
+    try:
+        [
+            send_remote_command(command=power_off.format(vm),
+                                ip=vm_dates[vm]['ip'], 
+                                user=user, 
+                                password=password) 
+                                for vm in vms
+        ]
+    except Exception as e:
+        print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
+
+#vms_off()
+        

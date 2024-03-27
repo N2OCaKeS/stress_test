@@ -596,10 +596,26 @@ class BackgroundTasks:
             self.target_function()
 
 
-def get_aqs_json(path):
+def get_aqs_json(path, __basic):
     url = 'https://git.astralinux.ru/projects/QA/repos/astra-qa-stand/browse/astra-config.json'
-    response = requests.get(url)
-
+    headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
+            'authority': 'jira.astralinux.ru',
+            'Authorization': __basic,
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://jira.astralinux.ru/secure/Tests.jspa',
+            'X-Requested-With': 'XMLHttpRequest',
+            'jira-project-id': '11200',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'TE': 'trailers'
+            }
+        
+    response = requests.get(url, headers=headers)
     assert response.status_code == 200, f'Request astra-config.json failed with status {response.status_code}'
 
     with open(f'{path}/astra-config.json', 'wb') as f:

@@ -24,7 +24,7 @@ rc_name = '1.8.0.14'
 check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
 set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
 run_test = 'cd /home/{} && sudo ./cpu_load'
-power_off = 'virsh shutdown {}'
+power_off = 'virsh destroy {}'
 user = 'vagrant'
 password = 'vagrant'
 stop_host_monitor = False
@@ -77,7 +77,7 @@ except Exception as e:
 def load_host_monitor():
     global stop_host_monitor
     while not stop_host_monitor:
-        comm = "iostat -c 1 2 | awk 'NR==4{print $5}'"
+        comm = """top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); printf "%s", 100-$8 "%"}'"""
         results = check_output_command(comm)
         print(results)
         with open(f'{TESTDIR}/host_results.txt', 'w') as w:
@@ -102,6 +102,7 @@ for vm in vms:
     thread.start()
     threads.append(thread)
 [thread.join() for thread in threads]
+stop_host_monitor = True
 
 if thread_monitor.is_alive():
     thread_monitor.join()

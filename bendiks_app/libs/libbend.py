@@ -598,7 +598,7 @@ class BackgroundTasks:
 
 
 def get_aqs_json(path, __basic):
-    url = 'https://git.astralinux.ru/projects/QA/repos/astra-qa-stand/browse/astra-config.json'
+    url = 'https://git.astralinux.ru/projects/QA/repos/astra-qa-stand/raw/astra-config.json?at=refs%2Fheads%2Fmaster'
     headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
             'authority': 'jira.astralinux.ru',
@@ -615,15 +615,12 @@ def get_aqs_json(path, __basic):
             'Sec-Fetch-Site': 'same-origin',
             'TE': 'trailers'
             }
-        
+
     response = requests.get(url, headers=headers)
     assert response.status_code == 200, f'Request astra-config.json failed with status {response.status_code}'
 
-    json_str = "".join(part['text'] for part in response.json()['lines'])
-    correct_data = json.loads(json_str)
-
-    with open('astra-config.json', 'w') as f:
-        f.write(json.dumps(correct_data, indent=4)) 
+    with open(f'{path}/astra-config.json', 'wb') as f:
+        f.write(response.content)
 
     
 

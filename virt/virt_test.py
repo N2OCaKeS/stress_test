@@ -7,6 +7,7 @@ from virt_conf import TEST_MASHINES, TESTDIR
 from threading import Thread
 import requests
 import os
+import datetime
 
 
 astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
@@ -28,6 +29,7 @@ power_off = 'virsh destroy {}'
 user = 'vagrant'
 password = 'vagrant'
 stop_host_monitor = False
+load_host_monitor_results = {}
 
 if not os.path.isdir(TESTDIR):
     os.mkdir(TESTDIR)
@@ -76,19 +78,18 @@ except Exception as e:
 
 def load_host_monitor():
     global stop_host_monitor
-    results = []
+    global load_host_monitor_results
 
     def __check_cpu_load():
             comm = """top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); printf "%s", 100-$8 "%"}'"""
             result = check_output_command(comm)
-            #print(result)
             return result
     
     while not stop_host_monitor:
-        results.append(__check_cpu_load())
+        load_host_monitor_results[datetime.datetime.now().strftime('%H:%M:%S')] = __check_cpu_load()
              
     with open(f'{TESTDIR}/host_results.txt', 'w') as w:
-        w.write(f'{results}\n')
+        w.write(f'{load_host_monitor_results}\n')
 
 
 def run_vm_test(vm):
@@ -132,11 +133,7 @@ except Exception as e:
 def vms_off():
     try:
         [
-            send_remote_command(command=power_off.format(vm),
-                                ip=vm_dates[vm]['ip'], 
-                                user=user, 
-                                password=password) 
-                                for vm in vms
+            cmd(power_off.format(vm_name) for vm_name in vms)
         ]
     except Exception as e:
         print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
@@ -144,3 +141,5 @@ def vms_off():
 
 vms_off()
         
+print(load_host_monitor_results)
+

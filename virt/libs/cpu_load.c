@@ -50,6 +50,9 @@ void *steal_time_function(void *vargp)
     char buff[128];
     FILE *fs;
     FILE *file;
+    time_t current_time;
+    char time_buffer[9];  
+    struct tm *tm_info;
 
     file = fopen(RESULTS_FILE, "a");
 
@@ -59,10 +62,15 @@ void *steal_time_function(void *vargp)
     }
 
     while(1) {
+        time(&current_time);
+        tm_info = localtime(&current_time);
+
+        strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
+
         fs = popen("iostat -c 1 2 | awk 'NR==4{print $5}'", "r");
 
         if (fgets(buff, 127, fs) != NULL) {
-            fprintf(file, "Steal Time: %s", buff);
+            fprintf(file, "Steal Time: %s - %s", time_buffer, buff);
         }
 
         pclose(fs);

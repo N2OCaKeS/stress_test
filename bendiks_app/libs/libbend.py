@@ -40,6 +40,7 @@ from libs.zefir import ZefirTestRun
 import ctypes
 import threading
 import requests
+import json
 
 
 
@@ -618,6 +619,14 @@ def get_aqs_json(path, __basic):
     response = requests.get(url, headers=headers)
     assert response.status_code == 200, f'Request astra-config.json failed with status {response.status_code}'
 
-    with open(f'{path}/astra-config.json', 'wb') as f:
-        f.write(response.content)
+    json_str = "".join(part['text'] for part in response.json()['lines'])
+    correct_data = json.loads(json_str)
+
+    with open('astra-config.json', 'w') as f:
+        f.write(json.dumps(correct_data, indent=4)) 
+
+    
+
+    
+    
 

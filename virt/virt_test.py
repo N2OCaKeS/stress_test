@@ -172,7 +172,7 @@ def results_processing():
                     for f in files if re.match(r'result_testvm(\d+)?\.txt', f)]
     print(vms_name_files)
 
-    with open('./host_results.txt', 'r') as r:
+    with open(f'{results_dir}/host_results.txt', 'r') as r:
         host_data = r.read()
 
     result = str(host_data.strip().strip('{,}').replace("'", "").split("% ")).strip("'[]").split(", ")
@@ -184,7 +184,7 @@ def results_processing():
     #print(main_dates)
 
     for i in vms_name_files:
-        with open(f'./result_{i}.txt', 'r') as r:
+        with open(f'{results_dir}/result_{i}.txt', 'r') as r:
             data = r.readlines()
 
         main_dates[i] = {}

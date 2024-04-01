@@ -512,17 +512,17 @@ class ZefirResultTable:
         response_stand = requests.get(stand_url)
         
         if response_times.status_code == 200:
-            with open('./templates/times.html', 'wb') as tfb:
+            with open('./template/times.html', 'wb') as tfb:
                 tfb.write(response_times.content)
         else:
-            with open('./templates/times.html', 'w') as f:
+            with open('./template/times.html', 'w') as f:
                 err_text = f'Failed to get file from {times_url}: {response_times.status_code}'
                 f.write(html_string.format(text=err_text))
         if response_stand.status_code == 200:
-            with open('./templates/stand.html', 'wb') as sfb:
+            with open('./template/stand.html', 'wb') as sfb:
                 sfb.write(response_stand.content)
         else:
-            with open('./templates/stand.html', 'w') as f:
+            with open('./template/stand.html', 'w') as f:
                 err_text = f'Failed to get file from {stand_url}: {response_stand.status_code}'
                 f.write(html_string.format(text=err_text))
 

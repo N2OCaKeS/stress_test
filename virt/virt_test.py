@@ -168,8 +168,8 @@ vms_off()
 def results_processing():
     results_dir = TESTDIR
     files = os.listdir(results_dir)
-    vms_name_files = [f.strip('.txt').strip('result').strip('_') 
-                    for f in files if re.match(r'result_testvm(\d+)?\.txt', f)]
+    vms_name_files = sorted([f.strip('.txt').strip('result').strip('_') 
+                            for f in files if re.match(r'result_testvm(\d+)?\.txt', f)])
     print(vms_name_files)
 
     with open(f'{results_dir}/host_results.txt', 'r') as r:
@@ -215,6 +215,7 @@ def results_processing():
         df_list.append(globals()[f'df_{vm}'])
 
     df = pd.concat(df_list, axis=1, keys=['host'] + vms_name_files)
+    df.sort_index(inplace=True)
 
     print("\nCPU util & VMs steal time")
     print(df)

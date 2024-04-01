@@ -2,15 +2,20 @@ Vagrant.configure("2") do |config|
     config.vm.box = ENV['UPDATE']
     config.vm.box_url = ENV['BOX_URL']
     config.vm.synced_folder "./", "/vagrant", disabled: true
-    
-    vms = [
-      { :name => "testvm1", :hostname => "testvm1.stress.rbt", :args => "testvm1", :cpus => "4", :memory => "4096", :ip => "10.177.103.151" },
-      { :name => "testvm2", :hostname => "testvm2.stress.rbt", :args => "testvm2", :cpus => "4", :memory => "4096", :ip => "10.177.103.152" },
-      { :name => "testvm3", :hostname => "testvm3.stress.rbt", :args => "testvm3", :cpus => "4", :memory => "4096", :ip => "10.177.103.153" },
-      { :name => "testvm4", :hostname => "testvm4.stress.rbt", :args => "testvm4", :cpus => "4", :memory => "4096", :ip => "10.177.103.154" },
-      { :name => "testvm5", :hostname => "testvm5.stress.rbt", :args => "testvm5", :cpus => "4", :memory => "4096", :ip => "10.177.103.155" },
-    ]
-  
+    num_vms = ENV['COUNT'].to_i
+    vms = []
+
+    for i in 1..num_vms do
+      new_vm = { 
+        :name => "testvm#{i}", 
+        :hostname => "testvm#{i}.stress.rbt", 
+        :args => "testvm#{i}", 
+        :cpus => "4", 
+        :memory => "4096"
+      }
+      vms.push(new_vm)
+    end
+      
     vms.each do |machine|
       config.vm.define machine[:name] do |node|
         node.vm.hostname = machine[:hostname]

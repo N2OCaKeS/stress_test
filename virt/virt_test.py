@@ -62,7 +62,7 @@ cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
 cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
 # create_vm
-cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={rc_name} vagrant up --provider=libvirt')
+cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={rc_name} COUNT={TEST_MASHINES} vagrant up --provider=libvirt')
 
 vm_dates = {
     vm: {

@@ -8,8 +8,12 @@ from threading import Thread
 import requests
 import os
 import datetime
+import re
+import pandas as pd
+from json import loads
 
 
+rc_name = '1.8.0.14'
 astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
 response_ac = requests.get(astra_config_url)
 if response_ac.status_code == 200:
@@ -18,10 +22,29 @@ if response_ac.status_code == 200:
 else:
     print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
 
+with open('astra-config.json', 'r') as r:
+    dates = loads(r.read())
+
+def box_wrapper(box):
+    true_key = False
+    box_name = ''
+    box_url = ''
+    for i in dates['astra-version']['vagrant_box']:
+        if box in str(i):
+            for key in i.keys():
+                if str(key).endswith('o'):
+                    true_key = key
+                    box_name = i[true_key][0]
+                    box_url = i[true_key][1]             
+            
+    if true_key == False:
+        print(f"ERROR: {box} not found")
+    
+    return box_name, box_url
+
+
 vms = [f'testvm{number}' for number in range(1, TEST_MASHINES + 1)]
-box_name = 'smolensk-vanilla-gui/1.8.0.14'
-box_url = 'http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json'
-rc_name = '1.8.0.14'
+box_name, box_url = box_wrapper(rc_name)
 check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
 set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
 run_test = 'cd /home/{} && sudo ./cpu_load'
@@ -140,6 +163,63 @@ def vms_off():
 
 
 vms_off()
+
+
+def results_processing():
+    results_dir = TESTDIR
+    files = os.listdir(results_dir)
+    vms_name_files = [f.strip('.txt').strip('result').strip('_') 
+                    for f in files if re.match(r'result_testvm(\d+)?\.txt', f)]
+    print(vms_name_files)
+
+    with open('./host_results.txt', 'r') as r:
+        host_data = r.read()
+
+    result = str(host_data.strip().strip('{,}').replace("'", "").split("% ")).strip("'[]").split(", ")
+    main_dates = {
+        'host': {key.split(': ', 1)[0]: key.split(': ', 1)[1] for key in result if len(key) > 10}
+    }
+
+    #print(result)
+    #print(main_dates)
+
+    for i in vms_name_files:
+        with open(f'./result_{i}.txt', 'r') as r:
+            data = r.readlines()
+
+        main_dates[i] = {}
+        main_dates[i]['instructions'] = data[0].split(' ')[3]
+        main_dates[i]['steal_time'] = {
+            item.split(' ')[2]: item.split(' ')[4].strip() for item in data[1::]
+        }
+
+    print(main_dates)
+
+
+    df_instructions = pd.DataFrame(index=['instructions'])
+    for name in vms_name_files:
+        df_instructions.at['instructions', name] = main_dates[name]['instructions']
+
+    print("\nVMs instructions count")
+    print(df_instructions)
+
+
+    df_list = []
+    df_host = pd.DataFrame(main_dates['host'], index=['value']).T
+    df_host.index.name = 'time'
+    df_list.append(df_host) 
+
+    for vm in vms_name_files:
+        globals()[f'df_{vm}'] = pd.DataFrame(main_dates[vm]['steal_time'], index=['value']).T
+        globals()[f'df_{vm}'].index.name = 'time'
+        df_list.append(globals()[f'df_{vm}'])
+
+    df = pd.concat(df_list, axis=1, keys=['host'] + vms_name_files)
+
+    print("\nCPU util & VMs steal time")
+    print(df)
         
-print(load_host_monitor_results)
+
+
+results_processing()
 

@@ -8,6 +8,7 @@ import matplotlib.patches as mpatches
 
 from bs4 import BeautifulSoup
 from atlassian import Confluence
+from distutils.version import LooseVersion
 
 
 class ConfluencePage:
@@ -285,7 +286,11 @@ class UnixBenchStatistics:
                 if len(data.get("data")) == 0:
                     continue
                 df = pd.DataFrame(data=data.get("data"), columns=columns_df, index=np.arange(1, len(data.get("data")) + 1))
-                df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                # df = df.sort_values(by=['Режим защищенности', 'Релиз'], ascending=[True, True])
+                df['Sort'] = df['Релиз'].apply(lambda s: [LooseVersion(x) for x in s.split('.', 1)])
+                df.sort_values(by='Sort', inplace=True)
+                df.drop(columns='Sort', inplace=True)
+                df.reset_index(drop=True, inplace=True)
                 
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()

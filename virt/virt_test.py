@@ -205,7 +205,7 @@ def results_processing():
     
     print('\nMean instructions')
     instructions = [float(main_dates[i]['instructions']) for i in vms_name_files]
-    mean_instructions = np.mean(instructions)
+    mean_instructions = '%.1f' % np.mean(instructions)
     print(mean_instructions)
     df_mean_instructions = pd.DataFrame({'Mean instructions':mean_instructions}, index=[''])
     

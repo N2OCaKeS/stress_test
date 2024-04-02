@@ -45,7 +45,7 @@ double cpuid_rate_loops(int loops_num)
         return rate;
 }
 
-void *steal_time_function(void *vargp)
+void *steal_time(void *vargp)
 {
     char buff[128];
     FILE *fs;
@@ -74,7 +74,7 @@ void *steal_time_function(void *vargp)
         }
 
         pclose(fs);
-        sleep(1);
+        // sleep(1);
     }
 
     fclose(file);
@@ -86,7 +86,7 @@ int main(int argc, char* argv[])
 {
     /* Add a thread to keep track of the steal time*/
     pthread_t thread_id;
-    pthread_create(&thread_id, NULL, steal_time_function, NULL);
+    pthread_create(&thread_id, NULL, steal_time, NULL);
 
     double approx_rate, rate;
     int loops;

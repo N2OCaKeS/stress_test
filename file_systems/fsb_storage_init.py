@@ -20,7 +20,8 @@ parser.add_argument('--fs',
                              'ext4',
                              'fat',
                              'ntfs',
-                             'xfs'],
+                             'xfs',
+                             'exfat'],
                     required=True,
                     help='filesystem',
                     dest='FS')
@@ -81,6 +82,9 @@ elif args.FS == 'ntfs':
 elif args.FS == 'xfs':
     cmd('parted -s /dev/{device} mklabel gpt mkpart primary xfs 0% 100%'.format(device=STORAGE_NAME))
     cmd("mkfs -t {fs} -f /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
+elif args.FS == 'exfat':
+    cmd('parted -s /dev/{device} mklabel gpt mkpart primary 0% 100%'.format(device=STORAGE_NAME))
+    cmd("mkfs -t exfat /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME))
 else:
     cmd('parted -s /dev/{device} mklabel gpt mkpart primary {fs} 0% 100%'.format(fs=args.FS ,device=STORAGE_NAME))
     cmd("mkfs -t {fs} {ic} -F /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME, ic=INODE_COUNT))

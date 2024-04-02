@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import re
+import numpy as np
 
 def results_processing():
     results_dir = './'
@@ -33,14 +34,20 @@ def results_processing():
 
     #print(main_dates)
         
-
-    steal_time = [data for data in main_dates[i]['steal_time'] #for i in vms_name_files
-
-    ]
-    print(f'ST:{steal_time}')
-    print(main_dates[i]['steal_time'])
-
-
+    print('\nMean steal time')
+    steal_time = [float(data.replace(',', '.')) for data in main_dates[i]['steal_time'].values() 
+                  for i in vms_name_files]
+    mean_steal_time = '%.2f' % np.mean(steal_time)
+    print(mean_steal_time)
+    df_mean_steal_time = pd.DataFrame({'Mean steal time':mean_steal_time}, index=[''])
+    print(df_mean_steal_time)
+    
+    print('\nMean instructions')
+    instructions = [float(main_dates[i]['instructions']) for i in vms_name_files]
+    mean_instructions = np.mean(instructions)
+    print(mean_instructions)
+    df_mean_instructions = pd.DataFrame({'Mean instructions':mean_instructions}, index=[''])
+    print(df_mean_instructions)
 
     df_instructions = pd.DataFrame(index=['instructions'])
     for name in vms_name_files:
@@ -65,7 +72,11 @@ def results_processing():
 
     print("\nCPU util & VMs steal time")
     print(df)
-        
+
+    df_instructions.to_html(f'{results_dir}/vms_instructions.html')
+    df.to_html(f'{results_dir}/vms_steal_time.html')
+    df_mean_instructions.to_html(f'{results_dir}/mean_instructions.html', index=False)
+    df_mean_steal_time.to_html(f'{results_dir}/mean_steal_time.html', index=False)
 
 
 results_processing()

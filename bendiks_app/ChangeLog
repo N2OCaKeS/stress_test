@@ -1,3 +1,10 @@
+bendiks_app - v2.14.1
+*  Add 1.7.6.1
+*  Del 1.8.0.x
+
+
+
+
 bendiks_app - v2.14.0
 *  Add new version logrotate
 *  Add load astra-config.json

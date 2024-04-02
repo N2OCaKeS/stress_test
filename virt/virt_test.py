@@ -169,7 +169,8 @@ def results_processing():
     results_dir = TESTDIR
     files = os.listdir(results_dir)
     vms_name_files = sorted([f.strip('.txt').strip('result').strip('_') 
-                            for f in files if re.match(r'result_testvm(\d+)?\.txt', f)])
+                            for f in files if re.match(r'result_testvm(\d+)?\.txt', f)],
+                            key=lambda x: int(re.findall(r'\d+', x)[0]))
     print(vms_name_files)
 
     with open(f'{results_dir}/host_results.txt', 'r') as r:
@@ -193,7 +194,7 @@ def results_processing():
             item.split(' ')[2]: item.split(' ')[4].strip() for item in data[1::]
         }
 
-    print(main_dates)
+    #print(main_dates)
 
 
     df_instructions = pd.DataFrame(index=['instructions'])

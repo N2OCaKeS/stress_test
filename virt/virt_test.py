@@ -3,7 +3,6 @@ from libs.virtlib import (check_output_command,
                           send_remote_command,
                           create_remote_file,
                           get_remote_file)
-from virt_conf import TEST_MASHINES, TESTDIR
 from threading import Thread
 import requests
 import os
@@ -14,15 +13,17 @@ from json import loads
 import numpy as np
 
 
-#rc_name = '1.8.0.14'
-
 
 class StealTime:
     def __init__(self,
-                 rc_vbox):
+                 rc_vbox,
+                 vm_count,
+                 testdir):
         
+        self.vm_count = vm_count
+        self.testdir = testdir
         self.rc_name = rc_vbox
-        self.vms = [f'testvm{number}' for number in range(1, TEST_MASHINES + 1)]
+        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
         self.run_test = 'cd /home/{} && sudo ./cpu_load'
@@ -64,8 +65,8 @@ class StealTime:
             
             return box_name, box_url
 
-        if not os.path.isdir(TESTDIR):
-            os.mkdir(TESTDIR)
+        if not os.path.isdir(self.testdir):
+            os.mkdir(self.testdir)
 
         # add_box
         box_name, box_url = box_wrapper(self.rc_name)
@@ -73,7 +74,7 @@ class StealTime:
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # create_vm
-        cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} COUNT={TEST_MASHINES} vagrant up --provider=libvirt')
+        cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} COUNT={self.vm_count} vagrant up --provider=libvirt')
         
         self.vm_dates = {
              vm:{
@@ -116,7 +117,7 @@ class StealTime:
             while not self.stop_host_monitor:
                 self.load_host_monitor_results[datetime.datetime.now().strftime('%H:%M:%S')] = __check_cpu_load()
                     
-            with open(f'{TESTDIR}/host_results.txt', 'w') as w:
+            with open(f'{self.testdir}/host_results.txt', 'w') as w:
                 w.write(f'{self.load_host_monitor_results}\n')
 
 
@@ -147,7 +148,7 @@ class StealTime:
         try: 
             [
                 get_remote_file(remote_file_path=f'/home/{self.user}/result.txt',
-                                local_file_path=f'{TESTDIR}/result_{vm}.txt',
+                                local_file_path=f'{self.testdir}/result_{vm}.txt',
                                 ip=self.vm_dates[vm]['ip'], 
                                 user=self.user, 
                                 password=self.password) 
@@ -168,16 +169,17 @@ class StealTime:
 
 
     def results_processing(self):
-        results_dir = TESTDIR
+        results_dir = self.testdir
         files = os.listdir(results_dir)
         vms_name_files = sorted([f.strip('.txt').strip('result').strip('_') 
                                 for f in files if re.match(r'result_testvm(\d+)?\.txt', f)],
                                 key=lambda x: int(re.findall(r'\d+', x)[0]))
         print(f'\nUsed VMs:\n{vms_name_files}')
-        if len(vms_name_files) != TEST_MASHINES:
+        if len(vms_name_files) != self.vm_count:
             print('Wrong VMs count been created. Aborted')
-            print(f'Expected: {TEST_MASHINES}, Received: {len(vms_name_files)}')
+            print(f'Expected: {self.vm_count}, Received: {len(vms_name_files)}')
             return -1
+
 
         with open(f'{results_dir}/host_results.txt', 'r') as r:
             host_data = r.read()
@@ -186,9 +188,6 @@ class StealTime:
         main_dates = {
             'host': {key.split(': ', 1)[0]: key.split(': ', 1)[1] for key in result if len(key) > 10}
         }
-
-        #print(result)
-        #print(main_dates)
 
         for i in vms_name_files:
             with open(f'{results_dir}/result_{i}.txt', 'r') as r:
@@ -200,7 +199,7 @@ class StealTime:
                 item.split(' ')[2]: item.split(' ')[4].strip() for item in data[1::]
             }
 
-        #print(main_dates)
+
         print('\nMean steal time')
         steal_time = [float(data.replace(',', '.')) for data in main_dates[i]['steal_time'].values() 
                     for i in vms_name_files]
@@ -222,7 +221,6 @@ class StealTime:
         print("\nVMs instructions count")
         print(df_instructions)
 
-
         df_list = []
         df_host = pd.DataFrame(main_dates['host'], index=['value']).T
         df_host.index.name = 'time'
@@ -239,6 +237,7 @@ class StealTime:
         print("\nCPU util & VMs steal time")
         print(df)
 
+
         df_instructions.to_html(f'{results_dir}/vms_instructions.html')
         df.to_html(f'{results_dir}/vms_steal_time.html')
         df_mean_instructions.to_html(f'{results_dir}/mean_instructions.html', index=False)
@@ -247,11 +246,3 @@ class StealTime:
         return len(vms_name_files)
 
 
-#results_processing()
-
-#TODO: 
-#Сделать проверку количества созданных ВМ и заданное количество в конф файле
-#Разбить на методы: 
-#    1.Подготовка
-#    2.Запуск теста и обработка результатов
-#    3.Удаление ВМ

@@ -78,5 +78,7 @@ def results_processing():
     df_mean_instructions.to_html(f'{results_dir}/mean_instructions.html', index=False)
     df_mean_steal_time.to_html(f'{results_dir}/mean_steal_time.html', index=False)
 
+    return len(vms_name_files)
 
-results_processing()
+
+print(results_processing())

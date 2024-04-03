@@ -10,3 +10,4 @@ lxml
 bs4
 prettytable
 setuptools
+paramiko

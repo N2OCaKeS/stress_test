@@ -16,10 +16,12 @@ import numpy as np
 
 class StealTime:
     def __init__(self,
-                 rc_vbox,
-                 vm_count,
-                 testdir):
+                 rc_vbox=None,
+                 vm_count=None,
+                 testdir=None,
+                 load_type=None):
         
+        self.load_type = load_type
         self.vm_count = vm_count
         self.testdir = testdir
         self.rc_name = rc_vbox
@@ -159,7 +161,7 @@ class StealTime:
 
 
     # Run before end general test, else every VM will shutdown 300 sec before reboot
-    def vms_off(self):
+    def vms_destroy(self):
         try:
             [
                 cmd(self.power_off.format(vm_name)) for vm_name in self.vms
@@ -238,10 +240,16 @@ class StealTime:
         print(df)
 
 
-        df_instructions.to_html(f'{results_dir}/vms_instructions.html')
-        df.to_html(f'{results_dir}/vms_steal_time.html')
-        df_mean_instructions.to_html(f'{results_dir}/mean_instructions.html', index=False)
-        df_mean_steal_time.to_html(f'{results_dir}/mean_steal_time.html', index=False)
+        df_instructions.to_html(f'{results_dir}/{self.load_type}_vms_instructions.html')
+        df.to_html(f'{results_dir}/{self.load_type}_vms_steal_time.html')
+        df_mean_instructions.to_html(f'{results_dir}/{self.load_type}_mean_instructions.html', index=False)
+        df_mean_steal_time.to_html(f'{results_dir}/{self.load_type}_mean_steal_time.html', index=False)
+
+
+        def cleared():
+            results_file = [f for f in files if not f.endswith('html')]
+            return results_file
+        [cmd(f'rm -r {results_dir}/{file}') for file in cleared()]
 
         return len(vms_name_files)
 

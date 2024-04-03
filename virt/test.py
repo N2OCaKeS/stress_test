@@ -78,7 +78,15 @@ def results_processing():
     df_mean_instructions.to_html(f'{results_dir}/mean_instructions.html', index=False)
     df_mean_steal_time.to_html(f'{results_dir}/mean_steal_time.html', index=False)
 
+
+    def cleared():
+            results_file = [
+                f for f in files if not f.endswith('html')
+            ]
+            return results_file
+    print(cleared())
+
     return len(vms_name_files)
 
 
-print(results_processing())
+results_processing()

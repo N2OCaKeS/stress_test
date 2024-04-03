@@ -31,16 +31,11 @@ class StealTime:
         self.password = 'vagrant'
         self.stop_host_monitor = False
         self.load_host_monitor_results = {}
-        self.vm_dates = {
-             vm:{
-                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
-                'login':f'{self.user}',
-                'password':f'{self.password}'
-                } for vm in self.vms}
-        
+        self.stop_host_monitor = False
+                
 
         
-    def prepare(self):
+    def prepare_and_start(self):
         astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
         response_ac = requests.get(astra_config_url)
         if response_ac.status_code == 200:
@@ -79,7 +74,13 @@ class StealTime:
 
         # create_vm
         cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} COUNT={TEST_MASHINES} vagrant up --provider=libvirt')
-
+        
+        self.vm_dates = {
+             vm:{
+                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+                'login':f'{self.user}',
+                'password':f'{self.password}'
+                } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
 
         try: 
@@ -106,21 +107,17 @@ class StealTime:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
 
-    def run(self):
         def load_host_monitor():
-            global stop_host_monitor
-            global load_host_monitor_results
-
             def __check_cpu_load():
                     comm = """top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); printf "%s", 100-$8 "%"}'"""
                     result = check_output_command(comm)
                     return result
             
-            while not stop_host_monitor:
-                load_host_monitor_results[datetime.datetime.now().strftime('%H:%M:%S')] = __check_cpu_load()
+            while not self.stop_host_monitor:
+                self.load_host_monitor_results[datetime.datetime.now().strftime('%H:%M:%S')] = __check_cpu_load()
                     
             with open(f'{TESTDIR}/host_results.txt', 'w') as w:
-                w.write(f'{load_host_monitor_results}\n')
+                w.write(f'{self.load_host_monitor_results}\n')
 
 
         def run_vm_test(vm):
@@ -141,7 +138,7 @@ class StealTime:
             thread.start()
             threads.append(thread)
         [thread.join() for thread in threads]
-        stop_host_monitor = True
+        self.stop_host_monitor = True
 
         if thread_monitor.is_alive():
             thread_monitor.join()

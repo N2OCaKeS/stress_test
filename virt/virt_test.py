@@ -31,10 +31,16 @@ class StealTime:
         self.password = 'vagrant'
         self.stop_host_monitor = False
         self.load_host_monitor_results = {}
+        self.vm_dates = {
+             vm:{
+                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+                'login':f'{self.user}',
+                'password':f'{self.password}'
+                } for vm in self.vms}
+        
 
         
     def prepare(self):
-        box_name, box_url = box_wrapper(self.rc_name)
         astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
         response_ac = requests.get(astra_config_url)
         if response_ac.status_code == 200:
@@ -67,27 +73,20 @@ class StealTime:
             os.mkdir(TESTDIR)
 
         # add_box
+        box_name, box_url = box_wrapper(self.rc_name)
         cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # create_vm
         cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} COUNT={TEST_MASHINES} vagrant up --provider=libvirt')
 
-        vm_dates = {
-            vm: {
-                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
-                'login':f'{self.user}',
-                'password':f'{self.password}'
-                } 
-            for vm in self.vms
-        }
-        print(f'VM dates is:\n{vm_dates}')
+        print(f'VM dates is:\n{self.vm_dates}')
 
         try: 
             [
                 create_remote_file(local_file_path='./libs/cpu_load', 
                                 remote_file_path=f'/home/{self.user}/cpu_load', 
-                                ip=vm_dates[vm]['ip'], 
+                                ip=self.vm_dates[vm]['ip'], 
                                 user=self.user, 
                                 password=self.password) 
                                 for vm in self.vms
@@ -98,7 +97,7 @@ class StealTime:
         try:
             [
                 send_remote_command(command=self.set_exec_bit.format(self.user),
-                                    ip=vm_dates[vm]['ip'], 
+                                    ip=self.vm_dates[vm]['ip'], 
                                     user=self.user, 
                                     password=self.password) 
                                     for vm in self.vms

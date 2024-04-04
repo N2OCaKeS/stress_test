@@ -37,7 +37,7 @@ modes = {
 #################################################################################################################################################
 tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
                                   'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels'],
-              'Файловые системы':['XFS', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec'],
+              'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT'],
               'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
               'UnixBench':       ['unix', 'unix parsec'],
               'FreeIPA':         ['FreeIPA auth'],
@@ -111,7 +111,8 @@ branches = {
     'file system benchmark. NTFS':'file_systems',
     'file system benchmark. EXT3':'file_systems',
     'file system benchmark. EXT2':'file_systems',
-    'file system benchmark. Fat32':'file_systems',
+    'file system benchmark. FAT':'file_systems',
+    'file system benchmark. EXFAT':'file_systems',
     'file system benchmark. EXT4 parsec':'file_systems',
     'file system benchmark. OCFS2 parsec':'file_systems',
     'file system benchmark. XFS parsec':'file_systems',
@@ -187,7 +188,8 @@ tests = {
     'file system benchmark. NTFS':'NTFS',
     'file system benchmark. EXT3':'EXT3',
     'file system benchmark. EXT2':'EXT2',
-    'file system benchmark. Fat32':'Fat32',
+    'file system benchmark. FAT':'FAT',
+    'file system benchmark. EXFAT':'EXFAT',
     'file system benchmark. EXT4 parsec':'EXT4 parsec',
     'file system benchmark. XFS parsec':'XFS parsec',
     'file system benchmark. OCFS2 parsec':'OCFS2 parsec',
@@ -224,7 +226,7 @@ group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache-rp', 'steal time']
+              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT']
 
 
 
@@ -295,7 +297,7 @@ rc_list = ['1.7.6.1', '1.8.0.14', '1.7.5.UU.1.7',]
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.6', '1.7.5.UU.1', '1.8.0']
 STP_VERSION = sorted(list(set(rc_list + releases_list)))
 
-testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix'] #, 'NTFS']
+testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
                                 'parsec impact-fs aud-off', 'apache-rp']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels',
@@ -303,7 +305,7 @@ testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla
 testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
-                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp']
+                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth',
                       'psql parsec', 'steal time']
 
@@ -340,7 +342,11 @@ tests_case_zefir_key = {
     'parsec impact-fs':'BT-T13486',
     'parsec impact-fs aud-off':'BT-T13489',
     'apache-rp':'BT-T13621',
-    'steal time':'BT-T13735'
+    'steal time':'BT-T13735',
+    'EXT2':'BT-T7560',
+    'EXT3':'BT-T7561',
+    'FAT':'BT-T7563',
+    'EXFAT':'BT-T13736'
 }
 
 
@@ -353,7 +359,7 @@ testname_columns = {
                     'file system benchmark. OCFS2':'FS_OCFS2', 'file system benchmark. NTFS':'FS_NTFS',
                     'auditd benchmark. psaud':'Auditd_psaud', 'linux_system_benchmark. UnixBench':'UnixBench',
                     'file system benchmark. EXT3':'FS_EXT3', 'file system benchmark. EXT2':'FS_EXT2',
-                    'file system benchmark. Fat32':'FS_Fat32', 'syslog-ng benchmark':'Syslog-NG', 'postgresql benchmark':'PostgreSQL',
+                    'file system benchmark. FAT':'FS_FAT', 'syslog-ng benchmark':'Syslog-NG', 'postgresql benchmark':'PostgreSQL',
                     'file system benchmark. EXT4 parsec':'FS_EXT4_parsec', 'auditd benchmark. fileaud':'Auditd_fileaud',
                     'auditd benchmark. useraud':'Auditd_useraud', 'file system benchmark. OCFS2 parsec':'FS_OCFS2_parsec',
                     'postgresql benchmark smol':'PostgreSQL_smol', 'postgresql benchmark audit-off':'PSQL_audit-off',
@@ -363,7 +369,7 @@ testname_columns = {
                     'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
                     'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
                     'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off',
-                    'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time'
+                    'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
                     }
 
 

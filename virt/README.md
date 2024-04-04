@@ -1,4 +1,4 @@
-# Virt_benchmark
+# QEMU/KVM/Libvirt_benchmark
 
 Комплекс нагрузочного тестирования, направленный на тестирование различных компонентов QEMU/KVM/Libvirt.
 

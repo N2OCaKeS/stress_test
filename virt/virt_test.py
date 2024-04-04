@@ -86,8 +86,8 @@ class StealTime:
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # create_vm
-        cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} 
-              COUNT={self.vm_count} vagrant up --provider=libvirt')
+        cmd(f'''UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} 
+                COUNT={self.vm_count} vagrant up --provider=libvirt''')
         
         self.vm_dates = {
              vm:{

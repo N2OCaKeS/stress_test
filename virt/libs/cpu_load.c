@@ -12,6 +12,7 @@
 #define LOOPS_APPROX_RATE       1000000
 
 #define RESULTS_FILE            "result.txt"
+#define KERNEL_FILE             "kernel.txt"
 
 // This test produces a CPU load with simple operations
 
@@ -90,13 +91,15 @@ int main(int argc, char* argv[])
 
     double approx_rate, rate;
     int loops;
-    FILE *file;
+    FILE *file, *kernel;
+    FILE *uname_proc = NULL;
+    char uname_output[256];
 
+    kernel = fopen(KERNEL_FILE, "w");
     file = fopen(RESULTS_FILE, "a");
 
     /* First we detect approximate CPUIDs rate. */
     approx_rate = cpuid_rate_loops(LOOPS_APPROX_RATE);
-
     printf("Approximate CPUIDs rate is %.2f \n", approx_rate);
 
     /*
@@ -108,8 +111,16 @@ int main(int argc, char* argv[])
     /* Get the precise instructions rate. */
     rate = cpuid_rate_loops(loops);
 
+    uname_proc = popen("uname -r", "r");
+    while (fgets(uname_output, sizeof(uname_output), uname_proc) != NULL) {
+    fprintf(kernel, "%s", uname_output);
+    }
+
     printf("CPUID instructions rate: %f instructions/second\n", rate);
     fprintf(file, "CPUID instructions rate: %.2f instructions/second\n", rate);
+
+    pclose(uname_proc);
+    fclose(kernel);
     fclose(file);
 
     sleep(1);

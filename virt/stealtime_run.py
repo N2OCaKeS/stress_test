@@ -98,12 +98,14 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
 low_load_test = StealTime(rc_vbox=args.VBOX,
                           vm_count=LOW,
                           testdir=REPORT_PATH,
-                          load_type='low')
+                          load_type='low',
+                          kernel=str(args.TCYC).split('_')[2])
 
 high_load_test = StealTime(rc_vbox=args.VBOX,
                            vm_count=HIGH,
                            testdir=REPORT_PATH,
-                           load_type='high')
+                           load_type='high',
+                           kernel=str(args.TCYC).split('_')[2])
 
 uzs.upload_test_cycle_status(zefir_status='progress')
 

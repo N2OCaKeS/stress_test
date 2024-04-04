@@ -110,10 +110,10 @@ class Public:
         with open(INFO_FILENAME) as info:
             info_lst = info.read().split('\n')
 
-        with open(VM_INFONAME) as info:
+        with open(f'{REPORT_PATH}/{VM_INFONAME}') as info:
             vm_info = info.read()
 
-        with open(VM_KERNEL) as info:
+        with open(f'{REPORT_PATH}/{VM_KERNEL}') as info:
             vm_kernel = info.read()
         
         with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:

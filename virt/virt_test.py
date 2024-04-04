@@ -19,8 +19,10 @@ class StealTime:
                  rc_vbox=None,
                  vm_count=None,
                  testdir=None,
-                 load_type=None):
+                 load_type=None,
+                 kernel=None):
         
+        self.kernel = kernel
         self.load_type = load_type
         self.vm_count = vm_count
         self.testdir = testdir
@@ -84,7 +86,8 @@ class StealTime:
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # create_vm
-        cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} COUNT={self.vm_count} vagrant up --provider=libvirt')
+        cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} 
+              COUNT={self.vm_count} vagrant up --provider=libvirt')
         
         self.vm_dates = {
              vm:{
@@ -181,7 +184,7 @@ class StealTime:
 
         try: 
             [
-                get_remote_file(remote_file_path=f'/home/kernel.txt',
+                get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
                                 local_file_path=f'{self.testdir}/kernel.txt',
                                 ip=self.vm_dates[vm]['ip'], 
                                 user=self.user, 

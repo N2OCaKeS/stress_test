@@ -63,7 +63,13 @@ class StealTime:
                             box_url = i[true_key][1]             
                     
             if true_key == False:
-                print(f"ERROR: {box} not found")
+                for i in dates['astra-version']['vagrant_box']:
+                    if str(box).startswith('1.7'):
+                        box_name = i['1.7.0'][0]
+                        box_url = i['1.7.0'][1]
+                    elif str(box).startswith('1.8'):
+                        box_name = i['1.8.0.14'][0]
+                        box_url = i['1.8.0.14'][1]
             
             return box_name, box_url
 
@@ -151,6 +157,30 @@ class StealTime:
             [
                 get_remote_file(remote_file_path=f'/home/{self.user}/result.txt',
                                 local_file_path=f'{self.testdir}/result_{vm}.txt',
+                                ip=self.vm_dates[vm]['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+                                for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try: 
+            [
+                get_remote_file(remote_file_path=f'/home/av.txt',
+                                local_file_path=f'{self.testdir}/av.txt',
+                                ip=self.vm_dates[vm]['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+                                for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try: 
+            [
+                get_remote_file(remote_file_path=f'/home/kernel.txt',
+                                local_file_path=f'{self.testdir}/kernel.txt',
                                 ip=self.vm_dates[vm]['ip'], 
                                 user=self.user, 
                                 password=self.password) 

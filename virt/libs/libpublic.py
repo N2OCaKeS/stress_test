@@ -1,6 +1,6 @@
 import os
 from libs.libreport import ReportToConfluence
-from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH 
+from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH, VM_INFONAME, VM_KERNEL 
 
 
 
@@ -109,11 +109,19 @@ class Public:
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:
             info_lst = info.read().split('\n')
+
+        with open(VM_INFONAME) as info:
+            vm_info = info.read()
+
+        with open(VM_KERNEL) as info:
+            vm_kernel = info.read()
         
         with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
             header_table_temp = file.read()
             header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],                                                    
+                                                    kernel=info_lst[1],
+                                                    vm_av=vm_info,
+                                                    vm_kernel=vm_kernel,                                                    
                                                     low=LOW,
                                                     high=HIGH,
                                                     arm_num=self.stands[self.grade_stand]['grade'],

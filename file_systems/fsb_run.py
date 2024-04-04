@@ -170,6 +170,7 @@ uzs.upload_test_cycle_status('progress')
 '''
 run_storage_init = 'sudo {venv_path} {dir}/fsb_storage_init.py --fs {fs}'
 run_test_ext4_st4 = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts} -sn {sn}'
+run_test_fat32 = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts} --fat32'
 run_test_parsec_ext4_st4 = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts} --parsec -sn {sn}'
 run_test = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts}'
 run_test_parsec = 'sudo {venv_path} {dir}/fsb_test.py --test-set {ts} --parsec'
@@ -344,6 +345,10 @@ else: # физ. стенд
                                              dir=SCRIPT_DIR,
                                              ts=args.TS,
                                              sn=args.STAND))
+            elif args.FS == "fat":
+                cmd(run_test_fat32.format(venv_path=VENV_PATH, 
+                                          dir=SCRIPT_DIR, 
+                                          ts=args.TS,))
             else:
                 cmd(run_test.format(venv_path=VENV_PATH,
                                     dir=SCRIPT_DIR,

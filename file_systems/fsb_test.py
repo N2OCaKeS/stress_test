@@ -37,6 +37,12 @@ parser.add_argument('--parsec',
                     help='',
                     dest='PARSEC')
 
+parser.add_argument('--fat32',
+                    action='store_true',
+                    required=False,
+                    help='',
+                    dest='FAT32')
+
 parser.add_argument('-sn', '--stand-num',
                     action='store',
                     choices=['1',
@@ -214,7 +220,7 @@ if args.TS == 'fs_mark_count':
                         step=FILES_STEP)
         
     try:
-        run_test.test_7_fs_mark33_count(parsec=args.PARSEC)
+        run_test.test_7_fs_mark33_count(parsec=args.PARSEC, fat32=args.FAT32)
     except Exception as exeption:
         log.info(exeption)
     finally:

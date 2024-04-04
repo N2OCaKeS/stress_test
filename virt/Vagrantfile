@@ -26,7 +26,8 @@ Vagrant.configure("2") do |config|
           v.disk_bus = "sata"
         end
         
-        node.vm.provision "shell", path:"provision/env_provision.sh", args: [ENV['RC'], ENV['KERNEL']]
+        #node.vm.provision "shell", path:"provision/env_provision.sh", args: [ENV['RC'], ENV['KERNEL']]
+        node.vm.provision "shell", path:"provision/env_provision.sh", args: "#{ENV['RC']} #{ENV['KERNEL']}"
       end
     end
   end

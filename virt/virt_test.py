@@ -65,11 +65,13 @@ class StealTime:
             if true_key == False:
                 for i in dates['astra-version']['vagrant_box']:
                     if str(box).startswith('1.7'):
-                        box_name = i['1.7.0'][0]
-                        box_url = i['1.7.0'][1]
+                          if '1.7.1.o' in str(i):
+                            box_name = i['1.7.1.o'][0]
+                            box_url = i['1.7.1.o'][1]
                     elif str(box).startswith('1.8'):
-                        box_name = i['1.8.0.14'][0]
-                        box_url = i['1.8.0.14'][1]
+                        if '1.8.0.o' in str(i):
+                            box_name = i['1.8.0.o'][0]
+                            box_url = i['1.8.0.o'][1]
             
             return box_name, box_url
 

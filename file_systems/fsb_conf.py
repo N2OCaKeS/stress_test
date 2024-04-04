@@ -38,9 +38,10 @@ VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 PACKAGES = {'ext2': 'e2fsprogs',
             'ext3': 'e2fsprogs',
             'ext4': 'e2fsprogs',
-            'fat': 'fat-modules',
+            'fat': 'dosfstools',
             'ntfs': 'ntfs-3g',
-            'xfs': 'xfsprogs'
+            'xfs': 'xfsprogs',
+            'exfat': 'exfat-utils'
 }
 
 '''

@@ -42,6 +42,8 @@ test "$(grep 1.8.0 /etc/astra_update_box)" && 18repo_test
 sudo apt-get update
 sudo astra-update -A -T -r
 sudo apt-get install -y sysstat
+sudo apt-get install linux-[5-6].*-generic -y
+sudo apt-get install linux-[5-6].*-lowlatency -y
 
 
 kernel="$2"

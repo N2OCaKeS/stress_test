@@ -94,10 +94,8 @@ class StealTime:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
         # create_vm
-        print(f'''UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} 
-                  COUNT={self.vm_count} vagrant up --provider=libvirt''')
-        cmd(f'''UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} 
-                COUNT={self.vm_count} vagrant up --provider=libvirt''')
+        print(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
+        cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
         
         self.vm_dates = {
              vm:{

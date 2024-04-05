@@ -85,6 +85,14 @@ class StealTime:
         cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
+        # add define pool
+        try:
+            cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
+            cmd('virsh pool-autostart default')
+            cmd('virsh pool-start default')
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
         # create_vm
         print(f'''UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} 
                   COUNT={self.vm_count} vagrant up --provider=libvirt''')

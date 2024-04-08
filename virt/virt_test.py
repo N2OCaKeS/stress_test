@@ -11,6 +11,7 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
+from virt_conf import VM_INFONAME, VM_KERNEL
 
 
 
@@ -181,7 +182,7 @@ class StealTime:
         try: 
             [
                 get_remote_file(remote_file_path=f'/home/av.txt',
-                                local_file_path=f'{self.testdir}/av.txt',
+                                local_file_path=f'{self.testdir}/{VM_INFONAME}',
                                 ip=self.vm_dates[vm]['ip'], 
                                 user=self.user, 
                                 password=self.password) 
@@ -193,7 +194,7 @@ class StealTime:
         try: 
             [
                 get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
-                                local_file_path=f'{self.testdir}/kernel.txt',
+                                local_file_path=f'{self.testdir}/{VM_KERNEL}',
                                 ip=self.vm_dates[vm]['ip'], 
                                 user=self.user, 
                                 password=self.password) 
@@ -290,7 +291,7 @@ class StealTime:
 
 
         def cleared():
-            results_file = [f for f in files if not f.endswith('html')]
+            results_file = [f for f in files if not f.endswith('html') and not f.endswith('log')]
             return results_file
         [cmd(f'rm -r {results_dir}/{file}') for file in cleared()]
 

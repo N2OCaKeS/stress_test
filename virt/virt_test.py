@@ -291,7 +291,7 @@ class StealTime:
 
 
         def cleared():
-            results_file = [f for f in files if not f.endswith('html') and not f.endswith('log')]
+            results_file = [f for f in files if not f.endswith('html') and not f.endswith('info')]
             return results_file
         [cmd(f'rm -r {results_dir}/{file}') for file in cleared()]
 

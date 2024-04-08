@@ -3,8 +3,8 @@ import os
 REPORT_PATH = f'{os.getcwd()}/test_results'
 TEMPLATE_PATH = f'{os.getcwd()}/templates'
 INFO_FILENAME = 'virt_info.txt'
-VM_INFONAME = 'av.log'
-VM_KERNEL = 'kernel.log'
+VM_INFONAME = 'av.info'
+VM_KERNEL = 'kernel.info'
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 

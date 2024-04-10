@@ -60,14 +60,3 @@ cat /etc/default/grub | grep GRUB_DEFAULT
 cat /etc/astra_version
 cat /etc/astra_version > /home/av.txt
 
-
-sudo reboot &
-sleep 2
-while true; do
-    if nc -zw1 127.0.0.1 22; then
-        break
-    else
-        sleep 2
-    fi
-done
-

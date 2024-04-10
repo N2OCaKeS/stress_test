@@ -475,6 +475,10 @@ class FileSystemStatistics:
         file_system_data = {
             'data': {
                 'stand1': {
+                    'FAT': [],
+                    'EXFAT': [],
+                    'EXT2': [],
+                    'EXT3': [],
                     'EXT4': [],
                     'EXT4_parsec': [],
                     'NTFS': [],
@@ -483,6 +487,10 @@ class FileSystemStatistics:
                     'XFS_parsec': []
                 },
                 'stand2': {
+                    'FAT': [],
+                    'EXFAT': [],
+                    'EXT2': [],
+                    'EXT3': [],
                     'EXT4': [],
                     'EXT4_parsec': [],
                     'NTFS': [],
@@ -491,6 +499,10 @@ class FileSystemStatistics:
                     'XFS_parsec': []
                 },
                 'stand3': {
+                    'FAT': [],
+                    'EXFAT': [],
+                    'EXT2': [],
+                    'EXT3': [],
                     'EXT4': [],
                     'EXT4_parsec': [],
                     'NTFS': [],
@@ -499,6 +511,10 @@ class FileSystemStatistics:
                     'XFS_parsec': []
                 },
                 'stand4': {
+                    'FAT': [],
+                    'EXFAT': [],
+                    'EXT2': [],
+                    'EXT3': [],
                     'EXT4': [],
                     'EXT4_parsec': [],
                     'NTFS': [],
@@ -553,6 +569,22 @@ class FileSystemStatistics:
 
         for key, data in file_system_data['data'].items():
             # print(key, data)
+            if data.get("FAT"):
+                rating_for_graph, shcl = build_main_dataframe("FAT", data.get("FAT"), key)
+                build_mat_stat_dataframe("FAT", rating_for_graph, key)
+                build_graph(fs_type="FAT", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
+            if data.get("EXFAT"):
+                rating_for_graph, shcl = build_main_dataframe("EXFAT", data.get("EXFAT"), key)
+                build_mat_stat_dataframe("EXFAT", rating_for_graph, key)
+                build_graph(fs_type="EXFAT", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
+            if data.get("EXT2"):
+                rating_for_graph, shcl = build_main_dataframe("EXT2", data.get("EXT2"), key)
+                build_mat_stat_dataframe("EXT2", rating_for_graph, key)
+                build_graph(fs_type="EXT2", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
+            if data.get("EXT3"):
+                rating_for_graph, shcl = build_main_dataframe("EXT3", data.get("EXT3"), key)
+                build_mat_stat_dataframe("EXT3", rating_for_graph, key)
+                build_graph(fs_type="EXT3", stand=key, rating_fg=rating_for_graph, shcala_txt=shcl)
             if data.get("EXT4"):
                 rating_for_graph, shcl = build_main_dataframe("EXT4", data.get("EXT4"), key)
                 build_mat_stat_dataframe("EXT4", rating_for_graph, key)
@@ -711,7 +743,8 @@ class FileSystemStatistics:
             </nav>
         """
         nav_lst = []
-
+        
+        
         for ind, item in enumerate(table_with_data_list):
             nav_lst.append(f'<li><a href="#id-Статистика.{page_rc_title}Файловыесистемы-{headers_for_content[ind]}">{headers_for_content[ind]}</a></li>')
             html_list.append("<br/><hr/>")

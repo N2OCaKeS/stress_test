@@ -12,6 +12,7 @@ import pandas as pd
 from json import loads
 import numpy as np
 from virt_conf import VM_INFONAME, VM_KERNEL
+from time import sleep
 
 
 
@@ -105,6 +106,8 @@ class StealTime:
                 'password':f'{self.password}'
                 } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
+
+        sleep(180)
 
         try: 
             [

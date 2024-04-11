@@ -11,8 +11,8 @@ Vagrant.configure("2") do |config|
         :name => "testvm#{i}", 
         :hostname => "testvm#{i}.stress.rbt", 
         :args => "testvm#{i}", 
-        :cpus => "4", 
-        :memory => "4096"
+        :cpus => "2", 
+        :memory => "2048"
       }
       vms.push(new_vm)
     end

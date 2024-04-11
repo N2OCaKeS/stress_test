@@ -57,6 +57,6 @@ sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT
 
 
-cat /etc/astra_version
-cat /etc/astra_version > /home/av.txt
+cat /etc/astra/build_version
+cat /etc/astra/build_version > /home/av.txt
 

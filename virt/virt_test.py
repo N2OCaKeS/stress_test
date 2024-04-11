@@ -108,7 +108,7 @@ class StealTime:
         print(f'VM dates is:\n{self.vm_dates}')
 
         print('\nWait reboot VMs 180s...\n')
-        sleep(180)
+        sleep(600)
 
         try: 
             [

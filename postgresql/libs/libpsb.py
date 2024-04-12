@@ -118,7 +118,7 @@ def init_test_tables(database,
     if debian == True:
         cmd(f'pgbench -i -U postgres --tablespace={tablespace} -s {t_scale_factor} -F {t_filling_factor} {database}')
     elif parsec == True:
-        cmd(f'pgbench -i -U postgres -h localhost --macs -p {port} -s {t_scale_factor} -F {t_filling_factor} test_parsec')
+        cmd(f'pgbench -i -U postgres -h localhost --macs=fixed -p {port} -s {t_scale_factor} -F {t_filling_factor} test_parsec')
     elif tantor == True:
         cmd(f'/opt/tantor/db/15/bin/pgbench -i -h localhost -s {t_scale_factor} -p 5432 -F {t_filling_factor} -U postgres test_parsec')
     else:

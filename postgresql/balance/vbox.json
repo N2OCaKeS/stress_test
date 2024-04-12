@@ -2,19 +2,19 @@
     "vagrant_box": [
         {
             "1.8-testing.s": [
-                "smolensk-vanilla-gui/1.8.0.5",
+                "smolensk-vanilla-gui/1.8.0.14",
                 "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json"
             ]
         },
         {
             "1.8-testing.v": [
-                "voronezh-vanilla-gui/1.8.0.5",
+                "voronezh-vanilla-gui/1.8.0.14",
                 "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.8.0.json"
             ]
         },
         {
             "1.8-testing.o": [
-                "orel-vanilla-gui/1.8.0.5",
+                "orel-vanilla-gui/1.8.0.14",
                 "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.8.0.json"
             ]
         },

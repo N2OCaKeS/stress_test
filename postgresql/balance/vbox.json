@@ -227,6 +227,18 @@
                 "smolensk-vanilla-gui/1.8.0.14",
                 "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json"
             ]
+        },
+        {
+            "1.7.6.s": [
+                "smolensk-vanilla-gui/1.7.5",
+                "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json"
+            ]
+        },
+        {
+            "1.7.6.1.s": [
+                "smolensk-vanilla-gui/1.7.5",
+                "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json"
+            ]
         }
     ]
 }

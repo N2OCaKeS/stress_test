@@ -21,3 +21,4 @@ flask
 pysnooper
 ansible
 paramiko
+setuptools

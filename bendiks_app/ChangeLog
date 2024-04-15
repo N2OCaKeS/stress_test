@@ -1,3 +1,10 @@
+bendiks_app - v2.16.4
+*  Add setuptools
+*  Upd psql-balance host snapshot to 1.8.0.14
+
+
+
+
 bendiks_app - v2.16.3
 *  Add 6.1.82-1-generic
 

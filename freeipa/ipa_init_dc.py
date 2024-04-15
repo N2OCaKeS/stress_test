@@ -1,6 +1,19 @@
 import subprocess
 # from libs.libipa import cmd
+from os import linesep
 from ipa_conf import REPLICA, DOMAIN, DC_PASSWORD
+
+def check_output_command(command, out=None):
+    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    output, errors = result.communicate()
+    output = linesep.join([s for s in output.splitlines() if s])
+    errors = linesep.join([s for s in errors.splitlines() if s])
+    if errors == "":
+        return output
+    elif out != None:
+        return errors + output
+    else:
+        return errors
 
 def cmd(command):
     ret_code = subprocess.run(command, shell=True).returncode
@@ -17,7 +30,10 @@ def initialization_freeipa_server():
     """    
     cmd("sudo apt update -y")
     cmd("sudo apt install python3-pip -y")
+if int(check_output_command("python3 --version").split()[1].split(".")[1]) >= 11:
     cmd("sudo pip3 install python-freeipa --break-system-packages")
+else:
+    cmd("sudo pip3 install python-freeipa")
     """
         Установка пакетов astra-freeipa-server
     """    

@@ -1,4 +1,4 @@
-from virt_test import StealTime
+from libs.libtests import StealTime
 from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU
 from libs.virtlib import info_list
 from libs.zefir import UploaderZC

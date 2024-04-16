@@ -11,6 +11,15 @@ VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 #StealTime
 LOW = 1         #TEST_MASHINES --- # count fot middleserver
 HIGH = 70       #TEST_MASHINES --- # count fot middleserver
+ST_vCPU = 2     #Steal Time vCPU
+ST_RAM = 2048   #Steal Time RAM
 
 
+#Flexible I/O tester
+FIO_vCPU = 16
+FIO_RAM = 32768
+BLOCK_SIZE = '4k'
+FILE_SIZE = '10G'
+IO_DEPTH_1 = 1
+IO_DEPTH_128 = 128
 

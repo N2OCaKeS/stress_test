@@ -1,5 +1,5 @@
 from virt_test import StealTime
-from virt_conf import LOW, HIGH, REPORT_PATH
+from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU
 from libs.virtlib import info_list
 from libs.zefir import UploaderZC
 import argparse
@@ -99,24 +99,30 @@ low_load_test = StealTime(rc_vbox=args.VBOX,
                           vm_count=LOW,
                           testdir=REPORT_PATH,
                           load_type='low',
-                          kernel=str(args.TCYC).split('_')[2])
+                          kernel=str(args.TCYC).split('_')[2],
+                          vcpu=ST_vCPU,
+                          ram=ST_RAM)
 
 high_load_test = StealTime(rc_vbox=args.VBOX,
                            vm_count=HIGH,
                            testdir=REPORT_PATH,
                            load_type='high',
-                           kernel=str(args.TCYC).split('_')[2])
+                           kernel=str(args.TCYC).split('_')[2],
+                           vcpu=ST_vCPU,
+                           ram=ST_RAM)
 
 uzs.upload_test_cycle_status(zefir_status='progress')
 
 #Start test
-low_load_test.prepare_and_start()
+low_load_test.prepare_vms()
+low_load_test.start_test()
 low_load_test.vms_destroy()
 if low_load_test.results_processing() == LOW:
     print('Low load test successfully done')
 else: uzs.upload_test_cycle_status(zefir_status='fail')
 
-high_load_test.prepare_and_start()
+high_load_test.prepare_vms()
+high_load_test.start_test()
 high_load_test.vms_destroy()
 if high_load_test.results_processing() == HIGH:
     print('High load test successfully done')

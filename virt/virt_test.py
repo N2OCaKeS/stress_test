@@ -11,38 +11,28 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
-from virt_conf import VM_INFONAME, VM_KERNEL
+from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE
 from time import sleep
 
 
 
-class StealTime:
+class CreateVM:
     def __init__(self,
                  rc_vbox=None,
-                 vm_count=None,
                  testdir=None,
-                 load_type=None,
-                 kernel=None):
+                 vm_count=None,
+                 kernel=None,
+                 vcpu=None,
+                 ram=None):
         
-        self.kernel = kernel
-        self.load_type = load_type
-        self.vm_count = vm_count
-        self.testdir = testdir
         self.rc_name = rc_vbox
-        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
-        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
-        self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
-        self.run_test = 'cd /home/{} && sudo ./cpu_load'
-        self.power_off = 'virsh destroy {}'
-        self.user = 'vagrant'
-        self.password = 'vagrant'
-        self.stop_host_monitor = False
-        self.load_host_monitor_results = {}
-        self.stop_host_monitor = False
-                
+        self.testdir = testdir
+        self.kernel = kernel
+        self.vm_count = vm_count
+        self.vcpu = vcpu
+        self.ram = ram
 
-        
-    def prepare_and_start(self):
+    def prepare_vms(self):
         astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
         response_ac = requests.get(astra_config_url)
         if response_ac.status_code == 200:
@@ -54,7 +44,7 @@ class StealTime:
         with open('astra-config.json', 'r') as r:
             dates = loads(r.read())
 
-        def box_wrapper(box):
+        def __box_wrapper(box):
             true_key = False
             box_name = ''
             box_url = ''
@@ -83,7 +73,7 @@ class StealTime:
             os.mkdir(self.testdir)
 
         # add_box
-        box_name, box_url = box_wrapper(self.rc_name)
+        box_name, box_url = __box_wrapper(self.rc_name)
         cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
@@ -96,9 +86,53 @@ class StealTime:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
         # create_vm
-        print(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
-        cmd(f'UPDATE={box_name} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
+        print('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
+                                                                                                                 box_url,
+                                                                                                                 self.rc_name,
+                                                                                                                 self.kernel,
+                                                                                                                 self.vm_count,
+                                                                                                                 self.vcpu,
+                                                                                                                 self.ram))
+        cmd('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
+                                                                                                               box_url,
+                                                                                                               self.rc_name,
+                                                                                                               self.kernel,
+                                                                                                               self.vm_count,
+                                                                                                               self.vcpu,
+                                                                                                               self.ram))
+
+        print('\nWait reboot VMs 180s...\n')
+        sleep(180)
+
+
+
+class StealTime(CreateVM):
+    def __init__(self,
+                 vm_count=None,
+                 testdir=None,
+                 load_type=None,
+                 vcpu=None,
+                 ram=None,
+                 rc_vbox=None,
+                 kernel=None):
+        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
         
+        self.load_type = load_type
+        self.vm_count = vm_count
+        self.testdir = testdir
+        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
+        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
+        self.run_test = 'cd /home/{} && sudo ./cpu_load'
+        self.power_off = 'virsh destroy {}'
+        self.user = 'vagrant'
+        self.password = 'vagrant'
+        self.stop_host_monitor = False
+        self.load_host_monitor_results = {}
+        self.stop_host_monitor = False
+
+
+    def start_test(self):
         self.vm_dates = {
              vm:{
                 'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
@@ -107,17 +141,15 @@ class StealTime:
                 } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
 
-        print('\nWait reboot VMs 180s...\n')
-        sleep(180)
-
+        
         try: 
             [
                 create_remote_file(local_file_path='./libs/cpu_load', 
-                                remote_file_path=f'/home/{self.user}/cpu_load', 
-                                ip=self.vm_dates[vm]['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-                                for vm in self.vms
+                                   remote_file_path=f'/home/{self.user}/cpu_load', 
+                                   ip=self.vm_dates[vm]['ip'], 
+                                   user=self.user, 
+                                   password=self.password) 
+                                   for vm in self.vms
             ]
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
@@ -134,7 +166,7 @@ class StealTime:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
 
-        def load_host_monitor():
+        def __load_host_monitor():
             def __check_cpu_load():
                     comm = """top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); printf "%s", 100-$8 "%"}'"""
                     result = check_output_command(comm)
@@ -147,7 +179,7 @@ class StealTime:
                 w.write(f'{self.load_host_monitor_results}\n')
 
 
-        def run_vm_test(vm):
+        def __run_vm_test(vm):
             try:
                 send_remote_command(command=self.run_test.format(self.user),
                                     ip=self.vm_dates[vm]['ip'], 
@@ -156,12 +188,12 @@ class StealTime:
             except Exception as e:
                 print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
-        thread_monitor = Thread(target=load_host_monitor)
+        thread_monitor = Thread(target=__load_host_monitor)
         thread_monitor.start()
 
         threads = []
         for vm in self.vms:
-            thread = Thread(target=run_vm_test, args=(vm,))
+            thread = Thread(target=__run_vm_test, args=(vm,))
             thread.start()
             threads.append(thread)
         [thread.join() for thread in threads]
@@ -301,4 +333,73 @@ class StealTime:
 
         return len(vms_name_files)
 
+
+
+class FlexibleIOTester(CreateVM):
+    def __init__(self, 
+                 rc_vbox=None, 
+                 testdir=None, 
+                 vm_count=None, 
+                 kernel=None, 
+                 vcpu=None, 
+                 ram=None,
+                 iodepth=None):
+        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
+
+        self.vms = f'testvm{iodepth}'
+        self.user = 'vagrant'
+        self.password = 'vagrant'
+        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.block_size = f'--bs={BLOCK_SIZE}'
+        self.io_depth = f'--iodepth={iodepth}'
+        self.file_size = f'--size={FILE_SIZE}'
+        self.results_file_name = f'/home/{self.user}/test_{iodepth}.txt'
+        self.fio_hardend = 'fio --rw=randrw --ioengine=libaio --name=test '
+        self.fio_cmd = self.fio_hardend + f'{self.block_size} {self.io_depth} {self.file_size} > ' + self.results_file_name
+        
+
+
+    def start_test(self):
+        self.vm_dates = {
+             vm:{
+                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+                'login':f'{self.user}',
+                'password':f'{self.password}'
+                } for vm in self.vms}
+        print(f'VM dates is:\n{self.vm_dates}')
+
+        #TODO: Добавить передачу fio пакета на ВМ и произвести установку
+
+        try:
+            [
+                send_remote_command(command=self.fio_cmd,
+                                    ip=self.vm_dates[vm]['ip'], 
+                                    user=self.user, 
+                                    password=self.password) 
+                                    for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try: 
+            [
+                get_remote_file(remote_file_path=self.results_file_name,
+                                local_file_path=f'{self.testdir}/result_{vm}.txt',
+                                ip=self.vm_dates[vm]['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+                                for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+
+    # Run before end general test, else every VM will shutdown 300 sec before reboot
+    def vms_destroy(self):
+        try:
+            [
+                cmd(self.power_off.format(vm_name)) for vm_name in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 

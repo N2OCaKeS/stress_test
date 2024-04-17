@@ -12,7 +12,7 @@ import pandas as pd
 from json import loads
 import numpy as np
 from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
-                      FIOVERS_18x, TEMPLATE_PATH   
+                      FIOVERS_18x, TEMPLATE_PATH, FIO_PATH   
 from time import sleep
 
 
@@ -379,7 +379,7 @@ class FlexibleIOTester(CreateVM):
         #Send & install fio pkg
         try: 
             [
-                create_remote_file(local_file_path=f'../../virt/libs/{self.fio_version}', 
+                create_remote_file(local_file_path=f'{FIO_PATH}/{self.fio_version}', 
                                    remote_file_path=f'/home/{self.user}/{self.fio_version}', 
                                    ip=self.vm_dates[vm]['ip'], 
                                    user=self.user, 
@@ -400,27 +400,27 @@ class FlexibleIOTester(CreateVM):
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
-        try:
-            [
-                send_remote_command(command=self.fb_cmd,
-                                    ip=self.vm_dates[vm]['ip'], 
-                                    user=self.user, 
-                                    password=self.password) 
-                                    for vm in self.vms
-            ]
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        # try:
+        #     [
+        #         send_remote_command(command=self.fb_cmd,
+        #                             ip=self.vm_dates[vm]['ip'], 
+        #                             user=self.user, 
+        #                             password=self.password) 
+        #                             for vm in self.vms
+        #     ]
+        # except Exception as e:
+        #     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
-        try:
-            [
-                send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
-                                    ip=self.vm_dates[vm]['ip'], 
-                                    user=self.user, 
-                                    password=self.password) 
-                                    for vm in self.vms
-            ]
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        # try:
+        #     [
+        #         send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+        #                             ip=self.vm_dates[vm]['ip'], 
+        #                             user=self.user, 
+        #                             password=self.password) 
+        #                             for vm in self.vms
+        #     ]
+        # except Exception as e:
+        #     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
         #exec test cmd
         try:

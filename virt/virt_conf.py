@@ -2,6 +2,7 @@ import os
 
 REPORT_PATH = f'{os.getcwd()}/test_results'
 TEMPLATE_PATH = f'{os.getcwd()}/templates'
+FIO_PATH = f'{os.getcwd()}/fio'
 INFO_FILENAME = 'virt_info.txt'
 VM_INFONAME = 'av.info'
 VM_KERNEL = 'kernel.info'

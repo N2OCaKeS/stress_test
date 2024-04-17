@@ -6,6 +6,7 @@ set -vx
 {
 cat << EOF > /etc/apt/sources.list
 deb ftp://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository$1 1.7_x86-64 main contrib non-free
+deb ftp://qa111.devos.astralinux.ru/astra/testing/extended-1.7-testing 1.7_x86-64 main contrib non-free
 EOF
 }
 
@@ -13,6 +14,7 @@ EOF
 {
 cat << EOF > /etc/apt/sources.list
 deb ftp://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository 1.7_x86-64 main contrib non-free
+deb ftp://qa111.devos.astralinux.ru/astra/testing/extended-1.7-testing 1.7_x86-64 main contrib non-free
 EOF
 }
 
@@ -21,6 +23,7 @@ EOF
 cat << EOF > /etc/apt/sources.list
 deb ftp://qa111.devos.astralinux.ru/astra/testing/1.8-testing/installation 1.8_x86-64 main contrib non-free
 deb ftp://qa111.devos.astralinux.ru/astra/testing/1.8-testing/devel 1.8_x86-64 main non-free contrib
+deb ftp://qa111.devos.astralinux.ru/astra/testing/1.8-testing/extended 1.8_x86-64 main contrib non-free
 EOF
 }
 

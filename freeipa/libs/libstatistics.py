@@ -329,7 +329,7 @@ class FreeipaStatistics:
                 
                 panda_series = df['rating_2']
                 data_for_df[key]['rating'] = panda_series.tolist()
-                data_for_df[key]['sr_znach'] = df['Задержка аутен. и авториз. при макс. кол-ве пользователей'].tolist()
+                data_for_df[key]['sr_znach'] = df['Задержка (в сек.) аутен. и авториз. при макс. кол-ве пользователей'].tolist()
                 data_for_df[key]['proc_errors'] = df['Число (в %) непройденных аутен. и авториз. в секунду при макс. кол-ве пользователей'].tolist()
                 # print(data, "data2")
                 df_5_10 = df[df["Ядро"].str.startswith('5.10')]
@@ -405,8 +405,13 @@ class FreeipaStatistics:
                 colors = ['#ea5c76']
                 titles = {
                     'rating': "FreeIPA. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования.\n",
-                    'sr_znach': "FreeIPA. Сравнительная диаграмма значений задержки аутентификации и авторизации сервиса при максимальном количестве пользователей, \nвычисленных на основании результатов нагрузочного тестирования.\n",
+                    'sr_znach': "FreeIPA. Сравнительная диаграмма значений задержки (в сек.) аутентификации и авторизации сервиса при максимальном количестве пользователей, \nвычисленных на основании результатов нагрузочного тестирования.\n",
                     'proc_errors': "FreeIPA. Сравнительная диаграмма значений ошибок (в %) непройденных аутентиф. и авториз. в секунду при максимальном количетсве пользователей, \nвычисленных на основании результатов нагрузочного тестирования. \n"
+                }
+                y_label_text = {
+                    'rating': 'Значение рейтинга',
+                    'sr_znach': 'Значение (в сек.) задержки аутент. и авториз.',
+                    'proc_errors': 'Значение (в %) непройденных аутент и авториз.'
                 }
                 # for temp in data_ratings.get('rating'):
                 #     #if temp < np.mean(data_ratings.get('rating')) - 2 * np.std(data_ratings.get('rating')) or temp > np.mean(data_ratings.get('rating')) + 2 * np.std(data_ratings.get('rating')):
@@ -424,7 +429,7 @@ class FreeipaStatistics:
                 ax.set_ylim([0, max(data_ratings.get(y_val)) + max(data_ratings.get(y_val)) * 0.15])
                 plt.gca().set_xticklabels(shcala_text, rotation=20, horizontalalignment= 'right')
                 # ax.set_xlabel("Порядковый номер теста")
-                ax.set_ylabel("Значение рейтинга")
+                ax.set_ylabel(y_label_text.get(y_val))
                 grade = self.get_grade(key)
                 ax.set_title(titles.get(y_val))
                 # for i, val in enumerate(data_ratings.get("rating")):
@@ -532,7 +537,7 @@ class FreeipaStatistics:
         pages_18, rc_pages_18 = self.get_list_required_pages(id_root_page="244154033")
         pages = pages_17 + pages_18
         rc_pages = {**rc_pages_17, **rc_pages_18}
-        columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "Рейтинг", "Задержка аутен. и авториз. при макс. кол-ве пользователей", "Число (в %) непройденных аутен. и авториз. в секунду при макс. кол-ве пользователей",'rating_2']
+        columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд", "Рейтинг", "Задержка (в сек.) аутен. и авториз. при макс. кол-ве пользователей", "Число (в %) непройденных аутен. и авториз. в секунду при макс. кол-ве пользователей",'rating_2']
         self.get_info_from_pages(pages=pages, columns_df=columns)
         for key, value in rc_pages.items():
             if value:

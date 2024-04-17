@@ -15,7 +15,7 @@ mytest: (groupid=0, jobs=1): err= 0: pid=24343: Tue Apr 16 16:45:14 2024
      | 99.99th=[ 1672]
    bw (  KiB/s): min=62408, max=79112, per=99.79%, avg=76652.46, stdev=4859.33, samples=13
    iops        : min=15602, max=19778, avg=19163.08, stdev=1214.82, samples=13
-  write: IOPS=19.2k, BW=75.0MiB/s (78.7MB/s)(512MiB/6824msec); 0 zone resets
+  write: IOPS=19.3k, BW=75.0MiB/s (78.7MB/s)(512MiB/6824msec); 0 zone resets
     slat (nsec): min=964, max=90215, avg=1374.91, stdev=760.61
     clat (nsec): min=205, max=2006, avg=221.44, stdev=15.60
      lat (nsec): min=1225, max=90530, avg=1638.16, stdev=762.79

@@ -11,7 +11,8 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
-from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE
+from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
+                      FIOVERS_18x, TEMPLATE_PATH   
 from time import sleep
 
 
@@ -144,7 +145,7 @@ class StealTime(CreateVM):
         
         try: 
             [
-                create_remote_file(local_file_path='./libs/cpu_load', 
+                create_remote_file(local_file_path='cpu_load', 
                                    remote_file_path=f'/home/{self.user}/cpu_load', 
                                    ip=self.vm_dates[vm]['ip'], 
                                    user=self.user, 
@@ -346,7 +347,7 @@ class FlexibleIOTester(CreateVM):
                  iodepth=None):
         super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
 
-        self.vms = f'testvm{iodepth}'
+        self.vms = [f'testvm{iodepth}']
         self.user = 'vagrant'
         self.password = 'vagrant'
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
@@ -356,6 +357,13 @@ class FlexibleIOTester(CreateVM):
         self.results_file_name = f'/home/{self.user}/test_{iodepth}.txt'
         self.fio_hardend = 'fio --rw=randrw --ioengine=libaio --name=test '
         self.fio_cmd = self.fio_hardend + f'{self.block_size} {self.io_depth} {self.file_size} > ' + self.results_file_name
+        self.fb_cmd = 'sudo apt-get install -fy'
+        self.iodepth = iodepth
+        if str(rc_vbox).startswith('1.7'):
+            self.fio_version = FIOVERS_17x
+        elif str(rc_vbox).startswith('1.8'):
+            self.fio_version = FIOVERS_18x
+        else: self.fio_version = FIOVERS_18x
         
 
 
@@ -368,8 +376,53 @@ class FlexibleIOTester(CreateVM):
                 } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
 
-        #TODO: Добавить передачу fio пакета на ВМ и произвести установку
+        #Send & install fio pkg
+        try: 
+            [
+                create_remote_file(local_file_path=f'../../virt/libs/{self.fio_version}', 
+                                   remote_file_path=f'/home/{self.user}/{self.fio_version}', 
+                                   ip=self.vm_dates[vm]['ip'], 
+                                   user=self.user, 
+                                   password=self.password) 
+                                   for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
+        try:
+            [
+                send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                                    ip=self.vm_dates[vm]['ip'], 
+                                    user=self.user, 
+                                    password=self.password) 
+                                    for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try:
+            [
+                send_remote_command(command=self.fb_cmd,
+                                    ip=self.vm_dates[vm]['ip'], 
+                                    user=self.user, 
+                                    password=self.password) 
+                                    for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try:
+            [
+                send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                                    ip=self.vm_dates[vm]['ip'], 
+                                    user=self.user, 
+                                    password=self.password) 
+                                    for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        #exec test cmd
         try:
             [
                 send_remote_command(command=self.fio_cmd,
@@ -384,7 +437,7 @@ class FlexibleIOTester(CreateVM):
         try: 
             [
                 get_remote_file(remote_file_path=self.results_file_name,
-                                local_file_path=f'{self.testdir}/result_{vm}.txt',
+                                local_file_path=f'{self.testdir}/result_{vm}.info',
                                 ip=self.vm_dates[vm]['ip'], 
                                 user=self.user, 
                                 password=self.password) 
@@ -402,4 +455,40 @@ class FlexibleIOTester(CreateVM):
             ]
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+    
+    def results_processing(self):
+        results_dir = self.testdir
+        files = os.listdir(results_dir)
+
+        with open(f'{results_dir}/result_testvm{self.iodepth}.info', 'r') as r:
+            text = r.readlines()
+
+        values = {
+            'read_iops':[text[i].split(' ') for i in range(len(text)) if 'read' in text[i] and 'IOPS' in text[i]],
+            'read_clat':[text[i+2].split(' ') for i in range(len(text)) if 'read' in text[i] and 'IOPS' in text[i]],
+            'write_iops':[text[i].split(' ') for i in range(len(text)) if 'write' in text[i] and 'IOPS' in text[i]],
+            'write_clat':[text[i+2].split(' ') for i in range(len(text)) if 'write' in text[i] and 'IOPS' in text[i]]
+        }
+
+        dates = {
+            'write':{'IOPS/*1000':re.findall(r'\d+.\d+?', values['write_iops'][0][3])[0],
+                    'Latency/avg':re.findall(r'\d+.\d+?', values['write_clat'][0][8])[0]},
+            'read':{'IOPS/*1000':re.findall(r'\d+.\d+?', values['read_iops'][0][3])[0],
+                    'Latency/avg':re.findall(r'\d+.\d+?', values['read_clat'][0][8])[0]}
+        }
+
+        print(dates)
+
+
+        df = pd.DataFrame(dates).T
+        print(df)
+        df.to_html(f'{TEMPLATE_PATH}/result_testvm{self.iodepth}.html')
+
+
+        def __cleared():
+                results_file = [f for f in files if not f.endswith('html') and not f.endswith('info')]
+                return results_file
+        [cmd(f'rm -r {results_dir}/{file}') for file in __cleared()]
+        
 

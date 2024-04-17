@@ -1,5 +1,6 @@
-from libs.libtests import StealTime
-from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU
+from libs.libtests import StealTime, FlexibleIOTester
+from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU, IO_DEPTH_1, \
+                      IO_DEPTH_128, FIO_RAM, FIO_vCPU
 from libs.virtlib import info_list
 from libs.zefir import UploaderZC
 import argparse
@@ -79,6 +80,12 @@ parser.add_argument('-vbox',
                     help='vbox name',
                     dest='VBOX')
 
+parser.add_argument('-testname', 
+                    action='store',
+                    required=True,
+                    help='test name',
+                    dest='TESTNAME')
+
 args = parser.parse_args()
 
 
@@ -93,44 +100,77 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
                 conf_new_page_name=args.NPAGE)
-
-
-low_load_test = StealTime(rc_vbox=args.VBOX,
-                          vm_count=LOW,
-                          testdir=REPORT_PATH,
-                          load_type='low',
-                          kernel=str(args.TCYC).split('_')[2],
-                          vcpu=ST_vCPU,
-                          ram=ST_RAM)
-
-high_load_test = StealTime(rc_vbox=args.VBOX,
-                           vm_count=HIGH,
-                           testdir=REPORT_PATH,
-                           load_type='high',
-                           kernel=str(args.TCYC).split('_')[2],
-                           vcpu=ST_vCPU,
-                           ram=ST_RAM)
-
 uzs.upload_test_cycle_status(zefir_status='progress')
 
+
 #Start test
-low_load_test.prepare_vms()
-low_load_test.start_test()
-low_load_test.vms_destroy()
-if low_load_test.results_processing() == LOW:
-    print('Low load test successfully done')
-else: uzs.upload_test_cycle_status(zefir_status='fail')
+if args.TESTNAME == 'stealtime':
+    st_no_errors = True
+    low_load_test = StealTime(rc_vbox=args.VBOX,
+                              vm_count=LOW,
+                              testdir=REPORT_PATH,
+                              load_type='low',
+                              kernel=str(args.TCYC).split('_')[2],
+                              vcpu=ST_vCPU,
+                              ram=ST_RAM)
 
-high_load_test.prepare_vms()
-high_load_test.start_test()
-high_load_test.vms_destroy()
-if high_load_test.results_processing() == HIGH:
-    print('High load test successfully done')
-else: uzs.upload_test_cycle_status(zefir_status='fail')
+    high_load_test = StealTime(rc_vbox=args.VBOX,
+                               vm_count=HIGH,
+                               testdir=REPORT_PATH,
+                               load_type='high',
+                               kernel=str(args.TCYC).split('_')[2],
+                               vcpu=ST_vCPU,
+                               ram=ST_RAM)
 
-info_list()
-uzs.public = True
-#uzs.statistics = True
-uzs.upload_test_cycle_status(zefir_status='pass')
+    low_load_test.prepare_vms()
+    low_load_test.start_test()
+    low_load_test.vms_destroy()
+    if low_load_test.results_processing() == LOW:
+        print('Low load test successfully done')
+    else: 
+        uzs.upload_test_cycle_status(zefir_status='fail')
+        st_no_errors = False
+
+    high_load_test.prepare_vms()
+    high_load_test.start_test()
+    high_load_test.vms_destroy()
+    if high_load_test.results_processing() == HIGH:
+        print('High load test successfully done')
+    else: 
+        uzs.upload_test_cycle_status(zefir_status='fail')
+        st_no_errors = False
+
+    info_list()
+    uzs.public = True
+    #uzs.statistics = True
+    if st_no_errors:
+        uzs.upload_test_cycle_status(zefir_status='pass')
+
+elif args.TESTNAME == 'fio':
+    low_depth_test = FlexibleIOTester(rc_vbox=args.VBOX,
+                                      vm_count=1,
+                                      testdir=REPORT_PATH,
+                                      iodepth=IO_DEPTH_1,
+                                      kernel=str(args.TCYC).split('_')[2],
+                                      vcpu=FIO_vCPU,
+                                      ram=FIO_RAM)
+    
+    high_depth_test = FlexibleIOTester(rc_vbox=args.VBOX,
+                                       vm_count=1,
+                                       testdir=REPORT_PATH,
+                                       iodepth=IO_DEPTH_128,
+                                       kernel=str(args.TCYC).split('_')[2],
+                                       vcpu=FIO_vCPU,
+                                       ram=FIO_RAM)
+
+    low_depth_test.prepare_vms()
+    low_depth_test.start_test()
+    low_depth_test.vms_destroy()
+    low_depth_test.results_processing()
+
+    high_depth_test.prepare_vms()
+    high_depth_test.start_test()
+    high_depth_test.vms_destroy()
+    high_depth_test.results_processing()
 
 

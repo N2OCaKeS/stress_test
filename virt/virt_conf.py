@@ -16,6 +16,8 @@ ST_RAM = 2048   #Steal Time RAM
 
 
 #Flexible I/O tester
+FIOVERS_17x = 'fio_3.12-2_amd64.deb'
+FIOVERS_18x = 'fio_3.33-3_amd64.deb'
 FIO_vCPU = 16
 FIO_RAM = 32768
 BLOCK_SIZE = '4k'

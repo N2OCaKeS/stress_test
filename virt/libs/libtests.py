@@ -454,15 +454,12 @@ class FlexibleIOTester(CreateVM):
     def vms_destroy(self):
         try:
             [
-                cmd(self.vg_destroy.format(vm_name)) for vm_name in self.vms
-            ]
-            [
                 cmd(self.destroy.format(vm_name)) for vm_name in self.vms
             ]
             [
                 cmd(self.undefine.format(vm_name)) for vm_name in self.vms
             ]
-            cmd('vagrant destroy -f')
+            cmd('rm -rf .vagrant')
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 

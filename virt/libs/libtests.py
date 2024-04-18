@@ -351,6 +351,7 @@ class FlexibleIOTester(CreateVM):
         self.user = 'vagrant'
         self.password = 'vagrant'
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.vg_destroy = 'vagrant destroy {}'
         self.destroy = 'virsh destroy {}'
         self.undefine = 'virsh undefine {}'
         self.block_size = f'--bs={BLOCK_SIZE}'
@@ -402,27 +403,27 @@ class FlexibleIOTester(CreateVM):
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
-        # try:
-        #     [
-        #         send_remote_command(command=self.fb_cmd,
-        #                             ip=self.vm_dates[vm]['ip'], 
-        #                             user=self.user, 
-        #                             password=self.password) 
-        #                             for vm in self.vms
-        #     ]
-        # except Exception as e:
-        #     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        try:
+            [
+                send_remote_command(command=self.fb_cmd,
+                                    ip=self.vm_dates[vm]['ip'], 
+                                    user=self.user, 
+                                    password=self.password) 
+                                    for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
-        # try:
-        #     [
-        #         send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
-        #                             ip=self.vm_dates[vm]['ip'], 
-        #                             user=self.user, 
-        #                             password=self.password) 
-        #                             for vm in self.vms
-        #     ]
-        # except Exception as e:
-        #     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        try:
+            [
+                send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                                    ip=self.vm_dates[vm]['ip'], 
+                                    user=self.user, 
+                                    password=self.password) 
+                                    for vm in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
         #exec test cmd
         try:
@@ -457,6 +458,9 @@ class FlexibleIOTester(CreateVM):
             ]
             [
                 cmd(self.undefine.format(vm_name)) for vm_name in self.vms
+            ]
+            [
+                cmd(self.vg_destroy.format(vm_name)) for vm_name in self.vms
             ]
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')

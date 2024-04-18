@@ -148,27 +148,29 @@ if args.TESTNAME == 'stealtime':
 
 elif args.TESTNAME == 'fio':
     low_depth_test = FlexibleIOTester(rc_vbox=args.VBOX,
-                                      vm_count=1,
+                                      vm_count=2,
                                       testdir=REPORT_PATH,
                                       iodepth=IO_DEPTH_1,
                                       kernel=str(args.TCYC).split('_')[2],
                                       vcpu=FIO_vCPU,
-                                      ram=FIO_RAM)
+                                      ram=FIO_RAM,
+                                      vm_num=1)
     
     high_depth_test = FlexibleIOTester(rc_vbox=args.VBOX,
-                                       vm_count=1,
+                                       vm_count=2,
                                        testdir=REPORT_PATH,
                                        iodepth=IO_DEPTH_128,
                                        kernel=str(args.TCYC).split('_')[2],
                                        vcpu=FIO_vCPU,
-                                       ram=FIO_RAM)
+                                       ram=FIO_RAM,
+                                       vm_num=2)
 
     low_depth_test.prepare_vms()
     low_depth_test.start_test()
-    low_depth_test.vms_destroy()
-    low_depth_test.results_processing()
+    #low_depth_test.vms_destroy()
+    #low_depth_test.results_processing()
 
-    high_depth_test.prepare_vms()
+    #high_depth_test.prepare_vms()
     high_depth_test.start_test()
     high_depth_test.vms_destroy()
     high_depth_test.results_processing()

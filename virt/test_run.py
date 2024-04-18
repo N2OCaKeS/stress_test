@@ -168,7 +168,7 @@ elif args.TESTNAME == 'fio':
     low_depth_test.prepare_vms()
     low_depth_test.start_test()
     #low_depth_test.vms_destroy()
-    #low_depth_test.results_processing()
+    low_depth_test.results_processing()
 
     #high_depth_test.prepare_vms()
     high_depth_test.start_test()

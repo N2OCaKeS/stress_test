@@ -452,7 +452,7 @@ class FlexibleIOTester(CreateVM):
         results_dir = self.testdir
         files = os.listdir(results_dir)
 
-        with open(f'{results_dir}/result_testvm{self.iodepth}.info', 'r') as r:
+        with open(f'{results_dir}/result_testvm{self.vm_num}.info', 'r') as r:
             text = r.readlines()
 
         values = {

@@ -347,10 +347,12 @@ class FlexibleIOTester(CreateVM):
                  iodepth=None):
         super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
 
-        self.vms = [f'testvm{iodepth}']
+        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.user = 'vagrant'
         self.password = 'vagrant'
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.destroy = 'virsh destroy {}'
+        self.undefine = 'virsh undefine {}'
         self.block_size = f'--bs={BLOCK_SIZE}'
         self.io_depth = f'--iodepth={iodepth}'
         self.file_size = f'--size={FILE_SIZE}'
@@ -451,7 +453,10 @@ class FlexibleIOTester(CreateVM):
     def vms_destroy(self):
         try:
             [
-                cmd(self.power_off.format(vm_name)) for vm_name in self.vms
+                cmd(self.destroy.format(vm_name)) for vm_name in self.vms
+            ]
+            [
+                cmd(self.undefine.format(vm_name)) for vm_name in self.vms
             ]
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
@@ -483,7 +488,7 @@ class FlexibleIOTester(CreateVM):
 
         df = pd.DataFrame(dates).T
         print(df)
-        df.to_html(f'{TEMPLATE_PATH}/result_testvm{self.iodepth}.html')
+        df.to_html(f'{TEMPLATE_PATH}/result_testvm_{self.iodepth}.html')
 
 
         def __cleared():

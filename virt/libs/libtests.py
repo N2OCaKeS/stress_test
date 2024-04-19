@@ -462,11 +462,16 @@ class FlexibleIOTester(CreateVM):
             'write_clat':[text[i+2].split(' ') for i in range(len(text)) if 'write' in text[i] and 'IOPS' in text[i]]
         }
 
+        def __k_parser(value:str):
+            if value.endswith('k,'):
+                return str(float(re.findall(r'\d+.\d+?', value)[0]) * 1000).replace('.0', '')
+            else: return re.findall(r'\d+.\d+?', value)[0]
+
         dates = {
-            'write':{'IOPS/*1000':re.findall(r'\d+.\d+?', values['write_iops'][0][3])[0],
-                    'Latency/avg':re.findall(r'\d+.\d+?', values['write_clat'][0][8])[0]},
-            'read':{'IOPS/*1000':re.findall(r'\d+.\d+?', values['read_iops'][0][3])[0],
-                    'Latency/avg':re.findall(r'\d+.\d+?', values['read_clat'][0][8])[0]}
+            'write':{'IOPS':__k_parser(values['write_iops'][0][3]),
+                    'Latency/avg':__k_parser(values['write_clat'][0][8])},
+            'read':{'IOPS':__k_parser(values['read_iops'][0][3]),
+                    'Latency/avg':__k_parser(values['read_clat'][0][8])}
         }
 
         print(dates)

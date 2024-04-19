@@ -438,6 +438,9 @@ class FlexibleIOTester(CreateVM):
     def vms_destroy(self):
         try:
             [
+                cmd(f'virsh dumpxml {vm_name}') for vm_name in self.vms
+            ]
+            [
                 cmd(self.destroy.format(vm_name)) for vm_name in self.vms
             ]
             [

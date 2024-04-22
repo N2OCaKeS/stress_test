@@ -32,7 +32,7 @@ from libs.libbend import (index_page,
                           psyc,
                           stands_ip,
                           user_app)
-from backup_image_conf import testname_columns
+from backup_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
 
 
 app = Flask(__name__)
@@ -251,6 +251,14 @@ def get_astra_config():
     return send_file('./astra-config.json', as_attachment=True)
 
 
+@app.route('/rest/api/get-jira-url', methods=['GET'])
+def get_jira_url():
+    return JIRA_URL, 200
+
+
+@app.route('/rest/api/get-confluence-url', methods=['GET'])
+def get_confluence_url():
+    return CONFLUENCE_URL, 200
 
 
 # if __name__ == '__main__':

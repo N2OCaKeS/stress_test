@@ -1,3 +1,10 @@
+bendiks_app - v2.17.0
+*  Add sett jira, conf url in congif
+*  Add jira, confluence url API
+
+
+
+
 bendiks_app - v2.16.4
 *  Add setuptools
 *  Upd psql-balance host snapshot to 1.8.0.14

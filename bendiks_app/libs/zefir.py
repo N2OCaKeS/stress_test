@@ -19,13 +19,15 @@ from backup_image_conf import(test_run_stands,
                               testcase_orel_middle_stand4,
                               testcase_smolensk_low_stand3,
                               testcase_smolensk_middle_stand4,
-                              testname_columns)
+                              testname_columns,
+                              JIRA_URL,
+                              CONFLUENCE_URL)
 
 
 
 def response_status():
-    jira = requests.get('https://jira.astralinux.ru').status_code
-    life = requests.get('https://life.astralinux.ru').status_code
+    jira = requests.get(f'https://{JIRA_URL}').status_code
+    life = requests.get(f'https://{CONFLUENCE_URL}').status_code
     return jira, life
 
 
@@ -72,12 +74,12 @@ class ZefirStatusAPI:
 
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-            'authority': 'jira.astralinux.ru',
+            'authority': JIRA_URL,
             'Authorization': self.__basic,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://jira.astralinux.ru/secure/Tests.jspa',
+            'Referer': f'https://{JIRA_URL}/secure/Tests.jspa',
             'X-Requested-With': 'XMLHttpRequest',
             'jira-project-id': '11200',
             'Connection': 'keep-alive',
@@ -94,7 +96,7 @@ class ZefirStatusAPI:
     #Тест кейсы в прогоне
     '-------------------------------------------------------------------------------------------------------------------------------'
     def test_case_dates(self, test_cycle_id):
-        self.url_test_cycle = f'''https://jira.astralinux.ru/rest/tests/1.0/testrun/{test_cycle_id}/testrunitems?fields=id,
+        self.url_test_cycle = f'''https://{JIRA_URL}/rest/tests/1.0/testrun/{test_cycle_id}/testrunitems?fields=id,
                             index,issueCount,$lastTestResult
                         '''
         self.response_test_cycle = requests.get(self.url_test_cycle, headers=self.headers)
@@ -113,19 +115,19 @@ class ZefirStatusAPI:
     '-------------------------------------------------------------------------------------------------------------------------------'
 
     def upload_status(self, result_status):
-        url = 'https://jira.astralinux.ru/rest/tests/1.0/testresult'
+        url = f'https://{JIRA_URL}/rest/tests/1.0/testresult'
         headers1 = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-            'authority': 'jira.astralinux.ru',
+            'authority': JIRA_URL,
             'Authorization': self.__basic,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://jira.astralinux.ru/secure/Tests.jspa',
+            'Referer': f'https://{JIRA_URL}/secure/Tests.jspa',
             'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/json;charset=utf-8',
             'jira-project-id': '11200',
-            'Origin': 'https://jira.astralinux.ru',
+            'Origin': f'https://{JIRA_URL}',
             'Connection': 'keep-alive',
             #'Cookie': '_ga=GA1.2.1097806090.1675253155; _ym_uid=1675343686577278045; _ym_d=1675343686; ajs_user_id=fc7aec5884ea4e02056a8ce8f996001f49ce373e; ajs_anonymous_id=cf669b37-814c-498d-a98c-8e36022b80b9; _gid=GA1.2.366592657.1683015166; INGRESSCOOKIE=1128ad0bc2c3007521086fda6d56670d|99e0851c823ae836b8f684b10f61e1b8; crowd.token_key=YSx8wZ-ooDdVIOnv8HyUqQAAAAABBoABZHRpbW9uaW4; JSESSIONID=4D2E62E6FC8E90D1821B702723E10B38; atlassian.xsrf.token=BCF3-299N-BY94-II8F_05e76f3ef04efbf6fd1d219fe74aef7ba313b8b2_lin; seraph.rememberme.cookie=91744%3A1cc82d680915e49453fb80ba5c55bd6e44a504f7',
             'Sec-Fetch-Dest': 'empty',
@@ -153,7 +155,7 @@ class ZefirStatusAPI:
         print(response.status_code)
 
     def dates_test_cycle(self):
-        url_list_test_cycles = f'''https://jira.astralinux.ru/rest/tests/1.0/testrun/search?fields=id,key,name,folderId,iterationId,
+        url_list_test_cycles = f'''https://{JIRA_URL}/rest/tests/1.0/testrun/search?fields=id,key,name,folderId,iterationId,
                                 projectVersionId,environmentId,userKeys,environmentIds,plannedStartDate,plannedEndDate,executionTime,
                                 estimatedTime,testResultStatuses,testCaseCount,issueCount,status(id,name,i18nKey,color),
                                 customFieldValues,createdOn,createdBy,updatedOn,updatedBy,
@@ -253,7 +255,7 @@ class ZefirResultTable:
 
 
         #Делаем get запрос в jira
-        matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
+        matrix_url = f'''https://{JIRA_URL}/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                         period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.
                         folderName+IN+({filter_url})&traceabilityCustomTreeDisplayOption=
                         CONDENSED&traceabilityMatrixOption=COVERAGE_TEST_CASES&traceabilityReportOption=COVERAGE_TEST_CASES&traceability
@@ -261,7 +263,7 @@ class ZefirResultTable:
                         '''
         headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-            'authority': 'jira.astralinux.ru',
+            'authority': JIRA_URL,
             'Authorization': self.__basic,
             'accept': 'application/json, text/plain, */*'
         }
@@ -368,7 +370,7 @@ class ZefirResultTable:
         write_html(times)
 
         #Выкладываем на лайф
-        confluence = Confluence(url='https://life.astralinux.ru',
+        confluence = Confluence(url=f'https://{CONFLUENCE_URL}',
                                 username=self.__username,
                                 token=self.__token)
 
@@ -446,7 +448,7 @@ class ZefirTestRun:
         
 
 
-        self.JIRA_URL = 'https://jira.astralinux.ru'
+        self.JIRA_URL = f'https://{JIRA_URL}'
         self.headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0'}
         with open('/home/u/tokens.json', 'r') as r:
             tokens = json.load(r)

@@ -1,7 +1,7 @@
 #!/home/u/python/Python-3.12.1/venv/bin/python3.12
 
 import subprocess
-from backup_image_conf import branches, cycle_tree_index, tests, parent_page_list
+from backup_image_conf import branches, cycle_tree_index, tests, parent_page_list, JIRA_URL
 import requests
 import json
 import argparse
@@ -66,7 +66,7 @@ else:
 
 
 #Делаем get запрос в jira
-matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
+matrix_url = f'''https://{JIRA_URL}/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                 period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.
                 folderName+IN+({filter_url})&traceabilityCustomTreeDisplayOption=
                 CONDENSED&traceabilityMatrixOption=COVERAGE_TEST_CASES&traceabilityReportOption=COVERAGE_TEST_CASES&traceability
@@ -74,7 +74,7 @@ matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/m
                 '''
 headers = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-    'authority': 'jira.astralinux.ru',
+    'authority': JIRA_URL,
     'Authorization': __jira_token,
     'accept': 'application/json, text/plain, */*'
 }

@@ -34,7 +34,8 @@ from backup_image_conf import (VENV_PATH,
                                repo_path,
                                LowServer_group,
                                MiddleServer_group,
-                               group_tests)
+                               group_tests,
+                               JIRA_URL)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -601,12 +602,12 @@ def get_aqs_json(path, __basic):
     url = 'https://git.astralinux.ru/projects/QA/repos/astra-qa-stand/raw/astra-config.json?at=refs%2Fheads%2Fmaster'
     headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-            'authority': 'jira.astralinux.ru',
+            'authority': JIRA_URL,
             'Authorization': __basic,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://jira.astralinux.ru/secure/Tests.jspa',
+            'Referer': f'https://{JIRA_URL}/secure/Tests.jspa',
             'X-Requested-With': 'XMLHttpRequest',
             'jira-project-id': '11200',
             'Connection': 'keep-alive',

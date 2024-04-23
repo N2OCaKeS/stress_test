@@ -7,7 +7,8 @@ from shutil import copy2
 import ftplib
 import requests
 from psb_conf import (SCRIPT_DIR, DATABASE_NAME, REPORT_PATH, LOG_FILENAME,
-                      INFO_FILENAME, PG_VERSION, TANTOR_VERSION, PG_VERSION_18)
+                      INFO_FILENAME, PG_VERSION, TANTOR_VERSION, PG_VERSION_18,
+                      JIRA_URL, CONFLUENCE_URL)
 import pysnooper
 import numpy as np
 import pandas as pd
@@ -226,8 +227,8 @@ def upload_results_to_ftp(rc_name, path_to_file, file_name):
 
 def response():
     try:
-        jira = requests.get('https://jira.astralinux.ru').status_code
-        life = requests.get('https://life.astralinux.ru').status_code
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
         return jira, life
     except Exception as e:
         jira, life = str(type(e).__name__), str(e)

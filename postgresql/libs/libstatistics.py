@@ -10,10 +10,11 @@ from bs4 import BeautifulSoup
 from atlassian import Confluence
 from functools import reduce
 from distutils.version import LooseVersion
+from psb_conf import CONFLUENCE_URL
 
 
 class ConfluencePage:
-    __url = 'https://life.astralinux.ru'
+    __url = f'https://{CONFLUENCE_URL}'
 
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -54,7 +55,7 @@ class ConfluencePage:
 
 
 class StatisticsToConfluence():
-    __url='https://life.astralinux.ru'
+    __url=f'https://{CONFLUENCE_URL}'
     
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -208,7 +209,7 @@ class PSQLStatistics:
                 """
                     Генерируем ссылку на отчет
                 """
-                link = "https://life.astralinux.ru/display/DEVQA/" + title 
+                link = f"https://{CONFLUENCE_URL}/display/DEVQA/" + title 
                 rating_with_link = f'<a href="{link}">{rating}</a>'
                 """
                     Записываем полученные данные для дальнейшего составления DataFrame
@@ -260,7 +261,7 @@ class PSQLStatistics:
             """
             statistics_table_html = df.to_html(escape=False, index=False)
             file_html = open(f"statistics/{name_html}_{key}_1.html", "w")
-            file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+            file_html.writelines(f'<h1><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
             file_html.writelines(f"<h1>Сводная таблица результатов тестирования {key}</h1> {statistics_table_html}")
             file_html.close()
 
@@ -399,7 +400,7 @@ class PSQLStatistics:
             <hr/>
             <br/>
             <span class="confluence-embedded-file-wrapper confluence-embedded-manual-size">
-                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
+                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://{CONFLUENCE_URL}" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
             </span>
         """
         image_list = []
@@ -416,7 +417,7 @@ class PSQLStatistics:
             if file.endswith("png"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
             if file.endswith("1.html"):
                 file_table = open(f'statistics/{file}', 'r')
                 table = file_table.read()
@@ -430,19 +431,19 @@ class PSQLStatistics:
             if file.endswith("5.10.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 kernel_image_list[0].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
             if file.endswith("5.15-gen.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 kernel_image_list[1].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
             if file.endswith("5.15-ll.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 kernel_image_list[2].append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                    img_png=file))
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
             if file.endswith("kernel.jpg"):
                 confluence_stat.attache_files(file=f'statistics/{file}', page_space="DD", page_title=f"Статистика. {type_stat}")
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id("DD", f"Статистика. {type_stat}"),
-                                                  img_png=file))
+                                                  img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
 
         html_list = []
 
@@ -676,7 +677,7 @@ class PSQLStatistics2:
                         """
                             Генерируем ссылку на отчет
                         """
-                        link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
+                        link = f"https://{CONFLUENCE_URL}/display/{SPACE}/" + title 
                         rating_with_link = f'<a href="{link}">{rating}</a>'
                         """
                             Записываем полученные данные для дальнейшего составления DataFrame
@@ -785,7 +786,7 @@ class PSQLStatistics2:
                 """
                 statistics_table_html = df.to_html(escape=False, index=False)
                 file_html = open(f"{stat_dir}/{test_name}_{key}_1.html", "w")
-                file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+                file_html.writelines(f'<h1><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 grage = self.get_grade(key)
                 file_html.writelines(f"<h1>Сводная таблица результатов тестирования {grage}_{key}</h1> {statistics_table_html}")
                 file_html.close()
@@ -1034,7 +1035,7 @@ class PSQLStatistics2:
                 df_for_table = df.drop(['Количество неудачных запросов 1', 'Процент неудачных запросов 1'], axis=1)
                 statistics_table_html = df_for_table.to_html(escape=False, index=False)
                 file_html = open(f"{stat_dir}/table_balance_{key}_1.html", "w")
-                file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+                file_html.writelines(f'<h1><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 file_html.writelines(f"<h1>Сводная таблица результатов тестирования</h1> {statistics_table_html}")
                 file_html.close()
 
@@ -1144,7 +1145,7 @@ class PSQLStatistics2:
             <hr/>
             <br/>
             <span class="confluence-embedded-file-wrapper confluence-embedded-manual-size">
-                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
+                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://{CONFLUENCE_UR}" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
             </span>
         """
 
@@ -1177,7 +1178,7 @@ class PSQLStatistics2:
             if file.endswith("png"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                    img_png=file)
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL)
                 name_stand = file.split("_")[2].split(".")[0]
                 if file.startswith("postgresql-sm"):
                     images_list_smolensk.append(img)
@@ -1246,7 +1247,7 @@ class PSQLStatistics2:
             stand_name_temp_for_key = file.split("_")[-2]
             if stand_name_temp_for_key not in new_kernel_image_dict.keys():
                     new_kernel_image_dict[stand_name_temp_for_key] = []
-            templ_img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), img_png=file)    
+            templ_img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), img_png=file, CONFLUENCE_URL=CONFLUENCE_URL)    
             if file.endswith("5.10.jpg"):  
                 new_kernel_image_dict[stand_name_temp_for_key].append(templ_img)
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
@@ -1269,27 +1270,27 @@ class PSQLStatistics2:
             if file.endswith("kernels_all.jpg"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 lst_all_stands_stat_kernel.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                                      img_png=file))
+                                                                      img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
             
             if file.endswith("summ.jpg"):
                 name_stand = file.split("_")[2]
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 if file.startswith("Orel-Smolensk"):
                     summ_graphs_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
-                                                                img_png=file))
+                                                                img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
                     header_orel_vs_smolensk.append(name_stand)
                 elif file.startswith("Orel-Orel-audit-off"):
                     summ_graphs_list_aud_on_off.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
-                                                                           img_png=file))
+                                                                           img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
                     header_aud_on_vs_off.append(name_stand)
                     # print(header_aud_on_vs_off)
                 elif file.startswith("Orel-Parsec"):
                     summ_graphs_list_orel_and_parsec.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
-                                                                                img_png=file))
+                                                                                img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
                     header_orel_and_parsec.append(name_stand)
                 elif file.startswith("Orel-Vanilla"):
                     summ_graphs_list_orel_and_vanilla.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"), 
-                                                                                 img_png=file))
+                                                                                 img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
                     header_orel_and_vanilla.append(name_stand)
                 else:
                     pass                            

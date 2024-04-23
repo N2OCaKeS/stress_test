@@ -17,7 +17,7 @@ class AutentificationTest():
         """
         remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_user_add.py', "ipa_user_add.py")
         remote_exec("python3 ipa_user_add.py", 'server')
-        remote_cmd("python3 ipa_user_add.py", HOSTS['server']['ip'])    
+        # remote_cmd("python3 ipa_user_add.py", HOSTS['server']['ip'])    
         
     def run(self):
         out_hostname_server = remote_cmd("hostname", HOSTS['server']['ip']).strip("\n")

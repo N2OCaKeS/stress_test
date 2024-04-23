@@ -2,7 +2,7 @@ import subprocess
 import os
 import requests
 from os.path import exists
-from ps_conf import INFO_FILENAME
+from ps_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL
 
 def command(command):
     result = subprocess.run([command], shell=True)
@@ -22,8 +22,8 @@ def check_output_command(command):
 
 def response():
     try:
-        jira = requests.get('https://jira.astralinux.ru').status_code
-        life = requests.get('https://life.astralinux.ru').status_code
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
         return jira, life
     except Exception as e:
         jira, life = str(type(e).__name__), str(e)

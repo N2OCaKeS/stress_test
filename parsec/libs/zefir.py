@@ -13,6 +13,7 @@ from libs.libparsec import response
 from libs.libpublic import Public
 from libs.libstatistics import ParsecStatistics
 from time import sleep, ctime
+from ps_conf import JIRA_URL, CONFLUENCE_URL
 
 
 class UploaderZC(Public, ParsecStatistics):
@@ -175,12 +176,12 @@ class ZefirStatusAPI:
 
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-            'authority': 'jira.astralinux.ru',
+            'authority': JIRA_URL,
             'Authorization': self.__basic,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://jira.astralinux.ru/secure/Tests.jspa',
+            'Referer': f'https://{JIRA_URL}/secure/Tests.jspa',
             'X-Requested-With': 'XMLHttpRequest',
             'jira-project-id': '11200',
             'Connection': 'keep-alive',
@@ -196,7 +197,7 @@ class ZefirStatusAPI:
     #Тест кейсы в прогоне
     '-------------------------------------------------------------------------------------------------------------------------------'
     def test_case_dates(self, test_cycle_id):
-        self.url_test_cycle = f'''https://jira.astralinux.ru/rest/tests/1.0/testrun/{test_cycle_id}/testrunitems?fields=id,
+        self.url_test_cycle = f'''https://{JIRA_URL}/rest/tests/1.0/testrun/{test_cycle_id}/testrunitems?fields=id,
                             index,issueCount,$lastTestResult
                         '''
         self.response_test_cycle = requests.get(self.url_test_cycle, headers=self.headers)
@@ -215,19 +216,19 @@ class ZefirStatusAPI:
     '-------------------------------------------------------------------------------------------------------------------------------'
 
     def upload_status(self, result_status):
-        url = 'https://jira.astralinux.ru/rest/tests/1.0/testresult'
+        url = f'https://{JIRA_URL}/rest/tests/1.0/testresult'
         headers1 = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-            'authority': 'jira.astralinux.ru',
+            'authority': JIRA_URL,
             'Authorization': self.__basic,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://jira.astralinux.ru/secure/Tests.jspa',
+            'Referer': f'https://{JIRA_URL}/secure/Tests.jspa',
             'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/json;charset=utf-8',
             'jira-project-id': '11200',
-            'Origin': 'https://jira.astralinux.ru',
+            'Origin': f'https://{JIRA_URL}',
             'Connection': 'keep-alive',
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
@@ -254,7 +255,7 @@ class ZefirStatusAPI:
         print(response.status_code)
 
     def dates_test_cycle(self):
-        url_list_test_cycles = f'''https://jira.astralinux.ru/rest/tests/1.0/testrun/search?fields=id,key,name,folderId,iterationId,
+        url_list_test_cycles = f'''https://{JIRA_URL}/rest/tests/1.0/testrun/search?fields=id,key,name,folderId,iterationId,
                                 projectVersionId,environmentId,userKeys,environmentIds,plannedStartDate,plannedEndDate,executionTime,
                                 estimatedTime,testResultStatuses,testCaseCount,issueCount,status(id,name,i18nKey,color),
                                 customFieldValues,createdOn,createdBy,updatedOn,updatedBy,
@@ -354,7 +355,7 @@ class ZefirResultTable:
 
 
         #Делаем get запрос в jira
-        matrix_url = f'''https://jira.astralinux.ru/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
+        matrix_url = f'''https://{JIRA_URL}/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                         period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.
                         folderName+IN+({filter_url})&traceabilityCustomTreeDisplayOption=
                         CONDENSED&traceabilityMatrixOption=COVERAGE_TEST_CASES&traceabilityReportOption=COVERAGE_TEST_CASES&traceability
@@ -362,7 +363,7 @@ class ZefirResultTable:
                         '''
         headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
-            'authority': 'jira.astralinux.ru',
+            'authority': JIRA_URL,
             'Authorization': self.__basic,
             'accept': 'application/json, text/plain, */*'
         }

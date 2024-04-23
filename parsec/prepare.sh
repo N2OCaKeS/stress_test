@@ -6,6 +6,7 @@ sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev l
 sudo apt-get install -y libffi-dev strace 
 sudo apt-get install -y libcurl4-gnutls-dev
 sudo apt-get install -y rustc cargo
+sudo apt-get install -y python3-requests
 
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
     sudo apt-get install -y linux-tools-6.1*-generic

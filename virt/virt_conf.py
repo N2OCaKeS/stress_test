@@ -1,5 +1,12 @@
 import os
+import requests
 
+jira_url_api = 'http://bendiks.devos.astralinux.ru/rest/api/get-jira-url'
+confluence_url_api = 'http://bendiks.devos.astralinux.ru/rest/api/get-confluence-url'
+response_jira_url = requests.get(jira_url_api)
+response_confluence_url = requests.get(confluence_url_api)
+JIRA_URL = response_jira_url.text
+CONFLUENCE_URL = response_confluence_url.text
 REPORT_PATH = f'{os.getcwd()}/test_results'
 TEMPLATE_PATH = f'{os.getcwd()}/templates'
 FIO_PATH = f'{os.getcwd()}/fio'

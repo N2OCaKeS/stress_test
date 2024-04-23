@@ -24,10 +24,8 @@ stands_ip = {
 #################################################################################################################################################
 #Atlassian URLs
 #################################################################################################################################################
-#JIRA_URL = 'jira.astralinux.ru'
-#CONFLUENCE_URL = 'life.astralinux.ru'
-JIRA_URL = 'dev-jira.astralinux.ru'
-CONFLUENCE_URL = 'dev-life.astralinux.ru'
+JIRA_URL = 'jira.astralinux.ru'
+CONFLUENCE_URL = 'life.astralinux.ru'
 
 
 

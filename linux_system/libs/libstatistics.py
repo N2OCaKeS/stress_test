@@ -5,14 +5,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-
+from lsb_conf import CONFLUENCE_URL
 from bs4 import BeautifulSoup
 from atlassian import Confluence
 from distutils.version import LooseVersion
 
 
 class ConfluencePage:
-    __url = 'https://life.astralinux.ru'
+    __url = f'https://{CONFLUENCE_URL}'
 
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -53,7 +53,7 @@ class ConfluencePage:
 
 
 class StatisticsToConfluence():
-    __url='https://life.astralinux.ru'
+    __url=f'https://{CONFLUENCE_URL}'
     
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -256,7 +256,7 @@ class UnixBenchStatistics:
                         """
                             Генерируем ссылку на отчет
                         """
-                        link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
+                        link = f"https://{CONFLUENCE_URL}/display/{SPACE}/" + title 
                         rating_with_link = f'<a href="{link}">{rating}</a>'
                         """
                             Записываем полученные данные для дальнейшего составления DataFrame
@@ -317,7 +317,7 @@ class UnixBenchStatistics:
                 """
                 statistics_table_html = df.to_html(escape=False, index=False)
                 file_html = open(f"{stat_dir}/{test_name}_{key}_1.html", "w")
-                file_html.writelines('<h1><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
+                file_html.writelines(f'<h1><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h1>')
                 grage = self.get_grade(key)
                 file_html.writelines(f"<h1>Сводная таблица результатов тестирования {grage}_{key}</h1> {statistics_table_html}")
                 file_html.close()
@@ -440,7 +440,7 @@ class UnixBenchStatistics:
             <hr/>
             <br/>
             <span class="confluence-embedded-file-wrapper confluence-embedded-manual-size">
-                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
+                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://{CONFLUENCE_URL}" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6"></img>
             </span>
         """
         image_list = []
@@ -451,7 +451,7 @@ class UnixBenchStatistics:
             if file.endswith("png"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 img = template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                    img_png=file)
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL)
                 image_list.append(img)
 
             if file.endswith("1.html"):

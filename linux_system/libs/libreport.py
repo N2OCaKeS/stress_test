@@ -9,10 +9,11 @@ from shutil import unpack_archive
 from atlassian import Confluence
 from atlassian import Jira
 from pprint import pprint
+from lsb_conf import JIRA_URL, CONFLUENCE_URL
 
 
 class ReportToConfluence():
-    __url='https://life.astralinux.ru'
+    __url=f'https://{CONFLUENCE_URL}'
 
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -84,7 +85,7 @@ class ReportToConfluence():
 
 
 class ReportToJira():
-    __url='https://jira.astralinux.ru'
+    __url=f'https://{JIRA_URL}'
 
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -106,7 +107,7 @@ class ReportToJira():
 
 
 class ConfluencePage():
-    __url='https://life.astralinux.ru'
+    __url=f'https://{CONFLUENCE_URL}'
 
     def __init__(self, username, password=None, token=None):
         self.__username = username

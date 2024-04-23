@@ -5,13 +5,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-
+from aub_conf import CONFLUENCE_URL
 from bs4 import BeautifulSoup
 from atlassian import Confluence
 
 
 class ConfluencePage:
-    __url = 'https://life.astralinux.ru'
+    __url = f'https://{CONFLUENCE_URL}'
 
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -52,7 +52,7 @@ class ConfluencePage:
 
 
 class StatisticsToConfluence():
-    __url='https://life.astralinux.ru'
+    __url=f'https://{CONFLUENCE_URL}'
     
     def __init__(self, username, password=None, token=None):
         self.__username = username
@@ -416,7 +416,7 @@ class FileSystemStatistics:
                 """
                     Генерируем ссылку на отчет
                 """
-                link = f"https://life.astralinux.ru/display/{SPACE}/" + title 
+                link = f"https://{CONFLUENCE_URL}/display/{SPACE}/" + title 
                 rating_with_link = f'<a href="{link}">{rating}</a>'
 
                 if parsec:
@@ -478,7 +478,7 @@ class FileSystemStatistics:
 
         template_img = """ 
             <span class="confluence-embedded-file-wrapper confluence-embedded-manual-size">
-                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://life.astralinux.ru" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6" ></img>
+                <img class="confluence-embedded-image" draggable="false" src="/download/attachments/{page_id}/{img_png}" data-image-src="/download/attachments/{page_id}/{img_png}" data-unresolved-comment-count="0" data-linked-resource-id="{page_id}" data-linked-resource-version="1" data-linked-resource-type="attachment" data-linked-resource-default-alias="{img_png}" data-base-url="https://{CONFLUENCE_URL}" data-linked-resource-content-type="image/png" data-linked-resource-container-id="{page_id}" data-linked-resource-container-version="6" ></img>
             </span>
             <br/>
         """
@@ -495,7 +495,7 @@ class FileSystemStatistics:
             if file.endswith("1.png"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 image_list.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                    img_png=file))
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
                 part_header = file.split("_")
                 if part_header[2] == "parsec":
                     headers.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}</b></h1>")
@@ -507,7 +507,7 @@ class FileSystemStatistics:
             if file.endswith("a.png"):
                 confluence_stat.attache_files(file=f'{stat_dir}/{file}', page_space=SPACE, page_title=f"Статистика.{page_rc_title} {type_stat}")
                 image_list_ext4_comparison.append(template_img.format(page_id=confluence_stat.get_confluence_page_id(SPACE, f"Статистика.{page_rc_title} {type_stat}"),
-                                                    img_png=file))
+                                                    img_png=file, CONFLUENCE_URL=CONFLUENCE_URL))
                 
                 part_header = file.split("_")
                 headers2.append(f"<h1 id='{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[5]}_{part_header[6]}'><b>{part_header[1]}_{part_header[2]}_{part_header[3]}_{part_header[5]}_{part_header[6]}</b></h1>")
@@ -549,7 +549,7 @@ class FileSystemStatistics:
             html_list.append("<br/><hr/>")
             html_list.append(headers[ind])
             html_list.append(image_list[ind])
-            html_list.append('<h2><a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
+            html_list.append(f'<h2><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(item)
             html_list.append("<br/>" + table_with_mat_stat_list[ind])
         

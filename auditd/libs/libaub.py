@@ -12,7 +12,7 @@ import subprocess
 import pexpect
 import ftplib
 import requests
-
+from aub_conf import JIRA_URL, CONFLUENCE_URL
 from os import path, mkdir, listdir, chmod
 from time import sleep, ctime, time, strftime, gmtime
 
@@ -110,8 +110,8 @@ def put_system_info_in_file(start, file):
 
 def response():
     try:
-        jira = requests.get('https://jira.astralinux.ru').status_code
-        life = requests.get('https://life.astralinux.ru').status_code
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
         return jira, life
     except Exception as e:
         jira, life = str(type(e).__name__), str(e)

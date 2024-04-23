@@ -7,7 +7,7 @@ from json import dumps
 from paramiko.ssh_exception import NoValidConnectionsError
 from time import sleep
 from fabric import Connection
-from ipa_conf import USER, PASSWORD, HOSTS
+from ipa_conf import USER, PASSWORD, HOSTS, JIRA_URL, CONFLUENCE_URL
 import ftplib
 import re
 
@@ -180,8 +180,8 @@ def put_system_info_in_file(start, file):
 
 def response():
     try:
-        jira = requests.get('https://jira.astralinux.ru').status_code
-        life = requests.get('https://life.astralinux.ru').status_code
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
         return jira, life
     except Exception as e:
         jira, life = str(type(e).__name__), str(e)

@@ -184,11 +184,11 @@ parser.add_argument('-apache',
                     help='testlist',
                     dest='APACHE')
 
-parser.add_argument('-steal',
+parser.add_argument('-lvirt',
                     action='store',
                     required=False,
                     help='testlist',
-                    dest='STEALTIME')
+                    dest='LVIRT')
 
 
 args = parser.parse_args()
@@ -238,6 +238,7 @@ psql_aud_off = '-psql_aud off'
 psql_parsec = '-parsec parsec'
 psql_vanilla = '-psql_van pv'
 tantor_vanilla = '-tantor_van tv'
+lvirt_test = f'-testname {args.LVIRT}'
 ovf = f'-ovf {args.OVF}'
 ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
 ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
@@ -282,9 +283,9 @@ elif args.PARSEC_IMPACT or args.PARSEC_IMPACT_AO:
 elif args.APACHE == 'rp':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
-elif args.STEALTIME == 'time':
+elif args.LVIRT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox}'
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {lvirt_test}'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

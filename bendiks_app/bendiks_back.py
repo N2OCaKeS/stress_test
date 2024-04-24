@@ -263,7 +263,8 @@ try:
                         parsec_impact = '-parsec-impact impact'
                         parsec_impact_ao = '-parsec-impact-ao audit-off'
                         apache_rp = '-apache rp'
-                        steal_time = '-steal time'
+                        steal_time = '-lvirt stealtime'
+                        fio = '-lvirt fio'
                         if tests[dates_list[i][1]] == 'auditd-p':
                             testlist = f'-aud psaud'
                         elif tests[dates_list[i][1]] == 'auditd-f':
@@ -317,7 +318,10 @@ try:
                                         {tcas} {branch} {cti} {pp} {testnum} {apache_rp}', shell=True)
                         elif tests[dates_list[i][1]] == 'steal time':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True) 
+                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True)
+                        elif tests[dates_list[i][1]] == 'FIO':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True)  
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
@@ -367,7 +371,8 @@ try:
                     parsec_impact = '-parsec-impact impact'
                     parsec_impact_ao = '-parsec-impact-ao audit-off'
                     apache_rp = '-apache rp'
-                    steal_time = '-steal time'
+                    steal_time = '-lvirt stealtime'
+                    fio = '-lvirt fio'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -421,7 +426,10 @@ try:
                                         {tcas} {branch} {cti} {pp} {testnum} {apache_rp}', shell=True)
                     elif tests[dates_list[i][1]] == 'steal time':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True)  
+                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True) 
+                    elif tests[dates_list[i][1]] == 'FIO':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True) 
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)

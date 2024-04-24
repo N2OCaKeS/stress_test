@@ -1,7 +1,7 @@
 import os
 from libs.libreport import ReportToConfluence
 from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH, VM_INFONAME, VM_KERNEL, \
-                      IO_DEPTH_1, IO_DEPTH_128
+                      IO_DEPTH_1, IO_DEPTH_128, FILE_SIZE
 
 
 
@@ -183,6 +183,7 @@ class Public:
                                                         vm_kernel=vm_kernel,                                                    
                                                         low=IO_DEPTH_1,
                                                         high=IO_DEPTH_128,
+                                                        file_size=FILE_SIZE,
                                                         arm_num=self.stands[self.grade_stand]['grade'],
                                                         arm_proc=self.stands[self.grade_stand]['cpu'],
                                                         arm_mem=self.stands[self.grade_stand]['ram'],
@@ -195,8 +196,8 @@ class Public:
                 high_depth = file.read()
 
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            head_row2 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди {IO_DEPTH_1}":</b></h3></p>'
-            head_row3 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди {IO_DEPTH_128}":</b></h3></p>'
+            head_row2 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди "{IO_DEPTH_1}":</b></h3></p>'
+            head_row3 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди "{IO_DEPTH_128}":</b></h3></p>'
             html_page = '\n'.join([header_table, head_row, head_row2, low_depth, head_row3, high_depth])
 
         else: html_page = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Тест не выбран</b></h2></p>'

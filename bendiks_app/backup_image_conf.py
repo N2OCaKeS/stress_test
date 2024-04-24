@@ -138,7 +138,7 @@ branches = {
     'Parsec impact fs benchmark audit-off':'parsec',
     'Apache_ReverseProxy':'apache2',
     'Steal time':'virt',
-    'FIO':'virt'
+    'FIO benchmark':'virt'
 }
 
 

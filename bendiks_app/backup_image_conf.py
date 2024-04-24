@@ -385,7 +385,7 @@ testname_columns = {
                     'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
                     'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off',
                     'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
-                    'FIO':'FIO'
+                    'FIO benchmark':'FIO'
                     }
 
 

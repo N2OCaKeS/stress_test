@@ -53,10 +53,10 @@ tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', '
               'Apache':          ['apache-rp'],
               'Qemu/KVM/Libvirt':['steal time', 'FIO']}
 
-release_version = ['1.8.0.15',
+release_version = ['1.8.0.15',               #add testing 6.6.12-1-generic
                    '1.8.0.14',
                    '1.8.0',
-                   '1.7.6.4',
+                   '1.7.6.4',                #add testing 6.1.82-1-generic-flavour
                    '1.7.6.3',
                    '1.7.6.1',
                    '1.7.6',

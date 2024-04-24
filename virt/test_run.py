@@ -99,7 +99,8 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 grade_stand=args.STAND,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
-                conf_new_page_name=args.NPAGE)
+                conf_new_page_name=args.NPAGE,
+                testname=args.TESTNAME)
 uzs.upload_test_cycle_status(zefir_status='progress')
 
 
@@ -167,12 +168,14 @@ elif args.TESTNAME == 'fio':
 
     low_depth_test.prepare_vms()
     low_depth_test.start_test()
-    #low_depth_test.vms_destroy()
     low_depth_test.results_processing()
 
-    #high_depth_test.prepare_vms()
     high_depth_test.start_test()
     high_depth_test.vms_destroy()
     high_depth_test.results_processing()
+
+    info_list()
+    uzs.public = True
+    #uzs.statistics = True
 
 

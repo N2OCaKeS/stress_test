@@ -433,6 +433,15 @@ class FlexibleIOTester(CreateVM):
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
+        try: 
+                get_remote_file(remote_file_path=f'/home/av.txt',
+                                local_file_path=f'{self.testdir}/{VM_INFONAME}',
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
 
     # Run before end general test, else every VM will shutdown 300 sec before reboot
     def vms_destroy(self):

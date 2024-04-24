@@ -1,6 +1,7 @@
 import os
 from libs.libreport import ReportToConfluence
-from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH, VM_INFONAME, VM_KERNEL 
+from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH, VM_INFONAME, VM_KERNEL, \
+                      IO_DEPTH_1, IO_DEPTH_128
 
 
 
@@ -19,7 +20,7 @@ class Public:
                  test_cycle_version=None,
                  storage=False,
                  kernel_check=False,
-                 balance=False):
+                 testname=False):
     
         self.username = username
         self.token = token
@@ -31,7 +32,7 @@ class Public:
         self.tcv = test_cycle_version
         self.storage = storage
         self.kernel_check = kernel_check
-        self.balance = balance
+        self.testname = testname
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -105,62 +106,100 @@ class Public:
             confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
                                             self.c_space,
                                             c_np)
-            
-        #генерация вступительной таблицы
-        with open(INFO_FILENAME) as info:
-            info_lst = info.read().split('\n')
-
-        with open(f'{REPORT_PATH}/{VM_INFONAME}') as info:
-            vm_info = info.read()
-
-        with open(f'{REPORT_PATH}/{VM_KERNEL}') as info:
-            vm_kernel = info.read()
         
-        with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
-            header_table_temp = file.read()
-            header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],
-                                                    vm_av=vm_info,
-                                                    vm_kernel=vm_kernel,                                                    
-                                                    low=LOW,
-                                                    high=HIGH,
-                                                    arm_num=self.stands[self.grade_stand]['grade'],
-                                                    arm_proc=self.stands[self.grade_stand]['cpu'],
-                                                    arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'])
-            
-        #создание страницы отчета
-        with open(f'{REPORT_PATH}/low_mean_instructions.html', 'r') as file:
-            low_mean_instructions = file.read()
-        with open(f'{REPORT_PATH}/low_mean_steal_time.html', 'r') as file:
-            low_mean_steal_time = file.read()
-        with open(f'{REPORT_PATH}/low_vms_instructions.html', 'r') as file:
-            low_vms_instructions = file.read()
-        with open(f'{REPORT_PATH}/low_vms_steal_time.html', 'r') as file:
-            low_vms_steal_time = file.read()
-        with open(f'{REPORT_PATH}/high_mean_instructions.html', 'r') as file:
-            high_mean_instructions = file.read()
-        with open(f'{REPORT_PATH}/high_mean_steal_time.html', 'r') as file:
-            high_mean_steal_time = file.read()
-        with open(f'{REPORT_PATH}/high_vms_instructions.html', 'r') as file:
-            high_vms_instructions = file.read()
-        with open(f'{REPORT_PATH}/high_vms_steal_time.html', 'r') as file:
-            high_vms_steal_time = file.read()
+        if self.testname == 'stealtime':
+            #генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
 
-        
-        head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-        head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение для одной ВМ "Инструкций в секунду":</b></h3></p>'
-        head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение для одной ВМ "Steal time":</b></h3></p>'
-        head_row4 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты для одной ВМ "Инструкций в секунду":</b></h3></p>'
-        head_row5 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты для одной ВМ "Steal time":</b></h3></p>'
-        head_row6 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение под нагрузкой "Инструкций в секунду":</b></h3></p>'
-        head_row7 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение под нагрузкой "Steal time":</b></h3></p>'
-        head_row8 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты под нагрузкой "Инструкций в секунду":</b></h3></p>'
-        head_row9 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты под нагрузкой "Steal time":</b></h3></p>'
-        html_page = '\n'.join([header_table, head_row, head_row2, low_mean_instructions, head_row3, low_mean_steal_time,
-                               head_row4, low_vms_instructions, head_row5, low_vms_steal_time,
-                               head_row6, high_mean_instructions, head_row7, high_mean_steal_time,
-                               head_row8, high_vms_instructions, head_row9, high_vms_steal_time])
+            with open(f'{REPORT_PATH}/{VM_INFONAME}') as info:
+                vm_info = info.read()
+
+            with open(f'{REPORT_PATH}/{VM_KERNEL}') as info:
+                vm_kernel = info.read()
+            
+            with open(f'{TEMPLATE_PATH}/header_table_template_stealtime.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        vm_av=vm_info,
+                                                        vm_kernel=vm_kernel,                                                    
+                                                        low=LOW,
+                                                        high=HIGH,
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
+                
+            #создание страницы отчета
+            with open(f'{REPORT_PATH}/low_mean_instructions.html', 'r') as file:
+                low_mean_instructions = file.read()
+            with open(f'{REPORT_PATH}/low_mean_steal_time.html', 'r') as file:
+                low_mean_steal_time = file.read()
+            with open(f'{REPORT_PATH}/low_vms_instructions.html', 'r') as file:
+                low_vms_instructions = file.read()
+            with open(f'{REPORT_PATH}/low_vms_steal_time.html', 'r') as file:
+                low_vms_steal_time = file.read()
+            with open(f'{REPORT_PATH}/high_mean_instructions.html', 'r') as file:
+                high_mean_instructions = file.read()
+            with open(f'{REPORT_PATH}/high_mean_steal_time.html', 'r') as file:
+                high_mean_steal_time = file.read()
+            with open(f'{REPORT_PATH}/high_vms_instructions.html', 'r') as file:
+                high_vms_instructions = file.read()
+            with open(f'{REPORT_PATH}/high_vms_steal_time.html', 'r') as file:
+                high_vms_steal_time = file.read()
+
+            
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение для одной ВМ "Инструкций в секунду":</b></h3></p>'
+            head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение для одной ВМ "Steal time":</b></h3></p>'
+            head_row4 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты для одной ВМ "Инструкций в секунду":</b></h3></p>'
+            head_row5 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты для одной ВМ "Steal time":</b></h3></p>'
+            head_row6 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение под нагрузкой "Инструкций в секунду":</b></h3></p>'
+            head_row7 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Среднее значение под нагрузкой "Steal time":</b></h3></p>'
+            head_row8 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты под нагрузкой "Инструкций в секунду":</b></h3></p>'
+            head_row9 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Общие результаты под нагрузкой "Steal time":</b></h3></p>'
+            html_page = '\n'.join([header_table, head_row, head_row2, low_mean_instructions, head_row3, low_mean_steal_time,
+                                head_row4, low_vms_instructions, head_row5, low_vms_steal_time,
+                                head_row6, high_mean_instructions, head_row7, high_mean_steal_time,
+                                head_row8, high_vms_instructions, head_row9, high_vms_steal_time])
+            
+        elif self.testname == 'fio':
+            #генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+            
+            with open(f'{REPORT_PATH}/{VM_INFONAME}') as info:
+                vm_info = info.read()
+
+            with open(f'{REPORT_PATH}/{VM_KERNEL}') as info:
+                vm_kernel = info.read()
+
+            with open(f'{TEMPLATE_PATH}/header_table_template_fio.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        vm_av=vm_info,
+                                                        vm_kernel=vm_kernel,                                                    
+                                                        low=IO_DEPTH_1,
+                                                        high=IO_DEPTH_128,
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
+                
+            #создание страницы отчета
+            with open(f'{TEMPLATE_PATH}/result_testvm_{IO_DEPTH_1}.html', 'r') as file:
+                low_depth = file.read()
+            with open(f'{TEMPLATE_PATH}/result_testvm_{IO_DEPTH_128}.html', 'r') as file:
+                high_depth = file.read()
+
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            head_row2 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди {IO_DEPTH_1}":</b></h3></p>'
+            head_row3 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди {IO_DEPTH_128}":</b></h3></p>'
+            html_page = '\n'.join([header_table, head_row, head_row2, low_depth, head_row3, high_depth])
+
+        else: html_page = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Тест не выбран</b></h2></p>'
         
 
         #выкладываем информацию на страницу

@@ -392,6 +392,14 @@ class FlexibleIOTester(CreateVM):
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
         try:
+            send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try:
             send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
                                 ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                                 user=self.user, 
@@ -436,6 +444,15 @@ class FlexibleIOTester(CreateVM):
         try: 
                 get_remote_file(remote_file_path=f'/home/av.txt',
                                 local_file_path=f'{self.testdir}/{VM_INFONAME}',
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try: 
+                get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
+                                local_file_path=f'{self.testdir}/{VM_KERNEL}',
                                 ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                                 user=self.user, 
                                 password=self.password) 

@@ -48,6 +48,7 @@ sudo apt-get install -y sysstat
 sudo apt-get install -y netcat
 sudo apt-get install linux-[5-6].*-generic -y
 sudo apt-get install linux-[5-6].*-lowlatency -y
+sudo apt-get install -y libffi-dev gcc make libpdp-dev
 
 
 kernel="$2"

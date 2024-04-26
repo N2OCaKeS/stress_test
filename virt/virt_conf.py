@@ -14,6 +14,9 @@ INFO_FILENAME = 'virt_info.txt'
 VM_INFONAME = 'av.info'
 VM_KERNEL = 'kernel.info'
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
+UB_PATH = f'{os.getcwd()}/byte-unixbench-master'
+UB_ARHIVE = f'{UB_PATH}/unixbench.zip'
+UB_RESULTS = f'{UB_PATH}/UnixBench/results'
 
 
 #StealTime

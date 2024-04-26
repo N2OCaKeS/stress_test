@@ -12,7 +12,7 @@ import pandas as pd
 from json import loads
 import numpy as np
 from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
-                      FIOVERS_18x, TEMPLATE_PATH, FIO_PATH   
+                      FIOVERS_18x, TEMPLATE_PATH, FIO_PATH, UB_ARHIVE
 from time import sleep
 
 
@@ -516,4 +516,54 @@ class FlexibleIOTester(CreateVM):
                 return results_file
         [cmd(f'rm -r {results_dir}/{file}') for file in __cleared()]
         
+
+
+class UnixBench(CreateVM):
+    def __init__(self, 
+                 rc_vbox=None, 
+                 testdir=None, 
+                 vm_count=None, 
+                 kernel=None, 
+                 vcpu=None, 
+                 ram=None,
+                 vm_num=None):
+        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
+
+        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
+        self.vm_num = vm_num
+        self.user = 'vagrant'
+        self.password = 'vagrant'
+        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.vg_destroy = 'vagrant destroy {}'
+        self.destroy = 'virsh destroy {}'
+        self.undefine = 'virsh undefine {}'
+
+
+    def start_test(self):
+        self.vm_dates = {
+             vm:{
+                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+                'login':f'{self.user}',
+                'password':f'{self.password}'
+                } for vm in self.vms}
+        print(f'VM dates is:\n{self.vm_dates}')
+
+        #Send & install unixbench zip
+        try: 
+            create_remote_file(local_file_path=UB_ARHIVE, 
+                               remote_file_path=f'/home/{self.user}/unixbench.zip', 
+                               ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                               user=self.user, 
+                               password=self.password) 
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        try:
+            send_remote_command(command=f'cd /home/{self.user} && unzip unixbench.zip',
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
 

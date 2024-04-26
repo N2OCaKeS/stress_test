@@ -1,44 +1,105 @@
-mytest: (g=0): rw=randrw, bs=(R) 4096B-4096B, (W) 4096B-4096B, (T) 4096B-4096B, ioengine=libaio, iodepth=1
-fio-3.12
-Starting 1 process
+   BYTE UNIX Benchmarks (Version 5.1.3)
 
-mytest: (groupid=0, jobs=1): err= 0: pid=24343: Tue Apr 16 16:45:14 2024
-  read: IOPS=19.2k, BW=75.0MiB/s (78.7MB/s)(512MiB/6824msec)
-    slat (usec): min=29, max=8356, avg=49.04, stdev=24.55
-    clat (nsec): min=233, max=5376, avg=258.05, stdev=26.76
-     lat (usec): min=29, max=8358, avg=49.36, stdev=24.56
-    clat percentiles (nsec):
-     |  1.00th=[  243],  5.00th=[  247], 10.00th=[  249], 20.00th=[  253],
-     | 30.00th=[  255], 40.00th=[  255], 50.00th=[  258], 60.00th=[  258],
-     | 70.00th=[  262], 80.00th=[  262], 90.00th=[  266], 95.00th=[  270],
-     | 99.00th=[  302], 99.50th=[  314], 99.90th=[  334], 99.95th=[  406],
-     | 99.99th=[ 1672]
-   bw (  KiB/s): min=62408, max=79112, per=99.79%, avg=76652.46, stdev=4859.33, samples=13
-   iops        : min=15602, max=19778, avg=19163.08, stdev=1214.82, samples=13
-  write: IOPS=19.3k, BW=75.0MiB/s (78.7MB/s)(512MiB/6824msec); 0 zone resets
-    slat (nsec): min=964, max=90215, avg=1374.91, stdev=760.61
-    clat (nsec): min=205, max=2006, avg=221.44, stdev=15.60
-     lat (nsec): min=1225, max=90530, avg=1638.16, stdev=762.79
-    clat percentiles (nsec):
-     |  1.00th=[  211],  5.00th=[  213], 10.00th=[  215], 20.00th=[  217],
-     | 30.00th=[  219], 40.00th=[  219], 50.00th=[  221], 60.00th=[  223],
-     | 70.00th=[  223], 80.00th=[  225], 90.00th=[  229], 95.00th=[  233],
-     | 99.00th=[  258], 99.50th=[  270], 99.90th=[  286], 99.95th=[  294],
-     | 99.99th=[  652]
-   bw (  KiB/s): min=62800, max=79976, per=99.64%, avg=76569.46, stdev=4702.40, samples=13
-   iops        : min=15700, max=19994, avg=19142.31, stdev=1175.58, samples=13
-  lat (nsec)   : 250=54.71%, 500=45.27%, 750=0.01%, 1000=0.01%
-  lat (usec)   : 2=0.01%, 4=0.01%, 10=0.01%
-  cpu          : usr=1.89%, sys=9.45%, ctx=131048, majf=0, minf=10
-  IO depths    : 1=100.0%, 2=0.0%, 4=0.0%, 8=0.0%, 16=0.0%, 32=0.0%, >=64=0.0%
-     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
-     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
-     issued rwts: total=131040,131104,0,0 short=0,0,0,0 dropped=0,0,0,0
-     latency   : target=0, window=0, percentile=100.00%, depth=1
+   System: stand-1-i711700-32-low: GNU/Linux
+   OS: GNU/Linux -- 5.10.190-1-generic -- #astra1+ci7 SMP Fri Nov 17 18:52:36 UTC 2023
+   Machine: x86_64 (unknown)
+   Language: en_US.utf8 (charmap="ANSI_X3.4-1968", collate="ANSI_X3.4-1968")
+   CPU 0: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 1: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 2: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 3: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 4: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 5: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 6: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 7: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 8: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 9: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 10: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 11: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 12: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 13: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 14: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   CPU 15: 11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (4992.0 bogomips)
+          Hyper-Threading, x86-64, MMX, Physical Address Ext, SYSENTER/SYSEXIT, SYSCALL/SYSRET, Intel virtualization
+   19:08:31 up 2 days,  4:44,  1 user,  load average: 0.17, 0.40, 1.37; runlevel Apr
 
-Run status group 0 (all jobs):
-   READ: bw=75.0MiB/s (78.7MB/s), 75.0MiB/s-75.0MiB/s (78.7MB/s-78.7MB/s), io=512MiB (537MB), run=6824-6824msec
-  WRITE: bw=75.0MiB/s (78.7MB/s), 75.0MiB/s-75.0MiB/s (78.7MB/s-78.7MB/s), io=512MiB (537MB), run=6824-6824msec
+------------------------------------------------------------------------
+Benchmark Run: Пт апр 26 2024 19:08:32 - 19:36:22
+16 CPUs in system; running 2 parallel copies of tests
 
-Disk stats (read/write):
-  nvme0n1: ios=127499/57170, merge=0/40, ticks=5965/2391, in_queue=8360, util=97.20%
+Dhrystone 2 using register variables      143246784.6 lps   (10.0 s, 7 samples)
+Double-Precision Whetstone                    20551.7 MWIPS (8.8 s, 7 samples)
+Execl Throughput                              15652.6 lps   (30.0 s, 2 samples)
+File Copy 1024 bufsize 2000 maxblocks       2834191.2 KBps  (30.0 s, 2 samples)
+File Copy 256 bufsize 500 maxblocks          769094.8 KBps  (30.0 s, 2 samples)
+File Copy 4096 bufsize 8000 maxblocks       6953163.2 KBps  (30.0 s, 2 samples)
+Pipe Throughput                             5583656.0 lps   (10.0 s, 7 samples)
+Pipe-based Context Switching                 597931.3 lps   (10.0 s, 7 samples)
+Process Creation                              33074.6 lps   (30.0 s, 2 samples)
+Shell Scripts (1 concurrent)                  17100.2 lpm   (60.0 s, 2 samples)
+Shell Scripts (8 concurrent)                   9009.3 lpm   (60.0 s, 2 samples)
+System Call Overhead                        2712171.4 lps   (10.0 s, 7 samples)
+
+System Benchmarks Index Values               BASELINE       RESULT    INDEX
+Dhrystone 2 using register variables         116700.0  143246784.6  12274.8
+Double-Precision Whetstone                       55.0      20551.7   3736.7
+Execl Throughput                                 43.0      15652.6   3640.1
+File Copy 1024 bufsize 2000 maxblocks          3960.0    2834191.2   7157.0
+File Copy 256 bufsize 500 maxblocks            1655.0     769094.8   4647.1
+File Copy 4096 bufsize 8000 maxblocks          5800.0    6953163.2  11988.2
+Pipe Throughput                               12440.0    5583656.0   4488.5
+Pipe-based Context Switching                   4000.0     597931.3   1494.8
+Process Creation                                126.0      33074.6   2625.0
+Shell Scripts (1 concurrent)                     42.4      17100.2   4033.1
+Shell Scripts (8 concurrent)                      6.0       9009.3  15015.4
+System Call Overhead                          15000.0    2712171.4   1808.1
+                                                                   ========
+System Benchmarks Index Score                                        4739.2
+
+------------------------------------------------------------------------
+Benchmark Run: Пт апр 26 2024 19:36:22 - 20:04:15
+16 CPUs in system; running 4 parallel copies of tests
+
+Dhrystone 2 using register variables      253320338.8 lps   (10.0 s, 7 samples)
+Double-Precision Whetstone                    38827.8 MWIPS (9.1 s, 7 samples)
+Execl Throughput                              25687.8 lps   (30.0 s, 2 samples)
+File Copy 1024 bufsize 2000 maxblocks       4418231.1 KBps  (30.0 s, 2 samples)
+File Copy 256 bufsize 500 maxblocks         1337062.5 KBps  (30.0 s, 2 samples)
+File Copy 4096 bufsize 8000 maxblocks      10345063.0 KBps  (30.0 s, 2 samples)
+Pipe Throughput                            10035274.2 lps   (10.0 s, 7 samples)
+Pipe-based Context Switching                 940453.5 lps   (10.0 s, 7 samples)
+Process Creation                              52842.3 lps   (30.0 s, 2 samples)
+Shell Scripts (1 concurrent)                  40085.9 lpm   (60.0 s, 2 samples)
+Shell Scripts (8 concurrent)                   9533.4 lpm   (60.0 s, 2 samples)
+System Call Overhead                        2629950.0 lps   (10.0 s, 7 samples)
+
+System Benchmarks Index Values               BASELINE       RESULT    INDEX
+Dhrystone 2 using register variables         116700.0  253320338.8  21707.0
+Double-Precision Whetstone                       55.0      38827.8   7059.6
+Execl Throughput                                 43.0      25687.8   5973.9
+File Copy 1024 bufsize 2000 maxblocks          3960.0    4418231.1  11157.1
+File Copy 256 bufsize 500 maxblocks            1655.0    1337062.5   8078.9
+File Copy 4096 bufsize 8000 maxblocks          5800.0   10345063.0  17836.3
+Pipe Throughput                               12440.0   10035274.2   8066.9
+Pipe-based Context Switching                   4000.0     940453.5   2351.1
+Process Creation                                126.0      52842.3   4193.8
+Shell Scripts (1 concurrent)                     42.4      40085.9   9454.2
+Shell Scripts (8 concurrent)                      6.0       9533.4  15889.0
+System Call Overhead                          15000.0    2629950.0   1753.3
+                                                                   ========
+System Benchmarks Index Score                                        7483.2

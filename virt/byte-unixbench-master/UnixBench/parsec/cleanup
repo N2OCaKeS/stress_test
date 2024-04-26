@@ -1,0 +1,12 @@
+#!/usr/bin/bash
+
+# Read configuration
+for v in `cat $(dirname "$0")/config`; do
+  export $v
+done
+
+# Remove working directory if exist
+if [ -d "$parsec_workdir" ]; then
+  sudo rm -rf $parsec_workdir
+fi
+

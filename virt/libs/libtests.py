@@ -539,7 +539,7 @@ class UnixBench(CreateVM):
                             password=self.password) 
 
         get_remote_file(remote_file_path=f'/home/{self.user}/UnixBench/results/result.zip',
-                        local_file_path=f'{self.testdir}/result_testvm{self.vm_num}.info',
+                        local_file_path=f'{self.testdir}/result_testvm{self.vm_num}.zip',
                         ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                         user=self.user, 
                         password=self.password) 

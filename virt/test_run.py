@@ -1,6 +1,6 @@
-from libs.libtests import StealTime, FlexibleIOTester
+from libs.libtests import StealTime, FlexibleIOTester, UnixBench
 from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU, IO_DEPTH_1, \
-                      IO_DEPTH_128, FIO_RAM, FIO_vCPU
+                      IO_DEPTH_128, FIO_RAM, FIO_vCPU, UB_RAM, UB_vCPU
 from libs.virtlib import info_list
 from libs.zefir import UploaderZC
 import argparse
@@ -179,4 +179,16 @@ elif args.TESTNAME == 'fio':
     #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
+elif args.TESTNAME == 'unixbench':
+    unixbench_test = UnixBench(rc_vbox=args.VBOX,
+                               vm_count=1,
+                               testdir=REPORT_PATH,
+                               kernel=str(args.TCYC).split('_')[2],
+                               vcpu=UB_vCPU,
+                               ram=UB_RAM,
+                               vm_num=1)
 
+    unixbench_test.prepare_vms()
+    unixbench_test.start_test()
+
+    

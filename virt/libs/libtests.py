@@ -12,7 +12,8 @@ import pandas as pd
 from json import loads
 import numpy as np
 from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
-                      FIOVERS_18x, TEMPLATE_PATH, FIO_PATH, UB_ARHIVE
+                      FIOVERS_18x, TEMPLATE_PATH, FIO_PATH, UB_ARHIVE, STEP, \
+                      LOW_COPIES, HIGH_COPIES
 from time import sleep
 
 
@@ -141,30 +142,22 @@ class StealTime(CreateVM):
                 'password':f'{self.password}'
                 } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
-
         
-        try: 
-            [
-                create_remote_file(local_file_path='cpu_load', 
-                                   remote_file_path=f'/home/{self.user}/cpu_load', 
-                                   ip=self.vm_dates[vm]['ip'], 
-                                   user=self.user, 
-                                   password=self.password) 
-                                   for vm in self.vms
-            ]
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        try:
-            [
-                send_remote_command(command=self.set_exec_bit.format(self.user),
-                                    ip=self.vm_dates[vm]['ip'], 
-                                    user=self.user, 
-                                    password=self.password) 
-                                    for vm in self.vms
-            ]
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        [
+            create_remote_file(local_file_path='cpu_load', 
+                                remote_file_path=f'/home/{self.user}/cpu_load', 
+                                ip=self.vm_dates[vm]['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+                                for vm in self.vms
+        ]
+        [
+            send_remote_command(command=self.set_exec_bit.format(self.user),
+                                ip=self.vm_dates[vm]['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+                                for vm in self.vms
+        ]
 
 
         def __load_host_monitor():
@@ -204,41 +197,31 @@ class StealTime(CreateVM):
             thread_monitor.join()
             
 
-        try: 
-            [
-                get_remote_file(remote_file_path=f'/home/{self.user}/result.txt',
-                                local_file_path=f'{self.testdir}/result_{vm}.txt',
-                                ip=self.vm_dates[vm]['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-                                for vm in self.vms
-            ]
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        [
+            get_remote_file(remote_file_path=f'/home/{self.user}/result.txt',
+                            local_file_path=f'{self.testdir}/result_{vm}.txt',
+                            ip=self.vm_dates[vm]['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+                            for vm in self.vms
+        ]
+        [
+            get_remote_file(remote_file_path=f'/home/av.txt',
+                            local_file_path=f'{self.testdir}/{VM_INFONAME}',
+                            ip=self.vm_dates[vm]['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+                            for vm in self.vms
+        ]
+        [
+            get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
+                            local_file_path=f'{self.testdir}/{VM_KERNEL}',
+                            ip=self.vm_dates[vm]['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+                            for vm in self.vms
+        ]
 
-        try: 
-            [
-                get_remote_file(remote_file_path=f'/home/av.txt',
-                                local_file_path=f'{self.testdir}/{VM_INFONAME}',
-                                ip=self.vm_dates[vm]['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-                                for vm in self.vms
-            ]
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        try: 
-            [
-                get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
-                                local_file_path=f'{self.testdir}/{VM_KERNEL}',
-                                ip=self.vm_dates[vm]['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-                                for vm in self.vms
-            ]
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
 
     # Run before end general test, else every VM will shutdown 300 sec before reboot
@@ -382,82 +365,55 @@ class FlexibleIOTester(CreateVM):
         print(f'VM dates is:\n{self.vm_dates}')
 
         #Send & install fio pkg
-        try: 
-            create_remote_file(local_file_path=f'{FIO_PATH}/{self.fio_version}', 
-                                remote_file_path=f'/home/{self.user}/{self.fio_version}', 
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        try:
-            send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        try:
-            send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        try:
-            send_remote_command(command=self.fb_cmd,
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        try:
-            send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        #exec test cmd
-        try:
-            send_remote_command(command=self.fio_cmd,
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-
-        try: 
-            get_remote_file(remote_file_path=self.results_file_name,
-                            local_file_path=f'{self.testdir}/result_testvm{self.vm_num}.info',
+        create_remote_file(local_file_path=f'{FIO_PATH}/{self.fio_version}', 
+                            remote_file_path=f'/home/{self.user}/{self.fio_version}', 
                             ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                             user=self.user, 
                             password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
-        try: 
-                get_remote_file(remote_file_path=f'/home/av.txt',
-                                local_file_path=f'{self.testdir}/{VM_INFONAME}',
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
 
-        try: 
-                get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
-                                local_file_path=f'{self.testdir}/{VM_KERNEL}',
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+
+        send_remote_command(command=self.fb_cmd,
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+
+        send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+
+        #exec test cmd
+        send_remote_command(command=self.fio_cmd,
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+
+        get_remote_file(remote_file_path=self.results_file_name,
+                        local_file_path=f'{self.testdir}/result_testvm{self.vm_num}.info',
+                        ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
+
+        get_remote_file(remote_file_path=f'/home/av.txt',
+                        local_file_path=f'{self.testdir}/{VM_INFONAME}',
+                        ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
+
+        get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
+                        local_file_path=f'{self.testdir}/{VM_KERNEL}',
+                        ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
 
 
     # Run before end general test, else every VM will shutdown 300 sec before reboot
@@ -537,6 +493,7 @@ class UnixBench(CreateVM):
         self.vg_destroy = 'vagrant destroy {}'
         self.destroy = 'virsh destroy {}'
         self.undefine = 'virsh undefine {}'
+        self.run_cmd = './Run ' + ' '.join([f'-c {copy}' for copy in range(LOW_COPIES, HIGH_COPIES, STEP)])
 
 
     def start_test(self):
@@ -549,21 +506,48 @@ class UnixBench(CreateVM):
         print(f'VM dates is:\n{self.vm_dates}')
 
         #Send & install unixbench zip
-        try: 
-            create_remote_file(local_file_path=UB_ARHIVE, 
-                               remote_file_path=f'/home/{self.user}/unixbench.zip', 
-                               ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                               user=self.user, 
-                               password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        create_remote_file(local_file_path=UB_ARHIVE, 
+                           remote_file_path=f'/home/{self.user}/unixbench.zip', 
+                           ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                           user=self.user, 
+                           password=self.password) 
+        
+        send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+        
+        send_remote_command(command=f'cd /home/{self.user} && unzip unixbench.zip',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
 
-        try:
-            send_remote_command(command=f'cd /home/{self.user} && unzip unixbench.zip',
-                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        send_remote_command(command=f'cd /home/{self.user}/UnixBench && {self.run_cmd}',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+        
+        send_remote_command(command=f'cd /home/{self.user}/UnixBench/results && zip -r result.zip *',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+
+        get_remote_file(remote_file_path=f'/home/{self.user}/UnixBench/results/result.zip',
+                        local_file_path=f'{self.testdir}/result_testvm{self.vm_num}.info',
+                        ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
+
+        get_remote_file(remote_file_path=f'/home/av.txt',
+                        local_file_path=f'{self.testdir}/{VM_INFONAME}',
+                        ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
+
+        get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
+                        local_file_path=f'{self.testdir}/{VM_KERNEL}',
+                        ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
 
 

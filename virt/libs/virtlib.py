@@ -27,6 +27,17 @@ def cmd(command):
     subprocess.run(command, shell=True)
 
 
+def trycorator(function):
+    def wrapper(*args, **kwargs):
+        try: 
+            function(*args, **kwargs)
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+    return wrapper
+
+
+@trycorator
 def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -37,6 +48,7 @@ def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     client.close()
 
 
+@trycorator
 def send_remote_command(command, ip, user, password):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -54,6 +66,7 @@ def send_remote_command(command, ip, user, password):
     ssh.close()
 
 
+@trycorator
 def get_remote_file(remote_file_path, local_file_path, ip, user, password):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())

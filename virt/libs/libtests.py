@@ -522,7 +522,7 @@ class UnixBench(CreateVM):
                             user=self.user, 
                             password=self.password) 
         
-        send_remote_command(command=f'chmod +x /home/{self.user}/UnixBench/Run',
+        send_remote_command(command=f'chmod -R +x /home/{self.user}/UnixBench',
                             ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                             user=self.user, 
                             password=self.password) 

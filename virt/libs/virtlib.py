@@ -32,7 +32,7 @@ def trycorator(function):
         try: 
             function(*args, **kwargs)
         except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+            print(f'Function: {function.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
     return wrapper
 

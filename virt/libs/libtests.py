@@ -145,11 +145,11 @@ class StealTime(CreateVM):
         
         [
             create_remote_file(local_file_path='cpu_load', 
-                                remote_file_path=f'/home/{self.user}/cpu_load', 
-                                ip=self.vm_dates[vm]['ip'], 
-                                user=self.user, 
-                                password=self.password) 
-                                for vm in self.vms
+                               remote_file_path=f'/home/{self.user}/cpu_load', 
+                               ip=self.vm_dates[vm]['ip'], 
+                               user=self.user, 
+                               password=self.password) 
+                               for vm in self.vms
         ]
         [
             send_remote_command(command=self.set_exec_bit.format(self.user),

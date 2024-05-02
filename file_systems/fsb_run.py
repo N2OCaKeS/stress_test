@@ -365,6 +365,9 @@ lead_time = strftime("%H:%M:%S", gmtime(time() - start_time))
 print('lead time: {t}'.format(t=lead_time))
 
 # собрать системную информацию
+if str(astra_version()[0]).startswith('1.8') and args.FS == 'exfat':
+    PACKAGES[args.FS] = 'exfatprogs'
+
 info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_version()[1]),
             subprocess.run('uname -r',
                            shell=True,

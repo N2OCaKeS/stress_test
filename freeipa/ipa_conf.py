@@ -1,4 +1,15 @@
-import requests
+import subprocess
+
+def cmd(command):
+    ret_code = subprocess.run(command, shell=True).returncode
+    return ret_code
+
+try:
+    import requests
+except Exception as e:
+    print(str(e))
+    cmd('sudo apt-get install -y python3-requests')
+    import requests
 
 jira_url_api = 'http://bendiks.devos.astralinux.ru/rest/api/get-jira-url'
 confluence_url_api = 'http://bendiks.devos.astralinux.ru/rest/api/get-confluence-url'

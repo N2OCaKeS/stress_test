@@ -261,6 +261,11 @@ def get_confluence_url():
     return CONFLUENCE_URL, 200
 
 
+@app.route('/rest/api/get-repo-path', methods=['GET'])
+def get_repo_path():
+    return send_file('./releases.json', as_attachment=True)
+
+
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)
 

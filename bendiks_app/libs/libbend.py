@@ -35,7 +35,8 @@ from backup_image_conf import (VENV_PATH,
                                LowServer_group,
                                MiddleServer_group,
                                group_tests,
-                               JIRA_URL)
+                               JIRA_URL,
+                               releases_dict)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -625,6 +626,44 @@ def get_aqs_json(path, __basic):
 
     
 
+class ReleaseToRepo:
+    def __init__(self,
+                 current_directory=None):
+        self.load_filename = 'releases-index.json'
+        self.gen_filename = 'releases.json'
+        self.cur_directory = current_directory
+
+
+    def get_releases_index(self):
+        url = 'https://releases.devos.astralinux.ru/index.json'
+        response = requests.get(url)
+        assert response.status_code == 200, f'Request {self.load_filename} failed with status {response.status_code}'
+
+        with open(f'{self.cur_directory}/{self.load_filename}', 'wb') as f:
+            f.write(response.content)
+
+     
+    def generate_releases_file(self):
+        prefix = 'deb https://releases.devos.astralinux.ru/'
+        sufix = '_x86-64 main contrib non-free'
+
+        with open(f'{self.cur_directory}/{self.load_filename}', 'r') as r:
+            releases = json.load(r)
+
+        def __path_seporator(build_version):
+            release = '.'.join(build_version.split('.')[:2])
+            update = '.'.join(build_version.split('.')[:3])
+
+            return [f'{prefix}{releases['releases'][release][update][build_version]['files'][i]['mount_point']} {release}{sufix}'
+                    for i in range(len(releases['releases'][release][update][build_version]['files']))]
+
+
+        dates = {
+            key: __path_seporator(version) for key, version in releases_dict.items()
+        }
+
+        with open(f'{self.cur_directory}/{self.gen_filename}', 'w') as w:
+            json.dump(dates, w, indent=4)
     
     
 

@@ -3,7 +3,7 @@ import string
 import random
 import subprocess
 import os
-from libs.libbend import get_aqs_json
+from libs.libbend import get_aqs_json, ReleaseToRepo
 import json
 
 
@@ -12,6 +12,11 @@ with open('/home/u/tokens.json', 'r') as r:
 __git_token = tokens['git_token']
 current_directory = os.getcwd()
 get_aqs_json(current_directory, __git_token)
+
+
+repo = ReleaseToRepo(current_directory=current_directory)
+repo.get_releases_index()
+repo.generate_releases_file()
 
 
 def generate_random_string(length):

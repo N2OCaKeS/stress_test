@@ -654,7 +654,7 @@ class ReleaseToRepo:
             release = '.'.join(build_version.split('.')[:2])
             update = '.'.join(build_version.split('.')[:3])
 
-            return [f'{prefix}{releases['releases'][release][update][build_version]['files'][i]['mount_point']} {release}{sufix}'
+            return [f"{prefix}{releases['releases'][release][update][build_version]['files'][i]['mount_point']} {release}{sufix}"
                     for i in range(len(releases['releases'][release][update][build_version]['files']))]
 
 

@@ -12,7 +12,6 @@ from functools import reduce
 from distutils.version import LooseVersion
 from psb_conf import CONFLUENCE_URL
 
-
 class ConfluencePage:
     __url = f'https://{CONFLUENCE_URL}'
 
@@ -708,7 +707,8 @@ class PSQLStatistics2:
                 '5.10': [],
                 '5.15-gen': [],
                 '5.15-ll': [],
-                '6.1-gen': []
+                '6.1-gen': [],
+                '6.6-gen': []
             }
             for key, data in data_for_df.items():
                 if len(data.get("data")) == 0:
@@ -729,7 +729,8 @@ class PSQLStatistics2:
                     df_sort_5_15_gen = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\\S*generic', case=False, regex=True)]
                     df_sort_5_15_ll = df_for_each_version[df_for_each_version["Ядро"].str.contains('5.15\\S*low', case=False, regex=True)]
                     df_sort_6_1_gen = df_for_each_version[df_for_each_version["Ядро"].str.startswith('6.1')]
-                    dfs = [df_sort_5_10_gen, df_sort_5_15_gen, df_sort_5_15_ll, df_sort_6_1_gen]
+                    df_sort_6_6_gen = df_for_each_version[df_for_each_version["Ядро"].str.startswith('6.6')]
+                    dfs = [df_sort_5_10_gen, df_sort_5_15_gen, df_sort_5_15_ll, df_sort_6_1_gen, df_sort_6_6_gen]
                     for df_with_one_kernel in dfs:
                         try:
                             df_with_one_kernel[['numeric_version', 'additional_digits', 'kernel_type']] = df_with_one_kernel['Ядро'].str.split('-', expand=True)
@@ -772,6 +773,11 @@ class PSQLStatistics2:
                 df_6_1_gen = df[df["Ядро"].str.startswith('6.1')]
                 df_6_1_gen['Ядро'] = '6.1-gen'
                 temp_data_kernel["6.1-gen"].append(df_6_1_gen[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
+
+                df_6_6_gen = df[df["Ядро"].str.startswith('6.6')]
+                df_6_6_gen['Ядро'] = '6.6-gen'
+                temp_data_kernel["6.6-gen"].append(df_6_6_gen[['Релиз', 'Ядро', 'Стенд', 'rating_2']])
+
 
                 
 
@@ -901,7 +907,7 @@ class PSQLStatistics2:
             fig, ax = plt.subplots(figsize=(12.8, 7.2))
             ax.grid(True, alpha=.6)
             ax.set_title(f"Линейная диаграмма сравнения по ядрам.\n{test_name}")
-            colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c']
+            colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c', 'green']
             for index in range(ratings_for_plt_graph.shape[1]):
                 # print(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index])
                 ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])

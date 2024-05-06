@@ -650,7 +650,7 @@ class ReleaseToRepo:
         with open(f'{self.cur_directory}/{self.load_filename}', 'r') as r:
             releases = json.load(r)
 
-        def __path_seporator(build_version):
+        def __path_seporator(build_version: str):
             release = '.'.join(build_version.split('.')[:2])
             update = '.'.join(build_version.split('.')[:3])
 

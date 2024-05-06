@@ -23,6 +23,8 @@ from ansible.vars.manager import VariableManager
 from libs.zefir import ZefirResultTable, ZefirStatusAPI, response_status
 import psycopg2
 from psycopg2 import sql
+import threading
+
 
 
 parser = argparse.ArgumentParser()
@@ -650,35 +652,42 @@ class BootOrder:
         self.set_new_config = 'set /system1/bootconfig1/oemhp_uefibootsource{} bootorder=1'
         self.old_mode_key = '-oKexAlgorithms=+diffie-hellman-group1-sha1'
         self.no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+        self.reset_machine = 'reset /system1'
         self.slot_count = 5
         if os.path.isfile('/home/u/ilo.json'):
             with open('/home/u/ilo.json', 'r') as ilocfg:
                 self.ilo = json.load(ilocfg)
+        self.login = self.ilo[self.stand]['username']
+        self.password = self.ilo[self.stand]['password']
+        self.address = self.ilo[self.stand]['ip']
+        self.ssh_command = f'sshpass -p "{password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
 
     def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
         return output
 
-    def set_boot_order(self):
-        login = self.ilo[self.stand]['username']
-        password = self.ilo[self.stand]['password']
-        address = self.ilo[self.stand]['ip']
-        ssh_command = f'sshpass -p "{password}" ssh {self.no_fprint} {self.old_mode_key} -l {login} {address}'
-        
+    def set_boot_order(self):        
         try:
             for i in range(0, self.slot_count + 1, 1):
-                answer = self.cmd(f'{ssh_command} {self.show_config}{i}')
+                answer = self.cmd(f'{self.ssh_command} {self.show_config}{i}')
                 if self.boot_type in answer and i == 1:
                     logging.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
                     break
                 elif self.boot_type in answer and i != 1:
                     logging.debug(f'\033[93m{answer}\033[0m')
-                    result = self.cmd(f'{ssh_command} {self.set_new_config}'.format(i))
+                    result = self.cmd(f'{self.ssh_command} {self.set_new_config}'.format(i))
                     if 'Bootorder being set' in result:
                         logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
                     break
         except Exception as e:
             logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+
+    def reset_by_timer(self, func):
+        timer = 7200
+        sleep(timer)
+        if func.is_alive():
+            logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
+            logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
 
 
 
@@ -712,7 +721,7 @@ class TestRunProvision(BootOrder):
                 if comm_and_log(clonezilla_command) == 0:
                     write_status(success)
                 else: write_status(fail)
-            print('Clonezilla block done\n')
+            logging.debug('Clonezilla block done\n')
 
         if read_status() == success:
             write_status(in_prog)
@@ -738,7 +747,7 @@ class TestRunProvision(BootOrder):
             elif args.PSQL_BALANCE:
                 socket_available()
             write_status(success)
-            print('Grub block done\n')
+            logging.debug('Grub block done\n')
 
         if args.RELEASE not in systems and not args.PSQL_BALANCE:
             if read_status() == success:
@@ -872,7 +881,13 @@ def freeipa_authentication_test():
     run_provision.stand_ip = clients_ip
     run_provision.kernel = kernel
     run_provision.modes = False
-    run_provision.provision()
+
+    provision_thread = threading.Thread(target=run_provision.provision)
+    provision_thread.start()
+
+    reset_thread = threading.Thread(target=run_provision.reset_by_timer, args=(provision_thread,))
+    reset_thread.start()
+
     comm_and_log(f'cd {git_path} && {VENV_PATH} git_clone.py')
     comm_and_log(f'cd {git_path}/stress_test && git checkout freeipa')
     comm_and_log(f'cd {all_path} && {VENV_PATH} ipa_run.py {dates}')
@@ -881,6 +896,8 @@ def freeipa_authentication_test():
 
 
 
+######################################################################################################################
+######################################################################################################################
 
 
 with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
@@ -888,7 +905,11 @@ with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
 write_status(in_prog)
 
 run_provision = TestRunProvision(stand=args.STAND)
-run_provision.provision()
+provision_thread = threading.Thread(target=run_provision.provision)
+provision_thread.start()
+
+reset_thread = threading.Thread(target=run_provision.reset_by_timer, args=(provision_thread,))
+reset_thread.start()
 
 #dates.conf
 create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')

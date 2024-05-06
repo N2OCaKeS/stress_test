@@ -660,7 +660,7 @@ class BootOrder:
         self.login = self.ilo[self.stand]['username']
         self.password = self.ilo[self.stand]['password']
         self.address = self.ilo[self.stand]['ip']
-        self.ssh_command = f'sshpass -p "{password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
+        self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
 
     def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
@@ -684,10 +684,13 @@ class BootOrder:
 
     def reset_by_timer(self, func):
         timer = 7200
-        sleep(timer)
-        if func.is_alive():
-            logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
-            logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+        interval = 60
+        for _ in range(timer // interval):
+            sleep(interval)
+            if not func.is_alive():
+                return 0
+        logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
+        logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
 
 
 
@@ -910,6 +913,8 @@ provision_thread.start()
 
 reset_thread = threading.Thread(target=run_provision.reset_by_timer, args=(provision_thread,))
 reset_thread.start()
+
+provision_thread.join()
 
 #dates.conf
 create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')

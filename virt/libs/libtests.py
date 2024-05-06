@@ -391,7 +391,7 @@ class FlexibleIOTester(CreateVM):
         #                     user=self.user, 
         #                     password=self.password) 
         
-        send_remote_command(command=f'sudo apt-get install fio',
+        send_remote_command(command=f'sudo apt-get install fio -y',
                             ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                             user=self.user, 
                             password=self.password) 

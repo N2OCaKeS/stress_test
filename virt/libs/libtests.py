@@ -144,7 +144,7 @@ class StealTime(CreateVM):
         print(f'VM dates is:\n{self.vm_dates}')
         
         [
-            create_remote_file(local_file_path='cpu_load', 
+            create_remote_file(local_file_path='./cpu_load', 
                                remote_file_path=f'/home/{self.user}/cpu_load', 
                                ip=self.vm_dates[vm]['ip'], 
                                user=self.user, 

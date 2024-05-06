@@ -2,8 +2,8 @@ bendiks_app - v2.20.0
 * Add reset by 2 hours wait
   if load clonezilla snapshot 
   not successful
+* Add rc version args in starter
 
-  
 
 bendiks_app - v2.19.0
 * Add dynamic repo path API

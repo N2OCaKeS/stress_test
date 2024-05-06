@@ -25,12 +25,12 @@ git checkout $1
 
 #Настраиваем окружение и запускаем тест
 cd $1
-bash prepare.sh $1
+bash prepare.sh $1 $3
 
-if [ "$3" == "kernel" ]; then
-    python3 run.py -n "$2" -kn "$3"
-elif [ "$3" == "balance" ]; then
-    python3 run.py -n "$2" -bl "$3"
+if [ "$4" == "kernel" ]; then
+    python3 run.py -n "$2" -kn "$4"
+elif [ "$4" == "balance" ]; then
+    python3 run.py -n "$2" -bl "$4"
 else
     python3 run.py -n "$2"
 fi

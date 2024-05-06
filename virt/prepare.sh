@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# create venv 
+dpkg -s jq &> /dev/null || sudo apt-get install jq -y
+wget http://bendiks.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
+sudo jq -r ".\"$2\"[]" releases.json > /etc/apt/sources.list
 sudo apt update
+
+# create venv 
 sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo apt-get install -y libffi-dev strace 
 sudo apt-get install -y libcurl4-gnutls-dev

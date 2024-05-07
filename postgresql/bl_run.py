@@ -6,6 +6,7 @@ from psb_conf import REPORT_PATH
 import pandas
 import argparse
 import json
+import requests
 
 
 """
@@ -115,19 +116,57 @@ def cmd(command):
 
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-vbox_path = os.path.join(current_dir, 'balance', 'vbox.json')
-with open(vbox_path, 'r') as vbox:
-    vagrant_boxes = json.load(vbox)
+# vbox_path = os.path.join(current_dir, 'balance', 'vbox.json')
+# with open(vbox_path, 'r') as vbox:
+#     vagrant_boxes = json.load(vbox)
 
-set_box = args.SET_BOX + '.s'
-check_len_version = set_box.split('.')
-if len(check_len_version) == 7 and check_len_version[3] == 'UU':
-    set_box = '.'.join(check_len_version[:5]) + '.s'
-elif len(check_len_version) == 5 and check_len_version[3] != 'UU':
-    set_box = '.'.join(check_len_version[:3]) + '.s'
-box = [i for i in vagrant_boxes['vagrant_box'] if set_box in i]
-box_url = box[0][set_box][1]
-box_name = box[0][set_box][0]
+# set_box = args.SET_BOX + '.s'
+# check_len_version = set_box.split('.')
+# if len(check_len_version) == 7 and check_len_version[3] == 'UU':
+#     set_box = '.'.join(check_len_version[:5]) + '.s'
+# elif len(check_len_version) == 5 and check_len_version[3] != 'UU':
+#     set_box = '.'.join(check_len_version[:3]) + '.s'
+# box = [i for i in vagrant_boxes['vagrant_box'] if set_box in i]
+# box_url = box[0][set_box][1]
+# box_name = box[0][set_box][0]
+
+astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
+response_ac = requests.get(astra_config_url)
+if response_ac.status_code == 200:
+    with open('astra-config.json', 'wb') as acb:
+        acb.write(response_ac.content)
+else:
+    print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
+
+with open('astra-config.json', 'r') as r:
+    dates = json.loads(r.read())
+
+def __box_wrapper(box):
+    true_key = False
+    box_name = ''
+    box_url = ''
+    for i in dates['astra-version']['vagrant_box']:
+        if box in str(i):
+            for key in i.keys():
+                if str(key).endswith('s'):
+                    true_key = key
+                    box_name = i[true_key][0]
+                    box_url = i[true_key][1]             
+            
+    if true_key == False:
+        for i in dates['astra-version']['vagrant_box']:
+            if str(box).startswith('1.7'):
+                if '1.7.1.s' in str(i):
+                    box_name = i['1.7.1.s'][0]
+                    box_url = i['1.7.1.s'][1]
+            elif str(box).startswith('1.8'):
+                if '1.8.0.s' in str(i):
+                    box_name = i['1.8.0.s'][0]
+                    box_url = i['1.8.0.s'][1]
+    
+    return box_name, box_url
+
+box_name, box_url = __box_wrapper(args.SET_BOX)
 kernel = str(args.TCYC).split('_')[2]
 VMs = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

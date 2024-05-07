@@ -121,6 +121,8 @@ if __name__ == "__main__":
     sleep(15)
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_init_dc.py', "ipa_init_dc.py")
+    remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/prepare.sh', "prepare.sh")
+    remote_exec(f"sudo bash prepare.sh {args.TCV}", 'server')
     remote_exec("sudo python3 ipa_init_dc.py", 'server')
     
     """

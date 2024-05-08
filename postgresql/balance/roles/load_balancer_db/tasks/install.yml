@@ -49,7 +49,7 @@
       retries: 3
 
     - name: Set user integrity
-      command: pdpl-user -i 63 postgres
+      command: sudo pdpl-user -i 63 postgres
   when: not debian_linux
 
 

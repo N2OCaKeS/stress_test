@@ -427,7 +427,7 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
-while attempts_count < 5:
+while attempts_count < 2:
     for command in ansible_commands:
         print(colors(f'Begin task: {command}', 'yellow'))
         result_code = cmd(command)
@@ -437,7 +437,7 @@ while attempts_count < 5:
         if result_code != 0:
             print(f'\nResult code: {colors(result_code, "red")}\n')
             negotive_attempt = 0
-            while negotive_attempt < 3:
+            while negotive_attempt < 2:
                 if command == ansible_commands[0]:
                     if backup_vms_snapshots() != 0:
                         print('При восстановлении снимков произошла ошибка')
@@ -452,7 +452,7 @@ while attempts_count < 5:
                     print(f'\nResult code: {colors(result_code, "red")}\n')
                     if command == ansible_commands[0]:
                         vm.check_available_vms()
-            if negotive_attempt >= 3:
+            if negotive_attempt >= 2:
                 if command == ansible_commands[0]:
                     vm.rebuild = True
                     vm.build_all_vms()

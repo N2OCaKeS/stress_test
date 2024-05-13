@@ -16,6 +16,7 @@ sudo apt-get install linux-[5-6].*-lowlatency -y
 sudo apt-get install -y python3-pip
 python3 -m pip install --upgrade pip
 python3 -m pip install psycopg2-binary
+dpkg -s ntpsec &> /dev/null || sudo apt-get install ntpsec -y
 
 
 #mount second storage

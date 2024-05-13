@@ -5,6 +5,11 @@ set -vx
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://bendiks.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
 sudo jq -r ".\"$1\"[]" releases.json > /etc/apt/sources.list
+cat << EOF | sudo tee /etc/apt/preferences.d/devel
+Package: *
+Pin: release l=devel
+Pin-Priority: 500
+EOF
 sudo apt update
 
 sudo astra-update -A -T -r

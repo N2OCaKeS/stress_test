@@ -1,5 +1,5 @@
 {
-  "date": "2024-04-27 19:53:18.882444",
+  "date": "2024-05-13 12:38:48.188391",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -7081,6 +7081,28 @@
         }
       }
     },
+    "4.1": {
+      "4.1.1": {
+        "4.1.1.1": {
+          "files": [
+            {
+              "path": "frozen/4.1/4.1.1/4.1.1.1/iso/base-4.1.1.1-23.03.2020_00.00.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.1/4.1.1/4.1.1.1/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "3288ebf19bc32941dc39f5a58cd24319bc87fcac12bb50cda0b3c109a99d1ac8",
+                "md5": "5eee6a48f33f2849cbd35b37b61913a6"
+              }
+            }
+          ],
+          "path": "frozen/4.1/4.1.1/4.1.1.1"
+        }
+      }
+    },
     "1.5": {
       "1.5.8": {
         "1.5.8.1": {
@@ -7524,6 +7546,13 @@
       "1.5.9": {
         "path": "stable/1.5/1.5.9",
         "release_candidate": "1.5.9.1",
+        "special_versions": {}
+      }
+    },
+    "4.1": {
+      "4.1.1": {
+        "path": "stable/4.1/4.1.1",
+        "release_candidate": "4.1.1.1",
         "special_versions": {}
       }
     }

@@ -73,7 +73,9 @@ cz_comm = {
         '1.8.0.15':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.204" \
                 -l ru_RU.UTF-8 startdisk restore LowServer-180-6.6 nvme0n1',
         '1.8.1.1':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.204" \
-                -l ru_RU.UTF-8 startdisk restore LowServer-181rc1 nvme0n1'
+                -l ru_RU.UTF-8 startdisk restore LowServer-181rc1 nvme0n1',
+        '1.8.1.01':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.204" \
+                -l ru_RU.UTF-8 startdisk restore LowServer-181rc01 nvme0n1'
         },
     'stand4':{
         '1.7.5':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.203" \

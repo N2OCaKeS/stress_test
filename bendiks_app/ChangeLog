@@ -1,3 +1,10 @@
+bendiks_app - v2.20.1
+* Add filter to repo path
+* Add 6.6.12-1-generic,
+  6.1.82-1-generic no debug no trace
+  as 1.8.1.01
+
+
 bendiks_app - v2.20.0
 * Add reset by 2 hours wait
   if load clonezilla snapshot 

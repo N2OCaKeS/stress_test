@@ -657,13 +657,27 @@ class ReleaseToRepo:
             return [f"{prefix}{releases['releases'][release][update][build_version]['files'][i]['mount_point']} {release}{sufix}"
                     for i in range(len(releases['releases'][release][update][build_version]['files']))]
 
+        def __repo_filter(dates, key: str):
+            no_base_repo = ['1.7.4', '1.7.3.UU.2', '1.7.3.UU.1', '1.7.3', '1.7.2.UU.1', '1.7.2', '1.7.1', '1.7.0']
 
-        dates = {
+            if key.startswith('1.7') and key not in no_base_repo:
+                return [v for v in dates[key] if 'base-repository' in v]
+            elif key.startswith('1.7') and key in no_base_repo:
+                return [v for v in dates[key] if not 'installation' in v and not 'update-repository' in v]
+            elif key.startswith('1.8'):
+                return [v for v in dates[key] if not 'installation-di' in v]
+            else: return [v for v in dates[key]]
+
+        seporated_dates = {
             key: __path_seporator(version) for key, version in releases_dict.items()
         }
 
+        filtered_dates = {
+            key: __repo_filter(seporated_dates, key) for key, version in seporated_dates.items()
+        }
+
         with open(f'{self.cur_directory}/{self.gen_filename}', 'w') as w:
-            json.dump(dates, w, indent=4)
+            json.dump(filtered_dates, w, indent=4)
     
     
 

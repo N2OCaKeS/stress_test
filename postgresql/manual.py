@@ -1,0 +1,105 @@
+import argparse
+from libs.libpsb import cmd, check_output_command
+import threading
+from time import sleep
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-cleare',
+                    action='store',
+                    required=False,
+                    help='cleare logs',
+                    dest='CLEARE')
+
+parser.add_argument('-count',
+                    action='store',
+                    required=False,
+                    help='count logs',
+                    dest='COUNT')
+
+parser.add_argument('-test',
+                    action='store',
+                    required=False,
+                    help='start test',
+                    dest='TEST')
+
+parser.add_argument('-prepare',
+                    action='store',
+                    required=False,
+                    help='prepare db',
+                    dest='PREPARE')
+
+args = parser.parse_args()
+
+
+def prepare():
+    cmd('sudo bash psb_db_prep_manual_test.sh 15')
+
+def cpu_load(function):
+    results = []
+    command = """
+            top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
+            printf "%s::%s::%s::", 100-$8 "%", $2 "%", $4 "%"}'; 
+            free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
+            """
+    
+    while True:
+        results.append(check_output_command(command))
+        sleep(1)
+        if not function.is_alive():
+            return print(f'\nCPU loads:\n{results}\n')
+         
+def start_test():
+    cmd('pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
+
+def test():
+    start_test_thread = threading.Thread(target=start_test)
+    cpu_load_thread = threading.Thread(target=cpu_load, args=(start_test_thread,))
+
+    cpu_load_thread.start()
+    start_test_thread.start()
+    start_test_thread.join()
+
+def cleare():
+    #Cluster
+    cmd('pg_ctlcluster 15 TEST restart')
+    #Journald
+    cmd('journalctl --rotate --vacuum-time=1s --unit=postgresql@15-TEST')
+    #Syslog-NG
+    cmd('logrotate --force /etc/logrotate.d/syslog-ng-mod-astra')
+    print('Cleared logs done\n')
+
+def count():
+    def __sum_audit_count():
+        try:
+            with open("/tmp/pg_count_audit.txt") as f:
+                lines = f.readlines()
+            return sum([int(x.split()[0]) for x in lines])
+        except Exception as e:
+            print(f'Error: {type(e).__name__}\nMessage: {str(e)}')
+
+    psql_event_count = __sum_audit_count()
+    journald = check_output_command('journalctl -t postgres | wc -l')
+    syslog_ng = check_output_command('grep "postgres" /parsec/log/astra/events | wc -l')
+    bd_logs = check_output_command('grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/postgresql-*.log | wc -l')
+    mini_server = check_output_command('grep -o "type=\'AUDIT\'" /tmp/pg_test_audit.log | wc -l')
+    print(f'Event count:\npsql_event_count: {psql_event_count}\njournald: {journald}')
+    print(f'syslog_ng: {syslog_ng}\nbd_logs: {bd_logs}\nmini_server: {mini_server}\n')
+
+    try:
+        print(f'Summ events: {int(journald) + int(syslog_ng) + int(bd_logs) + int(mini_server)}')
+    except Exception as e:
+            print(f'Error: {type(e).__name__}\nMessage: {str(e)}')
+
+
+
+if args.CLEARE:
+    cleare()
+elif args.COUNT:
+    count()
+elif args.PREPARE:
+    prepare()
+elif args.TEST:
+    test()
+
+    

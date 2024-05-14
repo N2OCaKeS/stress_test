@@ -44,7 +44,7 @@ systemctl restart postgresql.service
 
 
 pgbench -i -h localhost -p 6000 -U postgres -s 100 $DB_NAME
-#pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test
+#pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 $DB_NAME
 
 cat << EOF > start_test.sh
 #!/bin/bash

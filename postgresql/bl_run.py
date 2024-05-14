@@ -427,6 +427,44 @@ for key, value in vm_creds.items():
     print(colors(key, 'yellow'), value)
 
 
+# while attempts_count < 1:
+#     for command in ansible_commands:
+#         print(colors(f'Begin task: {command}', 'yellow'))
+#         result_code = cmd(command)
+#         print(f'\nResult code: {result_code}\n')
+#         if command == ansible_commands[-1] and result_code == 0:
+#             print(colors('Ansible commands cycle is fully executed', 'green'))
+#         if result_code != 0:
+#             print(f'\nResult code: {colors(result_code, "red")}\n')
+#             negotive_attempt = 0
+#             while negotive_attempt < 1:
+#                 if command == ansible_commands[0]:
+#                     if backup_vms_snapshots() != 0:
+#                         print('При восстановлении снимков произошла ошибка')
+#                         negotive_attempt += 1
+#                         break
+#                 result_code = cmd(command)
+#                 print(f'\nResult code: {result_code}\n')
+#                 if result_code == 0:
+#                     break
+#                 else: 
+#                     negotive_attempt += 1
+#                     print(f'\nResult code: {colors(result_code, "red")}\n')
+#                     if command == ansible_commands[0]:
+#                         vm.check_available_vms()
+#             if negotive_attempt >= 1:
+#                 if command == ansible_commands[0]:
+#                     vm.rebuild = True
+#                     vm.build_all_vms()
+#                     vm.check_available_vms()
+#                 attempts_count += 1
+#                 #break
+#     else:
+#         attempts_count += 1
+#         break
+
+# print(f'Attempts count was: {attempts_count}')
+
 while attempts_count < 1:
     for command in ansible_commands:
         print(colors(f'Begin task: {command}', 'yellow'))
@@ -436,29 +474,9 @@ while attempts_count < 1:
             print(colors('Ansible commands cycle is fully executed', 'green'))
         if result_code != 0:
             print(f'\nResult code: {colors(result_code, "red")}\n')
-            negotive_attempt = 0
-            while negotive_attempt < 1:
-                if command == ansible_commands[0]:
-                    if backup_vms_snapshots() != 0:
-                        print('При восстановлении снимков произошла ошибка')
-                        negotive_attempt += 1
-                        break
-                result_code = cmd(command)
-                print(f'\nResult code: {result_code}\n')
-                if result_code == 0:
-                    break
-                else: 
-                    negotive_attempt += 1
-                    print(f'\nResult code: {colors(result_code, "red")}\n')
-                    if command == ansible_commands[0]:
-                        vm.check_available_vms()
-            if negotive_attempt >= 1:
-                if command == ansible_commands[0]:
-                    vm.rebuild = True
-                    vm.build_all_vms()
-                    vm.check_available_vms()
-                attempts_count += 1
-                #break
+            print('Command execution failed, stopping the loop!')
+            attempts_count += 1
+            break
     else:
         attempts_count += 1
         break

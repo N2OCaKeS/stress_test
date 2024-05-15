@@ -1,31 +1,32 @@
 import argparse
 import subprocess
 from os import linesep
+import os
 import threading
 from time import sleep
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-cleare',
-                    action='store',
+                    action='store_true',
                     required=False,
                     help='cleare logs',
                     dest='CLEARE')
 
 parser.add_argument('-count',
-                    action='store',
+                    action='store_true',
                     required=False,
                     help='count logs',
                     dest='COUNT')
 
 parser.add_argument('-test',
-                    action='store',
+                    action='store_true',
                     required=False,
                     help='start test',
                     dest='TEST')
 
 parser.add_argument('-prepare',
-                    action='store',
+                    action='store_true',
                     required=False,
                     help='prepare db',
                     dest='PREPARE')
@@ -52,8 +53,8 @@ def check_output_command(command, out=None):
     else:
         return errors
 
-def cmd(command, err=subprocess.DEVNULL, out=subprocess.DEVNULL):
-    subprocess.run(command, shell=True, stderr=err, stdout=out)
+def cmd(command):
+    subprocess.run(command, shell=True)
 
 def prepare():
     cmd('sudo bash psb_db_prep_manual_test.sh 15')
@@ -90,6 +91,9 @@ def cleare():
     cmd('journalctl --rotate --vacuum-time=1s --unit=postgresql@15-TEST')
     #Syslog-NG
     cmd('logrotate --force /etc/logrotate.d/syslog-ng-mod-astra')
+    if os.path.isfile('perf.data'):
+        cmd('sudo rm -r perf.data')
+    cmd('sudo rm -r /var/lib/postgresql/15/TEST/pg_log/*')
     print('Cleared logs done\n')
 
 def count():
@@ -103,9 +107,13 @@ def count():
 
     psql_event_count = __sum_audit_count()
     journald = check_output_command('journalctl -t postgres | wc -l')
-    syslog_ng = check_output_command('grep "postgres" /parsec/log/astra/events | wc -l')
-    bd_logs = check_output_command('grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/postgresql-*.log | wc -l')
-    mini_server = check_output_command('grep -o "type=\'AUDIT\'" /tmp/pg_test_audit.log | wc -l')
+    syslog_ng = check_output_command('grep -a "postgres" /parsec/log/astra/events | wc -l')
+    if os.path.exists('/var/lib/postgresql/15/TEST/pg_log/'):
+        bd_logs = check_output_command('grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/postgresql-*.log | wc -l')
+    else: bd_logs = 0
+    if os.path.isfile('/tmp/pg_test_audit.log'):
+        mini_server = check_output_command('grep -o "type=\'AUDIT\'" /tmp/pg_test_audit.log | wc -l')
+    else: mini_server = 0
     print(f'Event count:\npsql_event_count: {psql_event_count}\njournald: {journald}')
     print(f'syslog_ng: {syslog_ng}\nbd_logs: {bd_logs}\nmini_server: {mini_server}\n')
 

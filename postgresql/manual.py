@@ -29,6 +29,13 @@ parser.add_argument('-prepare',
                     help='prepare db',
                     dest='PREPARE')
 
+parser.add_argument('-flame',
+                    action='store',
+                    required=False,
+                    choices=['0', '1', '2', '3', '4', '5', '6'],
+                    help='create flamegraph',
+                    dest='FLAME')
+
 args = parser.parse_args()
 
 
@@ -91,6 +98,10 @@ def count():
     except Exception as e:
             print(f'Error: {type(e).__name__}\nMessage: {str(e)}')
 
+def flame():
+    cmd('sudo perf record -g -a pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
+    cmd(f'sudo perf script | perl libs/stackcollapse-perf.pl | perl libs/flamegraph.pl > result_{args.FLAME}.svg')
+    print('Flamegraph done')
 
 
 if args.CLEARE:
@@ -101,5 +112,8 @@ elif args.PREPARE:
     prepare()
 elif args.TEST:
     test()
+elif args.FLAME:
+    flame()
 
+    
     

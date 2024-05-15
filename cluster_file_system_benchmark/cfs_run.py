@@ -5,6 +5,13 @@
 # ; Date: 2022
 # ;===========================================================
 
+"""
+    Start:
+    1) ./cfs_prep.sh
+    2) Указать HOST_IP в cfs_conf.py
+    3) venv/bin/python3 cfs_run.py --libvirt --fs ocfs2 --nodes testvm2 testvm3 --test-set fs_mark_count --host-storage testvm1 
+"""
+
 import argparse
 import subprocess
 
@@ -22,7 +29,7 @@ from cfs_conf import  \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT, \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
-    STORAGE_NAME
+    STORAGE_NAME, HOST_IP
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -226,9 +233,9 @@ if args.VBOX or args.LIBVIRT: # вирт. стенд
         TODO 
         1) Подсчет node + 1 storage init и передать в vm_count
         2) Передача rc_vbox и аргуменгта при запуске
-        3) Передача hostip например из ip a
+        3) Передача hostip например из ip или из конфига
     """
-    virt_machines = VMS(rc_vbox="1.8.0.14", vm_count=len(all_hosts), hostip="10.177.103.202")
+    virt_machines = VMS(rc_vbox="1.8.0.14", vm_count=len(all_hosts), hostip=HOST_IP)
     virt_machines.prepare_and_start()
 
     cmd(storagecreate.format(fs=args.FS,

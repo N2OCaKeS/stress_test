@@ -105,6 +105,8 @@ SIZE = 1024
 SIZE_STEP = 1024
 SIZE_LIMIT = 10240
 
+HOST_IP = "10.177.103.202"
+
 GRAPH_DESCRIPTIONS = {
     'cfs_file_count_app_overhead_graph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">'
                                              'График зависимости времененных затрат приложения (не считая системные вызовы) от количества файлов.'

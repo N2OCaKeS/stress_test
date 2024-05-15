@@ -75,7 +75,7 @@ def cpu_load(function):
         results.append(check_output_command(command))
         sleep(1)
         if not function.is_alive():
-            return print(f'\nCPU loads:\n[CPU::user::system::RAM]:\n{__median()}\n')
+            return print(f'\nMedian CPU loads:\n[CPU::user::system::RAM]:\n{__median()}\n')
          
 def start_test():
     cmd('pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
@@ -136,8 +136,10 @@ def count():
             print(f'Error: {type(e).__name__}\nMessage: {str(e)}')
 
 def flame():
+    cmd('pg_ctlcluster 15 TEST start')
     cmd('sudo perf record -g -a pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
     cmd(f'sudo perf script | perl libs/stackcollapse-perf.pl | perl libs/flamegraph.pl > result_{args.FLAME}.svg')
+    cmd('pg_ctlcluster 15 TEST stop')
     print('Flamegraph done')
 
 

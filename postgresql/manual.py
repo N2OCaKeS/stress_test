@@ -138,7 +138,7 @@ def count():
 def flame():
     cmd('pg_ctlcluster 15 TEST start')
     cmd('sudo perf record -g -a pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
-    cmd(f'sudo perf script | perl libs/stackcollapse-perf.pl | perl libs/flamegraph.pl > result_{args.FLAME}.svg')
+    cmd(f'sudo perf script | perl libs/libstackcollapse-perf.pl | perl libs/libflamegraph.pl > result_{args.FLAME}.svg')
     cmd('pg_ctlcluster 15 TEST stop')
     print('Flamegraph done')
 

@@ -7,8 +7,11 @@
 
 import paramiko
 import subprocess
+import requests
+
 from time import strftime, time, gmtime
 from os import linesep
+from cfs_conf import JIRA_URL, CONFLUENCE_URL
 
 def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     client = paramiko.SSHClient()
@@ -110,3 +113,12 @@ def put_system_info_in_file(start, file):
 
     with open(file, 'a+') as info:
         info.writelines(info_lst)
+
+def response():
+    try:
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
+        return jira, life
+    except Exception as e:
+        jira, life = str(type(e).__name__), str(e)
+        return jira, life

@@ -74,7 +74,9 @@ def cpu_load(function):
             return print(f'\nCPU loads:\n{results}\n')
          
 def start_test():
+    cmd('pg_ctlcluster 15 TEST start')
     cmd('pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
+    cmd('pg_ctlcluster 15 TEST stop')
 
 def test():
     start_test_thread = threading.Thread(target=start_test)
@@ -87,6 +89,8 @@ def test():
 def cleare():
     #Cluster
     cmd('pg_ctlcluster 15 TEST restart')
+    cmd('sudo systemctl restart postgresql.service')
+    cmd('pg_ctlcluster 15 TEST stop')
     #Journald
     cmd('journalctl --rotate --vacuum-time=1s --unit=postgresql@15-TEST')
     #Syslog-NG
@@ -94,7 +98,6 @@ def cleare():
     if os.path.isfile('perf.data'):
         cmd('sudo rm -r perf.data')
     cmd('sudo rm -r /var/lib/postgresql/15/TEST/pg_log/*')
-    cmd('sudo systemctl restart postgresql.service')
     print('Cleared logs done\n')
 
 def count():
@@ -109,12 +112,17 @@ def count():
     psql_event_count = __sum_audit_count()
     journald = check_output_command('journalctl -t postgres | wc -l')
     syslog_ng = check_output_command('grep -a "postgres" /parsec/log/astra/events | wc -l')
+
     if os.listdir('/var/lib/postgresql/15/TEST/pg_log/'):
-        bd_logs = check_output_command('sudo grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/postgresql-Wed.log | wc -l')
+        comm = 'sudo grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/{} | wc -l'
+        files = os.listdir('/var/lib/postgresql/15/TEST/pg_log')
+        bd_logs = sum([check_output_command(comm.format(logs)) for logs in files])
     else: bd_logs = 0
+
     if os.path.isfile('/tmp/pg_test_audit.log'):
         mini_server = check_output_command('grep -o "type=\'AUDIT\'" /tmp/pg_test_audit.log | wc -l')
     else: mini_server = 0
+
     print(f'Event count:\npsql_event_count: {psql_event_count}\njournald: {journald}')
     print(f'syslog_ng: {syslog_ng}\nbd_logs: {bd_logs}\nmini_server: {mini_server}\n')
 

@@ -110,7 +110,7 @@ def count():
     journald = check_output_command('journalctl -t postgres | wc -l')
     syslog_ng = check_output_command('grep -a "postgres" /parsec/log/astra/events | wc -l')
     if os.listdir('/var/lib/postgresql/15/TEST/pg_log/'):
-        bd_logs = check_output_command('sudo sh -c \'grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/postgresql-*.log | wc -l\'')
+        bd_logs = check_output_command('sudo grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/postgresql-Wed.log | wc -l')
     else: bd_logs = 0
     if os.path.isfile('/tmp/pg_test_audit.log'):
         mini_server = check_output_command('grep -o "type=\'AUDIT\'" /tmp/pg_test_audit.log | wc -l')

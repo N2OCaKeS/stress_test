@@ -1,9 +1,9 @@
 import argparse
 import subprocess
-from os import linesep
 import os
 import threading
 from time import sleep
+from statistics import median
 
 
 parser = argparse.ArgumentParser()
@@ -44,8 +44,8 @@ args = parser.parse_args()
 def check_output_command(command, out=None):
     result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     output, errors = result.communicate()
-    output = linesep.join([s for s in output.splitlines() if s])
-    errors = linesep.join([s for s in errors.splitlines() if s])
+    output = os.linesep.join([s for s in output.splitlines() if s])
+    errors = os.linesep.join([s for s in errors.splitlines() if s])
     if errors == "":
         return output
     elif out != None:
@@ -63,33 +63,37 @@ def cpu_load(function):
     results = []
     command = """
             top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
-            printf "%s::%s::%s::", 100-$8 "%", $2 "%", $4 "%"}'; 
-            free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
+            printf "%s::%s::%s::", 100-$8, $2, $4}'; 
+            free -m | awk 'NR==2{printf "%s\\n", $2-$7}'
             """
     
+    def __median():
+        rare_dates = [list(map(float, str(i).replace(',', '.').split('::'))) for i in results]
+        return [round(median([j[i] for j in rare_dates]), 1) for i in range(len(rare_dates[0]))]
+        
     while True:
         results.append(check_output_command(command))
         sleep(1)
         if not function.is_alive():
-            return print(f'\nCPU loads:\n{results}\n')
+            return print(f'\nCPU loads:\n[CPU::user::system::RAM]:\n{__median()}\n')
          
 def start_test():
-    cmd('pg_ctlcluster 15 TEST start')
     cmd('pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
-    cmd('pg_ctlcluster 15 TEST stop')
-
+    
 def test():
     start_test_thread = threading.Thread(target=start_test)
     cpu_load_thread = threading.Thread(target=cpu_load, args=(start_test_thread,))
 
+    cmd('pg_ctlcluster 15 TEST start')
     cpu_load_thread.start()
     start_test_thread.start()
     start_test_thread.join()
+    cmd('pg_ctlcluster 15 TEST stop')
 
 def cleare():
     #Cluster
-    cmd('pg_ctlcluster 15 TEST restart')
     cmd('sudo systemctl restart postgresql.service')
+    cmd('pg_ctlcluster 15 TEST restart')
     cmd('pg_ctlcluster 15 TEST stop')
     #Journald
     cmd('journalctl --rotate --vacuum-time=1s --unit=postgresql@15-TEST')
@@ -116,7 +120,7 @@ def count():
     if os.listdir('/var/lib/postgresql/15/TEST/pg_log/'):
         comm = 'sudo grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/{} | wc -l'
         files = os.listdir('/var/lib/postgresql/15/TEST/pg_log')
-        bd_logs = sum([check_output_command(comm.format(logs)) for logs in files])
+        bd_logs = sum([int(check_output_command(comm.format(logs))) for logs in files])
     else: bd_logs = 0
 
     if os.path.isfile('/tmp/pg_test_audit.log'):

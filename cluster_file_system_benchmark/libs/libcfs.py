@@ -103,7 +103,7 @@ def put_system_info_in_file(start, file):
                 subprocess.run('uname -r',
                                shell=True,
                                stdout=subprocess.PIPE).stdout.decode("utf-8"),
-                subprocess.run("dpkg -l auditd | awk '{print $3}' | tail -n1",
+                subprocess.run("dpkg -l ocfs2-tools | awk '{print $3}' | tail -n1",
                                shell=True,
                                stdout=subprocess.PIPE).stdout.decode("utf-8"),
                 str(lead_time)]

@@ -94,6 +94,7 @@ def cleare():
     if os.path.isfile('perf.data'):
         cmd('sudo rm -r perf.data')
     cmd('sudo rm -r /var/lib/postgresql/15/TEST/pg_log/*')
+    cmd('sudo systemctl restart postgresql.service')
     print('Cleared logs done\n')
 
 def count():
@@ -108,7 +109,7 @@ def count():
     psql_event_count = __sum_audit_count()
     journald = check_output_command('journalctl -t postgres | wc -l')
     syslog_ng = check_output_command('grep -a "postgres" /parsec/log/astra/events | wc -l')
-    if os.path.exists('/var/lib/postgresql/15/TEST/pg_log/'):
+    if os.listdir('/var/lib/postgresql/15/TEST/pg_log/'):
         bd_logs = check_output_command('grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/postgresql-*.log | wc -l')
     else: bd_logs = 0
     if os.path.isfile('/tmp/pg_test_audit.log'):

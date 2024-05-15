@@ -372,7 +372,7 @@ if args.LIBVIRT:
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
             storage_host_client.run("sudo mount {hostip}:/home/u/git/stress_test/cluster_file_system_benchmark {dir}".format(dir=SCRIPT_DIR,
-                                                                                                                             hostip="10.177.103.202"))
+                                                                                                                             hostip=HOST_IP))
 
 
 print("#########################")

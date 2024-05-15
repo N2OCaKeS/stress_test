@@ -1,5 +1,6 @@
 import argparse
-from libs.libpsb import cmd, check_output_command
+import subprocess
+from os import linesep
 import threading
 from time import sleep
 
@@ -38,6 +39,21 @@ parser.add_argument('-flame',
 
 args = parser.parse_args()
 
+
+def check_output_command(command, out=None):
+    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    output, errors = result.communicate()
+    output = linesep.join([s for s in output.splitlines() if s])
+    errors = linesep.join([s for s in errors.splitlines() if s])
+    if errors == "":
+        return output
+    elif out != None:
+        return errors + output
+    else:
+        return errors
+
+def cmd(command, err=subprocess.DEVNULL, out=subprocess.DEVNULL):
+    subprocess.run(command, shell=True, stderr=err, stdout=out)
 
 def prepare():
     cmd('sudo bash psb_db_prep_manual_test.sh 15')
@@ -115,5 +131,5 @@ elif args.TEST:
 elif args.FLAME:
     flame()
 
-    
+
     

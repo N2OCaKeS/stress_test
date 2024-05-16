@@ -3,6 +3,7 @@ import requests
 from json import loads
 from libs.libactions import cmd
 from libs.libcfs import check_output_command
+from time import sleep
 
 class VMS:
     def __init__(self, rc_vbox=None, vm_count=None, testdir=None, kernel="6.1", hostip=None):
@@ -44,9 +45,9 @@ class VMS:
             if true_key == False:
                 for i in dates['astra-version']['vagrant_box']:
                     if str(box).startswith('1.7'):
-                          if '1.7.5.o' in str(i):
-                            box_name = i['1.7.5.o'][0]
-                            box_url = i['1.7.5.o'][1]
+                          if '1.7.1.o' in str(i):
+                            box_name = i['1.7.1.o'][0]
+                            box_url = i['1.7.1.o'][1]
                     elif str(box).startswith('1.8'):
                         if '1.8.0.o' in str(i):
                             box_name = i['1.8.0.o'][0]
@@ -76,6 +77,9 @@ class VMS:
          # create_vm
         print(f'UPDATE={box_name} HOSTIP={self.hostip} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
         cmd(f'UPDATE={box_name} HOSTIP={self.hostip} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
+        
+        print('\nWait reboot VMs 180s...\n')
+        sleep(180)
 
         self.vm_dates = {
              vm:{

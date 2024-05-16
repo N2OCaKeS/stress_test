@@ -235,7 +235,7 @@ if args.VBOX or args.LIBVIRT: # вирт. стенд
         2) Передача rc_vbox и аргуменгта при запуске
         3) Передача hostip например из ip или из конфига
     """
-    virt_machines = VMS(rc_vbox="1.8.0.14", vm_count=len(all_hosts), hostip=HOST_IP)
+    virt_machines = VMS(rc_vbox="1.8.0", vm_count=len(all_hosts), hostip=HOST_IP)
     virt_machines.prepare_and_start()
 
     cmd(storagecreate.format(fs=args.FS,
@@ -329,6 +329,14 @@ try:
     # exit(1)
 
     if args.LIBVIRT:
+
+        for node in all_hosts:
+             with Connection(host=HOSTS[node]['ip'],
+                        user=USER,
+                        connect_kwargs={"password": PASSWORD}) as storage_host_client:
+                storage_host_client.run("sudo mount {hostip}:/home/u/git/stress_test/cluster_file_system_benchmark {dir}".format(dir=SCRIPT_DIR,
+                                                                                                                                 hostip=HOST_IP))
+
         with Connection(host=HOSTS[args.STORAGE]['ip'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:

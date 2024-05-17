@@ -90,3 +90,16 @@ else:
     cmd("mkfs -t {fs} {ic} -F /dev/{device}1".format(fs=args.FS, device=STORAGE_NAME, ic=INODE_COUNT))
 
 cmd("mount /dev/{device}1 {mount_dir}".format(device=STORAGE_NAME, mount_dir=STORAGE_MOUNT_DIR))
+
+
+
+
+#To manual nvme test
+#dd if=/dev/zero of=test_dir bs=1M count=1000
+#sudo mkfs.xfs test_dir
+#mkdir /tmp/test_dir
+#sudo mount -o loop test_dir /tmp/test_dir
+#/home/u/git/stress_test/file_systems/fs_mark-3.3/fs_mark -d /tmp/test_dir -s 1024 -n 10000 -v
+#/home/u/git/stress_test/file_systems/fs_mark-3.3/fs_mark -d /tmp/test_dir -s 1024 -n 50000 -v
+#/home/u/git/stress_test/file_systems/fs_mark-3.3/fs_mark -d /tmp/test_dir -s 1024 -n 90000 -v
+

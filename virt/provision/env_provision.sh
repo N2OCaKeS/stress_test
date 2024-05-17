@@ -9,6 +9,10 @@ cat << EOF | sudo tee /etc/apt/preferences.d/devel
 Package: *
 Pin: release l=devel
 Pin-Priority: 500
+
+Package: *
+Pin: release l=extended
+Pin-Priority: 500
 EOF
 sudo apt update
 

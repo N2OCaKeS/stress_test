@@ -5,6 +5,13 @@
 # ; Date: 2022
 # ;===========================================================
 
+"""
+    Start:
+    1) ./cfs_prep.sh
+    2) Указать HOST_IP в cfs_conf.py
+    3) venv/bin/python3 cfs_run.py --libvirt --fs ocfs2 --nodes testvm2 testvm3 --test-set fs_mark_count --host-storage testvm1 
+"""
+
 import argparse
 import subprocess
 
@@ -14,11 +21,15 @@ from threading import Thread
 from fabric import Connection
 from time import sleep, time
 from libs.libtable import Report
-from cfs_conf import MACHINE_POSTFIX, SNAPSHOT_NAME, \
-    HOSTS, USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME, INFO_FILENAME, \
+from libs.libcfs import create_remote_file
+from cfs_create_vms import VMS
+
+from cfs_conf import  \
+    USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME, INFO_FILENAME, \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT, \
-    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, IPTABLES_COMMAND
+    START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
+    STORAGE_NAME, HOST_IP
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -38,7 +49,7 @@ parser.add_argument('--disk-size',
                     action='store',
                     required=False,
                     type=str,
-                    default='5120',
+                    default='25',
                     help='size of vdi disk',
                     dest='DISK_SIZE')
 
@@ -91,17 +102,18 @@ all_hosts = args.NODES + [args.STORAGE]
 # bash cmd # /home/$USER/VirtualBox\ VMs/
 
 if args.LIBVIRT:
-    restore_snapshot = 'virsh --connect qemu:///system snapshot-revert {host}_{postfix} {snapshot}'
-    storagecreate = 'cd /var/lib/libvirt/images && sudo qemu-img create -f qcow2 cluster_storage {size}M'
-    storageattach = 'virsh --connect qemu:///system attach-device {host}_{postfix} --config storage.xml '
-    startvm = 'virsh --connect qemu:///system start {host}_{postfix}'
-    controlvm_off = 'virsh --connect qemu:///system destroy {host}_{postfix}'
-else:
-    restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {snapshot}'
-    storagecreate = 'VBoxManage createmedium disk --filename /home/$USER/VirtualBox\ VMs/{fs}_storage --size {size} --format VDI --variant Standard'
-    storageattach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium /home/$USER/VirtualBox\ VMs/{fs}_storage.vdi'
-    startvm = 'VBoxManage startvm {host}_{postfix} --type headless'
-    controlvm_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
+    restore_snapshot = 'virsh --connect qemu:///system snapshot-revert {host} {snapshot}'
+    storagecreate = 'cd /var/lib/libvirt/images && sudo qemu-img create -f qcow2 cluster_storage {size}G'
+    # storageattach = 'virsh --connect qemu:///system attach-device {host} --config storage.xml '
+    storageattach = f"virsh --connect qemu:///system attach-disk testvm1 --source /var/lib/libvirt/images/cluster_storage --target {STORAGE_NAME} --persistent --driver qemu --subdriver qcow2 --type disk"
+    startvm = 'virsh --connect qemu:///system start {host}'
+    controlvm_off = 'virsh --connect qemu:///system destroy {host}'
+# else:
+#     restore_snapshot = 'VBoxManage snapshot {host}_{postfix} restore {snapshot}'
+#     storagecreate = 'VBoxManage createmedium disk --filename /home/$USER/VirtualBox\ VMs/{fs}_storage --size {size} --format VDI --variant Standard'
+#     storageattach = 'VBoxManage storageattach {host}_{postfix} --storagectl "SATA Controller" --port 2 --device 0 --type hdd --medium /home/$USER/VirtualBox\ VMs/{fs}_storage.vdi'
+#     startvm = 'VBoxManage startvm {host}_{postfix} --type headless'
+#     controlvm_off = 'VBoxManage controlvm {host}_{postfix} poweroff'
 
 local_current_dir = path.dirname(path.realpath(__file__))
 
@@ -112,20 +124,20 @@ pm_off = ''
 
 ssh_keygen = 'ssh-keygen -f "/home/$USER/.ssh/known_hosts" -R {ip}'
 add_nodes_in_ssh_scrt = "sed -i '3s/.*/ips=({nodes} {host})/' /home/$USER/git/stress_test/cluster_file_system_benchmark/ssh_key.sh"
-run_storage_init = 'sudo python3.11 {dir}/cfs_storage_init.py --fs {fs} --host-storage {st_host} --nodes {hosts}'
-run_test_cmd = 'sudo python3.11 {dir}/{file} --test-set {ts}'
+run_storage_init = 'sudo python3 {dir}/cfs_storage_init.py --fs {fs} --host-storage {st_host} --nodes {hosts}'
+run_test_cmd = 'sudo python3 {dir}/{file} --test-set {ts}'
 
 
 def host_is_available(node):
     try:
-        if args.VBOX:  # вирт. стенд
-            with Connection(host='127.0.0.1',
-                            port=HOSTS[node]['port'],
-                            user=USER,
-                            connect_kwargs={"password": PASSWORD}) as node_client:
-                if str(node_client.run('uptime')):
-                    return True
-        elif args.LIBVIRT: # libvirt
+        # if args.VBOX:  # вирт. стенд
+        #     with Connection(host='127.0.0.1',
+        #                     port=HOSTS[node]['port'],
+        #                     user=USER,
+        #                     connect_kwargs={"password": PASSWORD}) as node_client:
+        #         if str(node_client.run('uptime')):
+        #             return True
+        if args.LIBVIRT: # libvirt
             with Connection(host=HOSTS[node]['ip'],
                             user=USER,
                             connect_kwargs={"password": PASSWORD}) as node_client:
@@ -152,14 +164,14 @@ def run_test(node=args.NODES[0], test_set='fs_mark_count', cmd_template=run_test
         test_cmd = test_cmd + ' --parsec'
 
     try:
-        if args.VBOX:  # вирт. стенд
-            with Connection(host='127.0.0.1',
-                            port=HOSTS[node]['port'],
-                            user=USER,
-                            connect_kwargs={"password": PASSWORD}) as node_client:
-                node_client.run(test_cmd)
+        # if args.VBOX:  # вирт. стенд
+        #     with Connection(host='127.0.0.1',
+        #                     port=HOSTS[node]['port'],
+        #                     user=USER,
+        #                     connect_kwargs={"password": PASSWORD}) as node_client:
+        #         node_client.run(test_cmd)
 
-        elif args.LIBVIRT:
+        if args.LIBVIRT:
             with Connection(host=HOSTS[node]['ip'],
                             user=USER,
                             connect_kwargs={"password": PASSWORD}) as node_client:
@@ -177,20 +189,20 @@ def run_test(node=args.NODES[0], test_set='fs_mark_count', cmd_template=run_test
 
 
 def shutdown_all_hosts(hosts=all_hosts):
-    if args.VBOX: # вирт. стенд
+    # if args.VBOX: # вирт. стенд
+    #     for host in hosts:
+    #         subprocess.run(controlvm_off.format(host=host, postfix=MACHINE_POSTFIX),
+    #                        shell=True,
+    #                        stderr=subprocess.DEVNULL)
+    if args.LIBVIRT:
         for host in hosts:
-            subprocess.run(controlvm_off.format(host=host, postfix=MACHINE_POSTFIX),
-                           shell=True,
-                           stderr=subprocess.DEVNULL)
-    elif args.LIBVIRT:
-        for host in hosts:
-            subprocess.run(controlvm_off.format(host=host, postfix=MACHINE_POSTFIX),
+            subprocess.run(controlvm_off.format(host=host),
                            shell=True,
                            stderr=subprocess.DEVNULL)
 
     else:  # физ. стенд
         for host in hosts:
-            subprocess.run(pm_off.format(host=host, postfix=MACHINE_POSTFIX),
+            subprocess.run(pm_off.format(host=host),
                            shell=True,
                            stderr=subprocess.DEVNULL)
 
@@ -198,29 +210,46 @@ def shutdown_all_hosts(hosts=all_hosts):
 def cmd(command):
     subprocess.run(command,
                    shell=True,
-                   stderr=subprocess.DEVNULL)
+                   stderr=subprocess.STDOUT)
 
 
 start_time = time()
 
-if args.LIBVIRT:
-    for command in IPTABLES_COMMAND:
-        cmd(command)
+# if args.LIBVIRT:
+#     for command in IPTABLES_COMMAND:
+#         cmd(command)
+
+
 
 if args.VBOX or args.LIBVIRT: # вирт. стенд
-    # Восстановить последний актуальные снимки SNAPSHOT_NAME
-    for host in all_hosts:
-        sleep(1)
-        cmd(restore_snapshot.format(host=host,
-                                    postfix=MACHINE_POSTFIX,
-                                    snapshot=SNAPSHOT_NAME))
+#     # Восстановить последний актуальные снимки SNAPSHOT_NAME
+#     for host in all_hosts:
+#         sleep(1)
+#         cmd(restore_snapshot.format(host=host, 
+#                                     snapshot=SNAPSHOT_NAME))
     # Создать тестовый накопитель
+
+    """
+        TODO 
+        1) Подсчет node + 1 storage init и передать в vm_count
+        2) Передача rc_vbox и аргуменгта при запуске
+        3) Передача hostip например из ip или из конфига
+    """
+    virt_machines = VMS(rc_vbox="1.8.0", vm_count=len(all_hosts), hostip=HOST_IP)
+    virt_machines.prepare_and_start()
+
     cmd(storagecreate.format(fs=args.FS,
                              size=args.DISK_SIZE))
 
+    
     cmd(storageattach.format(host=args.STORAGE,
-                             postfix=MACHINE_POSTFIX,
                              fs=args.FS))
+
+
+    HOSTS = virt_machines.vm_dates
+    # testvm1_value = HOSTS.pop('testvm1')
+    # HOSTS.update({'testvm1': testvm1_value})
+    # print(HOSTS)
 
 else:  # физ. стенд
     for host in all_hosts:
@@ -236,7 +265,7 @@ for host in all_hosts:
 if args.VBOX or args.LIBVIRT: # вирт. стенд
     for host in all_hosts:
         sleep(3)
-        cmd(startvm.format(host=host, postfix=MACHINE_POSTFIX))   
+        cmd(startvm.format(host=host))   
 
 else:  # физ. стенд
     pass
@@ -268,7 +297,7 @@ for node in args.NODES:
                  '        cluster = {fs}\n'.format(fs=args.FS),
                  '        ip_port = {p}\n'.format(p=PORT),
                  '        ip_address = {ip}\n'.format(ip=HOSTS[node]['ip']),
-                 '        name = {hostname}\n'.format(hostname=HOSTS[node]['short_name']),
+                 '        name = {hostname}\n'.format(hostname=node),
                  '\n']
     conf += node_conf
 
@@ -276,24 +305,42 @@ with open('cluster.conf', 'w') as file:
     file.writelines(conf)
 
 str_hosts = " ".join(args.NODES)
+
+print("TEST")
 # Настройка storage машины
 print("#########################")
 print("###### - PREPAPE - ######")
 print("#########################")
 try:
-    if args.VBOX:
-        with Connection(host='127.0.0.1',
-                        port=HOSTS[args.STORAGE]['port'],
+    # if args.VBOX:
+    #     with Connection(host='127.0.0.1',
+    #                     port=HOSTS[args.STORAGE]['port'],
+    #                     user=USER,
+    #                     connect_kwargs={"password": PASSWORD}) as storage_host_client:
+    #         storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
+    #                                                         fs=args.FS,
+    #                                                         st_host=args.STORAGE,
+    #
+    #                                                          hosts=str_hosts))
+    with open("./cfs_conf_2.py", "w+") as file:
+        hosts_str = f"HOSTS = {HOSTS}"
+        file.write(hosts_str)
+    
+    # exit(1)
+
+    if args.LIBVIRT:
+
+        for node in all_hosts:
+             with Connection(host=HOSTS[node]['ip'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
-            storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
-                                                            fs=args.FS,
-                                                            st_host=args.STORAGE,
-                                                            hosts=str_hosts))
-    elif args.LIBVIRT:
+                storage_host_client.run("sudo mount {hostip}:/home/u/git/stress_test/cluster_file_system_benchmark {dir}".format(dir=SCRIPT_DIR,
+                                                                                                                                 hostip=HOST_IP))
+
         with Connection(host=HOSTS[args.STORAGE]['ip'],
                         user=USER,
                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
+            print("test_prep")
             storage_host_client.run(run_storage_init.format(dir=SCRIPT_DIR,
                                                             fs=args.FS,
                                                             st_host=args.STORAGE,
@@ -309,14 +356,32 @@ try:
                                                             hosts=str_hosts))
 except Exception as exptn:
     print("\033[91mНе удалось настроить стенд.\033[0m")
+    print("$$$$$$")
     print(exptn)
-    exit(2)
+    print("$$$$")
+    # exit(2)
 
 # Ожидание окончания перезагрузки машин для подключения хранилища
+
+# if args.LIBVIRT:
+#         with Connection(host=HOSTS[args.STORAGE]['ip'],
+#                         user=USER,
+#                         connect_kwargs={"password": PASSWORD}) as storage_host_client:
+#             storage_host_client.run("sudo reboot")
+
 for node in args.NODES:
     while host_is_available(node) is False:
         sleep(1)
     sleep(10)
+
+# # exit(1)
+if args.LIBVIRT:
+        with Connection(host=HOSTS[args.NODES[0]]['ip'],
+                        user=USER,
+                        connect_kwargs={"password": PASSWORD}) as storage_host_client:
+            storage_host_client.run("sudo mount {hostip}:/home/u/git/stress_test/cluster_file_system_benchmark {dir}".format(dir=SCRIPT_DIR,
+                                                                                                                             hostip=HOST_IP))
+
 
 print("#########################")
 print("###### - TESTING - ######")

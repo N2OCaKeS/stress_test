@@ -13,7 +13,7 @@ from json import loads
 import numpy as np
 from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
                       FIOVERS_18x, TEMPLATE_PATH, FIO_PATH, UB_ARHIVE, STEP, \
-                      LOW_COPIES, HIGH_COPIES
+                      LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML
 from time import sleep
 
 
@@ -562,5 +562,40 @@ class UnixBench(CreateVM):
                         ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                         user=self.user, 
                         password=self.password) 
+
+
+    def vms_destroy(self):
+        try:
+            [
+                cmd(f'virsh dumpxml {vm_name}') for vm_name in self.vms
+            ]
+            [
+                cmd(self.destroy.format(vm_name)) for vm_name in self.vms
+            ]
+            [
+                cmd(self.undefine.format(vm_name)) for vm_name in self.vms
+            ]
+            cmd('rm -rf .vagrant')
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+
+    def results_processing(self):
+        arh_name = 'result_testvm1.zip'
+        cmd(f'cd {REPORT_PATH} && unzip {arh_name}')
+
+        files = os.listdir(REPORT_PATH)
+        file_name = [name for name in files if all(x not in name for x in ['log', 'zip', 'info', 'log'])]
+                   
+        with open(f'{REPORT_PATH}/{file_name[0]}', 'r') as r:
+            text = r.readlines()
+
+        keys = [' '.join(line.split(' ')[5:7]) for line in text if 'running' in line]
+        values = [line.split(' ')[-1].strip() for line in text if 'Score' in line]
+        results = {k: v for k, v in zip(keys, values)}
+        print(results)
+
+        df = pd.DataFrame(results, index=['Total score']).T
+        df.to_html(UB_RESULT_HTML)
 
 

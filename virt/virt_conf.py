@@ -43,4 +43,5 @@ LOW_COPIES = 4
 HIGH_COPIES = 16
 UB_vCPU = 8
 UB_RAM = 16384
+UB_RESULT_HTML = 'results.html'
 

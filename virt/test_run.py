@@ -190,7 +190,8 @@ elif args.TESTNAME == 'unixbench':
 
     unixbench_test.prepare_vms()
     unixbench_test.start_test()
-    unixbench_test.results_processing()
     unixbench_test.vms_destroy()
+    unixbench_test.results_processing()
+   
 
     

@@ -581,7 +581,7 @@ class UnixBench(CreateVM):
 
 
     def results_processing(self):
-        arh_name = f'result_{self.vm_dates[f'testvm{self.vm_num}']}.zip'
+        arh_name = f"result_{self.vm_dates[f'testvm{self.vm_num}']}.zip"
         cmd(f'cd {REPORT_PATH} && unzip {arh_name}')
 
         files = os.listdir(REPORT_PATH)

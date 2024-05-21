@@ -295,7 +295,7 @@ brest_stands = ['stand10', 'stand11', 'stand12']
 def generate_repo_path():
     import json
     pkg_path = '/dists/{}/main/binary-amd64/Packages'
-    vers_path = '/Release'
+    vers_path = '/dists/{}/Release'
 
     with open('releases.json', 'r') as rj:
         links = json.load(rj)

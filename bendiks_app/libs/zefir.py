@@ -295,31 +295,53 @@ class ZefirResultTable:
         self.new_tab = pd.DataFrame(data=data)
 
         #Заполняем новый фрейм данными из таблицы
+        # def add_columns_rows(iter):
+        #     '''
+        #     Функция добавляет столбец при совпадении элементов в первой паре словаря и 
+        #     добавляет строку при совпадении элементов второй пары словаря или 
+        #     несовпадении в первой паре 
+        #     '''
+        #     global new_tab 
+        #     if [dates_list[iter][0][0]] == list(data.values())[0] and [dates_list[iter][0][2]] == list(data.values())[1] \
+        #     and [dates_list[iter][0][1]] == list(data.values())[2] and [dates_list[iter][0][3]] == list(data.values())[3]:
+        #         if dates_list[iter][1] in self.new_tab.columns:
+        #             self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+        #         else:
+        #             self.new_tab.insert(loc=len(self.new_tab.columns), column=dates_list[iter][1], value='')
+        #             self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+        #     else:
+        #         data['Версия'] = [dates_list[iter][0][0]]
+        #         data['Ядро'] = [dates_list[iter][0][2]]
+        #         data['Режим'] = [dates_list[iter][0][1]]
+        #         data['№ стенда'] = [dates_list[iter][0][3]]
+        #         self.new_tab = self.new_tab._append(data, ignore_index=True)
+        #         if dates_list[iter][1] in self.new_tab.columns:
+        #            self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+        #         else:
+        #             self.new_tab.insert(loc=len(self.new_tab.columns), column=dates_list[iter][1], value='')
+        #             self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+        # [add_columns_rows(item) for item in range(0, len(dates_list))]
+
         def add_columns_rows(iter):
-            '''
-            Функция добавляет столбец при совпадении элементов в первой паре словаря и 
-            добавляет строку при совпадении элементов второй пары словаря или 
-            несовпадении в первой паре 
-            '''
             global new_tab 
             if [dates_list[iter][0][0]] == list(data.values())[0] and [dates_list[iter][0][2]] == list(data.values())[1] \
             and [dates_list[iter][0][1]] == list(data.values())[2] and [dates_list[iter][0][3]] == list(data.values())[3]:
-                if dates_list[iter][1] in self.new_tab.columns:
-                    self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+                if dates_list[iter][1] in self.new_tab.index:
+                    self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
                 else:
-                    self.new_tab.insert(loc=len(self.new_tab.columns), column=dates_list[iter][1], value='')
-                    self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+                    self.new_tab = self.new_tab.append(pd.Series(name=dates_list[iter][1]))
+                    self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
             else:
-                data['Версия'] = [dates_list[iter][0][0]]
-                data['Ядро'] = [dates_list[iter][0][2]]
-                data['Режим'] = [dates_list[iter][0][1]]
-                data['№ стенда'] = [dates_list[iter][0][3]]
-                self.new_tab = self.new_tab._append(data, ignore_index=True)
-                if dates_list[iter][1] in self.new_tab.columns:
-                   self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+                data['Версия'] = dates_list[iter][0][0]
+                data['Ядро'] = dates_list[iter][0][2]
+                data['Режим'] = dates_list[iter][0][1]
+                data['№ стенда'] = dates_list[iter][0][3]
+                self.new_tab[dates_list[iter][1]] = pd.Series(data)
+                if dates_list[iter][1] in self.new_tab.index:
+                    self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
                 else:
-                    self.new_tab.insert(loc=len(self.new_tab.columns), column=dates_list[iter][1], value='')
-                    self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
+                    self.new_tab = self.new_tab.append(pd.Series(name=dates_list[iter][1]))
+                    self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
         [add_columns_rows(item) for item in range(0, len(dates_list))]
 
         #Наводим красоту
@@ -339,9 +361,7 @@ class ZefirResultTable:
         self.new_tab = self.new_tab.sort_values(by=['Режим', '№ стенда'], ascending=[True, True])
         self.new_tab = self.new_tab[[x for x in self.new_tab if x not in self.new_tab.columns[4:].sort_values()] 
                         + [x for x in self.new_tab.columns[4:].sort_values() if x in self.new_tab]]
-        column_names = list(self.new_tab.columns)
-        self.new_tab = self.new_tab.T
-        self.new_tab.columns = column_names
+        self.new_tab = self.new_tab.transpose()
         self.new_tab.to_html('res.html', index=False)
 
         #Создаем новую html страницу

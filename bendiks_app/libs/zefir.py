@@ -21,7 +21,8 @@ from backup_image_conf import(test_run_stands,
                               testcase_smolensk_middle_stand4,
                               testname_columns,
                               JIRA_URL,
-                              CONFLUENCE_URL)
+                              CONFLUENCE_URL,
+                              startswith_kernel_list)
 
 
 
@@ -508,9 +509,7 @@ class ZefirTestRun:
                 if lowlatency_kernel:
                     kernels.append(str(lowlatency_kernel).replace("[", "").replace("]", "").replace("'", "").replace("linux-image-", ""))
 
-            kernel_list = [kernel for kernel in kernels if kernel.startswith('6.1') 
-                                                        or kernel.startswith('5.15') 
-                                                        or kernel.startswith('5.10')]
+            kernel_list = [kernel for kernel in kernels if any(kernel.startswith(x) for x in startswith_kernel_list)]
 
             print(vers_release[0])
             print(kernel_list)

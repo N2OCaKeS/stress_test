@@ -75,7 +75,9 @@ cz_comm = {
         '1.8.1.1':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.204" \
                 -l ru_RU.UTF-8 startdisk restore LowServer-181rc1 nvme0n1',
         '1.8.1.01':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.204" \
-                -l ru_RU.UTF-8 startdisk restore LowServer-181rc01 nvme0n1'
+                -l ru_RU.UTF-8 startdisk restore LowServer-181rc01 nvme0n1',
+        '1.8.1.2':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.204" \
+                -l ru_RU.UTF-8 startdisk restore LowServer-181rc2 nvme0n1'
         },
     'stand4':{
         '1.7.5':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.203" \
@@ -113,7 +115,9 @@ cz_comm = {
         '1.8.0.14':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.203" \
                 -l ru_RU.UTF-8 startdisk restore MiddleServer-180rc14 nvme0n1',
         '1.8.1.1':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.203" \
-                -l ru_RU.UTF-8 startdisk restore MiddleServer-181rc1 nvme0n1'
+                -l ru_RU.UTF-8 startdisk restore MiddleServer-181rc1 nvme0n1',
+        '1.8.1.2':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "10.177.103.203" \
+                -l ru_RU.UTF-8 startdisk restore MiddleServer-181rc2 nvme0n1'
         },
     'stand2':{
         '1.7.5':'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h " 10.177.103.202" \

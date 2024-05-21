@@ -292,31 +292,30 @@ brest_stands = ['stand10', 'stand11', 'stand12']
 #################################################################################################################################################
 #Перечень настроек, используемых для создания тестовых прогонов
 #################################################################################################################################################
-repo_path = {
-    'pkg_path_18testing':'http://qa111.devos.astralinux.ru/astra/testing/1.8-testing/installation/dists/1.8_x86-64/main/binary-amd64/Packages',
-    'vers_path_18testing':'http://qa111.devos.astralinux.ru/astra/testing/1.8-testing/installation/dists/1.8_x86-64/Release',
-    'pkg_path_17testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_17testing':'http://qa111.devos.astralinux.ru/astra/testing/1.7-testing/base-repository/dists/1.7_x86-64/Release',
-    'vers_path_175':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-5/dists/1.7_x86-64/Release',
-    'pkg_path_175':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-5/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_174UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4.1/dists/1.7_x86-64/Release',
-    'pkg_path_174UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4.1/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_174':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4/dists/1.7_x86-64/Release',
-    'pkg_path_174':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-4/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_173UU2':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.2/dists/1.7_x86-64/Release',
-    'pkg_path_173UU2':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.2/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_173UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.1/dists/1.7_x86-64/Release',
-    'pkg_path_173UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3.1/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_173':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3/dists/1.7_x86-64/Release',
-    'pkg_path_173':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-3/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_172UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2.1/dists/1.7_x86-64/Release',
-    'pkg_path_172UU1':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2.1/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_172':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2/dists/1.7_x86-64/Release',
-    'pkg_path_172':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-2/dists/1.7_x86-64/main/binary-amd64/Packages',
-    'vers_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/Release',
-    'pkg_path_171':'http://qa111.devos.astralinux.ru/astra/stable/1.7/base-repository-1/dists/1.7_x86-64/main/binary-amd64/Packages'
-}
+def generate_repo_path():
+    import json
+    pkg_path = '/dists/{}/main/binary-amd64/Packages'
+    vers_path = '/Release'
 
+    with open('releases.json', 'r') as rj:
+        links = json.load(rj)
+
+    pkg_path_dict = {
+        f'pkg_path_{key}': [f'{value.split(' ')[1]}{pkg_path}'.format(value.split(' ')[2])  
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
+        for key in links.keys()
+    }
+
+    vers_path_dict = {
+        f'vers_path_{key}': [f'{value.split(' ')[1]}{vers_path}'.format(value.split(' ')[2])   
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
+        for key in links.keys()
+    }
+
+    repo_path = {**pkg_path_dict, **vers_path_dict}
+    return repo_path
+
+repo_path = generate_repo_path()
 rc_list = ['1.7.6.1', '1.7.6.3', '1.7.6.4', '1.8.0.14', '1.8.0.15', '1.7.5.UU.1.7', '1.8.1.1', '1.8.1.01', '1.8.1.2']
 releases_list = ['1.7.1', '1.7.2', '1.7.3', '1.7.3.UU.1', '1.7.3.UU.2', '1.7.4', '1.7.4.UU.1', '1.7.5', '1.7.6', '1.7.5.UU.1', '1.8.0', '1.8.1']
 STP_VERSION = sorted(list(set(rc_list + releases_list)))

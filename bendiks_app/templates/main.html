@@ -47,18 +47,11 @@
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Список ядер</a>
     <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('18testing'); return false;">1.8 testing</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('17testing'); return false;">1.7 testing</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.5.UU.1'); return false;">1.7.5.UU.1</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.5'); return false;">1.7.5</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.4.UU.1'); return false;">1.7.4.UU.1</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.4'); return false;">1.7.4</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.3.UU.2'); return false;">1.7.3.UU.2</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.3.UU.1'); return false;">1.7.3.UU.1</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.3'); return false;">1.7.3</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.2.UU.1'); return false;">1.7.2.UU.1</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.2'); return false;">1.7.2</a></li>
-      <li><a class="dropdown-item" href="" onclick="updateBlockKernels('1.7.1'); return false;">1.7.1</a></li>
+      {% for version in repo_path %}
+        <li>
+          <a class="dropdown-item" href="" onclick="updateBlockKernels('{{version}}'); return false;">{{version}}</a>
+        </li>
+      {% endfor %}
     </ul>
   </li>
   <li class="nav-item dropdown">

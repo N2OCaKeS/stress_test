@@ -66,5 +66,5 @@ new_tab = new_tab[[x for x in new_tab if x not in new_tab.columns[4:].sort_value
                 + [x for x in new_tab.columns[4:].sort_values() if x in new_tab]]
 
 new_tab = new_tab.T
-
+#new_tab.reset_index(drop=True, inplace=True)
 print(new_tab)

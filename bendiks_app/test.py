@@ -1,5 +1,7 @@
 from collections import defaultdict
 import pandas as pd
+from backup_image_conf import testname_columns
+from numpy import where
 
 dates_list = [[['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'file system benchmark. EXFAT', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'file system benchmark. EXT2', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'file system benchmark. EXT3', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'file system benchmark. EXT4', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'file system benchmark. FAT', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'file system benchmark. XFS', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'linux_system_benchmark. UnixBench', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand3'], 'syslog-ng benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'FIO benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'Steal time', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'freeipa authentication test', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'postgresql benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'postgresql benchmark audit-off', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'postgresql benchmark balance', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'postgresql benchmark kernels', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.1.82-1-generic', 'stand4'], 'postgresql benchmark vanilla', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'file system benchmark. EXFAT', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'file system benchmark. EXT2', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'file system benchmark. EXT3', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'file system benchmark. EXT4', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'file system benchmark. FAT', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'file system benchmark. XFS', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'linux_system_benchmark. UnixBench', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand3'], 'syslog-ng benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'FIO benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'Steal time', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'freeipa authentication test', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'postgresql benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'postgresql benchmark audit-off', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'postgresql benchmark balance', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'postgresql benchmark kernels', 'NOT_EXECUTED'], [['1.8.1.2', 'orel', '6.6.28-1-generic', 'stand4'], 'postgresql benchmark vanilla', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'Apache_ReverseProxy', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'Parsec impact fs benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'Parsec impact fs benchmark audit-off', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'auditd benchmark. fileaud', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'auditd benchmark. psaud', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'auditd benchmark. useraud', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'file system benchmark. EXT4 parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'file system benchmark. XFS parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand3'], 'linux_system_benchmark. UnixBench parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand4'], 'postgresql benchmark parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.1.82-1-generic', 'stand4'], 'postgresql benchmark smol', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'Apache_ReverseProxy', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'Parsec impact fs benchmark', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'Parsec impact fs benchmark audit-off', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'auditd benchmark. fileaud', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'auditd benchmark. psaud', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'auditd benchmark. useraud', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'file system benchmark. EXT4 parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'file system benchmark. XFS parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand3'], 'linux_system_benchmark. UnixBench parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand4'], 'postgresql benchmark parsec', 'NOT_EXECUTED'], [['1.8.1.2', 'smolensk', '6.6.28-1-generic', 'stand4'], 'postgresql benchmark smol', 'NOT_EXECUTED']]
 
@@ -39,3 +41,30 @@ def add_columns_rows(iter):
 [add_columns_rows(item) for item in range(0, len(dates_list))]
 
 print(new_tab.T)
+
+
+#Наводим красоту
+new_tab.fillna('', inplace=True)
+columns = ['Версия', 'Ядро', 'Режим', '№ стенда']
+for col in columns:
+    new_tab[col] = new_tab[col].astype(str).str.replace(r'\[|\]|\'', '', regex=True)
+
+
+
+for k, v in testname_columns.items():
+    new_tab.rename(columns={k:v}, inplace=True)
+for name in new_tab.columns:
+    new_tab[name] = where(new_tab[name] == 'NOT_EXECUTED', 'Не запускался', new_tab[name])
+    new_tab[name] = where(new_tab[name] == 'IN_PROGRESS', 'Выполняется', new_tab[name])
+    new_tab[name] = where(new_tab[name] == 'PASS', 'Выполнено', new_tab[name])
+    new_tab[name] = where(new_tab[name] == 'FAIL', 'Провалено', new_tab[name])
+
+
+
+new_tab = new_tab.sort_values(by=['Режим', '№ стенда'], ascending=[True, True])
+new_tab = new_tab[[x for x in new_tab if x not in new_tab.columns[4:].sort_values()] 
+                + [x for x in new_tab.columns[4:].sort_values() if x in new_tab]]
+
+new_tab = new_tab.T
+
+print(new_tab)

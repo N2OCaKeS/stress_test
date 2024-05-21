@@ -66,5 +66,6 @@ new_tab = new_tab[[x for x in new_tab if x not in new_tab.columns[4:].sort_value
                 + [x for x in new_tab.columns[4:].sort_values() if x in new_tab]]
 
 new_tab = new_tab.T
-#new_tab.reset_index(drop=True, inplace=True)
+new_tab.columns = pd.MultiIndex.from_tuples(zip(new_tab.columns, new_tab.iloc[0]))
+new_tab = new_tab[1:]
 print(new_tab)

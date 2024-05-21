@@ -329,7 +329,7 @@ class ZefirResultTable:
                 if dates_list[iter][1] in self.new_tab.index:
                     self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
                 else:
-                    self.new_tab = self.new_tab.append(pd.Series(name=dates_list[iter][1]))
+                    self.new_tab.loc[dates_list[iter][1]] = pd.Series()
                     self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
             else:
                 data['Версия'] = dates_list[iter][0][0]
@@ -340,7 +340,7 @@ class ZefirResultTable:
                 if dates_list[iter][1] in self.new_tab.index:
                     self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
                 else:
-                    self.new_tab = self.new_tab.append(pd.Series(name=dates_list[iter][1]))
+                    self.new_tab.loc[dates_list[iter][1]] = pd.Series()
                     self.new_tab.at[dates_list[iter][1], self.new_tab.columns[-1]] = dates_list[iter][2]
         [add_columns_rows(item) for item in range(0, len(dates_list))]
 

@@ -321,7 +321,7 @@ class ZefirResultTable:
                     self.new_tab.insert(loc=len(self.new_tab.columns), column=dates_list[iter][1], value='')
                     self.new_tab.at[self.new_tab.index[-1], dates_list[iter][1]] = dates_list[iter][2]
         [add_columns_rows(item) for item in range(0, len(dates_list))]
-        self.new_tab.T
+        self.new_tab = self.new_tab.T
 
         #Наводим красоту
         self.new_tab.fillna('', inplace=True)

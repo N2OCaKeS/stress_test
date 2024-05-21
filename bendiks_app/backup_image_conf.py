@@ -301,13 +301,13 @@ def generate_repo_path():
         links = json.load(rj)
 
     pkg_path_dict = {
-        f'pkg_path_{key}': [f'{value.split(' ')[1]}{pkg_path}'.format(value.split(' ')[2])  
+        f"pkg_path_{key}": [f"{value.split(' ')[1]}{pkg_path}".format(value.split(' ')[2])  
         for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
         for key in links.keys()
     }
 
     vers_path_dict = {
-        f'vers_path_{key}': [f'{value.split(' ')[1]}{vers_path}'.format(value.split(' ')[2])   
+        f"vers_path_{key}": [f"{value.split(' ')[1]}{vers_path}".format(value.split(' ')[2])   
         for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
         for key in links.keys()
     }

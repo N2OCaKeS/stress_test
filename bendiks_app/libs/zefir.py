@@ -339,7 +339,9 @@ class ZefirResultTable:
         self.new_tab = self.new_tab.sort_values(by=['Режим', '№ стенда'], ascending=[True, True])
         self.new_tab = self.new_tab[[x for x in self.new_tab if x not in self.new_tab.columns[4:].sort_values()] 
                         + [x for x in self.new_tab.columns[4:].sort_values() if x in self.new_tab]]
-        self.new_tab = self.new_tab.transpose()
+        column_names = list(self.new_tab.columns)
+        self.new_tab = self.new_tab.T
+        self.new_tab.columns = column_names
         self.new_tab.to_html('res.html', index=False)
 
         #Создаем новую html страницу

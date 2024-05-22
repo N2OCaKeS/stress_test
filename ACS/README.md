@@ -13,11 +13,11 @@ sudo apt install docker-compose
 ```
 Если нет в репозитории то воспользоваться инструкцией https://docs.docker.com/compose/install/linux/
 
-2. Собрать образы
+2. Находясь в директории ACS cобрать образы
 ```
 sudo docker-compose build
 ```
-3. Запустить контейнер с postgres:15 и приложением
+3. Находясь в директории ACS cобрать образы запустить контейнер с postgres:15 и приложением.  По умолчанию работает на порту 9999
 ```
 sudo docker-compose up -d
 ```

@@ -7,11 +7,11 @@ sudo apt purge -y firewalld
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 sudo dpkg -i vagrant_2.2.19_x86_64.deb
-sudo adduser $USER libvirt
+sudo adduser u libvirt
 
 for group in kvm libvirt libvirt-qemu libvirt-admin; do
   if test ! "$(groups | grep ${group})"; then
-    sudo usermod -aG ${group} $USER 
+    sudo usermod -aG ${group} u 
   fi
 done
 
@@ -20,8 +20,8 @@ for plugin in vagrant-vbguest; do
   if test ! "$(vagrant plugin list | grep $plugin)"; then
     wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
     mkdir -p ~/.vagrant.d/gems/2.7.4
-    tar -C "$HOME/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
-    wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json  
+    tar -C "/home/u/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
+    wget -O "home/u/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json  
     [ $? != 0 ] && exit 1
   fi
 done

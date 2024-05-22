@@ -7,7 +7,7 @@
 
 """
     Start:
-    1) sudo ./prepare.sh
+    1) sudo ./prepare.sh ветка версия
     2) Указать HOST_IP в cfs_conf.py
     3) venv/bin/python3 cfs_run.py --libvirt --fs ocfs2 --nodes testvm2 testvm3 --test-set fs_mark_count --host-storage testvm1 -vbox 1.8.0 -kernel 6.1.50-1-generic
 """

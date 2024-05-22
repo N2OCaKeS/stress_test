@@ -10,9 +10,7 @@ deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/devel-reposit
 EOF
 }
 
-test "$(grep 1.8 /etc/astra_version)" && 18repo
-sudo apt update
-
+test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 sudo wget http://bendiks.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
 sudo jq -r ".\"$1\"[]" releases.json | sudo tee /etc/apt/sources.list

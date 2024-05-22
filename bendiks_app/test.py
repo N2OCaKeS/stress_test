@@ -69,6 +69,7 @@
 # new_tab.columns = pd.MultiIndex.from_tuples(zip(new_tab.columns, new_tab.iloc[0]))
 # new_tab = new_tab[1:]
 # print(new_tab)
+#test
 
 import psycopg2
 

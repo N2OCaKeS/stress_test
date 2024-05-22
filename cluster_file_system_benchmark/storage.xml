@@ -1,8 +1,0 @@
-<disk type="file" device="disk">
-  <driver name="qemu" type="qcow2"/>
-  <source file="/var/lib/libvirt/images/cluster_storage" index="2"/>
-  <backingStore/>
-  <target dev="sdb" bus="sata"/>
-  <alias name="sata0-0-1"/>
-  <address type="drive" controller="0" bus="0" target="0" unit="1"/>
-</disk>

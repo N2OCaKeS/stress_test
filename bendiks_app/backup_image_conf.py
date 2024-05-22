@@ -239,7 +239,14 @@ psyc = {
         'database':'bendiks',
         'user':'postgres',
         'password':'1'
-}     
+}    
+
+psyc_conf = {
+            'host':'127.0.0.1',
+            'database':'b_config',
+            'user':'postgres',
+            'password':'1'
+} 
 
 
 

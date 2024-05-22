@@ -1,0 +1,8 @@
+fabric
+pandas
+numpy
+matplotlib
+scipy
+pretty-html-table
+atlassian-python-api
+scikit-learn

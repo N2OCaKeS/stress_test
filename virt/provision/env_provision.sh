@@ -2,6 +2,15 @@
 
 set -vx
 
+18repo() {
+cat << EOF > /etc/apt/sources.list
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/extended-repository 1.8_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/devel-repository 1.8_x86-64 main contrib non-free
+EOF
+}
+
+test "$(grep 1.8 /etc/astra_version)" && 18repo
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://bendiks.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
 sudo jq -r ".\"$1\"[]" releases.json > /etc/apt/sources.list

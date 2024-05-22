@@ -21,7 +21,7 @@ for plugin in vagrant-vbguest; do
     wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
     mkdir -p /home/u/.vagrant.d/gems/2.7.4
     tar -C "/home/u/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
-    wget -O "home/u/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json  
+    wget -O "/home/u/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json  
     [ $? != 0 ] && exit 1
   fi
 done

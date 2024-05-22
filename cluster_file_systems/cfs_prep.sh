@@ -27,13 +27,21 @@ for plugin in vagrant-vbguest; do
 done
 
 # create venv in script_dir
-sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev
-python3 -m venv venv
+sudo mkdir /home/u/python
+cd /home/u/python
+sudo wget -P /home/u/python ftp://10.177.103.10/python/*
+tar -xf Python-3.12.1.tar.xz
+cd Python-3.12.1
+./configure --enable-optimizations
+make -j 6
+sudo make altinstall
 
-# install python dependencies in venv
+python3.12 -m venv venv
 source venv/bin/activate
-pip3 install --upgrade pip
-pip3 install -r req.txt
+
+cd /home/u/git/stress_test/cluster_file_systems
+python3.12 -m pip install --upgrade pip
+python3.12 -m pip install -r req.txt
 
 sudo apt-get install -y nfs-kernel-server
 

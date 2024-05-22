@@ -193,5 +193,9 @@ elif args.TESTNAME == 'unixbench':
     unixbench_test.vms_destroy()
     unixbench_test.results_processing()
    
+    info_list()
+    uzs.public = True
+    #uzs.statistics = True
+    uzs.upload_test_cycle_status(zefir_status='pass')
 
     

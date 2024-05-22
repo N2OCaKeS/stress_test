@@ -96,6 +96,19 @@ parser.add_argument('--parsec',
                     help='',
                     dest='PARSEC')
 
+parser.add_argument('-vbox', 
+                    action='store',
+                    required=True,
+                    help='vbox name',
+                    dest='VBOX')
+
+parser.add_argument('-kernel', 
+                    action='store',
+                    required=True,
+                    help='vbox name',
+                    dest='KERNEL')
+
+
 args = parser.parse_args()
 all_hosts = args.NODES + [args.STORAGE]
 
@@ -235,7 +248,7 @@ if args.VBOX or args.LIBVIRT: # вирт. стенд
         2) Передача rc_vbox и аргуменгта при запуске
         3) Передача hostip например из ip или из конфига
     """
-    virt_machines = VMS(rc_vbox="1.8.0", vm_count=len(all_hosts), hostip=HOST_IP)
+    virt_machines = VMS(rc_vbox=args.VBOX, vm_count=len(all_hosts), hostip=HOST_IP, kernel=args.KERNEL)
     virt_machines.prepare_and_start()
 
     cmd(storagecreate.format(fs=args.FS,

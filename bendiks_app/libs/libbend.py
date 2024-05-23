@@ -18,7 +18,7 @@ from paramiko import ssh_exception
 import socket
 import psycopg2
 from backup_image_conf import (VENV_PATH,
-                               STP_VERSION,
+                               stp_version,
                                psyc,
                                stands_ip,
                                main_tests,
@@ -216,8 +216,8 @@ def info_collector(page, ajax=None):
                                 test_list=test_list,
                                 releas_list=releas_list,
                                 kernel_list=kernel_list, 
-                                releases=releases, 
-                                kernels=kernels,
+                                releases=releases(), 
+                                kernels=kernels(),
                                 brest_url=brest_url,
                                 **status_logs,
                                 **logs,
@@ -228,14 +228,14 @@ def info_collector(page, ajax=None):
         return render_template(f'{page}.html', 
                                 options=options[page],
                                 stands=test_run_stands,
-                                kernelslist=kernels,
-                                rc=rc_list, 
-                                releaseslist=releases_list,
+                                kernelslist=kernels(),
+                                rc=rc_list(), 
+                                releaseslist=releases_list(),
                                 test_list=test_list,
                                 releas_list=releas_list,
                                 kernel_list=kernel_list, 
-                                releases=releases, 
-                                kernels=kernels,
+                                releases=releases(), 
+                                kernels=kernels(),
                                 **status_logs,
                                 **logs,
                                 **status_gif_logs,
@@ -244,8 +244,8 @@ def info_collector(page, ajax=None):
                                 main_url=main_url,
                                 mobile_url=mobile_url,
                                 brest_url=brest_url,
-                                stp_versions=STP_VERSION,
-                                repo_path=releases_dict.keys())
+                                stp_versions=stp_version(),
+                                repo_path=releases_dict().keys())
 
 
 
@@ -670,7 +670,7 @@ class ReleaseToRepo:
             else: return [v for v in dates[key]]
 
         seporated_dates = {
-            key: __path_seporator(version) for key, version in releases_dict.items()
+            key: __path_seporator(version) for key, version in releases_dict().items()
         }
 
         filtered_dates = {

@@ -73,23 +73,101 @@
 
 import psycopg2
 
+def add_value(value):
+    conn = psycopg2.connect(host='127.0.0.1',
+                            database='b_config',
+                            user='postgres',
+                            password='1'
+                            )
 
-conn = psycopg2.connect(host='10.177.103.10',
-                        database='b_config',
-                        user='postgres',
-                        password='1'
-                        )
+    cursor = conn.cursor()
+    values = list(value)
 
-cursor = conn.cursor()
+    if len(values) > 1:
+        for value in values:
+            insert_query = f"INSERT INTO main_table (release_version) VALUES ('{value}')"
+            cursor.execute(insert_query)
+    else:
+        insert_query = f"INSERT INTO main_table (release_version) VALUES ('{value}')"
+        cursor.execute(insert_query)
 
-values = ['1', '2', '3']
-
-for value in values:
-    insert_query = f"INSERT INTO main_table (release_version) VALUES ('{value}')"
-    cursor.execute(insert_query)
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 
-conn.commit()
-cursor.close()
-conn.close()
+#add_value('5')
 
+import json
+# from backup_image_conf import releases_dict, rc_list, releases_list, release_version, cycle_tree_index, releases, kernels
+# from backup_image_command import cz_comm
+
+def write_bendiks_conf(data):
+    # data = {'releases_dict':releases_dict,
+    #         'rc_list':rc_list,
+    #         'releases_list':releases_list,
+    #         'release_version':release_version,
+    #         'cycle_tree_index':cycle_tree_index,
+    #         'releases':releases,
+    #         'cz_comm':cz_comm,
+    #         'kernels':kernels}
+
+    with open('./bendiks_conf.json', 'w') as w:
+        json.dump(data, w, indent=4)
+
+
+
+#write_bendiks_conf()
+
+
+
+
+def mod_bendiks_conf(value):
+    with open('./bendiks_conf.json', 'r') as r:
+        data = json.load(r)
+
+    stands = {'LowServer':'10.177.103.204',
+              'MiddleServer':'10.177.103.203'}
+    cz_name = 'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "{}" \
+                -l ru_RU.UTF-8 startdisk restore {}-{}rc{} nvme0n1'
+
+    if value not in data['releases_dict'].keys():
+        data['releases_dict'][value] = value
+    if value not in data['rc_list']:
+        data['rc_list'].append(value)
+    if '.'.join(value.split('.')[:3]) not in data['releases_list']:
+        data['releases_list'].append('.'.join(value.split('.')[:3]))
+    if value not in data['release_version']:
+        data['release_version'].append(value)
+    if value not in data['releases']:
+        data['releases'].append(value)        
+
+    if value not in data['cz_comm']['stand3'].keys():
+        data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
+                                                          'LowServer',
+                                                          ''.join(value.split('.')[:3]),
+                                                          ''.join(value.split('.')[3:]))
+    if value not in data['cz_comm']['stand4'].keys():
+        data['cz_comm']['stand4'][value] = cz_name.format(stands['MiddleServer'],
+                                                          'MiddleServer',
+                                                          ''.join(value.split('.')[:3]),
+                                                          ''.join(value.split('.')[3:]))
+
+    write_bendiks_conf(data)
+
+
+
+#mod_bendiks_conf('1.8.1.3')
+
+#print(''.join('1.8.1.3'.split('.')[3:]))
+
+
+with open('ChangeLog', 'r') as r:
+    version = r.readline()
+    upp_version = int(version.split(' ')[2].split('.')[-1]) + 1
+    pre_version = '.'.join(version.split(' ')[2].split('.')[:-1])
+    new_version = f'{' '.join(version.split(' ')[:-1])} {pre_version}.{upp_version}'
+
+    print(version)
+    print(new_version)
+    print('.'.join(version.split(' ')[2].split('.')[:-1]))

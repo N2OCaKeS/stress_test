@@ -166,8 +166,8 @@ async def info_collector(page: str, request: Request):
         "test_list": test_list,
         "releas_list": releas_list,
         "kernel_list": kernel_list,
-        "releases": releases,
-        "kernels": kernels,
+        "releases": releases(),
+        "kernels": kernels(),
         **status_logs,
         **logs,
         **status_gif_logs,
@@ -180,9 +180,9 @@ async def info_collector(page: str, request: Request):
     elif page in ['main', 'mobile']:
         context.update({
             "stands": test_run_stands,
-            "kernelslist": kernels,
-            "rc": rc_list,
-            "releaseslist": releases_list,
+            "kernelslist": kernels(),
+            "rc": rc_list(),
+            "releaseslist": releases_list(),
             "main_url": main_url,
             "mobile_url": mobile_url,
             "brest_url": brest_url

@@ -9,6 +9,9 @@ from random import randrange
 from os.path import isfile
 from os import remove
 from json import dumps, loads
+import requests
+from bs4 import BeautifulSoup
+import re
 
 
 
@@ -36,6 +39,7 @@ help_text = """Доступные команды:
 /log - получить прогресс выполнения прогона
 /status - узнать статус прогона
 /id - узнать ID чата
+/vpn - доступные для использования в телефоне найстройки VPN'
 """
 
 def random_pics():
@@ -52,7 +56,37 @@ def status_output(stand):
     with open(f'/home/u/git/stress_test/bendiks_app/conf/work_status_stand{stand}.conf', 'r') as r:
         status = r.read()
         return status
-    
+
+def vpn_request():
+    r = requests.get('https://download.vpngate.jp/en/')
+    soup = BeautifulSoup(r.text, 'html.parser')
+    all_vpn = soup.find_all('tr') 
+
+    vpn_list = [str(i) for i in all_vpn]
+    con_list = ['Japan', 'United States', 'Viet Nam', 'Korea Republic of', 'Romania', 'Thailand', 'Brazil', 'India', 'Cambodia']
+    vpn = []
+
+    for i in vpn_list:
+        string = ''.join(i)
+        vpn_dict = {}
+        if 'You may connect to any' in i:
+            pswd = str(i)
+        try:
+            for con in con_list:
+                if con in string and 'L2TP/IPsec' in string:
+                    vpn_dict['country'] = con
+                    server = re.search('>(\\w+\\.opengw.net?)', string)
+                    vpn_dict['server'] = server.group(1)
+                    vpn_dict['l2tp'] = 'L2TP/IPsec'
+                    vpn.append(vpn_dict)
+        except Exception as e:
+            #print(f'{"Type"}:{type(e).__name__}; {"Message"}:{str(e)}\n{con}')
+            continue
+
+    return '\n'.join([str(i) for i in vpn]) + '\nFor all fields paste "vpn"'
+
+
+
 async def send_message_to_group(chat_id: str, message: str):
     await bot.send_message(chat_id, message)
 
@@ -117,7 +151,10 @@ async def start(message: types.Message):
                              photo='https://ichip.ru/images/cache/2022/8/7/q90_627312_9aeaad893dd578d3855844439.png', 
                              caption='Привет! \nНапиши мне help, если нужна помощь', 
                              reply_to_message_id=message.message_id)
-    
+
+@dp.message(Command('vpn'))
+async def start(message: types.Message):
+    await message.reply(str(vpn_request()))
 
 @dp.message(Command('log'))
 async def log_server(message: types.Message):

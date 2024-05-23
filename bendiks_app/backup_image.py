@@ -9,7 +9,6 @@ from tempfile import mkstemp
 import socket
 import paramiko
 from paramiko import ssh_exception
-from backup_image_command import cz_comm
 import argparse
 from backup_image_conf import *
 import pysnooper
@@ -208,9 +207,9 @@ stand_ip = stands_ip[args.STAND]
 user = 'u'
 password = '1'
 port = 22
-clonezilla_command = cz_comm[args.STAND][args.RELEASE]
+clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
 if args.PSQL_BALANCE:
-    clonezilla_command_balance = cz_comm['stand4']['1.8.0.14']
+    clonezilla_command_balance = cz_comm()['stand4']['1.8.0.14']
 branch = args.BRANCH
 parent_page = args.PARP
 systems = ['debian10', 'debian10-5.15', 'altlinux-5.10']
@@ -877,19 +876,14 @@ def freeipa_authentication_test():
     clients_ip = '10.177.103.201'
     kernel = '5.15.0-83-generic'
 
-    if comm_and_log(cz_comm['stand1']['1.7.5']) == 0:
+    if comm_and_log(cz_comm()['stand1']['1.7.5']) == 0:
         write_status(success)
     run_provision.bootorder = False
     run_provision.clonezilla = False
     run_provision.stand_ip = clients_ip
     run_provision.kernel = kernel
     run_provision.modes = False
-
-    provision_thread = threading.Thread(target=run_provision.provision)
-    provision_thread.start()
-
-    reset_thread = threading.Thread(target=run_provision.reset_by_timer, args=(provision_thread,))
-    reset_thread.start()
+    run_provision.provision()
 
     comm_and_log(f'cd {git_path} && {VENV_PATH} git_clone.py')
     comm_and_log(f'cd {git_path}/stress_test && git checkout freeipa')

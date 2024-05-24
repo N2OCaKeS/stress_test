@@ -264,12 +264,12 @@ async def addrc(message: types.Message, command: CommandObject):
     try:
         rc, password = command.args.split(' ', maxsplit=1)
     except ValueError:
-        await message.reply('Error: Укажите версию RC и пароль. Пример:\n'
+        content = Text('Error: Укажите версию RC и пароль. Пример:\n'
                             '/addrc <RC> <password>')
+        await message.reply(**content.as_kwargs())
         return
     if password == 'bendik$':
-        content = Text(f'Version is: {rc}')
-        await message.reply(**content.as_kwargs())
+        await message.reply(f'Version is: {rc}')
     else: await message.reply(f'Доступ запрещен', {message.from_user.full_name})
 
 

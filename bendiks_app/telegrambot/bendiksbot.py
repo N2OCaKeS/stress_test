@@ -45,7 +45,7 @@ help_text = """Доступные команды:
 """
 
 def write_bendiks_conf(data):
-    with open('./bendiks_conf.json', 'w') as w:
+    with open('../bendiks_conf.json', 'w') as w:
         json.dump(data, w, indent=4)
 
 

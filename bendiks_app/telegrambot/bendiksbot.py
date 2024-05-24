@@ -270,7 +270,9 @@ async def addrc(message: types.Message, command: CommandObject):
         return
     if password == 'bendik$':
         await message.reply(f'Version is: {rc}')
-    else: await message.reply(f'Доступ запрещен', {message.from_user.full_name})
+    else: 
+        content = Text(f'Доступ запрещен', {message.from_user.full_name})
+        await message.reply(**content.as_kwargs())
 
 
 

@@ -261,6 +261,7 @@ async def addrc(message: types.Message, command: CommandObject):
     try:
         rc, password = command.args.split(' ', maxsplit=1)
     except ValueError:
+        rc = None
         await message.reply('Error: Укажите версию RC и пароль. Пример:\n'
                             '/addrc <RC> <password>')
         return

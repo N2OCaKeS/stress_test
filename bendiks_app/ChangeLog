@@ -1,3 +1,10 @@
+bendiks_app - v2.21.0
+* Add dynamic config update
+  without reload services
+* Add t_bot command to add RC
+
+
+
 bendiks_app - v2.20.4
 * Add transpose to STP
 

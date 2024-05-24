@@ -123,7 +123,7 @@ def write_bendiks_conf(data):
 
 
 def mod_bendiks_conf(value):
-    with open('./bendiks_conf.json', 'r') as r:
+    with open('../bendiks_conf.json', 'r') as r:
         data = json.load(r)
 
     stands = {'LowServer':'10.177.103.204',
@@ -161,9 +161,11 @@ def mod_bendiks_conf(value):
 
 #print(''.join('1.8.1.3'.split('.')[3:]))
 
-
-with open('../ChangeLog', 'r') as r:
-    version = r.readline()
+def update_changelog(value):
+    path = '../ChangeLog'
+    with open(path, 'r') as r:
+        version = r.readline()
+        text = r.read()
     upp_version = int(version.split(' ')[2].split('.')[-1]) + 1
     pre_version = '.'.join(version.split(' ')[2].split('.')[:-1])
     new_version = f'{' '.join(version.split(' ')[:-1])} {pre_version}.{upp_version}'
@@ -171,3 +173,10 @@ with open('../ChangeLog', 'r') as r:
     print(version)
     print(new_version)
     print('.'.join(version.split(' ')[2].split('.')[:-1]))
+
+    commit = f'{new_version}\n* Add {value}\n\n\n\n\n'
+
+    with open(path, 'w') as w:
+        w.write(f'{commit}\n{version}{text}')
+
+update_changelog('1.8.1.3')

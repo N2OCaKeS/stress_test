@@ -8,7 +8,7 @@ import aiofiles
 from random import randrange
 from os.path import isfile
 from os import remove
-from json import dumps, loads
+import json
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -40,7 +40,66 @@ help_text = """Доступные команды:
 /status - узнать статус прогона
 /id - узнать ID чата
 /vpn - доступные для использования в телефоне найстройки VPN'
+/addrc - добавить новую версию релиз кандидата
 """
+
+def write_bendiks_conf(data):
+    with open('./bendiks_conf.json', 'w') as w:
+        json.dump(data, w, indent=4)
+
+
+def update_changelog(value):
+    path = '../ChangeLog'
+    with open(path, 'r') as r:
+        version = r.readline()
+        text = r.read()
+    upp_version = int(version.split(' ')[2].split('.')[-1]) + 1
+    pre_version = '.'.join(version.split(' ')[2].split('.')[:-1])
+    new_version = f'{' '.join(version.split(' ')[:-1])} {pre_version}.{upp_version}'
+
+    print(version)
+    print(new_version)
+    print('.'.join(version.split(' ')[2].split('.')[:-1]))
+
+    commit = f'{new_version}\n* Add {value}\n\n\n\n\n'
+
+    with open(path, 'w') as w:
+        w.write(f'{commit}\n{version}{text}')
+
+
+def mod_bendiks_conf(value):
+    with open('../bendiks_conf.json', 'r') as r:
+        data = json.load(r)
+
+    stands = {'LowServer':'10.177.103.204',
+              'MiddleServer':'10.177.103.203'}
+    cz_name = 'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "{}" \
+                -l ru_RU.UTF-8 startdisk restore {}-{}rc{} nvme0n1'
+
+    if value not in data['releases_dict'].keys():
+        data['releases_dict'][value] = value
+    if value not in data['rc_list']:
+        data['rc_list'].append(value)
+    if '.'.join(value.split('.')[:3]) not in data['releases_list']:
+        data['releases_list'].append('.'.join(value.split('.')[:3]))
+    if value not in data['release_version']:
+        data['release_version'].append(value)
+    if value not in data['releases']:
+        data['releases'].append(value)        
+
+    if value not in data['cz_comm']['stand3'].keys():
+        data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
+                                                          'LowServer',
+                                                          ''.join(value.split('.')[:3]),
+                                                          ''.join(value.split('.')[3:]))
+    if value not in data['cz_comm']['stand4'].keys():
+        data['cz_comm']['stand4'][value] = cz_name.format(stands['MiddleServer'],
+                                                          'MiddleServer',
+                                                          ''.join(value.split('.')[:3]),
+                                                          ''.join(value.split('.')[3:]))
+    write_bendiks_conf(data)
+    update_changelog(value)
+
 
 def random_pics():
     random_index = randrange(len(fotos))
@@ -122,7 +181,7 @@ async def changelog_check():
                     vers_text = ''.join(text[:1]).strip()
             if isfile(path_tgbot_conf):
                 async with aiofiles.open(path_tgbot_conf, 'r') as r:
-                    chlog_text = loads(await r.read())
+                    chlog_text = json.loads(await r.read())
                     line1 = chlog_text['changelog']['line1']
             
             if vers_text != line1.strip():
@@ -132,7 +191,7 @@ async def changelog_check():
                 await send_message_to_group(chat_id, upd_text)
                 chlog_text['changelog']['line1'] = vers_text
                 async with aiofiles.open(path_tgbot_conf, 'w') as w:
-                    await w.write(dumps(chlog_text, indent=4))
+                    await w.write(json.dumps(chlog_text, indent=4))
             await asyncio.sleep(100)
         except Exception as e:
             print(str(e))
@@ -153,7 +212,7 @@ async def start(message: types.Message):
                              reply_to_message_id=message.message_id)
 
 @dp.message(Command('vpn'))
-async def start(message: types.Message):
+async def vpn(message: types.Message):
     await message.reply(str(vpn_request()))
 
 @dp.message(Command('log'))
@@ -192,6 +251,17 @@ async def process_callback(query: types.CallbackQuery):
         choose = 'Выбран MiddleServer:\nСтатус:'
     await query.message.reply(f'{choose} {status_output(server_id)}')
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
+
+
+@dp.message_handler(commands='addrc')
+async def addrc(message: types.Message):
+    await message.answer('Введите версию')
+
+@dp.message_handler()
+async def get_version(message: types.Message):
+    version = message.text
+    await send_message_to_group(chat_id, f'Version is: {version}')
+
 
 
 @dp.message(F.text)

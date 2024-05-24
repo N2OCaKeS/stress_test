@@ -162,7 +162,7 @@ def mod_bendiks_conf(value):
 #print(''.join('1.8.1.3'.split('.')[3:]))
 
 
-with open('ChangeLog', 'r') as r:
+with open('../ChangeLog', 'r') as r:
     version = r.readline()
     upp_version = int(version.split(' ')[2].split('.')[-1]) + 1
     pre_version = '.'.join(version.split(' ')[2].split('.')[:-1])

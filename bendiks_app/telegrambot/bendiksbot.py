@@ -3,6 +3,7 @@ from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram import types 
 from aiogram.filters.command import Command, CommandObject
+from aiogram.utils.formatting import Text
 import asyncio
 import aiofiles
 from random import randrange
@@ -255,18 +256,20 @@ async def process_callback(query: types.CallbackQuery):
 
 @dp.message(Command('addrc'))
 async def addrc(message: types.Message, command: CommandObject):
+    rc = None
+    password = None
     if command.args is None:
         await message.reply('Error: Укажите версию RC и пароль')
         return
     try:
         rc, password = command.args.split(' ', maxsplit=1)
     except ValueError:
-        rc = None
         await message.reply('Error: Укажите версию RC и пароль. Пример:\n'
                             '/addrc <RC> <password>')
         return
     if password == 'bendik$':
-        await message.reply(f'Version is: {rc}')
+        content = Text(f'Version is: {rc}')
+        await message.reply(**content.as_kwargs())
     else: await message.reply(f'Доступ запрещен', {message.from_user.full_name})
 
 

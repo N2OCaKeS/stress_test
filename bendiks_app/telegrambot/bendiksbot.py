@@ -253,11 +253,11 @@ async def process_callback(query: types.CallbackQuery):
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
-@dp.message_handler(commands='addrc')
+@dp.message(Command('addrc'))
 async def addrc(message: types.Message):
     await message.answer('Введите версию')
 
-@dp.message_handler()
+@dp.message()
 async def get_version(message: types.Message):
     version = message.text
     await send_message_to_group(chat_id, f'Version is: {version}')

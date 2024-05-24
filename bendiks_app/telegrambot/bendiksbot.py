@@ -259,12 +259,12 @@ async def addrc(message: types.Message, command: CommandObject):
     rc = None
     password = None
     if command.args is None:
-        await message.reply('Error: Укажите версию RC и пароль')
+        await message.reply('❌ Укажите версию RC и пароль')
         return
     try:
         rc, password = command.args.split(' ', maxsplit=1)
     except ValueError:
-        content = Text('Error: Укажите версию RC и пароль. Пример:\n'
+        content = Text('❌ Укажите версию RC и пароль. Пример:\n'
                             '/addrc <RC> <password>')
         await message.reply(**content.as_kwargs())
         return

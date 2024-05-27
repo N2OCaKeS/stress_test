@@ -519,11 +519,12 @@
             Backup
           </button>
           <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
-            {% for version in stand1_snap %}
+            <!-- {% for version in stand1_snap %} -->
               <li>
                 <a class="dropdown-item" href="" onclick="backup_snapshot_stand1('{{version}}'); return false;">{{version}}</a>
+                <a class="dropdown-item" href="" onclick="backup_snapshot_stand1('{{version}}'); return false;">{{version}}</a>
               </li>
-            {% endfor %}
+            <!-- {% endfor %} -->
           </ul>
         </div>
 

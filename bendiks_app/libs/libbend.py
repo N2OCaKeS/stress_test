@@ -688,6 +688,6 @@ class ReleaseToRepo:
     
 
 def backup_snapshot(stand, snapshot):
-    command = f'{cz_comm[stand][snapshot]}'
+    command = f'{cz_comm()[stand][snapshot]}'
     subprocess.run(command, shell=True)
 

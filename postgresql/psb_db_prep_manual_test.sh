@@ -4,12 +4,13 @@ set -vx
 PG_VERSION=$1
 PG_SETEST_CLUSTER=TEST
 DB_NAME=test
+USER=postgres
 
 pg_createcluster $PG_VERSION $PG_SETEST_CLUSTER --port 6000                             
 rm -r /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/*
-chown -R postgres:postgres /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER
+chown -R $USER:$USER /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER
 
-sudo -u postgres -i << EOF
+sudo -u $USER -i << EOF
 /usr/lib/postgresql/$PG_VERSION/bin/initdb -D /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER --auth-local trust --auth-host md5
 EOF
 
@@ -18,7 +19,7 @@ pg_dropcluster $PG_VERSION main --stop
 rm -rf /etc/postgresql/$PG_VERSION/main
 pg_lsclusters
 
-sudo -u postgres -i << EOF
+sudo -u $USER -i << EOF
 psql -c "CREATE DATABASE $DB_NAME;"
 EOF
 
@@ -43,8 +44,8 @@ sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers 
 systemctl restart postgresql.service
 
 
-pgbench -i -h localhost -p 6000 -U postgres -s 100 $DB_NAME
-#pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 $DB_NAME
+pgbench -i -h localhost -p 6000 -U $USER -s 100 $DB_NAME
+#pgbench -h localhost -p 6000 -U $USER -t 1000 -j 200 -c 200 $DB_NAME
 
 cat << EOF > start_test.sh
 #!/bin/bash
@@ -55,7 +56,7 @@ mkdir \$dir
 for c in \$clients; do
     echo "pgbench_\${c}_\${t}.txt"
     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
-    pgbench -h localhost -p 6000 -U postgres --random-seed=13 -T \$t -j \$c -c \$c $DB_NAME >> "\${dir}/pgbench_result.txt"
+    pgbench -h localhost -p 6000 -U $USER --random-seed=13 -T \$t -j \$c -c \$c $DB_NAME >> "\${dir}/pgbench_result.txt"
     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
 done
 EOF

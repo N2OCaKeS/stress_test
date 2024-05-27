@@ -515,17 +515,14 @@
         <button class="commandButton btn btn-dark" data-command="/reboot/stand1">Reboot</button>
         <button class="commandButton btn btn-dark" data-command="/poweroff/stand1">Power off</button>
         <div class="dropdown">
-          <button class="commandButton btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-            Backup
-          </button>
-          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
-            <!-- {% for version in stand1_snap %} -->
-              <li>
-                <a class="dropdown-item" href="" onclick="backup_snapshot_stand1('{{version}}'); return false;">{{version}}</a>
-                <a class="dropdown-item" href="" onclick="backup_snapshot_stand1('{{version}}'); return false;">{{version}}</a>
-              </li>
-            <!-- {% endfor %} -->
-          </ul>
+          <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Список ядер</a>
+            <ul class="dropdown-menu">
+              {% for version in repo_path %}
+                <li>
+                  <a class="dropdown-item" href="" onclick="updateBlockKernels('{{version}}'); return false;">{{version}}</a>
+                </li>
+              {% endfor %}
+            </ul>
         </div>
 
 

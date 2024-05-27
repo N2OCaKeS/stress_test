@@ -8,9 +8,9 @@ USER=postgres
 
 pg_createcluster $PG_VERSION $PG_SETEST_CLUSTER --port 6000                             
 rm -r /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/*
-chown -R $USER:$USER /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER
+chown -R postgres:postgres /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER
 
-sudo -u $USER -i << EOF
+sudo -u postgres -i << EOF
 /usr/lib/postgresql/$PG_VERSION/bin/initdb -D /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER --auth-local trust --auth-host md5
 EOF
 
@@ -19,8 +19,11 @@ pg_dropcluster $PG_VERSION main --stop
 rm -rf /etc/postgresql/$PG_VERSION/main
 pg_lsclusters
 
-sudo -u $USER -i << EOF
+sudo -u postgres -i << EOF
+psql -c "CREATE USER $USER;"
 psql -c "CREATE DATABASE $DB_NAME;"
+psql -c "ALTER DATABASE $DB_NAME OWNER TO $USER;"
+psql -c "ALTER SCHEMA public OWNER TO $USER;"
 EOF
 
 sed -i -e 's/md5/trust/g' -e 's/scram-sha-256/trust/g' -e 's/peer/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf

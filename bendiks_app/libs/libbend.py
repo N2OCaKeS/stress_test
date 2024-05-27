@@ -247,10 +247,10 @@ def info_collector(page, ajax=None):
                                 brest_url=brest_url,
                                 stp_versions=stp_version(),
                                 repo_path=releases_dict().keys(),
-                                stand1_snap=cz_comm['stand1'].keys(),
-                                stand2_snap=cz_comm['stand2'].keys(),
-                                stand3_snap=cz_comm['stand3'].keys(),
-                                stand4_snap=cz_comm['stand4'].keys())
+                                stand1_snap=cz_comm()['stand1'].keys(),
+                                stand2_snap=cz_comm()['stand2'].keys(),
+                                stand3_snap=cz_comm()['stand3'].keys(),
+                                stand4_snap=cz_comm()['stand4'].keys())
 
 
 

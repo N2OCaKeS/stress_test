@@ -24,6 +24,7 @@ from libs.libbend import (index_page,
                           background_stat_storage_main,
                           update_settings_block,
                           get_kernels_from_rc,
+                          backup_snapshot,
                           main_url,
                           mobile_url,
                           brest_url,
@@ -229,6 +230,15 @@ def update_block(part):
         return update_settings_block()
     else:
         return get_kernels_from_rc(part)
+    
+
+@app.route('/backup/<stand>/<version>')
+def backup(stand, version):
+    """
+    Загрузить нужный снимок
+    """
+    backup_snapshot(stand, version)
+    return index_page('main')
 
 
 @app.route('/rest/api/get-testname-columns', methods=['GET'])

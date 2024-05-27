@@ -512,7 +512,38 @@
         </style>
         <button class="commandButton btn btn-dark" data-command="/reboot/stand1">Reboot</button>
         <button class="commandButton btn btn-dark" data-command="/poweroff/stand1">Power off</button>
-        
+        <div class="dropdown">
+          <button class="commandButton btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+            Backup
+          </button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+            {% for version in stand1_snap %}
+              <li>
+                <a class="dropdown-item" href="" onclick="backup_snapshot_stand1('{{version}}'); return false;">{{version}}</a>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+
+          <script>
+            function backup_snapshot_stand1(version) {
+                document.getElementById('loading-spinner').style.display = 'block';
+          
+                fetch('/backup/stand1/' + version, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
 
           <table class="table table-dark table-striped-columns">
             <thead>

@@ -36,7 +36,8 @@ from backup_image_conf import (VENV_PATH,
                                MiddleServer_group,
                                group_tests,
                                JIRA_URL,
-                               releases_dict)
+                               releases_dict,
+                               cz_comm)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -245,7 +246,11 @@ def info_collector(page, ajax=None):
                                 mobile_url=mobile_url,
                                 brest_url=brest_url,
                                 stp_versions=stp_version(),
-                                repo_path=releases_dict().keys())
+                                repo_path=releases_dict().keys(),
+                                stand1_snap=cz_comm['stand1'].keys(),
+                                stand2_snap=cz_comm['stand2'].keys(),
+                                stand3_snap=cz_comm['stand3'].keys(),
+                                stand4_snap=cz_comm['stand4'].keys())
 
 
 
@@ -681,4 +686,8 @@ class ReleaseToRepo:
             json.dump(filtered_dates, w, indent=4)
     
     
+
+def backup_snapshot(stand, snapshot):
+    command = f'{cz_comm[stand][snapshot]}'
+    subprocess.run(command, shell=True)
 

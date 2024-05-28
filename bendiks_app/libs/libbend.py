@@ -251,7 +251,7 @@ def info_collector(page, ajax=None):
                                 stand2_snap=cz_comm()['stand2'].keys(),
                                 stand3_snap=cz_comm()['stand3'].keys(),
                                 stand4_snap=cz_comm()['stand4'].keys(),
-                                stand4_snap=cz_comm()['stand5'].keys())
+                                stand5_snap=cz_comm()['stand5'].keys())
 
 
 

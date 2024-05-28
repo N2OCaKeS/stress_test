@@ -520,7 +520,7 @@
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
                 {% for version in stand1_snap %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="updateBlockKernels('{{version}}'); return false;">{{version}}</a>
+                    <a class="dropdown-item" href="#" onclick="backup_snapshot_stand1('{{version}}'); return false;">{{version}}</a>
                   </li>
                 {% endfor %}
               </ul>
@@ -973,11 +973,43 @@
 
     <div class="col-2 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">LowServer (stand3)(59)</div>
+        <div class="card-header">LowServer (stand3)(59)(204)</div>
         <div class="card-body">
 
-          <button class="commandButton btn btn-dark" data-command="/reboot/stand3">Reboot</button>
-          <button class="commandButton btn btn-dark" data-command="/poweroff/stand3">Power off</button>
+          <div class="btn-group" role="group">
+            <button class="commandButton btn btn-dark" data-command="/reboot/stand3">Reboot</button>
+            <button class="commandButton btn btn-dark" data-command="/poweroff/stand3">Power off</button>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                {% for version in stand3_snap %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="backup_snapshot_stand3('{{version}}'); return false;">{{version}}</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+
+
+          <script>
+            function backup_snapshot_stand3(version) {
+                document.getElementById('loading-spinner').style.display = 'block';
+          
+                fetch('/backup/stand3/' + version, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
           <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand3">iLO</button> -->
 
           <table class="table table-dark table-striped-columns">

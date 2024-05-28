@@ -501,20 +501,20 @@
         <div class="card-body">
 
           <style>
-            .commandButton {
+            .btn {
                 margin-right: 5px;                 
                 color: white; 
             }
-            .commandButton:hover {
+            .btn:hover {
                 background-color: #ff7b00; 
             }             
-            .commandButton:active {
+            .btn:active {
                 background-color: #3e8e41;
             }
         </style>
           <div class="btn-group" role="group">
-            <button class="commandButton btn btn-dark" data-command="/reboot/stand1">Reboot</button>
-            <button class="commandButton btn btn-dark" data-command="/poweroff/stand1">Power off</button>
+            <button class="commandButton1 btn btn-dark" data-command="/reboot/stand1">Reboot</button>
+            <button class="commandButton1 btn btn-dark" data-command="/poweroff/stand1">Power off</button>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -527,6 +527,31 @@
             </div>
           </div>
 
+          <script>
+            function powerCommand_stand1(command) {
+                document.getElementById('loading-spinner').style.display = 'block';
+            
+                fetch(command, {
+                    method: 'POST'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Action done:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+            
+            document.querySelectorAll('.commandButton1').forEach(function(button) {
+                button.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    powerCommand_stand1(event.target.dataset.command);
+                });
+            });
+          </script>
 
           <script>
             function backup_snapshot_stand1(version) {
@@ -977,8 +1002,8 @@
         <div class="card-body">
 
           <div class="btn-group" role="group">
-            <button class="commandButton btn btn-dark" data-command="/reboot/stand3">Reboot</button>
-            <button class="commandButton btn btn-dark" data-command="/poweroff/stand3">Power off</button>
+            <button class="commandButton3 btn btn-dark" data-command="/reboot/stand3">Reboot</button>
+            <button class="commandButton3 btn btn-dark" data-command="/poweroff/stand3">Power off</button>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -990,6 +1015,32 @@
               </ul>
             </div>
           </div>
+
+          <script>
+            function powerCommand_stand3(command) {
+                document.getElementById('loading-spinner').style.display = 'block';
+            
+                fetch(command, {
+                    method: 'POST'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Action done:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+            
+            document.querySelectorAll('.commandButton3').forEach(function(button) {
+                button.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    powerCommand_stand3(event.target.dataset.command);
+                });
+            });
+          </script>
 
 
           <script>

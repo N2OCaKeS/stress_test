@@ -214,6 +214,8 @@ for user in ${users63[*]}; do
 done
 
 echo "u  ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/u
+ls -l /etc/sudoers.d/
+cat /etc/sudoers.d/u
 
 ip a
 #for vm in database1_br database2_br database3_br lbdb1_br lbdb2_br lbdb3_br dcfreeipa_br; do

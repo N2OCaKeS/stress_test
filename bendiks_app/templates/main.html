@@ -500,6 +500,33 @@
         <div class="card-header">Test WorkStation (stand1)</div>
         <div class="card-body">
 
+          <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#exampleModal">
+            Инфо
+          </button>
+
+          <!-- Модальное окно -->
+          <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+              <div class="modal-dialog" role="document">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="exampleModalLabel"> Параметры стенда</h5>
+                  <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                  </button>
+                </div>
+                <div class="modal-body">
+                  CPU: Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz
+                  RAM: 32Gb
+                  STG: nvme0n1 Samsung 970 EVO 2Tb - системный
+                       sda Samsung SSD 870 QVO 2Tb
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-dismiss="modal">Закрыть</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <style>
             .btn {
                 margin-right: 5px;                 
@@ -1055,7 +1082,7 @@
 
     <div class="col-2 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">LowServer (stand3)(59)(204)</div>
+        <div class="card-header">LowServer (stand3-59-204)</div>
         <div class="card-body">
 
           <div class="btn-group" role="group">

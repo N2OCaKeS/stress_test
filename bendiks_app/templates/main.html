@@ -785,8 +785,65 @@
         <div class="card-header">Test WorkStation (stand2)</div>
         <div class="card-body">
 
-          <button class="commandButton btn btn-dark" data-command="/reboot/stand2">Reboot</button>
-          <button class="commandButton btn btn-dark" data-command="/poweroff/stand2">Power off</button>
+          <div class="btn-group" role="group">
+            <button class="commandButton2 btn btn-dark" data-command="/reboot/stand2">Reboot</button>
+            <button class="commandButton2 btn btn-dark" data-command="/poweroff/stand2">Power off</button>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                {% for version in stand2_snap %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="backup_snapshot_stand2('{{version}}'); return false;">{{version}}</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+
+          <script>
+            function powerCommand_stand2(command) {
+                document.getElementById('loading-spinner').style.display = 'block';
+            
+                fetch(command, {
+                    method: 'POST'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Action done:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+            
+            document.querySelectorAll('.commandButton2').forEach(function(button) {
+                button.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    powerCommand_stand2(event.target.dataset.command);
+                });
+            });
+          </script>
+
+          <script>
+            function backup_snapshot_stand2(version) {
+                document.getElementById('loading-spinner').style.display = 'block';
+          
+                fetch('/backup/stand2/' + version, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
 
           <table class="table table-dark table-striped-columns">
             <thead>
@@ -1272,11 +1329,69 @@
 
     <div class="col-2 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">MiddleServer (stand4)(58)</div>
+        <div class="card-header">MiddleServer (stand4-58-203)</div>
         <div class="card-body">
 
-          <button class="commandButton btn btn-dark" data-command="/reboot/stand4">Reboot</button>
-          <button class="commandButton btn btn-dark" data-command="/poweroff/stand4">Power off</button>
+          <div class="btn-group" role="group">
+            <button class="commandButton4 btn btn-dark" data-command="/reboot/stand4">Reboot</button>
+            <button class="commandButton4 btn btn-dark" data-command="/poweroff/stand4">Power off</button>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                {% for version in stand4_snap %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="backup_snapshot_stand4('{{version}}'); return false;">{{version}}</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+
+          <script>
+            function powerCommand_stand4(command) {
+                document.getElementById('loading-spinner').style.display = 'block';
+            
+                fetch(command, {
+                    method: 'POST'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Action done:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+            
+            document.querySelectorAll('.commandButton4').forEach(function(button) {
+                button.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    powerCommand_stand4(event.target.dataset.command);
+                });
+            });
+          </script>
+
+          <script>
+            function backup_snapshot_stand4(version) {
+                document.getElementById('loading-spinner').style.display = 'block';
+          
+                fetch('/backup/stand4/' + version, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
+
           <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand4">iLO</button> -->
           <!-- <script>
             $(document).ready(function(){
@@ -1577,8 +1692,66 @@
     <div class="card-header">HighServer (stand5)</div>
     <div class="card-body">
 
-      <button class="commandButton btn btn-dark" data-command="/reboot/stand5">Reboot</button>
-      <button class="commandButton btn btn-dark" data-command="/poweroff/stand5">Power off</button>
+      <div class="btn-group" role="group">
+        <button class="commandButton5 btn btn-dark" data-command="/reboot/stand5">Reboot</button>
+        <button class="commandButton5 btn btn-dark" data-command="/poweroff/stand5">Power off</button>
+        <div class="dropdown d-inline-block">
+          <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+            {% for version in stand5_snap %}
+              <li>
+                <a class="dropdown-item" href="#" onclick="backup_snapshot_stand5('{{version}}'); return false;">{{version}}</a>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <script>
+        function powerCommand_stand5(command) {
+            document.getElementById('loading-spinner').style.display = 'block';
+        
+            fetch(command, {
+                method: 'POST'
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('loading-spinner').style.display = 'none';
+                console.log('Action done:', data);
+            })
+            .catch((error) => {
+                document.getElementById('loading-spinner').style.display = 'none';
+                console.error('Error:', error);
+            });
+        }
+        
+        document.querySelectorAll('.commandButton5').forEach(function(button) {
+            button.addEventListener('click', function(event) {
+                event.preventDefault();
+                powerCommand_stand5(event.target.dataset.command);
+            });
+        });
+      </script>
+
+      <script>
+        function backup_snapshot_stand5(version) {
+            document.getElementById('loading-spinner').style.display = 'block';
+      
+            fetch('/backup/stand5/' + version, {
+                method: 'GET'
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('loading-spinner').style.display = 'none';
+                console.log('Backup completed:', data);
+            })
+            .catch((error) => {
+                document.getElementById('loading-spinner').style.display = 'none';
+                console.error('Error:', error);
+            });
+        }
+      </script>
+
       <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand5">iLO</button> -->
 
       <table class="table table-dark table-striped-columns">

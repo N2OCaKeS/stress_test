@@ -9,7 +9,7 @@
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script> -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css">
 
 
@@ -1127,8 +1127,32 @@
 
     <div class="col-2 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">LowServer (stand3-59-204)</div>
+        <div class="card-header">LowServer (stand3-59-204)
+          <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal3">
+            <i class="fas fa-info"></i>
+        </button>
+        </div>
         <div class="card-body">
+    
+          <div class="modal fade" id="standModal3" tabindex="-1" aria-labelledby="standModalLabel" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="standModalLabel">Параметры стенда</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                  CPU: Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz</br>
+                  RAM: 32Gb</br>
+                  STG: nvme0n1 SSD 2Tb - системный</br>
+                       sda SSD 512Gb
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div class="btn-group" role="group">
             <button class="commandButton3 btn btn-dark" data-command="/reboot/stand3">Reboot</button>

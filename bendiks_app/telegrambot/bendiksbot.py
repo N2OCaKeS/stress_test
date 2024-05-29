@@ -348,7 +348,7 @@ async def addrc(message: types.Message, command: CommandObject):
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_bendiks_conf(rc)
         content = Text(f'Пользователь: {message.from_user.full_name} добавил {rc}')
-        await send_message_to_group(chat_id, **content.as_kwargs())
+        await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())

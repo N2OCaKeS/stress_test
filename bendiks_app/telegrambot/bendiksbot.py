@@ -102,8 +102,10 @@ class ReleaseToRepo:
             key: __repo_filter(seporated_dates, key) for key, version in seporated_dates.items()
         }
 
+        sorted_dict = {k: v for k, v in sorted(filtered_dates.items())}
+
         with open(f'{self.cur_directory}/{self.gen_filename}', 'w') as w:
-            json.dump(filtered_dates, w, indent=4)
+            json.dump(sorted_dict, w, indent=4)
 
 
 def write_bendiks_conf(data):
@@ -160,7 +162,10 @@ def mod_bendiks_conf(value):
                                                           'MiddleServer',
                                                           ''.join(value.split('.')[:3]),
                                                           ''.join(value.split('.')[3:]))
-    write_bendiks_conf(data)
+        
+    sorted_data = {k: v for k, v in sorted(data.items())}
+
+    write_bendiks_conf(sorted_data)
     repo = ReleaseToRepo(current_directory='..')
     repo.get_releases_index()
     repo.generate_releases_file()

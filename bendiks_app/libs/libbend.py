@@ -683,8 +683,10 @@ class ReleaseToRepo:
             key: __repo_filter(seporated_dates, key) for key, version in seporated_dates.items()
         }
 
+        sorted_dict = {k: v for k, v in sorted(filtered_dates.items())}
+
         with open(f'{self.cur_directory}/{self.gen_filename}', 'w') as w:
-            json.dump(filtered_dates, w, indent=4)
+            json.dump(sorted_dict, w, indent=4)
     
     
 

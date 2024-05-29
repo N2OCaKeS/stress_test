@@ -276,6 +276,12 @@ def get_repo_path():
     return send_file('./releases.json', as_attachment=True)
 
 
+@app.route('/rest/api/get-repo-path-as-json', methods=['GET'])
+def get_repo_path_2():
+    with open('./releases.json', 'r') as r:
+        releases = r.read()
+    return releases
+
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)
 

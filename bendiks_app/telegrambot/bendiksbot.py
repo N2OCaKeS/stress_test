@@ -13,7 +13,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
-from libbend import ReleaseToRepo
+
 
 
 with open('/home/u/key.conf', 'r') as r:
@@ -43,6 +43,68 @@ help_text = """Доступные команды:
 /vpn - доступные для использования в телефоне настройки VPN'
 /addrc - добавить новую версию релиз кандидата
 """
+
+
+class ReleaseToRepo:
+    def __init__(self,
+                 current_directory=None):
+        self.load_filename = 'releases-index.json'
+        self.gen_filename = 'releases.json'
+        self.cur_directory = current_directory
+
+
+    def get_releases_index(self):
+        url = 'https://releases.devos.astralinux.ru/index.json'
+        response = requests.get(url)
+        assert response.status_code == 200, f'Request {self.load_filename} failed with status {response.status_code}'
+
+        with open(f'{self.cur_directory}/{self.load_filename}', 'wb') as f:
+            f.write(response.content)
+
+     
+    def generate_releases_file(self):
+        prefix = 'deb https://releases.devos.astralinux.ru/'
+        sufix = '_x86-64 main contrib non-free'
+
+        with open(f'{self.cur_directory}/{self.load_filename}', 'r') as r:
+            releases = json.load(r)
+
+        def __get_bendiks_conf():
+            with open('../bendiks_conf.json', 'r') as r:
+                return json.load(r)
+
+        def __releases_dict():
+            return __get_bendiks_conf()['releases_dict']
+
+        def __path_seporator(build_version: str):
+            release = '.'.join(build_version.split('.')[:2])
+            update = '.'.join(build_version.split('.')[:3])
+
+            return [f"{prefix}{releases['releases'][release][update][build_version]['files'][i]['mount_point']} {release}{sufix}"
+                    for i in range(len(releases['releases'][release][update][build_version]['files']))]
+
+        def __repo_filter(dates, key: str):
+            no_base_repo = ['1.7.4', '1.7.3.UU.2', '1.7.3.UU.1', '1.7.3', '1.7.2.UU.1', '1.7.2', '1.7.1', '1.7.0']
+
+            if key.startswith('1.7') and key not in no_base_repo:
+                return [v for v in dates[key] if 'base-repository' in v]
+            elif key.startswith('1.7') and key in no_base_repo:
+                return [v for v in dates[key] if not 'installation' in v and not 'update-repository' in v]
+            elif key.startswith('1.8'):
+                return [v for v in dates[key] if not 'installation-di' in v]
+            else: return [v for v in dates[key]]
+
+        seporated_dates = {
+            key: __path_seporator(version) for key, version in __releases_dict().items()
+        }
+
+        filtered_dates = {
+            key: __repo_filter(seporated_dates, key) for key, version in seporated_dates.items()
+        }
+
+        with open(f'{self.cur_directory}/{self.gen_filename}', 'w') as w:
+            json.dump(filtered_dates, w, indent=4)
+
 
 def write_bendiks_conf(data):
     with open('../bendiks_conf.json', 'w') as w:

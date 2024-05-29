@@ -347,7 +347,7 @@ async def addrc(message: types.Message, command: CommandObject):
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_bendiks_conf(rc)
-        content = f'Пользователь: {message.from_user.full_name} добавил {rc}'
+        content = f'Пользователь: "{message.from_user.full_name}" ID: "{message.from_user.id}" добавил RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})

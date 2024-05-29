@@ -214,6 +214,8 @@ for user in ${users63[*]}; do
 done
 
 echo "u  ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/u
+echo "u  ALL=(ALL:ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers
+echo "postgres  ALL=(ALL:ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers
 ls -l /etc/sudoers.d/
 cat /etc/sudoers.d/u
 

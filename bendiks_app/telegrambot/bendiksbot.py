@@ -13,7 +13,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
-
+from libs.libbend import ReleaseToRepo
 
 
 with open('/home/u/key.conf', 'r') as r:
@@ -69,10 +69,6 @@ def update_changelog(value):
 
 
 def mod_bendiks_conf(value):
-    import sys
-    sys.path.append('/home/u/git/stress_test/bendiks_app')
-    from libs.libbend import ReleaseToRepo
-
     with open('../bendiks_conf.json', 'r') as r:
         data = json.load(r)
 

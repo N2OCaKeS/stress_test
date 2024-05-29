@@ -13,6 +13,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
+from libs.libbend import ReleaseToRepo
 
 
 
@@ -99,6 +100,9 @@ def mod_bendiks_conf(value):
                                                           ''.join(value.split('.')[:3]),
                                                           ''.join(value.split('.')[3:]))
     write_bendiks_conf(data)
+    repo = ReleaseToRepo(current_directory='..')
+    repo.get_releases_index()
+    repo.generate_releases_file()
     update_changelog(value)
 
 

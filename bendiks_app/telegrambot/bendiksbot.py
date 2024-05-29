@@ -13,7 +13,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
-from bendiks_app.libs.libbend import ReleaseToRepo
+from ..libs.libbend import ReleaseToRepo
 
 
 with open('/home/u/key.conf', 'r') as r:

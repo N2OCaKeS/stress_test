@@ -143,14 +143,19 @@ def mod_bendiks_conf(value):
 
     if value not in data['releases_dict'].keys():
         data['releases_dict'][value] = value
+        data['releases_dict'] = {k: v for k, v in sorted(data['releases_dict'].items())}
     if value not in data['rc_list']:
         data['rc_list'].append(value)
+        data['rc_list'] = sorted(data['rc_list']) 
     if '.'.join(value.split('.')[:3]) not in data['releases_list']:
         data['releases_list'].append('.'.join(value.split('.')[:3]))
+        data['releases_list'] = sorted(data['releases_list'])
     if value not in data['release_version']:
         data['release_version'].append(value)
+        data['release_version'] = sorted(data['release_version'])
     if value not in data['releases']:
-        data['releases'].append(value)        
+        data['releases'].append(value)       
+        data['releases'] = sorted(data['releases']) 
 
     if value not in data['cz_comm']['stand3'].keys():
         data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
@@ -163,9 +168,10 @@ def mod_bendiks_conf(value):
                                                           ''.join(value.split('.')[:3]),
                                                           ''.join(value.split('.')[3:]))
         
-    sorted_data = {k: v for k, v in sorted(data.items())}
-
-    write_bendiks_conf(sorted_data)
+    data['cz_comm']['stand3'] = {k: v for k, v in sorted(data['cz_comm']['stand3'].items())}
+    data['cz_comm']['stand4'] = {k: v for k, v in sorted(data['cz_comm']['stand4'].items())}
+    
+    write_bendiks_conf(data)
     repo = ReleaseToRepo(current_directory='..')
     repo.get_releases_index()
     repo.generate_releases_file()
@@ -341,6 +347,8 @@ async def addrc(message: types.Message, command: CommandObject):
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_bendiks_conf(rc)
+        content = Text(f'Пользователь: {message.from_user.full_name} добавил {rc}')
+        await send_message_to_group(chat_id, **content.as_kwargs())
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())

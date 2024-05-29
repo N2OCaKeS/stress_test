@@ -23,6 +23,7 @@ sudo apt-get install -y python3-requests
 
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
     sudo apt-get install -y linux-tools-6.1*-generic
+    sudo apt-get install -y linux-tools-6.6*-generic
     sudo apt-get install -y linux-tools-common-6.*
 else
     sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*

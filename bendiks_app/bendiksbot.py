@@ -70,7 +70,7 @@ class ReleaseToRepo:
             releases = json.load(r)
 
         def __get_bendiks_conf():
-            with open('../bendiks_conf.json', 'r') as r:
+            with open('./bendiks_conf.json', 'r') as r:
                 return json.load(r)
 
         def __releases_dict():
@@ -112,7 +112,7 @@ def generate_repo_path():
     pkg_path = '/dists/{}/main/binary-amd64/Packages'
     vers_path = '/dists/{}/Release'
 
-    with open('../releases.json', 'r') as rj:
+    with open('./releases.json', 'r') as rj:
         links = json.load(rj)
 
     pkg_path_dict = {
@@ -131,12 +131,12 @@ def generate_repo_path():
     
     
 def write_bendiks_conf(data):
-    with open('../bendiks_conf.json', 'w') as w:
+    with open('./bendiks_conf.json', 'w') as w:
         json.dump(data, w, indent=4)
 
 
 def update_changelog(value):
-    path = '../ChangeLog'
+    path = './ChangeLog'
     with open(path, 'r') as r:
         version = r.readline()
         text = r.read()
@@ -155,7 +155,7 @@ def update_changelog(value):
 
 
 def mod_bendiks_conf(value):
-    with open('../bendiks_conf.json', 'r') as r:
+    with open('./bendiks_conf.json', 'r') as r:
         data = json.load(r)
 
     stands = {'LowServer':'10.177.103.204',
@@ -194,7 +194,7 @@ def mod_bendiks_conf(value):
     data['cz_comm']['stand4'] = {k: v for k, v in sorted(data['cz_comm']['stand4'].items())}
     write_bendiks_conf(data)
     
-    repo = ReleaseToRepo(current_directory='..')
+    repo = ReleaseToRepo(current_directory='.')
     repo.get_releases_index()
     repo.generate_releases_file()
 
@@ -372,7 +372,7 @@ async def addrc(message: types.Message, command: CommandObject):
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_bendiks_conf(rc)
-        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие: добавлено RC: "{rc}"'
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлено RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})

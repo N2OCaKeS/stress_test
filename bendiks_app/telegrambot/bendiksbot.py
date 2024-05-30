@@ -127,7 +127,7 @@ def generate_repo_path():
         for key in links.keys()
     }
 
-    return {'repo_path':{**pkg_path_dict, **vers_path_dict}}
+    return {**pkg_path_dict, **vers_path_dict}
     
     
 def write_bendiks_conf(data):
@@ -370,7 +370,7 @@ async def addrc(message: types.Message, command: CommandObject):
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_bendiks_conf(rc)
-        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\nдобавил RC: "{rc}"'
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие: добавлено RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})

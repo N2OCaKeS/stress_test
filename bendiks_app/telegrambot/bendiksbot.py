@@ -192,12 +192,14 @@ def mod_bendiks_conf(value):
         
     data['cz_comm']['stand3'] = {k: v for k, v in sorted(data['cz_comm']['stand3'].items())}
     data['cz_comm']['stand4'] = {k: v for k, v in sorted(data['cz_comm']['stand4'].items())}
-    data['repo_path'] = {k: v for k, v in sorted(generate_repo_path().items())}
-    
     write_bendiks_conf(data)
+    
     repo = ReleaseToRepo(current_directory='..')
     repo.get_releases_index()
     repo.generate_releases_file()
+
+    data['repo_path'] = {k: v for k, v in sorted(generate_repo_path().items())}
+    write_bendiks_conf(data)
     update_changelog(value)
 
 

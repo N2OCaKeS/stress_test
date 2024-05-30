@@ -1,3 +1,10 @@
+bendiks_app - v2.21.4
+* Add dynamic update repo path
+  to kernel shows
+
+
+  
+
 bendiks_app - v2.21.3
 * Add update releases.json
 * Add api releases as json

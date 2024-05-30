@@ -570,8 +570,8 @@ def get_kernels_from_rc(version_rc: str):
         c_name = ctypes.c_char_p(bytes(name, encoding='utf8'))
         clib.download_file(c_path, c_name)
 
-    pkg_path = repo_path[f'pkg_path_{version_rc}']
-    vers_path = repo_path[f'vers_path_{version_rc}']
+    pkg_path = repo_path()[f'pkg_path_{version_rc}']
+    vers_path = repo_path()[f'vers_path_{version_rc}']
 
     get_kernels = ZefirTestRun()
     get_file(str(pkg_path), 'available_packages')

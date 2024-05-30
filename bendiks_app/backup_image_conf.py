@@ -250,30 +250,8 @@ brest_stands = ['stand10', 'stand11', 'stand12']
 #################################################################################################################################################
 #Перечень настроек, используемых для создания тестовых прогонов
 #################################################################################################################################################
-def generate_repo_path():
-    import json
-    pkg_path = '/dists/{}/main/binary-amd64/Packages'
-    vers_path = '/dists/{}/Release'
-
-    with open('releases.json', 'r') as rj:
-        links = json.load(rj)
-
-    pkg_path_dict = {
-        f"pkg_path_{key}": [f"{value.split(' ')[1]}{pkg_path}".format(value.split(' ')[2])  
-        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
-        for key in links.keys()
-    }
-
-    vers_path_dict = {
-        f"vers_path_{key}": [f"{value.split(' ')[1]}{vers_path}".format(value.split(' ')[2])   
-        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
-        for key in links.keys()
-    }
-
-    repo_path = {**pkg_path_dict, **vers_path_dict}
-    return repo_path
-
-repo_path = generate_repo_path()
+def repo_path():
+    return get_bendiks_conf()['repo_path']
 
 def rc_list():
     return get_bendiks_conf()['rc_list']

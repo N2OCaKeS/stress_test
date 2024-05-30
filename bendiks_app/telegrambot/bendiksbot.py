@@ -108,6 +108,28 @@ class ReleaseToRepo:
             json.dump(sorted_dict, w, indent=4)
 
 
+def generate_repo_path():
+    pkg_path = '/dists/{}/main/binary-amd64/Packages'
+    vers_path = '/dists/{}/Release'
+
+    with open('../releases.json', 'r') as rj:
+        links = json.load(rj)
+
+    pkg_path_dict = {
+        f"pkg_path_{key}": [f"{value.split(' ')[1]}{pkg_path}".format(value.split(' ')[2])  
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
+        for key in links.keys()
+    }
+
+    vers_path_dict = {
+        f"vers_path_{key}": [f"{value.split(' ')[1]}{vers_path}".format(value.split(' ')[2])   
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
+        for key in links.keys()
+    }
+
+    return {'repo_path':{**pkg_path_dict, **vers_path_dict}}
+    
+    
 def write_bendiks_conf(data):
     with open('../bendiks_conf.json', 'w') as w:
         json.dump(data, w, indent=4)
@@ -170,6 +192,7 @@ def mod_bendiks_conf(value):
         
     data['cz_comm']['stand3'] = {k: v for k, v in sorted(data['cz_comm']['stand3'].items())}
     data['cz_comm']['stand4'] = {k: v for k, v in sorted(data['cz_comm']['stand4'].items())}
+    data['repo_path'] = {k: v for k, v in sorted(generate_repo_path().items())}
     
     write_bendiks_conf(data)
     repo = ReleaseToRepo(current_directory='..')
@@ -347,7 +370,7 @@ async def addrc(message: types.Message, command: CommandObject):
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_bendiks_conf(rc)
-        content = f'Пользователь: "{message.from_user.full_name}" ID: "{message.from_user.id}" добавил RC: "{rc}"'
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\nдобавил RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})

@@ -58,7 +58,7 @@ def parent_page_list():
                 'FreeIPA':         ['FreeIPA auth'],
                 'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off'],
                 'Apache':          ['apache-rp'],
-                'Qemu/KVM/Libvirt':['steal time', 'FIO']}
+                'Qemu/KVM/Libvirt':['steal time', 'FIO', 'vUnixBench']}
 
     parent_page_list = {
         key:{value:f'STRESS_report {key} ⬝ {topic}' for topic in tests_list for value in tests_list[topic]}  
@@ -129,7 +129,8 @@ branches = {
     'Parsec impact fs benchmark audit-off':'parsec',
     'Apache_ReverseProxy':'apache2',
     'Steal time':'virt',
-    'FIO benchmark':'virt'
+    'FIO benchmark':'virt',
+    'Virt UnixBench':'virt'
 }
 
 
@@ -179,7 +180,8 @@ tests = {
     'ram overflow':'RAM-overflow',
     'Apache_ReverseProxy':'apache-rp',
     'Steal time':'steal time',
-    'FIO benchmark':'FIO'
+    'FIO benchmark':'FIO',
+    'Virt UnixBench':'vUnixBench'
 }
 
 
@@ -210,7 +212,7 @@ group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO']
+              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench']
 
 
 
@@ -264,13 +266,13 @@ def stp_version():
 
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT'] #, 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
-                                'parsec impact-fs aud-off', 'apache-rp']
+                                'parsec impact-fs aud-off', 'apache-rp', 'vUnixBench']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels',
                                'psql balance', 'FreeIPA auth', 'steal time', 'FIO'] #'tantor vanilla', 'tantor kernels'
 testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
-                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT']
+                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'vUnixBench']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth',
                       'psql parsec', 'steal time', 'FIO']
 
@@ -312,7 +314,8 @@ tests_case_zefir_key = {
     'EXT3':'BT-T7561',
     'FAT':'BT-T7563',
     'EXFAT':'BT-T13736',
-    'FIO':'BT-T13864'
+    'FIO':'BT-T13864',
+    'vUnixBench':'BT-T14097'
 }
 
 
@@ -336,7 +339,7 @@ testname_columns = {
                     'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
                     'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off',
                     'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
-                    'FIO benchmark':'FIO'
+                    'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench'
                     }
 
 

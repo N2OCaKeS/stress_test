@@ -265,6 +265,7 @@ try:
                         apache_rp = '-apache rp'
                         steal_time = '-lvirt stealtime'
                         fio = '-lvirt fio'
+                        vunixbench = '-lvirt unixbench'
                         if tests[dates_list[i][1]] == 'auditd-p':
                             testlist = f'-aud psaud'
                         elif tests[dates_list[i][1]] == 'auditd-f':
@@ -322,6 +323,9 @@ try:
                         elif tests[dates_list[i][1]] == 'FIO':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True)  
+                        elif tests[dates_list[i][1]] == 'vUnixBench':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {vunixbench}', shell=True) 
                         elif tests[dates_list[i][1]].startswith('auditd'):
                             subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
@@ -373,6 +377,7 @@ try:
                     apache_rp = '-apache rp'
                     steal_time = '-lvirt stealtime'
                     fio = '-lvirt fio'
+                    vunixbench = '-lvirt unixbench'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -430,6 +435,9 @@ try:
                     elif tests[dates_list[i][1]] == 'FIO':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True) 
+                    elif tests[dates_list[i][1]] == 'vUnixBench':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {vunixbench}', shell=True) 
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)

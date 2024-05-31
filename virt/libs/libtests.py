@@ -595,6 +595,9 @@ class UnixBench(CreateVM):
         results = {k: v for k, v in zip(keys, values)}
         print(results)
 
+        if not os.path.isdir(UB_RESULTS):
+            os.mkdir(UB_RESULTS)
+
         df = pd.DataFrame(results, index=['Total score']).T
         df.to_html(f'{UB_RESULTS}/{UB_RESULT_HTML}')
 

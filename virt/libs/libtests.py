@@ -13,7 +13,7 @@ from json import loads
 import numpy as np
 from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
                       FIOVERS_18x, TEMPLATE_PATH, FIO_PATH, UB_ARHIVE, STEP, \
-                      LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML
+                      LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML, UB_RESULTS
 from time import sleep
 
 
@@ -596,6 +596,6 @@ class UnixBench(CreateVM):
         print(results)
 
         df = pd.DataFrame(results, index=['Total score']).T
-        df.to_html(UB_RESULT_HTML)
+        df.to_html(f'{UB_RESULTS}/{UB_RESULT_HTML}')
 
 

@@ -1,7 +1,7 @@
 import os
 from libs.libreport import ReportToConfluence
 from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH, VM_INFONAME, VM_KERNEL, \
-                      IO_DEPTH_1, IO_DEPTH_128, FILE_SIZE
+                      IO_DEPTH_1, IO_DEPTH_128, FILE_SIZE, UB_RESULTS, UB_RESULT_HTML
 
 
 
@@ -199,6 +199,35 @@ class Public:
             head_row2 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди "{IO_DEPTH_1}":</b></h3></p>'
             head_row3 = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Уровень глубины очереди "{IO_DEPTH_128}":</b></h3></p>'
             html_page = '\n'.join([header_table, head_row, head_row2, low_depth, head_row3, high_depth])
+
+        elif self.testname == 'unixbench':
+            #генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+            
+            with open(f'{REPORT_PATH}/{VM_INFONAME}') as info:
+                vm_info = info.read()
+
+            with open(f'{REPORT_PATH}/{VM_KERNEL}') as info:
+                vm_kernel = info.read()
+
+            with open(f'{TEMPLATE_PATH}/header_table_template_unixbench.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        vm_av=vm_info,
+                                                        vm_kernel=vm_kernel,                                                    
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
+
+            #создание страницы отчета
+            with open(f'{UB_RESULTS}/{UB_RESULT_HTML}', 'r') as file:
+                results = file.read()
+
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            html_page = '\n'.join([header_table, head_row, results])
 
         else: html_page = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Тест не выбран</b></h2></p>'
         

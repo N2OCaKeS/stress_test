@@ -13,7 +13,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
-from libs.libbend import ReleaseToRepo
+from libs.libbend import ReleaseToRepo, get_kernels_from_rc
 from backup_image_conf import JIRA_URL
 
 
@@ -75,6 +75,16 @@ def generate_repo_path():
 def write_bendiks_conf(data):
     with open('./bendiks_conf.json', 'w') as w:
         json.dump(data, w, indent=4)
+
+
+def add_kernels(value):
+    with open('./bendiks_conf.json', 'r') as r:
+        config = json.load(r)
+
+    rc_kernels = get_kernels_from_rc(value, get_list=True)
+    print(rc_kernels)
+    config['kernels'] += [kern for kern in rc_kernels if kern not in set(config['kernels'])]
+    return sorted(config['kernels'])
 
 
 def update_changelog(value):
@@ -191,6 +201,10 @@ def mod_bendiks_conf(value):
 
     data['repo_path'] = {k: v for k, v in sorted(generate_repo_path().items())}
     write_bendiks_conf(data)
+
+    data['kernels'] = add_kernels(value)
+    write_bendiks_conf(data)
+
     add_testrun_folder(value)
     update_changelog(value)
 

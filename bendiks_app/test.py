@@ -261,17 +261,9 @@ print(get_kernels_from_rc('1.7.6.5', get_list=True))
 with open('./bendiks_conf.json', 'r') as r:
         config = json.load(r)
 
-#res = {"kernel_list":"","releas_list":"Kernels: '5.10.216-1-generic', '5.15.0-102-generic', '5.15.0-102-lowlatency', '6.1.90-1-generic'","test_list":"Version: 1.7.6-base"}
-
-#res_filter = res["releas_list"].replace("'", "").replace("Kernels: ", "").split(', ')
-#print(res_filter)
-
-kernel_filtered = get_kernels_from_rc('1.7.6.5', get_list=True)
-print(kernel_filtered)
-
-for i in kernel_filtered:
-    if i not in config['kernels']:
-        config['kernels'].append(i)
+rc_kernels = get_kernels_from_rc('1.7.6.5', get_list=True)
+print(rc_kernels)
+config['kernels'] += [kern for kern in rc_kernels if kern not in set(config['kernels'])]
 
 print(config['kernels'])
 

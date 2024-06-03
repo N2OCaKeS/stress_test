@@ -561,7 +561,7 @@ def update_settings_block():
                    kernel_list=kernel_list)
 
 
-def get_kernels_from_rc(version_rc: str):
+def get_kernels_from_rc(version_rc: str, get_list=False):
     pathlib = str(getcwd() + '/libs/datlib.so')
     clib = ctypes.CDLL(pathlib)
 
@@ -578,9 +578,12 @@ def get_kernels_from_rc(version_rc: str):
     get_file(str(vers_path), 'available_version')
     version, kernels = get_kernels.get_kernels_from_file()
 
-    return jsonify(test_list=version, 
-                   releas_list=f'''Kernels: \'{" ".join(kernels).replace(" ", "', '")}\'''', 
-                   kernel_list='')
+    if get_list:
+        return kernels
+    else:
+        return jsonify(test_list=version, 
+                       releas_list=f'''Kernels: \'{" ".join(kernels).replace(" ", "', '")}\'''', 
+                       kernel_list='')
 
 
 

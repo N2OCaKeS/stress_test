@@ -10,6 +10,4 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-COPY /home/u/ilo.json /fastapi_app/src/add_tunning
-
 RUN chmod a+x docker/*.sh

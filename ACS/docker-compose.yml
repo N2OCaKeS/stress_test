@@ -32,6 +32,8 @@ services:
     depends_on:
       - db
       - redis
+    volumes: 
+      - /home/u/ilo.json:/fastapi_app/src/add_tunning/ilo.json
 
   celery:
     build:

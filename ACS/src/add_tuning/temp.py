@@ -40,7 +40,7 @@ class BootOrder:
         self.login = self.ilo[self.stand]['username']
         self.password = self.ilo[self.stand]['password']
         self.address = self.ilo[self.stand]['ip']
-        self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
+        self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -oHostKeyAlgorithms=+ssh-rsa -l {self.login} {self.address}'
 
     def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
@@ -107,7 +107,7 @@ def astra_version_update(new_version: str, stand, *args, **kwargs):
     """
         TODO Дописать преобразование
     """
-    if stand[1] == "LowServer":
+    if stand[1] == "LowServer": 
         num_stand = "stand3"
     elif stand[1] == "MiddleServer":
         num_stand = "stand4"

@@ -44,6 +44,8 @@ services:
     command: ["/fastapi_app/docker/celery.sh", "celery"]
     depends_on:
       - redis
+    volumes: 
+      - /home/u/ilo.json:/fastapi_app/src/ilo/ilo.json
 
   flower:
     build:

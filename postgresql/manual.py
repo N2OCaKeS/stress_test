@@ -38,6 +38,13 @@ parser.add_argument('-flame',
                     help='create flamegraph',
                     dest='FLAME')
 
+parser.add_argument('-set_hdd',
+                    action='store',
+                    required=False,
+                    choices=['ext4', 'xfs'],
+                    help='set test storage on HDD',
+                    dest='HDD')
+
 args = parser.parse_args()
 
 
@@ -142,6 +149,21 @@ def flame():
     cmd('pg_ctlcluster 15 TEST stop')
     print('Flamegraph done')
 
+def set_hdd(part='sdb', fs=args.HDD): 
+    if fs == 'xfs':
+        option = 'f'
+    else: option = 'F'
+
+    if not os.path.isdir('/var/lib/postgresql'):
+        os.mkdir('/var/lib/postgresql')
+    else: 
+        cmd('rm -r /var/lib/postgresql')
+        os.mkdir('/var/lib/postgresql')
+
+    cmd(f'parted -s /dev/{part} mklabel gpt mkpart primary {fs} 0% 100%')
+    cmd(f'mkfs -t {fs} -{option} /dev/{part}1')
+    cmd(f'mount /dev/{part}1 /var/lib/postgresql/')
+
 
 if args.CLEARE:
     cleare()
@@ -153,6 +175,8 @@ elif args.TEST:
     test()
 elif args.FLAME:
     flame()
+elif args.HDD:
+    set_hdd()
 
 
     

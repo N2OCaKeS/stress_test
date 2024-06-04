@@ -16,7 +16,7 @@ import paramiko
 from paramiko import ssh_exception
 import socket
 import psycopg2
-from allta_app.allta_image_conf import (VENV_PATH,
+from allta_image_conf import (VENV_PATH,
                                psyc,
                                stands_ip,
                                main_tests,

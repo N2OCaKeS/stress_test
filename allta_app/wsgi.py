@@ -2,7 +2,7 @@
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
-from allta_app.allta_front import app
+from allta_front import app
 import datetime
 import os
 import re

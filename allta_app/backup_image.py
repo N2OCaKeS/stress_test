@@ -10,7 +10,7 @@ import socket
 import paramiko
 from paramiko import ssh_exception
 import argparse
-from allta_app.allta_image_conf import *
+from allta_image_conf import *
 import pysnooper
 from ansible.plugins.callback import CallbackBase
 from ansible.executor.task_queue_manager import TaskQueueManager

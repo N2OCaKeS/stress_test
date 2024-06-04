@@ -14,7 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 from libs.libbend import ReleaseToRepo, get_kernels_from_rc
-from allta_app.allta_image_conf import JIRA_URL
+from allta_image_conf import JIRA_URL
 
 
 

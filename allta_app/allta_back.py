@@ -1,7 +1,7 @@
 #!/home/u/python/Python-3.12.1/venv/bin/python3.12
 
 import subprocess
-from allta_app.allta_image_conf import branches, cycle_tree_index, tests, parent_page_list, JIRA_URL
+from allta_image_conf import branches, cycle_tree_index, tests, parent_page_list, JIRA_URL
 import requests
 import json
 import argparse

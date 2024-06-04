@@ -1,4 +1,5 @@
-# Bendiks
+# ALLTA
+Astra Linux Load Tests Automation.     
 Проект является веб-приложением выполняющим функции оркестратора, интегрированного в среду нагрузочного тестирования **DEVQA**.  
 Доступен по адресу: [http://bendiks.devos.astralinux.ru](http://bendiks.devos.astralinux.ru)
 
@@ -14,13 +15,13 @@
 -  [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)
 
 ### Визуальное представление
-![Bendiks](static/bendiks.png)
+![ALLTA](static/allta.png)
 
 
 ### Настройки
 Перед началом выполнения тестового прогона, нужно произвести ряд манипуляций с файлами конфигурации.  
 -  В качестве примера будем рассматривать RC 1.7.5.4
--  Проект находится в ветке /git/stress_test/bendiks_app
+-  Проект находится в ветке /git/stress_test/allta_app
    
 
 #### В файл **"backup_image_command.py"** добавить в словари команду запуска восстановления снимка:

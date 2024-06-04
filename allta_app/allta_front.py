@@ -33,7 +33,7 @@ from libs.libbend import (index_page,
                           psyc,
                           stands_ip,
                           user_app)
-from backup_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
+from allta_app.allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
 
 
 app = Flask(__name__)

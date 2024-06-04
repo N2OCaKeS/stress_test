@@ -10,7 +10,7 @@ import socket
 import paramiko
 from paramiko import ssh_exception
 import argparse
-from backup_image_conf import *
+from allta_app.allta_image_conf import *
 import pysnooper
 from ansible.plugins.callback import CallbackBase
 from ansible.executor.task_queue_manager import TaskQueueManager
@@ -291,21 +291,21 @@ else:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
 
-with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
+with open(f'/home/u/git/stress_test/allta_app/{dates_name}', 'w') as w:
     w.write(dates)
 
 home_dir = os.path.expanduser('~')
-if not os.path.isdir(f'/home/u/git/stress_test/bendiks_app/status_{args.STAND}'):
-    os.mkdir(f'/home/u/git/stress_test/bendiks_app/status_{args.STAND}')
-status_dir = f'/home/u/git/stress_test/bendiks_app/status_{args.STAND}'
-if not os.path.isdir(f'/home/u/git/stress_test/bendiks_app/logs'):
-    os.mkdir(f'/home/u/git/stress_test/bendiks_app/logs')
+if not os.path.isdir(f'/home/u/git/stress_test/allta_app/status_{args.STAND}'):
+    os.mkdir(f'/home/u/git/stress_test/allta_app/status_{args.STAND}')
+status_dir = f'/home/u/git/stress_test/allta_app/status_{args.STAND}'
+if not os.path.isdir(f'/home/u/git/stress_test/allta_app/logs'):
+    os.mkdir(f'/home/u/git/stress_test/allta_app/logs')
 except_num = 1
-if os.path.isfile(f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log'):
-    os.remove(f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
+if os.path.isfile(f'/home/u/git/stress_test/allta_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log'):
+    os.remove(f'/home/u/git/stress_test/allta_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
 
 logging.basicConfig(
-        filename=f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log', 
+        filename=f'/home/u/git/stress_test/allta_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log', 
         level=logging.DEBUG, 
         filemode='a',
         format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
@@ -344,7 +344,7 @@ class GrubCommand:
 #@pysnooper.snoop()
 #def main():
 with open(f'conf/actual_log_path_{args.STAND}.conf', 'w') as w:
-    w.write(f'/home/u/git/stress_test/bendiks_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
+    w.write(f'/home/u/git/stress_test/allta_app/logs/backup_image_{args.STAND}_testnum{args.TESTNUM}.log')
 
 def write_status(status):
     with open(status_dir + '/status.txt', 'w') as wr:
@@ -848,7 +848,7 @@ def db_kernel_changer(cpu_count, database, position=None):
         elif database == 'psql':
             dates = test_args + f' {psql_version}'
     
-    with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
+    with open(f'/home/u/git/stress_test/allta_app/{dates_name}', 'w') as w:
         w.write(dates)
     
     grub.ex_command(set_count)
@@ -856,10 +856,10 @@ def db_kernel_changer(cpu_count, database, position=None):
     comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
     socket_available()
-    create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
+    create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
 
     if position == 'begin':
-        create_remote_file('/home/u/git/stress_test/bendiks_app/starter.sh', '/home/u/starter.sh')
+        create_remote_file('/home/u/git/stress_test/allta_app/starter.sh', '/home/u/starter.sh')
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} kernel')
     else: 
         if database == 'tantor':
@@ -911,9 +911,9 @@ reset_thread.start()
 provision_thread.join()
 
 #dates.conf
-create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
+create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
 #starter
-create_remote_file('/home/u/git/stress_test/bendiks_app/starter.sh', '/home/u/starter.sh')
+create_remote_file('/home/u/git/stress_test/allta_app/starter.sh', '/home/u/starter.sh')
 #stand_number
 #with open('/home/u/git/stress_test/stand_number.conf', 'w') as wr:
 #    wr.write(args.ST)
@@ -925,9 +925,9 @@ if read_status() == success:
     #             u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
     if args.OVF == 'ram':
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
-        with open(f'/home/u/git/stress_test/bendiks_app/{dates_name}', 'w') as w:
+        with open(f'/home/u/git/stress_test/allta_app/{dates_name}', 'w') as w:
             w.write(ovf_ram_dates)
-        create_remote_file(f'/home/u/git/stress_test/bendiks_app/{dates_name}', f'/home/u/{dates_name}')
+        create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
         write_status(done)
     elif args.OVF == 'sd':

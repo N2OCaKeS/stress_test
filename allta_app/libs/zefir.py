@@ -12,7 +12,7 @@ from sys import exit
 from atlassian import Confluence
 from os import remove, path
 import re
-from backup_image_conf import(test_run_stands,
+from allta_app.allta_image_conf import(test_run_stands,
                               test_run_modes,
                               tests_case_zefir_key,
                               testcase_orel_low_stand3,

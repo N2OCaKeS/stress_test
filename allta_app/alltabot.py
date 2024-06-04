@@ -14,7 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 from libs.libbend import ReleaseToRepo, get_kernels_from_rc
-from backup_image_conf import JIRA_URL
+from allta_app.allta_image_conf import JIRA_URL
 
 
 
@@ -27,10 +27,10 @@ with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
 __basic = tokens['jira_token']
 
-path_chlog = '/home/u/git/stress_test/bendiks_app/ChangeLog'
+path_chlog = '/home/u/git/stress_test/allta_app/ChangeLog'
 path_tgbot_conf = '/home/u/telegrambotconf.json'
-path_stand3 = '/home/u/git/stress_test/bendiks_app/telegrambot/results_stand3.txt'
-path_stand4 = '/home/u/git/stress_test/bendiks_app/telegrambot/results_stand4.txt'
+path_stand3 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand3.txt'
+path_stand4 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand4.txt'
 chat_id = '-1002121821530'
 fotos = [
 'https://sun9-24.userapi.com/impg/IZ8aU4agpRfx6mw2oPo8GodBU_XvtKiwe-FeUA/mjmDRavXZPs.jpg?size=1280x1119&quality=95&sign=\
@@ -72,13 +72,13 @@ def generate_repo_path():
     return {**pkg_path_dict, **vers_path_dict}
     
     
-def write_bendiks_conf(data):
-    with open('./bendiks_conf.json', 'w') as w:
+def write_allta_conf(data):
+    with open('./allta_conf.json', 'w') as w:
         json.dump(data, w, indent=4)
 
 
 def add_kernels(value):
-    with open('./bendiks_conf.json', 'r') as r:
+    with open('./allta_conf.json', 'r') as r:
         config = json.load(r)
 
     rc_kernels = get_kernels_from_rc(value, get_list=True)
@@ -128,11 +128,11 @@ def add_testrun_folder(rc):
             value = response.json()
             config['cycle_tree_index'][name] = str(value['id'])
             config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
-            write_bendiks_conf(config)
+            write_allta_conf(config)
 
     while counter < 2:
         counter += 1
-        with open('./bendiks_conf.json', 'r') as r:
+        with open('./allta_conf.json', 'r') as r:
             config = json.load(r)
 
         print(config['cycle_tree_index'].keys())
@@ -155,8 +155,8 @@ def add_testrun_folder(rc):
                 __create_testrun_folder(name)
 
 
-def mod_bendiks_conf(value):
-    with open('./bendiks_conf.json', 'r') as r:
+def mod_allta_conf(value):
+    with open('./allta_conf.json', 'r') as r:
         data = json.load(r)
 
     stands = {'LowServer':'10.177.103.204',
@@ -193,17 +193,17 @@ def mod_bendiks_conf(value):
         
     data['cz_comm']['stand3'] = {k: v for k, v in sorted(data['cz_comm']['stand3'].items())}
     data['cz_comm']['stand4'] = {k: v for k, v in sorted(data['cz_comm']['stand4'].items())}
-    write_bendiks_conf(data)
+    write_allta_conf(data)
     
     repo = ReleaseToRepo(current_directory='.')
     repo.get_releases_index()
     repo.generate_releases_file()
 
     data['repo_path'] = {k: v for k, v in sorted(generate_repo_path().items())}
-    write_bendiks_conf(data)
+    write_allta_conf(data)
 
     data['kernels'] = add_kernels(value)
-    write_bendiks_conf(data)
+    write_allta_conf(data)
 
     add_testrun_folder(value)
     update_changelog(value)
@@ -214,13 +214,13 @@ def random_pics():
     return str(fotos[random_index])
 
 def log_output(stand):
-    with open(f'/home/u/git/stress_test/bendiks_app/conf/all_output_stand{stand}.log', 'r') as r:
+    with open(f'/home/u/git/stress_test/allta_app/conf/all_output_stand{stand}.log', 'r') as r:
         status = r.readlines()
         text = ''.join(status[:10]) + ''.join(status[-15:])
         return text
     
 def status_output(stand):
-    with open(f'/home/u/git/stress_test/bendiks_app/conf/work_status_stand{stand}.conf', 'r') as r:
+    with open(f'/home/u/git/stress_test/allta_app/conf/work_status_stand{stand}.conf', 'r') as r:
         status = r.read()
         return status
 
@@ -294,7 +294,7 @@ async def changelog_check():
             
             if vers_text != line1.strip():
                 uphtg = '#update'
-                bhtg = '#Bendiks_update'
+                bhtg = '#allta_update'
                 upd_text = f'Вышло обновление!\n\n{vers_text}\nChangelog:\n{ch_text}\n\n{uphtg}\n{bhtg}'
                 await send_message_to_group(chat_id, upd_text)
                 chlog_text['changelog']['line1'] = vers_text
@@ -377,7 +377,7 @@ async def addrc(message: types.Message, command: CommandObject):
         return
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
-        mod_bendiks_conf(rc)
+        mod_allta_conf(rc)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлено RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
@@ -388,7 +388,7 @@ async def addrc(message: types.Message, command: CommandObject):
 
 @dp.message(F.text)
 async def get_message(message: types.Message):
-    if "Bendiks" in message.text: 
+    if "ALLTA" in message.text: 
         if "help" in message.text.lower():
             await message.reply(help_text)
         else: 
@@ -397,7 +397,7 @@ async def get_message(message: types.Message):
                                 caption='Oops! Команда не идентифицирована.\nНапиши мне help, если нужна помощь', 
                                 reply_to_message_id=message.message_id)
     elif message.reply_to_message and message.reply_to_message.from_user:
-        if message.reply_to_message.from_user.username == "BendiksDEVQAbot":
+        if message.reply_to_message.from_user.username == "ALLTAbot":
             if 'help' in message.text.lower():
                 await message.reply(help_text)
             else: 

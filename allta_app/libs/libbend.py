@@ -12,11 +12,13 @@ from os import (path,
                 setsid,
                 getcwd)
 from multiprocessing import Process
+#import concurrent.futures
 import paramiko
 from paramiko import ssh_exception
 import socket
 import psycopg2
-from backup_image_conf import (VENV_PATH,
+from allta_app.allta_image_conf import (VENV_PATH,
+                               stp_version,
                                psyc,
                                stands_ip,
                                main_tests,
@@ -29,22 +31,25 @@ from backup_image_conf import (VENV_PATH,
                                test_run_stands,
                                rc_list,
                                releases_list,
-                               repo_path)
+                               repo_path,
+                               LowServer_group,
+                               MiddleServer_group,
+                               group_tests,
+                               JIRA_URL,
+                               releases_dict,
+                               cz_comm)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
 import threading
-import asyncio
-import asyncssh
-import asyncpg
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import JSONResponse
-from fastapi import FastAPI, Request, HTTPException, Depends
-from pydantic import BaseModel, Field
-from typing import List
+import requests
+import json
 
 
-main_options = sorted(main_tests)
+
+ls_group = sorted(LowServer_group)
+ms_group = sorted(MiddleServer_group)
+main_options = group_tests + sorted(main_tests)
 brest_options = sorted(brest_tests)
 
 #main_url = generate_random_string(60)
@@ -83,7 +88,6 @@ process_list10 = []
 process_list11 = []
 process_list12 = []
 
-templates = Jinja2Templates(directory='templates')
 
 def generate_random_string(length):
     letters_and_digits = string.ascii_letters + string.digits
@@ -91,18 +95,15 @@ def generate_random_string(length):
     return rand_string * 5
 
 
-async def index_page(general_page, data, request: Request, ajax=None):
+def index_page(general_page, ajax=None):
     
-    if await post_info_collector(general_page, data, request) == 'index':
-        return await info_collector(general_page, request)
-    elif ajax:
-        return await info_collector_ajax(general_page)
-    else: return await info_collector(general_page, request)
+    if info_collector(general_page, ajax) == 'index':
+        return redirect(url_for(f'index_{general_page}'))
+    else: return info_collector(general_page, ajax)
 
 
+def info_collector(page, ajax=None):
 
-#@app.get("/info_collector/{page}")
-async def info_collector(page: str, request: Request):
     tests = []
     logs = {}
     progress_logs = {}
@@ -155,174 +156,102 @@ async def info_collector(page: str, request: Request):
                 progress_logs[f'progress_{stand}'] = ''
                 logs[f'{stand}_log'] = ''
     
-    
+    if ajax == True:
+        return jsonify({**status_logs,
+                        **logs,
+                        **status_gif_logs,
+                        **sett_logs,
+                        **progress_logs})    
+
     if page == 'mobile':
         test_list, releas_list, kernel_list = create_args('main')
     else: test_list, releas_list, kernel_list = create_args(page)
     
-    context = {
-        "request": request,
-        "options": options[page],
-        "test_list": test_list,
-        "releas_list": releas_list,
-        "kernel_list": kernel_list,
-        "releases": releases(),
-        "kernels": kernels(),
-        **status_logs,
-        **logs,
-        **status_gif_logs,
-        **sett_logs,
-        **progress_logs
-    }
+    if request.method == 'POST':
+        tr_stands = request.form.getlist('stands')
+        if tr_stands:
+            rc_part = request.form.getlist('rc')
+            releases_part = request.form.getlist('releaseslist')
+            kernel_part = request.form.getlist('kernelslist')
+            if rc_part:
+                test_run = ZefirTestRun(use_kernels=kernel_part,
+                                    stands=tr_stands,
+                                    release=releases_part,
+                                    rc=rc_part)
+            else:
+                test_run = ZefirTestRun(use_kernels=kernel_part,
+                                        stands=tr_stands,
+                                        release=releases_part)
+            test_run.creater()
+        else:
+            selected_options = request.form.getlist('options')
+            tests = [option for option in options[page] if option in selected_options]
+            if not tests:
+                tests = 'Тесты не выбраны'
+            
+            kernel = request.form.get('kernel')
+            with open(f'conf/{page}_kernel_args.conf', 'w') as w:
+                w.write(str(kernel))
+
+            releas = request.form.getlist('releas')
+            with open(f'conf/{page}_releas_args.conf', 'w') as w:
+                w.write(str(releas))
+            if not releas:
+                releas = 'Релиз не выбран'
+            
+            if str(tests) == "['_LowServer group']":
+                with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                    w.write(str(ls_group))
+            elif str(tests) == "['_MiddleServer group']":
+                with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                    w.write(str(ms_group))
+            else:
+                with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                    w.write(str(tests))
+        
+        return 'index'
 
     if page == 'brest':
-        context['brest_url'] = brest_url
-    elif page in ['main', 'mobile']:
-        context.update({
-            "stands": test_run_stands,
-            "kernelslist": kernels(),
-            "rc": rc_list(),
-            "releaseslist": releases_list(),
-            "main_url": main_url,
-            "mobile_url": mobile_url,
-            "brest_url": brest_url
-        })
+        return render_template(f'{page}.html', 
+                                options=options[page],
+                                test_list=test_list,
+                                releas_list=releas_list,
+                                kernel_list=kernel_list, 
+                                releases=releases(), 
+                                kernels=kernels(),
+                                brest_url=brest_url,
+                                **status_logs,
+                                **logs,
+                                **status_gif_logs,
+                                **sett_logs,
+                                **progress_logs)
     else:
-        raise HTTPException(status_code=404, detail='Нет такой страницы')
-
-    return templates.TemplateResponse(f'{page}.html', context)
-
-
-#@app.get("/info_collector/{page}/ajax")
-async def info_collector_ajax(page: str):
-    tests = []
-    logs = {}
-    progress_logs = {}
-    sett_logs = {}
-    status_gif_logs = {}
-    gif_mapping = {'Остановлен': red_gif, 
-                   'Запущен': green_gif, 
-                   'Готово': done_gif}
-    stands_dict = {'main':main_stands,
-                   'brest':brest_stands,
-                   'mobile':mobile_stands}
-    options = {'main':main_options,
-               'brest':brest_options,
-               'mobile':main_options}
-    status_logs = {f'status_{stand}':'-' for stand in stands_dict[page]}
-        
-    
-    for stand in stands_dict[page]:
-        try:
-            with open(f'conf/actual_log_path_{stand}.conf', 'r') as rl:
-                real_path = rl.read()
-            with open(real_path, 'r') as r:
-                #logs[f'{stand}_log'] = r.read()
-                logs[f'{stand}_log'] = '\n'.join(deque(r, maxlen=50))
-        except FileNotFoundError:
-            continue
-
-    for stand in stands_dict[page]:
-        try:
-            with open(f'conf/all_output_{stand}.log', 'r') as r:
-                progress_logs[f'progress_{stand}'] = r.read()
-        except FileNotFoundError:
-            progress_logs[f'progress_{stand}'] = ''
-
-    for stand in stands_dict[page]:
-        try:
-            with open(f'conf/status_output_{stand}.log', 'r') as rsc:
-                sett_logs[f'{stand}_sett'] = rsc.read()
-        except FileNotFoundError:
-            sett_logs[f'{stand}_sett'] = ''
-
-    for stand in stands_dict[page]:
-        with open(f'conf/work_status_{stand}.conf', 'r') as rs:
-            status = rs.read()
-            status_logs[f'status_{stand}'] = status
-            status_gif_logs[f'status_gif_{stand}'] = gif_mapping.get(status, ping_gif)
-            if status_gif_logs[f'status_gif_{stand}'] == ping_gif:
-                status_logs[f'status_{stand}'] = 'Нераспознан'
-            if status == 'Остановлен':
-                progress_logs[f'progress_{stand}'] = ''
-                logs[f'{stand}_log'] = ''
-    
-    return JSONResponse({**status_logs,
-                         **logs,
-                         **status_gif_logs,
-                         **sett_logs,
-                         **progress_logs})
-
-
-
-
-#@app.post("/info_collector/post/{page}")
-async def post_info_collector(page: str, data, request: Request):
-    options = {'main':main_options,
-               'brest':brest_options,
-               'mobile':main_options}
-    
-    if data.stands:
-        if data.rc:
-            test_run = ZefirTestRun(use_kernels=data.kernels_list,
-                                    stands=data.stands,
-                                    release=data.releases_list,
-                                    rc=data.rc)
-        else:
-            test_run = ZefirTestRun(use_kernels=data.kernels_list,
-                                    stands=data.stands,
-                                    release=data.releases_list)
-        test_run.creater()
-    else:
-        tests = [option for option in options[page] if option in data.options]
-        if not tests:
-            tests = "Тесты не выбраны"
-
-        kernel = request.form.get('kernel')
-        with open(f'conf/{page}_kernel_args.conf', 'w') as w:
-            w.write(str(kernel))
-
-        releas = request.form.getlist('releas')
-        with open(f'conf/{page}_releas_args.conf', 'w') as w:
-            w.write(str(releas))
-        if not releas:
-            releas = 'Релиз не выбран'
-        
-        with open(f'conf/{page}_tests_args.conf', 'w') as w:
-            w.write(str(tests))
-                
-    return 'index'
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        return render_template(f'{page}.html', 
+                                options=options[page],
+                                stands=test_run_stands,
+                                kernelslist=kernels(),
+                                rc=rc_list(), 
+                                releaseslist=releases_list(),
+                                test_list=test_list,
+                                releas_list=releas_list,
+                                kernel_list=kernel_list, 
+                                releases=releases(), 
+                                kernels=kernels(),
+                                **status_logs,
+                                **logs,
+                                **status_gif_logs,
+                                **sett_logs,
+                                **progress_logs,                                                        
+                                main_url=main_url,
+                                mobile_url=mobile_url,
+                                brest_url=brest_url,
+                                stp_versions=stp_version(),
+                                repo_path=releases_dict().keys(),
+                                stand1_snap=cz_comm()['stand1'].keys(),
+                                stand2_snap=cz_comm()['stand2'].keys(),
+                                stand3_snap=cz_comm()['stand3'].keys(),
+                                stand4_snap=cz_comm()['stand4'].keys(),
+                                stand5_snap=cz_comm()['stand5'].keys())
 
 
 
@@ -331,7 +260,7 @@ def run_command_on_stand(num):
     process_list = globals()[f'process_list{num}']
     command = request.form.get(f'command{num}')
     kernel = None
-    if num == '1' or num == '2' or num =='3' or num == '4':
+    if num == '1' or num == '2' or num =='3' or num == '4' or num == '5':
         prefix = 'main'
     elif num == '10' or num =='11' or num == '12':
         prefix = 'brest'
@@ -350,8 +279,8 @@ def run_command_on_stand(num):
             with open(f'conf/{prefix}_kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        command_to_run = f'{VENV_PATH} bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}"'
-        command_to_run_kernel = f'{VENV_PATH} bendiks_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}"'
+        command_to_run = f'{VENV_PATH} allta_back.py -rs {releas} -st stand{num} -ts "{tests}"'
+        command_to_run_kernel = f'{VENV_PATH} allta_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}"'
 
         def run_command_and_log(command):
             with open(f'front_stand{num}.log', 'a') as cpu_ram_output:
@@ -422,61 +351,6 @@ def ssh_command(command, stand_ip):
     client.close()
     return response
 
-# async def ssh_command(command, stand_ip):
-#     async with asyncssh.connect(host=stand_ip, port=port, username=user, password='1', 
-#                                 known_hosts=None) as conn:
-#         result = await conn.run(command)
-#         return result.stdout
-
-
-# async def output_remote_load(stand):
-#     command = """
-#             top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
-#             printf "%s::%s::%s::", 100-$8 "%", $2 "%", $4 "%"}'; 
-#             free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
-#             """
-
-#     try:
-#         cpu_ram_output = await ssh_command(command, stands_ip[stand])
-#         cpu_ram_output = cpu_ram_output.split('::')
-#         output_cpu = cpu_ram_output[0]
-#         output_cpu_user = cpu_ram_output[1].replace(',', '.')
-#         output_cpu_system = cpu_ram_output[2].replace(',', '.')
-#         output_ram = cpu_ram_output[3].strip()
-#     except (OSError, asyncssh.Error):
-#         output_cpu = '-'
-#         output_ram = '-'
-#         output_cpu_user = '-'
-#         output_cpu_system = '-'
-#     except Exception as error:
-#         output_cpu = output_cpu_user = output_cpu_system = output_ram = str(error)
-
-#     conn = await asyncpg.connect(
-#                                 user=psyc['user'],
-#                                 password=psyc['password'],
-#                                 database=psyc['database'],
-#                                 host=psyc['host']
-#                                 )
-
-#     try:
-#         async with conn.transaction():
-#             await conn.execute(
-#                                 f"""
-#                                 UPDATE main_table SET 
-#                                 {stand}_cpu = $1,
-#                                 {stand}_cpu_user = $2,
-#                                 {stand}_cpu_system = $3,
-#                                 {stand}_ram = $4
-#                                 WHERE id = $5
-#                                 """,
-#                                 output_cpu,
-#                                 output_cpu_user,
-#                                 output_cpu_system,
-#                                 output_ram,
-#                                 1
-#                             )
-#     finally:
-#         await conn.close()
 
 
 def output_remote_load(stand):
@@ -559,7 +433,7 @@ def remote_storage_load(stand):
         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone1/temp'
     elif stand == 'stand3':
         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
-    elif stand == 'stand4':
+    elif stand == 'stand4' or stand == 'stand5':
         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
 
     try:
@@ -607,7 +481,7 @@ def remote_storage_load(stand):
         else:
             if stand == 'stand1' or stand == 'stand2':
                 data = (output_nvme, output_sda, f'{int(float(temp_cpu) / 1000)}°', id)
-            elif stand == 'stand3' or stand == 'stand4':
+            elif stand == 'stand3' or stand == 'stand4' or stand == 'stand5':
                 temp_cpu = temp_cpu.split('\n')
                 data = (output_nvme, output_sda, f'{int(float(temp_cpu[0]) / 1000)}° | {int(float(temp_cpu[1]) / 1000)}°', id)
         cursor.execute(update_query, data)
@@ -634,7 +508,6 @@ def background_stat_storage_main():
 
     while True:
         [remote_storage_load(str(stand)) for stand in stands]
-        #remote_sysstat_available(stand)
         sleep(4)
 
 
@@ -644,12 +517,33 @@ def background_task_main():
     while True:
         [output_remote_load(str(stand)) for stand in stands]
         sleep(3)
-# async def background_task_main():
+
+
+# def background_stat_storage_main():
 #     stands = main_stands
 
 #     while True:
-#         await asyncio.gather(*(output_remote_load(str(stand)) for stand in stands))
-#         await asyncio.sleep(3)
+#         with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+#             executor.map(remote_storage_load, [str(stand) for stand in stands])
+#         sleep(4)
+
+
+# def background_task_main():
+#     stands = main_stands
+
+#     while True:
+#         with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+#             executor.map(output_remote_load, [str(stand) for stand in stands])
+#         sleep(3)
+
+
+# def background_task_brest():
+#     stands = brest_stands
+
+#     while True:
+#         with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+#             executor.map(output_remote_load, [str(stand) for stand in stands])
+#         sleep(3)
 
 def background_task_brest():
     stands = brest_stands
@@ -667,7 +561,7 @@ def update_settings_block():
                    kernel_list=kernel_list)
 
 
-def get_kernels_from_rc(version_rc: str):
+def get_kernels_from_rc(version_rc: str, get_list=False):
     pathlib = str(getcwd() + '/libs/datlib.so')
     clib = ctypes.CDLL(pathlib)
 
@@ -676,39 +570,20 @@ def get_kernels_from_rc(version_rc: str):
         c_name = ctypes.c_char_p(bytes(name, encoding='utf8'))
         clib.download_file(c_path, c_name)
 
-    pkg_path = repo_path[f'pkg_path_{version_rc.replace(".", "")}']
-    vers_path = repo_path[f'vers_path_{version_rc.replace(".", "")}']
+    pkg_path = repo_path()[f'pkg_path_{version_rc}']
+    vers_path = repo_path()[f'vers_path_{version_rc}']
 
     get_kernels = ZefirTestRun()
     get_file(str(pkg_path), 'available_packages')
     get_file(str(vers_path), 'available_version')
     version, kernels = get_kernels.get_kernels_from_file()
 
-    return jsonify(test_list=version, 
-                   releas_list=f'''Kernels: \'{" ".join(kernels).replace(" ", "', '")}\'''', 
-                   kernel_list='')
-
-
-
-# class BackgroundTasks:
-#     def __init__(self, target):
-#         self.target_function = target
-#         self.working = False
-#         self.task = None
-
-#     def start(self):
-#         self.working = True
-#         if self.task is None or self.task.done(): 
-#             self.task = asyncio.create_task(self.run())
-
-#     def stop(self):
-#         if self.task:
-#             self.task.cancel()
-#         self.working = False
-
-#     async def run(self):
-#         while self.working:
-#             await self.target_function()
+    if get_list:
+        return kernels
+    else:
+        return jsonify(test_list=version, 
+                       releas_list=f'''Kernels: \'{" ".join(kernels).replace(" ", "', '")}\'''', 
+                       kernel_list='')
 
 
 
@@ -732,4 +607,93 @@ class BackgroundTasks:
     def run(self):
         while self.working:
             self.target_function()
+
+
+def get_aqs_json(path, __basic):
+    url = 'https://git.astralinux.ru/projects/QA/repos/astra-qa-stand/raw/astra-config.json?at=refs%2Fheads%2Fmaster'
+    headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
+            'authority': JIRA_URL,
+            'Authorization': __basic,
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': f'https://{JIRA_URL}/secure/Tests.jspa',
+            'X-Requested-With': 'XMLHttpRequest',
+            'jira-project-id': '11200',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'TE': 'trailers'
+            }
+
+    response = requests.get(url, headers=headers)
+    assert response.status_code == 200, f'Request astra-config.json failed with status {response.status_code}'
+
+    with open(f'{path}/astra-config.json', 'wb') as f:
+        f.write(response.content)
+
+    
+
+class ReleaseToRepo:
+    def __init__(self,
+                 current_directory=None):
+        self.load_filename = 'releases-index.json'
+        self.gen_filename = 'releases.json'
+        self.cur_directory = current_directory
+
+
+    def get_releases_index(self):
+        url = 'https://releases.devos.astralinux.ru/index.json'
+        response = requests.get(url)
+        assert response.status_code == 200, f'Request {self.load_filename} failed with status {response.status_code}'
+
+        with open(f'{self.cur_directory}/{self.load_filename}', 'wb') as f:
+            f.write(response.content)
+
+     
+    def generate_releases_file(self):
+        prefix = 'deb https://releases.devos.astralinux.ru/'
+        sufix = '_x86-64 main contrib non-free'
+
+        with open(f'{self.cur_directory}/{self.load_filename}', 'r') as r:
+            releases = json.load(r)
+
+        def __path_seporator(build_version: str):
+            release = '.'.join(build_version.split('.')[:2])
+            update = '.'.join(build_version.split('.')[:3])
+
+            return [f"{prefix}{releases['releases'][release][update][build_version]['files'][i]['mount_point']} {release}{sufix}"
+                    for i in range(len(releases['releases'][release][update][build_version]['files']))]
+
+        def __repo_filter(dates, key: str):
+            no_base_repo = ['1.7.4', '1.7.3.UU.2', '1.7.3.UU.1', '1.7.3', '1.7.2.UU.1', '1.7.2', '1.7.1', '1.7.0']
+
+            if key.startswith('1.7') and key not in no_base_repo:
+                return [v for v in dates[key] if 'base-repository' in v]
+            elif key.startswith('1.7') and key in no_base_repo:
+                return [v for v in dates[key] if not 'installation' in v and not 'update-repository' in v]
+            elif key.startswith('1.8'):
+                return [v for v in dates[key] if not 'installation-di' in v]
+            else: return [v for v in dates[key]]
+
+        seporated_dates = {
+            key: __path_seporator(version) for key, version in releases_dict().items()
+        }
+
+        filtered_dates = {
+            key: __repo_filter(seporated_dates, key) for key, version in seporated_dates.items()
+        }
+
+        sorted_dict = {k: v for k, v in sorted(filtered_dates.items())}
+
+        with open(f'{self.cur_directory}/{self.gen_filename}', 'w') as w:
+            json.dump(sorted_dict, w, indent=4)
+    
+    
+
+def backup_snapshot(stand, snapshot):
+    command = f'{cz_comm()[stand][snapshot]}'
+    subprocess.run(command, shell=True)
 

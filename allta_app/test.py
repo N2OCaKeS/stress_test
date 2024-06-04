@@ -102,7 +102,7 @@ import json
 # from backup_image_conf import releases_dict, rc_list, releases_list, release_version, cycle_tree_index, releases, kernels
 # from backup_image_command import cz_comm
 
-def write_bendiks_conf(data):
+def write_allta_conf(data):
     # data = {'releases_dict':releases_dict,
     #         'rc_list':rc_list,
     #         'releases_list':releases_list,
@@ -112,18 +112,18 @@ def write_bendiks_conf(data):
     #         'cz_comm':cz_comm,
     #         'kernels':kernels}
 
-    with open('./bendiks_conf.json', 'w') as w:
+    with open('./allta_conf.json', 'w') as w:
         json.dump(data, w, indent=4)
 
 
 
-#write_bendiks_conf()
+#write_allta_conf()
 
 
 
 
-def mod_bendiks_conf(value):
-    with open('../bendiks_conf.json', 'r') as r:
+def mod_allta_conf(value):
+    with open('../allta_conf.json', 'r') as r:
         data = json.load(r)
 
     stands = {'LowServer':'10.177.103.204',
@@ -153,11 +153,11 @@ def mod_bendiks_conf(value):
                                                           ''.join(value.split('.')[:3]),
                                                           ''.join(value.split('.')[3:]))
 
-    write_bendiks_conf(data)
+    write_allta_conf(data)
 
 
 
-#mod_bendiks_conf('1.8.1.3')
+#mod_allta_conf('1.8.1.3')
 
 #print(''.join('1.8.1.3'.split('.')[3:]))
 
@@ -197,8 +197,8 @@ import requests
 __basic = ''
 JIRA_URL = 'jira.astralinux.ru'
 
-def write_bendiks_conf(data):
-    with open('./bendiks_conf.json', 'w') as w:
+def write_allta_conf(data):
+    with open('./allta_conf.json', 'w') as w:
         json.dump(data, w, indent=4)
 
 
@@ -224,11 +224,11 @@ def add_testrun_folder(rc):
             print(response.text)
             value = response.json()
             config['cycle_tree_index'][name] = str(value['id'])
-            write_bendiks_conf(config)
+            write_allta_conf(config)
 
     while counter < 2:
         counter += 1
-        with open('./bendiks_conf.json', 'r') as r:
+        with open('./allta_conf.json', 'r') as r:
             config = json.load(r)
 
         print(config['cycle_tree_index'].keys())
@@ -258,7 +258,7 @@ from libs.libbend import get_kernels_from_rc
 
 print(get_kernels_from_rc('1.7.6.5', get_list=True))
 
-with open('./bendiks_conf.json', 'r') as r:
+with open('./allta_conf.json', 'r') as r:
         config = json.load(r)
 
 rc_kernels = get_kernels_from_rc('1.7.6.5', get_list=True)

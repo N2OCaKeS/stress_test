@@ -2,7 +2,7 @@
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
-from bendiks_front import app
+from allta_app.allta_front import app
 import datetime
 import os
 import re
@@ -10,7 +10,7 @@ from time import sleep
 import threading
 
 app.secret_key = 'srv_2413'
-log_file_dir = '/home/u/git/stress_test/bendiks_app/'
+log_file_dir = '/home/u/git/stress_test/allta_app/'
 log_file_name = 'error.log'
 log_size = 52428800 
 
@@ -43,7 +43,7 @@ logging.basicConfig(filename=log_file_dir + log_file_name,
                     format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
                     datefmt='%Y/%m/%d %H:%M:%S',
                     filemode='a')
-sys.path.insert(0,"/home/u/git/stress_test/bendiks_app")
+sys.path.insert(0,"/home/u/git/stress_test/allta_app")
 
 
 def run_app():

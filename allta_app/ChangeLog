@@ -1,340 +1,340 @@
-bendiks_app - v2.22.2
+allta_app - v2.22.2
 * Add dynamic update kernels
 
 
 
 
 
-bendiks_app - v2.22.1
+allta_app - v2.22.1
 * Add dynamic update
   test_run ID
   "cycle_tree_index"
 
 
 
-bendiks_app - v2.22.0
+allta_app - v2.22.0
 *  Add new test vUnixBench
 
 
 
 
 
-bendiks_app - v2.21.4
+allta_app - v2.21.4
 * Add dynamic update repo path
   to kernel shows
 
 
   
 
-bendiks_app - v2.21.3
+allta_app - v2.21.3
 * Add update releases.json
 * Add api releases as json
 
 
 
 
-bendiks_app - v2.21.2
+allta_app - v2.21.2
 * Add stands info
 
 
 
 
 
-bendiks_app - v2.21.1
+allta_app - v2.21.1
 * Add load backup snapshots
 
 
 
 
 
-bendiks_app - v2.21.0
+allta_app - v2.21.0
 * Add dynamic config update
   without reload services
 * Add t_bot command to add RC
 
 
 
-bendiks_app - v2.20.4
+allta_app - v2.20.4
 * Add transpose to STP
 
 
 
 
 
-bendiks_app - v2.20.3
+allta_app - v2.20.3
 * Add dynamic generate
   kernel list in 
   dropdown menu
 
 
 
-bendiks_app - v2.20.2
+allta_app - v2.20.2
 * Add 1.8.1.2
 * Add 6.6.28-1-generic
 * Add dynamic kernek list
 
 
 
-bendiks_app - v2.20.1
+allta_app - v2.20.1
 * Add filter to repo path
 * Add 6.6.12-1-generic,
   6.1.82-1-generic no debug no trace
   as 1.8.1.01
 
 
-bendiks_app - v2.20.0
+allta_app - v2.20.0
 * Add reset by 2 hours wait
   if load clonezilla snapshot 
   not successful
 * Add rc version args in starter
 
 
-bendiks_app - v2.19.0
+allta_app - v2.19.0
 * Add dynamic repo path API
 
 
 
 
 
-bendiks_app - v2.18.2
+allta_app - v2.18.2
 *  Add 1.8.1.1
 
 
 
 
 
-bendiks_app - v2.18.1
+allta_app - v2.18.1
 *  Add 1.8.0.15 - 6.6.12-1-generic
 
 
 
 
 
-bendiks_app - v2.18.0
+allta_app - v2.18.0
 *  Add new test FIO
 *  Add testing kernel 6.6
 
 
 
 
-bendiks_app - v2.17.1
+allta_app - v2.17.1
 *  Add 6.1.82-1-generic-flavour
 
 
 
 
 
-bendiks_app - v2.17.0
+allta_app - v2.17.0
 *  Add sett jira, conf url in congif
 *  Add jira, confluence url API
 
 
 
 
-bendiks_app - v2.16.4
+allta_app - v2.16.4
 *  Add setuptools
 *  Upd psql-balance host snapshot to 1.8.0.14
 *  Add new statistic pages
 
 
 
-bendiks_app - v2.16.3
+allta_app - v2.16.3
 *  Add 6.1.82-1-generic
 
 
 
 
 
-bendiks_app - v2.16.2
+allta_app - v2.16.2
 *  Add 1.7.6.3
 
 
 
 
 
-bendiks_app - v2.16.1
+allta_app - v2.16.1
 *  Upd FS times
 
 
 
 
 
-bendiks_app - v2.16.0
+allta_app - v2.16.0
 *  Add new test EXT2
 *  Add new test EXT3
 *  Add new test EXFAT
 *  Add new test FAT
 
 
-bendiks_app - v2.15.0
+allta_app - v2.15.0
 *  Add new test Steal time
 
 
 
 
 
-bendiks_app - v2.14.1
+allta_app - v2.14.1
 *  Add 1.7.6.1
 *  Del 1.8.0.x
 
 
 
 
-bendiks_app - v2.14.0
+allta_app - v2.14.0
 *  Add new version logrotate
 *  Add load astra-config.json
 *  Add API to astra-config.json
 *  Add 1.8.0.14
 
 
-bendiks_app - v2.13.5
-*  Add rotate bendiks logging
+allta_app - v2.13.5
+*  Add rotate allta logging
 
 
 
 
 
-bendiks_app - v2.13.4
+allta_app - v2.13.4
 *  Add 1.8.0.13
 
 
 
 
 
-bendiks_app - v2.13.3
+allta_app - v2.13.3
 *  Add 1.8.0.12
 
 
 
 
 
-bendiks_app - v2.13.2
+allta_app - v2.13.2
 * Add new tests in time table
 
 
 
 
 
-bendiks_app - v2.13.1
+allta_app - v2.13.1
 * Change name apache_rp to apache-rp
 
 
 
 
 
-bendiks_app - v2.13.0
+allta_app - v2.13.0
 *  Add new test Apache-RP
 *  Add start settings to new test
 
 
 
 
-bendiks_app - v2.12.4
+allta_app - v2.12.4
 *  Add 1.8.0.11
 
 
 
 
 
-bendiks_app - v2.12.3
+allta_app - v2.12.3
 *  Add 1.8.0.10
 
 
 
 
 
-bendiks_app - v2.12.2
+allta_app - v2.12.2
 *  Add psql version prefix
 
 
 
 
 
-bendiks_app - v2.12.1
+allta_app - v2.12.1
 *  Add 1.8.0.9
 
 
 
 
 
-bendiks_app - v2.12.0
+allta_app - v2.12.0
 *  Add new test Parsec_imp-fs_aud-off
 *  Add start settings to new test
 
 
 
 
-bendiks_app - v2.11.0
+allta_app - v2.11.0
 Add REST API to:
 * TestCase zefir names in STP
 * Times templates
 * Stands templates
 
 
-bendiks_app - v2.10.0
+allta_app - v2.10.0
 * Add dinamic generator list STP
 
 
 
 
 
-bendiks_app - v2.9.2
+allta_app - v2.9.2
 *  Add new README file
 
 
 
 
 
-bendiks_app - v2.9.1
+allta_app - v2.9.1
 *  UU. Fix old stands call variables
 
 
 
 
 
-bendiks_app - v2.9.0
+allta_app - v2.9.0
 *  Add new test parsec impact-fs
 *  Add start settings to new test
 
 
 
 
-bendiks_app - v2.8.2
+allta_app - v2.8.2
 *  Add 1.7.5.UU.1.7
 
 
 
 
 
-bendiks_app - v2.8.1
+allta_app - v2.8.1
 *  Replace FreeIPA_auth from low to middle server
 
 
 
 
 
-bendiks_app - v2.8.0
+allta_app - v2.8.0
 *  Rebuild provision functional
 *  Add class TestRunProvision
 *  Add new test Freeipa Authentication
 *  Add start settings to new test
 
 
-bendiks_app - v2.7.15
+allta_app - v2.7.15
 *  improved text some bot answer
 
 
 
 
 
-bendiks_app - v2.7.14
+allta_app - v2.7.14
 *  fix bot answer to another user
 *  add choose server print
 
 
 
 
-bendiks_app - v2.7.13
+allta_app - v2.7.13
 *  add changelog
 *  add bot notification
 

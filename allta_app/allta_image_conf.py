@@ -1,7 +1,7 @@
 import json
 
-def get_bendiks_conf():
-    with open('./bendiks_conf.json', 'r') as r:
+def get_allta_conf():
+    with open('./allta_conf.json', 'r') as r:
         return json.load(r)
 
 #################################################################################################################################################
@@ -62,7 +62,7 @@ def parent_page_list():
 
     parent_page_list = {
         key:{value:f'STRESS_report {key} ⬝ {topic}' for topic in tests_list for value in tests_list[topic]}  
-                        for key in get_bendiks_conf()['release_version']
+                        for key in get_allta_conf()['release_version']
                         }
     return parent_page_list
 
@@ -139,7 +139,7 @@ branches = {
 #Tree_ID страницы тестового прогона
 #################################################################################################################################################
 def cycle_tree_index():
-    return get_bendiks_conf()['cycle_tree_index']
+    return get_allta_conf()['cycle_tree_index']
 
 
 
@@ -227,7 +227,7 @@ brest_tests = ['apache-graph']
 #Доступные релизы (следует указывать при наличии снимка в Clonezilla)
 #################################################################################################################################################
 def releases():
-    return get_bendiks_conf()['releases']
+    return get_allta_conf()['releases']
 
 
 
@@ -235,7 +235,7 @@ def releases():
 #Перечень доступных ядер
 #################################################################################################################################################
 def kernels():
-    return get_bendiks_conf()['kernels']
+    return get_allta_conf()['kernels']
 
 
 
@@ -253,13 +253,13 @@ brest_stands = ['stand10', 'stand11', 'stand12']
 #Перечень настроек, используемых для создания тестовых прогонов
 #################################################################################################################################################
 def repo_path():
-    return get_bendiks_conf()['repo_path']
+    return get_allta_conf()['repo_path']
 
 def rc_list():
-    return get_bendiks_conf()['rc_list']
+    return get_allta_conf()['rc_list']
 
 def releases_list():
-    return get_bendiks_conf()['releases_list']
+    return get_allta_conf()['releases_list']
 
 def stp_version():
     return sorted(list(set(rc_list() + releases_list())))
@@ -348,7 +348,7 @@ testname_columns = {
 #Перечень соответствий релизов и build_version для генерации путей репозиториев
 #################################################################################################################################################
 def releases_dict():
-    return get_bendiks_conf()['releases_dict']
+    return get_allta_conf()['releases_dict']
 
 
 
@@ -363,5 +363,5 @@ startswith_kernel_list = ['6.1', '6.6', '5.15', '5.10']
 #Перечень снимков clonezilla 
 #################################################################################################################################################
 def cz_comm():
-    return get_bendiks_conf()['cz_comm']
+    return get_allta_conf()['cz_comm']
 

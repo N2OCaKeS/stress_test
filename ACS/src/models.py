@@ -5,7 +5,7 @@ metadata = MetaData()
 stands = Table(
     "stands",
     metadata,
-    Column("id", Integer, primary_key=True),
+    Column("id", Integer, primary_key=True, autoincrement=True),
     Column("name", String, nullable=False),
     Column("storage_name", String, nullable=False),
     Column("ip", String, nullable=False),
@@ -16,7 +16,7 @@ stands = Table(
 versions = Table(
     'versions',
     metadata,
-    Column("id", Integer, primary_key=True),
+    Column("id", Integer, primary_key=True, autoincrement=True),
     Column("name", String, nullable=False),
     Column("digit_name", String, nullable=False)
 )
@@ -24,7 +24,7 @@ versions = Table(
 snapshots = Table(
     'snapshots',
     metadata,
-    Column('id', Integer, primary_key=True),
+    Column('id', Integer, primary_key=True, autoincrement=True),
     Column('name', String, nullable=False),
     Column('version_id', Integer, ForeignKey('versions.id')),
     Column("stand_id", Integer, ForeignKey("stands.id"))
@@ -33,7 +33,7 @@ snapshots = Table(
 repos = Table(
     'repos',
     metadata,
-    Column('id', Integer, primary_key=True),
+    Column('id', Integer, primary_key=True, autoincrement=True),
     Column('link', String, nullable=False),
     Column('version_id', Integer, ForeignKey('versions.id'))
 )

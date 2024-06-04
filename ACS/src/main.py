@@ -2,17 +2,23 @@
 
 import sys
 import os
+from celery import chain
 from fastapi import FastAPI, Depends, HTTPException
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
-from src.schemas import Stand, Version, Snapshot, Repo, CreateRepo
-from sqlalchemy import select, insert
+from sqlalchemy import select, insert, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.schemas import Stand, Version, Snapshot, Repo
 from src.database import get_async_session
 from src.models import versions, stands, repos
 
+from src.clonezilla_snap.clonezilla_func import backup_image
 from src.clonezilla_snap.router import router as clonezilla_router
 from src.add_tuning.router import router as add_tunning_router
+from src.add_tuning.router import get_info_stand
+from src.add_tuning.temp import astra_version_update
+from src.utils.secondary_func import func_filter_version
 
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -31,16 +37,28 @@ def index():
 
 @app.get("/stands/{stand_name}", response_model=Stand)
 async def get_stand(stand_name: str, session: AsyncSession = Depends(get_async_session)):
-    query = select(stands).where(stands.c.name == stand_name)
-    result = await session.execute(query)
-    return result.first()
+    try:
+        query = select(stands).where(stands.c.name == stand_name)
+        result = await session.execute(query)
+        return result.first()
+    except Exception as e:
+        return {"status": "failed", "error": e}
 
 @app.post("/stands")
 async def create_stand(new_stand: Stand, session: AsyncSession = Depends(get_async_session)):
-    stmt = insert(stands).values(**new_stand.dict())
+    print("testing!@!!!!!")
+    stmt = insert(stands).values(**new_stand.dict(exclude_none=True))
+    print(stmt)
     await session.execute(stmt)
     await session.commit()
     return {"status": "success"}
+
+@app.delete("/stands")
+async def delete_stand(stand_name: str, session: AsyncSession = Depends(get_async_session)):
+    stmt = delete(stands).where(stands.c.name == stand_name)
+    result = await session.execute(stmt)
+    await session.commit()
+    return {"status": "success"} if result.rowcount else {"status": "not found"}
 
 @app.get('/versions')
 async def get_versions(session: AsyncSession = Depends(get_async_session)):
@@ -63,10 +81,19 @@ async def get_versions(session: AsyncSession = Depends(get_async_session)):
 
 @app.post('/versions')
 async def add_versions(new_version: Version, session: AsyncSession = Depends(get_async_session)):
-    stmt = insert(versions).values(**new_version.dict())
-    await session.execute(stmt)
+    stmt = insert(versions).values(**new_version.dict(exclude_none=True)).returning(versions.c.id)
+    result = await session.execute(stmt)
+    new_id = result.scalar_one()
     await session.commit()
-    return {"status": "success"}
+    return {"status": "success", "data": new_id}
+
+@app.delete('/versions')
+async def delete_versions(version: str, session: AsyncSession = Depends(get_async_session)):
+    stmt = delete(versions).where(versions.c.name == version)
+    result = await session.execute(stmt)
+    await session.commit()
+    return {"status": "success"} if result.rowcount else {"status": "not found"}
+
 
 @app.get("/repos/")
 async def get_repo(session: AsyncSession = Depends(get_async_session)):
@@ -78,8 +105,8 @@ async def get_repo(session: AsyncSession = Depends(get_async_session)):
     return result.mappings().all()
 
 @app.post("/repos")
-async def add_repo(new_repo: CreateRepo, session: AsyncSession = Depends(get_async_session)):
-    stmt = insert(repos).values(**new_repo.dict())
+async def add_repo(new_repo: Repo, session: AsyncSession = Depends(get_async_session)):
+    stmt = insert(repos).values(**new_repo.dict(exclude_none=True))
     await session.execute(stmt)
     await session.commit()
     return {"status": "success"}
@@ -90,3 +117,20 @@ async def get_snapshots():
 
 async def add_snapshots():
     pass
+
+@app.post("/create_full_snap")
+def create_full_snap(restore_version: str, version_to_update: str, password_cs: str, stand = Depends(get_info_stand)):
+    restore_version_for_cs = func_filter_version(restore_version)
+    snap_name_restore = stand[1] + "-" + restore_version_for_cs
+
+    new_version_for_cs = func_filter_version(version_to_update)
+    snap_name_backup = stand[1] + "-" + new_version_for_cs
+    import logging
+    logging.error(f"{version_to_update} это версия")
+    print("EEEEEEEE", version_to_update)
+    chain_task = chain(backup_image.si(stand=list(stand), snap_name=snap_name_restore, password_cs=password_cs, restore=True),
+                       astra_version_update.si(new_version=version_to_update, stand=list(stand)),
+                       backup_image.si(stand=list(stand), snap_name=snap_name_backup, password_cs=password_cs, restore=False),
+                       )
+    result = chain_task.apply_async()
+    return {"status": "success"}

@@ -10,6 +10,8 @@ from src.schemas import Stand
 from src.models import stands, versions, repos
 from sqlalchemy import select
 
+from .temp import change_repos, astra_version_update
+
 from .conf import (COMPONENTS_INSTALL, 
                    CLONE_GIT_REPO, 
                    COMMAND_WGET_GITCLONE_FILE, 
@@ -34,26 +36,14 @@ async def get_info_stand(stand_name: str, session: AsyncSession = Depends(get_as
     return stand
 
 @router.get("/passwd")
-def change_pass(stand = Depends(get_info_stand)):
-    pass
+def change_pass(current_password: str, stand = Depends(get_info_stand)):
+    chngepasswd = 'echo -e "1\n1" | sudo passwd u'
+    remote_cmd(chngepasswd, host=stand[3], user=stand[4], passwd=current_password)
+    return {"ok"}
     
-@router.get("/change-repos/{version_name}")
-async def change_repos(version_name, stand = Depends(get_info_stand), session: AsyncSession = Depends(get_async_session)):
-    # TODO
-    print("OK 2")
-    query_version = select(versions).where(versions.c.name == version_name)
-    version = await session.execute(query_version)
-    version = version.first()
-    print("OK 3")
-    # print(version[0])
-    query_repo = select(repos).where(repos.c.version_id == version[0])
-    repo = await session.execute(query_repo)
-    repo = repo.mappings().all()[0].get('link')
-    print("OK 4")
-    # print(repo)
-    command = f'sudo echo "{repo}" | sudo tee /etc/apt/sources.list > /dev/null && sudo apt update -y'
-    remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
-    print("OK 5")
+@router.get("/change-repos")
+async def change_repos_r(version_name, stand = Depends(get_info_stand)):
+    await change_repos(version_name=version_name, stand=stand)
     return {"ok"}
 
 
@@ -76,17 +66,21 @@ def clone_git_repo(stand = Depends(get_info_stand)):
     # print(data)
     return {"ok"}
 
-
+"""
+    TODO  Возможно добавить в CELERY!
+"""
 @router.get('/wget-qainit')
 def wget_qainit(stand = Depends(get_info_stand)):
     remote_cmd(command=COMMAND_WGET_QAINIT_FILE, host=stand[3], user=stand[4], passwd=stand[5])
     return {"ok"}
+
 
 @router.get("/set-alias")
 def set_alias(stand = Depends(get_info_stand)):
     command = "sudo bash qa-init -a"
     remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
     return {"ok"}
+
 
 @router.get("/set-network/{version_name}")
 def set_network(version_name: str, stand = Depends(get_info_stand)):
@@ -112,6 +106,10 @@ def set_network(version_name: str, stand = Depends(get_info_stand)):
     print("OK!!!")
     return {"ok"}
 
+
+"""
+    TODO Возможно добавить в CELERY!
+"""
 # TODO продумать
 @router.get("/install-new-kernel/{version_name}")
 def install_kernels(version_name: str, stand = Depends(get_info_stand)):
@@ -124,6 +122,8 @@ def install_kernels(version_name: str, stand = Depends(get_info_stand)):
         kernel = "linux-5.15-generic linux-5.15-lowlatency"
     elif version_name.startswith("175"):
         kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
+    elif version_name.startswith("181"):
+        kernel = "linux-6.6-generic"
     else:
         kernel = None
     if kernel:
@@ -135,13 +135,17 @@ def install_kernels(version_name: str, stand = Depends(get_info_stand)):
     else:
         return {"Нет доп ядер"}
 
+"""
+    TODO Добавить в CELERY!
+"""
 @router.get('/astra-update')
-def astra_update(stand = Depends(get_info_stand)):
-    command_update = "sudo astra-update -A -T -r"
-    remote_cmd(command=command_update, host=stand[3], user=stand[4], passwd=stand[5])
+def astra_update(new_version, stand = Depends(get_info_stand)):
+    astra_version_update.delay(new_version=new_version, stand=list(stand))
     return {"ok"}
 
-
+"""
+    TODO Добавить в CELERY!
+"""
 @router.get("/all/{version_name}")
 async def all_tuning(version_name: str, stand = Depends(get_info_stand), session: AsyncSession = Depends(get_async_session)):
     set_network(version_name=version_name, stand=stand)
@@ -157,5 +161,11 @@ async def all_tuning(version_name: str, stand = Depends(get_info_stand), session
     wget_qainit(stand=stand)
     set_alias(stand=stand)
     return {"all ok"}
+
+@router.get('/temp')
+def temp():
+    from .temp import temp_task
+    temp_task.delay()
+    return {"ВСЕ ОК!"}
 
 

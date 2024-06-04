@@ -1,5 +1,8 @@
 import paramiko
+import socket
+import logging
 from time import sleep
+from paramiko import ssh_exception
 
 def remote_cmd(command: str, host: str, user: str, passwd: str, port: int = 22, read=True) -> str:
     try:
@@ -30,3 +33,85 @@ def remote_put_file(host: str, remote_path: str, local_path: str, port: int = 22
         sftp.get(localpath=local_path, remotepath=remote_path)
     sftp.close()
     transport.close()
+
+
+def ssh_command(command: str, host: str, user: str = "u", passwd: str = "1", port: int = 22):
+    client = paramiko.SSHClient()
+    
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    client.connect(host, port=port, username=user, password=passwd)
+    stdin, stdout, stderr = client.exec_command(command)
+    response = stdout.read().decode().strip()
+    client.close()
+    return response
+
+def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, user: str = "u", passwd: str = "1", port: int = 22):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex((stand_ip, 22))
+    if result == 0:
+        logging.debug('port is open')
+    else: 
+        logging.error('port is closed')
+
+    while True:
+        try:
+            system_status = ssh_command(command='systemctl is-system-running', 
+                                        host=stand_ip,
+                                        user=user,
+                                        passwd=passwd,
+                                        port=port)
+            if system_status == 'running':
+                logging.debug('System is running')
+                sock.close()
+                return True
+            elif system_status == 'degraded':
+                not_load_module = ssh_command(command="systemctl --state=failed --no-legend | awk '{print $2}'",
+                                              host=stand_ip,
+                                              user=user,
+                                              passwd=passwd,
+                                              port=port)
+                logging.error(f'Some modules is not loaded: {system_status}: {not_load_module}')
+                if not_load_module == 'astra-mount-lock.service':
+                    return True
+                else:
+                    if reboot_counter >= max_reboot_attempts:
+                        logging.error("Maximum reboot attempts reached. Check the system.")
+                        return False
+                    ssh_command(command='sudo reboot',
+                                host=stand_ip,
+                                user=user,
+                                passwd=passwd,
+                                port=port)
+                    sleep(60)
+                    sock.close()
+                    return socket_available(reboot_counter = reboot_counter + 1, 
+                                            stand_ip=stand_ip,
+                                            user=user,
+                                            passwd=passwd,
+                                            port=port)
+            else:
+                logging.error(f'System is not fully loaded yet: {system_status}')
+                sleep(30)
+        except paramiko.AuthenticationException:
+            sleep(30)
+            continue
+        except ssh_exception.NoValidConnectionsError:
+            sleep(30)
+            continue
+        except ssh_exception.SSHException:  
+            logging.error('Error reading SSH protocol banner')
+            sleep(30)
+            continue
+
+def func_filter_version(version: str):
+    temp = version.split(".")
+    if len(temp) > 3 and "UU" not in temp:
+        rc = temp[-1]
+        cl_version = "".join(temp[:-1]) + "rc" + rc
+    elif "UU" in temp and len(temp) > 5:
+        rc = temp[-1]
+        cl_version = "".join(temp[:-1]) + "rc" + rc
+    else:
+        cl_version = version
+        # print(cl_version)
+    return cl_version.replace(".", "")

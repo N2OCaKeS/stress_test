@@ -5,3 +5,6 @@ python-dotenv
 sqlalchemy
 gunicorn
 fabric
+redis
+celery
+flower

@@ -33,7 +33,7 @@ services:
       - db
       - redis
     volumes: 
-      - /home/u/ilo.json:/fastapi_app/src/add_tunning/ilo.json
+      - /home/u/ilo.json:/fastapi_app/src/ilo/ilo.json
 
   celery:
     build:

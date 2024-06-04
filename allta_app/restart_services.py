@@ -3,7 +3,7 @@ import string
 import random
 import subprocess
 import os
-from libs.libbend import get_aqs_json, ReleaseToRepo
+from libs.liballta import get_aqs_json, ReleaseToRepo
 import json
 
 

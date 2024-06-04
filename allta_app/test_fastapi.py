@@ -13,7 +13,7 @@ from libs.zefir import ZefirResultTable
 from starlette.responses import PlainTextResponse
 from starlette.responses import RedirectResponse
 from starlette.exceptions import HTTPException
-from libs.libbend import (index_page,
+from libs.liballta import (index_page,
                           BackgroundTasks,
                           run_command_on_stand,
                           ssh_command,

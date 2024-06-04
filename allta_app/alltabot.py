@@ -13,7 +13,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
-from libs.libbend import ReleaseToRepo, get_kernels_from_rc
+from libs.liballta import ReleaseToRepo, get_kernels_from_rc
 from allta_image_conf import JIRA_URL
 
 

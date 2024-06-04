@@ -254,7 +254,7 @@ def add_testrun_folder(rc):
 
 
 #TODO добавить новые ядра в конфиг
-from libs.libbend import get_kernels_from_rc
+from libs.liballta import get_kernels_from_rc
 
 print(get_kernels_from_rc('1.7.6.5', get_list=True))
 

@@ -15,7 +15,7 @@ import psycopg2
 import json
 from time import sleep
 from libs.libilo import iLOConsoleCaller
-from libs.libbend import (index_page,
+from libs.liballta import (index_page,
                           BackgroundTasks,
                           run_command_on_stand,
                           ssh_command,

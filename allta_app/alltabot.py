@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 import re
 from libs.liballta import ReleaseToRepo, get_kernels_from_rc
 from allta_image_conf import JIRA_URL
+from time import sleep
 
 
 
@@ -197,12 +198,12 @@ def acs_create_snapshot(version: str):
                                                                                         "version_to_update": version,
                                                                                         "password_cs": __password,
                                                                                         "stand_name": 'LowServer'})
-    
+    sleep(60)
     res_create_full_snap_stand4 = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
                                                                                         "version_to_update": version,
                                                                                         "password_cs": __password,
                                                                                         "stand_name": 'MiddleServer'})
-    return res_create_full_snap_stand3, res_create_full_snap_stand4
+    return res_create_full_snap_stand3.text, res_create_full_snap_stand4.text
 
 
 def generate_repo_path():

@@ -12,7 +12,7 @@ EOF
 
 test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
-wget http://bendiks.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
+wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
 sudo jq -r ".\"$3\"[]" releases.json > /etc/apt/sources.list
 cat << EOF | sudo tee /etc/apt/preferences.d/devel
 Package: *

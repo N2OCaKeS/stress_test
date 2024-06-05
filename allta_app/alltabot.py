@@ -193,7 +193,7 @@ def acs_create_snapshot(version: str):
     if version.startswith('1.8'):
         restore_version = '1.8.0'
     elif version.startswith('1.7'):
-        restore_version = '1.7.0'
+        restore_version = '1.7.1'
     
     res_create_full_snap_stand3 = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
                                                                                         "version_to_update": version,

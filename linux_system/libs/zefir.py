@@ -484,7 +484,7 @@ class ZefirResultTable:
         for col in columns:
             self.new_tab[col] = self.new_tab[col].astype(str).str.replace(r'\[|\]|\'', '', regex=True)
         
-        testname_columns_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-testname-columns'
+        testname_columns_url = 'http://allta.devos.astralinux.ru/rest/api/get-testname-columns'
         response_columns = requests.get(testname_columns_url)
         if response_columns.status_code == 200:
             testname_columns = response_columns.json()
@@ -508,8 +508,8 @@ class ZefirResultTable:
 
         #Создаем новую html страницу
         html_string = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>{text}</b></h3></p>'
-        times_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-times'
-        stand_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-stand'
+        times_url = 'http://allta.devos.astralinux.ru/rest/api/get-times'
+        stand_url = 'http://allta.devos.astralinux.ru/rest/api/get-stand'
         response_times = requests.get(times_url)
         response_stand = requests.get(stand_url)
         

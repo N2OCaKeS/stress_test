@@ -1,7 +1,6 @@
-# ALLTA
-Astra Linux Load Tests Automation.     
+# Astra Linux Load Tests Automation        
 Проект является веб-приложением выполняющим функции оркестратора, интегрированного в среду нагрузочного тестирования **DEVQA**.  
-Доступен по адресу: [http://bendiks.devos.astralinux.ru](http://bendiks.devos.astralinux.ru)
+Доступен по адресу: [http://allta.devos.astralinux.ru](http://allta.devos.astralinux.ru)
 
 ### Основные возможности
 -  Позволяет администрировать группу из 5 серверов (вариативно).

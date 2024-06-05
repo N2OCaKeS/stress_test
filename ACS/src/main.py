@@ -88,8 +88,8 @@ async def add_versions(new_version: Version, session: AsyncSession = Depends(get
     return {"status": "success", "data": new_id}
 
 @app.delete('/versions')
-async def delete_versions(version: str, session: AsyncSession = Depends(get_async_session)):
-    stmt = delete(versions).where(versions.c.name == version)
+async def delete_versions(version_id: str, session: AsyncSession = Depends(get_async_session)):
+    stmt = delete(versions).where(versions.c.id == version_id)
     result = await session.execute(stmt)
     await session.commit()
     return {"status": "success"} if result.rowcount else {"status": "not found"}

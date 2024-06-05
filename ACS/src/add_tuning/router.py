@@ -10,7 +10,7 @@ from src.schemas import Stand
 from src.models import stands, versions, repos
 from sqlalchemy import select
 
-from .temp import change_repos, astra_version_update
+from .temp import change_repos, astra_version_update, install_kernels
 
 from .conf import (COMPONENTS_INSTALL, 
                    CLONE_GIT_REPO, 
@@ -116,24 +116,7 @@ def install_kernels(version_name: str, stand = Depends(get_info_stand)):
     # Для 1.7.2 install linux-5.15-generic
     # Для 1.7.3 install linux-5.15-lowlatency
     # Для 1.7.5 install linux-6.1-generic
-    if version_name.startswith("172"):
-        kernel = "linux-5.15-generic"
-    elif version_name.startswith("173") or version_name.startswith("174"):
-        kernel = "linux-5.15-generic linux-5.15-lowlatency"
-    elif version_name.startswith("175"):
-        kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
-    elif version_name.startswith("181"):
-        kernel = "linux-6.6-generic"
-    else:
-        kernel = None
-    if kernel:
-        command = f"sudo apt install -y {kernel}"
-        print(command)
-        data = remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
-        print(data)
-        return {"ok"}
-    else:
-        return {"Нет доп ядер"}
+    return install_kernels(version_name, stand)
 
 """
     TODO Добавить в CELERY!

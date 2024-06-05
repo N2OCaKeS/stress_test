@@ -13,9 +13,6 @@ from src.database import get_async_session
 from src.tasks.tasks import celery
 from src.utils.secondary_func import socket_available, remote_cmd
 
-
-from src.clonezilla_snap.clonezilla_func import backup_image
-
 @celery.task
 def temp_task():
     time.sleep(100)
@@ -92,6 +89,29 @@ async def change_repos(version_name, stand):
         print("OK 5")
     return {"Репозитории изменены"}
 
+def install_kernels(version_name, stand):
+    if version_name.startswith("1.7.2"):
+        kernel = "linux-5.15-generic"
+    elif version_name.startswith("1.7.3") or version_name.startswith("174"):
+        kernel = "linux-5.15-generic linux-5.15-lowlatency"
+    elif version_name.startswith("1.7.5"):
+        kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
+    elif version_name.startswith("1.7.6"):
+        kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
+    elif version_name.startswith("1.8.1"):
+        kernel = "linux-6.6-generic"
+    else:
+        kernel = None
+    if kernel:
+        command = f"sudo apt install -y {kernel}"
+        print(command)
+        data = remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
+        print(data)
+        print("ЯДРА ДОЛЖНЫ БЫЛИ УСТАНОВИТЬСЯ")
+        return {"ok"}
+    else:
+        return {"Нет доп ядер"}
+
 @celery.task
 def astra_version_update(new_version: str, stand, *args, **kwargs):
     logging.error(f"{new_version} new_version!!!")
@@ -115,7 +135,7 @@ def astra_version_update(new_version: str, stand, *args, **kwargs):
     #     num_stand = "stand5"
     # change_boot_order = BootOrder(stand=num_stand)
     # change_boot_order.set_boot_order()
-
+    install_kernels(version_name=new_version, stand=stand)
     remote_cmd(command="sudo reboot", host=stand[3], user=stand[4], passwd=stand[5])
     time.sleep(15)
     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5])

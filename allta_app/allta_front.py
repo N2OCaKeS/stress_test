@@ -282,6 +282,17 @@ def get_repo_path_2():
         releases = r.read()
     return releases
 
+
+@app.route('/rest/api/get-ping1-pic', methods=['GET'])
+def get_ping1_pic():
+    return send_from_directory('static', 'ping1.jpeg')
+
+
+@app.route('/rest/api/get-ping2-pic', methods=['GET'])
+def get_ping2_pic():
+    return send_from_directory('static', 'ping2.jpg')
+
+
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)
 

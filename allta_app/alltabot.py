@@ -37,8 +37,8 @@ SERVER_ACS_IP_OR_NAME = "10.177.103.10"
 SERVER_ACS_PORT = 9999
 BASE_URL = f"http://{SERVER_ACS_IP_OR_NAME}:{SERVER_ACS_PORT}"
 fotos = [
-'./static/ping1.jpeg',
-'./static/ping2.jpg'
+'http://allta.devos.astralinux.ru/rest/api/get-ping1-pic',
+'http://allta.devos.astralinux.ru/rest/api/get-ping2-pic'
 ]
 
 help_text = """Доступные команды:

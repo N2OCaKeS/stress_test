@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 from libs.liballta import ReleaseToRepo, get_kernels_from_rc
+from libs.zefir import ZefirResultTable
 from allta_image_conf import JIRA_URL
 from time import sleep
 
@@ -26,6 +27,8 @@ dp = Dispatcher()
 
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
+__conf_token = tokens['conf_token']
+__username = tokens['username']
 __basic = tokens['jira_token']
 __password = tokens['pass']
 
@@ -48,6 +51,7 @@ help_text = """Доступные команды:
 /id - узнать ID чата
 /vpn - доступные для использования в телефоне настройки VPN'
 /addrc_acs - добавить новую версию релиз кандидата и сделать снимки
+/update_stp - обновить состав тестового прогона
 """
 
 help_acs = """Доступные команды:
@@ -174,6 +178,14 @@ async def create_full_snap(message: types.Message, command: CommandObject):
 
 ################################################################################################################################################################
 ################################################################################################################################################################
+
+def update_stp(version):
+    zefir_table = ZefirResultTable(test_cycle_version=str(version),
+                                   token=__conf_token,
+                                   basic_auth=__basic,
+                                   username=__username)
+    zefir_table
+
 
 def acs_create_snapshot(version: str):
     res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
@@ -528,17 +540,41 @@ async def addrc(message: types.Message, command: CommandObject):
         rc, password = command.args.split(' ', maxsplit=1)
     except ValueError:
         content = Text('❌ Укажите версию RC и пароль. Пример:\n'
-                            '/addrc <RC> <password>')
+                            '/addrc_acs <RC> <password>')
         await message.reply(**content.as_kwargs())
         return
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_allta_conf(rc)
         stand3, stand4 = acs_create_snapshot(rc)
-        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлено RC: "{rc}"'
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлен RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
-        await bot.send_message(chat_id=chat_id, text=stand3, parse_mode=None)
-        await bot.send_message(chat_id=chat_id, text=stand4, parse_mode=None)
+        await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand3}', parse_mode=None)
+        await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand4}', parse_mode=None)
+    else: 
+        content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
+        await message.reply(**content.as_kwargs())
+
+
+@dp.message(Command('update_stp'))
+async def addrc(message: types.Message, command: CommandObject):
+    rc = None
+    password = None
+    if command.args is None:
+        await message.reply('❌ Укажите версию RC и пароль')
+        return
+    try:
+        rc, password = command.args.split(' ', maxsplit=1)
+    except ValueError:
+        content = Text('❌ Укажите версию RC и пароль. Пример:\n'
+                            '/update_stp <RC> <password>')
+        await message.reply(**content.as_kwargs())
+        return
+    if password == 'bendik$':
+        await message.reply(f'✅ Доступ разрешен\nОбновляю СТП: {rc}')
+        update_stp(rc)
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nОбновление СТП: "{rc}"'
+        await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())

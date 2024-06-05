@@ -57,12 +57,12 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_
         logging.error('port is closed')
 
     while True:
-        if count_for_boot_local == 40 and cs_pass:
-            ssh_command(command=LOCALBOOT.format(ip_address=stand_ip),
-                        user=user,
-                        passwd=cs_pass,
-                        port=port)
         try:
+            if count_for_boot_local == 40 and cs_pass:
+                ssh_command(command=LOCALBOOT.format(ip_address=stand_ip),
+                            user=user,
+                            passwd=cs_pass,
+                            port=port)
             system_status = ssh_command(command='systemctl is-system-running', 
                                         host=stand_ip,
                                         user=user,

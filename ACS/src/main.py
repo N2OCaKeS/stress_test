@@ -112,7 +112,7 @@ async def add_repo(new_repo: Repo, session: AsyncSession = Depends(get_async_ses
     return {"status": "success"}
 
 @app.delete('/repos')
-async def delete_versions(id_repo: int, session: AsyncSession = Depends(get_async_session)):
+async def delete_repos(id_repo: int, session: AsyncSession = Depends(get_async_session)):
     stmt = delete(repos).where(repos.c.id == id_repo)
     result = await session.execute(stmt)
     await session.commit()

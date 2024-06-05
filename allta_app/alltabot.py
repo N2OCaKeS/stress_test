@@ -37,13 +37,8 @@ SERVER_ACS_IP_OR_NAME = "10.177.103.10"
 SERVER_ACS_PORT = 9999
 BASE_URL = f"http://{SERVER_ACS_IP_OR_NAME}:{SERVER_ACS_PORT}"
 fotos = [
-'https://sun9-24.userapi.com/impg/IZ8aU4agpRfx6mw2oPo8GodBU_XvtKiwe-FeUA/mjmDRavXZPs.jpg?size=1280x1119&quality=95&sign=\
-23214073b39fc706737d33e7ade4de5b&c_uniq_tag=_KqT8ouMY-LQeWE7W33O-vlbD3h8PbAHULqbk5uvbQg&type=album',
-'https://avatars.mds.yandex.net/i?id=2f27371e02e01ea034624aa4a1e7eb06-4298968-images-thumbs&ref=rim&n=33&w=262&h=200',
-'https://sun9-17.userapi.com/impg/zdR1_joV0_O6Xnba-bfkt8DyCEZqH6VD8s8RAw/tGohYNLhvlk.jpg?size=736x1472&quality=95&sign=\
-4cb1af85ac687db37f3f092f8c1d9e35&c_uniq_tag=NSqjmxZdyHmUP31opyfHcISGDWTVKGNVzN6TbWQ-54Q&type=album',
-'https://sun9-38.userapi.com/impg/REykA5Xgo5DNHj2aQdnKhdW7i6v1Gcae4BwsHA/SvzF-I9yHxU.jpg?size=752x1222&quality=96&sign=\
-63e981b3b1d9f96e861dab158190c314&c_uniq_tag=LC62h939btYyDEUpTwBfnzEcFfg7yAJGoOdKhHVqqcg&type=album'
+'./static/ping1.jpeg',
+'./static/ping2.jpg'
 ]
 
 help_text = """Доступные команды:
@@ -52,6 +47,9 @@ help_text = """Доступные команды:
 /id - узнать ID чата
 /vpn - доступные для использования в телефоне настройки VPN'
 /addrc_acs - добавить новую версию релиз кандидата и сделать снимки
+"""
+
+help_acs = """Доступные команды:
 /addvers - Добавить версию, если есть для нее репозитории
 /getsnap - получить список снимков
 /infstand stand_name - информация о стенде
@@ -548,8 +546,10 @@ async def addrc(message: types.Message, command: CommandObject):
 
 @dp.message(F.text)
 async def get_message(message: types.Message):
-    if "ALLTA" in message.text: 
-        if "help" in message.text.lower():
+    if "Allta" in message.text: 
+        if "help acs" in message.text.lower():
+            await message.reply(help_acs)
+        elif "help" in message.text.lower():
             await message.reply(help_text)
         else: 
             await bot.send_photo(chat_id=message.chat.id, 
@@ -558,7 +558,9 @@ async def get_message(message: types.Message):
                                 reply_to_message_id=message.message_id)
     elif message.reply_to_message and message.reply_to_message.from_user:
         if message.reply_to_message.from_user.username == "ALLTAbot":
-            if 'help' in message.text.lower():
+            if "help acs" in message.text.lower():
+                await message.reply(help_acs)
+            elif "help" in message.text.lower():
                 await message.reply(help_text)
             else: 
                 await bot.send_photo(chat_id=message.chat.id, 

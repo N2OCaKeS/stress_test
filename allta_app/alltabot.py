@@ -26,12 +26,16 @@ dp = Dispatcher()
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
 __basic = tokens['jira_token']
+__password = tokens['pass']
 
 path_chlog = '/home/u/git/stress_test/allta_app/ChangeLog'
 path_tgbot_conf = '/home/u/telegrambotconf.json'
 path_stand3 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand3.txt'
 path_stand4 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand4.txt'
 chat_id = '-1002121821530'
+SERVER_ACS_IP_OR_NAME = "10.177.103.10"
+SERVER_ACS_PORT = 9999
+BASE_URL = f"http://{SERVER_ACS_IP_OR_NAME}:{SERVER_ACS_PORT}"
 fotos = [
 'https://sun9-24.userapi.com/impg/IZ8aU4agpRfx6mw2oPo8GodBU_XvtKiwe-FeUA/mjmDRavXZPs.jpg?size=1280x1119&quality=95&sign=\
 23214073b39fc706737d33e7ade4de5b&c_uniq_tag=_KqT8ouMY-LQeWE7W33O-vlbD3h8PbAHULqbk5uvbQg&type=album',
@@ -47,8 +51,161 @@ help_text = """Доступные команды:
 /status - узнать статус прогона
 /id - узнать ID чата
 /vpn - доступные для использования в телефоне настройки VPN'
-/addrc - добавить новую версию релиз кандидата
+/addrc_acs - добавить новую версию релиз кандидата и сделать снимки
+/addvers - Добавить версию, если есть для нее репозитории
+/getsnap - получить список снимков
+/infstand stand_name - информация о стенде
+/restoresnap version_name, pass_cz_server, stand_name
+/createsnap version_name, pass_cz_server, stand_name
+/updatestand version_name, stand_name - обновить версию ОС
+/createfullsnap restore_version, new_version, pass_cz_server, stand_name - Сделать снимок
 """
+
+################################################################################################################################################################
+#ACS
+################################################################################################################################################################
+"""
+    ACS
+    Clonzilla snapshot
+"""
+@dp.message(Command('getsnap'))
+async def get_snapshots(message: types.Message):
+    res = requests.get(f"{BASE_URL}/clonezilla-snap/check-snapshots", params={'password_clonezilla_server': "team13"})
+    data = res.json()
+    data = data.get("snaphosts")
+    snap_str = "\n".join(data)
+    await message.answer(f"Ща все будет,\n{snap_str}")
+
+@dp.message(Command("restoresnap"))
+async def restore_snapshot(message: types.Message, command: CommandObject):
+    if command.args is None:
+        await message.reply('❌ Укажите version_name, pass_cz_server, stand_name')
+        return
+    version_name, pass_cs_server, stand_name = command.args.split(", ", maxsplit=3)
+    res = requests.post(f"{BASE_URL}/clonezilla-snap/restore-backup", params={"version_name": version_name, 
+                                                                               "password_clonezilla_server": pass_cs_server,
+                                                                               "stand_name": stand_name})
+    # data = res.json()
+    await message.answer(f"{res.json()}")
+
+@dp.message(Command('createsnap'))
+async def create_snapshot(message: types.Message, command: CommandObject):
+    if command.args is None:
+        await message.reply('❌ Укажите version_name, pass_cz_server, stand_name')
+        return
+    version_name, pass_cs_server, stand_name = command.args.split(", ", maxsplit=3)
+    res = requests.post(f"{BASE_URL}/clonezilla-snap/save-disk", params={"version_name": version_name, 
+                                                                         "password_clonezilla_server": pass_cs_server, 
+                                                                         "stand_name": stand_name})
+    await message.answer(f"{res.text}")
+
+"""
+    ACS
+    default
+"""
+@dp.message(Command("infstand"))
+async def get_stand(message: types.Message, command: CommandObject):
+    if command.args is None:
+        await message.reply('❌ Укажите имя стенда')
+        return
+    stand_name = "".join(command.args.split(" ", maxsplit=1))
+    res = requests.get(f"{BASE_URL}/stands/{stand_name}")
+    data = res.json()
+    answer_text = ""
+    for key, value in data.items():
+        if key == "id":
+            continue
+        answer_text += f"{key}: {value}\n"
+    await message.answer(f"{answer_text}")
+
+@dp.message(Command("addvers"))
+async def add_version_and_repos(message: types.Message, command: CommandObject):
+    if command.args is None:
+        await message.reply('❌ Укажите версию')
+        return
+    version_name = "".join(command.args.split(" ", maxsplit=1))
+    print(version_name, type(version_name))
+
+    res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
+    data_repos = json.loads(res_all_repos)
+    needed_repos = data_repos.get(version_name)
+
+    if needed_repos:
+        repos_to_one_str = "\n".join(needed_repos)
+        res_ver = requests.post(f"{BASE_URL}/versions", json={"name": version_name,
+                                                              "digit_name": version_name})
+        data = res_ver.json()
+        id_new_version = data.get("data")
+        res_add_repos = requests.post(f"{BASE_URL}/repos", json={"link": repos_to_one_str,
+                                                                 "version_id": id_new_version})
+        
+        await message.answer(f"{res_add_repos.text}")
+    else:
+        await message.answer("Нет репозиториев для этой версии")
+
+
+@dp.message(Command("updatestand"))
+async def update_stand(message: types.Message, command: CommandObject):
+    if command.args is None:
+        await message.reply('❌ Укажите версию и имя стенда')
+        return
+    version_name, stand_name = command.args.split(", ", maxsplit=2)
+    # print(version_name, stand_name)
+    # res_change_repos = requests.get(f"{BASE_URL}/add-tuning/change-repos", params={"version_name": version_name,
+    #                                                                                "stand_name": stand_name})
+    # await message.answer(f"Репы изменяются: {res_change_repos.text}")
+
+    res_update = requests.get(f"{BASE_URL}/add-tuning/astra-update", params={"new_version": version_name,
+                                                                             "stand_name": stand_name})
+    await message.answer(f"Версия ОС обновляется: {res_update.text}")
+
+@dp.message(Command("createfullsnap"))
+async def create_full_snap(message: types.Message, command: CommandObject):
+    if command.args is None:
+        await message.reply('❌ Укажите версию и имя стенда')
+        return
+    pass
+    restore_version, version_to_update, password_cs, stand_name = command.args.split(", ", maxsplit=4)
+    res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                 "version_to_update": version_to_update,
+                                                                                 "password_cs": password_cs,
+                                                                                 "stand_name": stand_name})
+    await message.answer(f"Полетели делать снимок {res_create_full_snap.text}")
+
+
+################################################################################################################################################################
+################################################################################################################################################################
+
+def acs_create_snapshot(version: str):
+    res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
+    data_repos = json.loads(res_all_repos)
+    needed_repos = data_repos.get(version)
+
+    if needed_repos:
+        repos_to_one_str = "\n".join(needed_repos)
+        res_ver = requests.post(f"{BASE_URL}/versions", json={"name": version,
+                                                              "digit_name": version})
+        data = res_ver.json()
+        id_new_version = data.get("data")
+        requests.post(f"{BASE_URL}/repos", json={"link": repos_to_one_str,
+                                                 "version_id": id_new_version}) 
+        
+    if version.startswith('1.8'):
+        restore_version = '1.8.0'
+    elif version.startswith('1.7'):
+        restore_version = '1.7.0'
+    
+    res_create_full_snap_stand3 = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": __password,
+                                                                                        "stand_name": 'LowServer'})
+    
+    res_create_full_snap_stand4 = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": __password,
+                                                                                        "stand_name": 'MiddleServer'})
+    return res_create_full_snap_stand3, res_create_full_snap_stand4
+
 
 def generate_repo_path():
     pkg_path = '/dists/{}/main/binary-amd64/Packages'
@@ -361,7 +518,7 @@ async def process_callback(query: types.CallbackQuery):
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
-@dp.message(Command('addrc'))
+@dp.message(Command('addrc_acs'))
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
     password = None
@@ -378,8 +535,11 @@ async def addrc(message: types.Message, command: CommandObject):
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_allta_conf(rc)
+        stand3, stand4 = acs_create_snapshot(rc)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлено RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
+        await bot.send_message(chat_id=chat_id, text=stand3, parse_mode=None)
+        await bot.send_message(chat_id=chat_id, text=stand4, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())
@@ -405,9 +565,6 @@ async def get_message(message: types.Message):
                                     photo=random_pics(), 
                                     caption='Oops! Команда не идентифицирована.\nНапиши мне help, если нужна помощь', 
                                     reply_to_message_id=message.message_id)
-        
-
-
 
 
 

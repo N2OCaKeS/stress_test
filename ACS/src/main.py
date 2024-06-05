@@ -110,6 +110,14 @@ async def add_repo(new_repo: Repo, session: AsyncSession = Depends(get_async_ses
     await session.execute(stmt)
     await session.commit()
     return {"status": "success"}
+
+@app.delete('/repos')
+async def delete_versions(id_repo: int, session: AsyncSession = Depends(get_async_session)):
+    stmt = delete(repos).where(repos.c.id == id_repo)
+    result = await session.execute(stmt)
+    await session.commit()
+    return {"status": "success"} if result.rowcount else {"status": "not found"}
+
 # app.include_router(clonezilla_router)
 
 async def get_snapshots():

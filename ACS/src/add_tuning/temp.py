@@ -13,6 +13,8 @@ from src.database import get_async_session
 from src.tasks.tasks import celery
 from src.utils.secondary_func import socket_available, remote_cmd
 
+from src.add_tuning.conf import COMPONENTS_INSTALL
+
 @celery.task
 def temp_task():
     time.sleep(100)
@@ -102,6 +104,13 @@ def install_kernels(version_name, stand):
         kernel = "linux-6.6-generic"
     else:
         kernel = None
+
+    components = " ".join(COMPONENTS_INSTALL)
+    install_components = remote_cmd(command=f"sudo apt update && sudo apt install -y {components}", 
+                                    host=stand[3], 
+                                    user=stand[4], 
+                                    passwd=stand[5])
+    print(install_components)
     if kernel:
         command = f"sudo apt install -y {kernel}"
         print(command)

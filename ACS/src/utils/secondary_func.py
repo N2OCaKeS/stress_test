@@ -4,6 +4,8 @@ import logging
 from time import sleep
 from paramiko import ssh_exception
 
+from src.clonezilla_snap.conf import LOCALBOOT
+
 def remote_cmd(command: str, host: str, user: str, passwd: str, port: int = 22, read=True) -> str:
     try:
         client = paramiko.SSHClient()
@@ -45,15 +47,21 @@ def ssh_command(command: str, host: str, user: str = "u", passwd: str = "1", por
     client.close()
     return response
 
-def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, user: str = "u", passwd: str = "1", port: int = 22):
+def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_pass=None, user: str = "u", passwd: str = "1", port: int = 22):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = sock.connect_ex((stand_ip, 22))
+    count_for_boot_local = 0
     if result == 0:
         logging.debug('port is open')
     else: 
         logging.error('port is closed')
 
     while True:
+        if count_for_boot_local == 40 and cs_pass:
+            ssh_command(command=LOCALBOOT.format(ip_address=stand_ip),
+                        user=user,
+                        passwd=cs_pass,
+                        port=port)
         try:
             system_status = ssh_command(command='systemctl is-system-running', 
                                         host=stand_ip,
@@ -92,6 +100,7 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, use
             else:
                 logging.error(f'System is not fully loaded yet: {system_status}')
                 sleep(30)
+                count_for_boot_local+=1
         except paramiko.AuthenticationException:
             sleep(30)
             continue

@@ -553,7 +553,7 @@ async def get_message(message: types.Message):
             await message.reply(help_text)
         else: 
             await bot.send_photo(chat_id=message.chat.id, 
-                                photo=random_pics(), 
+                                photo='http://allta.devos.astralinux.ru/rest/api/get-ping2-pic', 
                                 caption='Oops! Команда не идентифицирована.\nНапиши мне help, если нужна помощь', 
                                 reply_to_message_id=message.message_id)
     elif message.reply_to_message and message.reply_to_message.from_user:
@@ -564,7 +564,7 @@ async def get_message(message: types.Message):
                 await message.reply(help_text)
             else: 
                 await bot.send_photo(chat_id=message.chat.id, 
-                                    photo=random_pics(), 
+                                    photo='http://allta.devos.astralinux.ru/rest/api/get-ping2-pic', 
                                     caption='Oops! Команда не идентифицирована.\nНапиши мне help, если нужна помощь', 
                                     reply_to_message_id=message.message_id)
 

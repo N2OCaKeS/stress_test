@@ -564,7 +564,7 @@ async def addrc(message: types.Message, command: CommandObject):
         await message.reply(**content.as_kwargs())
         return
     if password == 'bendik$':
-        await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
+        await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию RC: {rc}')
         mod_allta_conf(rc)
         #stand3, stand4 = acs_create_snapshot(rc)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация RC: "{rc}"'
@@ -599,7 +599,7 @@ async def addrc(message: types.Message, command: CommandObject):
             server = 'MiddleServer'
         
         stand_resp = acs_create_snapshot(rc, stand)
-        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nСоздается снимок: "{rc}"'
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nСоздание снимка: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
         await bot.send_message(chat_id=chat_id, text=f'Запуск ACS на {server}: {stand_resp}', parse_mode=None)
     else: 

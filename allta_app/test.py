@@ -296,7 +296,12 @@ def generate_repo_path():
     return {**pkg_path_dict, **vers_path_dict}
 
 
-print(generate_repo_path())
+#print(generate_repo_path())
+
+
+version = '1.8.1.3'
+release = '.'.join(version.split('.')[:3])
+print(release)
 
 #response_check = requests.get(url=check_folder_url, headers=headers)
 #print(response_check.status_code)

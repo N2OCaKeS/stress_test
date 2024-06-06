@@ -14,7 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 from libs.liballta import ReleaseToRepo, get_kernels_from_rc
-from libs.zefir import ZefirResultTable
+from libs.zefir import ZefirResultTable, ZefirTestRun
 from allta_image_conf import JIRA_URL
 from time import sleep
 
@@ -50,8 +50,10 @@ help_text = """Доступные команды:
 /status - узнать статус прогона
 /id - узнать ID чата
 /vpn - доступные для использования в телефоне настройки VPN'
-/addrc_acs - добавить новую версию релиз кандидата и сделать снимки
+/addrc - добавить конфигурацию новой версии релиз кандидата
+/acs - сделать снимок для выбранного стенда
 /update_stp - обновить состав тестового прогона
+/add_testrun - создать тестовый прогон
 """
 
 help_acs = """Доступные команды:
@@ -179,6 +181,18 @@ async def create_full_snap(message: types.Message, command: CommandObject):
 ################################################################################################################################################################
 ################################################################################################################################################################
 
+def create_test_run(version: str):
+    release = '.'.join(version.split('.')[:3])
+    stands = ['stand3', 'stand4']
+    kernels = get_kernels_from_rc(version, get_list=True)
+
+    test_run = ZefirTestRun(use_kernels=kernels,
+                            stands=stands,
+                            release=release,
+                            rc=version)
+    test_run.creater()
+
+
 def update_stp(version):
     zefir_table = ZefirResultTable(test_cycle_version=str(version),
                                    token=__conf_token,
@@ -187,7 +201,7 @@ def update_stp(version):
     zefir_table
 
 
-def acs_create_snapshot(version: str):
+def acs_create_snapshot(version: str, stand):
     res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
     data_repos = json.loads(res_all_repos)
     needed_repos = data_repos.get(version)
@@ -206,16 +220,18 @@ def acs_create_snapshot(version: str):
     elif version.startswith('1.7'):
         restore_version = '1.7.1'
     
-    res_create_full_snap_stand3 = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
-                                                                                        "version_to_update": version,
-                                                                                        "password_cs": __password,
-                                                                                        "stand_name": 'LowServer'})
-    sleep(10)
-    res_create_full_snap_stand4 = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
-                                                                                        "version_to_update": version,
-                                                                                        "password_cs": __password,
-                                                                                        "stand_name": 'MiddleServer'})
-    return res_create_full_snap_stand3.text, res_create_full_snap_stand4.text
+    if stand == 'stand3':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'LowServer'})
+    elif stand == 'stand4':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'MiddleServer'})
+    else: res_create_full_snap = 'Wrong stand'
+    return res_create_full_snap.text
 
 
 def generate_repo_path():
@@ -533,7 +549,7 @@ async def process_callback(query: types.CallbackQuery):
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id)
 
 
-@dp.message(Command('addrc_acs'))
+@dp.message(Command('addrc'))
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
     password = None
@@ -550,11 +566,42 @@ async def addrc(message: types.Message, command: CommandObject):
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую версию RC: {rc}')
         mod_allta_conf(rc)
-        stand3, stand4 = acs_create_snapshot(rc)
-        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлен RC: "{rc}"'
+        #stand3, stand4 = acs_create_snapshot(rc)
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
-        await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand3}', parse_mode=None)
-        await bot.send_message(chat_id=chat_id, text=f'Запуск обновления MiddleServer: {stand4}', parse_mode=None)
+        #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand3}', parse_mode=None)
+        #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления MiddleServer: {stand4}', parse_mode=None)
+    else: 
+        content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
+        await message.reply(**content.as_kwargs())
+
+
+@dp.message(Command('acs'))
+async def addrc(message: types.Message, command: CommandObject):
+    rc = None
+    stand = None
+    password = None
+    if command.args is None:
+        await message.reply('❌ Укажите версию RC, стенд и пароль')
+        return
+    try:
+        rc, stand, password = command.args.split(' ', maxsplit=2)
+    except ValueError:
+        content = Text('❌ Укажите версию RC, стенд и пароль. Пример:\n'
+                            '/addrc_acs <RC> <stand#> <password>')
+        await message.reply(**content.as_kwargs())
+        return
+    if password == 'bendik$':
+        await message.reply(f'✅ Доступ разрешен\nСоздаю снимок: {rc}')
+        if stand == 'stand3':
+            server = 'LowServer'
+        elif stand == 'stand4':
+            server = 'MiddleServer'
+        
+        stand_resp = acs_create_snapshot(rc, stand)
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nСоздается снимок: "{rc}"'
+        await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
+        await bot.send_message(chat_id=chat_id, text=f'Запуск ACS на {server}: {stand_resp}', parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())
@@ -582,6 +629,31 @@ async def addrc(message: types.Message, command: CommandObject):
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())
+
+
+@dp.message(Command('add_testrun'))
+async def addrc(message: types.Message, command: CommandObject):
+    rc = None
+    password = None
+    if command.args is None:
+        await message.reply('❌ Укажите версию RC и пароль')
+        return
+    try:
+        rc, password = command.args.split(' ', maxsplit=1)
+    except ValueError:
+        content = Text('❌ Укажите версию RC и пароль. Пример:\n'
+                            '/add_testrun <RC> <password>')
+        await message.reply(**content.as_kwargs())
+        return
+    if password == 'bendik$':
+        await message.reply(f'✅ Доступ разрешен\nСоздаю тестовый прогон: {rc}')
+        create_test_run(rc)
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nСоздан тестовый прогон: "{rc}"'
+        await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
+    else: 
+        content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
+        await message.reply(**content.as_kwargs())
+
 
 
 

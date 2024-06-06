@@ -61,8 +61,9 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_
 
     while True:
         try:
-            if count_for_boot_local == 50 and cs_pass:
+            if count_for_boot_local == 45 and cs_pass:
                 ssh_command(command=LOCALBOOT.format(ip_address=stand_ip),
+                            host="10.177.103.10",
                             user=user,
                             passwd=cs_pass,
                             port=port)

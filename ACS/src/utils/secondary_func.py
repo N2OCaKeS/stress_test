@@ -50,7 +50,7 @@ def ssh_command(command: str, host: str, user: str = "u", passwd: str = "1", por
 def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_pass=None, user: str = "u", passwd: str = "1", port: int = 22):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = sock.connect_ex((stand_ip, 22))
-    count_for_boot_local = 0
+    # count_for_boot_local = 0
     if result == 0:
         logging.debug('port is open')
     else: 
@@ -58,11 +58,11 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_
 
     while True:
         try:
-            if count_for_boot_local == 40 and cs_pass:
-                ssh_command(command=LOCALBOOT.format(ip_address=stand_ip),
-                            user=user,
-                            passwd=cs_pass,
-                            port=port)
+            # if count_for_boot_local == 40 and cs_pass:
+            #     ssh_command(command=LOCALBOOT.format(ip_address=stand_ip),
+            #                 user=user,
+            #                 passwd=cs_pass,
+            #                 port=port)
             system_status = ssh_command(command='systemctl is-system-running', 
                                         host=stand_ip,
                                         user=user,
@@ -100,7 +100,7 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_
             else:
                 logging.error(f'System is not fully loaded yet: {system_status}')
                 sleep(30)
-                count_for_boot_local+=1
+                # count_for_boot_local+=1
         except paramiko.AuthenticationException:
             sleep(30)
             continue

@@ -210,7 +210,7 @@ def acs_create_snapshot(version: str):
                                                                                         "version_to_update": version,
                                                                                         "password_cs": __password,
                                                                                         "stand_name": 'LowServer'})
-    sleep(60)
+    sleep(10)
     res_create_full_snap_stand4 = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
                                                                                         "version_to_update": version,
                                                                                         "password_cs": __password,
@@ -222,18 +222,22 @@ def generate_repo_path():
     pkg_path = '/dists/{}/main/binary-amd64/Packages'
     vers_path = '/dists/{}/Release'
 
+    def sort_element(repo_list: list, element):
+        [repo_list.insert(0, repo_list.pop(repo_list.index(i))) for i in repo_list if element in i]
+        return repo_list[0]
+
     with open('./releases.json', 'r') as rj:
         links = json.load(rj)
 
     pkg_path_dict = {
-        f"pkg_path_{key}": [f"{value.split(' ')[1]}{pkg_path}".format(value.split(' ')[2])  
-        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
+        f"pkg_path_{key}": sort_element([f"{value.split(' ')[1]}{pkg_path}".format(value.split(' ')[2])  
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])], 'installation')
         for key in links.keys()
     }
 
     vers_path_dict = {
-        f"vers_path_{key}": [f"{value.split(' ')[1]}{vers_path}".format(value.split(' ')[2])   
-        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])][0]
+        f"vers_path_{key}": sort_element([f"{value.split(' ')[1]}{vers_path}".format(value.split(' ')[2])   
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])], 'installation')
         for key in links.keys()
     }
 
@@ -550,7 +554,7 @@ async def addrc(message: types.Message, command: CommandObject):
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлен RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
         await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand3}', parse_mode=None)
-        await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand4}', parse_mode=None)
+        await bot.send_message(chat_id=chat_id, text=f'Запуск обновления MiddleServer: {stand4}', parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())

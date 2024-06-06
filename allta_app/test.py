@@ -253,25 +253,50 @@ def add_testrun_folder(rc):
         
 
 
-#TODO добавить новые ядра в конфиг
-from libs.liballta import get_kernels_from_rc
+# #TODO добавить новые ядра в конфиг
+# from libs.liballta import get_kernels_from_rc
 
-print(get_kernels_from_rc('1.7.6.5', get_list=True))
+# print(get_kernels_from_rc('1.7.6.5', get_list=True))
 
-with open('./allta_conf.json', 'r') as r:
-        config = json.load(r)
+# with open('./allta_conf.json', 'r') as r:
+#         config = json.load(r)
 
-rc_kernels = get_kernels_from_rc('1.7.6.5', get_list=True)
-print(rc_kernels)
-config['kernels'] += [kern for kern in rc_kernels if kern not in set(config['kernels'])]
+# rc_kernels = get_kernels_from_rc('1.7.6.5', get_list=True)
+# print(rc_kernels)
+# config['kernels'] += [kern for kern in rc_kernels if kern not in set(config['kernels'])]
 
-print(config['kernels'])
-
-
+# print(config['kernels'])
 
 
 
 
+def generate_repo_path():
+    pkg_path = '/dists/{}/main/binary-amd64/Packages'
+    vers_path = '/dists/{}/Release'
+
+    def sort_element(repo_list: list, element):
+        [repo_list.insert(0, repo_list.pop(repo_list.index(i))) for i in repo_list if element in i]
+        return repo_list[0]
+
+    with open('./releases.json', 'r') as rj:
+        links = json.load(rj)
+
+    pkg_path_dict = {
+        f"pkg_path_{key}": sort_element([f"{value.split(' ')[1]}{pkg_path}".format(value.split(' ')[2])  
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])], 'installation')
+        for key in links.keys()
+    }
+
+    vers_path_dict = {
+        f"vers_path_{key}": sort_element([f"{value.split(' ')[1]}{vers_path}".format(value.split(' ')[2])   
+        for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])], 'installation')
+        for key in links.keys()
+}  
+
+    return {**pkg_path_dict, **vers_path_dict}
+
+
+print(generate_repo_path())
 
 #response_check = requests.get(url=check_folder_url, headers=headers)
 #print(response_check.status_code)

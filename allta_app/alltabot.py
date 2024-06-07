@@ -13,9 +13,9 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
-from libs.liballta import ReleaseToRepo, get_kernels_from_rc
+from libs.liballta import ReleaseToRepo, get_kernels_from_rc, run_command_on_stand
 from libs.zefir import ZefirResultTable, ZefirTestRun
-from allta_image_conf import JIRA_URL
+from allta_image_conf import JIRA_URL, LowServer_group, MiddleServer_group
 from time import sleep
 
 
@@ -54,6 +54,7 @@ help_text = """Доступные команды:
 /acs - сделать снимок для выбранного стенда
 /update_stp - обновить состав тестового прогона
 /add_testrun - создать тестовый прогон
+/runtests - запустить тесты
 """
 
 help_acs = """Доступные команды:
@@ -180,6 +181,22 @@ async def create_full_snap(message: types.Message, command: CommandObject):
 
 ################################################################################################################################################################
 ################################################################################################################################################################
+
+def run_tests(version, stand):
+    tests_dir = 'conf/main_tests_args.conf'
+    releases_dir = 'conf/main_releas_args.conf'
+    if stand == 'stand3':
+        tests = LowServer_group
+    elif stand == 'stand4':
+        tests = MiddleServer_group
+
+    with open(releases_dir, 'w') as w:
+        w.write(str([version]))
+    with open(tests_dir, 'w') as w:
+        w.write(str(tests))
+
+    run_command_on_stand(list(stand)[-1])
+
 
 def create_test_run(version: str):
     release = '.'.join(version.split('.')[:3])
@@ -588,7 +605,7 @@ async def addrc(message: types.Message, command: CommandObject):
         rc, stand, password = command.args.split(' ', maxsplit=2)
     except ValueError:
         content = Text('❌ Укажите версию RC, стенд и пароль. Пример:\n'
-                            '/addrc_acs <RC> <stand#> <password>')
+                            '/acs <RC> <stand#> <password>')
         await message.reply(**content.as_kwargs())
         return
     if password == 'bendik$':
@@ -654,6 +671,30 @@ async def addrc(message: types.Message, command: CommandObject):
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())
 
+
+@dp.message(Command('runtests'))
+async def addrc(message: types.Message, command: CommandObject):
+    rc = None
+    stand = None
+    password = None
+    if command.args is None:
+        await message.reply('❌ Укажите версию RC, стенд и пароль')
+        return
+    try:
+        rc, stand, password = command.args.split(' ', maxsplit=2)
+    except ValueError:
+        content = Text('❌ Укажите версию RC, стенд и пароль. Пример:\n'
+                            '/runtests <RC> <stand#> <password>')
+        await message.reply(**content.as_kwargs())
+        return
+    if password == 'bendik$':
+        await message.reply(f'✅ Доступ разрешен\nЗапускаю тесты: {rc}')   
+        run_tests(rc, stand)
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nЗапуск тестов: "{rc}" - "{stand}"'
+        await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
+    else: 
+        content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
+        await message.reply(**content.as_kwargs())
 
 
 

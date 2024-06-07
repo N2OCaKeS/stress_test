@@ -301,7 +301,13 @@ def generate_repo_path():
 
 version = '1.8.1.3'
 release = '.'.join(version.split('.')[:3])
-print(release)
+#print(release)
+
+st = 'stand3'
+print(list(st)[-1])
+
+
+
 
 #response_check = requests.get(url=check_folder_url, headers=headers)
 #print(response_check.status_code)

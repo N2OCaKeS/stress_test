@@ -321,7 +321,8 @@ def run_command_on_stand(num, http=True):
         with open(f'conf/work_status_stand{num}.conf', 'w') as w:
             w.write('Остановлен')
 
-    return index_page(prefix)
+    if http:
+        return index_page(prefix)
 
 
 

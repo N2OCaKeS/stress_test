@@ -1,6 +1,6 @@
 import requests
-jira_url_api = 'http://bendiks.devos.astralinux.ru/rest/api/get-jira-url'
-confluence_url_api = 'http://bendiks.devos.astralinux.ru/rest/api/get-confluence-url'
+jira_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-jira-url'
+confluence_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-confluence-url'
 response_jira_url = requests.get(jira_url_api)
 response_confluence_url = requests.get(confluence_url_api)
 JIRA_URL = response_jira_url.text

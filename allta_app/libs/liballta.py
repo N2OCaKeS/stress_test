@@ -255,10 +255,12 @@ def info_collector(page, ajax=None):
 
 
 
-def run_command_on_stand(num):
+def run_command_on_stand(num, http=True):
     process_manager = globals()[f'process_manager{num}']
     process_list = globals()[f'process_list{num}']
-    command = request.form.get(f'command{num}')
+    if http:
+        command = request.form.get(f'command{num}')
+    else: command = 'start'
     kernel = None
     if num == '1' or num == '2' or num =='3' or num == '4' or num == '5':
         prefix = 'main'

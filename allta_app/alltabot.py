@@ -195,7 +195,7 @@ def run_tests(version, stand):
     with open(tests_dir, 'w') as w:
         w.write(str(tests))
 
-    run_command_on_stand(list(stand)[-1])
+    run_command_on_stand(list(stand)[-1], http=False)
 
 
 def create_test_run(version: str):

@@ -742,7 +742,7 @@ class TestRunProvision(BootOrder):
                         sleep(60)
                 if self.modes:
                     comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                                u@' + self.stand_ip + " sudo sed -i '/auth[[:space:]]*required[[:space:]]*pam_lastlog.so inactive=/s/^/#/' /etc/pam.d/common-auth")
+                                u@' + self.stand_ip + " sudo sed -i '/auth[[:space:]]*required[[:space:]]*pam_lastlog.so[[:space:]]*inactive=/s/^/#/' /etc/pam.d/common-auth")
                     comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                 u@' + self.stand_ip + " cat /etc/pam.d/common-auth")
                     comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \

@@ -88,6 +88,19 @@ async def change_repos(version_name, stand):
         # print(repo)
         command = f'sudo echo "{repo}" | sudo tee /etc/apt/sources.list > /dev/null && sudo apt update -y'
         remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
+        priority_command = """
+            cat << EOF | sudo tee /etc/apt/preferences.d/devel
+            Package: *
+            Pin: release l=devel
+            Pin-Priority: 500
+
+            Package: *
+            Pin: release l=extended
+            Pin-Priority: 500
+            EOF
+            sudo apt update -y
+        """
+        remote_cmd(command=priority_command, host=stand[3], user=stand[4], passwd=stand[5])
         print("OK 5")
     return {"Репозитории изменены"}
 

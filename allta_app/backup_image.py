@@ -741,6 +741,8 @@ class TestRunProvision(BootOrder):
                         logging.error(str(e))
                         sleep(60)
                 if self.modes:
+                    comm_and_log("sudo sed -i '/auth[[:space:]]*required[[:space:]]*pam_lastlog.so inactive=/s/^/#/' /etc/pam.d/common-auth")
+                    comm_and_log('cat /etc/pam.d/common-auth')
                     comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                 u@' + self.stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
                     if modes[args.MODE] == '2':

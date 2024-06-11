@@ -120,10 +120,15 @@ class ParsecImpactTest:
             load_rare_results.strip().split('\n') if result.startswith(match)
             ]
 
-        load_rare_results = {i[0]:i[1] for i in load_rare_results}
+        #load_rare_results = {i[0]:i[1] for i in load_rare_results}
+        load_rare_results = {' '.join(i).split()[0]:' '.join(i).split()[1] for i in load_rare_results}
+        print(load_rare_results)
+        # load_results = {
+        #     key:{'Seconds':int(value[0]) * 60 + float(value[1].replace(',', '.')) 
+        #         for value in [load_rare_results[key].strip('s').split('m')]} for key in self.find_args
+        # }
         load_results = {
-            key:{'Seconds':int(value[0]) * 60 + float(value[1].replace(',', '.')) 
-                for value in [load_rare_results[key].strip('s').split('m')]} for key in self.find_args
+            key:{'Seconds':value for value in [load_rare_results[key].strip('s').split('m')]} for key in self.find_args
         }
         print(load_results)
 

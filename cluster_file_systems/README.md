@@ -49,13 +49,13 @@
 - **--data-from-config** - брать переменные из конфига
 
 #### Проведение тестирования
-Тестирование проводится в автоматическом режиме с помощью оркестратора Bendiks.
+Тестирование проводится в автоматическом режиме с помощью оркестратора ALLTA.
 
-- [Bendiks](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
+- [ALLTA](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
 
 #### Обработка результатов
 Результаты обрабатываются и выкладываются в пространстве нагрузочного тестирования confluence 
-с помощью орекстратора Bendiks в автоматическом режиме.
+с помощью орекстратора ALLTA в автоматическом режиме.
 
 - [Пространство](https://life.astralinux.ru/pages/viewpage.action?pageId=140673304&src=contextnavpagetreemode)
 - [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)

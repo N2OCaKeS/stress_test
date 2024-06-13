@@ -19,7 +19,7 @@ class VMS:
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
 
     def prepare_and_start(self):
-        astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
+        astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-astra-config'
         response_ac = requests.get(astra_config_url)
         if response_ac.status_code == 200:
             with open('astra-config.json', 'wb') as acb:

@@ -33,11 +33,11 @@ from cfs_conf import  \
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
-parser.add_argument('--virtual-box',
-                    action='store_true',
-                    required=False,
-                    help='host type',
-                    dest='VBOX')
+# parser.add_argument('--virtual-box',
+#                     action='store_true',
+#                     required=False,
+#                     help='host type',
+#                     dest='VBOX')
 
 parser.add_argument('--libvirt',
                     action='store_true',

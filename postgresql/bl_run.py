@@ -130,7 +130,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 # box_url = box[0][set_box][1]
 # box_name = box[0][set_box][0]
 
-astra_config_url = 'http://bendiks.devos.astralinux.ru/rest/api/get-astra-config'
+astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-astra-config'
 response_ac = requests.get(astra_config_url)
 if response_ac.status_code == 200:
     with open('astra-config.json', 'wb') as acb:

@@ -9,7 +9,7 @@
     Start:
     1) sudo ./prepare.sh ветка версия
     2) Указать HOST_IP в cfs_conf.py
-    3) venv/bin/python3 cfs_run.py --libvirt --fs ocfs2 --nodes testvm2 testvm3 --test-set fs_mark_count --host-storage testvm1 -vbox 1.8.0 -kernel 6.1.50-1-generic
+    3) /home/u/python/Python-3.12.1/venv/bin/python3 cfs_run.py --libvirt --fs ocfs2 --nodes testvm2 testvm3 --test-set fs_mark_count --host-storage testvm1 -vbox 1.8.0 -kernel 6.1.50-1-generic
 """
 
 import argparse
@@ -29,7 +29,7 @@ from cfs_conf import  \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT, \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
-    STORAGE_NAME, HOST_IP
+    STORAGE_NAME, HOST_IP, HOST_STORAGE, NODES
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -60,18 +60,18 @@ parser.add_argument('--fs',
                     help='filesystem',
                     dest='FS')
 
-parser.add_argument('--host-storage',
-                    action='store',
-                    required=True,
-                    help='hostname where the storage is located',
-                    dest='STORAGE')
+# parser.add_argument('--host-storage',
+#                     action='store',
+#                     required=True,
+#                     help='hostname where the storage is located',
+#                     dest='STORAGE')
 
-parser.add_argument('--nodes',
-                    action='store',
-                    nargs="+",
-                    required=True,
-                    help='nodes list <hostname1 hostname2 hostname3 ...>',
-                    dest='NODES')
+# parser.add_argument('--nodes',
+#                     action='store',
+#                     nargs="+",
+#                     required=True,
+#                     help='nodes list <hostname1 hostname2 hostname3 ...>',
+#                     dest='NODES')
 
 parser.add_argument('--test-set',
                     action='store',
@@ -110,6 +110,8 @@ parser.add_argument('-kernel',
 
 
 args = parser.parse_args()
+args.STORAGE = HOST_STORAGE
+args.NODES = NODES
 all_hosts = args.NODES + [args.STORAGE]
 
 # bash cmd # /home/$USER/VirtualBox\ VMs/

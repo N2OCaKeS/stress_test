@@ -13,7 +13,8 @@ from json import loads
 import numpy as np
 from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
                       FIOVERS_18x, TEMPLATE_PATH, FIO_PATH, UB_ARHIVE, STEP, \
-                      LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML, UB_RESULTS
+                      LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML, UB_RESULTS, \
+                      VM_RESULTS_PATH
 from time import sleep
 
 
@@ -601,4 +602,85 @@ class UnixBench(CreateVM):
         df = pd.DataFrame(results, index=['Total score']).T
         df.to_html(f'{UB_RESULTS}/{UB_RESULT_HTML}')
 
+
+
+class PingPong(CreateVM):
+    def __init__(self, 
+                 rc_vbox=None, 
+                 testdir=None, 
+                 vm_count=None, 
+                 kernel=None, 
+                 vcpu=None, 
+                 ram=None):
+        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
+
+        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
+        self.user = 'vagrant'
+        self.password = 'vagrant'
+        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.vg_destroy = 'vagrant destroy {}'
+        self.destroy = 'virsh destroy {}'
+        self.undefine = 'virsh undefine {}'
+
+
+    def start_test(self):
+        self.vm_dates = {
+             vm:{
+                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+                'login':f'{self.user}',
+                'password':f'{self.password}'
+                } for vm in self.vms}
+        print(f'VM dates is:\n{self.vm_dates}')
+
+        #Send pingpong script & start test
+        create_remote_file(local_file_path=f'{os.getcwd()}/libs/ping_pong.py', 
+                           remote_file_path=f'/home/{self.user}/ping_pong.py', 
+                           ip=self.vm_dates['testvm1']['ip'], 
+                           user=self.user, 
+                           password=self.password) 
+        
+        send_remote_command(command=f'chmod -R +x /home/{self.user}/ping_pong.py',
+                            ip=self.vm_dates['testvm1']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+        
+        #Start test
+        send_remote_command(command=f'python3 /home/{self.user}/ping_pong.py',
+                            ip=self.vm_dates['testvm1']['ip'], 
+                            user=self.user, 
+                            password=self.password)
+    
+        get_remote_file(remote_file_path='/home/vagrant/results',
+                        local_file_path=f'{self.testdir}/{VM_RESULTS_PATH}',
+                        ip=self.vm_dates['testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password)
+        
+        get_remote_file(remote_file_path=f'/home/av.txt',
+                        local_file_path=f'{self.testdir}/{VM_INFONAME}',
+                        ip=self.vm_dates['testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
+
+        get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
+                        local_file_path=f'{self.testdir}/{VM_KERNEL}',
+                        ip=self.vm_dates['testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
+        
+
+    def vms_destroy(self):
+        try:
+            [
+                cmd(f'virsh dumpxml {vm_name}') for vm_name in self.vms
+            ]
+            [
+                cmd(self.destroy.format(vm_name)) for vm_name in self.vms
+            ]
+            [
+                cmd(self.undefine.format(vm_name)) for vm_name in self.vms
+            ]
+            cmd('rm -rf .vagrant')
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 

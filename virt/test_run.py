@@ -1,6 +1,7 @@
-from libs.libtests import StealTime, FlexibleIOTester, UnixBench
+from libs.libtests import StealTime, FlexibleIOTester, UnixBench, PingPong
 from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU, IO_DEPTH_1, \
-                      IO_DEPTH_128, FIO_RAM, FIO_vCPU, UB_RAM, UB_vCPU
+                      IO_DEPTH_128, FIO_RAM, FIO_vCPU, UB_RAM, UB_vCPU, PP_vCPU, \
+                      PP_RAM
 from libs.virtlib import info_list
 from libs.zefir import UploaderZC
 import argparse
@@ -198,4 +199,20 @@ elif args.TESTNAME == 'unixbench':
     #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
+elif args.TESTNAME == 'pingpong':
+    pingpong_test = PingPong(rc_vbox=args.VBOX,
+                             vm_count=1,
+                             testdir=REPORT_PATH,
+                             kernel=str(args.TCYC).split('_')[2],
+                             vcpu=PP_vCPU,
+                             ram=PP_RAM)
     
+    pingpong_test.prepare_vms()
+    pingpong_test.start_test()
+    pingpong_test.vms_destroy()
+
+    info_list()
+    uzs.public = True
+    #uzs.statistics = True
+    uzs.upload_test_cycle_status(zefir_status='pass')
+

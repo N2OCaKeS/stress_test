@@ -45,3 +45,8 @@ UB_vCPU = 8
 UB_RAM = 16384
 UB_RESULT_HTML = 'results.html'
 
+
+#PingPong
+VM_RESULTS_PATH = 'pp_results'
+PP_vCPU = 8
+PP_RAM = 16384

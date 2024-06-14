@@ -31,13 +31,13 @@ def ping_pong():
 
     return exchange_count
 
-dates = np.array([ping_pong() for i in range(30)])
+dates = np.array([ping_pong() for i in range(50)])
 print(dates)
 
 #Лимит группы по количеству элементов, принимаемой к расчетам, в %
 valid_values_percent = 50
 #Лимит отклонения, в %
-percent_limit = 2 #1.5
+percent_limit = 10 #1.5
 
 def check_value(value, all_values, percent_limit):
     diffs = np.abs((all_values - value) / value * 100)

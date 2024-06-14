@@ -254,7 +254,7 @@ class Public:
             #создание страницы отчета
             with open(f'{REPORT_PATH}/{VM_RESULTS_PATH}', 'r') as file:
                 results = file.read()
-                results = f'<p> style="font-family: Century Gothic, sans-serif; font-size: 14px;"><b>Score: {results}</b></p>'
+                results = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Score: {results}</b></h3></p>'
 
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             html_page = '\n'.join([header_table, head_row, results])

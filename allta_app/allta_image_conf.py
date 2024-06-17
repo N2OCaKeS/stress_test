@@ -108,14 +108,14 @@ branches = {
     'postgresql benchmark audit-off':'postgresql',
     'tantor benchmark vanilla':'postgresql',
     'tantor benchmark kernels':'postgresql',
-    'file system benchmark. OCFS2':'file_systems',
+    'file system benchmark. OCFS2':'cluster_file_systems',
     'file system benchmark. NTFS':'file_systems',
     'file system benchmark. EXT3':'file_systems',
     'file system benchmark. EXT2':'file_systems',
     'file system benchmark. FAT':'file_systems',
     'file system benchmark. EXFAT':'file_systems',
     'file system benchmark. EXT4 parsec':'file_systems',
-    'file system benchmark. OCFS2 parsec':'file_systems',
+    'file system benchmark. OCFS2 parsec':'cluster_file_systems',
     'file system benchmark. XFS parsec':'file_systems',
     'auditd benchmark. psaud':'auditd',
     'auditd benchmark. fileaud':'auditd',
@@ -131,8 +131,7 @@ branches = {
     'Steal time':'virt',
     'FIO benchmark':'virt',
     'Virt UnixBench':'virt',
-    'vPingPong':'virt',
-    'file system benchmark. OCFS2':'file_systems'
+    'vPingPong':'virt'
 }
 
 

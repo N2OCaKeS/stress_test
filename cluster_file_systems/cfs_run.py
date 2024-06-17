@@ -119,7 +119,7 @@ parser.add_argument('--disk-size',
                     help='size of vdi disk',
                     dest='DISK_SIZE')
 
-parser.add_argument('--fs',
+parser.add_argument('-fs',
                     action='store',
                     choices=['ocfs2', 'gfs2'],
                     required=True,
@@ -134,6 +134,7 @@ parser.add_argument('--test-set',
                              'big_files',
                              'fs_mark_count',
                              'fs_mark_size'],
+                    default='fs_mark_count',
                     required=True,
                     dest='TS')
 

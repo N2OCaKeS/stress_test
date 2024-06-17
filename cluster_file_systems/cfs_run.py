@@ -135,7 +135,7 @@ parser.add_argument('--test-set',
                              'fs_mark_count',
                              'fs_mark_size'],
                     default='fs_mark_count',
-                    required=True,
+                    required=False,
                     dest='TS')
 
 parser.add_argument('--multithreading',

@@ -37,7 +37,7 @@ print(dates)
 #Лимит группы по количеству элементов, принимаемой к расчетам, в %
 valid_values_percent = 50
 #Лимит отклонения, в %
-percent_limit = 10 #1.5
+percent_limit = 30 #1.5
 
 def check_value(value, all_values, percent_limit):
     diffs = np.abs((all_values - value) / value * 100)

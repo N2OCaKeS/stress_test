@@ -644,6 +644,11 @@ class PingPong(CreateVM):
                             user=self.user, 
                             password=self.password) 
         
+        send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password)
+        
         #Start test
         send_remote_command(command=f'python3 /home/{self.user}/ping_pong.py',
                             ip=self.vm_dates['testvm1']['ip'], 

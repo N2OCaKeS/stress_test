@@ -52,7 +52,7 @@ modes = {
 def parent_page_list():
     tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
                                     'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels'],
-                'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT'],
+                'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
                 'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
                 'UnixBench':       ['unix', 'unix parsec'],
                 'FreeIPA':         ['FreeIPA auth'],
@@ -131,7 +131,8 @@ branches = {
     'Steal time':'virt',
     'FIO benchmark':'virt',
     'Virt UnixBench':'virt',
-    'vPingPong':'virt'
+    'vPingPong':'virt',
+    'file system benchmark. OCFS2':'file_systems'
 }
 
 
@@ -214,7 +215,7 @@ group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong']
+              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2']
 
 
 
@@ -269,14 +270,14 @@ def stp_version():
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
                                 'parsec impact-fs aud-off', 'apache-rp']
-testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels',
+testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2',
                                'psql balance', 'FreeIPA auth', 'steal time', 'FIO', 'vUnixBench', 'vPingPong'] #'tantor vanilla', 'tantor kernels'
 testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
                    'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth',
-                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong']
+                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2']
 
 #testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
 #testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
@@ -318,7 +319,8 @@ tests_case_zefir_key = {
     'EXFAT':'BT-T13736',
     'FIO':'BT-T13864',
     'vUnixBench':'BT-T14097',
-    'vPingPong':'BT-T14145'
+    'vPingPong':'BT-T14145',
+    'OCFS2':'BT-T7848'
 }
 
 

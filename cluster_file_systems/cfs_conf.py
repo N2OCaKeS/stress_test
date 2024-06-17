@@ -80,7 +80,7 @@ PACKAGES = {'ocfs2': 'ocfs2-tools'}
 REPORT_FILENAME = 'cfs_report.txt'
 REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
-
+VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
 
 # Количество Inode

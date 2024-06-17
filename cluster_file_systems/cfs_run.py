@@ -23,6 +23,7 @@ from time import sleep, time
 from libs.libtable import Report
 from libs.libcfs import create_remote_file
 from cfs_create_vms import VMS
+from libs.zefir import UploaderZC
 
 from cfs_conf import  \
     USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME, INFO_FILENAME, \
@@ -33,11 +34,76 @@ from cfs_conf import  \
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
-# parser.add_argument('--virtual-box',
-#                     action='store_true',
-#                     required=False,
-#                     help='host type',
-#                     dest='VBOX')
+parser.add_argument('-u', '--username',
+                    action='store',
+                    required=True,
+                    help='confluence user',
+                    dest='USER')
+
+parser.add_argument('-t', '--token',
+                    action='store',
+                    required=False,
+                    default=None,
+                    help='confluence access token',
+                    dest='TOKEN')
+
+parser.add_argument('-cs', '--confluence-space',
+                    action='store',
+                    required=True,
+                    help='confluence space',
+                    dest='SPACE')
+
+parser.add_argument('-cpp', '--confluence-parent-page',
+                    action='store',
+                    required=True,
+                    help='confluence parent page',
+                    dest='PPAGE')
+
+parser.add_argument('-cnp', '--confluence-new-page',
+                    action='store',
+                    required=True,
+                    help='confluence new page',
+                    dest='NPAGE')
+
+parser.add_argument('-sn', '--stand-num',
+                    action='store',
+                    choices=['1',
+                             '2',
+                             '3',
+                             '4'],
+                    required=True,
+                    help='stand num',
+                    dest='STAND')
+
+parser.add_argument('-fti', '--folder-tree-id',
+                    action='store',
+                    required=True,
+                    help='folder-tree-id',
+                    dest='FTI')
+
+parser.add_argument('-tcyc', '--test-cycle-name',
+                    action='store',
+                    required=True,
+                    help='test-cycle-name',
+                    dest='TCYC')
+
+parser.add_argument('-tcas', '--test-case-name',
+                    action='store',
+                    required=True,
+                    help='test-case-name',
+                    dest='TCAS')
+
+parser.add_argument('-ba', '--basic-auth',
+                    action='store',
+                    required=True,
+                    help='basic-auth',
+                    dest='BA')
+
+parser.add_argument('-tcv', '--test-cycle-version',
+                    action='store',
+                    required=True,
+                    help='test-cycle-version',
+                    dest='TCV')
 
 parser.add_argument('--libvirt',
                     action='store_true',
@@ -59,19 +125,6 @@ parser.add_argument('--fs',
                     required=True,
                     help='filesystem',
                     dest='FS')
-
-# parser.add_argument('--host-storage',
-#                     action='store',
-#                     required=True,
-#                     help='hostname where the storage is located',
-#                     dest='STORAGE')
-
-# parser.add_argument('--nodes',
-#                     action='store',
-#                     nargs="+",
-#                     required=True,
-#                     help='nodes list <hostname1 hostname2 hostname3 ...>',
-#                     dest='NODES')
 
 parser.add_argument('--test-set',
                     action='store',
@@ -113,6 +166,22 @@ args = parser.parse_args()
 args.STORAGE = HOST_STORAGE
 args.NODES = NODES
 all_hosts = args.NODES + [args.STORAGE]
+
+uzs = UploaderZC(folder_tree_id=args.FTI,
+                 test_cycle_name=args.TCYC,
+                 test_case_name=args.TCAS,
+                 basic_auth=args.BA,
+                 test_cycle_version=args.TCV,
+                 token=args.TOKEN,
+                 username=args.USER,
+                 conf_space=args.SPACE,
+                 conf_parent_page=args.PPAGE,
+                 conf_new_page_name=args.NPAGE,
+                 grade_stand=args.STAND,
+                 file_system=args.FS,
+                 test_set=args.TS)
+    
+uzs.upload_test_cycle_status('progress')
 
 # bash cmd # /home/$USER/VirtualBox\ VMs/
 
@@ -473,3 +542,9 @@ print("#####################")
 # Выключаем все машины
 print('lead time: {t} sec'.format(t=time() - start_time))
 shutdown_all_hosts()
+
+
+
+uzs.public = True
+#uzs.statistics = True
+uzs.upload_test_cycle_status(zefir_status='pass')

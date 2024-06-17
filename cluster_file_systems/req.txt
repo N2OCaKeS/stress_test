@@ -1,8 +1,12 @@
 fabric
+atlassian-python-api
+pretty-html-table
 pandas
+scikit-learn
+requests
 numpy
 matplotlib
-scipy
-pretty-html-table
-atlassian-python-api
-scikit-learn
+lxml
+prettytable
+bs4
+setuptools

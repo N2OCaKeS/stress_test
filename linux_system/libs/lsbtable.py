@@ -11,6 +11,7 @@ import tarfile
 import warnings
 import pysnooper
 import numpy as np
+from numpy.exceptions import RankWarning
 from time import time
 from scipy import integrate
 from os import listdir, chdir
@@ -85,7 +86,7 @@ class Report:
                 warnings.filterwarnings('error')
                 try:
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
-                except np.RankWarning:
+                except RankWarning:
                     polinom_factor -= 1
 
     @staticmethod

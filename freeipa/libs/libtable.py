@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import warnings
-
+from numpy.exceptions import RankWarning
 from os import path
 from scipy import integrate
 from matplotlib import pyplot as plt
@@ -63,7 +63,7 @@ class Report:
                 warnings.filterwarnings('error')
                 try:
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
-                except np.RankWarning:
+                except RankWarning:
                     polinom_factor -= 1
 
     

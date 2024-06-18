@@ -9,7 +9,7 @@ import tarfile
 import warnings
 import numpy as np
 import pandas as pd
-
+from numpy.exceptions import RankWarning
 from scipy import integrate
 from os import listdir, chdir
 from datetime import datetime
@@ -50,7 +50,7 @@ class Report:
                 warnings.filterwarnings('error')
                 try:
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
-                except np.RankWarning:
+                except RankWarning:
                     polinom_factor -= 1
 
 

@@ -4,7 +4,7 @@ import pandas
 import tarfile
 import warnings
 import numpy as np
-
+from numpy.exceptions import RankWarning
 from shutil import copy
 from time import time
 from os import listdir
@@ -118,7 +118,7 @@ class Report:
                 warnings.filterwarnings('error')
                 try:
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
-                except np.RankWarning:
+                except RankWarning:
                     polinom_factor -= 1
 
     ####################################################################################################################

@@ -15,7 +15,7 @@
 import argparse
 import subprocess
 
-from os import path, mkdir
+from os import path, mkdir, getuid
 from sys import exit
 from threading import Thread
 from fabric import Connection
@@ -207,7 +207,13 @@ restore_snapshot_agb = ''
 pm_on = ''
 pm_off = ''
 
-ssh_keygen = 'ssh-keygen -f "/home/$USER/.ssh/known_hosts" -R {ip}'
+# Получите uid текущего пользователя
+user_id = getuid()
+
+if user_id == 0:
+    ssh_keygen = 'ssh-keygen -f "/root/.ssh/known_hosts" -R {ip}'
+else:
+    ssh_keygen = 'ssh-keygen -f "/home/$USER/.ssh/known_hosts" -R {ip}'
 add_nodes_in_ssh_scrt = "sed -i '3s/.*/ips=({nodes} {host})/' /home/u/git/stress_test/cluster_file_systems/ssh_key.sh"
 run_storage_init = 'sudo python3 {dir}/cfs_storage_init.py --fs {fs} --host-storage {st_host} --nodes {hosts}'
 run_test_cmd = 'sudo python3 {dir}/{file} --test-set {ts}'

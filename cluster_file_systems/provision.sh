@@ -52,6 +52,6 @@ sudo apt install -y python3-pip
 
 sudo mount $3:/home/u/git/stress_test/cluster_file_systems /git
 
-sudo pip3 install fabric --break-system-packages
+pip3 install fabric --break-system-packages
 
-sudo pip3 install -r /git/req.txt --break-system-packages
+pip3 install -r /git/req.txt --break-system-packages

@@ -4,6 +4,8 @@ sudo $pkg_manager update
 
 # create venv in script_dir
 sudo $pkg_manager install -y python3
+sudo $pkg_manager install -y pip
+sudo $pkg_manager install -y parted
 sudo $pkg_manager install -y build-essential    
 sudo $pkg_manager install -y zlib1g-dev
 sudo $pkg_manager install -y libncurses5-dev
@@ -20,6 +22,7 @@ sudo $pkg_manager install -y libffi-dev
 sudo $pkg_manager install -y python3-requests
 sudo $pkg_manager install -y exfat-utils
 sudo $pkg_manager install -y exfatprogs
+sudo $pkg_manager install -y xfsprogs
 
 
 python3 -m pip install --upgrade pip

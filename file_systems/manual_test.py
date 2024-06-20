@@ -56,14 +56,14 @@ def set_fs():
     if cmd(f'lsblk | grep {storage_name}') == 0:
         if cmd(f'lsblk | grep {storage_name}1') == 0:
             cmd('umount /mnt')
-            cmd(f'parted -s /dev/{storage_name} select && parted -s /dev/{storage_name} rm 1')
+            cmd(f'sudo parted -s /dev/{storage_name} select && sudo parted -s /dev/{storage_name} rm 1')
 
     if args.FS == 'xfs':
-        cmd(f'parted -s /dev/{storage_name} mklabel gpt mkpart primary xfs 0% 100%')
-        cmd(f"mkfs -t {args.FS} -f /dev/{storage_name}1")
+        cmd(f'sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary xfs 0% 100%')
+        cmd(f"sudo mkfs -t {args.FS} -f /dev/{storage_name}1")
     else:
-        cmd(f'parted -s /dev/{storage_name} mklabel gpt mkpart primary {args.FS} 0% 100%')
-        cmd(f"mkfs -t {args.FS} {INODE_COUNT} -F /dev/{storage_name}1")
+        cmd(f'sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary {args.FS} 0% 100%')
+        cmd(f"sudo mkfs -t {args.FS} {INODE_COUNT} -F /dev/{storage_name}1")
 
     cmd(f"mount /dev/{storage_name}1 {STORAGE_MOUNT_DIR}")
 
@@ -77,8 +77,16 @@ def fs_mark33_count(start=FILES,
                     fat32=False):
     
     print(f"# TEST # <{fs_mark33_count.__name__}>:")
+
+    if not os.path.isdir(REPORT_PATH):
+        os.mkdir(REPORT_PATH)
     report_file = open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'w')
     report_file.close()
+
+
+
+
+    #TODO: Add original mark3.3 without parsec librares
 
     if fat32:
         run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v -D 20 -N 10000'

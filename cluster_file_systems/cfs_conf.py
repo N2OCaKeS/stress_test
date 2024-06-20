@@ -64,7 +64,6 @@ CONFLUENCE_URL = response_confluence_url.text
 # ...
 
 # SCRIPT_DIR = '/media/sf_git/stress_test/cluster_file_system_benchmark'
-# SCRIPT_DIR = '/home/u/git/stress_test/cluster_file_system_benchmark'
 SCRIPT_DIR = '/git'
 
 # SCRIPT_DIR = '/home/u'
@@ -80,8 +79,12 @@ PACKAGES = {'ocfs2': 'ocfs2-tools'}
 REPORT_FILENAME = 'cfs_report.txt'
 REPORT_DIR = '{}/report'.format(SCRIPT_DIR)
 REPORT_PATH = '{}/report/{}'.format(SCRIPT_DIR, REPORT_FILENAME)
+
+REPORT_DIR_HOST = '{}/report'.format(LOCAL_SCRIPT_DIR)
+REPORT_PATH_HOST = '{}/report/{}'.format(LOCAL_SCRIPT_DIR, REPORT_FILENAME)
+
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
-TEMPLATE_PATH = '{}/templates'.format(SCRIPT_DIR)
+TEMPLATE_PATH = '{}/templates'.format(LOCAL_SCRIPT_DIR)
 
 # Количество Inode
 INODE_COUNT = '-N 255'

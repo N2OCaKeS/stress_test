@@ -1,7 +1,7 @@
 import os
 from libs.libreport import ReportToConfluence
 from libs.libtable import Report
-from cfs_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, \
+from cfs_conf import REPORT_DIR_HOST, TEMPLATE_PATH, INFO_FILENAME, \
     FILES, FILES_STEP, FILES_LIMIT, \
     SIZE, SIZE_STEP, SIZE_LIMIT, PACKAGES, GRAPH_DESCRIPTIONS
 
@@ -93,8 +93,8 @@ class Public:
                                                      c_np)
         
         #прикрепить файлы к странице confluence
-        for file in os.listdir(REPORT_PATH):
-            confluence_report.attache_files(f'{REPORT_PATH}/{file}',
+        for file in os.listdir(REPORT_DIR_HOST):
+            confluence_report.attache_files(f'{REPORT_DIR_HOST}/{file}',
                                             self.c_space,
                                             c_np)
             
@@ -119,19 +119,19 @@ class Public:
         with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
             rating_temp = template.read()
             if self.ts == 'fs_mark_count':
-                rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT, report=REPORT_PATH)
+                rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT, report=REPORT_DIR_HOST)
                 rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_count_lst)))
             if self.ts == 'fs_mark_size':
-                rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT, report=REPORT_PATH)
+                rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT, report=REPORT_DIR_HOST)
                 rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
 
-        with open(f'{REPORT_PATH}/cfs_report_table.html', 'r') as file:
+        with open(f'{REPORT_DIR_HOST}/cfs_report_table.html', 'r') as file:
             main_table = file.read()
 
         with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
             images_lst = []
             img_temp = template.read()
-            for file in os.listdir(REPORT_PATH):
+            for file in os.listdir(REPORT_DIR_HOST):
                 if file.endswith('png'):
                     images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
                                                      img_png=file,

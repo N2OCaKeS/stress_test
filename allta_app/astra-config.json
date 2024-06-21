@@ -1,0 +1,701 @@
+{
+    "astra-version": {
+        "vm-machines": [
+            "sudcm",
+            "sufs",
+            "suac",
+            "sudcs",
+            "susrv",
+            "suodcm",
+            "suoac",
+            "fidcm",
+            "fidcr1",
+            "fidcr2",
+            "fisrv",
+            "fiac",
+            "samdc",
+            "samac",
+            "samfs",
+            "all"
+        ],
+        "version": [
+            {
+                "1.8": [
+                    "1.8-testing.s",
+                    "1.8-testing.v",
+                    "1.8-testing.o",
+                    "1.8.0.s",
+                    "1.8.0.v",
+                    "1.8.0.o"
+                ]
+            },
+            {
+                "1.7": [
+                    "1.7-testing.s",
+                    "1.7-testing.v",
+                    "1.7-testing.o",
+                    "1.7.0",
+                    "1.7.1.s",
+                    "1.7.1.v",
+                    "1.7.1.o",
+                    "1.7.2.s",
+                    "1.7.2.v",
+                    "1.7.2.o",
+                    "1.7.2.UU.1.s",
+                    "1.7.2.UU.1.v",
+                    "1.7.2.UU.1.o",
+                    "1.7.3.s",
+                    "1.7.3.v",
+                    "1.7.3.o",
+                    "1.7.3.UU.1.s",
+                    "1.7.3.UU.1.v",
+                    "1.7.3.UU.1.o",
+                    "1.7.3.UU.2.s",
+                    "1.7.3.UU.2.v",
+                    "1.7.3.UU.2.o",
+                    "1.7.4.s",
+                    "1.7.4.v",
+                    "1.7.4.o",
+                    "1.7.4.UU.1.s",
+                    "1.7.4.UU.1.v",
+                    "1.7.4.UU.1.o",
+                    "1.7.5.s",
+                    "1.7.5.v",
+                    "1.7.5.o",
+                    "1.7.5.UU.1.s",
+                    "1.7.5.UU.1.v",
+                    "1.7.5.UU.1.o"
+                ]
+            },
+            {
+                "1.6": [
+                    "1.6.0",
+                    "1.6.1",
+                    "1.6.2",
+                    "1.6.3",
+                    "1.6.4",
+                    "1.6.5",
+                    "1.6.6",
+                    "1.6.7",
+                    "1.6.8",
+                    "1.6.9",
+                    "1.6.10",
+                    "1.6.11",
+                    "1.6.12",
+                    "1.6.13",
+                    "1.6.14",
+                    "1.6-testing"
+                ]
+            },
+            {
+                "2.12": [
+                    "2.12.40",
+                    "2.12.42",
+                    "2.12.43",
+                    "2.12.44",
+                    "2.12.45",
+                    "2.12.46"
+                ]
+            }
+        ],
+        "postfix": [
+            {
+                "1.8": "_osse18"
+            },
+            {
+                "1.7": "_osse"
+            },
+            {
+                "1.6": "_smol"
+            },
+            {
+                "2.12": "_orel"
+            }
+        ],
+        "network": [
+            {
+                "sudcm": [
+                    "08:00:27:E1:87:C4",
+                    "int0",
+                    "10.0.0.21"
+                ]
+            },
+            {
+                "sufs": [
+                    "08:00:27:64:AF:57",
+                    "int0",
+                    "10.0.0.22"
+                ]
+            },
+            {
+                "suac": [
+                    "08:00:27:35:FB:4D",
+                    "int0",
+                    "10.0.0.25"
+                ]
+            },
+            {
+                "sudcs": [
+                    "08:00:27:93:D3:2B",
+                    "int0",
+                    "10.0.0.24"
+                ]
+            },
+            {
+                "susrv": [
+                    "08:00:27:73:E5:1C",
+                    "int0",
+                    "10.0.0.23"
+                ]
+            },
+            {
+                "suodcm": [
+                    "08:00:27:56:02:DE",
+                    "int1",
+                    "10.0.10.6"
+                ]
+            },
+            {
+                "suoac": [
+                    "08:00:27:AC:61:56",
+                    "int1",
+                    "10.0.10.7"
+                ]
+            },
+            {
+                "fidcm": [
+                    "52:54:00:25:F4:8B",
+                    "int2",
+                    "10.0.20.20"
+                ]
+            },
+            {
+                "fidcr1": [
+                    "52:54:00:7D:A5:95",
+                    "int2",
+                    "10.0.20.21"
+                ]
+            },
+            {
+                "fidcr2": [
+                    "08:00:27:86:E7:E6",
+                    "int2",
+                    "10.0.20.22"
+                ]
+            },
+            {
+                "fisrv": [
+                    "52:54:00:12:2A:57",
+                    "int2",
+                    "10.0.20.23"
+                ]
+            },
+            {
+                "fiac": [
+                    "52:54:00:67:A4:E3",
+                    "int2",
+                    "10.0.20.30"
+                ]
+            },
+            {
+                "samdc": [
+                    "52:54:00:50:A4:81",
+                    "int2",
+                    "10.0.20.101"
+                ]
+            },
+            {
+                "samac": [
+                    "52:54:00:B9:E4:50",
+                    "int2",
+                    "10.0.20.102"
+                ]
+            },
+            {
+                "samfs": [
+                    "52:54:00:E3:7B:25",
+                    "int2",
+                    "10.0.20.103"
+                ]
+            }
+        ],
+        "vbox_network": [
+            {
+                "sudcm": [
+                    "2021",
+                    "3421"
+                ]
+            },
+            {
+                "sufs": [
+                    "2022",
+                    "3422"
+                ]
+            },
+            {
+                "suac": [
+                    "2025",
+                    "3425"
+                ]
+            },
+            {
+                "sudcs": [
+                    "2024",
+                    "3424"
+                ]
+            },
+            {
+                "susrv": [
+                    "2023",
+                    "3423"
+                ]
+            },
+            {
+                "suodcm": [
+                    "2034",
+                    "3434"
+                ]
+            },
+            {
+                "suoac": [
+                    "2035",
+                    "3435"
+                ]
+            },
+            {
+                "fidcm": [
+                    "2026",
+                    "3426"
+                ]
+            },
+            {
+                "fidcr1": [
+                    "2027",
+                    "3427"
+                ]
+            },
+            {
+                "fidcr2": [
+                    "2028",
+                    "3428"
+                ]
+            },
+            {
+                "fisrv": [
+                    "2029",
+                    "3429"
+                ]
+            },
+            {
+                "fiac": [
+                    "2030",
+                    "3430"
+                ]
+            },
+            {
+                "samdc": [
+                    "2031",
+                    "3431"
+                ]
+            },
+            {
+                "samac": [
+                    "2032",
+                    "3432"
+                ]
+            },
+            {
+                "samfs": [
+                    "2033",
+                    "3433"
+                ]
+            }
+        ],
+        "vagrant_box": [
+            {
+                "1.8-testing.s": [
+                    "smolensk-vanilla-gui/1.8.0.14",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.8-testing.v": [
+                    "voronezh-vanilla-gui/1.8.0.14",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.8-testing.o": [
+                    "orel-vanilla-gui/1.8.0.14",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.8.0.s": [
+                    "smolensk-vanilla-gui/1.8.0.14",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.8.0.v": [
+                    "voronezh-vanilla-gui/1.8.0.14",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.8.0.o": [
+                    "orel-vanilla-gui/1.8.0.14",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.7.0": [
+                    "smolensk-vanilla-gui/1.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.0.json"
+                ]
+            },
+            {
+                "1.7.1.s": [
+                    "smolensk-vanilla-gui/1.7.1",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.1.json"
+                ]
+            },
+            {
+                "1.7.1.v": [
+                    "voronezh-vanilla-gui/1.7.1",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.1.json"
+                ]
+            },
+            {
+                "1.7.1.o": [
+                    "orel-vanilla-gui/1.7.1",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.1.json"
+                ]
+            },
+            {
+                "1.7.2.s": [
+                    "smolensk-vanilla-gui/1.7.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.2.json"
+                ]
+            },
+            {
+                "1.7.2.v": [
+                    "voronezh-vanilla-gui/1.7.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.2.json"
+                ]
+            },
+            {
+                "1.7.2.o": [
+                    "orel-vanilla-gui/1.7.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.2.json"
+                ]
+            },
+            {
+                "1.7.2.UU.1.s": [
+                    "smolensk-vanilla-gui/1.7.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.2.json"
+                ]
+            },
+            {
+                "1.7.2.UU.1.v": [
+                    "voronezh-vanilla-gui/1.7.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.2.json"
+                ]
+            },
+            {
+                "1.7.2.UU.1.o": [
+                    "orel-vanilla-gui/1.7.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.2.json"
+                ]
+            },
+            {
+                "1.7.3.s": [
+                    "smolensk-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.3.json"
+                ]
+            },
+            {
+                "1.7.3.v": [
+                    "voronezh-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.3.json"
+                ]
+            },
+            {
+                "1.7.3.o": [
+                    "orel-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.3.json"
+                ]
+            },
+            {
+                "1.7.3.UU.1.s": [
+                    "smolensk-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.3.UU1.json"
+                ]
+            },
+            {
+                "1.7.3.UU.1.v": [
+                    "voronezh-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.3.UU1.json"
+                ]
+            },
+            {
+                "1.7.3.UU.1.o": [
+                    "orel-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.3.UU1.json"
+                ]
+            },
+            {
+                "1.7.3.UU.2.s": [
+                    "smolensk-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.3.UU2.json"
+                ]
+            },
+            {
+                "1.7.3.UU.2.v": [
+                    "voronezh-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.3.UU2.json"
+                ]
+            },
+            {
+                "1.7.3.UU.2.o": [
+                    "orel-vanilla-gui/1.7.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.3.UU2.json"
+                ]
+            },
+            {
+                "1.7.4.s": [
+                    "smolensk-vanilla-gui/1.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.json"
+                ]
+            },
+            {
+                "1.7.4.v": [
+                    "voronezh-vanilla-gui/1.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.4.json"
+                ]
+            },
+            {
+                "1.7.4.o": [
+                    "orel-vanilla-gui/1.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.4.json"
+                ]
+            },
+            {
+                "1.7.4.UU.1.s": [
+                    "smolensk-vanilla-gui/1.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.4.UU1.json"
+                ]
+            },
+            {
+                "1.7.4.UU.1.v": [
+                    "voronezh-vanilla-gui/1.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.4.UU1.json"
+                ]
+            },
+            {
+                "1.7.4.UU.1.o": [
+                    "orel-vanilla-gui/1.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.4.UU1.json"
+                ]
+            },
+            {
+                "1.7.5.s": [
+                    "smolensk-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json"
+                ]
+            },
+            {
+                "1.7.5.v": [
+                    "voronezh-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.5.json"
+                ]
+            },
+            {
+                "1.7.5.o": [
+                    "orel-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.5.json"
+                ]
+            },
+            {
+                "1.7.5.UU.1.s": [
+                    "smolensk-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.UU1.json"
+                ]
+            },
+            {
+                "1.7.5.UU.1.v": [
+                    "voronezh-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.5.UU1.json"
+                ]
+            },
+            {
+                "1.7.5.UU.1.o": [
+                    "orel-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.5.UU1.json"
+                ]
+            },
+            {
+                "1.7-testing.s": [
+                    "smolensk-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.5.json"
+                ]
+            },
+            {
+                "1.7-testing.v": [
+                    "voronezh-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.5.json"
+                ]
+            },
+            {
+                "1.7-testing.o": [
+                    "orel-vanilla-gui/1.7.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.5.json"
+                ]
+            },
+            {
+                "1.6.0": [
+                    "smolensk-vanilla-gui/1.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.0.json"
+                ]
+            },
+            {
+                "1.6.1": [
+                    "smolensk-vanilla-gui/1.6.1",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.1.json"
+                ]
+            },
+            {
+                "1.6.2": [
+                    "smolensk-vanilla-gui/1.6.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.2.json"
+                ]
+            },
+            {
+                "1.6.3": [
+                    "smolensk-vanilla-gui/1.6.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.3.json"
+                ]
+            },
+            {
+                "1.6.3": [
+                    "smolensk-vanilla-gui/1.6.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.3.json"
+                ]
+            },
+            {
+                "1.6.4": [
+                    "smolensk-vanilla-gui/1.6.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.4.json"
+                ]
+            },
+            {
+                "1.6.5": [
+                    "smolensk-vanilla-gui/1.6.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.5.json"
+                ]
+            },
+            {
+                "1.6.6": [
+                    "smolensk-vanilla-gui/1.6.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.6.json"
+                ]
+            },
+            {
+                "1.6.7": [
+                    "smolensk-vanilla-gui/1.6.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.7.json"
+                ]
+            },
+            {
+                "1.6.8": [
+                    "smolensk-vanilla-gui/1.6.8",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.8.json"
+                ]
+            },
+            {
+                "1.6.9": [
+                    "smolensk-vanilla-gui/1.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.9.json"
+                ]
+            },
+            {
+                "1.6.10": [
+                    "smolensk-vanilla-gui/1.6.10",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.10.json"
+                ]
+            },
+            {
+                "1.6.11": [
+                    "smolensk-vanilla-gui/1.6.11",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.11.json"
+                ]
+            },
+            {
+                "1.6.12": [
+                    "smolensk-vanilla-gui/1.6.12",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.12.json"
+                ]
+            },
+            {
+                "1.6.13": [
+                    "smolensk-vanilla-gui/1.6.13",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.13.json"
+                ]
+            },
+            {
+                "1.6.14": [
+                    "smolensk-vanilla-gui/1.6.14",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.14.json"
+                ]
+            },
+            {
+                "1.6-testing": [
+                    "smolensk-vanilla-gui/1.6.13",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.13.json"
+                ]
+            },
+            {
+                "2.12.29": [
+                    "orel-vanilla-gui/2.12.29",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.29.json"
+                ]
+            },
+            {
+                "2.12.40": [
+                    "orel-vanilla-gui/2.12.40",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.40.json"
+                ]
+            },
+            {
+                "2.12.42": [
+                    "orel-vanilla-gui/2.12.42",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.42.json"
+                ]
+            },
+            {
+                "2.12.43": [
+                    "orel-vanilla-gui/2.12.43",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.43.json"
+                ]
+            },
+            {
+                "2.12.44": [
+                    "orel-vanilla-gui/2.12.43",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.43.json"
+                ]
+            },
+            {
+                "2.12.45": [
+                    "orel-vanilla-gui/2.12.45",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.45.json"
+                ]
+            },
+            {
+                "2.12.46": [
+                    "orel-vanilla-gui/2.12.45",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.45.json"
+                ]
+            }
+        ]
+    }
+}

@@ -25,7 +25,7 @@ sudo $pkg_manager install -y exfatprogs
 sudo $pkg_manager install -y xfsprogs
 
 
-python3 -m pip install --upgrade pip
-python3 -m pip install -r req.txt
+python3 -m pip install --upgrade pip #--break-system-packages
+python3 -m pip install -r req.txt #--break-system-packages
 
 

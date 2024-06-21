@@ -89,9 +89,9 @@ def fs_mark33_count(start=FILES,
     #TODO: Add original mark3.3 without parsec librares
 
     if fat32:
-        run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v -D 20 -N 10000'
+        run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark_original -d {test_dir} -s {file_size} -n {file_count} -v -D 20 -N 10000'
     else:
-        run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark -d {test_dir} -s {file_size} -n {file_count} -v'
+        run_fs_mark = '{script_dir}/fs_mark-3.3/fs_mark_original -d {test_dir} -s {file_size} -n {file_count} -v'
     print('FSUse%        Count         Size    Files/sec     App Overhead        CREAT (Min/Avg/Max)        WRITE (Min/Avg/Max)        FSYNC (Min/Avg/Max)         SYNC (Min/Avg/Max)        CLOSE (Min/Avg/Max)       UNLINK (Min/Avg/Max)')
     for count in range(start, end, step):
         test = subprocess.run(run_fs_mark.format(script_dir=scr_dir,

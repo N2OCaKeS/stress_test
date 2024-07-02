@@ -261,6 +261,11 @@ def get_astra_config():
     return send_file('./astra-config.json', as_attachment=True)
 
 
+@app.route('/rest/api/get-box-config', methods=['GET'])
+def get_box_config():
+    return send_file('./box-config.json', as_attachment=True)
+
+
 @app.route('/rest/api/get-jira-url', methods=['GET'])
 def get_jira_url():
     return JIRA_URL, 200

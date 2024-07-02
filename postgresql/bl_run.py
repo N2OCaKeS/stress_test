@@ -130,22 +130,22 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 # box_url = box[0][set_box][1]
 # box_name = box[0][set_box][0]
 
-astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-astra-config'
+astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
 response_ac = requests.get(astra_config_url)
 if response_ac.status_code == 200:
-    with open('astra-config.json', 'wb') as acb:
+    with open('box-config.json', 'wb') as acb:
         acb.write(response_ac.content)
 else:
     print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
 
-with open('astra-config.json', 'r') as r:
+with open('box-config.json', 'r') as r:
     dates = json.loads(r.read())
 
 def __box_wrapper(box):
     true_key = False
     box_name = ''
     box_url = ''
-    for i in dates['astra-version']['vagrant_box']:
+    for i in dates['vagrant_box']:
         if box in str(i):
             for key in i.keys():
                 if str(key).endswith('s'):
@@ -154,7 +154,7 @@ def __box_wrapper(box):
                     box_url = i[true_key][1]             
             
     if true_key == False:
-        for i in dates['astra-version']['vagrant_box']:
+        for i in dates['vagrant_box']:
             if str(box).startswith('1.7'):
                 if '1.7.1.s' in str(i):
                     box_name = i['1.7.1.s'][0]

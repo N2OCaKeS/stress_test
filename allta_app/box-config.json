@@ -3,7 +3,7 @@
         {
             "1.8.0.s": [
                 "smolensk-vanilla-gui/1.8.0.15",
-                "ftp://10.177.103.10/boxes/smolensk-vanilla-gui-1.8.0.json"
+                "ftp://10.177.103.10/boxes/box/smolensk-vanilla-gui-1.8.0-gmg15.0.0-virtualbox.box"
             ]
         },
         {
@@ -15,13 +15,13 @@
         {
             "1.8.0.o": [
                 "orel-vanilla-gui/1.8.0.15",
-                "ftp://10.177.103.10/boxes/orel-vanilla-gui-1.8.0.json"
+                "ftp://10.177.103.10/boxes/box/orel-vanilla-gui-1.8.0-gmg15.0.0-virtualbox.box"
             ]
         },
         {
             "1.7.1.s": [
                 "smolensk-vanilla-gui/1.7.1",
-                "ftp://10.177.103.10/boxes/smolensk-vanilla-gui-1.7.1.json"
+                "ftp://10.177.103.10/boxes/box/smolensk-vanilla-gui-1.7.1-gmg9.0.0-virtualbox.box"
             ]
         },
         {
@@ -33,7 +33,7 @@
         {
             "1.7.1.o": [
                 "orel-vanilla-gui/1.7.1",
-                "ftp://10.177.103.10/boxes/orel-vanilla-gui-1.7.1.json"
+                "ftp://10.177.103.10/boxes/box/orel-vanilla-gui-1.7.1-gmg1.0.0-virtualbox.box"
             ]
         }
     ]

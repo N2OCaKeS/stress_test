@@ -58,4 +58,4 @@ else:
 
 
 with open('/home/vagrant/results', 'w') as w:
-    w.write(str(mean_cleaned))
+    w.write(str(round(mean_cleaned), 1))

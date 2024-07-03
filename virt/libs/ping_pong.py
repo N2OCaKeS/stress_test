@@ -50,7 +50,7 @@ print('Используемые в расчетах значения:', valid_va
 print('Отсеянные значения:', novalid_values)
 
 if len(valid_values) >= len(dates) * valid_values_percent / 100:
-    mean_cleaned = np.mean(valid_values)
+    mean_cleaned = round(np.mean(valid_values), 1)
     print(f"Среднее значение без учета аномалий: {int(mean_cleaned)}")
 else:
     mean_cleaned = 'No results'
@@ -58,4 +58,4 @@ else:
 
 
 with open('/home/vagrant/results', 'w') as w:
-    w.write(str(round(mean_cleaned), 1))
+    w.write(str(mean_cleaned))

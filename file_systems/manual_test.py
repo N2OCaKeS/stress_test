@@ -613,7 +613,8 @@ parser.add_argument('-fs',
                     choices=['ext2',
                              'ext3',
                              'ext4',                             
-                             'xfs'],
+                             'xfs',
+                             'ntfs'],
                     required=False,
                     help='filesystem',
                     dest='FS')
@@ -646,6 +647,16 @@ def set_fs():
     if args.FS == 'xfs':
         cmd(f'sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary xfs 0% 100%')
         cmd(f"sudo mkfs -t {args.FS} -f /dev/{storage_name}1")
+    elif args.FS == 'ntfs':
+        start_time = time()
+        cmd(f'sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary ntfs 0% 100%')
+        cmd(f'sudo mkfs -t {args.FS} -I /dev/{storage_name}1')
+        end_time = time()
+        execution_time = f'NTFS\n{end_time - start_time}'
+        print(execution_time)
+
+        with open('formatting_time.txt', 'w') as w:
+            w.write(execution_time)
     else:
         cmd(f'sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary {args.FS} 0% 100%')
         cmd(f"sudo mkfs -t {args.FS} {INODE_COUNT} -F /dev/{storage_name}1")

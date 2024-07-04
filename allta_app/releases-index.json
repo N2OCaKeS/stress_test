@@ -1,5 +1,5 @@
 {
-  "date": "2024-06-21 11:53:28.261812",
+  "date": "2024-07-02 13:28:12.630366",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -1586,6 +1586,63 @@
         }
       },
       "1.8.1": {
+        "1.8.1.5": {
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/extended-1.8.1.5-21.06.2024_07.39.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "a64b66c0306a75d9322075e0512a2bfd3b4a7247107e7d908aaf9b18fd84d3c1",
+                "md5": "741d262cd0c7599ccbc075d8692284ab"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/devel-1.8.1.5-21.06.2024_07.39.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "de1c7f93ea6ab308c8053576d4df2000cc21a0ceb4fc09eddde68e24689b881f",
+                "md5": "20d9da62cb0da3a20dc056cf89f2bd2b"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/installation-1.8.1.5-21.06.2024_07.39-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "8be6df545bd188e76431f6655fcebc5ee2d6aa8e1fe00836e9e5e45b332396cb",
+                "md5": "5ca4b332ec72cc7c820814656d5f813e"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/installation-1.8.1.5-21.06.2024_07.39.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "ef5675a3a7be19cd4eb9d699d59695c0f876c2ab13469e682d6153a16e371495",
+                "md5": "bf3e4ad46fbcdbf1302c3173c76bfe9d"
+              }
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.5"
+        },
         "1.8.1.1": {
           "files": [
             {
@@ -1744,6 +1801,63 @@
           ],
           "path": "frozen/1.8/1.8.1/1.8.1.4"
         },
+        "1.8.1.6": {
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.6/iso/installation-1.8.1.6-27.06.2024_14.12-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.6/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "e8e09e89e2da4a822b147c36293d9befdc46120164a70c660e665b652b40b880",
+                "md5": "56eadb3e65df37d5443200eb6638e728"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.6/iso/devel-1.8.1.6-27.06.2024_14.12.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.6/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "b8be9f5929a401d4a29f142092b5d67753470c8c03bac9b9480f5db733ed6309",
+                "md5": "2d64a15a91ca3c05eac9eaffa3a0b200"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.6/iso/installation-1.8.1.6-27.06.2024_14.12.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.6/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "a9f534d69ef1497c4766dc4d0d6a8ebb6fb1f7242f66a52952bda5acdff09bdf",
+                "md5": "ebcb7ce6d3d071177fe2488eac7a0f98"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.6/iso/extended-1.8.1.6-27.06.2024_14.12.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.6/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "2721e77ba31e6b761d5cb53463a933db4534d610992f6493dd411df1064a24c8",
+                "md5": "2b54e0e3e1efd601f23d501086673640"
+              }
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.6"
+        },
         "1.8.1.2": {
           "files": [
             {
@@ -1800,63 +1914,6 @@
             }
           ],
           "path": "frozen/1.8/1.8.1/1.8.1.2"
-        },
-        "1.8.1.5": {
-          "files": [
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/extended-1.8.1.5-21.06.2024_07.39.iso",
-              "type": "extended",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/extended-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "a64b66c0306a75d9322075e0512a2bfd3b4a7247107e7d908aaf9b18fd84d3c1",
-                "md5": "741d262cd0c7599ccbc075d8692284ab"
-              }
-            },
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/devel-1.8.1.5-21.06.2024_07.39.iso",
-              "type": "devel",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/devel-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "de1c7f93ea6ab308c8053576d4df2000cc21a0ceb4fc09eddde68e24689b881f",
-                "md5": "20d9da62cb0da3a20dc056cf89f2bd2b"
-              }
-            },
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/installation-1.8.1.5-21.06.2024_07.39-di.iso",
-              "type": "installation",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/installation-di",
-              "is_iso": true,
-              "is_bootable_iso": true,
-              "is_tarball": false,
-              "device": "di",
-              "hashsums": {
-                "gost": "8be6df545bd188e76431f6655fcebc5ee2d6aa8e1fe00836e9e5e45b332396cb",
-                "md5": "5ca4b332ec72cc7c820814656d5f813e"
-              }
-            },
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.5/iso/installation-1.8.1.5-21.06.2024_07.39.iso",
-              "type": "installation",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.5/installation",
-              "is_iso": true,
-              "is_bootable_iso": true,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "ef5675a3a7be19cd4eb9d699d59695c0f876c2ab13469e682d6153a16e371495",
-                "md5": "bf3e4ad46fbcdbf1302c3173c76bfe9d"
-              }
-            }
-          ],
-          "path": "frozen/1.8/1.8.1/1.8.1.5"
         }
       }
     },
@@ -1953,14 +2010,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/4.7/4.7.3/4.7.3.9/iso/devel-4.7.3.9-16.03.2023_14.21.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.3/4.7.3.9/devel-repository",
+              "path": "frozen/4.7/4.7.3/4.7.3.9/iso/base-4.7.3.9-16.03.2023_14.21.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.3/4.7.3.9/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "8667a5db039ffd5a8a591cd609c580e2e192895acff54793f4eec35a851eaed1",
+                "md5": "9834e6611f3b37ff400b5793f1005c88"
+              }
             },
             {
               "path": "frozen/4.7/4.7.3/4.7.3.9/iso/main_update-4.7.3.9-03.08.2023_00.00.iso",
@@ -2043,6 +2103,19 @@
               "hashsums": {}
             },
             {
+              "path": "frozen/4.7/4.7.3/4.7.3.8/iso/base-4.7.3.8-27.01.2023_15.11.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.3/4.7.3.8/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "d4d77baff96ef095a5dcab0d6abca60c41501501c74289a9eb7ed2831378e64f",
+                "md5": "9a35b757bb6532df07f485313eb2089d"
+              }
+            },
+            {
               "path": "frozen/4.7/4.7.3/4.7.3.8/iso/installation-4.7.3.8-27.01.2023_15.13-baikal1.iso",
               "type": "installation",
               "mount_point": "frozen/4.7/4.7.3/4.7.3.8/installation-baikal1",
@@ -2051,16 +2124,6 @@
               "is_tarball": false,
               "device": "baikal1",
               "hashsums": {}
-            },
-            {
-              "path": "frozen/4.7/4.7.3/4.7.3.8/iso/devel-4.7.3.8-27.01.2023_15.11.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.3/4.7.3.8/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
             }
           ],
           "path": "frozen/4.7/4.7.3/4.7.3.8"
@@ -2068,22 +2131,25 @@
         "4.7.3.5": {
           "files": [
             {
+              "path": "frozen/4.7/4.7.3/4.7.3.5/iso/base-4.7.3.5-10.11.2022_11.43.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.3/4.7.3.5/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "808ea885899175ae6f2c42502885da65098e800c6c0d50442764cd1b55dad3e3",
+                "md5": "954b37607bb1e31b10a7e9a66422fda4"
+              }
+            },
+            {
               "path": "frozen/4.7/4.7.3/4.7.3.5/iso/main_update-4.7.3.5-02.08.2023_22.19.iso",
               "type": "main_update",
               "mount_point": "frozen/4.7/4.7.3/4.7.3.5/update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
-              "device": null,
-              "hashsums": {}
-            },
-            {
-              "path": "frozen/4.7/4.7.3/4.7.3.5/iso/devel-4.7.3.5-10.11.2022_11.43.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.3/4.7.3.5/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
               "device": null,
               "hashsums": {}
             },
@@ -2133,6 +2199,19 @@
         "4.7.3.6": {
           "files": [
             {
+              "path": "frozen/4.7/4.7.3/4.7.3.6/iso/base-4.7.3.6-22.12.2022_11.24.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.3/4.7.3.6/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "8d4b51ae2491761b6df139011e3e5d988f7b3ee9da9aff8525bb5a7e78aa91d6",
+                "md5": "9cdbd9f5ff64f06cd81b8f8e317308f1"
+              }
+            },
+            {
               "path": "frozen/4.7/4.7.3/4.7.3.6/iso/installation-4.7.3.6-22.12.2022_13.03-baikal1.iso",
               "type": "installation",
               "mount_point": "frozen/4.7/4.7.3/4.7.3.6/installation-baikal1",
@@ -2159,16 +2238,6 @@
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
-              "device": null,
-              "hashsums": {}
-            },
-            {
-              "path": "frozen/4.7/4.7.3/4.7.3.6/iso/devel-4.7.3.6-22.12.2022_11.24.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.3/4.7.3.6/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
               "device": null,
               "hashsums": {}
             },
@@ -2218,16 +2287,6 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/4.7/4.7.3/4.7.3.7/iso/devel-4.7.3.7-16.01.2023_17.07.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.3/4.7.3.7/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/4.7/4.7.3/4.7.3.7/iso/main_update-4.7.3.7-02.08.2023_23.08.iso",
               "type": "main_update",
               "mount_point": "frozen/4.7/4.7.3/4.7.3.7/update-repository",
@@ -2246,6 +2305,19 @@
               "is_tarball": false,
               "device": "mtrust1",
               "hashsums": {}
+            },
+            {
+              "path": "frozen/4.7/4.7.3/4.7.3.7/iso/base-4.7.3.7-16.01.2023_17.07.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.3/4.7.3.7/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "c3d592dcb6762ee17262496f1e006902c206f9d5f1b1e5b5840cb1f0133bd459",
+                "md5": "73676b29807bf2d34f23b82f121515d4"
+              }
             },
             {
               "path": "frozen/4.7/4.7.3/4.7.3.7/iso/installation-4.7.3.7-16.01.2023_17.12-baikal1.iso",
@@ -2414,14 +2486,17 @@
         "4.7.4.1": {
           "files": [
             {
-              "path": "frozen/4.7/4.7.4/4.7.4.1/iso/devel-4.7.4.1-26.04.2023_10.46.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.4/4.7.4.1/devel-repository",
+              "path": "frozen/4.7/4.7.4/4.7.4.1/iso/base-4.7.4.1-26.04.2023_10.46.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.4/4.7.4.1/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "f5fec3f27aefdf42d1402c8c910b992ab20fb91def57e97d887b821f67d959e1",
+                "md5": "fcbe68ece135fb19c786a01e33c2c1d7"
+              }
             },
             {
               "path": "frozen/4.7/4.7.4/4.7.4.1/iso/installation-4.7.4.1-26.04.2023_11.18-mtrust1.iso",
@@ -2713,6 +2788,18 @@
               "hashsums": {}
             },
             {
+              "path": "frozen/4.7/4.7.1/4.7.1.8/iso/base-4.7.1.8-30.12.2021_12.35.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.1/4.7.1.8/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "7db7cd2c1c1ffaf2311359112a81e0323cc4ad98decd8d19f3979107d3f7bfbd"
+              }
+            },
+            {
               "path": "frozen/4.7/4.7.1/4.7.1.8/iso/installation-4.7.1.8-30.12.2021_13.08-huawei1.iso",
               "type": "installation",
               "mount_point": "frozen/4.7/4.7.1/4.7.1.8/installation-huawei1",
@@ -2720,16 +2807,6 @@
               "is_bootable_iso": true,
               "is_tarball": false,
               "device": "huawei1",
-              "hashsums": {}
-            },
-            {
-              "path": "frozen/4.7/4.7.1/4.7.1.8/iso/devel-4.7.1.8-30.12.2021_12.35.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.1/4.7.1.8/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
               "hashsums": {}
             },
             {
@@ -2795,6 +2872,19 @@
               "hashsums": {}
             },
             {
+              "path": "frozen/4.7/4.7.0/4.7.0.6/iso/base-4.7.0.6-11.06.2021_22.33.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.0/4.7.0.6/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "2926f58486663cf567809dbdda992c967a06256a741e7f3b59d3a48fd1848b14",
+                "md5": "8f095208a2efceff346c7531fb6d0a0d"
+              }
+            },
+            {
               "path": "frozen/4.7/4.7.0/4.7.0.6/iso/main-4.7.0.6-11.06.2021_22.33.iso",
               "type": "main",
               "mount_point": "frozen/4.7/4.7.0/4.7.0.6/main-repository",
@@ -2812,16 +2902,6 @@
               "is_bootable_iso": true,
               "is_tarball": false,
               "device": "huawei1",
-              "hashsums": {}
-            },
-            {
-              "path": "frozen/4.7/4.7.0/4.7.0.6/iso/devel-4.7.0.6-11.06.2021_22.33.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.0/4.7.0.6/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
               "hashsums": {}
             }
           ],
@@ -3242,16 +3322,6 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/4.7/4.7.2/4.7.2.4/iso/devel-4.7.2.4-30.08.2022_17.08.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.2/4.7.2.4/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/4.7/4.7.2/4.7.2.4/iso/main-4.7.2.4-30.08.2022_17.04.iso",
               "type": "main",
               "mount_point": "frozen/4.7/4.7.2/4.7.2.4/main-repository",
@@ -3290,6 +3360,19 @@
               "is_tarball": false,
               "device": "baikal1",
               "hashsums": {}
+            },
+            {
+              "path": "frozen/4.7/4.7.2/4.7.2.4/iso/base-4.7.2.4-30.08.2022_17.08.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.2/4.7.2.4/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "3401a177dbbc3e59dc67e1eae4fcd5636b16477bb19b3499614f26b3f0604b38",
+                "md5": "b99824da727154ab975839c6d408ee52"
+              }
             }
           ],
           "path": "frozen/4.7/4.7.2/4.7.2.4"
@@ -3297,14 +3380,17 @@
         "4.7.2.5": {
           "files": [
             {
-              "path": "frozen/4.7/4.7.2/4.7.2.5/iso/devel-4.7.2.5-08.09.2022_15.07.tgz",
-              "type": "devel",
-              "mount_point": "frozen/4.7/4.7.2/4.7.2.5/devel-repository",
+              "path": "frozen/4.7/4.7.2/4.7.2.5/iso/base-4.7.2.5-08.09.2022_15.07.tgz",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.2/4.7.2.5/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "92b0292e3eea832f7f5b2c3e51b1ead4a3a4740103aae4b4a343dceb60518482",
+                "md5": "f4feff645d24c1c8f19ad03b1f35a6e2"
+              }
             },
             {
               "path": "frozen/4.7/4.7.2/4.7.2.5/iso/installation-4.7.2.5-08.09.2022_16.24-mtrust1.iso",
@@ -3366,16 +3452,6 @@
         "1.7.0.18": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.0/1.7.0.18/iso/devel-1.7.0.18-11.06.2021_12.40.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.0/1.7.0.18/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.0/1.7.0.18/iso/installation-1.7.0.18-11.06.2021_12.40.iso",
               "type": "installation",
               "mount_point": "frozen/1.7/1.7.0/1.7.0.18/installation",
@@ -3384,6 +3460,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.0/1.7.0.18/iso/base-1.7.0.18-11.06.2021_12.40.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.0/1.7.0.18/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "d8aecf49d4cbeddf638cfb2d4f3f5b50847ac3a5b634fcec3309f057908cc0b2",
+                "md5": "536dbea6aa694ed5324cad5ad7915494"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.0/1.7.0.18"
@@ -3403,16 +3492,6 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.4/iso/devel-1.7.3.4-28.10.2022_22.59.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.4/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.3/1.7.3.4/iso/main_update-1.7.3.4-02.08.2023_11.57.iso",
               "type": "main_update",
               "mount_point": "frozen/1.7/1.7.3/1.7.3.4/update-repository",
@@ -3421,22 +3500,25 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.3/1.7.3.4/iso/base-1.7.3.4-28.10.2022_22.59.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.4/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "9377ed7530375968d538955f2a7a581616d29ea6b2e8d5edec78fee6df9675ae",
+                "md5": "c80176e4efd68ac06364dc269a73d33a"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.3/1.7.3.4"
         },
         "1.7.3.11": {
           "files": [
-            {
-              "path": "frozen/1.7/1.7.3/1.7.3.11/iso/devel-1.7.3.11-15.02.2023_11.15.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.11/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.11/iso/main_update-1.7.3.11-02.08.2023_10.02.iso",
               "type": "main_update",
@@ -3446,6 +3528,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.3/1.7.3.11/iso/base-1.7.3.11-15.02.2023_11.15.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.11/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "fe1a60b7205b2795303bf5f9d140498d53e831f125254fdd3991f5efbf2db6d9",
+                "md5": "8206df7c71722438f50f59caa2a2c240"
+              }
             },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.11/iso/installation-1.7.3.11-15.02.2023_11.15.iso",
@@ -3503,14 +3598,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.13/iso/devel-1.7.3.13-03.03.2023_11.09.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.13/devel-repository",
+              "path": "frozen/1.7/1.7.3/1.7.3.13/iso/base-1.7.3.13-03.03.2023_11.09.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.13/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "cb533a6c14ac3d9d9fbe7f40817e5c45c561cf802ca6235e5f126d24690e7c43",
+                "md5": "191fb64239edc9c7dc107b3c8970043d"
+              }
             },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.13/iso/main_update-1.7.3.13-02.08.2023_10.51.iso",
@@ -3527,16 +3625,6 @@
         },
         "1.7.3.5": {
           "files": [
-            {
-              "path": "frozen/1.7/1.7.3/1.7.3.5/iso/devel-1.7.3.5-29.10.2022_22.16.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.5/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.5/iso/main_update-1.7.3.5-02.08.2023_12.17.iso",
               "type": "main_update",
@@ -3556,6 +3644,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.3/1.7.3.5/iso/base-1.7.3.5-29.10.2022_22.16.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.5/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "a6a85dcc1b3aa7a207c107ed918e08ea79da1effa454580e927840bf917cc068",
+                "md5": "8545f6e9e2bf04c35d4f52f04f12d978"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.3/1.7.3.5"
@@ -3573,16 +3674,6 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.12/iso/devel-1.7.3.12-01.03.2023_14.45.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.12/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.3/1.7.3.12/iso/installation-1.7.3.12-01.03.2023_14.45.iso",
               "type": "installation",
               "mount_point": "frozen/1.7/1.7.3/1.7.3.12/installation",
@@ -3591,6 +3682,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.3/1.7.3.12/iso/base-1.7.3.12-01.03.2023_14.45.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.12/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "9288ccdbe91bc80b99561109c2d71197c46ae1c90d982a79561987d9137c23c2",
+                "md5": "28b374c2c28b0ab1d046d60df70fee16"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.3/1.7.3.12"
@@ -3623,14 +3727,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.8/iso/devel-1.7.3.8-12.12.2022_14.19.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.8/devel-repository",
+              "path": "frozen/1.7/1.7.3/1.7.3.8/iso/base-1.7.3.8-12.12.2022_14.19.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.8/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "0c5796097c14bc479e6304f6b8898a3ff21c558ed75882e1cb8973d71a53f1fd",
+                "md5": "6ac09cd2aad209f1d5663fe1fc0de270"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.3/1.7.3.8"
@@ -3673,14 +3780,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.10/iso/devel-1.7.3.10-20.12.2022_18.45.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.10/devel-repository",
+              "path": "frozen/1.7/1.7.3/1.7.3.10/iso/base-1.7.3.10-20.12.2022_18.45.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.10/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "7cf2d6d282cb26425418fc2e38dd96e1a8ab7d61ea9dddb9284b05f294e2ec18",
+                "md5": "56037362f1fc264c75a9978be178f39c"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.3/1.7.3.10"
@@ -3688,14 +3798,17 @@
         "1.7.3.9": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.9/iso/devel-1.7.3.9-16.12.2022_12.32.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.9/devel-repository",
+              "path": "frozen/1.7/1.7.3/1.7.3.9/iso/base-1.7.3.9-16.12.2022_12.32.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.9/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "ffae18298ddc0177d8373ffda9b42ef6a2800e5bb63606b88fef2383724a1748",
+                "md5": "b49138a6cc9856c9c587fc749f6a42d7"
+              }
             },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.9/iso/main_update-1.7.3.9-02.08.2023_13.39.iso",
@@ -3713,16 +3826,6 @@
         "1.7.3.7": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.7/iso/devel-1.7.3.7-03.11.2022_15.53.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.7/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.3/1.7.3.7/iso/installation-1.7.3.7-03.11.2022_15.53.iso",
               "type": "installation",
               "mount_point": "frozen/1.7/1.7.3/1.7.3.7/installation",
@@ -3731,6 +3834,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.3/1.7.3.7/iso/base-1.7.3.7-03.11.2022_15.53.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.7/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "92665e2fd671b70b57d69905450eff95aac5544740555ccb1f82c8bb354d655c",
+                "md5": "57913f5c424981cd42cf8e5fd5ed665e"
+              }
             },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.7/iso/main_update-1.7.3.7-02.08.2023_12.59.iso",
@@ -3768,30 +3884,23 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.6/iso/devel-1.7.3.6-31.10.2022_09.47.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.6/devel-repository",
+              "path": "frozen/1.7/1.7.3/1.7.3.6/iso/base-1.7.3.6-31.10.2022_09.47.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.6/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "820b4cfa3a59eda6c3de987d494c0b2c88180fca5579159cbfaf1c4da9cabb2a",
+                "md5": "1f358063cfcd0a08b7db2072f300c8ff"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.3/1.7.3.6"
         },
         "1.7.3.1": {
           "files": [
-            {
-              "path": "frozen/1.7/1.7.3/1.7.3.1/iso/devel-1.7.3.1-07.10.2022_18.28.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.1/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.1/iso/installation-1.7.3.1-07.10.2022_18.28.iso",
               "type": "installation",
@@ -3801,6 +3910,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.3/1.7.3.1/iso/base-1.7.3.1-07.10.2022_18.28.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.1/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "53493a81db8cfcd5ad0c57f3ec96588eabd171116ca8d114c783d9a3ce5899b4",
+                "md5": "daaa93bf2d5caddac78d615d8ab742b8"
+              }
             },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.1/iso/main_update-1.7.3.1-02.08.2023_09.17.iso",
@@ -3828,14 +3950,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.3/iso/devel-1.7.3.3-25.10.2022_13.46.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.3/devel-repository",
+              "path": "frozen/1.7/1.7.3/1.7.3.3/iso/base-1.7.3.3-25.10.2022_13.46.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.3/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "f0fa60fa34b31016d1e82e16829cf90462007cdf59ec3980d8277cc141791f38",
+                "md5": "fa6905dd5b00f3a3bc68ac9553f4eda6"
+              }
             },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.3/iso/main_update-1.7.3.3-02.08.2023_11.36.iso",
@@ -3853,14 +3978,17 @@
         "1.7.3.2": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.3/1.7.3.2/iso/devel-1.7.3.2-17.10.2022_21.17.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.3/1.7.3.2/devel-repository",
+              "path": "frozen/1.7/1.7.3/1.7.3.2/iso/base-1.7.3.2-17.10.2022_21.17.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.3/1.7.3.2/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "1c55fadada65c243a921b731ff8a2cbd15fae7a385da3b14f801385988b862b4",
+                "md5": "a61b836951873416ae88246d776ad77c"
+              }
             },
             {
               "path": "frozen/1.7/1.7.3/1.7.3.2/iso/installation-1.7.3.2-17.10.2022_21.17.iso",
@@ -4707,16 +4835,6 @@
         "1.7.2.6": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.6/iso/devel-1.7.2.6-31.08.2022_13.05.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.6/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.2/1.7.2.6/iso/installation-1.7.2.6-31.08.2022_13.05.iso",
               "type": "installation",
               "mount_point": "frozen/1.7/1.7.2/1.7.2.6/installation",
@@ -4725,6 +4843,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.2/1.7.2.6/iso/base-1.7.2.6-31.08.2022_13.05.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.6/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "02a510414c4df57cb33881e6414a8fffd7d8ba1d89a4383598d1633f97adf1ed",
+                "md5": "a7d681e329d846c6c35d81174ecbae78"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.2/1.7.2.6"
@@ -4762,19 +4893,6 @@
         "1.7.2.10": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.10/iso/devel-1.7.2.10-29.09.2022_14.41.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.10/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {
-                "gost": "5952caa3799047c39579a4f8d00d8779db64c38e8b2f5fc4f02d9c96065669e1",
-                "md5": "0345c133d725c7a8e21db54b2436f9f6"
-              }
-            },
-            {
               "path": "frozen/1.7/1.7.2/1.7.2.10/iso/main_update-1.7.2.10-02.08.2023_05.57.iso",
               "type": "main_update",
               "mount_point": "frozen/1.7/1.7.2/1.7.2.10/update-repository",
@@ -4783,6 +4901,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.2/1.7.2.10/iso/base-1.7.2.10-29.09.2022_14.41.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.10/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "5952caa3799047c39579a4f8d00d8779db64c38e8b2f5fc4f02d9c96065669e1",
+                "md5": "0345c133d725c7a8e21db54b2436f9f6"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.2/1.7.2.10"
@@ -4805,16 +4936,6 @@
         "1.7.2.3": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.3/iso/devel-1.7.2.3-22.07.2022_18.25.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.3/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.2/1.7.2.3/iso/main_update-1.7.2.3-02.08.2023_06.53.iso",
               "type": "main_update",
               "mount_point": "frozen/1.7/1.7.2/1.7.2.3/update-repository",
@@ -4823,6 +4944,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.2/1.7.2.3/iso/base-1.7.2.3-22.07.2022_18.25.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.3/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "81f937bc9e1eb8783395c865d5c8388f2f877058b8e5fc0e7f47636201d84bd0",
+                "md5": "772925746c35134a0a3932943c83f9bd"
+              }
             },
             {
               "path": "frozen/1.7/1.7.2/1.7.2.3/iso/installation-1.7.2.3-22.07.2022_18.25.iso",
@@ -4850,33 +4984,23 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.1/iso/devel-1.7.2.1-10.06.2022_11.44.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.1/devel-repository",
+              "path": "frozen/1.7/1.7.2/1.7.2.1/iso/base-1.7.2.1-10.06.2022_11.44.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.1/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "f3f6f2e364ee7ddb8a92c9c4fc4d656e8f03286bd717293276d3fab63ae02689",
+                "md5": "15ce0192854feb0632eb0a8903759272"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.2/1.7.2.1"
         },
         "1.7.2.8": {
           "files": [
-            {
-              "path": "frozen/1.7/1.7.2/1.7.2.8/iso/devel-1.7.2.8-23.09.2022_10.22.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.8/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {
-                "gost": "a83df4b62123b14941e29fc9215c66dec35e5a36bcdcb06ac6ae385765ba6cf9",
-                "md5": "1ddbec366efb9d83c1896ffa1edb1bb4"
-              }
-            },
             {
               "path": "frozen/1.7/1.7.2/1.7.2.8/iso/main_update-1.7.2.8-02.08.2023_08.39.iso",
               "type": "main_update",
@@ -4886,6 +5010,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.2/1.7.2.8/iso/base-1.7.2.8-23.09.2022_10.22.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.8/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "a83df4b62123b14941e29fc9215c66dec35e5a36bcdcb06ac6ae385765ba6cf9",
+                "md5": "1ddbec366efb9d83c1896ffa1edb1bb4"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.2/1.7.2.8"
@@ -4903,14 +5040,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.7/iso/devel-1.7.2.7-08.09.2022_09.39.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.7/devel-repository",
+              "path": "frozen/1.7/1.7.2/1.7.2.7/iso/base-1.7.2.7-08.09.2022_09.39.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.7/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "828894be413255cfa420376affde4a1c7b2df9acc72b26dcb0470f759de8702a",
+                "md5": "f15a1bea3dfb0fee903c355370088536"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.2/1.7.2.7"
@@ -4933,14 +5073,17 @@
         "1.7.2.2": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.2/iso/devel-1.7.2.2-06.07.2022_19.39.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.2/devel-repository",
+              "path": "frozen/1.7/1.7.2/1.7.2.2/iso/base-1.7.2.2-06.07.2022_19.39.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.2/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "00bc1936871d02b3b757b28d9ed7fad11c165d377701796b8f4c88c9e710d5fe",
+                "md5": "ad2149d71d4aa8cdf3f18409a4786c12"
+              }
             },
             {
               "path": "frozen/1.7/1.7.2/1.7.2.2/iso/main_update-1.7.2.2-02.08.2023_06.33.iso",
@@ -4983,6 +5126,19 @@
         "1.7.2.4": {
           "files": [
             {
+              "path": "frozen/1.7/1.7.2/1.7.2.4/iso/base-1.7.2.4-01.08.2022_15.33.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.4/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "dd122e41028ddfcd527c030b7b852f3e92f9561f00e3e78c19a94a92b1fd2b77",
+                "md5": "d6f9d8c6c56e87f9c4f1b8bea75d5448"
+              }
+            },
+            {
               "path": "frozen/1.7/1.7.2/1.7.2.4/iso/main_update-1.7.2.4-02.08.2023_07.12.iso",
               "type": "main_update",
               "mount_point": "frozen/1.7/1.7.2/1.7.2.4/update-repository",
@@ -5001,22 +5157,25 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
-            },
-            {
-              "path": "frozen/1.7/1.7.2/1.7.2.4/iso/devel-1.7.2.4-01.08.2022_15.33.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.4/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
             }
           ],
           "path": "frozen/1.7/1.7.2/1.7.2.4"
         },
         "1.7.2.5": {
           "files": [
+            {
+              "path": "frozen/1.7/1.7.2/1.7.2.5/iso/base-1.7.2.5-11.08.2022_15.28.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.5/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "3e2695de55b85d5d75c31f4df2fa479068bc6e09264990fcec4e6ec7944225a1",
+                "md5": "752e3ca231fc0e07e6c4e885fc72774c"
+              }
+            },
             {
               "path": "frozen/1.7/1.7.2/1.7.2.5/iso/main_update-1.7.2.5-02.08.2023_07.36.iso",
               "type": "main_update",
@@ -5036,16 +5195,6 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
-            },
-            {
-              "path": "frozen/1.7/1.7.2/1.7.2.5/iso/devel-1.7.2.5-11.08.2022_15.28.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.5/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
             }
           ],
           "path": "frozen/1.7/1.7.2/1.7.2.5"
@@ -5053,9 +5202,9 @@
         "1.7.2.9": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.9/iso/devel-1.7.2.9-28.09.2022_14.21.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.9/devel-repository",
+              "path": "frozen/1.7/1.7.2/1.7.2.9/iso/base-1.7.2.9-28.09.2022_14.21.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.9/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
@@ -5091,9 +5240,9 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.2/1.7.2.11/iso/devel-1.7.2.11-04.10.2022_16.55.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.2/1.7.2.11/devel-repository",
+              "path": "frozen/1.7/1.7.2/1.7.2.11/iso/base-1.7.2.11-04.10.2022_16.55.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.2/1.7.2.11/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
@@ -5126,16 +5275,6 @@
         "1.7.4.7": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.4/1.7.4.7/iso/devel-1.7.4.7-24.04.2023_14.23.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.4/1.7.4.7/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.4/1.7.4.7/iso/main_update-1.7.4.7-02.08.2023_17.26.iso",
               "type": "main_update",
               "mount_point": "frozen/1.7/1.7.4/1.7.4.7/update-repository",
@@ -5154,6 +5293,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.4/1.7.4.7/iso/base-1.7.4.7-24.04.2023_14.23.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.4/1.7.4.7/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "2882db0003f1c66956357c58660bcb989901254fde1a5df022ce893b7e617838",
+                "md5": "a8251859bdc2c53b15714905964c81cf"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.4/1.7.4.7"
@@ -5171,14 +5323,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.4/1.7.4.5/iso/devel-1.7.4.5-19.04.2023_08.26.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.4/1.7.4.5/devel-repository",
+              "path": "frozen/1.7/1.7.4/1.7.4.5/iso/base-1.7.4.5-19.04.2023_08.26.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.4/1.7.4.5/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "51dc0bbb8984bd8a357ae4b8e4192a0b053e249df9681266c779ea45be036c53",
+                "md5": "8bf5a603dd519b3fc2af98d3f26f1506"
+              }
             },
             {
               "path": "frozen/1.7/1.7.4/1.7.4.5/iso/installation-1.7.4.5-19.04.2023_08.26.iso",
@@ -5392,14 +5547,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.4/1.7.4.1/iso/devel-1.7.4.1-17.03.2023_12.07.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.4/1.7.4.1/devel-repository",
+              "path": "frozen/1.7/1.7.4/1.7.4.1/iso/base-1.7.4.1-17.03.2023_12.07.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.4/1.7.4.1/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "ff4037485a97a0f80e5a1dad973fb667fb2ba7730a40ba704f360b32851326df",
+                "md5": "33fb0348a27d5ecc729188c2543c3ce5"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.4/1.7.4.1"
@@ -5462,22 +5620,25 @@
               "hashsums": {}
             },
             {
+              "path": "frozen/1.7/1.7.4/1.7.4.3/iso/base-1.7.4.3-31.03.2023_10.36.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.4/1.7.4.3/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "5f799c11d562d563d38f8f9d4bc08a10f71f5100e4bd900a9a29111b6f1341e8",
+                "md5": "c5350ef5f1e03a9dbcd2b94cf0e1bb39"
+              }
+            },
+            {
               "path": "frozen/1.7/1.7.4/1.7.4.3/iso/main_update-1.7.4.3-02.08.2023_15.25.iso",
               "type": "main_update",
               "mount_point": "frozen/1.7/1.7.4/1.7.4.3/update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
-              "device": null,
-              "hashsums": {}
-            },
-            {
-              "path": "frozen/1.7/1.7.4/1.7.4.3/iso/devel-1.7.4.3-31.03.2023_10.36.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.4/1.7.4.3/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
               "device": null,
               "hashsums": {}
             }
@@ -5487,16 +5648,6 @@
         "1.7.4.4": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.4/1.7.4.4/iso/devel-1.7.4.4-05.04.2023_16.38.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.4/1.7.4.4/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.4/1.7.4.4/iso/installation-1.7.4.4-05.04.2023_16.38.iso",
               "type": "installation",
               "mount_point": "frozen/1.7/1.7.4/1.7.4.4/installation",
@@ -5505,6 +5656,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.4/1.7.4.4/iso/base-1.7.4.4-05.04.2023_16.38.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.4/1.7.4.4/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "e4688da235ab27a474d3bd0da59dfff809bf049aab75f863eaaa8fd6ca1c8867",
+                "md5": "0430c726ca423b31e01dc45d8e75a667"
+              }
             },
             {
               "path": "frozen/1.7/1.7.4/1.7.4.4/iso/main_update-1.7.4.4-02.08.2023_15.56.iso",
@@ -5547,14 +5711,17 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/1.7/1.7.4/1.7.4.6/iso/devel-1.7.4.6-21.04.2023_16.15.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.4/1.7.4.6/devel-repository",
+              "path": "frozen/1.7/1.7.4/1.7.4.6/iso/base-1.7.4.6-21.04.2023_16.15.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.4/1.7.4.6/base-repository",
               "is_iso": false,
               "is_bootable_iso": false,
               "is_tarball": true,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "1ba71bb14a71d10f2854cc357b44f6c6f3305e380f883317551a14a6f1e7711d",
+                "md5": "080815e7b7b62d7e75178135215af8e1"
+              }
             },
             {
               "path": "frozen/1.7/1.7.4/1.7.4.6/iso/installation-1.7.4.6-21.04.2023_16.15.iso",
@@ -5602,16 +5769,6 @@
         "1.7.4.2": {
           "files": [
             {
-              "path": "frozen/1.7/1.7.4/1.7.4.2/iso/devel-1.7.4.2-24.03.2023_15.37.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.4/1.7.4.2/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
-              "device": null,
-              "hashsums": {}
-            },
-            {
               "path": "frozen/1.7/1.7.4/1.7.4.2/iso/main_update-1.7.4.2-02.08.2023_14.54.iso",
               "type": "main_update",
               "mount_point": "frozen/1.7/1.7.4/1.7.4.2/update-repository",
@@ -5630,6 +5787,19 @@
               "is_tarball": false,
               "device": null,
               "hashsums": {}
+            },
+            {
+              "path": "frozen/1.7/1.7.4/1.7.4.2/iso/base-1.7.4.2-24.03.2023_15.37.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.4/1.7.4.2/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "66d5ec0b055d0423e7fd8b9384eb0710f63cf5082f7563a1bc7711b07b2594f0",
+                "md5": "345960174ce3ff1f27d0232ad08281cd"
+              }
             }
           ],
           "path": "frozen/1.7/1.7.4/1.7.4.2"
@@ -5905,22 +6075,25 @@
         "1.7.1.8": {
           "files": [
             {
+              "path": "frozen/1.7/1.7.1/1.7.1.8/iso/base-1.7.1.8-22.11.2021_10.50.tgz",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.1/1.7.1.8/base-repository",
+              "is_iso": false,
+              "is_bootable_iso": false,
+              "is_tarball": true,
+              "device": null,
+              "hashsums": {
+                "gost": "1eacbaf1c4da65d36b2d968c83c684a625c1bd94b98692c0995a07a012eca000",
+                "md5": "b6cc92fa1867bb8b2cba3763487d469e"
+              }
+            },
+            {
               "path": "frozen/1.7/1.7.1/1.7.1.8/iso/installation-1.7.1.8-22.11.2021_10.50.iso",
               "type": "installation",
               "mount_point": "frozen/1.7/1.7.1/1.7.1.8/installation",
               "is_iso": true,
               "is_bootable_iso": true,
               "is_tarball": false,
-              "device": null,
-              "hashsums": {}
-            },
-            {
-              "path": "frozen/1.7/1.7.1/1.7.1.8/iso/devel-1.7.1.8-22.11.2021_10.50.tgz",
-              "type": "devel",
-              "mount_point": "frozen/1.7/1.7.1/1.7.1.8/devel-repository",
-              "is_iso": false,
-              "is_bootable_iso": false,
-              "is_tarball": true,
               "device": null,
               "hashsums": {}
             },
@@ -6341,9 +6514,9 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/8.1/8.1.3/8.1.3.1/iso/main-8.1.3.1-19.10.2021_02.53.iso",
-              "type": "main",
-              "mount_point": "frozen/8.1/8.1.3/8.1.3.1/main-repository",
+              "path": "frozen/8.1/8.1.3/8.1.3.1/iso/main_update-8.1.3.1-19.10.2021_02.53.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.3/8.1.3.1/update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
@@ -6984,9 +7157,9 @@
               "hashsums": {}
             },
             {
-              "path": "frozen/8.1/8.1.2/8.1.2.1/iso/main-8.1.2.1-29.04.2020_02.52.iso",
-              "type": "main",
-              "mount_point": "frozen/8.1/8.1.2/8.1.2.1/main-repository",
+              "path": "frozen/8.1/8.1.2/8.1.2.1/iso/main_update-8.1.2.1-29.04.2020_02.52.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.2/8.1.2.1/update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
@@ -7027,9 +7200,9 @@
               }
             },
             {
-              "path": "frozen/8.1/8.1.5/8.1.5.7/iso/devel-8.1.5.7-19.04.2024_07.26.iso",
-              "type": "devel",
-              "mount_point": "frozen/8.1/8.1.5/8.1.5.7/devel-repository",
+              "path": "frozen/8.1/8.1.5/8.1.5.7/iso/devel_update-8.1.5.7-19.04.2024_07.26.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.7/devel-update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
@@ -7045,9 +7218,9 @@
         "8.1.5.2": {
           "files": [
             {
-              "path": "frozen/8.1/8.1.5/8.1.5.2/iso/main-8.1.5.2-09.02.2024_18.26.iso",
-              "type": "main",
-              "mount_point": "frozen/8.1/8.1.5/8.1.5.2/main-repository",
+              "path": "frozen/8.1/8.1.5/8.1.5.2/iso/main_update-8.1.5.2-09.02.2024_18.26.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.2/update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
@@ -7102,19 +7275,6 @@
               }
             },
             {
-              "path": "frozen/8.1/8.1.5/8.1.5.4/iso/main-8.1.5.4-28.02.2024_07.04.iso",
-              "type": "main",
-              "mount_point": "frozen/8.1/8.1.5/8.1.5.4/main-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "d56f755b2e289ad52c0733168d7c8ca2ee3d4d312a25ae38e03b2c6670df76fb",
-                "md5": "705735a7d9c0e80949f51efb1001f98b"
-              }
-            },
-            {
               "path": "frozen/8.1/8.1.5/8.1.5.4/iso/devel_update-8.1.5.4-28.02.2024_07.04.iso",
               "type": "devel_update",
               "mount_point": "frozen/8.1/8.1.5/8.1.5.4/devel-update-repository",
@@ -7126,6 +7286,19 @@
                 "gost": "cb0b3422597918578e903da5437909cb2babc4b5a3df8968778d01647fb5119e",
                 "md5": "b0e25b2c477f97df0273d797a1686cdd"
               }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.4/iso/main_update-8.1.5.4-28.02.2024_07.04.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.4/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "d56f755b2e289ad52c0733168d7c8ca2ee3d4d312a25ae38e03b2c6670df76fb",
+                "md5": "705735a7d9c0e80949f51efb1001f98b"
+              }
             }
           ],
           "path": "frozen/8.1/8.1.5/8.1.5.4"
@@ -7133,9 +7306,9 @@
         "8.1.5.6": {
           "files": [
             {
-              "path": "frozen/8.1/8.1.5/8.1.5.6/iso/main-8.1.5.6-03.04.2024_18.07.iso",
-              "type": "main",
-              "mount_point": "frozen/8.1/8.1.5/8.1.5.6/main-repository",
+              "path": "frozen/8.1/8.1.5/8.1.5.6/iso/main_update-8.1.5.6-03.04.2024_18.07.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.6/update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
@@ -7143,6 +7316,19 @@
               "hashsums": {
                 "gost": "0779d67a88c40df34ba122ee4e62cbf451d9071501637fb6670133ec87e9c28a",
                 "md5": "583fd001b0bce6bd4e93311869e556cb"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.6/iso/devel_update-8.1.5.6-03.04.2024_18.07.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.6/devel-update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "ae8e6be0a833c4f7b8f9bb34585a3354bcb40f365427d96ec08f120f9f7026dd",
+                "md5": "4262d9c097f4f91996526688090eea90"
               }
             },
             {
@@ -7157,51 +7343,12 @@
                 "gost": "c14af552ded0fc454f75a570bfbb7a5f5c91c983009a3185a5221cd078453dc4",
                 "md5": "8294ac46fff55f8992236195602b9f24"
               }
-            },
-            {
-              "path": "frozen/8.1/8.1.5/8.1.5.6/iso/devel-8.1.5.6-03.04.2024_18.07.iso",
-              "type": "devel",
-              "mount_point": "frozen/8.1/8.1.5/8.1.5.6/devel-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "ae8e6be0a833c4f7b8f9bb34585a3354bcb40f365427d96ec08f120f9f7026dd",
-                "md5": "4262d9c097f4f91996526688090eea90"
-              }
             }
           ],
           "path": "frozen/8.1/8.1.5/8.1.5.6"
         },
         "8.1.5.5": {
           "files": [
-            {
-              "path": "frozen/8.1/8.1.5/8.1.5.5/iso/devel-8.1.5.5-07.03.2024_22.12.iso",
-              "type": "devel",
-              "mount_point": "frozen/8.1/8.1.5/8.1.5.5/devel-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "6083df90f748058e9abb3b4c6b19c3156552943637f0c12c1cda281a4fd3c357",
-                "md5": "c55425d19981a0820140cfbe6475e89d"
-              }
-            },
-            {
-              "path": "frozen/8.1/8.1.5/8.1.5.5/iso/main-8.1.5.5-07.03.2024_22.12.iso",
-              "type": "main",
-              "mount_point": "frozen/8.1/8.1.5/8.1.5.5/main-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "f4b2323701bf7778ea2eb6e23a186b6b7661842998807492bff9083e457c0c7b",
-                "md5": "343fb221617495ec0429d91800c2b213"
-              }
-            },
             {
               "path": "frozen/8.1/8.1.5/8.1.5.5/iso/installation-8.1.5.5-07.03.2024_22.12.iso",
               "type": "installation",
@@ -7213,6 +7360,32 @@
               "hashsums": {
                 "gost": "2f626b5d8c36938e446f4543cbd0b511a08648ed8dd4c4698fcd6b3099b04929",
                 "md5": "49f94a7def9cb2ccd21c76a878011607"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.5/iso/main_update-8.1.5.5-07.03.2024_22.12.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.5/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "f4b2323701bf7778ea2eb6e23a186b6b7661842998807492bff9083e457c0c7b",
+                "md5": "343fb221617495ec0429d91800c2b213"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.5/iso/devel_update-8.1.5.5-07.03.2024_22.12.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.5/devel-update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "6083df90f748058e9abb3b4c6b19c3156552943637f0c12c1cda281a4fd3c357",
+                "md5": "c55425d19981a0820140cfbe6475e89d"
               }
             }
           ],
@@ -7887,11 +8060,6 @@
         "release_candidate": "8.1.0.1",
         "special_versions": {}
       },
-      "8.1.4": {
-        "path": "stable/8.1/8.1.4",
-        "release_candidate": "8.1.4.29",
-        "special_versions": {}
-      },
       "8.1.1": {
         "path": "stable/8.1/8.1.1",
         "release_candidate": "8.1.1.1",
@@ -7900,6 +8068,11 @@
       "8.1.2": {
         "path": "stable/8.1/8.1.2",
         "release_candidate": "8.1.2.1",
+        "special_versions": {}
+      },
+      "8.1.4": {
+        "path": "stable/8.1/8.1.4",
+        "release_candidate": "8.1.4.29",
         "special_versions": {}
       }
     },

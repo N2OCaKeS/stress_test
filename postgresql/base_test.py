@@ -2,7 +2,7 @@
 import subprocess
 from os import path
 import argparse
-from psb_conf import VENV_PATH
+#from psb_conf import VENV_PATH
 
 def cmd(command):
     subprocess.run(command, shell=True)
@@ -10,7 +10,8 @@ def cmd(command):
 try:
     import numpy as np
 except (ImportError, ImportWarning):
-    cmd(f'{VENV_PATH} -m pip install numpy')
+    #cmd(f'{VENV_PATH} -m pip install numpy')
+    cmd('python3 -m pip install numpy')
     import numpy as np
 
 
@@ -66,7 +67,7 @@ def test_run(clients, repeat):
     repeat_str = ' '.join(repeat_list)
     
     #Создание и настройка БД
-    cmd(f'sudo bash default_base_up.sh "{repeat_str}" {args.DB} {args.SD} {args.STAND} {args.OS}')
+    #cmd(f'sudo bash default_base_up.sh "{repeat_str}" {args.DB} {args.SD} {args.STAND} {args.OS}')
     cmd('sudo bash start_test.sh')
     if args.DB == 'tantor':
         cmd('cat test/pgbench_result.txt | grep tps | awk \'{print$3}\' >> result_testing.txt')

@@ -2,23 +2,17 @@
 set -vx
 
 PG_VERSION=tantor-se-15
-PG_SETEST_CLUSTER=TEST
+PG_SETEST_CLUSTER=data
 DB_NAME=test
 USER=postgres
 
-pg_createcluster $PG_VERSION $PG_SETEST_CLUSTER --port 6000                             
-rm -r /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/*
-chown -R postgres:postgres /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER
 
+chown -R postgres:postgres /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER
 sudo -u postgres -i << EOF
-/usr/lib/postgresql/$PG_VERSION/bin/initdb -D /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER --auth-local trust --auth-host md5
+/opt/tantor/db/15/bin/initdb -D /var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER --auth-local trust --auth-host md5
 EOF
 
 systemctl start tantor-se-server-15
-pg_ctlcluster $PG_VERSION $PG_SETEST_CLUSTER restart
-pg_dropcluster $PG_VERSION main --stop
-rm -rf /etc/postgresql/$PG_VERSION/main
-pg_lsclusters
 
 sudo -u postgres -i << EOF
 psql -c "CREATE USER $USER;"
@@ -47,7 +41,7 @@ sed -i -e 's/md5/trust/g' -e 's/scram-sha-256/trust/g' -e 's/peer/trust/g' /var/
 
 systemctl restart tantor-se-server-15
 
-/opt/tantor/db/15/bin/pgbench -i -h localhost -s 500 -p 6000 -F 100 -U postgres test
+/opt/tantor/db/15/bin/pgbench -i -h localhost -s 500 -p 5432 -F 100 -U postgres test
 
 cat << EOF > start_test.sh
 #!/bin/bash
@@ -58,7 +52,7 @@ mkdir \$dir
 for c in \$clients; do
     echo "pgbench_\${c}_\${t}.txt"
     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
-    /opt/tantor/db/15/bin/pgbench -h localhost -p 6000 -U $USER --random-seed=13 -T \$t -j \$c -c \$c $DB_NAME >> "\${dir}/pgbench_result.txt"
+    /opt/tantor/db/15/bin/pgbench -h localhost -p 5432 -U $USER --random-seed=13 -T \$t -j \$c -c \$c $DB_NAME >> "\${dir}/pgbench_result.txt"
     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "\${dir}/pgbench_\${c}.txt"
 done
 EOF

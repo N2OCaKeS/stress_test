@@ -10,7 +10,7 @@ ram = 8192
 box_name = 'debian'
 box_url = 'ftp://10.177.103.10/boxes/box/debian.box'
 
-cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
+cmd(f'vagrant box add --force --provider virtualbox {box_name} {box_url}')
 cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
 # add define pool

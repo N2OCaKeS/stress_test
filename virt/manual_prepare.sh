@@ -1,4 +1,6 @@
 
+#lvirt
+apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 sudo dpkg -i vagrant_2.2.19_x86_64.deb

@@ -1,4 +1,10 @@
 
+apt-get install pip
+python3 -m pip install --upgrade pip
+python3 -m pip install -r req.txt
+python3 -m pip install --upgrade pip --break-system-packages
+python3 -m pip install -r req.txt --break-system-packages
+
 #lvirt
 apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 

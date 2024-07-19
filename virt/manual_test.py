@@ -9,6 +9,7 @@ import re
 import pandas as pd
 import numpy as np
 from threading import Thread
+import argparse
 from virt_conf import VM_KERNEL, LOW, HIGH, ST_vCPU, ST_RAM
 
 
@@ -270,26 +271,35 @@ class StealTime(CreateVM):
 
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument('-box',
+                    action='store',
+                    choices=['debian',
+                             'rhel'],
+                    required=True,
+                    help='vbox name',
+                    dest='BOX')
+args = parser.parse_args()
 
 ####################################
 #Start test
 ####################################
-box = 'debian'
+box = args.BOX
 
 st_no_errors = True
 low_load_test = StealTime(rc_vbox=box,
-                            vm_count=LOW,
-                            testdir='TEST',
-                            load_type='low',
-                            vcpu=ST_vCPU,
-                            ram=ST_RAM)
+                          vm_count=LOW,
+                          testdir='TEST',
+                          load_type='low',
+                          vcpu=ST_vCPU,
+                          ram=ST_RAM)
 
 high_load_test = StealTime(rc_vbox=box,
-                            vm_count=HIGH,
-                            testdir='TEST',
-                            load_type='high',
-                            vcpu=ST_vCPU,
-                            ram=ST_RAM)
+                           vm_count=HIGH,
+                           testdir='TEST',
+                           load_type='high',
+                           vcpu=ST_vCPU,
+                           ram=ST_RAM)
 
 low_load_test.prepare_vms()
 low_load_test.start_test()

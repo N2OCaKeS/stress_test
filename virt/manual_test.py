@@ -275,7 +275,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-box',
                     action='store',
                     choices=['debian',
-                             'rhel'],
+                             'rhel',
+                             'redos',
+                             'alt'],
                     required=True,
                     help='vbox name',
                     dest='BOX')

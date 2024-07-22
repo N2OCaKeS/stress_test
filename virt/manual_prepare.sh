@@ -4,21 +4,23 @@ set -vx
 
 if [ "$1" == "debian" ] || [ "$1" == "alt" ]; then
     pm=apt-get
+    wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
+    sudo dpkg -i vagrant_2.2.19_x86_64.deb
+    $pm install pip -y
+    python3 -m pip install --upgrade pip --break-system-packages
+    python3 -m pip install -r req.txt --break-system-packages
 elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     pm=yum
+    wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/upload/timonin/vagrant
+    sudo rpm -i vagrant_2.2.19_x86_64.rpm
+    $pm install pip -y
+    python3 -m pip install --upgrade pip
+    python3 -m pip install -r req.txt
 fi
 
-$pm install pip -y
-python3 -m pip install --upgrade pip
-python3 -m pip install -r req.txt
-python3 -m pip install --upgrade pip --break-system-packages
-python3 -m pip install -r req.txt --break-system-packages
 
 #lvirt
 $pm install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
-
-wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-sudo dpkg -i vagrant_2.2.19_x86_64.deb
 sudo adduser $USER libvirt
 
 for group in kvm libvirt libvirt-qemu libvirt-admin; do

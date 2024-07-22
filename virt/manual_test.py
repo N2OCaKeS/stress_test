@@ -34,8 +34,18 @@ class CreateVM:
         self.ram = ram
 
     def prepare_vms(self):
-        box_name = 'debian'
-        box_url = 'ftp://10.177.103.10/boxes/box/debian.box'
+        if self.rc_name == 'debian':
+            box_name = 'debian'
+            box_url = 'ftp://10.177.103.10/boxes/box/debian.box'
+        elif self.rc_name == 'rhel':
+            box_name = 'rhel'
+            box_url = 'ftp://10.177.103.10/boxes/box/rhel.box'
+        elif self.rc_name == 'redos':
+            box_name = 'redos'
+            box_url = 'ftp://10.177.103.10/boxes/box/redos.box'
+        elif self.rc_name == 'alt':
+            box_name = 'alt'
+            box_url = 'ftp://10.177.103.10/boxes/box/alt.box'
 
         cmd(f'vagrant box add --force --provider virtualbox {box_name} {box_url}')
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')

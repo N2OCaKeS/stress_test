@@ -9,6 +9,7 @@ if [ "$1" == "debian" ] || [ "$1" == "alt" ]; then
     $pm install pip -y
     python3 -m pip install --upgrade pip --break-system-packages
     python3 -m pip install -r req.txt --break-system-packages
+    $pm install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     pm=yum
     wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/upload/timonin/vagrant
@@ -16,11 +17,13 @@ elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     $pm install pip -y
     python3 -m pip install --upgrade pip
     python3 -m pip install -r req.txt
+    $pm install virt-manager libvirt-daemon qemu-img libvirt -y
+    systemctl enable libvirtd
+    systemctl start libvirtd
 fi
 
 
 #lvirt
-$pm install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 sudo adduser $USER libvirt
 
 for group in kvm libvirt libvirt-qemu libvirt-admin; do

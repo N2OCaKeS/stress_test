@@ -46,6 +46,9 @@ class CreateVM:
         elif self.rc_name == 'alt':
             box_name = 'alt'
             box_url = 'ftp://10.177.103.10/boxes/box/alt.box'
+        elif self.rc_name == 'astra':
+            box_name = '1816s'
+            box_url = 'ftp://10.177.103.10/boxes/box/1816s.box'
 
         cmd(f'vagrant box add --force --provider virtualbox {box_name} {box_url}')
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')

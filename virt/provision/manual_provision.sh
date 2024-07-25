@@ -2,7 +2,7 @@
 
 set -vx
 
-if [ "$1" == "debian" ] || [ "$1" == "alt" ]; then
+if [ "$1" == "debian" ] || [ "$1" == "astra" ] || [ "$1" == "alt" ]; then
     pm=apt-get
 elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     pm=yum

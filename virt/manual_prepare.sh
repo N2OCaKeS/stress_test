@@ -2,7 +2,7 @@
 
 set -vx
 
-if [ "$1" == "debian" ]; then
+if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
     pm=apt-get
     wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
     sudo dpkg -i vagrant_2.2.19_x86_64.deb

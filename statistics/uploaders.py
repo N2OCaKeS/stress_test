@@ -66,7 +66,6 @@ class BaseUploader:
         html_file.close()
         return table
 
-
     def _find_files(self):
         base_html_file = {}
         for file in sorted(os.listdir(self.folder)):
@@ -134,124 +133,8 @@ class BaseUploader:
         html_list.insert(0, nav)
         html_list = [str(item) for item in html_list if item is not None]
         self.html_page = "".join(html_list)
-   
-    # def collect_a_single_html(self, parent_page_title):
-    #     self._create_page()
-    #     html_list = []
-    #     nav_lst = []
-    #     for type_test, html_src_images_and_tables in self._find_files().items():
-    #         type_test = TypeTest.get_full_name_test_without_df(type_test)
-    #         nav_lst.append(self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
-    #                                             stat_type_without_probel=self.statistics_type.replace(" ", ""),
-    #                                             type_stat_header_without_probel=type_test.replace(" ", ""),
-    #                                             type_stat_header=type_test))
-    #         html_list.append("<br/><hr/>")
-    #         html_list.append(html_src_images_and_tables.get("Header"))
-    #         # TODO # COMPARISON KERNEL LINE GRAPH
-    #         # html_list.append(html_src_images_and_tables.get("ComparisonKernelLineGraph"))
-    #         html_list.append(html_src_images_and_tables.get("MainGraph"))
-    #         html_list.append(f'<h2><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
-    #         html_list.append(html_src_images_and_tables.get("MainTable"))
-    #         html_list.append("<br/>")
-    #         html_list.append(html_src_images_and_tables.get("MathTable"))
-    #         html_list.append(html_src_images_and_tables.get("SummaryGraph"))
-        
-    #     nav_items = "".join(nav_lst)
-    #     nav = self.NAV_START + nav_items  + self.NAV_END
-    #     html_list.insert(0, nav)
-    #     html_list = [str(item) for item in html_list if item is not None]
-    #     self.html_page = "".join(html_list)
 
     def upload_page(self):
         self.confluence_stat.update_confluence_page(page_space=CONFLUENCE_SPACE,
                                                     page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}",
                                                     page_body=self.html_page)
-    
-
-# class VirtUploader(BaseUploader):
-#     def _create_page(self):
-#         if self.page_rc_title:
-#             parent_page = self.pp_title
-#         else:
-#             parent_page = "Статистика"
-#         self.confluence_stat.create_confluence_page(page_space=CONFLUENCE_SPACE, 
-#                                                     page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}", 
-#                                                     parent_page_title=parent_page)
-
-#     def _find_files(self):
-#         base_html_file = {}
-#         for file in sorted(os.listdir(self.folder)):
-#             part_header = file.split("_")
-#             set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time"}
-#             if part_header[1] in set_titles:
-#                 type_stat = part_header[0] + "_" + part_header[1]
-#             else:
-#                 type_stat = part_header[0]
-
-#             self.confluence_stat.attache_files(file=f"{self.folder}/{file}",
-#                                                page_space=CONFLUENCE_SPACE,
-#                                                page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}")
-
-#             base_html_file.setdefault(type_stat, {})
-#             temp_var = part_header[-1].split(".")[0]
-#             if file.endswith(".png"):
-#                 base_html_file[type_stat].setdefault(temp_var, [])
-#                 image = TemplateImage.template.format(page_id=self.confluence_stat.get_confluence_page_id(page_space=CONFLUENCE_SPACE, page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}"), img_png=file, CONFLUENCE_URL=CONFLUENCE_URL)
-#                 base_html_file[type_stat][temp_var].append(image)
-#             elif file.endswith(".html"):
-#                 base_html_file[type_stat][temp_var] =  self._read_html_file(file_name=file)
-            
-#             base_html_file[type_stat]["Header"] = f"<h1 id='{TypeTest.get_full_name_test_without_df(type_stat)}'><b>{TypeTest.get_full_name_test_without_df(type_stat)}</b></h1>"
-            
-#         return base_html_file
-
-#     def collect_a_single_html(self):
-#         self._create_page()
-#         html_list = []
-#         nav_lst = []
-#         for type_test, html_src_images_and_tables in self._find_files().items():
-#             type_test = TypeTest.get_full_name_test_without_df(type_test)
-            
-#             nav_lst.append(self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
-#                                                 stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
-#                                                 type_stat_header_without_probel=type_test.replace(" ", ""),
-#                                                 type_stat_header=type_test))
-#             html_list.append("<br/><hr/>")
-#             html_list.append(html_src_images_and_tables.get("Header"))
-            
-#             main_graphs = html_src_images_and_tables.get("MainGraph")
-#             if main_graphs is not None:
-#                 for graph in main_graphs:
-#                     html_list.append(graph)
-            
-#             html_list.append(f'<h2><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
-#             html_list.append(html_src_images_and_tables.get("MainTable"))
-#             html_list.append("<br/>")
-#             html_list.append(html_src_images_and_tables.get("MathTable"))
-
-
-#             summary_graph = html_src_images_and_tables.get("SummaryLineGraph")
-#             if summary_graph is not None:
-#                 for graph in summary_graph:
-#                     html_list.append(graph)
-            
-#             comparison_kernel_line_graphs = html_src_images_and_tables.get("ComparisonKernelLineGraph")
-#             if comparison_kernel_line_graphs is not None:
-#                 for graph in comparison_kernel_line_graphs:
-#                     html_list.append(graph)
-        
-#         nav_items = "".join(nav_lst)
-#         nav = self.NAV_START + nav_items  + self.NAV_END
-#         html_list.insert(0, nav)
-#         html_list = [str(item) for item in html_list if item is not None]
-#         self.html_page = "".join(html_list)
-
-    
-#     def upload_page(self):
-#         self.confluence_stat.update_confluence_page(page_space=CONFLUENCE_SPACE,
-#                                                     page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}",
-#                                                     page_body=self.html_page)
-            
-
-
-        

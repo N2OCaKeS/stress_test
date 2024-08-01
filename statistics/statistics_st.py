@@ -113,26 +113,6 @@ class BaseStatistics(Statistics):
                """
                     TODO Добавить логирование
                """
-               """
-                    TODO Этот функционал вынести в отдельную функцию и только ее переобределять в классах потомках, а здесь просто вызвать эту функцию
-               """
-               # saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
-               # saver_graph = SaveGraph(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
-
-               # table = MainTable(data=data_for_tables.get(type_test), 
-               #                   saver=saver)
-               # df = table.build()
-               # if isinstance(df, pd.DataFrame) and not df.empty:
-               #      dct_with_type_test_and_its_df[type_test] = df
-
-               #      math_table = MathTable(dataframe=df, saver=saver)
-               #      math_table.build()
-
-               #      graph = MainGraph(list_of_score=df.iloc[:, -1], 
-               #                        scale_txt=Scale.get_base_scale_text(dataframe=df), 
-               #                        type_test=TypeTest.get_type_test(dataframe=df),
-               #                        saver=saver_graph)
-               #      graph.draw()
                flag, df = self.unique_functionality(type_test=type_test, data_for_tables=data_for_tables, rc_version=stat_rc_version)
                
                """"""
@@ -175,6 +155,7 @@ class InheritedStatistics(BaseStatistics):
           5) Uploader
      """
 
+
 class FreeIpaStatistics(BaseStatistics):
      def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = FreeIpaParser):
           super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
@@ -202,43 +183,6 @@ class FreeIpaStatistics(BaseStatistics):
                return True, df
           else:
                return False, None
-                    
-
-     # def _create_single_stat(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None):
-     #      parse = MainParser(pages_ids=all_pages, CP=confluence_obj.CP, parser=self.score_parser)
-     #      data_for_tables, d_keys = parse.find_data()
-
-     #      dct_with_type_test_and_its_df = {}
-
-     #      for type_test in self.set_of_test_types:
-     #           """
-     #                TODO Добавить логирование
-     #           """
-     #           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
-     #           saver_graph = SaveGraph(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
-
-     #           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
-     #           col_scores = ["Задержка (в сек.) аутен. и авториз. при макс. кол-ве пользователей", 
-     #                         "Число (в %) непройденных аутен. и авториз. в секунду при макс. кол-ве пользователей",
-     #                         "Рейтинг"]
-     #           table = MainTable(data=data_for_tables.get(type_test), 
-     #                             saver=saver,
-     #                             columns=columns,
-     #                             columns_scores=col_scores)
-     #           df = table.build()
-     #           if isinstance(df, pd.DataFrame) and not df.empty:
-     #                dct_with_type_test_and_its_df[type_test] = df
-
-     #                # Здесь сравнение по ядрам
-     #                for ind, score in enumerate(col_scores):
-     #                     """
-     #                          TODO Сохраняет один файл надо 3!!!!!!
-     #                     """
-     #                     self._compare_scores_by_kernel(df=df,
-     #                                                    type_test=type_test,
-     #                                                    stat_rc_vers=stat_rc_version,
-     #                                                    score=score)
-     
                          
 
 class VirtStatistics(BaseStatistics):
@@ -276,126 +220,3 @@ class VirtStatistics(BaseStatistics):
                return True, df
           else:
                return False, None
-
-     # def _upload_to_confluence(self, stat_rc_vers: str, pp_title: str):
-     #      uploader = BaseUploader(username=self.username, 
-     #                              token=self.tokenconf, 
-     #                              statistics_type=self.stat_title.replace("/", "-"),
-     #                              stat_rc_vers=stat_rc_vers,
-     #                              pp_title=pp_title)
-     #      uploader.collect_a_single_html()
-     #      uploader.upload_page()
-
-     # def _create_single_stat_old(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None):
-     #      parse = MainParser(pages_ids=all_pages, CP=confluence_obj.CP, parser=self.score_parser)
-     #      data_for_tables, d_keys = parse.find_data()
-     #      # dct_with_type_test_and_its_df = {}
-
-     #      for type_test in self.set_of_test_types:
-     #           """
-     #                TODO Добавить логирование
-     #           """
-     #           saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_version)
-     #           saver_graph = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_version)
-
-     #           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
-     #           try:
-     #                score_cols = self.score_columns[type_test]
-     #           except KeyError:
-     #                score_cols = ["Рейтинг"]
-     #           table = MainTable(data=data_for_tables.get(type_test), 
-     #                             saver=saver,
-     #                             columns=columns,
-     #                             columns_scores=score_cols)
-     #           df = table.build()
-     #           if isinstance(df, pd.DataFrame) and not df.empty:
-     #                # dct_with_type_test_and_its_df[type_test] = df
-     #                saver_comparison_graph = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_version)
-     #                comparison_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_version)
-                    
-     #                if type_test == "vUnixBench":
-     #                     sg = SummaryGraph(saver=saver_comparison_graph,
-     #                                       stand_grade=df["Стенд"].mode()[0],
-     #                                       comparison_scale_of_score=[df["Рейтинг 4 ядер"], df["Рейтинг 8 ядер"], df["Рейтинг 12 ядер"]],
-     #                                       scale_txt=df['Релиз'] + '_' + df['Ядро'],
-     #                                       comparison_names=self.score_columns[type_test],
-     #                                       graph_name=f"{type_test}_many_kernel",
-     #                                       colors=['#f90829', '#007b7a', '#f9b312'])
-     #                     sg.draw()
-     #                elif type_test == "steal_time":
-     #                     sg_1 = SummaryGraph(saver=saver_comparison_graph,
-     #                                         stand_grade=df["Стенд"].mode()[0],
-     #                                         comparison_scale_of_score=[df["1 VM mean instructions"], df["70 VM mean instuctions"]],
-     #                                         scale_txt=df['Релиз'] + '_' + df['Ядро'],
-     #                                         comparison_names=self.score_columns[type_test][:2],
-     #                                         graph_name=f"{type_test}_meaninstr",
-     #                                         )
-     #                     sg_1.draw()
-     #                     sg_2 = SummaryGraph(saver=saver_comparison_graph,
-     #                                         stand_grade=df["Стенд"].mode()[0],
-     #                                         comparison_scale_of_score=[df["1 VM mean steal time"], df["70 VM mean steal time"]],
-     #                                         scale_txt=df['Релиз'] + '_' + df['Ядро'],
-     #                                         comparison_names=self.score_columns[type_test][2:],
-     #                                         graph_name=f"{type_test}_meanst",
-     #                                         )
-     #                     sg_2.draw()
-     #                elif type_test == "FIO":
-     #                     sg_1 = SummaryGraph(saver=saver_comparison_graph,
-     #                                         stand_grade=df["Стенд"].mode()[0],
-     #                                         comparison_scale_of_score=[df["1 VM iops write"], df["70 VM iops write"], df["1 VM iops read"], df["70 VM iops read"] ],
-     #                                         scale_txt=df['Релиз'] + '_' + df['Ядро'],
-     #                                         comparison_names=self.score_columns[type_test][:4],
-     #                                         graph_name=f"{type_test}_iops",
-     #                                         colors=['#f90829', '#007b7a', '#f9b312', '#c7d84c'])
-     #                     sg_1.draw()
-
-     #                     sg_2 = SummaryGraph(saver=saver_comparison_graph,
-     #                                         stand_grade=df["Стенд"].mode()[0],
-     #                                         comparison_scale_of_score=[df["1 VM latency-avg write"], df["70 VM latency-avg write"], df["1 VM latency-avg read"], df["70 VM latency-avg read"] ],
-     #                                         scale_txt=df['Релиз'] + '_' + df['Ядро'],
-     #                                         comparison_names=self.score_columns[type_test][4:],
-     #                                         graph_name=f"{type_test}_latency",
-     #                                         colors=['#f90829', '#007b7a', '#f9b312', '#c7d84c'])
-     #                     sg_2.draw()
-     #                elif type_test == "vPingPong":
-     #                     separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score_cols[0])
-     #                     separate_kernel_data = separate_kernel.build()
-     #                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
-     #                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
-     #                                                                                       saver=comparison_separate_kernel_line_graph_saver)
-     #                     comparison_separate_kernel_line_graph.draw()
-
-          
-     # def _create_single_stat(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None):
-     #      parse = MainParser(pages_ids=all_pages, CP=confluence_obj.CP, parser=self.score_parser)
-     #      data_for_tables, d_keys = parse.find_data()
-     #      for type_test in self.set_of_test_types:
-     #           """
-     #                TODO Добавить логирование
-     #           """
-     #           saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_version)
-     #           saver_graph = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_version)
-
-     #           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
-     #           try:
-     #                score_cols = self.score_columns[type_test]
-     #           except KeyError:
-     #                score_cols = ["Рейтинг"]
-     #           table = MainTable(data=data_for_tables.get(type_test), 
-     #                             saver=saver,
-     #                             columns=columns,
-     #                             columns_scores=score_cols)
-     #           df = table.build()
-     #           if isinstance(df, pd.DataFrame) and not df.empty:
-     #                comparison_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_version)
-     #                for ind, item in enumerate(score_cols):
-     #                     separate_kernel = TableSeparatelyByKernel(dataframe=df, score=item)
-     #                     separate_kernel_data = separate_kernel.build()
-     #                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
-     #                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
-     #                                                                                       saver=comparison_separate_kernel_line_graph_saver,)
-     #                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=item)
-          
-     #      self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
-
-          

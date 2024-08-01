@@ -1,0 +1,2 @@
+class NoDataAvailableForThisTestType(Exception):
+    pass

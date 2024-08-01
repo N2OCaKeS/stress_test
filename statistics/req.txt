@@ -1,0 +1,7 @@
+numpy
+pandas
+matplotlib
+lxml
+bs4
+atlassian-python-api
+setuptools

@@ -5,3 +5,5 @@ lxml
 bs4
 atlassian-python-api
 setuptools
+fastapi[standard]
+gunicorn

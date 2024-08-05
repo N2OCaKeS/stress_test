@@ -1,25 +1,17 @@
 import paramiko
-import logging
 import time
 import os
 from tempfile import mkstemp
+from logger import Logger
 import subprocess
 
 
 fd, temp_file_err = mkstemp(dir='/tmp/', suffix='log', text=True)
 fd, temp_file_out = mkstemp(dir='/tmp/', suffix='log', text=True)
-log_name = f"/tmp/backup_allta.log"
+log_name = 'backup_allta.log'
 except_num = 1
+logging = Logger(filename=log_name)
 
-
-
-
-logging.basicConfig(
-        filename=log_name, 
-        level=logging.DEBUG, 
-        filemode='w',
-        format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S')
 
 
 def command(command, fd_close=False):

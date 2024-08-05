@@ -76,6 +76,7 @@
     <ul class="dropdown-menu">
       <li><a class="dropdown-item" href="http://10.177.103.10:9999/docs" target="_blank">ACS</a></li>
       <li><a class="dropdown-item" href="http://10.177.103.10:8888" target="_blank">ACS tasks</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#backupcredsModal">ALLTA Backup. Основные компоненты </a></li>
       <li><a class="dropdown-item" href="javascript:update_cpumeminfo()">Перезапустить мониторинг ресурсов</a></li>
     </ul>
   </li>
@@ -91,6 +92,36 @@
     <a class="nav-link disabled" aria-disabled="true">© QA Team13</a>
   </li>
 </ul>
+
+
+<div class="modal fade" id="backupcredsModal" tabindex="-1" aria-labelledby="backupModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="backupModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="backupForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="password" class="form-label">Пароль</label>
+              <input type="password" class="form-control" id="password" name="password" placeholder="Введите пароль">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <div id="loading-spinner" class="spinner-border text-secondary" role="status" style="display: none;">
   <span class="visually-hidden">Loading...</span>
 </div>
@@ -130,6 +161,25 @@
             console.error('Error:', error);
         });
     }
+    </script>
+
+    <script>
+      $(document).ready(function(){
+          $("#backupForm").submit(function(e){
+              e.preventDefault();
+              $.ajax({
+                  url: '/backup/allta',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                  }
+              });
+          });
+      });
     </script>
 
 

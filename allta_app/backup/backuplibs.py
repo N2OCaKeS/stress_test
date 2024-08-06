@@ -12,6 +12,8 @@ log_name = f"/tmp/backup_allta.log"
 except_num = 1
 
 
+with open(log_name, 'w') as w:
+            w.write('')
 
 backup_logger = logging.getLogger('backup_logger')
 backup_logger.setLevel(logging.DEBUG)

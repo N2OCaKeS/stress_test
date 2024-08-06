@@ -74,6 +74,19 @@ def trycorator(function):
     return wrapper
 
 
+def check_command(ip, user, password):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+        ssh.connect(hostname=ip, username=user, password=password, port=22)
+    except paramiko.AuthenticationException:
+        return 'Authentication failed'
+
+    ssh.close()
+    return 'Authentication successful'
+
+
 @trycorator
 def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     client = paramiko.SSHClient()

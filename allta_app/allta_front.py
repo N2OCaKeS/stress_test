@@ -34,7 +34,7 @@ from libs.liballta import (index_page,
                           stands_ip,
                           user_app)
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
-from backup.backuplibs import Backup
+from backup.backuplibs import Backup, check_command
 
 
 app = Flask(__name__)
@@ -244,14 +244,22 @@ def backup(stand, version):
 
 @app.route('/backup/allta', methods=['POST'])
 def backup_request():
+    backup_ip = '10.177.5.21'
     username = request.form.get('username')
     password = request.form.get('password')
-    backup = Backup(ip='10.177.5.21',
-                    user=username,
-                    password=password)
+    connection_status = check_command(ip=backup_ip,
+                                      user=username,
+                                      password=password)
 
-    backup.run()
-    return {"status": "success", "message": "Backup successfully completed"}, 200
+    if 'Authentication failed' in connection_status:
+        return {"status": "failed", "message": "Authentication failed"}, 401
+    else:
+        backup = Backup(ip=backup_ip,
+                        user=username,
+                        password=password)
+
+        backup.run()
+        return {"status": "success", "message": "Backup successfully completed"}, 200
 
 
 @app.route('/rest/api/get-testname-columns', methods=['GET'])

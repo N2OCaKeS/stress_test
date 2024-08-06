@@ -14,47 +14,52 @@ log_file_dir = '/home/u/git/stress_test/allta_app/'
 log_file_name = 'error.log'
 log_size = 52428800 
 
-def logrotate():
-    logger = logging.getLogger() 
-    handler = logger.handlers[0]
-    log_version = 1
+# def logrotate():
+#     logger = logging.getLogger() 
+#     handler = logger.handlers[0]
+#     log_version = 1
 
-    while True:
-        files = os.listdir(log_file_dir)
-        logs_versions = [f for f in files if re.match(r'error(\.\d+)?\.log', f)]
-        if logs_versions:
-            versions = [int(re.search(r'\d+', f).group()) if re.search(r'\d+', f) else 0 for f in logs_versions]
-            log_version = max(versions) + 1
+#     while True:
+#         files = os.listdir(log_file_dir)
+#         logs_versions = [f for f in files if re.match(r'error(\.\d+)?\.log', f)]
+#         if logs_versions:
+#             versions = [int(re.search(r'\d+', f).group()) if re.search(r'\d+', f) else 0 for f in logs_versions]
+#             log_version = max(versions) + 1
 
-        if os.path.isfile(log_file_dir + log_file_name):
-            if os.path.getsize(log_file_dir + log_file_name) >= log_size:
-                if not os.path.isfile(f'{log_file_dir}error.{log_version}.log'):
-                    os.rename(log_file_dir + log_file_name, f'{log_file_dir}error.{log_version}.log')
-                    with open(log_file_dir + log_file_name, 'w') as wlog:
-                        wlog.write(f'Start new log {datetime.datetime.now()}')
-                    handler.close()
-                    new_handler = logging.FileHandler(log_file_dir + log_file_name)
-                    new_handler.setFormatter(handler.formatter) 
-                    logger.handlers = []
-                    logger.addHandler(new_handler)
-            else: sleep(3600)
+#         if os.path.isfile(log_file_dir + log_file_name):
+#             if os.path.getsize(log_file_dir + log_file_name) >= log_size:
+#                 if not os.path.isfile(f'{log_file_dir}error.{log_version}.log'):
+#                     os.rename(log_file_dir + log_file_name, f'{log_file_dir}error.{log_version}.log')
+#                     with open(log_file_dir + log_file_name, 'w') as wlog:
+#                         wlog.write(f'Start new log {datetime.datetime.now()}')
+#                     handler.close()
+#                     new_handler = logging.FileHandler(log_file_dir + log_file_name)
+#                     new_handler.setFormatter(handler.formatter) 
+#                     logger.handlers = []
+#                     logger.addHandler(new_handler)
+#             else: sleep(3600)
 
-logging.basicConfig(filename=log_file_dir + log_file_name,
-                    format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
-                    datefmt='%Y/%m/%d %H:%M:%S',
-                    filemode='a')
+
+logger_wsgi = logging.getLogger('logger_wsgi')
+logger_wsgi.setLevel(logging.DEBUG)
+handler_wsgi = RotatingFileHandler(log_file_dir + log_file_name, maxBytes=log_size, backupCount=5)
+formatter_wsgi = logging.Formatter('%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s')
+handler_wsgi.setFormatter(formatter_wsgi)
+logger_wsgi.addHandler(handler_wsgi)
+
 sys.path.insert(0,"/home/u/git/stress_test/allta_app")
 
 
-def run_app():
-    app.run(threaded=True)
+#def run_app():
+#    app.run(threaded=True)
 
 
-task1 = threading.Thread(target=logrotate, daemon=True)
-task2 = threading.Thread(target=run_app, daemon=True)    
+#task1 = threading.Thread(target=logrotate, daemon=True)
+#task2 = threading.Thread(target=run_app, daemon=True)    
 
 
 
 if __name__ == '__main__':
-    task1.start()
-    task2.start()
+    #task1.start()
+    #task2.start()
+    app.run()

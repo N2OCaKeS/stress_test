@@ -12,15 +12,15 @@ log_name = f"/tmp/backup_allta.log"
 except_num = 1
 
 
-logger = logging
-logger.basicConfig(
-        filename=log_name, 
-        level=logging.DEBUG, 
-        filemode='w',
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S')
 
-logger.info('\n\n\nStart backup logging\n')
+backup_logger = logging.getLogger('backup_logger')
+backup_logger.setLevel(logging.DEBUG)
+handler_bl = logging.FileHandler(log_name)
+formatter_bl = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler_bl.setFormatter(formatter_bl)
+backup_logger.addHandler(handler_bl)
+
+backup_logger.info('\n\n\nStart backup logging\n')
 
 
 def command(command, fd_close=False):
@@ -48,16 +48,16 @@ def comm_and_log(comm):
     code, output, error, text_comm = command(comm)
     try:
         if error != '':
-            logger.error(text_comm)
-            logger.error('ErrorCode ' + f'{code}')
-            logger.error(error)
+            backup_logger.error(text_comm)
+            backup_logger.error('ErrorCode ' + f'{code}')
+            backup_logger.error(error)
             os.unlink(temp_file_err)
         if output != '':
-            logger.debug(output)
+            backup_logger.debug(output)
             os.unlink(temp_file_out)
     except Exception as e:
         global except_num
-        logger.error(f'Исключение №{except_num}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        backup_logger.error(f'Исключение №{except_num}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
         except_num = except_num + 1
     return code
 
@@ -67,7 +67,7 @@ def trycorator(function):
         try: 
             function(*args, **kwargs)
         except Exception as e:
-            logger.error(f'Function: {function.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+            backup_logger.error(f'Function: {function.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
     return wrapper
 
@@ -95,9 +95,9 @@ def send_remote_command(command, ip, user, password):
     output = chanel.makefile().read().decode('utf-8')
     err_output = chanel.makefile_stderr().read().decode('utf-8')
     if output != '':
-        logger.debug(f'STDOUT:\n{output}')
+        backup_logger.debug(f'STDOUT:\n{output}')
     if err_output != '':
-        logger.error(f'STDERR:\n{err_output}')
+        backup_logger.error(f'STDERR:\n{err_output}')
     ssh.close()
 
 

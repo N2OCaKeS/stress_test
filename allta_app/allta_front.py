@@ -242,7 +242,7 @@ def backup(stand, version):
     return index_page('main')
 
 
-@app.route('/backup-allta', methods=['POST'])
+@app.route('/backup/allta', methods=['POST'])
 def backup_request():
     username = request.form.get('username')
     password = request.form.get('password')

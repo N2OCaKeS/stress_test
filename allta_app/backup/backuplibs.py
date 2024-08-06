@@ -1,17 +1,26 @@
 import paramiko
+import logging
 import time
 import os
 from tempfile import mkstemp
-from logger import Logger
 import subprocess
 
 
 fd, temp_file_err = mkstemp(dir='/tmp/', suffix='log', text=True)
 fd, temp_file_out = mkstemp(dir='/tmp/', suffix='log', text=True)
-log_name = 'backup_allta.log'
+log_name = f"/tmp/backup_allta.log"
 except_num = 1
-logging = Logger(filename=log_name)
 
+
+logger = logging
+logger.basicConfig(
+        filename=log_name, 
+        level=logging.DEBUG, 
+        filemode='w',
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S')
+
+logger.info('\n\n\nStart backup logging\n')
 
 
 def command(command, fd_close=False):
@@ -39,16 +48,16 @@ def comm_and_log(comm):
     code, output, error, text_comm = command(comm)
     try:
         if error != '':
-            logging.error(text_comm)
-            logging.error('ErrorCode ' + f'{code}')
-            logging.error(error)
+            logger.error(text_comm)
+            logger.error('ErrorCode ' + f'{code}')
+            logger.error(error)
             os.unlink(temp_file_err)
         if output != '':
-            logging.debug(output)
+            logger.debug(output)
             os.unlink(temp_file_out)
     except Exception as e:
         global except_num
-        logging.error(f'Исключение №{except_num}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        logger.error(f'Исключение №{except_num}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
         except_num = except_num + 1
     return code
 
@@ -58,7 +67,7 @@ def trycorator(function):
         try: 
             function(*args, **kwargs)
         except Exception as e:
-            logging.error(f'Function: {function.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+            logger.error(f'Function: {function.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
     return wrapper
 
@@ -86,9 +95,9 @@ def send_remote_command(command, ip, user, password):
     output = chanel.makefile().read().decode('utf-8')
     err_output = chanel.makefile_stderr().read().decode('utf-8')
     if output != '':
-        logging.debug(f'STDOUT:\n{output}')
+        logger.debug(f'STDOUT:\n{output}')
     if err_output != '':
-        logging.error(f'STDERR:\n{err_output}')
+        logger.error(f'STDERR:\n{err_output}')
     ssh.close()
 
 

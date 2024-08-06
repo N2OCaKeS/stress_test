@@ -47,7 +47,13 @@ formatter_wsgi = logging.Formatter('%(asctime)s - %(levelname)s - %(funcName)s: 
 handler_wsgi.setFormatter(formatter_wsgi)
 logger_wsgi.addHandler(handler_wsgi)
 
+def handle_exception(exc_type, exc_value, exc_traceback):
+    logger_wsgi.error("Uncaught exception",
+        exc_info=(exc_type, exc_value, exc_traceback))
+
+sys.excepthook = handle_exception
 sys.path.insert(0,"/home/u/git/stress_test/allta_app")
+
 
 
 #def run_app():

@@ -47,12 +47,20 @@ formatter_wsgi = logging.Formatter('%(asctime)s - %(levelname)s - %(funcName)s: 
 handler_wsgi.setFormatter(formatter_wsgi)
 logger_wsgi.addHandler(handler_wsgi)
 
-def handle_exception(exc_type, exc_value, exc_traceback):
-    logger_wsgi.error("Uncaught exception",
-        exc_info=(exc_type, exc_value, exc_traceback))
-
-sys.excepthook = handle_exception
 sys.path.insert(0,"/home/u/git/stress_test/allta_app")
+
+
+class ExceptionLoggingThread(threading.Thread):
+    def run(self):
+        try:
+            return super().run()
+        except Exception as e:
+            logger_wsgi.error("Uncaught exception",
+                            exc_info=(type(e), e, e.__traceback__))
+            raise
+
+
+
 
 
 
@@ -61,11 +69,12 @@ sys.path.insert(0,"/home/u/git/stress_test/allta_app")
 
 
 #task1 = threading.Thread(target=logrotate, daemon=True)
-#task2 = threading.Thread(target=run_app, daemon=True)    
+#task2 = threading.Thread(target=run_app, daemon=True) 
+task3 = ExceptionLoggingThread(target=app.run, daemon=True)   
 
 
 
 if __name__ == '__main__':
     #task1.start()
     #task2.start()
-    app.run()
+    task3.start()

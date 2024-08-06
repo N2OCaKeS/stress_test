@@ -169,7 +169,7 @@
               e.preventDefault();
               $('#backupcredsModal').modal('hide');
               $.ajax({
-                  url: '/backup/allta',
+                  url: '/backup-allta',
                   type: 'POST',
                   data: $(this).serialize(),
                   timeout: 600000,

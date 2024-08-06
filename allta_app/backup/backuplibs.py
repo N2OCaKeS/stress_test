@@ -162,4 +162,7 @@ class Backup:
                            user=self.user, 
                            password=self.password)
         
+        if os.path.isfile(self.zip_dir):
+            os.remove(self.zip_dir)
+        backup_logger.info('Backup completed')
 

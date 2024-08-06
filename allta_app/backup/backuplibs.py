@@ -163,6 +163,7 @@ class Backup:
                            password=self.password)
         
         if os.path.isfile(self.zip_dir):
+            os.chmod(self.zip_dir, 0o777)
             os.remove(self.zip_dir)
         backup_logger.info('Backup completed')
 

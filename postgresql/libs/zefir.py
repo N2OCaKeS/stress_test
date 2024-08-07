@@ -11,12 +11,12 @@ from atlassian import Confluence
 from os import remove, path
 from libs.libpsb import response
 from libs.libpublic import Public
-from libs.libstatistics import PSQLStatistics2
+from libs.libstatistics import PSQLStatistics
 from time import sleep, ctime
 from psb_conf import JIRA_URL, CONFLUENCE_URL
 
 
-class UploaderZC(Public, PSQLStatistics2):
+class UploaderZC(Public, PSQLStatistics):
 
     def __init__(self,
                  folder_tree_id=None,
@@ -77,7 +77,7 @@ class UploaderZC(Public, PSQLStatistics2):
                                basic_auth=self.BA)
 
         if self.statistics == True:
-            statistics = PSQLStatistics2(username=self.UN, 
+            statistics = PSQLStatistics(username=self.UN, 
                                         token=self.CT)
             statistics.update_statistics()
 

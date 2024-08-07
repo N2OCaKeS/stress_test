@@ -1,5 +1,5 @@
 import requests
-
+import json
 
 
 class PSQLStatistics: 
@@ -9,7 +9,7 @@ class PSQLStatistics:
         
         self.username = username
         self.token = token
-        self.url = 'allta.devos.astralinux.ru:7777/base-statistcs'
+        self.url = 'http://allta.devos.astralinux.ru:7777/base-statistcs'
 
     def update_statistics(self):
         data = {
@@ -26,5 +26,9 @@ class PSQLStatistics:
             'comparison_kernel_list':["postgresql"]
         }
 
-        requests.post(url=self.url, data=data)
+        headers = {
+            'Content-Type': 'application/json'
+            }
+        
+        requests.post(url=self.url, data=json.dumps(data), headers=headers)
 

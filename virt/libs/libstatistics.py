@@ -1,5 +1,5 @@
 import requests
-
+import json
 
 
 class VirtStatistics: 
@@ -9,7 +9,7 @@ class VirtStatistics:
         
         self.username = username
         self.token = token
-        self.url = 'allta.devos.astralinux.ru:7777/virt-statistics'
+        self.url = 'http://allta.devos.astralinux.ru:7777/virt-statistics'
 
     def update_statistics(self):
         data = {
@@ -19,6 +19,10 @@ class VirtStatistics:
             'set_of_test_types':["FIO", "vPingPong", "vUnixBench", "steal_time"]
         }
 
-        requests.post(url=self.url, data=data)
+        headers = {
+            'Content-Type': 'application/json'
+            }
+        
+        requests.post(url=self.url, data=json.dumps(data), headers=headers)
         
 

@@ -35,6 +35,7 @@ from libs.liballta import (index_page,
                           user_app)
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
 from backup.backuplibs import Backup, check_command
+import requests
 
 
 app = Flask(__name__)
@@ -260,6 +261,18 @@ def backup_request():
 
         backup.run()
         return {"status": "success", "message": "Backup successfully completed"}, 200
+
+
+@app.route('/all-statistics', methods=['POST'])
+def all_statistics():
+    url = 'allta.devos.astralinux.ru:7777/all-statistics'
+    data = {
+        'username':request.form.get('username'),
+        'token':request.form.get('token')
+    }
+
+    requests.post(url=url, data=data)
+    return {"status": "success", "message": "Command successfully done"}, 200
 
 
 @app.route('/rest/api/get-testname-columns', methods=['GET'])

@@ -76,13 +76,15 @@
     <ul class="dropdown-menu">
       <li><a class="dropdown-item" href="http://10.177.103.10:9999/docs" target="_blank">ACS</a></li>
       <li><a class="dropdown-item" href="http://10.177.103.10:8888" target="_blank">ACS tasks</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#allstatisticsModal">Пересчитать всю статистику</a></li>
       <li><a class="dropdown-item" href="javascript:update_cpumeminfo()">Перезапустить мониторинг ресурсов</a></li>
-      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#backupcredsModal">ALLTA Backup. Основные компоненты </a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#backupcredsModal">ALLTA Backup. Основные компоненты</a></li>
     </ul>
   </li>
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">О проекте</a>
     <ul class="dropdown-menu">
+      <li><a class="dropdown-item" href="http://allta.devos.astralinux.ru:7777/docs" target="_blank">Статистика</a></li>
       <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode" target="_blank">Настройки</a></li>
       <li><a class="dropdown-item" href="https://jira.astralinux.ru/secure/Tests.jspa#/v2/testCycles?projectId=11200" target="_blank">Прогоны</a></li>
       <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=154351118" target="_blank">СТП</a></li>
@@ -120,6 +122,36 @@
     </div>
   </div>
 </div>
+
+
+
+<div class="modal fade" id="allstatisticsModal" tabindex="-1" aria-labelledby="allstatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="allstatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="allstatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 
 <div id="loading-spinner" class="spinner-border text-secondary" role="status" style="display: none;">
@@ -173,6 +205,31 @@
                   type: 'POST',
                   data: $(this).serialize(),
                   timeout: 3600000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+
+    <script>
+      $(document).ready(function(){
+          $("#allstatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#allstatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/all-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
                   success: function(response){
                     alert(response.message)
                   },

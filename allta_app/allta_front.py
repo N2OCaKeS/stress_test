@@ -265,7 +265,7 @@ def backup_request():
 
 @app.route('/all-statistics', methods=['POST'])
 def all_statistics():
-    url = 'allta.devos.astralinux.ru:7777/all-statistics'
+    url = 'http://allta.devos.astralinux.ru:7777/all-statistics'
     data = {
         'username':request.form.get('username'),
         'token':request.form.get('token')

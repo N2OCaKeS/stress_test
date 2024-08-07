@@ -265,13 +265,17 @@ def backup_request():
 
 @app.route('/all-statistics', methods=['POST'])
 def all_statistics():
-    url = 'localhost:7777/all-statistics'
+    url = 'allta.devos.astralinux.ru:7777/all-statistics'
     data = {
         'username':request.form.get('username'),
         'token':request.form.get('token')
     }
 
-    requests.post(url=url, data=data)
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
     return {"status": "success", "message": "Command successfully done"}, 200
 
 

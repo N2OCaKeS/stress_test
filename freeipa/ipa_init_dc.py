@@ -60,13 +60,16 @@ def initialization_freeipa_server():
     file_hosts.close()
     file_hosts = open("/etc/hosts", "w")
     file_hosts.writelines(temp)
-    file_hosts.write("10.77.103.10\tallta.devos.astralinux.ru")
     file_hosts.close()
     """
         Инициализация домена
     """    
     # cmd(f"astra-freeipa-server --dogtag -p {DC_PASSWORD} -d {DOMAIN} -y")
     cmd(f"astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y")
+
+    file_hosts = open("/etc/hosts", "w")
+    file_hosts.write("10.77.103.10\tallta.devos.astralinux.ru\n")
+    file_hosts.close()
     """
         Перезапуск контроллера домена
     """

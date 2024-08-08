@@ -70,7 +70,7 @@ class BaseUploader:
         base_html_file = {}
         for file in sorted(os.listdir(self.folder)):
             part_header = file.split("_")
-            set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time"}
+            set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time", "auth"}
             if part_header[1] in set_titles:
                 type_stat = part_header[0] + "_" + part_header[1]
             else:

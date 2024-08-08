@@ -47,7 +47,7 @@ def base_statistics_api(body: Statistics):
         base_stat.create()
     return {"OK"}
 
-@app.post("/freipa-statistics")
+@app.post("/freeipa-statistics")
 def freeipa_statistics_api(body: Statistics):
     freeipa_stat = FreeIpaStatistics(stat_title=body.title_statistics,
                                      username=body.username,

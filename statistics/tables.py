@@ -37,8 +37,14 @@ class MainTable(Table):
 
     def __combine_cells_for_build_link_to_the_report(self, ind, dataframe):
         title = "_".join(dataframe.iloc[ind - 1, [0, 1, 3, 2, 4]].astype(str))
-        if "parsec" in title:
-            title = title.replace("_", " ", 1)
+        set_titles = {"parsec", "vanilla", "balance", "auth", "time"}
+        for item in set_titles:
+            if item in title:
+                if "parsec_impact-fs-aud-off" in title:
+                    title = title.replace("parsec_impact-fs-aud-off", "parsec impact-fs aud-off")
+                    break
+                title = title.replace("_", " ", 1)
+                break
         link = f"https://{CONFLUENCE_URL}/display/{CONFLUENCE_SPACE}/" + title
         value_with_link = f'<a href="{link}">{ind}</a>'
 

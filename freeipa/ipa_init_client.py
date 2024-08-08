@@ -98,6 +98,10 @@ def initialization_freeipa_client():
         Ввод клиента в домен
     """
     cmd(f"astra-freeipa-client -y -p {DC_PASSWORD}")
+
+    file_hosts = open("/etc/hosts", "a")
+    file_hosts.write("10.77.103.10\tallta.devos.astralinux.ru\n")
+    file_hosts.close()
     """
         Перезапуск контроллера домена
     """

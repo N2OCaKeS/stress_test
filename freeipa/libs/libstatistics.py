@@ -9,7 +9,7 @@ class FreeipaStatistics:
         
         self.username = username
         self.token = token
-        self.url = 'http://allta.devos.astralinux.ru:7777/virt-statistics'
+        self.url = 'http://allta.devos.astralinux.ru:7777/freeipa-statistics'
 
     def update_statistics(self):
         data = {

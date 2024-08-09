@@ -24,7 +24,7 @@ class Auth(BaseModel):
     username: str
     token: str
 
-@app.post("/base-statistcs")
+@app.post("/base-statistics")
 def base_statistics_api(body: Statistics):
     if body.title_statistics == "Apache":
         parser = ApacheParser

@@ -28,7 +28,6 @@ from libs.libsng import (astra_version,
                          response)
 from libs.zefir import UploaderZC
 from libs.libpublic import Public
-from libs.libstatistics import FileSystemStatistics
 from sng_conf import SERVICE_COUNT, TIME_EXEC, TIME_EXEC_ST3_ST4, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME, VENV_PATH
 
 

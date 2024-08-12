@@ -12,14 +12,14 @@ from sys import exit
 from atlassian import Confluence
 from os import remove, path
 from libs.libpublic import Public
-from libs.libstatistics import FileSystemStatistics
+from libs.libstatistics import SystemStatistics
 from time import sleep, ctime
 from libs.libaub import response
 from aub_conf import JIRA_URL, CONFLUENCE_URL
 
 
 
-class UploaderZC(Public, FileSystemStatistics):
+class UploaderZC(Public, SystemStatistics):
 
     def __init__(self,
                  folder_tree_id=None,
@@ -74,7 +74,7 @@ class UploaderZC(Public, FileSystemStatistics):
                                basic_auth=self.BA)
 
         if self.statistics == True:
-            statistics = FileSystemStatistics(username=self.UN, 
+            statistics = SystemStatistics(username=self.UN, 
                                               token=self.CT)
             statistics.update_statistics()
 

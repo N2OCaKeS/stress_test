@@ -16,14 +16,14 @@ class PSQLStatistics:
             'title_statistics':'PostgreSQL',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':["postgresql", "postgresql-sm", "postgresql-aud-off", "psql_parsec", "psql_vanilla", "tantor_vanilla"],
+            'set_of_test_types':['postgresql', 'postgresql-sm', 'postgresql-aud-off', 'psql_parsec', 'psql_vanilla', 'tantor_vanilla'],
             'comparison_list':[
-                ["postgresql", "postgresql-sm"], 
-                ["postgresql", "postgresql-aud-off"], 
-                ["postgresql", "psql_parsec"], 
-                ["postgresql", "psql_vanilla"]
+                ['postgresql', 'postgresql-sm'], 
+                ['postgresql', 'postgresql-aud-off'], 
+                ['postgresql', 'psql_parsec'], 
+                ['postgresql', 'psql_vanilla']
             ],
-            'comparison_kernel_list':["postgresql"]
+            'comparison_kernel_list':['postgresql']
         }
 
         headers = {

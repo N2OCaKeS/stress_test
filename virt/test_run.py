@@ -144,7 +144,7 @@ if args.TESTNAME == 'stealtime':
 
     info_list()
     uzs.public = True
-    #uzs.statistics = True
+    uzs.statistics = True
     if st_no_errors:
         uzs.upload_test_cycle_status(zefir_status='pass')
 
@@ -177,7 +177,7 @@ elif args.TESTNAME == 'fio':
 
     info_list()
     uzs.public = True
-    #uzs.statistics = True
+    uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
 elif args.TESTNAME == 'unixbench':
@@ -196,7 +196,7 @@ elif args.TESTNAME == 'unixbench':
    
     info_list()
     uzs.public = True
-    #uzs.statistics = True
+    uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
 elif args.TESTNAME == 'pingpong':
@@ -213,6 +213,6 @@ elif args.TESTNAME == 'pingpong':
 
     info_list()
     uzs.public = True
-    #uzs.statistics = True
+    uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 

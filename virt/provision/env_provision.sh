@@ -11,6 +11,7 @@ EOF
 }
 
 17repo() {
+echo "grub-pc grub-pc/install_devices multiselect /dev/sda" | sudo debconf-set-selections
 cat << EOF > /etc/apt/sources.list
 deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/installation/ 1.7_x86-64 main contrib non-free
 deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/ 1.7_x86-64 main contrib non-free
@@ -33,8 +34,8 @@ Package: *
 Pin: release l=extended
 Pin-Priority: 500
 EOF
-sudo apt update
 
+sudo apt update
 sudo astra-update -A -T -r
 sudo apt-get install -y sysstat
 sudo apt-get install -y netcat

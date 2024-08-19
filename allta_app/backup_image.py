@@ -208,6 +208,7 @@ stand_ip = stands_ip[args.STAND]
 user = 'u'
 password = '1'
 port = 22
+ipmi = BootOrder(stand=args.STAND)
 clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
 if args.PSQL_BALANCE:
     #clonezilla_command_balance = cz_comm()['stand4']['1.8.0.14']
@@ -736,8 +737,9 @@ class TestRunProvision(BootOrder):
 
         if read_status() == success:
             write_status(in_prog)
-            comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
-                        -o UserKnownHostsFile=/dev/null u@' + self.stand_ip + ' sudo reboot')
+            #comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
+            #            -o UserKnownHostsFile=/dev/null u@' + self.stand_ip + ' sudo reboot')
+            ipmi.reset()
             sleep(3)
             if args.RELEASE not in systems and not args.PSQL_BALANCE:
                 holder = 0
@@ -767,8 +769,9 @@ class TestRunProvision(BootOrder):
         if args.RELEASE not in systems and not args.PSQL_BALANCE:
             if read_status() == success:
                 write_status(in_prog)
-                comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                            u@' + self.stand_ip + ' sudo reboot')
+                #comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                #            u@' + self.stand_ip + ' sudo reboot')
+                ipmi.reset()
                 sleep(3)
                 socket_available()
                 write_status(success)

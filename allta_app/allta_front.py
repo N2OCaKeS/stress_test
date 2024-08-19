@@ -17,6 +17,7 @@ from time import sleep
 from libs.libilo import iLOConsoleCaller
 from libs.liballta import (index_page,
                           BackgroundTasks,
+                          BootOrder,
                           run_command_on_stand,
                           ssh_command,
                           background_task_main,
@@ -35,7 +36,6 @@ from libs.liballta import (index_page,
                           user_app)
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
 from backup.backuplibs import Backup, check_command
-from backup_image import BootOrder
 import requests
 
 

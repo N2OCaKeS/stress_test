@@ -23,6 +23,7 @@ from libs.zefir import ZefirResultTable, ZefirStatusAPI, response_status
 import psycopg2
 from psycopg2 import sql
 import threading
+from libs.liballta import BootOrder
 
 
 
@@ -644,60 +645,60 @@ def send_remote_command(command):
 
 
 
-class BootOrder:
-    def __init__(self,
-                 stand=None,
-                 boottype='PXE'):
+# class BootOrder:
+#     def __init__(self,
+#                  stand=None,
+#                  boottype='PXE'):
         
-        self.stand = stand
-        self.boot_type = boottype
-        self.show_config = 'show /system1/bootconfig1/oemhp_uefibootsource'
-        self.set_new_config = 'set /system1/bootconfig1/oemhp_uefibootsource{} bootorder=1'
-        self.old_mode_key = '-oKexAlgorithms=+diffie-hellman-group1-sha1'
-        self.no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-        self.reset_machine = 'reset /system1'
-        self.slot_count = 5
-        if os.path.isfile('/home/u/ilo.json'):
-            with open('/home/u/ilo.json', 'r') as ilocfg:
-                self.ilo = json.load(ilocfg)
-        self.login = self.ilo[self.stand]['username']
-        self.password = self.ilo[self.stand]['password']
-        self.address = self.ilo[self.stand]['ip']
-        self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
+#         self.stand = stand
+#         self.boot_type = boottype
+#         self.show_config = 'show /system1/bootconfig1/oemhp_uefibootsource'
+#         self.set_new_config = 'set /system1/bootconfig1/oemhp_uefibootsource{} bootorder=1'
+#         self.old_mode_key = '-oKexAlgorithms=+diffie-hellman-group1-sha1'
+#         self.no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+#         self.reset_machine = 'reset /system1'
+#         self.slot_count = 5
+#         if os.path.isfile('/home/u/ilo.json'):
+#             with open('/home/u/ilo.json', 'r') as ilocfg:
+#                 self.ilo = json.load(ilocfg)
+#         self.login = self.ilo[self.stand]['username']
+#         self.password = self.ilo[self.stand]['password']
+#         self.address = self.ilo[self.stand]['ip']
+#         self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
 
-    def cmd(self, cmd):
-        output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
-        return output
+#     def cmd(self, cmd):
+#         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
+#         return output
 
-    def set_boot_order(self):        
-        try:
-            for i in range(0, self.slot_count + 1, 1):
-                answer = self.cmd(f'{self.ssh_command} {self.show_config}{i}')
-                if self.boot_type in answer and i == 1:
-                    logging.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
-                    break
-                elif self.boot_type in answer and i != 1:
-                    logging.debug(f'\033[93m{answer}\033[0m')
-                    result = self.cmd(f'{self.ssh_command} {self.set_new_config}'.format(i))
-                    if 'Bootorder being set' in result:
-                        logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
-                    break
-        except Exception as e:
-            logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+#     def set_boot_order(self):        
+#         try:
+#             for i in range(0, self.slot_count + 1, 1):
+#                 answer = self.cmd(f'{self.ssh_command} {self.show_config}{i}')
+#                 if self.boot_type in answer and i == 1:
+#                     logging.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
+#                     break
+#                 elif self.boot_type in answer and i != 1:
+#                     logging.debug(f'\033[93m{answer}\033[0m')
+#                     result = self.cmd(f'{self.ssh_command} {self.set_new_config}'.format(i))
+#                     if 'Bootorder being set' in result:
+#                         logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
+#                     break
+#         except Exception as e:
+#             logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
 
-    def reset_by_timer(self, func):
-        timer = 7200
-        interval = 60
-        for _ in range(timer // interval):
-            sleep(interval)
-            if not func.is_alive():
-                return 0
-        logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
-        logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+#     def reset_by_timer(self, func):
+#         timer = 7200
+#         interval = 60
+#         for _ in range(timer // interval):
+#             sleep(interval)
+#             if not func.is_alive():
+#                 return 0
+#         logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
+#         logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
 
-    def reset(self):
-        logging.debug('execute IPMI hard reboot')
-        logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+#     def reset(self):
+#         logging.debug('execute IPMI hard reboot')
+#         logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
 
 
 

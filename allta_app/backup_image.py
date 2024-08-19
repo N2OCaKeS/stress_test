@@ -695,6 +695,10 @@ class BootOrder:
         logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
         logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
 
+    def reset(self):
+        logging.debug('execute IPMI hard reboot')
+        logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+
 
 
 class TestRunProvision(BootOrder):

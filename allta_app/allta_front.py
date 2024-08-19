@@ -35,6 +35,7 @@ from libs.liballta import (index_page,
                           user_app)
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
 from backup.backuplibs import Backup, check_command
+from backup_image import BootOrder
 import requests
 
 
@@ -210,8 +211,10 @@ def check_running_system(stand):
   
 @app.route('/reboot/<stand>', methods=['POST'])
 def reboot(stand):
-    ssh_command('sudo reboot', 
-                stand_ip=stands_ip[stand])
+    #ssh_command('sudo reboot', 
+    #            stand_ip=stands_ip[stand])
+    ipmi = BootOrder(stand=stand)
+    ipmi.reset()
    
 
 @app.route('/poweroff/<stand>', methods=['POST'])

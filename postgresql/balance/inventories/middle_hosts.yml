@@ -17,8 +17,10 @@ all:
       children:
         web_servers:
           hosts:
+            placeholder_host: {}
         load_balancers_web:
           hosts:
+            placeholder_host: {}
 
         databases:
           hosts:
@@ -53,6 +55,7 @@ all:
 
     clients:
       hosts:
+        placeholder_host: {}
     development:
     
 

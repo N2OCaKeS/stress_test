@@ -44,6 +44,7 @@ if test "$(grep -E '1.8.*' /etc/astra_version)"; then
 else
     sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
     sudo apt-get install -y linux-tools-5.15*-lowlatency
+    sudo apt-get install -y libssl1.1 psmisc
 fi
 
 sudo mkdir /home/u/python

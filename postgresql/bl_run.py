@@ -354,7 +354,8 @@ class CheckVMs():
                 print(str(e))
                 print(f'Some problem with remove')
 
-        cmd(f'cd balance && vagrant box add {box_url} --force')
+        cmd('apt install -fy')
+        cmd(f'cd balance && vagrant box add {box_name} {box_url} --force')
         cmd(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={args.SET_BOX} vagrant up --provider=virtualbox')
 
         # # # Network set

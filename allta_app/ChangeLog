@@ -1,3 +1,10 @@
+allta_app - v2.26.8
+* Add debug kernels:
+  6.1.90-1-debug
+  6.6.28-1-debug
+
+
+
 allta_app - v2.26.7
 * Add ipmi reset stands
 

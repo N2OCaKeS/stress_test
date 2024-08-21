@@ -263,8 +263,10 @@
         "6.1.50-1-generic",
         "6.1.82-1-generic",
         "6.1.90-1-generic",
+        "6.1.90-1-debug",
         "6.6.12-1-generic",
-        "6.6.28-1-generic"
+        "6.6.28-1-generic",
+        "6.6.28-1-debug"
     ],
     "repo_path": {
         "pkg_path_1.7.0": "https://releases.devos.astralinux.ru/frozen/1.7/1.7.0/1.7.0.18/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages",

@@ -211,10 +211,12 @@ def check_running_system(stand):
   
 @app.route('/reboot/<stand>', methods=['POST'])
 def reboot(stand):
-    #ssh_command('sudo reboot', 
-    #            stand_ip=stands_ip[stand])
-    ipmi = BootOrder(stand=stand)
-    ipmi.reset()
+    if stand == "stand1" or stand == "stand2":
+        ssh_command('sudo reboot', 
+                    stand_ip=stands_ip[stand])
+    elif stand == "stand3" or stand == "stand4" or stand == "stand5":
+        ipmi = BootOrder(stand=stand)
+        ipmi.reset()
    
 
 @app.route('/poweroff/<stand>', methods=['POST'])

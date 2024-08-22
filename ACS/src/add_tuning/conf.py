@@ -25,3 +25,5 @@ iface {interface} inet static
 
 dns-nameservers 10.177.128.198
 """
+
+COMMON_AUTH_OFF = "sudo sed -i '/auth[[:space:]]*required[[:space:]]*pam_lastlog.so[[:space:]]*inactive=/s/^/#/' /etc/pam.d/common-auth"

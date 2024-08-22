@@ -16,7 +16,8 @@ from .conf import (COMPONENTS_INSTALL,
                    CLONE_GIT_REPO, 
                    COMMAND_WGET_GITCLONE_FILE, 
                    COMMAND_WGET_QAINIT_FILE,
-                   NETWORK_SETTINGS_TEMPLATE)
+                   NETWORK_SETTINGS_TEMPLATE,
+                   COMMON_AUTH_OFF)
 
 
 router = APIRouter(
@@ -82,6 +83,12 @@ def set_alias(stand = Depends(get_info_stand)):
     return {"ok"}
 
 
+@router.get("/pamd_auth-off")
+def pamd_auth_off(stand=Depends(get_info_stand)):
+    remote_cmd(command=COMMON_AUTH_OFF, host=stand[3], user=stand[4], passwd=stand[5])
+    return {"ok"}
+
+
 @router.get("/set-network/{version_name}")
 def set_network(version_name: str, stand = Depends(get_info_stand)):
     if version_name.startswith("18"):
@@ -143,6 +150,7 @@ async def all_tuning(version_name: str, stand = Depends(get_info_stand), session
     clone_git_repo(stand=stand)
     wget_qainit(stand=stand)
     set_alias(stand=stand)
+    pamd_auth_off(stand=stand)
     return {"all ok"}
 
 @router.get('/temp')

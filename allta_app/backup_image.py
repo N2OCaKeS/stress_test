@@ -5,7 +5,6 @@ import os
 import json
 from time import sleep, ctime
 import logging
-from tempfile import mkstemp
 import socket
 import paramiko
 from paramiko import ssh_exception
@@ -23,7 +22,7 @@ from libs.zefir import ZefirResultTable, ZefirStatusAPI, response_status
 import psycopg2
 from psycopg2 import sql
 import threading
-from libs.liballta import BootOrder
+from libs.liballta import BootOrder, comm_and_log
 
 
 
@@ -361,58 +360,6 @@ def read_status():
         status = r.read()
         return status
     
-fd, temp_file_err = mkstemp(dir='/tmp/', suffix='log', text=True)
-fd, temp_file_out = mkstemp(dir='/tmp/', suffix='log', text=True)
-
-def check_output_command(command, out=None):
-    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    output, errors = result.communicate()
-    output = os.linesep.join([s for s in output.splitlines() if s])
-    errors = os.linesep.join([s for s in errors.splitlines() if s])
-    if errors == "":
-        return output
-    elif out != None:
-        return errors + output
-    else:
-        return errors
-
-def command(command, fd_close=False):
-    f_err = open(temp_file_err, 'w')
-    f_out = open(temp_file_out, 'w')
-    result = subprocess.Popen([command], shell=True, stderr=f_err, stdout=f_out)
-    output, error = result.communicate()
-    text_comm = command
-    #rc = result.wait()
-    f_err.close()
-    f_out.close()
-
-    with open(temp_file_err) as r:
-        data_err = r.read()
-    with open(temp_file_out) as r:
-        data_out = r.read()
-        
-    if fd_close == True:
-        os.close(fd)
-
-    return result.returncode, data_out, data_err, text_comm
-
-def comm_and_log(comm):
-    code, output, error, text_comm = command(comm)
-    try:
-        if error != '':
-            logging.error(text_comm)
-            logging.error('ErrorCode ' + f'{code}')
-            logging.error(error)
-            os.unlink(temp_file_err)
-        if output != '':
-            logging.debug(output)
-            os.unlink(temp_file_out)
-    except Exception as e:
-        global except_num
-        logging.error(f'Исключение №{except_num}\n{e}')
-        #print('Обнаружено исключение №{}, событие записано в лог'.format(except_num))
-        except_num = except_num + 1
-    return code
 
 def jira_send_status(FTI, TCYC, TCAS, TCV, status):
     def test_cycle_status_start():

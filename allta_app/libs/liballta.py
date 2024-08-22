@@ -10,9 +10,13 @@ import subprocess
 from os import (path, 
                 remove,  
                 setsid,
-                getcwd)
+                getcwd,
+                close,
+                unlink,
+                linesep)
 from multiprocessing import Process
 #import concurrent.futures
+from tempfile import mkstemp
 import paramiko
 from paramiko import ssh_exception
 import socket
@@ -88,6 +92,60 @@ process_list4 = []
 process_list10 = []
 process_list11 = []
 process_list12 = []
+
+
+fd, temp_file_err = mkstemp(dir='/tmp/', suffix='log', text=True)
+fd, temp_file_out = mkstemp(dir='/tmp/', suffix='log', text=True)
+
+def check_output_command(command, out=None):
+    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    output, errors = result.communicate()
+    output = linesep.join([s for s in output.splitlines() if s])
+    errors = linesep.join([s for s in errors.splitlines() if s])
+    if errors == "":
+        return output
+    elif out != None:
+        return errors + output
+    else:
+        return errors
+
+def command(command, fd_close=False):
+    f_err = open(temp_file_err, 'w')
+    f_out = open(temp_file_out, 'w')
+    result = subprocess.Popen([command], shell=True, stderr=f_err, stdout=f_out)
+    output, error = result.communicate()
+    text_comm = command
+    #rc = result.wait()
+    f_err.close()
+    f_out.close()
+
+    with open(temp_file_err) as r:
+        data_err = r.read()
+    with open(temp_file_out) as r:
+        data_out = r.read()
+        
+    if fd_close == True:
+        close(fd)
+
+    return result.returncode, data_out, data_err, text_comm
+
+def comm_and_log(comm):
+    code, output, error, text_comm = command(comm)
+    try:
+        if error != '':
+            logging.error(text_comm)
+            logging.error('ErrorCode ' + f'{code}')
+            logging.error(error)
+            unlink(temp_file_err)
+        if output != '':
+            logging.debug(output)
+            unlink(temp_file_out)
+    except Exception as e:
+        global except_num
+        logging.error(f'Исключение №{except_num}\n{e}')
+        #print('Обнаружено исключение №{}, событие записано в лог'.format(except_num))
+        except_num = except_num + 1
+    return code
 
 
 def generate_random_string(length):
@@ -308,6 +366,9 @@ def run_command_on_stand(num, http=True):
             w.write('Остановлен')
 
     elif command == 'stop':
+        ppid = check_output_command(f"ps -fad -N | grep stand{num} | awk {{'print $2'}}")
+        comm_and_log(f"pkill -TERM -g {ppid}")
+
         if process_manager is not None:
             for process in process_list:
                 try:

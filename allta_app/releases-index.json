@@ -1,5 +1,5 @@
 {
-  "date": "2024-07-24 16:32:16.689104",
+  "date": "2024-08-22 12:46:17.542635",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -16,6 +16,7 @@
     "7.7": {
       "7.7.0": {
         "7.7.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/7.7/7.7.0/7.7.0.1/iso/installation-7.7.0.1-08.09.2022_09.39.iso",
@@ -51,6 +52,7 @@
     "7.6": {
       "7.6.0": {
         "7.6.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/7.6/7.6.0/7.6.0.1/iso/devel-7.6.0.1-17.09.2019_13.43.iso",
@@ -80,6 +82,7 @@
     "1.6": {
       "1.6.4": {
         "1.6.4.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.4/1.6.4.1/iso/devel_update-1.6.4.1-29.10.2019_11.33.iso",
@@ -113,6 +116,7 @@
       },
       "1.6.7": {
         "1.6.7.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.7/1.6.7.1/iso/devel_update-1.6.7.1-11.06.2021_11.39.iso",
@@ -146,6 +150,7 @@
       },
       "1.6.0": {
         "1.6.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.0/1.6.0.1/iso/devel-1.6.0.1-20.06.2018_15.56.iso",
@@ -171,6 +176,7 @@
           "path": "frozen/1.6/1.6.0/1.6.0.1"
         },
         "1.6.0.FSB1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.0/1.6.0.FSB1.1/iso/devel-1.6.0.FSB1.1-28.02.2019_15.07.iso",
@@ -198,6 +204,7 @@
       },
       "1.6.2": {
         "1.6.2.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.2/1.6.2.1/iso/devel_update-1.6.2.1-22.02.2019_11.30.iso",
@@ -231,6 +238,7 @@
       },
       "1.6.5": {
         "1.6.5.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.5/1.6.5.1/iso/main_update-1.6.5.1-27.03.2020_11.35.iso",
@@ -264,6 +272,7 @@
       },
       "1.6.12": {
         "1.6.12.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.12/1.6.12.1/iso/main_update-1.6.12.1-03.08.2023_11.25.iso",
@@ -301,6 +310,7 @@
       },
       "1.6.1": {
         "1.6.1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.1/1.6.1.1/iso/devel_update-1.6.1.1-29.12.2018_11.13.iso",
@@ -332,6 +342,7 @@
           "path": "frozen/1.6/1.6.1/1.6.1.1"
         },
         "1.6.1.FSB1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.1/1.6.1.FSB1.1/iso/main_update-1.6.1.FSB1.1-02.08.2023_00.27.iso",
@@ -359,6 +370,7 @@
       },
       "1.6.9": {
         "1.6.9.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.9/1.6.9.1/iso/main_update-1.6.9.1-08.10.2021_11.46.iso",
@@ -405,6 +417,7 @@
       },
       "1.6.15": {
         "1.6.15.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.15/1.6.15.1/iso/main_update-1.6.15.1-12.04.2024_14.47.iso",
@@ -449,6 +462,7 @@
           "path": "frozen/1.6/1.6.15/1.6.15.1"
         },
         "1.6.15.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.15/1.6.15.2/iso/devel_update-1.6.15.2-27.04.2024_15.16.iso",
@@ -495,6 +509,7 @@
       },
       "1.6.8": {
         "1.6.8.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.8/1.6.8.1/iso/installation-1.6.8.1-20.06.2018_15.56.iso",
@@ -541,6 +556,7 @@
       },
       "1.6.14": {
         "1.6.14.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.14/1.6.14.1/iso/devel_update-1.6.14.1-26.12.2023_13.45.iso",
@@ -587,6 +603,7 @@
       },
       "1.6.3": {
         "1.6.3.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.3/1.6.3.1/iso/devel_update-1.6.3.1-12.09.2019_11.31.iso",
@@ -620,6 +637,7 @@
       },
       "1.6.13": {
         "1.6.13.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.13/1.6.13.3/iso/main_update-1.6.13.3-06.12.2023_22.33.iso",
@@ -664,6 +682,7 @@
           "path": "frozen/1.6/1.6.13/1.6.13.3"
         },
         "1.6.13.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.13/1.6.13.2/iso/devel_update-1.6.13.2-24.11.2023_11.33.iso",
@@ -695,6 +714,7 @@
           "path": "frozen/1.6/1.6.13/1.6.13.2"
         },
         "1.6.13.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.13/1.6.13.1/iso/devel_update-1.6.13.1-15.11.2023_11.33.iso",
@@ -728,6 +748,7 @@
       },
       "1.6.11": {
         "1.6.11.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.11/1.6.11.4/iso/installation-1.6.11.4-29.08.2022_12.04.iso",
@@ -763,6 +784,7 @@
           "path": "frozen/1.6/1.6.11/1.6.11.4"
         },
         "1.6.11.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.11/1.6.11.2/iso/main_update-1.6.11.2-03.08.2023_11.57.iso",
@@ -788,6 +810,7 @@
           "path": "frozen/1.6/1.6.11/1.6.11.2"
         },
         "1.6.11.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.11/1.6.11.1/iso/main_update-1.6.11.1-03.08.2023_11.54.iso",
@@ -813,6 +836,7 @@
           "path": "frozen/1.6/1.6.11/1.6.11.1"
         },
         "1.6.11.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.11/1.6.11.3/iso/installation-1.6.11.3-16.08.2022_11.26.iso",
@@ -850,6 +874,7 @@
       },
       "1.6.10": {
         "1.6.10.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.10/1.6.10.1/iso/devel_update-1.6.10.1-26.11.2021_11.15.iso",
@@ -896,6 +921,7 @@
       },
       "1.6.6": {
         "1.6.6.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.6/1.6.6/1.6.6.1/iso/main_update-1.6.6.1-22.07.2020_11.37.iso",
@@ -931,6 +957,7 @@
     "1.8": {
       "1.8.0": {
         "1.8.0.9": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.9/iso/extended-1.8.0.9-19.02.2024_09.40.iso",
@@ -988,10 +1015,12 @@
           "path": "frozen/1.8/1.8.0/1.8.0.9"
         },
         "1.8.0.1": {
+          "astra_hash": null,
           "files": [],
           "path": "frozen/1.8/1.8.0/1.8.0.1"
         },
         "1.8.0.13": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.13/iso/extended-1.8.0.13-22.03.2024_13.57.iso",
@@ -1049,6 +1078,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.13"
         },
         "1.8.0.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.8/iso/installation-1.8.0.8-12.02.2024_11.25.iso",
@@ -1093,6 +1123,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.8"
         },
         "1.8.0.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.5/iso/devel-1.8.0.5-15.01.2024_14.50.iso",
@@ -1137,6 +1168,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.5"
         },
         "1.8.0.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.6/iso/devel-1.8.0.6-26.01.2024_14.07.iso",
@@ -1181,6 +1213,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.6"
         },
         "1.8.0.10": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.10/iso/installation-1.8.0.10-26.02.2024_18.19-di.iso",
@@ -1238,6 +1271,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.10"
         },
         "1.8.0.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.7/iso/devel-1.8.0.7-07.02.2024_12.04.iso",
@@ -1282,6 +1316,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.7"
         },
         "1.8.0.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.3/iso/devel-1.8.0.3-14.12.2023_15.00.iso",
@@ -1326,6 +1361,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.3"
         },
         "1.8.0.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.4/iso/extended-1.8.0.4-26.12.2023_06.06.iso",
@@ -1370,6 +1406,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.4"
         },
         "1.8.0.14": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.14/iso/installation-1.8.0.14-25.03.2024_19.45-di.iso",
@@ -1427,6 +1464,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.14"
         },
         "1.8.0.11": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.11/iso/installation-1.8.0.11-06.03.2024_11.37-di.iso",
@@ -1484,6 +1522,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.11"
         },
         "1.8.0.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.2/iso/installation-1.8.0.2-29.11.2023_15.38.iso",
@@ -1528,6 +1567,7 @@
           "path": "frozen/1.8/1.8.0/1.8.0.2"
         },
         "1.8.0.12": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.0/1.8.0.12/iso/installation-1.8.0.12-15.03.2024_12.37.iso",
@@ -1587,6 +1627,7 @@
       },
       "1.8.1": {
         "1.8.1.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.1/1.8.1.5/iso/extended-1.8.1.5-21.06.2024_07.39.iso",
@@ -1644,6 +1685,7 @@
           "path": "frozen/1.8/1.8.1/1.8.1.5"
         },
         "1.8.1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.1/1.8.1.1/iso/extended-1.8.1.1-25.04.2024_09.28.iso",
@@ -1688,6 +1730,7 @@
           "path": "frozen/1.8/1.8.1/1.8.1.1"
         },
         "1.8.1.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.1/1.8.1.3/iso/devel-1.8.1.3-05.06.2024_09.27.iso",
@@ -1745,6 +1788,7 @@
           "path": "frozen/1.8/1.8.1/1.8.1.3"
         },
         "1.8.1.7": {
+          "astra_hash": "635c3e1f857fc8f99ca93e547b18bf8604d152c",
           "files": [
             {
               "path": "frozen/1.8/1.8.1/1.8.1.7/iso/installation-1.8.1.7-23.07.2024_15.55.iso",
@@ -1801,7 +1845,66 @@
           ],
           "path": "frozen/1.8/1.8.1/1.8.1.7"
         },
+        "1.8.1.10": {
+          "astra_hash": "0fb7c5a0c954cd185dec3f4e2c2b693a8b4aebc3",
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.10/iso/devel-1.8.1.10-20.08.2024_10.04.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.10/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "8520a59922937797d77c1bdb4c7ea5cb7fe46530720932c78d86dfae1d8a9af4",
+                "md5": "9a392ca1937fefbce9700c4d8a254aca"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.10/iso/extended-1.8.1.10-20.08.2024_10.04.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.10/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "6564012620b23f714edc1ddfa4cc4f8f8fe2894d473bd8c9e04ed5c37938499e",
+                "md5": "a00c60c0efd531c98a47d58c9dfa5b08"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.10/iso/installation-1.8.1.10-20.08.2024_10.04.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.10/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "481ab2a6536db55524fc6536408957936ca4b95d1e2bb79a21ecba6c58ffe876",
+                "md5": "926704db15c7883032da4013a220f793"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.10/iso/installation-1.8.1.10-20.08.2024_10.04-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.10/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "145271c34e57d954668a4183fbe8214f33bdd10f85e121680bdb93d1c1096c0e",
+                "md5": "2a65921533616336b55edbb2faa713b5"
+              }
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.10"
+        },
         "1.8.1.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.1/1.8.1.4/iso/installation-1.8.1.4-15.06.2024_06.05.iso",
@@ -1859,6 +1962,7 @@
           "path": "frozen/1.8/1.8.1/1.8.1.4"
         },
         "1.8.1.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.1/1.8.1.6/iso/installation-1.8.1.6-27.06.2024_14.12-di.iso",
@@ -1915,7 +2019,124 @@
           ],
           "path": "frozen/1.8/1.8.1/1.8.1.6"
         },
+        "1.8.1.8": {
+          "astra_hash": "7983bc309da80c55b080b56dedf1d1dd84acb65",
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.8/iso/devel-1.8.1.8-30.07.2024_13.00.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.8/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "92ad1f489b8c51c628f72024ecd4a59e1f3b574bd21ddcb9b5cb0b19e125e924",
+                "md5": "643d00e39d4d17234beb418f5b8ead37"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.8/iso/installation-1.8.1.8-30.07.2024_13.00-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.8/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "7cbfb633f202074355fddf6b253cd6c8e2024e5de35830f509f9050ac754f324",
+                "md5": "2607672ce75cab0896cc353f7b031ecf"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.8/iso/installation-1.8.1.8-30.07.2024_13.00.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.8/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "94d52cb569d5694abfa00d974bb43065d6993e18be7525b460a2b3b5b2ff4c4b",
+                "md5": "2953afe4cf931b7eefe44785153e0864"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.8/iso/extended-1.8.1.8-30.07.2024_13.00.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.8/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "74182a73d4a04ccd6ee4ccb065bfd817a81029f0d63b879cdc987957709e3b81",
+                "md5": "fa89167bc109f2cda7d85b0a1927fdc2"
+              }
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.8"
+        },
+        "1.8.1.9": {
+          "astra_hash": "7983bc309da80c55b080b56dedf1d1dd84acb65c",
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.9/iso/installation-1.8.1.9-13.08.2024_11.24.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.9/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "d524cc5c97a49a97ac011cf05e587ee59b782b878d680e1eb49f9cf5944f6f55",
+                "md5": "917d0d07d68459d8484c297fa007a921"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.9/iso/installation-1.8.1.9-13.08.2024_11.24-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.9/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "99f167401838af27002d4e198874b5507bbb2c5de937326620797ac9db249670",
+                "md5": "3804d58c10e7cc4708925b2e13cbdb3f"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.9/iso/devel-1.8.1.9-13.08.2024_11.24.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.9/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "60991121beab5f914b6ad7259868e5051afa393af8294484991e5019226a4351",
+                "md5": "536cc70f1877105de4002bc45ba2f286"
+              }
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.9/iso/extended-1.8.1.9-13.08.2024_11.24.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.9/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "ab1907e3efb1b430831934402eec62cd5eca4bda48068340c790defef51818e6",
+                "md5": "04e4fd9b219ca95b9ebee99e55dc2812"
+              }
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.9"
+        },
         "1.8.1.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.8/1.8.1/1.8.1.2/iso/installation-1.8.1.2-20.05.2024_11.21.iso",
@@ -1977,6 +2198,7 @@
     "2.13": {
       "2.13.0": {
         "2.13.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.13/2.13.0/2.13.0.1/iso/main-2.13.0.1-25.12.2020_13.29.iso",
@@ -2006,6 +2228,7 @@
     "1.2": {
       "1.2.0": {
         "1.2.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.2/1.2.0/1.2.0.1/iso/installation-1.2.0.1-04.04.2011_11.15.iso",
@@ -2035,6 +2258,7 @@
     "4.7": {
       "4.7.3": {
         "4.7.3.9": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.3/4.7.3.9/iso/installation-4.7.3.9-16.03.2023_14.53-baikal1.iso",
@@ -2103,6 +2327,7 @@
           "path": "frozen/4.7/4.7.3/4.7.3.9"
         },
         "4.7.3.KREA1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.3/4.7.3.KREA1.1/iso/krea-4.7.3.KREA1.1-02.08.2023_00.59.iso",
@@ -2118,6 +2343,7 @@
           "path": "frozen/4.7/4.7.3/4.7.3.KREA1.1"
         },
         "4.7.3.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.3/4.7.3.8/iso/main-4.7.3.8-27.01.2023_15.06.iso",
@@ -2186,6 +2412,7 @@
           "path": "frozen/4.7/4.7.3/4.7.3.8"
         },
         "4.7.3.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.3/4.7.3.5/iso/base-4.7.3.5-10.11.2022_11.43.tgz",
@@ -2254,6 +2481,7 @@
           "path": "frozen/4.7/4.7.3/4.7.3.5"
         },
         "4.7.3.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.3/4.7.3.6/iso/base-4.7.3.6-22.12.2022_11.24.tgz",
@@ -2322,6 +2550,7 @@
           "path": "frozen/4.7/4.7.3/4.7.3.6"
         },
         "4.7.3.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.3/4.7.3.7/iso/installation-4.7.3.7-16.01.2023_17.27-huawei1.iso",
@@ -2392,6 +2621,7 @@
       },
       "4.7.4": {
         "4.7.4.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.4/iso/installation-4.7.4.4-21.07.2023_21.27-baikal1.iso",
@@ -2456,6 +2686,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.4"
         },
         "4.7.4.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.2/iso/installation-4.7.4.2-28.06.2023_16.26-huawei1.iso",
@@ -2526,6 +2757,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.2"
         },
         "4.7.4.KREA1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.KREA1.1/iso/krea-4.7.4.KREA1.1-02.08.2023_01.00.iso",
@@ -2541,6 +2773,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.KREA1.1"
         },
         "4.7.4.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.1/iso/base-4.7.4.1-26.04.2023_10.46.tgz",
@@ -2609,6 +2842,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.1"
         },
         "4.7.4.EXT1.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.EXT1.2/iso/extended-4.7.4.EXT1.2-27.09.2023_05.21.tgz",
@@ -2624,6 +2858,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.EXT1.2"
         },
         "4.7.4.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.6/iso/installation-4.7.4.6-29.08.2023_16.33-mtrust1.iso",
@@ -2688,6 +2923,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.6"
         },
         "4.7.4.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.3/iso/installation-4.7.4.3-18.07.2023_17.41-huawei1.iso",
@@ -2752,6 +2988,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.3"
         },
         "4.7.4.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.5/iso/base-4.7.4.5-30.07.2023_12.01.iso",
@@ -2816,6 +3053,7 @@
           "path": "frozen/4.7/4.7.4/4.7.4.5"
         },
         "4.7.4.EXT1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.4/4.7.4.EXT1.1/iso/extended-4.7.4.EXT1.1-24.07.2023_14.21.tgz",
@@ -2833,6 +3071,7 @@
       },
       "4.7.1": {
         "4.7.1.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.1/4.7.1.8/iso/main-4.7.1.8-30.12.2021_12.31.iso",
@@ -2902,6 +3141,7 @@
       },
       "4.7.0": {
         "4.7.0.KREA1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.0/4.7.0.KREA1.1/iso/krea-4.7.0.KREA1.1-02.08.2023_00.57.iso",
@@ -2917,6 +3157,7 @@
           "path": "frozen/4.7/4.7.0/4.7.0.KREA1.1"
         },
         "4.7.0.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.0/4.7.0.6/iso/installation-4.7.0.6-11.06.2021_19.46-baikal1.iso",
@@ -2966,7 +3207,79 @@
         }
       },
       "4.7.6": {
+        "4.7.6.2": {
+          "astra_hash": null,
+          "files": [
+            {
+              "path": "frozen/4.7/4.7.6/4.7.6.2/iso/installation-4.7.6.2-01.08.2024_19.54.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.6/4.7.6.2/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "162c6ad10713ec8cba8b2b77c3d562c6eac8ad532b77386db0c7b708a467d644",
+                "md5": "3e21fee39c977fca7f0a00ea51f9c183"
+              }
+            },
+            {
+              "path": "frozen/4.7/4.7.6/4.7.6.2/iso/base-4.7.6.2-01.08.2024_19.14.iso",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.6/4.7.6.2/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "1d8a1a2bd81f449906b5c19c890df390085ed1a737e060ffbfdc13c653165d6c",
+                "md5": "fed316ac34ef57ec352b532965dbba84"
+              }
+            },
+            {
+              "path": "frozen/4.7/4.7.6/4.7.6.2/iso/installation-4.7.6.2-01.08.2024_19.37-baikal1.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.6/4.7.6.2/installation-baikal1",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "baikal1",
+              "hashsums": {
+                "gost": "0b70c556752ca61919b40956f45d306d74ece63da540a148d184f509c91931dc",
+                "md5": "cfc04b1e0224e3cfcaba991a5977761f"
+              }
+            },
+            {
+              "path": "frozen/4.7/4.7.6/4.7.6.2/iso/main_update-4.7.6.2-01.08.2024_19.07.iso",
+              "type": "main_update",
+              "mount_point": "frozen/4.7/4.7.6/4.7.6.2/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "0467777bc8c53e5e60e789e85f6610b1d34b9ac1773b085449f5fa827073c874",
+                "md5": "5ca8f8f8903a9100173bcf8ff5eb97dd"
+              }
+            },
+            {
+              "path": "frozen/4.7/4.7.6/4.7.6.2/iso/installation-4.7.6.2-01.08.2024_19.19-mtrust1.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.6/4.7.6.2/installation-mtrust1",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": "mtrust1",
+              "hashsums": {
+                "gost": "c8e48258ad82ab45b9b834d5e47638afec878d060eb568cc9879641c2781b043",
+                "md5": "fefb2d7c3ec73e30e1459704c06682f1"
+              }
+            }
+          ],
+          "path": "frozen/4.7/4.7.6/4.7.6.2"
+        },
         "4.7.6.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.6/4.7.6.1/iso/installation-4.7.6.1-16.07.2024_12.58.iso",
@@ -3039,6 +3352,7 @@
       },
       "4.7.5": {
         "4.7.5.EXT1.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.EXT1.2/iso/extended-4.7.5.EXT1.2-01.04.2024_13.48.iso",
@@ -3057,6 +3371,7 @@
           "path": "frozen/4.7/4.7.5/4.7.5.EXT1.2"
         },
         "4.7.5.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.2/iso/base-4.7.5.2-06.12.2023_19.56.iso",
@@ -3127,6 +3442,7 @@
           "path": "frozen/4.7/4.7.5/4.7.5.2"
         },
         "4.7.5.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.1/iso/installation-4.7.5.1-27.10.2023_22.53-baikal1.iso",
@@ -3191,6 +3507,7 @@
           "path": "frozen/4.7/4.7.5/4.7.5.1"
         },
         "4.7.5.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.3/iso/main_update-4.7.5.3-01.03.2024_13.12.iso",
@@ -3261,6 +3578,7 @@
           "path": "frozen/4.7/4.7.5/4.7.5.3"
         },
         "4.7.5.EXT1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.EXT1.1/iso/extended-4.7.5.EXT1.1-18.03.2024_14.05.iso",
@@ -3279,6 +3597,7 @@
           "path": "frozen/4.7/4.7.5/4.7.5.EXT1.1"
         },
         "4.7.5.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.5/iso/base-4.7.5.5-04.04.2024_15.04.iso",
@@ -3349,6 +3668,7 @@
           "path": "frozen/4.7/4.7.5/4.7.5.5"
         },
         "4.7.5.EXT1.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.EXT1.3/iso/extended-4.7.5.EXT1.3-17.04.2024_12.47.iso",
@@ -3367,6 +3687,7 @@
           "path": "frozen/4.7/4.7.5/4.7.5.EXT1.3"
         },
         "4.7.5.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.5/4.7.5.4/iso/installation-4.7.5.4-28.03.2024_20.39.iso",
@@ -3439,6 +3760,7 @@
       },
       "4.7.2": {
         "4.7.2.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.2/4.7.2.4/iso/installation-4.7.2.4-30.08.2022_17.20-huawei1.iso",
@@ -3507,6 +3829,7 @@
           "path": "frozen/4.7/4.7.2/4.7.2.4"
         },
         "4.7.2.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.7/4.7.2/4.7.2.5/iso/base-4.7.2.5-08.09.2022_15.07.tgz",
@@ -3579,6 +3902,7 @@
     "1.7": {
       "1.7.0": {
         "1.7.0.18": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.0/1.7.0.18/iso/installation-1.7.0.18-11.06.2021_12.40.iso",
@@ -3609,6 +3933,7 @@
       },
       "1.7.3": {
         "1.7.3.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.4/iso/installation-1.7.3.4-28.10.2022_22.59.iso",
@@ -3647,6 +3972,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.4"
         },
         "1.7.3.11": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.11/iso/main_update-1.7.3.11-02.08.2023_10.02.iso",
@@ -3685,6 +4011,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.11"
         },
         "1.7.3.KREA1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.KREA1.1/iso/krea-1.7.3.KREA1.1-02.08.2023_00.45.iso",
@@ -3700,6 +4027,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.KREA1.1"
         },
         "1.7.3.KREA4.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.KREA4.1/iso/krea-1.7.3.KREA4.1-02.08.2023_00.46.iso",
@@ -3715,6 +4043,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.KREA4.1"
         },
         "1.7.3.13": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.13/iso/installation-1.7.3.13-03.03.2023_11.09.iso",
@@ -3753,6 +4082,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.13"
         },
         "1.7.3.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.5/iso/main_update-1.7.3.5-02.08.2023_12.17.iso",
@@ -3791,6 +4121,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.5"
         },
         "1.7.3.12": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.12/iso/main_update-1.7.3.12-02.08.2023_10.27.iso",
@@ -3829,6 +4160,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.12"
         },
         "1.7.3.KREA6.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.KREA6.1/iso/krea-1.7.3.KREA6.1-02.08.2023_00.47.iso",
@@ -3844,6 +4176,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.KREA6.1"
         },
         "1.7.3.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.8/iso/main_update-1.7.3.8-02.08.2023_13.17.iso",
@@ -3872,6 +4205,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.8"
         },
         "1.7.3.EXT1.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.EXT1.3/iso/extended-1.7.3.EXT1.3-23.11.2022_19.59.tgz",
@@ -3887,6 +4221,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.EXT1.3"
         },
         "1.7.3.10": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.10/iso/main_update-1.7.3.10-02.08.2023_09.37.iso",
@@ -3925,6 +4260,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.10"
         },
         "1.7.3.9": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.9/iso/base-1.7.3.9-16.12.2022_12.32.tgz",
@@ -3953,6 +4289,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.9"
         },
         "1.7.3.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.7/iso/installation-1.7.3.7-03.11.2022_15.53.iso",
@@ -3991,6 +4328,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.7"
         },
         "1.7.3.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.6/iso/installation-1.7.3.6-31.10.2022_09.47.iso",
@@ -4029,6 +4367,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.6"
         },
         "1.7.3.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.1/iso/installation-1.7.3.1-07.10.2022_18.28.iso",
@@ -4067,6 +4406,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.1"
         },
         "1.7.3.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.3/iso/installation-1.7.3.3-25.10.2022_13.46.iso",
@@ -4105,6 +4445,7 @@
           "path": "frozen/1.7/1.7.3/1.7.3.3"
         },
         "1.7.3.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.3/1.7.3.2/iso/base-1.7.3.2-17.10.2022_21.17.tgz",
@@ -4145,6 +4486,7 @@
       },
       "1.7.5": {
         "1.7.5.KREA2.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.KREA2.1/iso/krea-1.7.5.KREA2.1-24.06.4_17.44.iso",
@@ -4163,6 +4505,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.KREA2.1"
         },
         "1.7.5.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.8/iso/base-1.7.5.8-16.10.23_12.29.iso",
@@ -4207,6 +4550,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.8"
         },
         "1.7.5.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.6/iso/main_update-1.7.5.6-02.10.23_11.05.iso",
@@ -4251,6 +4595,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.6"
         },
         "1.7.5.10": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.10/iso/base-1.7.5.10-23.11.23_15.26.iso",
@@ -4295,6 +4640,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.10"
         },
         "1.7.5.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.4/iso/main_update-1.7.5.4-08.09.23_11.27.iso",
@@ -4339,6 +4685,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.4"
         },
         "1.7.5.9": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.9/iso/installation-1.7.5.9-16.10.23_16.58.iso",
@@ -4383,6 +4730,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.9"
         },
         "1.7.5.15": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.15/iso/base-1.7.5.15-02.02.24_17.13.iso",
@@ -4427,6 +4775,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.15"
         },
         "1.7.5.EXT1.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.EXT1.2/iso/extended-1.7.5.EXT1.2-28.10.2023_01.35.iso",
@@ -4442,6 +4791,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.EXT1.2"
         },
         "1.7.5.16": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.16/iso/main_update-1.7.5.16-06.02.24_14.21.iso",
@@ -4486,6 +4836,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.16"
         },
         "1.7.5.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.1/iso/installation-1.7.5.1-27.07.23_15.40.iso",
@@ -4530,6 +4881,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.1"
         },
         "1.7.5.KREA1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.KREA1.1/iso/krea-1.7.5.KREA1.1-23.11.16_16.52.iso",
@@ -4548,6 +4900,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.KREA1.1"
         },
         "1.7.5.11": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.11/iso/base-1.7.5.11-18.12.23_16.43.iso",
@@ -4592,6 +4945,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.11"
         },
         "1.7.5.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.3/iso/installation-1.7.5.3-01.09.23_13.45.iso",
@@ -4636,6 +4990,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.3"
         },
         "1.7.5.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.7/iso/base-1.7.5.7-10.10.23_18.29.iso",
@@ -4680,6 +5035,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.7"
         },
         "1.7.5.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.5/iso/base-1.7.5.5-19.09.23_18.13.iso",
@@ -4724,6 +5080,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.5"
         },
         "1.7.5.EXT1.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.EXT1.5/iso/extended-1.7.5.EXT1.5-07.11.2023_19.05.iso",
@@ -4739,6 +5096,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.EXT1.5"
         },
         "1.7.5.12": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.12/iso/main_update-1.7.5.12-19.12.23_15.28.iso",
@@ -4783,6 +5141,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.12"
         },
         "1.7.5.13": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.13/iso/main_update-1.7.5.13-19.01.24_10.46.iso",
@@ -4827,6 +5186,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.13"
         },
         "1.7.5.EXT1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.EXT1.1/iso/extended-1.7.5.EXT1.1-23.10.2023_17.59.iso",
@@ -4842,6 +5202,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.EXT1.1"
         },
         "1.7.5.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.2/iso/base-1.7.5.2-22.08.23_16.53.iso",
@@ -4886,6 +5247,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.2"
         },
         "1.7.5.14": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.14/iso/installation-1.7.5.14-23.01.24_15.08.iso",
@@ -4930,6 +5292,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.14"
         },
         "1.7.5.EXT1.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.EXT1.3/iso/extended-1.7.5.EXT1.3-02.11.2023_20.14.iso",
@@ -4945,6 +5308,7 @@
           "path": "frozen/1.7/1.7.5/1.7.5.EXT1.3"
         },
         "1.7.5.EXT1.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.5/1.7.5.EXT1.4/iso/extended-1.7.5.EXT1.4-03.11.2023_22.55.iso",
@@ -4962,6 +5326,7 @@
       },
       "1.7.2": {
         "1.7.2.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.6/iso/installation-1.7.2.6-31.08.2022_13.05.iso",
@@ -4990,6 +5355,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.6"
         },
         "1.7.2.EXT2.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.EXT2.3/iso/extended-1.7.2.EXT2.3-12.10.2022_17.13.tgz",
@@ -5005,6 +5371,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.EXT2.3"
         },
         "1.7.2.EXT2.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.EXT2.2/iso/extended-1.7.2.EXT2.2-05.10.2022_19.39.tgz",
@@ -5020,6 +5387,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.EXT2.2"
         },
         "1.7.2.10": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.10/iso/main_update-1.7.2.10-02.08.2023_05.57.iso",
@@ -5048,6 +5416,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.10"
         },
         "1.7.2.EXT1.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.EXT1.2/iso/extended-1.7.2.EXT1.2-25.08.2022_19.50.tgz",
@@ -5063,6 +5432,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.EXT1.2"
         },
         "1.7.2.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.3/iso/main_update-1.7.2.3-02.08.2023_06.53.iso",
@@ -5101,6 +5471,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.3"
         },
         "1.7.2.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.1/iso/main_update-1.7.2.1-02.08.2023_05.41.iso",
@@ -5129,6 +5500,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.1"
         },
         "1.7.2.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.8/iso/main_update-1.7.2.8-02.08.2023_08.39.iso",
@@ -5157,6 +5529,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.8"
         },
         "1.7.2.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.7/iso/installation-1.7.2.7-08.09.2022_09.39.iso",
@@ -5185,6 +5558,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.7"
         },
         "1.7.2.EXT1.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.EXT1.3/iso/extended-1.7.2.EXT1.3-31.08.2022_10.39.tgz",
@@ -5200,6 +5574,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.EXT1.3"
         },
         "1.7.2.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.2/iso/base-1.7.2.2-06.07.2022_19.39.tgz",
@@ -5238,6 +5613,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.2"
         },
         "1.7.2.EXT1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.EXT1.1/iso/extended-1.7.2.EXT1.1-16.08.2022_17.36.tgz",
@@ -5253,6 +5629,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.EXT1.1"
         },
         "1.7.2.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.4/iso/base-1.7.2.4-01.08.2022_15.33.tgz",
@@ -5291,6 +5668,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.4"
         },
         "1.7.2.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.5/iso/base-1.7.2.5-11.08.2022_15.28.tgz",
@@ -5329,6 +5707,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.5"
         },
         "1.7.2.9": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.9/iso/base-1.7.2.9-28.09.2022_14.21.tgz",
@@ -5357,6 +5736,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.9"
         },
         "1.7.2.11": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.11/iso/main_update-1.7.2.11-02.08.2023_06.14.iso",
@@ -5385,6 +5765,7 @@
           "path": "frozen/1.7/1.7.2/1.7.2.11"
         },
         "1.7.2.EXT2.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.2/1.7.2.EXT2.1/iso/extended-1.7.2.EXT2.1-30.09.2022_14.34.tgz",
@@ -5402,6 +5783,7 @@
       },
       "1.7.4": {
         "1.7.4.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.7/iso/main_update-1.7.4.7-02.08.2023_17.26.iso",
@@ -5440,6 +5822,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.7"
         },
         "1.7.4.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.5/iso/main_update-1.7.4.5-02.08.2023_16.27.iso",
@@ -5478,6 +5861,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.5"
         },
         "1.7.4.10": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.10/iso/main_update-1.7.4.10-16.06.23_13.05.iso",
@@ -5522,6 +5906,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.10"
         },
         "1.7.4.9": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.9/iso/main_update-1.7.4.9-11.06.23_09.18.iso",
@@ -5566,6 +5951,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.9"
         },
         "1.7.4.11": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.11/iso/main_update-1.7.4.11-23.06.23_17.13.iso",
@@ -5610,6 +5996,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.11"
         },
         "1.7.4.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.8/iso/installation-1.7.4.8-01.06.23_20.24.iso",
@@ -5654,6 +6041,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.8"
         },
         "1.7.4.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.1/iso/main_update-1.7.4.1-02.08.2023_14.06.iso",
@@ -5692,6 +6080,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.1"
         },
         "1.7.4.EXT1.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.EXT1.4/iso/extended-1.7.4.EXT1.4-23.05.2023_22.01.tgz",
@@ -5707,6 +6096,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.EXT1.4"
         },
         "1.7.4.EXT1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.EXT1.1/iso/extended-1.7.4.EXT1.1-11.05.2023_05.51.tgz",
@@ -5722,6 +6112,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.EXT1.1"
         },
         "1.7.4.EXT1.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.EXT1.3/iso/extended-1.7.4.EXT1.3-22.05.2023_19.54.tgz",
@@ -5737,6 +6128,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.EXT1.3"
         },
         "1.7.4.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.3/iso/installation-1.7.4.3-31.03.2023_10.36.iso",
@@ -5775,6 +6167,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.3"
         },
         "1.7.4.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.4/iso/installation-1.7.4.4-05.04.2023_16.38.iso",
@@ -5813,6 +6206,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.4"
         },
         "1.7.4.KREA2.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.KREA2.1/iso/krea-1.7.4.KREA2.1-02.08.2023_00.48.iso",
@@ -5828,6 +6222,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.KREA2.1"
         },
         "1.7.4.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.6/iso/main_update-1.7.4.6-02.08.2023_16.57.iso",
@@ -5866,6 +6261,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.6"
         },
         "1.7.4.KREA1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.KREA1.1/iso/krea-1.7.4.KREA1.1-02.08.2023_00.47.iso",
@@ -5881,6 +6277,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.KREA1.1"
         },
         "1.7.4.EXT1.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.EXT1.2/iso/extended-1.7.4.EXT1.2-18.05.2023_17.01.tgz",
@@ -5896,6 +6293,7 @@
           "path": "frozen/1.7/1.7.4/1.7.4.EXT1.2"
         },
         "1.7.4.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.4/1.7.4.2/iso/main_update-1.7.4.2-02.08.2023_14.54.iso",
@@ -5936,6 +6334,7 @@
       },
       "1.7.6": {
         "1.7.6.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.4/iso/installation-1.7.6.4-18.04.24_12.00.iso",
@@ -5980,6 +6379,7 @@
           "path": "frozen/1.7/1.7.6/1.7.6.4"
         },
         "1.7.6.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.1/iso/installation-1.7.6.1-21.03.24_14.24.iso",
@@ -6024,6 +6424,7 @@
           "path": "frozen/1.7/1.7.6/1.7.6.1"
         },
         "1.7.6.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.7/iso/main_update-1.7.6.7-09.07.24_14.42.iso",
@@ -6068,6 +6469,7 @@
           "path": "frozen/1.7/1.7.6/1.7.6.7"
         },
         "1.7.6.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.3/iso/main_update-1.7.6.3-09.04.24_19.50.iso",
@@ -6111,7 +6513,53 @@
           ],
           "path": "frozen/1.7/1.7.6/1.7.6.3"
         },
+        "1.7.6.8": {
+          "astra_hash": "718fdf95e6dfac32e1ab68fd7e5c7ce7c488ae2f",
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.8/iso/base-1.7.6.8-24.07.24_17.48.iso",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.8/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "0947e381d829aeea4ebf5d11cee4aadb324af4e71f8ec8d21685f524de3dd37e",
+                "md5": "43da299638452d02ce082da3c86af91e"
+              }
+            },
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.8/iso/main_update-1.7.6.8-24.07.24_17.48.iso",
+              "type": "main_update",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.8/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "ff00f0ea2a7dd10c979555b125611cacae47d01d1ddb4ad462934d74522afd94",
+                "md5": "bac5e2383f2eac30d5eae4f6a678b9b6"
+              }
+            },
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.8/iso/installation-1.7.6.8-24.07.24_17.48.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.8/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "cb5d773370936f73d3fa1dff1ac1f6f7a6452932ae85630ffda990233586d4e4",
+                "md5": "bf326f1dd65d72afff5dd525f275cfbd"
+              }
+            }
+          ],
+          "path": "frozen/1.7/1.7.6/1.7.6.8"
+        },
         "1.7.6.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.5/iso/installation-1.7.6.5-27.05.24_17.36.iso",
@@ -6156,6 +6604,7 @@
           "path": "frozen/1.7/1.7.6/1.7.6.5"
         },
         "1.7.6.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.6/iso/installation-1.7.6.6-19.06.24_17.06.iso",
@@ -6199,7 +6648,40 @@
           ],
           "path": "frozen/1.7/1.7.6/1.7.6.6"
         },
+        "1.7.6.EXT1.2": {
+          "astra_hash": null,
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.EXT1.2/iso/extended-1.7.6.EXT1.2-25.07.2024_22.09-no-dkms.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.EXT1.2/extended-repository-no-dkms",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": "no-dkms",
+              "hashsums": {
+                "gost": "c0eee29a7d185f79e7d13803462305fb47b3f44c4c81b5701be8bd6f6bedfac7",
+                "md5": "ea585878849d864b99dc4d6beb5cb1ad"
+              }
+            },
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.EXT1.2/iso/extended-1.7.6.EXT1.2-25.07.2024_22.09.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.EXT1.2/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "c13b47f6963ea04ffc65dc8d001791ea97e203c815622478392d1a72761e9a85",
+                "md5": "53b7aae238909458157f4c19031c34d8"
+              }
+            }
+          ],
+          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.2"
+        },
         "1.7.6.EXT1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.EXT1.1/iso/extended-1.7.6.EXT1.1-11.07.2024_12.52.iso",
@@ -6217,7 +6699,53 @@
           ],
           "path": "frozen/1.7/1.7.6/1.7.6.EXT1.1"
         },
+        "1.7.6.9": {
+          "astra_hash": "5da7cec1f1d09cd4ae62b284d7fc7a5402159d9b",
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.9/iso/main_update-1.7.6.9-09.08.24_12.51.iso",
+              "type": "main_update",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.9/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "c01351791d4ef8b0eda973ea0cb05e30b191fb9cb112c4d9d037617561b98792",
+                "md5": "90fec83666f68ff1533638048a1dd783"
+              }
+            },
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.9/iso/base-1.7.6.9-09.08.24_12.51.iso",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.9/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "049dc2c26dff8c3d89e464e6c5277463bb6203af7080356ca087715b17c5bdc8",
+                "md5": "e437a3910e7fafc3c7dfc86d64a5c6dd"
+              }
+            },
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.9/iso/installation-1.7.6.9-09.08.24_12.51.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.9/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "93d54ecb3e22a93207a2f6ad697b423ca99c91a2117262fd0e0cc71e20345632",
+                "md5": "f9770a6fd3d5e78e54670ccfb27372c2"
+              }
+            }
+          ],
+          "path": "frozen/1.7/1.7.6/1.7.6.9"
+        },
         "1.7.6.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.6/1.7.6.2/iso/installation-1.7.6.2-09.04.24_15.16.iso",
@@ -6261,53 +6789,55 @@
           ],
           "path": "frozen/1.7/1.7.6/1.7.6.2"
         },
-        "1.7.6.8": {
+        "1.7.6.10": {
+          "astra_hash": "c98c87a89ec3c0fba8cf8ea6f7c409f44bc9495a",
           "files": [
             {
-              "path": "frozen/1.7/1.7.6/1.7.6.8/iso/base-1.7.6.8-24.07.24_17.48.iso",
-              "type": "base",
-              "mount_point": "frozen/1.7/1.7.6/1.7.6.8/base-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "0947e381d829aeea4ebf5d11cee4aadb324af4e71f8ec8d21685f524de3dd37e",
-                "md5": "43da299638452d02ce082da3c86af91e"
-              }
-            },
-            {
-              "path": "frozen/1.7/1.7.6/1.7.6.8/iso/main_update-1.7.6.8-24.07.24_17.48.iso",
+              "path": "frozen/1.7/1.7.6/1.7.6.10/iso/main_update-1.7.6.10-22.08.24_13.40.iso",
               "type": "main_update",
-              "mount_point": "frozen/1.7/1.7.6/1.7.6.8/update-repository",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.10/update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
               "device": null,
               "hashsums": {
-                "gost": "ff00f0ea2a7dd10c979555b125611cacae47d01d1ddb4ad462934d74522afd94",
-                "md5": "bac5e2383f2eac30d5eae4f6a678b9b6"
+                "gost": "36c2aea2c937d107d2dbab207527bb2f502874869ae003a58cb24e3ef43e02a1",
+                "md5": "1ca71ade936927219611daeb1dc00516"
               }
             },
             {
-              "path": "frozen/1.7/1.7.6/1.7.6.8/iso/installation-1.7.6.8-24.07.24_17.48.iso",
+              "path": "frozen/1.7/1.7.6/1.7.6.10/iso/installation-1.7.6.10-22.08.24_13.40.iso",
               "type": "installation",
-              "mount_point": "frozen/1.7/1.7.6/1.7.6.8/installation",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.10/installation",
               "is_iso": true,
               "is_bootable_iso": true,
               "is_tarball": false,
               "device": null,
               "hashsums": {
-                "gost": "cb5d773370936f73d3fa1dff1ac1f6f7a6452932ae85630ffda990233586d4e4",
-                "md5": "bf326f1dd65d72afff5dd525f275cfbd"
+                "gost": "8e6703d392b6eaa0fab2a1af7d68a7cbea718a7b9799a2a451baa4bf6b93a71a",
+                "md5": "725f6d1c92bccd1c9b7dec62ff0eb776"
+              }
+            },
+            {
+              "path": "frozen/1.7/1.7.6/1.7.6.10/iso/base-1.7.6.10-22.08.24_13.40.iso",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.6/1.7.6.10/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "29544306ffecabd607e75a7ec0b7eaf9244327a75ae89048705c1b39a49a6b9d",
+                "md5": "6d87f99b16ec807314f888b610f8b7e5"
               }
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.8"
+          "path": "frozen/1.7/1.7.6/1.7.6.10"
         }
       },
       "1.7.1": {
         "1.7.1.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.1/1.7.1.8/iso/base-1.7.1.8-22.11.2021_10.50.tgz",
@@ -6346,6 +6876,7 @@
           "path": "frozen/1.7/1.7.1/1.7.1.8"
         },
         "1.7.1.EXT2.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.7/1.7.1/1.7.1.EXT2.3/iso/extended-1.7.1.EXT2.3-22.01.2022_13.02.tgz",
@@ -6365,6 +6896,7 @@
     "1.4": {
       "1.4.0": {
         "1.4.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.4/1.4.0/1.4.0.1/iso/devel-1.4.0.1-09.07.2014_14.06.iso",
@@ -6394,6 +6926,7 @@
     "2.12": {
       "2.12.40": {
         "2.12.40.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.40/2.12.40.1/iso/installation-2.12.40.1-25.12.2020_14.45.iso",
@@ -6411,6 +6944,7 @@
       },
       "2.12.43": {
         "2.12.43.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.43/2.12.43.1/iso/installation-2.12.43.1-14.09.2021_10.29.iso",
@@ -6428,6 +6962,7 @@
       },
       "2.12.22": {
         "2.12.22.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.22/2.12.22.1/iso/installation-2.12.22.1-04.12.2019_09.06.iso",
@@ -6445,6 +6980,7 @@
       },
       "2.12.13": {
         "2.12.13.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.13/2.12.13.1/iso/installation-2.12.13.1-06.05.2019_12.39.iso",
@@ -6462,6 +6998,7 @@
       },
       "2.12.46": {
         "2.12.46.KREA3.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.KREA3.3/iso/krea-2.12.46.KREA3.3-17.01.2024_14.58.iso",
@@ -6480,6 +7017,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.KREA3.3"
         },
         "2.12.46.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.1/iso/installation-2.12.46.1-21.02.2023_18.20.iso",
@@ -6495,6 +7033,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.1"
         },
         "2.12.46.KREA2.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.KREA2.1/iso/krea-2.12.46.KREA2.1-08.11.2023_16.36.iso",
@@ -6510,6 +7049,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.KREA2.1"
         },
         "2.12.46.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.3/iso/installation-2.12.46.3-21.03.2023_14.00.iso",
@@ -6525,6 +7065,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.3"
         },
         "2.12.46.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.2/iso/installation-2.12.46.2-09.03.2023_10.59.iso",
@@ -6540,6 +7081,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.2"
         },
         "2.12.46.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.5/iso/installation-2.12.46.5-07.04.2023_18.23.iso",
@@ -6555,6 +7097,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.5"
         },
         "2.12.46.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.6/iso/installation-2.12.46.6-17.04.2023_15.09.iso",
@@ -6570,6 +7113,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.6"
         },
         "2.12.46.KREA3.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.KREA3.1/iso/krea-2.12.46.KREA3.1-11.01.2024_11.56.iso",
@@ -6588,6 +7132,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.KREA3.1"
         },
         "2.12.46.KREA1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.KREA1.1/iso/krea-2.12.46.KREA1.1-02.08.2023_01.25.iso",
@@ -6603,6 +7148,7 @@
           "path": "frozen/2.12/2.12.46/2.12.46.KREA1.1"
         },
         "2.12.46.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.46/2.12.46.4/iso/installation-2.12.46.4-02.04.2023_20.53.iso",
@@ -6620,6 +7166,7 @@
       },
       "2.12.45": {
         "2.12.45.KREA3.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.45/2.12.45.KREA3.1/iso/krea-2.12.45.KREA3.1-02.08.2023_01.23.iso",
@@ -6635,6 +7182,7 @@
           "path": "frozen/2.12/2.12.45/2.12.45.KREA3.1"
         },
         "2.12.45.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.45/2.12.45.1/iso/installation-2.12.45.1-23.07.2022_07.53.iso",
@@ -6650,6 +7198,7 @@
           "path": "frozen/2.12/2.12.45/2.12.45.1"
         },
         "2.12.45.KREA5.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/2.12/2.12.45/2.12.45.KREA5.1/iso/krea-2.12.45.KREA5.1-02.08.2023_01.24.iso",
@@ -6669,6 +7218,7 @@
     "1.3": {
       "1.3.0": {
         "1.3.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.3/1.3.0/1.3.0.1/iso/installation-1.3.0.1-05.11.2012_19.03.iso",
@@ -6698,6 +7248,7 @@
     "6.2": {
       "6.2.1": {
         "6.2.1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/6.2/6.2.1/6.2.1.1/iso/main-6.2.1.1-03.08.2023_10.48.iso",
@@ -6726,44 +7277,55 @@
     },
     "8.1": {
       "8.1.3": {
-        "8.1.3.1": {
+        "8.1.3.11": {
+          "astra_hash": null,
           "files": [
             {
-              "path": "frozen/8.1/8.1.3/8.1.3.1/iso/installation-8.1.3.1-03.08.2023_02.55.iso",
-              "type": "installation",
-              "mount_point": "frozen/8.1/8.1.3/8.1.3.1/installation",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {}
-            },
-            {
-              "path": "frozen/8.1/8.1.3/8.1.3.1/iso/devel_update-8.1.3.1-03.08.2023_02.56.iso",
+              "path": "frozen/8.1/8.1.3/8.1.3.11/iso/devel_update-8.1.3.11-19.10.2021_02.53.iso",
               "type": "devel_update",
-              "mount_point": "frozen/8.1/8.1.3/8.1.3.1/devel-update-repository",
+              "mount_point": "frozen/8.1/8.1.3/8.1.3.11/devel-update-repository",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "d28b99c5c416c11f9fe1f90410c51454e2efe4ceccbf80a9b79b0083b4587e2e",
+                "md5": "dde803b226d116cbf3a5df64f481d39c"
+              }
             },
             {
-              "path": "frozen/8.1/8.1.3/8.1.3.1/iso/main_update-8.1.3.1-19.10.2021_02.53.iso",
-              "type": "main_update",
-              "mount_point": "frozen/8.1/8.1.3/8.1.3.1/update-repository",
+              "path": "frozen/8.1/8.1.3/8.1.3.11/iso/installation-8.1.3.11-19.10.2021_02.53.iso",
+              "type": "installation",
+              "mount_point": "frozen/8.1/8.1.3/8.1.3.11/installation",
               "is_iso": true,
               "is_bootable_iso": false,
               "is_tarball": false,
               "device": null,
-              "hashsums": {}
+              "hashsums": {
+                "gost": "f18bbcdb13a95624c5fa5874d1c54f638d41979db39041b42ba1f202e9491cea",
+                "md5": "ced481b91d7c03a9c3a7f56837784029"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.3/8.1.3.11/iso/main_update-8.1.3.11-19.10.2021_02.53.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.3/8.1.3.11/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "46b7897a35dfa6c3b9bbd22c9dc3fa2777b39b7d5fb6e1a729ee9a056a0d2fcf",
+                "md5": "8fddf5a13887274f874e356d8181e644"
+              }
             }
           ],
-          "path": "frozen/8.1/8.1.3/8.1.3.1"
+          "path": "frozen/8.1/8.1.3/8.1.3.11"
         }
       },
       "8.1.0": {
         "8.1.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.0/8.1.0.1/iso/main-8.1.0.1-26.01.2019_17.49.iso",
@@ -6791,6 +7353,7 @@
       },
       "8.1.4": {
         "8.1.4.29": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.29/iso/main_update-8.1.4.29-08.11.2023_20.15.iso",
@@ -6826,6 +7389,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.29"
         },
         "8.1.4.23": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.23/iso/devel_update-8.1.4.23-02.10.2023_16.52.iso",
@@ -6861,6 +7425,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.23"
         },
         "8.1.4.15": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.15/iso/installation-8.1.4.15-03.08.2023_03.24.iso",
@@ -6876,6 +7441,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.15"
         },
         "8.1.4.17": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.17/iso/devel_update-8.1.4.17-03.08.2023_03.26.iso",
@@ -6911,6 +7477,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.17"
         },
         "8.1.4.27": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.27/iso/installation-8.1.4.27-08.11.2023_19.59.iso",
@@ -6946,6 +7513,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.27"
         },
         "8.1.4.19": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.19/iso/devel_update-8.1.4.19-03.08.2023_03.43.iso",
@@ -6981,6 +7549,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.19"
         },
         "8.1.4.9": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.9/iso/installation-8.1.4.9-03.08.2023_03.00.iso",
@@ -7016,6 +7585,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.9"
         },
         "8.1.4.22": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.22/iso/installation-8.1.4.22-11.09.2023_13.58.iso",
@@ -7051,6 +7621,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.22"
         },
         "8.1.4.28": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.28/iso/main_update-8.1.4.28-08.11.2023_20.12.iso",
@@ -7086,6 +7657,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.28"
         },
         "8.1.4.25": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.25/iso/main_update-8.1.4.25-02.10.2023_17.07.iso",
@@ -7121,6 +7693,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.25"
         },
         "8.1.4.10": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.10/iso/devel_update-8.1.4.10-03.08.2023_03.06.iso",
@@ -7156,6 +7729,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.10"
         },
         "8.1.4.26": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.26/iso/main_update-8.1.4.26-08.11.2023_19.35.iso",
@@ -7191,6 +7765,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.26"
         },
         "8.1.4.11": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.11/iso/devel_update-8.1.4.11-03.08.2023_03.16.iso",
@@ -7226,6 +7801,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.11"
         },
         "8.1.4.24": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.24/iso/devel_update-8.1.4.24-02.10.2023_17.00.iso",
@@ -7261,6 +7837,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.24"
         },
         "8.1.4.12": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.12/iso/installation-8.1.4.12-03.08.2023_03.21.iso",
@@ -7276,6 +7853,7 @@
           "path": "frozen/8.1/8.1.4/8.1.4.12"
         },
         "8.1.4.18": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.4/8.1.4.18/iso/installation-8.1.4.18-03.08.2023_03.40.iso",
@@ -7313,6 +7891,7 @@
       },
       "8.1.1": {
         "8.1.1.FSB1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.1/8.1.1.FSB1.1/iso/devel_update-8.1.1.FSB1.1-02.08.2023_00.21.iso",
@@ -7338,6 +7917,7 @@
           "path": "frozen/8.1/8.1.1/8.1.1.FSB1.1"
         },
         "8.1.1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.1/8.1.1.1/iso/main_update-8.1.1.1-03.08.2023_02.51.iso",
@@ -7365,6 +7945,7 @@
       },
       "8.1.2": {
         "8.1.2.FSB1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.2/8.1.2.FSB1.1/iso/main_update-8.1.2.FSB1.1-02.08.2023_00.22.iso",
@@ -7380,6 +7961,7 @@
           "path": "frozen/8.1/8.1.2/8.1.2.FSB1.1"
         },
         "8.1.2.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.2/8.1.2.1/iso/devel_update-8.1.2.1-03.08.2023_02.52.iso",
@@ -7407,6 +7989,7 @@
       },
       "8.1.5": {
         "8.1.5.7": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.5/8.1.5.7/iso/main_update-8.1.5.7-19.04.2024_07.26.iso",
@@ -7451,6 +8034,7 @@
           "path": "frozen/8.1/8.1.5/8.1.5.7"
         },
         "8.1.5.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.5/8.1.5.2/iso/main_update-8.1.5.2-09.02.2024_18.26.iso",
@@ -7494,7 +8078,98 @@
           ],
           "path": "frozen/8.1/8.1.5/8.1.5.2"
         },
+        "8.1.5.10": {
+          "astra_hash": null,
+          "files": [
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.10/iso/main_update-8.1.5.10-13.08.2024_13.44.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.10/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "10d4f33e1115159224cf99235bfb0664f206d8bae2d20dbfaeba9ba3d7b78c55",
+                "md5": "e40c8adfd4cd0988d5c373889a48219e"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.10/iso/installation-8.1.5.10-13.08.2024_13.44.iso",
+              "type": "installation",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.10/installation",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "20f1ffd652d2a380b2b3b14f4ba4c8b77a4dc5010d42abf4a83d09cba501ecc7",
+                "md5": "a6a7807db60f000556a6ec1ce203a257"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.10/iso/devel_update-8.1.5.10-13.08.2024_13.44.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.10/devel-update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "ebdfe2653144352bbe3f056059e352427e117d756c79fe625a4aa82e02374b9e",
+                "md5": "6de9c313e8785eb51b789f767ad1ad29"
+              }
+            }
+          ],
+          "path": "frozen/8.1/8.1.5/8.1.5.10"
+        },
+        "8.1.5.9": {
+          "astra_hash": null,
+          "files": [
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.9/iso/devel_update-8.1.5.9-02.08.2024_11.34.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.9/devel-update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "6b6b271a55db2564dfaf04d289075be3585ac6db646a9289e9c634c6cb2f6bf2",
+                "md5": "15edd91a9a0a3da8e108dc181a138b5b"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.9/iso/installation-8.1.5.9-02.08.2024_11.34.iso",
+              "type": "installation",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.9/installation",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "c0677e28db5f3af54b6068b878116f60f4007b3c32e683042f40e14b8ecf7c0a",
+                "md5": "7cd4992661a5d1f31369515ed791ce6e"
+              }
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.9/iso/main_update-8.1.5.9-02.08.2024_11.34.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.9/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "c3cc4182a63908d52548fb6542dd177e1f8f44537c3f685fa20d8a0fc09cbfd8",
+                "md5": "6695b279a21070b5b6839d92b8246bcd"
+              }
+            }
+          ],
+          "path": "frozen/8.1/8.1.5/8.1.5.9"
+        },
         "8.1.5.8": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.5/8.1.5.8/iso/installation-8.1.5.8-10.07.2024_21.13.iso",
@@ -7539,6 +8214,7 @@
           "path": "frozen/8.1/8.1.5/8.1.5.8"
         },
         "8.1.5.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.5/8.1.5.4/iso/installation-8.1.5.4-28.02.2024_07.04.iso",
@@ -7583,6 +8259,7 @@
           "path": "frozen/8.1/8.1.5/8.1.5.4"
         },
         "8.1.5.6": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.5/8.1.5.6/iso/main_update-8.1.5.6-03.04.2024_18.07.iso",
@@ -7627,6 +8304,7 @@
           "path": "frozen/8.1/8.1.5/8.1.5.6"
         },
         "8.1.5.5": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/8.1/8.1.5/8.1.5.5/iso/installation-8.1.5.5-07.03.2024_22.12.iso",
@@ -7675,6 +8353,7 @@
     "14.7": {
       "14.7.4": {
         "14.7.4.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/14.7/14.7.4/14.7.4.1/iso/main-14.7.4.1-30.05.2023_15.25.iso",
@@ -7710,6 +8389,7 @@
           "path": "frozen/14.7/14.7.4/14.7.4.1"
         },
         "14.7.4.3": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/14.7/14.7.4/14.7.4.3/iso/main-14.7.4.3-11.07.2023_22.14.iso",
@@ -7754,6 +8434,7 @@
           "path": "frozen/14.7/14.7.4/14.7.4.3"
         },
         "14.7.4.4": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/14.7/14.7.4/14.7.4.4/iso/base-14.7.4.4-20.07.2023_22.00.iso",
@@ -7798,6 +8479,7 @@
           "path": "frozen/14.7/14.7.4/14.7.4.4"
         },
         "14.7.4.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/14.7/14.7.4/14.7.4.2/iso/installation-14.7.4.2-22.06.2023_15.40-mcom02.iso",
@@ -7837,6 +8519,7 @@
     "1.11": {
       "1.11.0": {
         "1.11.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.11/1.11.0/1.11.0.1/iso/main_update-1.11.0.1-03.08.2023_04.22.iso",
@@ -7866,6 +8549,7 @@
     "4.1": {
       "4.1.1": {
         "4.1.1.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/4.1/4.1.1/4.1.1.1/iso/base-4.1.1.1-23.03.2020_00.00.tgz",
@@ -7888,6 +8572,7 @@
     "1.5": {
       "1.5.8": {
         "1.5.8.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.5/1.5.8/1.5.8.1/iso/devel_update-1.5.8.1-03.08.2023_11.03.iso",
@@ -7915,6 +8600,7 @@
       },
       "1.5.0": {
         "1.5.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.5/1.5.0/1.5.0.1/iso/installation-1.5.0.1-24.03.2016_20.40.iso",
@@ -7942,6 +8628,7 @@
       },
       "1.5.9": {
         "1.5.9.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/1.5/1.5.9/1.5.9.1/iso/devel_update-1.5.9.1-03.08.2023_11.05.iso",
@@ -7971,6 +8658,7 @@
     "3.8": {
       "3.8.0": {
         "3.8.0.2": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/3.8/3.8.0/3.8.0.2/iso/devel-3.8.0.2-10.07.2024_21.00.iso",
@@ -8028,6 +8716,7 @@
           "path": "frozen/3.8/3.8.0/3.8.0.2"
         },
         "3.8.0.1": {
+          "astra_hash": null,
           "files": [
             {
               "path": "frozen/3.8/3.8.0/3.8.0.1/iso/extended-3.8.0.1-06.06.2024_18.00.iso",
@@ -8070,6 +8759,66 @@
             }
           ],
           "path": "frozen/3.8/3.8.0/3.8.0.1"
+        }
+      },
+      "3.8.1": {
+        "3.8.1.1": {
+          "astra_hash": null,
+          "files": [
+            {
+              "path": "frozen/3.8/3.8.1/3.8.1.1/iso/installation-3.8.1.1-08.08.2024_19.00.iso",
+              "type": "installation",
+              "mount_point": "frozen/3.8/3.8.1/3.8.1.1/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "30ece5be621fb118aa278e917453562f50e42725b9b382ea392b17454062b2d5",
+                "md5": "15b03848f4b6bdddcb60ab8fa555b0ea"
+              }
+            },
+            {
+              "path": "frozen/3.8/3.8.1/3.8.1.1/iso/devel-3.8.1.1-08.08.2024_19.00.iso",
+              "type": "devel",
+              "mount_point": "frozen/3.8/3.8.1/3.8.1.1/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "c5190c82a66affd387393050d86a50a0d9ec8d73fc18f8f3cf603c2d7a579c63",
+                "md5": "e0c1c8f9edb42c611fc020d55ca4f38d"
+              }
+            },
+            {
+              "path": "frozen/3.8/3.8.1/3.8.1.1/iso/main-3.8.1.1-08.08.2024_19.00.iso",
+              "type": "main",
+              "mount_point": "frozen/3.8/3.8.1/3.8.1.1/main-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "5c34bebae13e8d3e9ac3e4d77f9b3c6d9ac54f9d50be30d9d8f1ea9bf3b2f78e",
+                "md5": "1f19fdf7c71df1fa5bae0d45458412f1"
+              }
+            },
+            {
+              "path": "frozen/3.8/3.8.1/3.8.1.1/iso/extended-3.8.1.1-08.08.2024_19.00.iso",
+              "type": "extended",
+              "mount_point": "frozen/3.8/3.8.1/3.8.1.1/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "097e168633aec1a9f553b723eb717afcf289e423c28a0c21ae9f3180dc66bf47",
+                "md5": "691270f19307996a6b828b4268d35c6f"
+              }
+            }
+          ],
+          "path": "frozen/3.8/3.8.1/3.8.1.1"
         }
       }
     }
@@ -8393,7 +9142,7 @@
     "8.1": {
       "8.1.3": {
         "path": "stable/8.1/8.1.3",
-        "release_candidate": "8.1.3.1",
+        "release_candidate": "8.1.3.11",
         "special_versions": {}
       },
       "8.1.0": {

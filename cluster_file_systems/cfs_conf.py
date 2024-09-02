@@ -99,7 +99,7 @@ STORAGE_MOUNT_DIR = '/mnt'
 #
 PORT = '7777'
 #
-USER = 'u'
+USER = 'root'
 #
 PASSWORD = '1'
 

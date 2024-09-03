@@ -9,7 +9,7 @@ import pandas
 import tarfile
 import warnings
 import numpy as np
-from numpy.exceptions import RankWarning
+# from numpy.exceptions import RankWarning
 
 from shutil import copy
 from time import time
@@ -22,6 +22,11 @@ from pretty_html_table import build_table
 from cfs_conf import REPORT_DIR, REPORT_FILENAME, LOG_PATH, LOG_FILENAME, SCRIPT_DIR, \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
     FILES_LIMIT, FILES_STEP, FILES
+
+try:
+    from numpy.exceptions import RankWarning
+except ImportError:
+    from numpy import RankWarning
 
 
 class Report:

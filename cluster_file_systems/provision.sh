@@ -60,6 +60,7 @@ sleep 10
 sudo mkdir /git
 
 sudo apt install -y python3-pip
+pip3 install --upgrade pip
 
 sudo mount $3:/home/u/git/stress_test/cluster_file_systems /git
 

@@ -99,9 +99,9 @@ STORAGE_MOUNT_DIR = '/mnt'
 #
 PORT = '7777'
 #
-USER = 'root'
+USER = 'vagrant'
 #
-PASSWORD = '1'
+PASSWORD = 'vagrant'
 
 START_BORDER_FOR_DATA = 10000
 STEP_FOR_DATA = 10000

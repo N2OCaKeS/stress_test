@@ -60,15 +60,15 @@ sleep 10
 sudo mkdir /git
 
 sudo apt install -y python3-pip
-pip3 install --upgrade pip
+sudo pip3 install --upgrade pip
 
 sudo mount $3:/home/u/git/stress_test/cluster_file_systems /git
 
-test "$(grep 1.7 /etc/astra_version)" && pip3 install fabric
-test "$(grep 1.8 /etc/astra_version)" && pip3 install fabric --break-system-packages
+test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install fabric
+test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install fabric --break-system-packages
 
-test "$(grep 1.7 /etc/astra_version)" && pip3 install -r /git/req.txt
-test "$(grep 1.8 /etc/astra_version)" && pip3 install -r /git/req.txt --break-system-packages
+test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install -r /git/req.txt
+test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install -r /git/req.txt --break-system-packages
 
-test "$(grep 1.7 /etc/astra_version)" && pip3 install numpy --upgrade
-test "$(grep 1.8 /etc/astra_version)" && pip3 install numpy --upgrade --break-system-packages
+test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install numpy --upgrade
+test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install numpy --upgrade --break-system-packages

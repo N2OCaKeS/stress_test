@@ -61,11 +61,7 @@ sudo mkdir /git
 
 sudo apt install -y python3-pip
 sleep 10
-if ! sudo pip3 install --upgrade pip; then
-    echo "Не удалось обновить pip. Пожалуйста, проверьте ошибки и попробуйте снова."
-    sudo apt install -y python3-pip
-    sudo pip3 install --upgrade pip
-fi
+sudo pip3 install --upgrade pip
 
 sudo mount $3:/home/u/git/stress_test/cluster_file_systems /git
 

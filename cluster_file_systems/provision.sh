@@ -60,9 +60,16 @@ sleep 10
 sudo mkdir /git
 
 sudo apt install -y python3-pip
-sudo pip3 install --upgrade pip
+sleep 10
+if ! sudo pip3 install --upgrade pip; then
+    echo "Не удалось обновить pip. Пожалуйста, проверьте ошибки и попробуйте снова."
+    sudo apt install -y python3-pip
+    sudo pip3 install --upgrade pip
+fi
 
 sudo mount $3:/home/u/git/stress_test/cluster_file_systems /git
+
+sleep 30
 
 test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install fabric
 test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install fabric --break-system-packages

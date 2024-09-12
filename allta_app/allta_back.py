@@ -2,6 +2,7 @@
 
 import subprocess
 from allta_image_conf import branches, cycle_tree_index, tests, parent_page_list, JIRA_URL
+from libs.libconfluence import SendCommentToConfluence
 import requests
 import json
 import argparse
@@ -51,6 +52,9 @@ __test_list = eval(args.TESTS)
 bot_file = f'/home/u/git/stress_test/allta_app/telegrambot/results_{args.STAND}.txt'
 total_start_time = datetime.datetime.now().replace(microsecond=0) 
 
+conf = SendCommentToConfluence(rc_name=__pt_version,
+                               username=__username,
+                               token=__conf_token)
 
 check_len_version = __pt_version.split('.')
 if len(check_len_version) == 4 and check_len_version[3] != 'UU':
@@ -476,6 +480,7 @@ try:
     bot_results('Прогон завершен')
     bot_results(bot_head)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
+    conf.send_comment()
 except Exception as e:
     print(e)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:

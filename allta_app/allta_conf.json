@@ -251,7 +251,7 @@
             "1.8.1.5": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-181rc5 nvme0n1",
             "1.8.1.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-181rc6 nvme0n1",
             "1.8.1.UU.1.4": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-181UU1rc4 nvme0n1",
-            "1.8.1.UU.1.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-181rc12 nvme0n1"
+            "1.8.1.UU.1.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-181UU1rc6 nvme0n1"
         },
         "stand2": {
             "1.7.5": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \" 10.177.103.202\"                 -l ru_RU.UTF-8 startdisk restore stand-2-qa-team-13-175 nvme0n1",

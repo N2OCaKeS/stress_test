@@ -360,7 +360,7 @@ def add_testrun_folder(rc):
                 __create_testrun_folder(name)
 
 
-def mod_allta_conf(value):
+def mod_allta_conf(value, uu_value=None):
     with open('./allta_conf.json', 'r') as r:
         data = json.load(r)
 
@@ -370,14 +370,21 @@ def mod_allta_conf(value):
                 -l ru_RU.UTF-8 startdisk restore {}-{}rc{} nvme0n1'
 
     if value not in data['releases_dict'].keys():
-        data['releases_dict'][value] = value
+        if uu_value:
+            data['releases_dict'][value] = uu_value
+        else: data['releases_dict'][value] = value
         data['releases_dict'] = {k: v for k, v in sorted(data['releases_dict'].items())}
     if value not in data['rc_list']:
         data['rc_list'].append(value)
         data['rc_list'] = sorted(data['rc_list']) 
-    if '.'.join(value.split('.')[:3]) not in data['releases_list']:
-        data['releases_list'].append('.'.join(value.split('.')[:3]))
-        data['releases_list'] = sorted(data['releases_list'])
+    if uu_value:
+        if '.'.join(value.split('.')[:5]) not in data['releases_list']:
+            data['releases_list'].append('.'.join(value.split('.')[:5]))
+            data['releases_list'] = sorted(data['releases_list'])
+    else:
+        if '.'.join(value.split('.')[:3]) not in data['releases_list']:
+            data['releases_list'].append('.'.join(value.split('.')[:3]))
+            data['releases_list'] = sorted(data['releases_list'])
     if value not in data['release_version']:
         data['release_version'].append(value)
         data['release_version'] = sorted(data['release_version'])
@@ -385,16 +392,28 @@ def mod_allta_conf(value):
         data['releases'].append(value)       
         data['releases'] = sorted(data['releases']) 
 
-    if value not in data['cz_comm']['stand3'].keys():
-        data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
-                                                          'LowServer',
-                                                          ''.join(value.split('.')[:3]),
-                                                          ''.join(value.split('.')[3:]))
-    if value not in data['cz_comm']['stand4'].keys():
-        data['cz_comm']['stand4'][value] = cz_name.format(stands['MiddleServer'],
-                                                          'MiddleServer',
-                                                          ''.join(value.split('.')[:3]),
-                                                          ''.join(value.split('.')[3:]))
+    if uu_value:
+        if value not in data['cz_comm']['stand3'].keys():
+            data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
+                                                            'LowServer',
+                                                            ''.join(value.split('.')[:5]),
+                                                            ''.join(value.split('.')[5:]))
+        if value not in data['cz_comm']['stand4'].keys():
+            data['cz_comm']['stand4'][value] = cz_name.format(stands['MiddleServer'],
+                                                            'MiddleServer',
+                                                            ''.join(value.split('.')[:5]),
+                                                            ''.join(value.split('.')[5:]))
+    else:
+        if value not in data['cz_comm']['stand3'].keys():
+            data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
+                                                            'LowServer',
+                                                            ''.join(value.split('.')[:3]),
+                                                            ''.join(value.split('.')[3:]))
+        if value not in data['cz_comm']['stand4'].keys():
+            data['cz_comm']['stand4'][value] = cz_name.format(stands['MiddleServer'],
+                                                            'MiddleServer',
+                                                            ''.join(value.split('.')[:3]),
+                                                            ''.join(value.split('.')[3:]))
         
     data['cz_comm']['stand3'] = {k: v for k, v in sorted(data['cz_comm']['stand3'].items())}
     data['cz_comm']['stand4'] = {k: v for k, v in sorted(data['cz_comm']['stand4'].items())}
@@ -570,19 +589,20 @@ async def process_callback(query: types.CallbackQuery):
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
     password = None
+    uu_value = None
     if command.args is None:
         await message.reply('❌ Укажите версию RC и пароль')
         return
     try:
-        rc, password = command.args.split(' ', maxsplit=1)
+        rc, password, uu_value = command.args.split(' ', maxsplit=2)
     except ValueError:
-        content = Text('❌ Укажите версию RC и пароль. Пример:\n'
-                            '/addrc_acs <RC> <password>')
+        content = Text('❌ Укажите версию RC, пароль и UU build version при наличии. Пример:\n'
+                            '/addrc <RC> <password> <UU build version>')
         await message.reply(**content.as_kwargs())
         return
     if password == 'bendik$':
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию RC: {rc}')
-        mod_allta_conf(rc)
+        mod_allta_conf(rc, uu_value)
         #stand3, stand4 = acs_create_snapshot(rc)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация RC: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)

@@ -90,6 +90,7 @@
       <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode" target="_blank">Настройки</a></li>
       <li><a class="dropdown-item" href="https://jira.astralinux.ru/secure/Tests.jspa#/v2/testCycles?projectId=11200" target="_blank">Прогоны</a></li>
       <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=154351118" target="_blank">СТП</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#alltaVersionModal">Версия</a></li>
     </ul>
   </li>
   <li class="nav-item">
@@ -149,6 +150,37 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<style>
+.allta-version-content {
+  background-color: #292d30;
+  color: white !important;
+}
+
+.allta-version-header,
+.allta-version-title,
+.allta-version-body {
+  color: white !important;
+}
+</style>
+
+<div class="modal fade" id="alltaVersionModal" tabindex="-1" aria-labelledby="alltaVersionModalLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content allta-version-content">
+      <div class="modal-header allta-version-header">
+        <h5 class="modal-title allta-version-title" id="alltaVersionModalLabel">Версия</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start allta-version-body">
+        <b>ALLTA</b></br>
+        Astra Linux Load Tests Automation</br>
+        {{ allta_version }}</br></br>
+        <em>© QA Team13</em>
       </div>
     </div>
   </div>

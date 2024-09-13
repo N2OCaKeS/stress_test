@@ -41,7 +41,8 @@ from allta_image_conf import (VENV_PATH,
                                group_tests,
                                JIRA_URL,
                                releases_dict,
-                               cz_comm)
+                               cz_comm,
+                               allta_version)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -272,6 +273,7 @@ def info_collector(page, ajax=None):
 
     if page == 'brest':
         return render_template(f'{page}.html', 
+                                allta_version=allta_version(),
                                 options=options[page],
                                 test_list=test_list,
                                 releas_list=releas_list,
@@ -285,7 +287,8 @@ def info_collector(page, ajax=None):
                                 **sett_logs,
                                 **progress_logs)
     else:
-        return render_template(f'{page}.html', 
+        return render_template(f'{page}.html',
+                                allta_version=allta_version(), 
                                 options=options[page],
                                 stands=test_run_stands,
                                 kernelslist=kernels(),

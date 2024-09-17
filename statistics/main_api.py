@@ -1,12 +1,18 @@
+import os
 from time import sleep
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Response, Query
+from fastapi.responses import FileResponse
+from starlette.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Set
 from atlassian.errors import ApiPermissionError
 
 from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics
 from parsers import BaseParser, ApacheParser, ParsecParser
+
+from utils import UtilForReadLogs
+from logging_conf import main_logger
 
 app = FastAPI(
     title="Statistics"
@@ -42,7 +48,7 @@ def base_statistics_api(body: Statistics):
     try:
         base_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         base_stat.create()
     return {"OK"}
@@ -57,7 +63,7 @@ def freeipa_statistics_api(body: Statistics):
     try:
         freeipa_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         freeipa_stat.create()
     return {"OK"}
@@ -71,7 +77,7 @@ def virt_statistics_api(body: Statistics):
     try:
         virt_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         virt_stat.create()
     return {"ОК"}
@@ -86,7 +92,7 @@ def all_statistics(body: Auth):
     try:
         unix_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         unix_stat.create()
 
@@ -98,7 +104,7 @@ def all_statistics(body: Auth):
     try:
         system_services_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         system_services_stat.create()
 
@@ -110,7 +116,7 @@ def all_statistics(body: Auth):
     try:
         file_systems_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         file_systems_stat.create()
 
@@ -128,7 +134,7 @@ def all_statistics(body: Auth):
     try:
         postresql_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         postresql_stat.create()
 
@@ -140,7 +146,7 @@ def all_statistics(body: Auth):
     try:
         apache_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         apache_stat.create()
 
@@ -153,7 +159,7 @@ def all_statistics(body: Auth):
     try:
         parsec_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         parsec_stat.create()
 
@@ -165,7 +171,7 @@ def all_statistics(body: Auth):
     try:
         freeipa_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         freeipa_stat.create()
 
@@ -176,8 +182,40 @@ def all_statistics(body: Auth):
     try:
         virt_stat.create()
     except ApiPermissionError:
-        print("confluence тупит пробуем еще раз")
+        main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         virt_stat.create()
 
     return {"Вся статистика обновлена"}
+
+@app.get("/logs")
+def read_logs(last_lines: Optional[int] = Query(None, description="Number of last lines to read"), reverse: bool = False, debug: bool = False, logs_download: bool = False):
+    filename = "main_statistics_logger.log" if not debug else "debug_statistics_logger.log"
+    logs = UtilForReadLogs.read_last_lines(filename, last_lines, reverse=reverse)
+    
+    if logs_download:
+        if os.path.exists(filename):
+            return FileResponse(filename, media_type='application/octet-stream', filename="logs.txt")
+        else:
+            return {"error": "File not found"}
+    
+    style = """
+    <style>
+        body {
+            background-color: #222128;
+            color: white;
+        }
+    </style>
+    """
+
+    content = f'<html><head>{style}</head><body>'
+    for line in logs:
+        if "CRITICAL" in line or "ERROR" in line:
+            content += f'<div style="color:red;">{line}</div>'
+        elif "WARNING" in line:
+            content += f'<div style="color:yellow;">{line}</div>'
+        else:
+            content += f'<p>{line}</p>'
+    content += '</body></html>'
+
+    return HTMLResponse(content=content)

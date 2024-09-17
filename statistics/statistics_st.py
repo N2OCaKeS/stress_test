@@ -14,6 +14,8 @@ from uploaders import BaseUploader
 from typetest import TypeTest
 from errors import NoDataAvailableForThisTestType
 
+from logging_conf import main_logger
+
 
 class Statistics:
      @abstractmethod
@@ -36,7 +38,9 @@ class BaseStatistics(Statistics):
                os.mkdir(self.stat_title)
                os.mkdir(f"{self.stat_title}/statistics")
                os.mkdir(f"{self.stat_title}/statistics_rc")
-          self.stat_title = self.stat_title.replace("-", "/") 
+          self.stat_title = self.stat_title.replace("-", "/")
+          main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
+          
      
      def _get_pages(self):
           confluence_obj = Pages(username=self.username, token=self.tokenconf)
@@ -46,6 +50,7 @@ class BaseStatistics(Statistics):
                                                                                          stat_title=self.stat_title)
                all_pages.extend(pages_major_update)
                rc_all_pages.update(rc_pages_major_update)
+          main_logger.debug(f"ID всех страниц - {all_pages};\nID всех страниц RC и имена их родителей - {rc_all_pages}")
           return all_pages, rc_all_pages, confluence_obj
      
      def _compare_scores_by_kernel(self, df: pd.DataFrame, type_test: str, stat_rc_vers: str, score=None):
@@ -57,6 +62,7 @@ class BaseStatistics(Statistics):
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test),
                                                                                       saver=comparison_separate_kernel_line_graph_saver)
                     comparison_separate_kernel_line_graph.draw()
+                    main_logger.info(f"Отработало  сравнение по ядрам {self.stat_title} - {type_test} (Заданное при вызове класса) {','.join(self.comparison_kernel_list)}")
      
      def _compare_scores(self, dct_wttaidf: dict, stat_rc_vers: str):
           if self.comparison_list:
@@ -75,6 +81,7 @@ class BaseStatistics(Statistics):
                                                   comparison_names=[comporison_item[0], comporison_item[1]],
                                                   graph_name=" vs ".join([comporison_item[0], comporison_item[1]]))
                          sum_graph.draw()
+                         main_logger.info(f"Отработало сравнение {self.stat_title} (Заданное при вызове класса) - {','.join(self.comparison_list)}")
 
      def _upload_to_confluence(self, stat_rc_vers: str, pp_title: str):
           uploader = BaseUploader(username=self.username, 
@@ -83,9 +90,14 @@ class BaseStatistics(Statistics):
                                   stat_rc_vers=stat_rc_vers,
                                   pp_title=pp_title)
           uploader.collect_a_single_html()
-          uploader.upload_page()
+          try:
+               uploader.upload_page()
+          except Exception as err:
+               main_logger.exception("Ошибка")
+               main_logger.critical(f"{self.stat_title} СТАТИСТИКА НЕ ВЫЛОЖИЛАСЬ!!!!")
 
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+          main_logger.info("Начало уникального функционала для каждого типа статистики")
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
           saver_graph = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
           table = MainTable(data=data_for_tables.get(type_test), saver=saver)
@@ -99,8 +111,10 @@ class BaseStatistics(Statistics):
                                    type_test=TypeTest.get_type_test(dataframe=df),
                                    saver=saver_graph)
                graph.draw()
+               main_logger.info("Конец уникального функционала для каждого типа статистики")
                return True, df
           else:
+               main_logger.info("Конец уникального функционала для каждого типа статистики")
                return False, None
      
      def _create_single_stat(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None):
@@ -132,17 +146,20 @@ class BaseStatistics(Statistics):
 
      def create(self):
           all_pages, rc_all_pages, confluence_obj = self._get_pages()
+          if not all_pages or not rc_all_pages:
+               main_logger.critical(f"{self.stat_title} НЕ НАЙДЕНЫ НЕОБХОДИМЫЕ СТРАНИЦЫ")
           self._create_single_stat(all_pages=all_pages, confluence_obj=confluence_obj)
           for key_version, pages_ids in rc_all_pages.items():
                stat_for_rc_version_os = key_version.split(" ⬝ ")[1]
                if pages_ids:
-                    self._create_single_stat(all_pages=pages_ids, 
+                    self._create_single_stat(all_pages=pages_ids,
                                              confluence_obj=confluence_obj,
                                              stat_rc_version=stat_for_rc_version_os,
                                              pp_title_rc_vers=key_version)
                     
      def __del__(self):
           shutil.rmtree(self.stat_title.replace("/", "-"))
+          main_logger.debug(f"Удаляем директорию {self.stat_title.replace("/", "-")}")
 
 
 class InheritedStatistics(BaseStatistics):
@@ -159,8 +176,10 @@ class InheritedStatistics(BaseStatistics):
 class FreeIpaStatistics(BaseStatistics):
      def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = FreeIpaParser):
           super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
+          main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
      
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+          main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
 
           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
@@ -180,8 +199,10 @@ class FreeIpaStatistics(BaseStatistics):
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
                                                                                       saver=comp_separate_kernel_line_graph_saver)
                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=col_scores[ind])
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
           else:
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return False, None
                          
 
@@ -195,8 +216,10 @@ class VirtStatistics(BaseStatistics):
                "vUnixBench": ["Рейтинг 4 ядер", "Рейтинг 8 ядер", "Рейтинг 12 ядер"],
                "steal_time": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"]
           }
+          main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
      
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+          main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")
           saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
           try:
@@ -217,6 +240,8 @@ class VirtStatistics(BaseStatistics):
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
                                                                                       saver=comparison_separate_kernel_line_graph_saver,)
                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=item)
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
           else:
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return False, None

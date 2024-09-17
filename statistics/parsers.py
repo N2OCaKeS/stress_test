@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from confluence.confluence import ConfluencePage
 from confluence.confluence_conf import CONFLUENCE_SPACE
 
+from logging_conf import main_logger
 
 class MainParser:
     def __init__(self, pages_ids, CP, parser):
@@ -46,7 +47,7 @@ class MainParser:
             "sec_mode": sec_mode,
             "stand": stand
         }
-
+        main_logger.debug("Возвращаем html и title_data_dict")
         return (soup, title_data_dict)
 
     def find_data(self) -> dict:
@@ -58,6 +59,7 @@ class MainParser:
             dict_with_title_data['score'] = score
             data.setdefault(dict_with_title_data.get("type_test"), [])
             data[dict_with_title_data.get("type_test")].append(dict_with_title_data)
+        main_logger.debug(f"Возвращаем данные полученные в {self.__class__.__name__}")
         return data, data.keys()
 
 

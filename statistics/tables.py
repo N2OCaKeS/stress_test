@@ -9,6 +9,7 @@ from grade import Grade
 from sorting import SortMainTable, SortUniqueMajorKernel
 from typetest import TypeTest
 
+from logging_conf import main_logger
 
 class Table:
     @abstractmethod
@@ -81,6 +82,7 @@ class MainTable(Table):
         self.saver.save(dataframe=sort_df.drop(columns=['type_test']),
                         name=f"{TypeTest.get_type_test(dataframe=df)}_{self.__class__.__name__}.html", 
                         desc=f"<h2>Сводная таблица результатов тестирования {TypeTest.get_full_name_test(dataframe=df)}</h2>")
+        main_logger.info(f"Сохранена таблица {self.__class__.__name__}")
         # возвращаем отсортированную, правильную таблицу
         return sort_df
 
@@ -123,6 +125,7 @@ class MathTable(Table):
         self.saver.save(dataframe=df, 
                         name=f"{TypeTest.get_type_test(dataframe=self.dataframe)}_{self.__class__.__name__}.html",
                         desc=f"<h2>Таблица основных статистических параметров {TypeTest.get_full_name_test(dataframe=self.dataframe)}</h2>")
+        main_logger.info(f"Сохранена таблица {self.__class__.__name__}")
 
 
 class SummaryTable(Table):
@@ -137,10 +140,13 @@ class SummaryTable(Table):
                              right_on=["Релиз", "Ядро", "Стенд"])
         df_merged['Рейтинг_x'] = df_merged['Рейтинг_x'].fillna(0)
         df_merged['Рейтинг_y'] = df_merged['Рейтинг_y'].fillna(0)
-        return (df_merged["Стенд"].mode()[0], 
-                df_merged["Рейтинг_x"], 
-                df_merged["Рейтинг_y"], 
-                df_merged['Релиз'] + '_' + df_merged['Ядро'])
+        df = (df_merged["Стенд"].mode()[0], 
+              df_merged["Рейтинг_x"], 
+              df_merged["Рейтинг_y"], 
+              df_merged['Релиз'] + '_' + df_merged['Ядро'])
+        main_logger.info(f"Построена {self.__class__.__name__}")
+        main_logger.debug(f"{df}")
+        return df
     
 
 class SummaryTableNew(Table):
@@ -156,7 +162,9 @@ class SummaryTableNew(Table):
                                                        right[['Релиз', 'Ядро', 'Стенд', self.score]], 
                                                        how='outer', 
                                                        on=["Релиз", "Ядро", "Стенд"]), self.dataframes)
-        print(df_merged.columns)
+        main_logger.info(f"Построена {self.__class__.__name__}")
+        main_logger.debug(f"{df_merged}")
+        # print(df_merged.columns)
 
 
 class TableSeparatelyByKernel(Table):
@@ -171,4 +179,6 @@ class TableSeparatelyByKernel(Table):
         # print(self.score)
         for kernel in keys_kernel:
             separate_by_kernel_df[kernel] = SortUniqueMajorKernel.filter_by_kernel_version(df=self.dataframe, kernel=kernel)[['Релиз', 'Ядро', 'Стенд', self.score]]
+        main_logger.info(f"Построена {self.__class__.__name__}")
+        main_logger.debug(f"{separate_by_kernel_df}")
         return separate_by_kernel_df

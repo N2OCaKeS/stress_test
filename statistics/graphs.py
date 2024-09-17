@@ -8,6 +8,8 @@ from abc import abstractmethod
 
 from typetest import TypeTest
 
+from logging_conf import main_logger
+
 """
     TODO Необходимо реализовать интерактивный график, смотреть запись техсреды от ОНИ (который работал в Apple)
 """
@@ -40,6 +42,9 @@ class MainGraph(Graphs):
         self.scale_txt = scale_txt
         self.type_test = type_test
         self.saver = saver
+        main_logger.debug(f"Тип теста: {self.type_test}")
+        main_logger.debug(f"Отработал конструктор scale_x = {self.scale_x}, шкала = {self.scale_txt}")
+        
 
     def __get_colors(self):
         colors = []
@@ -64,10 +69,12 @@ class MainGraph(Graphs):
         ax.grid(self.grid)
         ax.set_xticks(self.scale_x)
         lower, upper = 0, max(self.list_of_score) + max(self.list_of_score) * 0.15
+        main_logger.debug(f"Нижняя граница = {lower}, верхняя граница = {upper}")
         if upper - lower < 1e-5:  # или любое другое малое значение, которое вам кажется подходящим
             upper += 0.1  # или любое другое значение, которое создаст достаточное разнообразие
         ax.set_ylim([lower, upper])
         plt.gca().set_xticklabels(self.scale_txt, rotation=20, horizontalalignment='right')
+        main_logger.debug("Задан угол наклон шкалы 20 градусов, горизонтальное выравнивание справа")
         ax.set_ylabel(self.ylabel)
         ax.set_title(f"{TypeTest.get_full_name_test_without_df(self.type_test)}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования.")
         ax.bar_label(rect, label_type="center", fmt="%d", rotation=90, fontweight=500)
@@ -77,7 +84,7 @@ class MainGraph(Graphs):
         """
         self.saver.save(plot=plt, 
                         name=f"{self.type_test}_{self.__class__.__name__}")
-        
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
         plt.close()
         
 
@@ -120,6 +127,7 @@ class SummaryGraph(Graphs):
                            width=width,
                            label=self.comparison_names[ind])
             ax.bar_label(rects, label_type="center", fmt="%d", rotation=90)
+            main_logger.debug(f"Накидываем ind={ind} bar в {self.__class__.__name__}")
 
         ax.set_ylim([0, max_score + max_score * 0.15])
         ax.set_xticks(self.scale_x)
@@ -128,6 +136,7 @@ class SummaryGraph(Graphs):
         ax.legend()
         fig.tight_layout()
         self.saver.save(plot=plt, name=f"{self.graph_name}_{self.__class__.__name__}")
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
         plt.close()
 
 
@@ -140,15 +149,18 @@ class SummaryLineGraph(SummaryGraph):
             if max_score < max(scale_of_score):
                 max_score = max(scale_of_score)
             ax.plot(self.scale_x, scale_of_score, "o-", color=self.colors[ind])
+            main_logger.debug(f"Накидываем plot в {self.__class__.__name__}")
             legend.append(self.comparison_names[ind])
         
         ax.set_ylim([0, max_score + max_score * 0.15])
+        main_logger.debug("Назначаем ylim = 0...max_score + max_score * 0.15")
         ax.set_xticks(self.scale_x)
         ax.set_title(f"{" - ".join(self.comparison_names)}.\n{self.stand_grade}\nСравнительная диаграмма значений, \nвычисленных на основании результатов нагрузочного тестирования.")
         ax.set_xticklabels(self.scale_txt, rotation=20, horizontalalignment='right')
         ax.legend(legend)
         fig.tight_layout()
         self.saver.save(plot=plt, name=f"{self.graph_name}_{self.__class__.__name__}")
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
         plt.close()
 
 
@@ -170,6 +182,7 @@ class ComparisonKernelLineGraph(Graphs):
         if kwargs.get("y_label"):
             y_label = kwargs.get("y_label")
             ax.set_ylabel(y_label)
+            main_logger.debug("в kwargs было передано y_label, задаем описание y_label")
         ax.set_title(f"Линейная диаграмма сравнения по ядрам.\n{self.type_test}")
         colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c', 'green', 'red']
         for index in range(ratings_for_plt_graph.shape[1]):
@@ -177,15 +190,20 @@ class ComparisonKernelLineGraph(Graphs):
         plt.legend(self.separate_by_kernel_data.keys())
 
         # Lighten borders
+        
         plt.gca().spines["top"].set_alpha(.0)
         plt.gca().spines["bottom"].set_alpha(.3)
         plt.gca().spines["right"].set_alpha(.0)
         plt.gca().spines["left"].set_alpha(.3)
+        main_logger.debug("Задали осветление границ")
 
         if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
             graph_name = f"{self.type_test}_{kwargs.get("graph_ind")}"
+            main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
         else:
             graph_name = f"{self.type_test}"
+            main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
 
         self.saver.save(plot=plt, name=f"{graph_name}_{self.__class__.__name__}")
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
         plt.close()

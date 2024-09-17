@@ -6,6 +6,8 @@ from confluence.confluence_conf import CONFLUENCE_SPACE, CONFLUENCE_URL, CONFLUE
 
 from typetest import TypeTest
 from utils import UtilForBuildPath
+from logging_conf import main_logger
+
 
 class TemplateImage:
     template = """ 
@@ -50,15 +52,19 @@ class BaseUploader:
         self.html_page = ""
         self.confluence_stat = StatisticsToConfluence(username=self.username,
                                                       token=self.token)
+        main_logger.info("Начало uploader положено (конструктор)")
         
     def _create_page(self):
         if self.page_rc_title and self.pp_title:
             parent_page = self.pp_title
         else:
             parent_page = "Статистика"
-        self.confluence_stat.create_confluence_page(page_space=CONFLUENCE_SPACE, 
-                                                    page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}", 
-                                                    parent_page_title=parent_page)
+        try:
+            self.confluence_stat.create_confluence_page(page_space=CONFLUENCE_SPACE, 
+                                                        page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}", 
+                                                        parent_page_title=parent_page)
+        except Exception as err:
+            main_logger.exception(f"Страница Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")} не создалась")
 
     def _read_html_file(self, file_name):
         html_file = open(f"{self.folder}/{file_name}")
@@ -104,37 +110,52 @@ class BaseUploader:
                                                 stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
                                                 type_stat_header_without_probel=type_test.replace(" ", ""),
                                                 type_stat_header=type_test))
+            main_logger.debug(f"Добавлен NAV_ITEM {type_test} в html")
             html_list.append("<br/><hr/>")
             html_list.append(html_src_images_and_tables.get("Header"))
+            main_logger.debug(f'Добавлен Header {html_src_images_and_tables.get("Header")} в html')
             
             comparison_kernel_line_graphs = html_src_images_and_tables.get("ComparisonKernelLineGraph")
             if comparison_kernel_line_graphs is not None:
                 for graph in comparison_kernel_line_graphs:
                     html_list.append(graph)
+                    main_logger.debug("Добавлен ComparisonKernelLineGraph в html")
 
             main_graphs = html_src_images_and_tables.get("MainGraph")
             if main_graphs is not None:
                 for graph in main_graphs:
                     html_list.append(graph)
+                    main_logger.debug("Добавлен MainGraph в html")
             
             html_list.append(f'<h2><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(html_src_images_and_tables.get("MainTable"))
+            if html_src_images_and_tables.get("MainTable"):
+                main_logger.debug("Добавлена MainTable в html")
             html_list.append("<br/>")
             html_list.append(html_src_images_and_tables.get("MathTable"))
-
-
+            if html_src_images_and_tables.get("MathTable"):
+                main_logger.debug("Добавлено MathTable в html")
+            
             summary_graph = html_src_images_and_tables.get("SummaryGraph")
             if summary_graph is not None:
                 for graph in summary_graph:
                     html_list.append(graph)
+                    main_logger.debug("Добавлен SummaryGraph в html")
             
         nav_items = "".join(nav_lst)
         nav = self.NAV_START + nav_items  + self.NAV_END
         html_list.insert(0, nav)
+        main_logger.debug("Сформирован и вставлен в начала NAV")
         html_list = [str(item) for item in html_list if item is not None]
         self.html_page = "".join(html_list)
+        main_logger.info("Сгенерирована страница html для публикации")
 
     def upload_page(self):
-        self.confluence_stat.update_confluence_page(page_space=CONFLUENCE_SPACE,
-                                                    page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}",
-                                                    page_body=self.html_page)
+        try:
+            self.confluence_stat.update_confluence_page(page_space=CONFLUENCE_SPACE,
+                                                        page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}",
+                                                        page_body=self.html_page)
+            main_logger.info(f"Должна была обновиться страница со статистикой - Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}")
+        except Exception as err:
+            main_logger.error(f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")} НЕ ОБНОВИЛАСЬ!")
+            main_logger.exception(err)

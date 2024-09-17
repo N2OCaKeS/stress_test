@@ -1,10 +1,12 @@
 from confluence.confluence import ConfluencePage
+from logging_conf import main_logger
 
 class Pages:
     def __init__(self, username, token) -> None:
         self.username = username
         self.token = token
         self.CP = ConfluencePage(username=self.username, token=self.token)
+        main_logger.info(f"Отработал конструктор {self.__class__.__name__}. Должно быть подключение к Confluence")
     
     """
         TODO ДОРАБОТАТЬ!!!
@@ -15,6 +17,7 @@ class Pages:
             Получаем дочерние страницы 1.7: 1.7.1; 1.7.2; 1.7.n...
         """
         children_main_page = self.CP.get_child_page_as_html(id=id_root_page, by_title=False)
+        main_logger.debug("Получаем дочерние страницы 1.7: 1.7.1; 1.7.2; 1.7.n...")
         required_pages = [] #, required_pages_rc = [], []
         test_dict_rc = {}
         """

@@ -1,7 +1,7 @@
 import argparse
 import json
 import requests
-from balance.bl_lib import VBox
+from balance.bl_lib import VBox, LVirt, bl
 from libs.zefir import UploaderZC
 from psb_conf import REPORT_PATH
 import pandas
@@ -12,16 +12,28 @@ import os
 """
 INFO
 
-pgpool2 имеет некоторую особенность, что при совершении failover или failback он на короткий промежуток времени запрещает подключение пользователей, 
-из-за чего pgbench завершается с ошибкой, и не получается идеальной доступности сервиса.
-Поэтому вместо использования pgbench был написан свой скрипт для симуляции клиентов, который спокойно переваривает ошибки подключения и просто 
-записывает их как неудачные запросы. 
-Оказалось, что даже при текущем поведении в failover/failback получается не так уж и много запросов не обрабатывается кластером (при обновлении 3 БД со связкой с 3-мя балансировщиками), 
-всего не больше 150 при общем количестве запросов около 67000, что составляет в среднем не больше 0.2% проваленных запросов. Кроме того, 
-ниже я скинул ссылку на коммит из Github репозитория pgpool2, где наконец летом этого года кто-то занялся этой проблемой с запретом подключения пользователей, 
-так что в будущем можно ожидать, что процент проваленных запросов при обновлении будет ещё меньше.
+pgpool2 имеет некоторую особенность, что при совершении failover или failback он на короткий промежуток времени запрещает 
+подключение пользователей, из-за чего pgbench завершается с ошибкой, и не получается идеальной доступности сервиса.
+Поэтому вместо использования pgbench был написан свой скрипт для симуляции клиентов, который спокойно переваривает ошибки 
+подключения и просто записывает их как неудачные запросы. 
+Оказалось, что даже при текущем поведении в failover/failback получается не так уж и много запросов не обрабатывается 
+кластером (при обновлении 3 БД со связкой с 3-мя балансировщиками), всего не больше 150 при общем количестве запросов 
+около 67000, что составляет в среднем не больше 0.2% проваленных запросов. Кроме того, ниже я скинул ссылку на коммит 
+из Github репозитория pgpool2, где наконец летом этого года кто-то занялся этой проблемой с запретом подключения 
+пользователей, так что в будущем можно ожидать, что процент проваленных запросов при обновлении будет ещё меньше.
 https://github.com/pgpool/pgpool2/commit/4aa657e055250da9db9a4c5cde7260e8f24707cb
 """
+
+
+provider = VBox
+"""
+SETTINGS
+
+В зависимости от требований нужно выбрать необходимый провайдер для виртуальных машин, в которых будет проходить тест:   
+1. Virtualbox: VBox
+2. LibVirt:    LVirt
+"""
+
 
 
 parser = argparse.ArgumentParser()
@@ -99,6 +111,10 @@ parser.add_argument('-vbox', '--set-vbox',
                     dest='SET_BOX')
 
 
+"""
+VARIABLES
+"""
+
 args = parser.parse_args()
 astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
 response_ac = requests.get(astra_config_url)
@@ -112,32 +128,7 @@ with open('box-config.json', 'r') as r:
     dates = json.loads(r.read())
 
 
-def _box_wrapper(box):
-    true_key = False
-    box_name = ''
-    box_url = ''
-    for i in dates['vagrant_box']:
-        if box in str(i):
-            for key in i.keys():
-                if str(key).endswith('s'):
-                    true_key = key
-                    box_name = i[true_key][0]
-                    box_url = i[true_key][1]             
-            
-    if true_key == False:
-        for i in dates['vagrant_box']:
-            if str(box).startswith('1.7'):
-                if '1.7.1.s' in str(i):
-                    box_name = i['1.7.1.s'][0]
-                    box_url = i['1.7.1.s'][1]
-            elif str(box).startswith('1.8'):
-                if '1.8.0.s' in str(i):
-                    box_name = i['1.8.0.s'][0]
-                    box_url = i['1.8.0.s'][1]
-    
-    return box_name, box_url
-
-box_name, box_url = _box_wrapper(args.SET_BOX)
+box_name, box_url = bl.box_wrapper(args.SET_BOX, dates)
 kernel = str(args.TCYC).split('_')[2]
 vms = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 ansible_commands = [
@@ -183,15 +174,10 @@ vm_dates = {
 }
 
 
-def check_result(method: classmethod):
-    """
-    Проверка успешного выполнения методов
-    """
-    if method != 0:
-        uzs.upload_test_cycle_status(zefir_status='fail')
-        print(f"Method {method.__class__.__name__}.{method.__name__} return bad result. Execution stoped")
-        exit(1)
 
+"""
+TEST
+"""
 
 uzs = UploaderZC(folder_tree_id=args.FTI,
                 test_cycle_name=args.TCYC,
@@ -207,10 +193,10 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
 uzs.upload_test_cycle_status('progress')
 
 
-check_result(VBox.prepare())
-check_result(VBox.build(box_name=box_name, box_url=box_url, kernel=kernel, rc=args.SET_BOX, vms=vms))
-check_result(VBox.check(vm_dates=vm_dates, vms=vms))
-check_result(VBox.execute(ansible_commands=ansible_commands, vm_dates=vm_dates, vms=vms))
+bl.check(provider.prepare(), uzs)
+bl.check(provider.build(box_name=box_name, box_url=box_url, kernel=kernel, rc=args.SET_BOX, vms=vms), uzs)
+bl.check(provider.check(vm_dates=vm_dates, vms=vms), uzs)
+bl.check(provider.execute(ansible_commands=ansible_commands, vm_dates=vm_dates, vms=vms), uzs)
 
 
 if os.path.isfile('results_balance.txt'):

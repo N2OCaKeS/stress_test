@@ -27,6 +27,53 @@ class system:
 
 
 
+class bl:
+    """
+    Класс с внутренними методами, которые относятся   
+    к тесту с балансировщиком.
+    """
+    @staticmethod
+    def box_wrapper(box: str, dates: dict) -> tuple:
+        """
+        Метод определяет соответствие версий ОС и доступности
+        бокса, возвращает соответствующий url и name
+        """
+        true_key = False
+        box_name = ''
+        box_url = ''
+        for i in dates['vagrant_box']:
+            if box in str(i):
+                for key in i.keys():
+                    if str(key).endswith('s'):
+                        true_key = key
+                        box_name = i[true_key][0]
+                        box_url = i[true_key][1]             
+                
+        if true_key == False:
+            for i in dates['vagrant_box']:
+                if str(box).startswith('1.7'):
+                    if '1.7.1.s' in str(i):
+                        box_name = i['1.7.1.s'][0]
+                        box_url = i['1.7.1.s'][1]
+                elif str(box).startswith('1.8'):
+                    if '1.8.0.s' in str(i):
+                        box_name = i['1.8.0.s'][0]
+                        box_url = i['1.8.0.s'][1]
+        
+        return box_name, box_url
+    
+    @staticmethod
+    def check(method: classmethod, uzs: classmethod):
+        """
+        Проверка успешности выполнения переданного метода
+        """
+        if method != 0:
+            uzs.upload_test_cycle_status(zefir_status='fail')
+            print(f"Method {method.__class__.__name__}.{method.__name__} return bad result. Execution stoped")
+            exit(1)
+
+
+
 class VirtualMashines(ABC):
     """
     Абстрактный конвейер\n

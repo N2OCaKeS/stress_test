@@ -127,6 +127,8 @@ class VBox(VirtualMashines):
             return system.check_output_command('vboxmanage list vms')
 
         system.cmd('apt install -fy')
+        if system.cmd_with_returncode('mv Vagrantfile_vbox Vagrantfile') != 0:
+            return 1
         if system.cmd_with_returncode(f'cd balance && vagrant box add {box_name} {box_url} --force') != 0:
             return 1
         if system.cmd_with_returncode(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=virtualbox') != 0:
@@ -156,6 +158,7 @@ class VBox(VirtualMashines):
         
     @classmethod
     def execute(cls, vms: list, ansible_commands: list, vm_dates: dict) -> int:
+        attempts_count = 0
         no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         vm_creds = {name:f'sshpass -v -p 1 ssh {no_fprint} u@{vm_dates[name]["ip_bridge"]}' for name in vms}
         print('\n***--------- Connecting credentials ---------***\n')
@@ -184,7 +187,66 @@ class VBox(VirtualMashines):
 
 
 class LVirt(VirtualMashines):
+    """
+    Класс подготоваливает окружение под провайдер Libvirt,   
+    разворачивает и производит настройку необходимых ВМ,   
+    проверяет их доступность, запускает плэйбуки.
+    """
     @classmethod
     def prepare(cls) -> int:
         return system.cmd_with_returncode("sudo bash balance/bl_prepare_lvirt.sh")
+    
+    @classmethod
+    def build(cls, box_name: str, box_url: str, kernel: str, rc: str, vms: list) -> int:
+        def _set_bridge_network(vm, bridge_name):
+            try:
+                system.cmd(f'virsh shutdown {vm}'); sleep(1)
+                system.cmd(f'virsh attach-interface {vm} --type bridge --source {bridge_name} --model virtio --config --live')
+                system.cmd(f'virsh start {vm}')
+            except Exception as e:
+                print(f'Type: {type(e).__name__},\nError: {str(e)}')
+
+        def _check_vm_list():
+            return system.check_output_command('virsh list --all')
+
+        system.cmd('apt install -fy')
+
+        # add_box
+        if system.cmd_with_returncode('mv Vagrantfile_lvirt Vagrantfile') != 0:
+            return 1
+        if system.cmd_with_returncode(f'cd balance && vagrant box add --provider virtualbox {box_name} {box_url} --force') != 0:
+            return 1
+        if system.cmd_with_returncode(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio') != 0:
+            return 1
+        
+        # add define pool
+        try:
+            system.cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
+            system.cmd('virsh pool-autostart default')
+            system.cmd('virsh pool-start default')
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        # create_vm
+        if system.cmd_with_returncode(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=libvirt') != 0:
+            return 1
+        print('\nWait reboot VMs 180s...\n')
+        sleep(180)
+        
+        bridge_iface = system.check_output_command("virsh net-list --all | grep bridge | awk '{print $1}' | head -n 1")
+        print(f'Bridge interface found as: {bridge_iface}')
+        [_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
+        [system.cmd(f'virsh snapshot-create-as --domain {vm} --name snapshot_1') for vm in vms if vm in _check_vm_list()]
+        system.cmd('virsh net-list --all')
+        system.cmd('virsh iface-list')
+        system.cmd('virsh list --all')
+        return 0
+
+    @classmethod
+    def check(cls, vms: list, vm_dates: dict):
+        return VBox.check(vms=vms, vm_dates=vm_dates)
+
+    @classmethod
+    def execute(cls, vms: list, ansible_commands: list, vm_dates: dict) -> int:
+        return VBox.execute(vms=vms, ansible_commands=ansible_commands, vm_dates=vm_dates)
     

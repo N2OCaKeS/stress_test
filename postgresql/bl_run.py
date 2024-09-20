@@ -25,7 +25,7 @@ https://github.com/pgpool/pgpool2/commit/4aa657e055250da9db9a4c5cde7260e8f24707c
 """
 
 
-provider = VBox
+provider = LVirt
 """
 SETTINGS
 

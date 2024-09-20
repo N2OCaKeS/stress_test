@@ -1,0 +1,48 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = ENV['UPDATE']
+  config.vm.box_url = ENV['BOX_URL']
+  config.vm.synced_folder "./", "/vagrant", disabled: true
+  config.vm.boot_timeout = 180
+    
+  vms = [
+    { :name => "database1", :hostname => "database1.balance.rbt", :args => "database1", :cpus => "4", :memory => "32768", :ip => "10.177.103.111" },
+    { :name => "database2", :hostname => "database2.balance.rbt", :args => "database2", :cpus => "4", :memory => "32768", :ip => "10.177.103.112" },
+    { :name => "database3", :hostname => "database3.balance.rbt", :args => "database3", :cpus => "8", :memory => "32768", :ip => "10.177.103.113" },
+    { :name => "lbdb1", :hostname => "lbdb1.balance.rbt", :args => "lbdb1", :cpus => "8", :memory => "32768", :ip => "10.177.103.141" },
+    { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "8", :memory => "32768", :ip => "10.177.103.142" },
+    { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "8", :memory => "32768", :ip => "10.177.103.143" },
+    { :name => "dcfreeipa", :hostname => "dcfreeipa.balance.rbt", :args => "dcfreeipa", :cpus => "8", :memory => "32768", :ip => "10.177.103.110" },
+    { :name => "test", :hostname => "test.balance.rbt", :args => "test", :cpus => "2", :memory => "2048", :ip => "10.177.103.116" }
+  ]
+
+  vms.each do |vm|
+    if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
+      config.vm.define vm[:name] do |node|
+        node.vm.hostname = vm[:hostname]
+        node.vm.provider :libvirt do |v|
+          v.name = vm[:name]
+          v.memory = vm[:memory]
+          v.cpus = vm[:cpus]
+          v.default_prefix = ""
+          v.disk_bus = "sata"
+        end
+
+        node.vm.provision "shell", inline: <<-SHELL
+          VM_NAME=#{vm[:name]}
+          DISK_FILE="/var/lib/libvirt/images/#{vm[:name]}_disk.qcow2"
+
+          if [ ! -f "$DISK_FILE" ]; then
+            qemu-img create -f qcow2 $DISK_FILE 40G
+          fi
+
+          if ! virsh dumpxml $VM_NAME | grep -q "<disk.*#{vm[:name]}_disk.qcow2"; then
+            virsh attach-disk $VM_NAME $DISK_FILE vdb --cache writeback --persistent
+          fi
+        SHELL
+    
+        node.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args], ENV['KERNEL'], ENV['RC']]    
+        node.vm.provision "shell", inline: "echo 'Rebooting VM...'; sudo reboot", run: "always"
+      end
+    end
+  end
+end

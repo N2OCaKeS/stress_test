@@ -127,7 +127,7 @@ class VBox(VirtualMashines):
             return system.check_output_command('vboxmanage list vms')
 
         system.cmd('apt install -fy')
-        if system.cmd_with_returncode('mv Vagrantfile_vbox Vagrantfile') != 0:
+        if system.cmd_with_returncode('cd balance && mv Vagrantfile_vbox Vagrantfile') != 0:
             return 1
         if system.cmd_with_returncode(f'cd balance && vagrant box add {box_name} {box_url} --force') != 0:
             return 1
@@ -212,7 +212,7 @@ class LVirt(VirtualMashines):
         system.cmd('apt install -fy')
 
         # add_box
-        if system.cmd_with_returncode('mv Vagrantfile_lvirt Vagrantfile') != 0:
+        if system.cmd_with_returncode('cd balance && mv Vagrantfile_lvirt Vagrantfile') != 0:
             return 1
         if system.cmd_with_returncode(f'cd balance && vagrant box add --provider virtualbox {box_name} {box_url} --force') != 0:
             return 1

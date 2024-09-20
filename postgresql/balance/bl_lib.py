@@ -127,8 +127,10 @@ class VBox(VirtualMashines):
             return system.check_output_command('vboxmanage list vms')
 
         system.cmd('apt install -fy')
-        system.cmd(f'vagrant box add {box_name} {box_url} --force')
-        system.cmd(f'UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=virtualbox')
+        if system.cmd_with_returncode(f'cd balance && vagrant box add {box_name} {box_url} --force') != 0:
+            return 1
+        if system.cmd_with_returncode(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=virtualbox') != 0:
+            return 1
         bridge_iface = system.check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
         print(f'Bridge interface found as: {bridge_iface}')
         [_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
@@ -142,7 +144,7 @@ class VBox(VirtualMashines):
     @classmethod
     def check(cls, vms: list, vm_dates: dict):
         def _check_ping():
-            bad_vms = [vm for vm in vms if system.cmd(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
+            bad_vms = [vm for vm in vms if system.cmd_with_returncode(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
             return bad_vms
         
         if _check_ping():   

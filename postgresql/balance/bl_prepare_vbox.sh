@@ -175,7 +175,7 @@ fi
 if test ! "$(groups | grep vboxusers)"; then
   >&2 echo -e "\e[91mERROR (!) '$USER' is not a member of the 'vboxusers' group\e[0m"
   echo -e "\e[91mPlease, reboot your system and restart this script again\e[0m"
-  exit 1
+  exit 0
 fi
 
 # # create NAT network for vbox

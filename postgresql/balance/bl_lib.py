@@ -63,13 +63,14 @@ class bl:
         return box_name, box_url
     
     @staticmethod
-    def check(method: classmethod, uzs: classmethod):
+    def check(method, uzs, *args, **kwargs):
         """
         Проверка успешности выполнения переданного метода
         """
-        if method != 0:
+        result = method(*args, **kwargs)
+        if result != 0:
             uzs.upload_test_cycle_status(zefir_status='fail')
-            print(f"Method {method.__class__.__name__}.{method.__name__} return bad result. Execution stoped")
+            print(f"Method \"{method.__name__}\" return bad result. Execution stopped, result: {result}")
             exit(1)
 
 
@@ -108,7 +109,7 @@ class VBox(VirtualMashines):
     """
     @classmethod
     def prepare(cls) -> int:
-        return system.cmd_with_returncode("sudo bash bl_prepare_vbox.sh")
+        return system.cmd_with_returncode("sudo bash balance/bl_prepare_vbox.sh")
     
     @classmethod
     def build(cls, box_name: str, box_url: str, kernel: str, rc: str, vms: list) -> int:
@@ -183,5 +184,5 @@ class VBox(VirtualMashines):
 class LVirt(VirtualMashines):
     @classmethod
     def prepare(cls) -> int:
-        return system.cmd_with_returncode("sudo bash bl_prepare_lvirt.sh")
+        return system.cmd_with_returncode("sudo bash balance/bl_prepare_lvirt.sh")
     

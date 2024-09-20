@@ -193,10 +193,10 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
 uzs.upload_test_cycle_status('progress')
 
 
-bl.check(provider.prepare(), uzs)
-bl.check(provider.build(box_name=box_name, box_url=box_url, kernel=kernel, rc=args.SET_BOX, vms=vms), uzs)
-bl.check(provider.check(vm_dates=vm_dates, vms=vms), uzs)
-bl.check(provider.execute(ansible_commands=ansible_commands, vm_dates=vm_dates, vms=vms), uzs)
+bl.check(provider.prepare, uzs)
+bl.check(provider.build, uzs, box_name=box_name, box_url=box_url, kernel=kernel, rc=args.SET_BOX, vms=vms)
+bl.check(provider.check, uzs, vm_dates=vm_dates, vms=vms)
+bl.check(provider.execute, uzs, ansible_commands=ansible_commands, vm_dates=vm_dates, vms=vms)
 
 
 if os.path.isfile('results_balance.txt'):

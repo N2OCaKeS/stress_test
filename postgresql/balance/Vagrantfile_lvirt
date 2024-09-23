@@ -20,27 +20,13 @@ Vagrant.configure("2") do |config|
       config.vm.define vm[:name] do |node|
         node.vm.hostname = vm[:hostname]
         node.vm.provider :libvirt do |v|
-          v.name = vm[:name]
           v.memory = vm[:memory]
           v.cpus = vm[:cpus]
           v.default_prefix = ""
           v.disk_bus = "sata"
         end
-
-        node.vm.provision "shell", inline: <<-SHELL
-          VM_NAME=#{vm[:name]}
-          DISK_FILE="/var/lib/libvirt/images/#{vm[:name]}_disk.qcow2"
-
-          if [ ! -f "$DISK_FILE" ]; then
-            qemu-img create -f qcow2 $DISK_FILE 40G
-          fi
-
-          if ! virsh dumpxml $VM_NAME | grep -q "<disk.*#{vm[:name]}_disk.qcow2"; then
-            virsh attach-disk $VM_NAME $DISK_FILE vdb --cache writeback --persistent
-          fi
-        SHELL
     
-        node.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args], ENV['KERNEL'], ENV['RC']]    
+        node.vm.provision "shell", path:"provision/env_provision_lvirt.sh", args: [vm[:args], ENV['KERNEL'], ENV['RC']]    
         node.vm.provision "shell", inline: "echo 'Rebooting VM...'; sudo reboot", run: "always"
       end
     end

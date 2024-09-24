@@ -36,3 +36,43 @@ else
 fi
 
 
+
+if test "$(sudo virsh net-list --all | grep default)"; then
+sudo virsh net-undefine default
+fi
+
+# upd network
+IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
+cat << EOF > /etc/network/interfaces
+
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+auto br0
+iface br0 inet static
+    address 10.177.103.203
+    netmask 255.255.255.0
+    gateway 10.177.103.254
+    bridge_ports $IFACE
+    bridge_stp off
+    bridge_fd 0
+    bridge_maxwait 0
+    dns-nameserver 10.177.128.198
+
+auto $IFACE
+iface $IFACE inet manual
+
+dns-nameservers 10.177.128.198
+EOF
+systemctl restart networking
+fi
+
+
+# check user group 'libvirt'
+test "$(groups $USER | grep libvirt)" || sudo usermod -aG libvirt $USER
+
+
+

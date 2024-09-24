@@ -19,6 +19,7 @@ Vagrant.configure("2") do |config|
     if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
       config.vm.define vm[:name] do |node|
         node.vm.hostname = vm[:hostname]
+        node.vm.network "public_network", ip: vm[:ip], bridge: "br0"
         node.vm.provider :libvirt do |v|
           v.memory = vm[:memory]
           v.cpus = vm[:cpus]

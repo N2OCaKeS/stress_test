@@ -161,9 +161,9 @@ elif [ "$1" = "test" ]; then
 fi
 
 
-#sudo nmcli connection modify "${bridge_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
-sudo nmcli connection modify "${bridge_net_name}" gw4 $vbox_bridge_gateway
-sudo nmcli connection modify "${bridge_net_name}" ipv4.dns "$dns_br"
+sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
+sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
+sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
 nmcli connection show
 
 if id "$main_user" >/dev/null 2>&1; then

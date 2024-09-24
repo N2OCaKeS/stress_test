@@ -73,7 +73,6 @@ iface $IFACE inet manual
 dns-nameservers 10.177.128.198
 EOF
 systemctl restart networking
-fi
 
 
 # check user group 'libvirt'

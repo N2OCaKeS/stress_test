@@ -3,7 +3,7 @@ sudo apt-get install ansible -y
 sudo apt-get install sshpass -y
 
 #lvirt
-apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
+apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 bridge-utils -y
 
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
@@ -43,6 +43,11 @@ fi
 
 # upd network
 IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
+
+sudo brctl addbr br0
+sudo brctl addif br0 $IFACE
+sudo ip link set br0 up
+
 cat << EOF > /etc/network/interfaces
 
 source /etc/network/interfaces.d/*

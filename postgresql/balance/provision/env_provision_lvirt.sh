@@ -164,7 +164,11 @@ fi
 sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
 sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
 sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
+
+sudo systemctl restart networking
 nmcli connection show
+ip a
+
 
 if id "$main_user" >/dev/null 2>&1; then
     echo "$main_user:$pass" | chpasswd 2>/dev/null
@@ -188,12 +192,6 @@ echo "postgres  ALL=(ALL:ALL) NOPASSWD:ALL" | sudo tee -a /etc/sudoers
 ls -l /etc/sudoers.d/
 cat /etc/sudoers.d/u
 cat /etc/sudoers
-
-ip a
-#for vm in database1_br database2_br database3_br lbdb1_br lbdb2_br lbdb3_br dcfreeipa_br; do
-#    declare -n view=$vm
-#    ping -c 1 "${view[ip]}"
-#done
 
 apt list postgresql* > /home/u/available_packages.txt
 

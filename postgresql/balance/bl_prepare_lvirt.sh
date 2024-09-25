@@ -38,11 +38,27 @@ fi
 
 
 if test "$(sudo virsh net-list --all | grep default)"; then
+sudo virsh net-destroy default
 sudo virsh net-undefine default
 fi
 
 # upd network
 IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
+
+cat << EOF > /tmp/br0.xml
+<network>
+  <name>br0-net</name>
+  <uuid>e4c83d6f-a465-41f2-9562-a39336ac2b25</uuid>
+  <forward mode='bridge'/>
+  <bridge name='br0' stp='on' delay='0'/>
+  <mac address='52:54:00:f0:b5:6f'/>
+  <domain name='br0-net'/>
+</network>
+EOF
+
+sudo virsh net-define /tmp/br0.xml
+sudo virsh net-start br0-net
+sudo virsh net-autostart br0-net
 
 sudo brctl addbr br0
 sudo brctl addif br0 $IFACE

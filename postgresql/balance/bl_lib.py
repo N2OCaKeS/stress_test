@@ -235,7 +235,7 @@ class LVirt(VirtualMashines):
         
         bridge_iface = system.check_output_command("virsh net-list --all | grep br0 | awk '{print $1}' | head -n 1")
         print(f'Bridge interface found as: {bridge_iface}')
-        #[_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
+        [_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
         [system.cmd(f'virsh snapshot-create-as --domain {vm} --name snapshot_1') for vm in vms if vm in _check_vm_list()]
         system.cmd('virsh net-list --all')
         system.cmd('virsh iface-list')

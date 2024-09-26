@@ -50,9 +50,7 @@ cat << EOF > /tmp/br0.xml
   <name>br0-net</name>
   <uuid>e4c83d6f-a465-41f2-9562-a39336ac2b25</uuid>
   <forward mode='bridge'/>
-  <bridge name='br0' stp='on' delay='0'/>
-  <mac address='52:54:00:f0:b5:6f'/>
-  <domain name='br0-net'/>
+  <bridge name='br0'/>
 </network>
 EOF
 

@@ -54,7 +54,8 @@ help_text = """Доступные команды:
 /acs - сделать снимок для выбранного стенда
 /update_stp - обновить состав тестового прогона
 /add_testrun - создать тестовый прогон
-/runtests - запустить тесты
+/runtests - запустить тесты на стенде
+/runalltests - запустить тесты на всех стендах
 """
 
 help_acs = """Доступные команды:
@@ -716,6 +717,32 @@ async def addrc(message: types.Message, command: CommandObject):
         await message.reply(f'✅ Доступ разрешен\nЗапускаю тесты: {rc}')   
         run_tests(rc, stand)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nЗапуск тестов: "{rc}" - "{stand}"'
+        await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
+    else: 
+        content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
+        await message.reply(**content.as_kwargs())
+
+
+@dp.message(Command('runalltests'))
+async def addrc(message: types.Message, command: CommandObject):
+    rc = None
+    password = None
+    if command.args is None:
+        await message.reply('❌ Укажите версию RC и пароль')
+        return
+    try:
+        rc, password = command.args.split(' ', maxsplit=1)
+    except ValueError:
+        content = Text('❌ Укажите версию RC и пароль. Пример:\n'
+                            '/runtests <RC> <password>')
+        await message.reply(**content.as_kwargs())
+        return
+    if password == 'bendik$':
+        await message.reply(f'✅ Доступ разрешен\nЗапускаю тесты: {rc}')   
+        run_tests(rc, 'stand3')
+        sleep(1)
+        run_tests(rc, 'stand4')
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nЗапуск тестов: "{rc}" - "All stands"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})

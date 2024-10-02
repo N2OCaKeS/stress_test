@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import subprocess
 import os
 from time import sleep
+from string import Template
 
 
 
@@ -208,6 +209,9 @@ class LVirt(VirtualMashines):
 
         def _check_vm_list():
             return system.check_output_command('virsh list --all')
+        
+        def _vms_ip(vm) -> str:
+            return system.check_output_command(f"virsh domifaddr {vm} | tail -n 2 | awk '{{print$4}}' | head -n 1")
 
         system.cmd('apt install -fy')
 
@@ -232,11 +236,35 @@ class LVirt(VirtualMashines):
             return 1
         print('\nWait reboot VMs 180s...\n')
         sleep(180)
+
+        find_vms = sorted(system.check_output_command('virsh list --name').strip().split('\n'))
+        print(find_vms)
+
+        vms_ip = {
+            vm_name: _vms_ip(vm_name).split('/')[0] for vm_name in find_vms
+        }
+        print(vms_ip)
+
+        with open('inventories/middle_hosts_lvirt.yml') as file:
+            hosts_template = Template(file.read())
+            hosts = hosts_template.substitute(dcfreeipa=vms_ip['dcfreeipa'],
+                                              database1=vms_ip['database1'],
+                                              database2=vms_ip['database2'],
+                                              database3=vms_ip['database3'],
+                                              lbdb1=vms_ip['lbdb1'],
+                                              lbdb2=vms_ip['lbdb2'],
+                                              lbdb3=vms_ip['lbdb3'])
+            print(hosts)
+
+        if system.cmd_with_returncode('cd inventories && mv middle_hosts_lvirt.yml middle_hosts.yml') != 0:
+            return 1
+        if system.cmd_with_returncode('cd inventories/group_vars && mv ALL_lvirt.yml ALL.yml') != 0:
+            return 1
         
         bridge_iface = system.check_output_command("virsh iface-list --all | grep br0 | awk '{print $1}' | head -n 1")
         print(f'Bridge interface found as: {bridge_iface}')
-        [_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
-        [system.cmd(f'virsh snapshot-create-as --domain {vm} --name snapshot_1') for vm in vms if vm in _check_vm_list()]
+        #[_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
+        [system.cmd(f'virsh snapshot-create-as --domain {vm} --name snapshot_1') for vm in find_vms if vm in _check_vm_list()]
         system.cmd('virsh net-list --all')
         system.cmd('virsh iface-list')
         system.cmd('virsh list --all')
@@ -244,7 +272,22 @@ class LVirt(VirtualMashines):
 
     @classmethod
     def check(cls, vms: list, vm_dates: dict):
-        return VBox.check(vms=vms, vm_dates=vm_dates)
+        def _vms_ip(vm) -> str:
+            return system.check_output_command(f"virsh domifaddr {vm} | tail -n 2 | awk '{{print$4}}' | head -n 1")
+        
+        vms_ip = {
+            vm_name: _vms_ip(vm_name).split('/')[0] for vm_name in vms
+        }
+        def _check_ping():
+            bad_vms = [vm for vm in vms if system.cmd_with_returncode(f"ping -c 1 {vms_ip[vm]}") != 0]
+            return bad_vms
+        
+        if _check_ping():   
+            print("Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)")
+            return 1
+        else: 
+            print("All vms is available")
+            return 0
 
     @classmethod
     def execute(cls, vms: list, ansible_commands: list, vm_dates: dict) -> int:

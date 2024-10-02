@@ -42,51 +42,51 @@ sudo virsh net-destroy default
 sudo virsh net-undefine default
 fi
 
-# upd network
-IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
+# # upd network
+# IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
 
-cat << EOF > /tmp/br0.xml
-<network>
-  <name>br0-net</name>
-  <uuid>e4c83d6f-a465-41f2-9562-a39336ac2b25</uuid>
-  <forward mode='bridge'/>
-  <bridge name='br0'/>
-</network>
-EOF
+# cat << EOF > /tmp/br0.xml
+# <network>
+#   <name>br0-net</name>
+#   <uuid>e4c83d6f-a465-41f2-9562-a39336ac2b25</uuid>
+#   <forward mode='bridge'/>
+#   <bridge name='br0'/>
+# </network>
+# EOF
 
-sudo virsh net-define /tmp/br0.xml
-sudo virsh net-start br0-net
-sudo virsh net-autostart br0-net
+# sudo virsh net-define /tmp/br0.xml
+# sudo virsh net-start br0-net
+# sudo virsh net-autostart br0-net
 
-sudo brctl addbr br0
-sudo brctl addif br0 $IFACE
-sudo ip link set br0 up
+# sudo brctl addbr br0
+# sudo brctl addif br0 $IFACE
+# sudo ip link set br0 up
 
-cat << EOF > /etc/network/interfaces
+# cat << EOF > /etc/network/interfaces
 
-source /etc/network/interfaces.d/*
+# source /etc/network/interfaces.d/*
 
-# The loopback network interface
-auto lo
-iface lo inet loopback
+# # The loopback network interface
+# auto lo
+# iface lo inet loopback
 
-auto br0
-iface br0 inet static
-    address 10.177.103.203
-    netmask 255.255.255.0
-    gateway 10.177.103.254
-    bridge_ports $IFACE
-    bridge_stp off
-    bridge_fd 0
-    bridge_maxwait 0
-    dns-nameserver 10.177.128.198
+# auto br0
+# iface br0 inet static
+#     address 10.177.103.203
+#     netmask 255.255.255.0
+#     gateway 10.177.103.254
+#     bridge_ports $IFACE
+#     bridge_stp off
+#     bridge_fd 0
+#     bridge_maxwait 0
+#     dns-nameserver 10.177.128.198
 
-auto $IFACE
-iface $IFACE inet manual
+# auto $IFACE
+# iface $IFACE inet manual
 
-dns-nameservers 10.177.128.198
-EOF
-systemctl restart networking
+# dns-nameservers 10.177.128.198
+# EOF
+# systemctl restart networking
 
 
 # check user group 'libvirt'

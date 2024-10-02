@@ -1,0 +1,50 @@
+all:
+  vars:
+    astra_domain: balance.rbt
+    debian_linux: false
+    no_purge: true
+    repo_pakages: true
+    ansible_ssh_pass: vagrant
+    ansible_ssh_user: vagrant
+  children:
+
+    servers:
+      hosts:
+        domain:
+          ansible_host: ${dcfreeipa}
+          domain_name: dcfreeipa
+
+        databases:
+          hosts:
+            database:
+              ansible_host: ${database1}
+              domain_name: database1
+
+            database_2:
+              ansible_host: ${database2}
+              domain_name: database2
+
+            database_3:
+              ansible_host: ${database3}
+              domain_name: database3
+
+        load_balancers_db:
+          hosts:
+            lb_db:
+              ansible_host: ${lbdb1}
+              domain_name: lbdb1
+
+            lb_db_2:
+              ansible_host: ${lbdb2}
+              domain_name: lbdb2
+
+            lb_db_3:
+              ansible_host: ${lbdb3}
+              domain_name: lbdb3
+
+
+    
+
+
+
+    

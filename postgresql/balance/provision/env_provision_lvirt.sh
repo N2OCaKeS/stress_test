@@ -48,9 +48,9 @@ python3 -m pip install psycopg2-binary
 dpkg -s ntpsec &> /dev/null || sudo apt-get install ntpsec -y
 
 
-main_user=u
-users63=(root u)
-pass=1
+main_user=vagrant
+users63=(root vagrant)
+pass=vagrant
 
 # groups for 'u' user
 ugroups=(\
@@ -166,26 +166,26 @@ fi
 #sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
 #sudo nmcli connection modify "${nat_net_name}" 802-3-ethernet.mac-address $mac_br
 
-IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
-cat << EOF > /etc/network/interfaces
+# IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
+# cat << EOF > /etc/network/interfaces
 
-source /etc/network/interfaces.d/*
+# source /etc/network/interfaces.d/*
 
-# The loopback network interface
-auto lo
-iface lo inet loopback
+# # The loopback network interface
+# auto lo
+# iface lo inet loopback
 
-auto $IFACE
-iface $IFACE inet static
-    address $ip_br
-    netmask 255.255.255.0
-    gateway $vbox_bridge_gateway
-    dns-nameserver $dns_br
+# auto $IFACE
+# iface $IFACE inet static
+#     address $ip_br
+#     netmask 255.255.255.0
+#     gateway $vbox_bridge_gateway
+#     dns-nameserver $dns_br
 
-EOF
+# EOF
 
-cat /etc/network/interfaces
-sudo systemctl restart networking
+# cat /etc/network/interfaces
+# sudo systemctl restart networking
 nmcli connection show
 ip a
 

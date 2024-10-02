@@ -164,6 +164,7 @@ fi
 #sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
 #sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
 #sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
+#sudo nmcli connection modify "${nat_net_name}" 802-3-ethernet.mac-address $mac_br
 
 IFACE=`ip -o link show | awk -F': ' '{print $2}' | head -n 2 | tail -n 1`
 cat << EOF > /etc/network/interfaces

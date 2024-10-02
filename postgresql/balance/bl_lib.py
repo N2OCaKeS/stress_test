@@ -245,7 +245,7 @@ class LVirt(VirtualMashines):
         }
         print(vms_ip)
 
-        with open('inventories/middle_hosts_lvirt.yml') as file:
+        with open('balance/inventories/middle_hosts_lvirt.yml', 'r') as file:
             hosts_template = Template(file.read())
             hosts = hosts_template.substitute(dcfreeipa=vms_ip['dcfreeipa'],
                                               database1=vms_ip['database1'],
@@ -256,9 +256,9 @@ class LVirt(VirtualMashines):
                                               lbdb3=vms_ip['lbdb3'])
             print(hosts)
 
-        if system.cmd_with_returncode('cd inventories && mv middle_hosts_lvirt.yml middle_hosts.yml') != 0:
+        if system.cmd_with_returncode('cd balance/inventories && mv middle_hosts_lvirt.yml middle_hosts.yml') != 0:
             return 1
-        if system.cmd_with_returncode('cd inventories/group_vars && mv ALL_lvirt.yml ALL.yml') != 0:
+        if system.cmd_with_returncode('cd balance/inventories/group_vars && mv ALL_lvirt.yml ALL.yml') != 0:
             return 1
         
         bridge_iface = system.check_output_command("virsh iface-list --all | grep br0 | awk '{print $1}' | head -n 1")

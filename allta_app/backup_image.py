@@ -210,8 +210,8 @@ port = 22
 ipmi = BootOrder(stand=args.STAND)
 clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
 if args.PSQL_BALANCE:
-    #clonezilla_command_balance = cz_comm()['stand4']['1.8.0.14']
-    clonezilla_command_balance = cz_comm()['stand4'][args.RELEASE]
+    clonezilla_command_balance = cz_comm()['stand4']['1.8.1.6']
+    #clonezilla_command_balance = cz_comm()['stand4'][args.RELEASE]
 branch = args.BRANCH
 parent_page = args.PARP
 systems = ['debian10', 'debian10-5.15', 'altlinux-5.10']

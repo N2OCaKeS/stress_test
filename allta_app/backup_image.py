@@ -209,8 +209,9 @@ password = '1'
 port = 22
 ipmi = BootOrder(stand=args.STAND)
 clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
+balance_host_release = '1.8.1.6'
 if args.PSQL_BALANCE:
-    clonezilla_command_balance = cz_comm()['stand4']['1.8.1.6']
+    clonezilla_command_balance = cz_comm()['stand4'][balance_host_release]
     #clonezilla_command_balance = cz_comm()['stand4'][args.RELEASE]
 branch = args.BRANCH
 parent_page = args.PARP
@@ -917,7 +918,7 @@ if read_status() == success:
         db_kernel_changer(24, args.DB_KERNELS)
         db_kernel_changer(32, args.DB_KERNELS, position='end')
     elif args.PSQL_BALANCE:
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} balance')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} balance {balance_host_release}')
     elif args.FREEIPA_AUTH:
         freeipa_authentication_test()
     else:    

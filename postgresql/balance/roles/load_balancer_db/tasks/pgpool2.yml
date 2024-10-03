@@ -138,7 +138,7 @@
     mode: 'u=rwx,g=rx,o=rx'
 
 - name: Allow the postgres user to manipulate virtual ip
-  become: yes
+  become: true
   community.general.sudoers:
     name: allow-virtual-ip
     user: postgres

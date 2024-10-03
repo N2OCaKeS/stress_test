@@ -24,7 +24,7 @@
           apt:
             name:
               - libpq5
-              - postgresql-client-15
+              - postgresql-client-{{ server.pg.version }}
           register: result
           until: result is not failed
           retries: 3

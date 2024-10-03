@@ -42,7 +42,7 @@ server:
       enabled: yes
 
   pg:
-    version: 15
+    version: 11
     port: 5440
     db_name: contrprimer
     schema_template: s#

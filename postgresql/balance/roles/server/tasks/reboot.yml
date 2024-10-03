@@ -43,7 +43,7 @@
 
 - name: Start pgpool2
   delegate_to: '{{ item }}'
-  become: yes
+  become: true
   service:
     name: pgpool2
     state: started

@@ -1,11 +1,11 @@
 - name: Setup db load balancer
-  become: yes
+  become: true
   block:
     - name: Install necessary components
       import_tasks: install.yml
 
     - name: Temporarily disable pgpool2 service
-      become: yes
+      become: true
       service:
         name: pgpool2
         state: stopped

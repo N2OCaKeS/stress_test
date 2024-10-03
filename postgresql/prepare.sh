@@ -22,8 +22,8 @@ test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
 
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
-if [[ -n $5 ]]; then
-    sudo jq -r ".\"$5\"[]" releases.json > /etc/apt/sources.list
+if [[ -n $3 ]]; then
+    sudo jq -r ".\"$3\"[]" releases.json > /etc/apt/sources.list
 else
     sudo jq -r ".\"$2\"[]" releases.json > /etc/apt/sources.list
 fi

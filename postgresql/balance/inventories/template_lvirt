@@ -39,7 +39,7 @@ all:
         load_balancers_db:
           vars:
             virtual_domain_name: pgpool
-            delegate_ip: {192.168.121.131}
+            delegate_ip: ${pgpool}
           hosts:
             lb_db:
               ansible_host: ${lbdb1}

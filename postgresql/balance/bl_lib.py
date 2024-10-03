@@ -253,7 +253,8 @@ class LVirt(VirtualMashines):
                                               database3=vms_ip['database3'],
                                               lbdb1=vms_ip['lbdb1'],
                                               lbdb2=vms_ip['lbdb2'],
-                                              lbdb3=vms_ip['lbdb3'])
+                                              lbdb3=vms_ip['lbdb3'],
+                                              pgpool=vms_ip['test'])
             print(hosts)
 
         with open('balance/inventories/middle_hosts.yml', 'w') as file:

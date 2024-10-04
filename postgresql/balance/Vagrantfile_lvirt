@@ -12,7 +12,10 @@ Vagrant.configure("2") do |config|
     { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "8", :memory => "32768", :ip => "10.177.103.142" },
     { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "8", :memory => "32768", :ip => "10.177.103.143" },
     { :name => "dcfreeipa", :hostname => "dcfreeipa.balance.rbt", :args => "dcfreeipa", :cpus => "8", :memory => "32768", :ip => "10.177.103.110" },
-    { :name => "test", :hostname => "test.balance.rbt", :args => "test", :cpus => "2", :memory => "2048", :ip => "10.177.103.116" }
+    { :name => "test", :hostname => "test.balance.rbt", :args => "test", :cpus => "2", :memory => "2048", :ip => "10.177.103.116" },
+    { :name => "web1", :hostname => "web1.balance.rbt", :args => "web1", :cpus => "4", :memory => "4096", :ip => "10.177.103.117" },
+    { :name => "web2", :hostname => "web2.balance.rbt", :args => "web2", :cpus => "4", :memory => "4096", :ip => "10.177.103.118" },
+    { :name => "client", :hostname => "client.balance.rbt", :args => "client", :cpus => "2", :memory => "2048", :ip => "10.177.103.119" }
   ]
 
   vms.each do |vm|

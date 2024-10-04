@@ -15,6 +15,18 @@ all:
           domain_name: dcfreeipa
 
       children:
+        web_servers:
+          hosts:
+            placeholder_host: 
+              ansible_host: 127.0.0.1
+              ansible_connection: local
+
+        load_balancers_web:
+          hosts:
+            placeholder_host: 
+              ansible_host: 127.0.0.1
+              ansible_connection: local
+
         databases:
           hosts:
             database:
@@ -46,4 +58,9 @@ all:
               ansible_host: ${lbdb3}
               domain_name: lbdb3
 
-    
+    clients:
+      hosts:
+        placeholder_host: 
+          ansible_host: 127.0.0.1
+          ansible_connection: local
+    development:

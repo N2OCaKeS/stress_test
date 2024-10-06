@@ -27,7 +27,7 @@
       - ['ac_ignore_socket_maclabel', 'false']
     pg_hba_conf:
       - ['all', 'all', '0.0.0.0/0', 'md5', 'absent']
-      - ['all', 'all', '{{ ansible_enp0s3.ipv4.address }}/24', 'gss', 'present',
+      - ['all', 'all', '{{ ansible_all_ipv4_addresses | first }}/24', 'gss', 'present',
          'include_realm=0 krb_realm={{ astra_domain | upper }}']
 
 - name: Configure postgresql.conf

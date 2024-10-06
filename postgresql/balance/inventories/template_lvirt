@@ -17,12 +17,12 @@ all:
       children:
         web_servers:
           hosts:
-            web1: 
+            web_placeholder_1: 
               ansible_host: ${web1}
 
         load_balancers_web:
           hosts:
-            web2: 
+            web_placeholder_2: 
               ansible_host: ${web2}
 
         databases:
@@ -58,6 +58,6 @@ all:
 
     clients:
       hosts:
-        client: 
+        client_placeholder: 
           ansible_host: ${client}
     development:

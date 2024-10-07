@@ -7,7 +7,6 @@
     state: '{{ item }}'
   loop: "{{ ['absent', 'present'] if server.apache.load_balancing.enabled else ['present'] }}"
   when: >-
-    inventory_hostname in groups.web_servers or
     (server.apache_postgres_together and inventory_hostname in groups.databases)
 
 - name: Create postgres freeipa service

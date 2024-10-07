@@ -29,7 +29,6 @@
         owner: www-data
         mode: u=rw,g=r,o=r
   when: >-
-    inventory_hostname in groups.web_servers or
     (server.apache_postgres_together and inventory_hostname in groups.databases)
 
 - block:
@@ -49,7 +48,6 @@
   set_fact:
     allowed_uid: >-
       {{ "www-data, postgres" if server.apache_postgres_together else
-         "www-data" if inventory_hostname in groups.web_servers else
          "postgres" }}
 
 - name: Read sssd.conf

@@ -4,7 +4,6 @@
     - name: Setup web server
       include_tasks: apache/main.yml
       when: >-
-        inventory_hostname in groups.web_servers or
         (server.apache_postgres_together and inventory_hostname in groups.databases)
 
     - name: Setup database server

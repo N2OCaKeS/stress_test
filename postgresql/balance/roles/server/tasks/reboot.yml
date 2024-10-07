@@ -2,7 +2,7 @@
   set_fact:
     db_replication: '{{ server.pg.replication.enabled and inventory_hostname in groups.databases }}'
     db_restart: '{{ restart_database is defined and restart_database and inventory_hostname in groups.databases }}'
-    web_restart: '{{ restart_web_server is defined and restart_web_server and inventory_hostname in groups.web_servers }}'
+    web_restart: '{{ restart_web_server is defined and restart_web_server }}'
 
 - name: Wait until master replica database is restarted
   vars:

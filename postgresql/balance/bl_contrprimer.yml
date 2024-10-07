@@ -38,7 +38,7 @@
     - name: Setup servers
       include_role:
         name: server
-      when: 'inventory_hostname in groups.web_servers or inventory_hostname in groups.databases'
+      when: 'inventory_hostname in groups.databases'
 
     - name: Setup load balancers for databases
       include_role:

@@ -54,7 +54,7 @@
       command: >-
         pg_basebackup -D {{ pg_data_path }} -h {{ hostvars[groups.databases.0].ansible_host }}
                       -p {{ server.pg.port }} -U {{ server.pg.replication.user }} -w
-                      -X stream --checkpoint=fast --no-estimate-size --write-recovery-conf
+                      -X stream --checkpoint=fast --write-recovery-conf
                       --slot='{{ hostvars[inventory_hostname].domain_name }}_{{ astra_domain | replace(".", "_") }}'
 
     - name: Replace IP with hostname

@@ -98,15 +98,16 @@ declare -A test=( [ip]=10.0.0.10 [domain]=test.balance.rbt [host]=test [dns]="10
 #127.0.0.1   localhost localhost.localdomain
 cat << EOF > /etc/hosts
 10.177.5.111    qa111.devos.astralinux.ru
-127.0.0.1   localhost 
-${database1_br[ip]} ${database1_br[domain]} ${database1_br[host]}
-${database2_br[ip]} ${database2_br[domain]} ${database2_br[host]}
-${database3_br[ip]} ${database3_br[domain]} ${database3_br[host]}
-${lbdb1_br[ip]} ${lbdb1_br[domain]} ${lbdb1_br[host]}
-${lbdb2_br[ip]} ${lbdb2_br[domain]} ${lbdb2_br[host]}
-${lbdb3_br[ip]} ${lbdb3_br[domain]} ${lbdb3_br[host]}
-${dcfreeipa_br[ip]} ${dcfreeipa_br[domain]} ${dcfreeipa_br[host]}
-EOF
+127.0.0.1   localhost
+EOF 
+#${database1_br[ip]} ${database1_br[domain]} ${database1_br[host]}
+#${database2_br[ip]} ${database2_br[domain]} ${database2_br[host]}
+#${database3_br[ip]} ${database3_br[domain]} ${database3_br[host]}
+#${lbdb1_br[ip]} ${lbdb1_br[domain]} ${lbdb1_br[host]}
+#${lbdb2_br[ip]} ${lbdb2_br[domain]} ${lbdb2_br[host]}
+#${lbdb3_br[ip]} ${lbdb3_br[domain]} ${lbdb3_br[host]}
+#${dcfreeipa_br[ip]} ${dcfreeipa_br[domain]} ${dcfreeipa_br[host]}
+#EOF
 #${pgpool_br[ip]} ${pgpool_br[domain]} ${pgpool_br[host]}
 
 if [ "$1" = "dcfreeipa" ]; then

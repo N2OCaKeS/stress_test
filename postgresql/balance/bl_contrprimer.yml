@@ -26,10 +26,14 @@
   gather_facts: no # do not modify
   vars_files: vars.yml
   tasks:
+    - name: Set hosts on all VMs
+      import_tasks: '{{ playbook_dir }}/tasks/set_hosts.yml'
+      when: vm.lvirt
+
     - name: Gathering info for 'ansible_play_hosts' variable
       setup:
         gather_subset: '!all,!min'
-
+ 
     - name: Setup domain
       include_role:
         name: domain

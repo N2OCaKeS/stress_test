@@ -9,6 +9,8 @@ virtual_network:
 
 
 vm:
+  lvirt: true
+  
   # For virtualbox set full paths
   images_base_paths:
     vanilla: "/home/u/Downloads/MG/alse-vanilla-1.7.1-virtualbox-mg7.0.0.ova"

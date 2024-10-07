@@ -136,7 +136,7 @@ class SummaryGraph(Graphs):
         ax.legend()
         fig.tight_layout()
         self.saver.save(plot=plt, name=f"{self.graph_name}_{self.__class__.__name__}")
-        main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {' '.join(self.comparison_names)}")
         plt.close()
 
 
@@ -160,7 +160,7 @@ class SummaryLineGraph(SummaryGraph):
         ax.legend(legend)
         fig.tight_layout()
         self.saver.save(plot=plt, name=f"{self.graph_name}_{self.__class__.__name__}")
-        main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {' '.join(self.comparison_names)}")
         plt.close()
 
 

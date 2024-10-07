@@ -10,13 +10,13 @@
       # Primary
       - ['max_wal_senders', '{{ server.pg.replication.max_num_replicas }}']
       - ['max_replication_slots', '{{ server.pg.replication.max_num_replicas }}']
-      - ['wal_keep_size', '{{ server.pg.replication.wal_keep_size }}']  # TODO: maybe remove later (because of replication slots)
+      #- ['wal_keep_size', '{{ server.pg.replication.wal_keep_size }}']  # TODO: maybe remove later (because of replication slots)
       # Standby
       - ['hot_standby', 'on']
-      - ['promote_trigger_file', 'failover']
+      #- ['promote_trigger_file', 'failover']
       # Other
       - ['wal_level', 'replica']
-      - ['recovery_target_timeline', 'latest']
+      #- ['recovery_target_timeline', 'latest']
     contrprimer_conf:
       - ['listen_addresses', "'*'"]
       - ['krb_server_keyfile', "'/etc/postgresql/{{ server.pg.version }}/{{ server.pg.db_name }}/krb5.keytab'"]

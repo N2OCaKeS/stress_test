@@ -45,20 +45,20 @@
         name: load_balancer_db
       when: 'server.pg.load_balancing.enabled and inventory_hostname in groups.load_balancers_db'
 
-    - name: Setup load balancers for web
-      include_role:
-        name: load_balancer_web
-      when: 'server.apache.load_balancing.enabled and inventory_hostname in groups.load_balancers_web'
+    #- name: Setup load balancers for web
+    #  include_role:
+    #    name: load_balancer_web
+    #  when: 'server.apache.load_balancing.enabled and inventory_hostname in groups.load_balancers_web'
 
-    - name: Setup client
-      include_role:
-        name: client
-      when: inventory_hostname in groups.clients
+    #- name: Setup client
+    #  include_role:
+    #    name: client
+    #  when: inventory_hostname in groups.clients
 
-    - name: Setup devops
-      include_role:
-        name: devops
-      when: inventory_hostname in groups.development
+    #- name: Setup devops
+    #  include_role:
+    #    name: devops
+    #  when: inventory_hostname in groups.development
 
 - name: Cleanup
   hosts: localhost

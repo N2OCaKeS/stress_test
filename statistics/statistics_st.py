@@ -81,7 +81,7 @@ class BaseStatistics(Statistics):
                                                   comparison_names=[comporison_item[0], comporison_item[1]],
                                                   graph_name=" vs ".join([comporison_item[0], comporison_item[1]]))
                          sum_graph.draw()
-                         main_logger.info(f"Отработало сравнение {self.stat_title} (Заданное при вызове класса) - {','.join(self.comparison_list)}")
+                         main_logger.info(f"Отработало сравнение {self.stat_title} (Заданное при вызове класса)")
 
      def _upload_to_confluence(self, stat_rc_vers: str, pp_title: str):
           uploader = BaseUploader(username=self.username, 

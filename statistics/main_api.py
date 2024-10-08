@@ -82,7 +82,7 @@ def virt_statistics_api(body: Statistics):
         virt_stat.create()
     return {"ОК"}
 
-@app.post("/parsec_statistics")
+@app.post("/parsec-statistics")
 def parsec_statistics_api(body: Statistics):
     parsec_stat = ParsecStatistics(stat_title=body.title_statistics,
                                    username=body.username,

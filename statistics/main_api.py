@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Set
 from atlassian.errors import ApiPermissionError
 
-from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics
+from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, ParsecStatistics
 from parsers import BaseParser, ApacheParser, ParsecParser
 
 from utils import UtilForReadLogs
@@ -80,6 +80,20 @@ def virt_statistics_api(body: Statistics):
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         virt_stat.create()
+    return {"ОК"}
+
+@app.post("/parsec_statistics")
+def parsec_statistics_api(body: Statistics):
+    parsec_stat = ParsecStatistics(stat_title=body.title_statistics,
+                                   username=body.username,
+                                   tokenconf=body.token,
+                                   set_of_test_types=body.set_of_test_types)
+    try:
+        parsec_stat.create()
+    except ApiPermissionError:
+        main_logger.error("confluence тупит пробуем еще раз")
+        sleep(60)
+        parsec_stat.create()
     return {"ОК"}
 
 @app.post("/all-statistics")

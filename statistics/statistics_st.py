@@ -5,7 +5,7 @@ from abc import abstractmethod
 
 from confluence.confluence_conf import ID_ROOT_PAGES
 from pages import Pages
-from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser
+from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser
 from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew
 from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph
 from sorting import Scale
@@ -230,6 +230,44 @@ class VirtStatistics(BaseStatistics):
                               saver=saver,
                               columns=columns,
                               columns_scores=score_cols)
+          df = table.build()
+          if isinstance(df, pd.DataFrame) and not df.empty:
+               comparison_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+               for ind, item in enumerate(score_cols):
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=item)
+                    separate_kernel_data = separate_kernel.build()
+                    comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
+                                                                                      type_test=TypeTest.get_full_name_test_without_df(type_test), 
+                                                                                      saver=comparison_separate_kernel_line_graph_saver,)
+                    comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=item)
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return True, df
+          else:
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return False, None
+          
+
+class ParsecStatistics(BaseStatistics):
+     def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = ParsecParser):
+          super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
+          self.score_columns = {
+               "parsec_impact-fs": ["Total used by parsec func in %"],
+               "parsec_impact-fs-aud-off": ["Total used by parsec func in %"]
+          }
+          main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
+     
+     def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+          main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")
+          saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+          columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
+          try:
+               score_cols = self.score_columns[type_test]
+          except KeyError:
+               score_cols = ["Рейтинг"]
+          table = MainTable(data=data_for_tables.get(type_test), 
+                            saver=saver,
+                            columns=columns,
+                            columns_scores=score_cols)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
                comparison_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)

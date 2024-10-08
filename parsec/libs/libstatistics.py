@@ -9,7 +9,7 @@ class ParsecStatistics:
         
         self.username = username
         self.token = token
-        self.url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
+        self.url = 'http://allta.devos.astralinux.ru:7777/parsec-statistics'
 
     def update_statistics(self):
         data = {
@@ -17,7 +17,6 @@ class ParsecStatistics:
             'username':self.username,
             'token':self.token,
             'set_of_test_types':['parsec_impact-fs', 'parsec_impact-fs-aud-off'],
-            'comparison_list':[['parsec_impact-fs', 'parsec_impact-fs-aud-off']],
         }
 
         headers = {

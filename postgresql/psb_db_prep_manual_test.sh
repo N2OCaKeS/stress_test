@@ -86,3 +86,14 @@ EOF
 # Чт 21 мар 2024 20:11:09 MSK
 # ausearch -i -ts "20:11:08" -te "20:11:09" -m user_avc | less | wc -l
 # 10042
+
+
+# echo Start in "$(date)" > cpu_output.txt
+# while true; do
+#   {
+#     echo -n "$(date '+%H:%M:%S:%N') "
+#     top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); printf "CPU-%s::user-%s::system-%s::", 100-$8, $2, $4}'
+#     free -m | awk 'NR==2{printf "RAM-%s\n", $2-$7}'
+#   } >> cpu_output.txt
+#   sleep 1
+# done

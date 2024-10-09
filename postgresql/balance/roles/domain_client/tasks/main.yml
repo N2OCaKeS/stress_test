@@ -1,5 +1,5 @@
 - name: Setup freeipa client
-  become: yes
+  become: true
   block:
     # - name: Set hostname
     #   shell: |
@@ -16,6 +16,13 @@
     #       {{ hostvars.domain.ansible_host }}
     #       {{ hostvars.domain.domain_name }}.{{ astra_domain }}
     #       {{ hostvars.domain.domain_name }}
+
+    - name: Configure /etc/resolv.conf
+      become: true
+      template:
+        src: templates/resolv.conf.j2
+        dest: /etc/resolv.conf
+        mode: '0644'
 
     - name: Install freeipa client
       apt:

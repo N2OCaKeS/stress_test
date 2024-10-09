@@ -268,6 +268,7 @@ try:
                         parsec_impact_ao = '-parsec-impact-ao audit-off'
                         apache_rp = '-apache rp'
                         steal_time = '-lvirt stealtime'
+                        steal_time_sm = '-lvirt stealtime_sm'
                         fio = '-lvirt fio'
                         vunixbench = '-lvirt unixbench'
                         vpp = '-lvirt pingpong'
@@ -325,6 +326,9 @@ try:
                         elif tests[dates_list[i][1]] == 'steal time':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True)
+                        elif tests[dates_list[i][1]] == 'steal time-sm':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time_sm}', shell=True)
                         elif tests[dates_list[i][1]] == 'FIO':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True)  
@@ -384,6 +388,7 @@ try:
                     parsec_impact_ao = '-parsec-impact-ao audit-off'
                     apache_rp = '-apache rp'
                     steal_time = '-lvirt stealtime'
+                    steal_time_sm = '-lvirt stealtime_sm'
                     fio = '-lvirt fio'
                     vunixbench = '-lvirt unixbench'
                     vpp = '-lvirt pingpong'
@@ -441,6 +446,9 @@ try:
                     elif tests[dates_list[i][1]] == 'steal time':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True) 
+                    elif tests[dates_list[i][1]] == 'steal time-sm':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time_sm}', shell=True)
                     elif tests[dates_list[i][1]] == 'FIO':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True) 

@@ -26,8 +26,20 @@ class CreateVM:
                  vm_count=None,
                  kernel=None,
                  vcpu=None,
-                 ram=None):
+                 ram=None,
+                 mode=None):
         
+        """
+        :param rc_vbox: Параметр rc_vbox, значение по умолчанию None.
+        :param testdir: Параметр testdir, значение по умолчанию None.
+        :param vm_count: Количество виртуальных машин, значение по умолчанию None.
+        :param kernel: Параметр kernel, значение по умолчанию None.
+        :param vcpu: Количество виртуальных процессоров, значение по умолчанию None.
+        :param ram: Объём оперативной памяти, значение по умолчанию None.
+        :param mode: Режим, значение по умолчанию None.
+        """
+
+        self.mode = mode
         self.rc_name = rc_vbox
         self.testdir = testdir
         self.kernel = kernel
@@ -47,14 +59,14 @@ class CreateVM:
         with open('box-config.json', 'r') as r:
             dates = loads(r.read())
 
-        def __box_wrapper(box):
+        def __box_wrapper(box, mode):
             true_key = False
             box_name = ''
             box_url = ''
             for i in dates['vagrant_box']:
                 if box in str(i):
                     for key in i.keys():
-                        if str(key).endswith('o'):
+                        if str(key).endswith(mode):
                             true_key = key
                             box_name = i[true_key][0]
                             box_url = i[true_key][1]             
@@ -62,13 +74,13 @@ class CreateVM:
             if true_key == False:
                 for i in dates['vagrant_box']:
                     if str(box).startswith('1.7'):
-                          if '1.7.1.o' in str(i):
-                            box_name = i['1.7.1.o'][0]
-                            box_url = i['1.7.1.o'][1]
+                          if f'1.7.1.{mode}' in str(i):
+                            box_name = i[f'1.7.1.{mode}'][0]
+                            box_url = i[f'1.7.1.{mode}'][1]
                     elif str(box).startswith('1.8'):
-                        if '1.8.0.o' in str(i):
-                            box_name = i['1.8.0.o'][0]
-                            box_url = i['1.8.0.o'][1]
+                        if f'1.8.0.{mode}' in str(i):
+                            box_name = i[f'1.8.0.{mode}'][0]
+                            box_url = i[f'1.8.0.{mode}'][1]
             
             return box_name, box_url
 
@@ -76,7 +88,7 @@ class CreateVM:
             os.mkdir(self.testdir)
 
         # add_box
-        box_name, box_url = __box_wrapper(self.rc_name)
+        box_name, box_url = __box_wrapper(self.rc_name, self.mode)
         cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
@@ -117,8 +129,9 @@ class StealTime(CreateVM):
                  vcpu=None,
                  ram=None,
                  rc_vbox=None,
-                 kernel=None):
-        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
+                 kernel=None,
+                 mode='o'):
+        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram, mode)
         
         self.load_type = load_type
         self.vm_count = vm_count

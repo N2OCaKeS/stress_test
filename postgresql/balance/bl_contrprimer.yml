@@ -24,6 +24,7 @@
 - name: Set hosts on all VMs
   hosts: all
   gather_facts: no
+  vars_files: vars.yml
   tasks:
     - name: Set hosts on VMs
       import_tasks: '{{ playbook_dir }}/tasks/set_hosts.yml'

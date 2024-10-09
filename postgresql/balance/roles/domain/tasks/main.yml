@@ -1,5 +1,5 @@
 - name: Setup freeipa domain
-  become: yes
+  become: true
   block:
     # - name: Set hostname
     #   shell: |

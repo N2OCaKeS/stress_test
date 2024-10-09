@@ -1,15 +1,35 @@
-- name: Collect hostnames and IPs
-  set_fact:
-    host_entries: |
-      {% for host in groups['all'] %}
-      {{ hostvars[host]['ansible_host'] }} {{ host }} {{ hostvars[host].get('domain_name', '') }}
-      {% endfor %}
+# - name: Collect hostnames and IPs
+#   set_fact:
+#     host_entries: |
+#       {% for host in groups['all'] %}
+#       {{ hostvars[host]['ansible_host'] }} {{ host }} {{ hostvars[host].get('domain_name', '') }}
+#       {% endfor %}
+
+# - name: Update /etc/hosts
+#   become: true
+#   lineinfile:
+#     path: /etc/hosts
+#     line: "{{ item }}"
+#     state: present
+#   loop: "{{ host_entries.split('\n') }}"
+#   when: item | trim != ""
+
 
 - name: Update /etc/hosts
   become: true
   lineinfile:
     path: /etc/hosts
-    line: "{{ item }}"
-    state: present
-  loop: "{{ host_entries.split('\n') }}"
-  when: item | trim != ""
+    line: |
+      10.177.5.111    qa111.devos.astralinux.ru
+      127.0.0.1   localhost
+      {{ domain['ansible_host'] }} {{ domain['domain_name'] }}.{{ astra_domain }} {{ domain['domain_name'] }}
+      {{ database['ansible_host'] }} {{ database['domain_name'] }}.{{ astra_domain }} {{ database['domain_name'] }}
+      {{ database_2['ansible_host'] }} {{ database_2['domain_name'] }}.{{ astra_domain }} {{ database_2['domain_name'] }}
+      {{ database_3['ansible_host'] }} {{ database_3['domain_name'] }}.{{ astra_domain }} {{ database_3['domain_name'] }}
+      {{ lb_db['ansible_host'] }} {{ lb_db['domain_name'] }}.{{ astra_domain }} {{ lb_db['domain_name'] }}
+      {{ lb_db_2['ansible_host'] }} {{ lb_db_2['domain_name'] }}.{{ astra_domain }} {{ lb_db_2['domain_name'] }}
+      {{ lb_db_3['ansible_host'] }} {{ lb_db_3['domain_name'] }}.{{ astra_domain }} {{ lb_db_3['domain_name'] }}
+
+
+
+     

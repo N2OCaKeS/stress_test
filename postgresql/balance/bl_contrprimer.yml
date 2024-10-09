@@ -20,16 +20,22 @@
         path: signals/
         state: absent
 
+
+- name: Set hosts on all VMs
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Set hosts on VMs
+      import_tasks: '{{ playbook_dir }}/tasks/set_hosts.yml'
+      when: vm.lvirt
+
+
 - name: Setup contrprimer
   hosts: all
   strategy: free
   gather_facts: no # do not modify
   vars_files: vars.yml
   tasks:
-    - name: Set hosts on all VMs
-      import_tasks: '{{ playbook_dir }}/tasks/set_hosts.yml'
-      when: vm.lvirt
-
     - name: Gathering info for 'ansible_play_hosts' variable
       setup:
         gather_subset: '!all,!min'

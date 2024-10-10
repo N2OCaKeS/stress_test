@@ -107,7 +107,7 @@ class Public:
                                             self.c_space,
                                             c_np)
         
-        if self.testname == 'stealtime':
+        if self.testname == 'stealtime' or self.testname == 'stealtime_sm':
             #генерация вступительной таблицы
             with open(INFO_FILENAME) as info:
                 info_lst = info.read().split('\n')

@@ -21,6 +21,7 @@
     path: /etc/hosts
     line: |
       10.177.5.111    qa111.devos.astralinux.ru
+      10.177.43.1    releases.devos.astralinux.ru
       127.0.0.1   localhost
       {{ hostvars['domain']['ansible_host'] }} {{ hostvars['domain']['domain_name'] }}.{{ astra_domain }} {{ hostvars['domain']['domain_name'] }}
       {{ hostvars['database']['ansible_host'] }} {{ hostvars['database']['domain_name'] }}.{{ astra_domain }} {{ hostvars['database']['domain_name'] }}

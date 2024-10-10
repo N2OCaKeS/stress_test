@@ -133,9 +133,9 @@ kernel = str(args.TCYC).split('_')[2]
 vms = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 ansible_commands = [
     'cd balance && ansible-playbook bl_contrprimer.yml -vvv',
-    'cd balance && ansible-playbook tasks/checks/db/replication.yml -vv',
-    'cd balance && ansible-playbook tasks/checks/db/load_balancing.yml -vv',
-    'cd balance && ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml -vv'
+    'cd balance && ansible-playbook tasks/checks/db/replication.yml -vvv',
+    'cd balance && ansible-playbook tasks/checks/db/load_balancing.yml -vvv',
+    'cd balance && ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml -vvv'
 ]
 
 vm_dates = {

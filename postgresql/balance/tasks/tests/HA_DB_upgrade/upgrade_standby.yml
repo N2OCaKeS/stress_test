@@ -43,10 +43,16 @@
       failed_when: false
 
     # TODO: change to installation from custom repository
-    - name: Install new custom postgresql-15
+    # - name: Install new custom postgresql-15
+    #   become: yes
+    #   shell: |
+    #     dpkg -i /usr/share/custom_pg15_upgrade/*.deb
+
+    # - delegate_to: '{{ groups.load_balancers_db[0] }}'
+    - name: ReInstall postgresql-{{ server.pg.version }}
       become: yes
       shell: |
-        dpkg -i /usr/share/custom_pg15_upgrade/*.deb
+        apt-get reinstall postgresql-{{ server.pg.version }} -y
 
     - delegate_to: '{{ groups.load_balancers_db[0] }}'
       block:

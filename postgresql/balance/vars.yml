@@ -9,7 +9,7 @@ virtual_network:
 
 
 vm:
-  lvirt: true
+  lvirt: ${lvirt}
   
   # For virtualbox set full paths
   images_base_paths:
@@ -44,7 +44,7 @@ server:
       enabled: yes
 
   pg:
-    version: 11
+    version: ${pg_version}
     port: 5440
     db_name: contrprimer
     schema_template: s#

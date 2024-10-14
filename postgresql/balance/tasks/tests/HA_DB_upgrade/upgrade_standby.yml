@@ -50,12 +50,10 @@
 
     # - delegate_to: '{{ groups.load_balancers_db[0] }}'
 
-    # apt-get reinstall postgresql-{{ server.pg.version }} -y
-
     - name: ReInstall postgresql-{{ server.pg.version }}
       become: yes
       shell: |
-        apt list postgresql-{{ server.pg.version }}
+        apt-get reinstall postgresql-{{ server.pg.version }} -y
       environment:
         DEBIAN_FRONTEND: noninteractive
     - delegate_to: '{{ groups.load_balancers_db[0] }}'

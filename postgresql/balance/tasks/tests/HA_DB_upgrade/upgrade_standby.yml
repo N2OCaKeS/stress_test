@@ -49,12 +49,17 @@
     #     dpkg -i /usr/share/custom_pg15_upgrade/*.deb
 
     # - delegate_to: '{{ groups.load_balancers_db[0] }}'
+
+    # apt-get reinstall postgresql-{{ server.pg.version }} -y
+
     - name: ReInstall postgresql-{{ server.pg.version }}
       become: yes
       shell: |
-        apt-get reinstall postgresql-{{ server.pg.version }} -y
-
+        apt list postgresql-{{ server.pg.version }}
+      environment:
+        DEBIAN_FRONTEND: noninteractive
     - delegate_to: '{{ groups.load_balancers_db[0] }}'
+
       block:
 #        - name: Enable verbose log on primary node
 #          delegate_to: '{{ groups.databases[primary_index | int] }}'

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Set
 from atlassian.errors import ApiPermissionError
 
-from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, ParsecStatistics
+from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, ParsecStatistics, PostgreSQLStatistics
 from parsers import BaseParser, ApacheParser, ParsecParser
 
 from utils import UtilForReadLogs
@@ -96,6 +96,21 @@ def parsec_statistics_api(body: Statistics):
         parsec_stat.create()
     return {"ОК"}
 
+@app.post("/postgresql-statistics")
+def postgresql_statistics_api(body: Statistics):
+    postgresql_stat = PostgreSQLStatistics(stat_title=body.title_statistics,
+                                           username=body.username,
+                                           tokenconf=body.token,
+                                           set_of_test_types=body.set_of_test_types,
+                                           comparison_list=body.comparison_list,
+                                           comparison_kernel_list=body.comparison_kernel_list)
+    try:
+        postgresql_stat.create()
+    except ApiPermissionError:
+        main_logger.error("confluence тупит пробуем еще раз")
+        sleep(60)
+        postgresql_stat.create()
+
 @app.post("/all-statistics")
 def all_statistics(body: Auth):
     unix_stat = BaseStatistics(stat_title="UnixBench", 
@@ -134,17 +149,15 @@ def all_statistics(body: Auth):
         sleep(60)
         file_systems_stat.create()
 
-    postresql_stat = BaseStatistics(stat_title="PostgreSQL",
-                                    username=body.username, 
-                                    tokenconf=body.token,
-                                    set_of_test_types={"postgresql", "postgresql-sm", "postgresql-aud-off", "psql_parsec", "psql_vanilla", "tantor_vanilla"},
-                                    comparison_list=[
-                                        ["postgresql", "postgresql-sm"], 
-                                        ["postgresql", "postgresql-aud-off"], 
-                                        ["postgresql", "psql_parsec"], 
-                                        ["postgresql", "psql_vanilla"]],
-                                    comparison_kernel_list=["postgresql"]
-                                    )
+    postresql_stat = PostgreSQLStatistics(stat_title="PostgreSQL",
+                                          username=body.username, 
+                                          tokenconf=body.token,set_of_test_types={"postgresql", "postgresql-sm", "postgresql-aud-off", "psql_parsec", "psql_vanilla", "tantor_vanilla", "psql_balance"},
+                                          comparison_list=[
+                                              ["postgresql", "postgresql-sm"], 
+                                              ["postgresql", "postgresql-aud-off"], 
+                                              ["postgresql", "psql_parsec"], 
+                                              ["postgresql", "psql_vanilla"]],
+                                          comparison_kernel_list=["postgresql"])
     try:
         postresql_stat.create()
     except ApiPermissionError:

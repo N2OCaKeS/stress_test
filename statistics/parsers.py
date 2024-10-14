@@ -92,6 +92,7 @@ class OneRowTwoCollTableParser(ScoreParser):
             value = 0
         return (value,)
 
+
 class ApacheParser(OneRowTwoCollTableParser):
     def find_score(self, html_page, re_template: str = "Requests per second", type_test=None) -> tuple:
         rps = super().find_score(html_page=html_page, re_template=re_template)
@@ -219,3 +220,32 @@ class VirtParser(BaseParser):
             score = (0,)
         return score
 
+
+class PostgreSQLParser(BaseParser):
+    def find_score_psql_balance(self, html_page) -> tuple:
+        data_table = []
+        try:
+            table = html_page.find_all("table")[1]
+            # пройдемся по всем строкам таблицы, кроме заголовка
+            for row in table.find_all('tr')[1:]:
+                cols = row.find_all('td')  # найдем все столбцы
+                cols = [col.text.strip() for col in cols]  # очистим от лишних пробелов
+                data_table.append(cols)  # добавим в итоговый список
+        except:
+            pass
+        
+        try:
+            number_of_failed_queries = data_table[1][1]
+            percent_of_failed_queries = data_table[2][1].split("%")[0]
+        except IndexError:
+            number_of_failed_queries = None
+            percent_of_failed_queries = None
+
+        return (number_of_failed_queries, percent_of_failed_queries)
+    
+    def find_score(self, html_page, re_template: str = "[Tt]otal rating", type_test=None, ind=2) -> tuple:
+        if type_test == "psql_balance":
+            score = self.find_score_psql_balance(html_page=html_page)
+        else:
+            score = super().find_score(html_page=html_page)
+        return score

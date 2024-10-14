@@ -1,6 +1,6 @@
 import argparse
 
-from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics
+from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, PostgreSQLStatistics
 from parsers import ApacheParser, ParsecParser
 
 if __name__ == "__main__":
@@ -37,17 +37,16 @@ if __name__ == "__main__":
                                        set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4_parsec", "FAT", "NTFS", "XFS", "XFS_parsec", "OCFS2"},
                                        comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4_parsec"]])
     file_systems_stat.create()
-    postresql_stat = BaseStatistics(stat_title="PostgreSQL",
-                                    username=args.USER,
-                                    tokenconf=args.TOKEN,
-                                    set_of_test_types={"postgresql", "postgresql-sm", "postgresql-aud-off", "psql_parsec", "psql_vanilla", "tantor_vanilla"},
-                                    comparison_list=[
-                                        ["postgresql", "postgresql-sm"], 
-                                        ["postgresql", "postgresql-aud-off"], 
-                                        ["postgresql", "psql_parsec"], 
-                                        ["postgresql", "psql_vanilla"]],
-                                    comparison_kernel_list=["postgresql"]
-                                    )
+    postresql_stat = PostgreSQLStatistics(stat_title="PostgreSQL",
+                                          username=args.USER,
+                                          tokenconf=args.TOKEN,
+                                          set_of_test_types={"postgresql", "postgresql-sm", "postgresql-aud-off", "psql_parsec", "psql_vanilla", "tantor_vanilla", "psql_balance"},
+                                          comparison_list=[
+                                              ["postgresql", "postgresql-sm"], 
+                                              ["postgresql", "postgresql-aud-off"], 
+                                              ["postgresql", "psql_parsec"], 
+                                              ["postgresql", "psql_vanilla"]],
+                                          comparison_kernel_list=["postgresql"])
     postresql_stat.create()
     apache_stat = BaseStatistics(stat_title="Apache",
                                  username=args.USER,

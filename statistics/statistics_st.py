@@ -5,7 +5,7 @@ from abc import abstractmethod
 
 from confluence.confluence_conf import ID_ROOT_PAGES
 from pages import Pages
-from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser
+from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser
 from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew
 from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph
 from sorting import Scale
@@ -128,7 +128,7 @@ class BaseStatistics(Statistics):
                     TODO Добавить логирование
                """
                flag, df = self.unique_functionality(type_test=type_test, data_for_tables=data_for_tables, rc_version=stat_rc_version)
-               
+               print(type_test, flag)
                """"""
                # Здесь сравнение по ядрам
                if flag:
@@ -171,6 +171,37 @@ class InheritedStatistics(BaseStatistics):
           4) Graphs
           5) Uploader
      """
+
+
+class PostgreSQLStatistics(BaseStatistics):
+     def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = PostgreSQLParser):
+          super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
+          main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
+     
+     def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+          balance_columns_score = ["Number of failed queries", "Percent of failed queries"]
+          columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
+          saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
+          if not type_test == "psql_balance":
+               return super().unique_functionality(type_test, data_for_tables, rc_version)
+          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=balance_columns_score)
+          df = table.build()
+          if isinstance(df, pd.DataFrame) and not df.empty:
+               # Здесь сравнение по ядрам
+               for ind, score in enumerate(balance_columns_score):
+                    comp_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score)
+                    separate_kernel_data = separate_kernel.build()
+                    comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
+                                                                                      type_test=TypeTest.get_full_name_test_without_df(type_test), 
+                                                                                      saver=comp_separate_kernel_line_graph_saver)
+                    comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=balance_columns_score[ind])
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return True, df
+          else:
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return False, None
+          # return super().unique_functionality(type_test, data_for_tables, rc_version)
 
 
 class FreeIpaStatistics(BaseStatistics):

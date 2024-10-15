@@ -89,7 +89,9 @@ class CreateVM:
 
         # add_box
         box_name, box_url = __box_wrapper(self.rc_name, self.mode)
+        print(f'vagrant box add --provider virtualbox {box_name} {box_url}')
         cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
+        print(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
         cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # add define pool

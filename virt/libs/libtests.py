@@ -601,7 +601,8 @@ class UnixBench(CreateVM):
         cmd(f'cd {REPORT_PATH} && unzip {arh_name}')
 
         files = os.listdir(REPORT_PATH)
-        file_name = [name for name in files if all(x not in name for x in ['log', 'zip', 'info', 'log'])]
+        file_name = [name for name in files if all(x not in name for x in ['log', 'zip', 'info', 'html'])]
+        print(f'File name: {file_name}')
                    
         with open(f'{REPORT_PATH}/{file_name[0]}', 'r') as r:
             text = r.readlines()
@@ -609,7 +610,9 @@ class UnixBench(CreateVM):
         keys = [' '.join(line.split(' ')[5:7]) for line in text if 'running' in line]
         values = [line.split(' ')[-1].strip() for line in text if 'Score' in line]
         results = {k: v for k, v in zip(keys, values)}
-        print(results)
+        print(f'Keys: {keys}')
+        print(f'Values: {values}')
+        print(f'Results: {results}')
 
         if not os.path.isdir(UB_RESULTS):
             os.mkdir(UB_RESULTS)

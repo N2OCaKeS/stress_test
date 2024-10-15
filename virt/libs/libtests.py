@@ -27,7 +27,7 @@ class CreateVM:
                  kernel=None,
                  vcpu=None,
                  ram=None,
-                 mode=None):
+                 mode='o'):
         
         """
         :param rc_vbox: Параметр rc_vbox, значение по умолчанию None.

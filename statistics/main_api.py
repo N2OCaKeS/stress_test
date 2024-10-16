@@ -205,7 +205,7 @@ def all_statistics(body: Auth):
     virt_stat = VirtStatistics(stat_title="Qemu/KVM/Libvirt",
                                username=body.username, 
                                tokenconf=body.token,
-                               set_of_test_types={"FIO", "vPingPong", "vUnixBench", "steal_time"})
+                               set_of_test_types={"FIO", "vPingPong", "vUnixBench", "steal_time", "steal_time-sm"})
     try:
         virt_stat.create()
     except ApiPermissionError:

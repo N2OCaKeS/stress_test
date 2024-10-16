@@ -27,7 +27,7 @@ class MainParser:
         data = src_html.get("body").get("view").get("value")
         soup = BeautifulSoup(data, 'lxml')
         title_data = title.replace(" ", "_").split("_")
-        set_titles = {"parsec", "vanilla", "balance", "impact-fs", "auth", "time"}
+        set_titles = {"parsec", "vanilla", "balance", "impact-fs", "auth", "time", "time-sm"}
         if title_data[1] == "impact-fs" and title_data[2] == "aud-off":
             parsec_or_the_rest = None
             type_test, astra_version, sec_mode, kernel, stand = f"{title_data[0]}_{title_data[1]}-{title_data[2]}", title_data[3], title_data[4], title_data[5], title_data[6]
@@ -210,7 +210,7 @@ class VirtParser(BaseParser):
     def find_score(self, html_page, type_test=None) -> tuple:
         if type_test == "FIO":
             score = self.fio_find_score(html_page=html_page)
-        elif type_test == "steal_time":
+        elif type_test == "steal_time" or type_test == "steal_time-sm":
             score = self.steal_time_find_score(html_page=html_page)
         elif type_test == "vPingPong":
             score = self.vpp_find_score(html_page=html_page)

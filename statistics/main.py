@@ -71,5 +71,5 @@ if __name__ == "__main__":
     virt_stat = VirtStatistics(stat_title="Qemu/KVM/Libvirt",
                                username=args.USER,
                                tokenconf=args.TOKEN,
-                               set_of_test_types={"FIO", "vPingPong", "vUnixBench", "steal_time"})
+                               set_of_test_types={"FIO", "vPingPong", "vUnixBench", "steal_time", "steal_time-sm"})
     virt_stat.create()

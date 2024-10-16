@@ -245,7 +245,8 @@ class VirtStatistics(BaseStatistics):
                        "1 VM latency-avg write", "70 VM latency-avg write", "1 VM latency-avg read", "70 VM latency-avg read"],
                "vPingPong": ["Рейтинг"],
                "vUnixBench": ["Рейтинг 4 ядер", "Рейтинг 8 ядер", "Рейтинг 12 ядер"],
-               "steal_time": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"]
+               "steal_time": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"],
+               "steal_time-sm": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"]
           }
           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
      

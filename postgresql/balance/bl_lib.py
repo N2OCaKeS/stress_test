@@ -294,8 +294,10 @@ class LVirt(VirtualMashines):
 
         if rc.startswith('1.7'):
             pg_version = 11
+            if_name = 'eth0'
         elif rc.startswith('1.8'):
             pg_version = 15
+            if_name = 'ens5'
 
         with open('balance/vars.yml', 'r') as vars_file:
             vars_template = Template(vars_file.read())
@@ -319,7 +321,8 @@ class LVirt(VirtualMashines):
                                               pgpool=__pgpool_ip(),
                                               web1=vms_ip['web1'],
                                               web2=vms_ip['web2'],
-                                              client=vms_ip['client'])
+                                              client=vms_ip['client'],
+                                              if_name=if_name)
             print(hosts)
 
         with open('balance/inventories/middle_hosts.yml', 'w') as file:

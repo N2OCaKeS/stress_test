@@ -21,7 +21,7 @@
       - ['connect_timeout', '30000']
       - ['use_watchdog', 'on'] # necessary for delegate_ip
       - ['arping_path', "'/usr/bin'"]
-      - ['arping_cmd', "'/usr/bin/sudo /usr/bin/arping -U $_IP_$ -w 1 -I eth0'"]
+      - ['arping_cmd', "'/usr/bin/sudo /usr/bin/arping -U $_IP_$ -w 1 -I {{ iface_name }}'"]
       - ['pool_passwd', "'pool_passwd'"]
       - ['failover_command', "'{{ fail_scripts_path }}/failover.sh %m %H %R %r %d %h %p %D %M %P %N %S'"]
       - ['auto_failback', 'on']

@@ -259,7 +259,37 @@ class LVirt(VirtualMashines):
         vms_ip = {
             vm_name: _vms_ip(vm_name).split('/')[0] for vm_name in find_vms
         }
-        print(vms_ip)
+        print(f'VMs IP: {vms_ip}')
+        chunk_ip = str(vms_ip['test'].split('.')[-1])
+        print(f'Chunk IP: {chunk_ip}')
+
+        def __pgpool_ip():
+            loop = 0
+            base_ip = '.'.join(vms_ip['test'].split('.')[:3])
+            current_ip = int(chunk_ip)
+            
+            # Start looking for a free IP address
+            while True:
+                if current_ip < 254:
+                    current_ip += 1
+                else:
+                    current_ip = 11
+                    loop += 1
+                    if loop >= 2:
+                        pgpool_ip = '"Not found free IP"'
+                        break  
+                
+                pgpool_ip = base_ip + '.' + str(current_ip)
+                
+                if pgpool_ip not in vms_ip.values():
+                    print(f'Found free IP: {pgpool_ip}')
+                    break
+                else:
+                    print(f'Tried IP: {pgpool_ip} - already in use')
+
+            return pgpool_ip
+
+        print(f'pgpool IP define is {__pgpool_ip()}')
 
 
         if rc.startswith('1.7'):
@@ -286,7 +316,7 @@ class LVirt(VirtualMashines):
                                               lbdb1=vms_ip['lbdb1'],
                                               lbdb2=vms_ip['lbdb2'],
                                               lbdb3=vms_ip['lbdb3'],
-                                              pgpool=vms_ip['test'],
+                                              pgpool=__pgpool_ip(),
                                               web1=vms_ip['web1'],
                                               web2=vms_ip['web2'],
                                               client=vms_ip['client'])

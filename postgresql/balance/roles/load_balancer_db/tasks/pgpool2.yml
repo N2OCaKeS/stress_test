@@ -6,7 +6,7 @@
   set_fact:
     pgpool_conf:
       # TODO: categorize settings with comments
-      - ['listen_addresses', '*']
+      - ['listen_addresses', "'*'"]
       - ['port', '{{ server.pg.port }}']
       - ['enable_pool_hba', 'on']
       - ['replicate_select', 'on']
@@ -20,6 +20,8 @@
       - ['health_check_retry_delay', '5']
       - ['connect_timeout', '30000']
       - ['use_watchdog', 'on'] # necessary for delegate_ip
+      - ['if_cmd_path', "'/usr/bin'"]
+      - ['if_up_cmd', "'/usr/bin/sudo /usr/bin/ip addr add $_IP_$/24 dev {{ iface_name }} label {{ iface_name }}:0'"]
       - ['arping_path', "'/usr/bin'"]
       - ['arping_cmd', "'/usr/bin/sudo /usr/bin/arping -U $_IP_$ -w 1 -I {{ iface_name }}'"]
       - ['pool_passwd', "'pool_passwd'"]

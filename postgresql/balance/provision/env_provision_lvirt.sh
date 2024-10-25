@@ -70,10 +70,8 @@ fi
 
 
 main_user=vagrant
-users63=(root vagrant user0 user1 user2 user3)
+users63=(root vagrant)
 pass=vagrant
-psql_users=(user0 user1 user2 user3)
-psql_pass=12345678
 
 # groups for 'u' user
 ugroups=(\
@@ -224,10 +222,6 @@ fi
 
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 echo "root:$pass" | chpasswd 2>/dev/null
-
-for user in ${psql_users[*]}; do
-    useradd -m $user -s /bin/bash && echo "$user:$psql_pass" | chpasswd 2>/dev/null
-done
 
 for user in ${users63[*]}; do
     pdpl-user $user -i 63

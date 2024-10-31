@@ -88,47 +88,17 @@
     state: absent
   when: not server.pg.replication.enabled
 
-# - name: Create users
-#   become: yes
-#   become_user: postgres
-#   vars:
-#     users: "{{ [domain.user_template] | product(range(domain.num_of_users)) | map('join') }}"
-#   postgresql_user:
-#     port: '{{ server.pg.port }}'
-#     name: '{{ item }}'
-#     role_attr_flags: LOGIN
-#   loop: '{{ [domain.admin] + users }}'
-#   when: inventory_hostname == groups.databases.0 or not server.pg.replication.enabled
-
 - name: Create users
   become: yes
   become_user: postgres
   vars:
     users: "{{ [domain.user_template] | product(range(domain.num_of_users)) | map('join') }}"
-  tasks:
-    - name: Create PostgreSQL user
-      postgresql_user:
-        name: '{{ item }}'
-        role_attr_flags: LOGIN
-        port: '{{ server.pg.port }}'
-      loop: '{{ [domain.admin] + users }}'
-      when: inventory_hostname == groups.databases.0 or not server.pg.replication.enabled
-      register: user_creation_result
-
-    - name: Verify PostgreSQL user creation
-      postgresql_info:
-        db: postgres
-        query: "SELECT 1 FROM pg_roles WHERE rolname='{{ item }}';"
-        port: '{{ server.pg.port }}'
-      loop: '{{ [domain.admin] + users }}'
-      register: user_verification_result
-      when: user_creation_result is changed
-
-    - name: Fail if user not created
-      fail:
-        msg: "User {{ item.item }} was not successfully created."
-      loop: '{{ user_verification_result.results }}'
-      when: item.queries[0] is not defined
+  postgresql_user:
+    port: '{{ server.pg.port }}'
+    name: '{{ item }}'
+    role_attr_flags: LOGIN
+  loop: '{{ [domain.admin] + users }}'
+  when: inventory_hostname == groups.databases.0 or not server.pg.replication.enabled
 
 - name: Load balancing
   block:

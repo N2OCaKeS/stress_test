@@ -253,6 +253,11 @@ def acs_create_snapshot(version: str, stand):
                                                                                      "version_to_update": version,
                                                                                      "password_cs": __password,
                                                                                      "stand_name": 'MiddleServer'})
+    elif stand == 'stand5':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'HighServer'})
     else: res_create_full_snap = 'Wrong stand'
     return res_create_full_snap.text
 
@@ -640,6 +645,8 @@ async def addrc(message: types.Message, command: CommandObject):
             server = 'LowServer'
         elif stand == 'stand4':
             server = 'MiddleServer'
+        elif stand == 'stand5':
+            server = 'HighServer'
         
         stand_resp = acs_create_snapshot(rc, stand)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nСоздание снимка: "{rc}"'

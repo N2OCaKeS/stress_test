@@ -23,8 +23,8 @@ class BootOrder:
         self.no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         self.reset_machine = 'reset /system1'
         self.slot_count = 5
-        if os.path.isfile('/home/u/ilo.json'):
-            with open('/home/u/ilo.json', 'r') as ilocfg:
+        if os.path.isfile('/fastapi_app/src/ilo/ilo.json'):
+            with open('/fastapi_app/src/ilo/ilo.json', 'r') as ilocfg:
                 self.ilo = json.load(ilocfg)
         self.login = self.ilo[self.stand]['username']
         self.password = self.ilo[self.stand]['password']

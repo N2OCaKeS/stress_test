@@ -50,6 +50,7 @@ import threading
 import requests
 import json
 import logging
+import redfish
 
 
 
@@ -787,12 +788,19 @@ class BootOrder:
         self.password = self.ilo[self.stand]['password']
         self.address = self.ilo[self.stand]['ip']
         self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
+        self.client = redfish.RedfishClient(base_url=self.address, username=self.login, password=self.password)
 
     def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
         return output
+    
+    def set_boot_order(self):
+        if self.stand == 'stand3' or self.stand == 'stand4':
+            self.__set_boot_order_ilo()
+        elif self.stand == 'stand5':
+            self.__set_boot_order_idrac()
 
-    def set_boot_order(self):        
+    def __set_boot_order_ilo(self):        
         try:
             for i in range(0, self.slot_count + 1, 1):
                 answer = self.cmd(f'{self.ssh_command} {self.show_config}{i}')
@@ -808,6 +816,50 @@ class BootOrder:
         except Exception as e:
             logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
 
+    def __set_boot_order_idrac(self):
+        self.client.login(auth="session")
+
+        try:
+            response = self.client.get('/redfish/v1/Systems/System.Embedded.1')
+            system_info = response.dict
+            logging.debug("System Information: ", system_info)
+
+            response = self.client.get('/redfish/v1/Systems/System.Embedded.1/BootSources')
+            boot_sources = response.dict
+            logging.debug("Boot Sources: ", boot_sources)
+
+            body = {
+                "Boot": {
+                    "BootSourceOverrideTarget": "Pxe",
+                    "BootSourceOverrideEnabled": "Once"
+                }
+            }
+            response = self.client.patch('/redfish/v1/Systems/System.Embedded.1', body=body)
+            if response.status == 200:
+                logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
+        except Exception as e:
+            logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+        finally:
+            self.client.logout()
+
+    def __reboot_idrac(self):
+        self.__set_boot_order_idrac()
+        self.client.login(auth="session")
+
+        try:
+            body = {
+                "ResetType": "ForceRestart"
+            }
+            response = self.client.post('/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset', body=body)
+            if response.status in [200, 204]:
+                logging.debug('execute IPMI iDRAC hard reboot successfully')
+            else:
+                logging.error(f'execute IPMI iDRAC hard reboot failed, status: {response.status}')
+        except Exception as e:
+            logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+        finally:
+            self.client.logout()
+
     def reset_by_timer(self, func):
         timer = 7200
         interval = 60
@@ -816,8 +868,14 @@ class BootOrder:
             if not func.is_alive():
                 return 0
         logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
-        logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+        if self.stand == 'stand3' or self.stand == 'stand4':
+            logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+        elif self.stand == 'stand5':
+            self.__reboot_idrac()
 
     def reset(self):
-        logging.debug('execute IPMI hard reboot')
-        logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+        if self.stand == 'stand3' or self.stand == 'stand4':
+            logging.debug('execute IPMI hard reboot')
+            logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+        elif self.stand == 'stand5':
+            self.__reboot_idrac()

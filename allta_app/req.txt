@@ -22,3 +22,4 @@ pysnooper
 ansible
 paramiko
 setuptools
+python-ilorest-library

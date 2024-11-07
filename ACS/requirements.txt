@@ -8,3 +8,4 @@ fabric
 redis
 celery
 flower
+python-ilorest-library

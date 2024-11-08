@@ -12,8 +12,8 @@ sudo apt-get install sshpass -y
 #sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
 
 #virtualbox
-#wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/virtualbox
-wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
+wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/vbox7
+#wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
 wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1n-0+deb10u6_amd64.deb
 sudo apt-get install plymouth-themes -y
 sudo apt install gcc make perl rsync -y
@@ -24,14 +24,15 @@ sudo apt install libsdl1.2debian -y
 sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb 
 sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
 sudo apt install psmisc -y
-sudo dpkg -i virtualbox-*.deb
+sudo dpkg -i virtualbox-7.0_7.0.20*.deb
 sudo apt install pkexec -y
 sudo apt install policykit-1 -y
 sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-*.vbox-extpack
 
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-sudo dpkg -i vagrant_2.2.19_x86_64.deb
+#sudo dpkg -i vagrant_2.2.19_x86_64.deb
+sudo dpkg -i vagrant_2.4.1-1_x86_64.deb
 
 
 #source "provision/env_provision.sh"
@@ -120,9 +121,9 @@ fi
 for plugin in vagrant-vbguest; do
   if test ! "$(vagrant plugin list | grep $plugin)"; then
     wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
-    mkdir -p ~/.vagrant.d/gems/2.7.4
-    tar -C "$HOME/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
-    wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json  
+    mkdir -p ~/.vagrant.d/gems/3.1.4
+    tar -C "$HOME/.vagrant.d/gems/3.1.4" -xvf /tmp/gems.tar.gz
+    wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json
     [ $? != 0 ] && exit 1
   fi
 done

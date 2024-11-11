@@ -266,6 +266,7 @@
         "stand5": {
             "1.7.1": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.205\"                 -l ru_RU.UTF-8 startdisk restore HighServer-171 nvme0n1",
             "1.7.6.4": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.205\"                 -l ru_RU.UTF-8 startdisk restore HighServer-176rc4 nvme0n1",
+            "1.7.6.5": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.205\"                 -l ru_RU.UTF-8 startdisk restore HighServer-176rc5 nvme0n1",
             "1.8.0": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.205\"                 -l ru_RU.UTF-8 startdisk restore HighServer-180 nvme0n1"
         }
     },

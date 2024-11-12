@@ -25,6 +25,10 @@ sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb
 sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
 sudo apt install psmisc -y
 sudo dpkg -i virtualbox-7.0_7.0.20*.deb
+if [[ $? != 0 ]]; then
+    sudo apt install -fy
+    sudo dpkg -i virtualbox-7.0_7.0.20*.deb
+fi
 sudo apt install pkexec -y
 sudo apt install policykit-1 -y
 sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-*.vbox-extpack

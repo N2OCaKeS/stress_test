@@ -31,7 +31,7 @@ if [[ $? != 0 ]]; then
 fi
 sudo apt install pkexec -y
 sudo apt install policykit-1 -y
-sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-*.vbox-extpack
+sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-7.0.20*.vbox-extpack
 
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant

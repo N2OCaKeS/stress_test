@@ -6,6 +6,7 @@ all:
     repo_pakages: true
     ansible_ssh_pass: 1
     ansible_ssh_user: u
+    iface_name: ${if_name}
   children:
 
     servers:
@@ -15,12 +16,12 @@ all:
           domain_name: dcfreeipa
 
       children:
-        web_servers:
-          hosts:
-            placeholder_host: {}
-        load_balancers_web:
-          hosts:
-            placeholder_host: {}
+        # web_servers:
+        #   hosts:
+        #     placeholder_host: {}
+        # load_balancers_web:
+        #   hosts:
+        #     placeholder_host: {}
 
         databases:
           hosts:
@@ -53,10 +54,10 @@ all:
               ansible_host: 10.177.103.143
               domain_name: lbdb3
 
-    clients:
-      hosts:
-        placeholder_host: {}
-    development:
+    # clients:
+    #   hosts:
+    #     placeholder_host: {}
+    # development:
     
 
 

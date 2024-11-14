@@ -128,6 +128,7 @@ declare -A test=( [ip]=10.0.0.10 [domain]=test.balance.rbt [host]=test [dns]="10
 #127.0.0.1   localhost localhost.localdomain
 cat << EOF > /etc/hosts
 10.177.5.111    qa111.devos.astralinux.ru
+10.177.43.1    releases.devos.astralinux.ru
 127.0.0.1   localhost 
 ${database1_br[ip]} ${database1_br[domain]} ${database1_br[host]}
 ${database2_br[ip]} ${database2_br[domain]} ${database2_br[host]}

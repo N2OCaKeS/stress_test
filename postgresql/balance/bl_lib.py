@@ -142,6 +142,22 @@ class VBox(VirtualMashines):
         with open('balance/vars.yml', 'w') as vars_file:
             vars_file.write(new_vars)
 
+        if os.path.isfile():
+            with open('/home/iface/iface', 'r') as r:
+                if_name = r.read().strip()
+        else:
+            if rc.startswith('1.7'):
+                pg_version = 11
+                if_name = 'eth0'
+            elif rc.startswith('1.8'):
+                pg_version = 15
+                if_name = 'ens5'
+
+        with open('balance/inventories/middle_hosts.yml', 'r') as file:
+            hosts_template = Template(file.read())
+            hosts = hosts_template.substitute(if_name=if_name)
+            print(hosts)
+
 
         system.cmd('apt install -fy')
         if system.cmd_with_returncode('cd balance && mv Vagrantfile_vbox Vagrantfile') != 0:

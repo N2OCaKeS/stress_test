@@ -142,9 +142,13 @@ class VBox(VirtualMashines):
         with open('balance/vars.yml', 'w') as vars_file:
             vars_file.write(new_vars)
 
-        if os.path.isfile():
+        if os.path.isfile('/home/iface/iface'):
             with open('/home/iface/iface', 'r') as r:
                 if_name = r.read().strip()
+                if rc.startswith('1.7'):
+                    pg_version = 11
+                elif rc.startswith('1.8'):
+                    pg_version = 15
         else:
             if rc.startswith('1.7'):
                 pg_version = 11
@@ -152,6 +156,12 @@ class VBox(VirtualMashines):
             elif rc.startswith('1.8'):
                 pg_version = 15
                 if_name = 'ens5'
+
+        with open('balance/vars.yml', 'r') as vars_file:
+            vars_template = Template(vars_file.read())
+            new_vars = vars_template.substitute(pg_version=pg_version,
+                                                lvirt='false')
+            print(new_vars)
 
         with open('balance/inventories/middle_hosts.yml', 'r') as file:
             hosts_template = Template(file.read())

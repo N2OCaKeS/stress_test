@@ -643,8 +643,29 @@
         color: #333;
         border-color: #de425a;
       }
+      .global-accordion-button {
+        background-color: #292d30;
+        color: white;
+        border-color: #496f6b;
+      }
+      .global-accordion-button.collapsed {
+        background-color: #292d30;
+        color: white;
+        border-color: #496f6b;
+      }
+      .global-accordion-button:not(.collapsed) {
+        background-color: #292d30;
+        color: #333;
+        border-color: #de425a;
+      }
       .accordion-body {
         background-color: #606465;
+      }
+      .accordion-body-global {
+        background-color: #00121a;
+      }
+      .accordion-item {
+        background-color: #00121a;
       }
     </style>
 
@@ -662,10 +683,63 @@
         background-color: #002534;
       }
     </style>
+
+    <style>
+        .accordion-table {
+          width: 100%;
+          table-layout: fixed; 
+          border-collapse: collapse;
+          margin: 0;
+          padding: 0;
+          background-color: #292d30;
+          color: white;
+        }
+
+        .accordion-table td {
+          padding: 3px; 
+        }
+
+        .accordion-table .col1 {
+          width: 70%; 
+          text-align: left;
+        }
+
+        .accordion-table .col2 {
+          width: 15%; 
+          text-align: center;
+        }
+
+        .accordion-table .col3 {
+          width: 15%; 
+          text-align: center;
+        }
+    </style>
     
-    <div class="col-2 stands">
+    <div class="col accordion">
+    <div class="accordion" id="globalaccordion">
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand1" aria-expanded="false" aria-controls="collapseStandOne" style="width: 100%;">
+          <table class="accordion-table">
+            <tr>
+              <td class="col1">
+                Test WorkStation (stand1-201)
+              </td>
+              <td class="col2">
+                <td><img id="status-image-stand1" src="" alt='Status image' width='100' height='30'></td>
+              </td>
+              <td class="col3">
+                <img src="{{ status_gif_global_stand1 }}" alt="stat_pic" width="32" height="32">
+              </td>
+            </tr>
+          </table>
+        </button>
+      </h2>
+      <div id="collapsestand1" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+        <div class="accordion-body-global" style="text-align: left;">
+    <div class="col-4 stands">
       <div class="card text-bg-dark mb-3" >
-        <div class="card-header">Test WorkStation (stand1)
+        <div class="card-header">Hardware overview (stand1-201)
           <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal">
             <i class="fas fa-info"></i>
         </button>
@@ -934,32 +1008,8 @@
             <br></br>
 
 
-            <form method="POST" action="/run-command-stand1">
-              <style>
-                  .btn-start, .btn-stop, .btn-ok {
-                      color: #ffffff;
-                  }
-                  .btn-start {
-                      background-color: #465645;
-                  }
-                  .btn-start:hover {
-                      background-color: #47ca6a;
-                  }
-                  .btn-stop {
-                      background-color: #564745;
-                  }
-                  .btn-stop:hover {
-                      background-color: #ca5747;
-                  }
-                  .btn-ok {
-                      background-color: #465645;
-                  }
-                  .btn-ok:hover {
-                      background-color: #47ca6a;
-                  }
-              </style>
-              
-              <div class="btn-group" role="group" aria-label="Basic example">
+            <form method="POST" action="/run-command-stand1">             
+              <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                   <button id="start-btn1" class="btn btn-start" name="command1" type="submit" value="start">Запустить</button>
                   <button id="stop-btn1" class="btn btn-stop" name="command1" type="submit" value="stop">Остановить</button>
                   <!-- <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button> -->
@@ -971,15 +1021,37 @@
         </div>
       </div>
     </div>
-    
+  </div>
+</div>
+</div>
 
 
 
      
-
-    <div class="col-2 stands">
+    
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand2" aria-expanded="false" aria-controls="collapseStandTwo">
+            <table class="accordion-table">
+              <tr>
+                <td class="col1">
+                  Test WorkStation (stand2-202)
+                </td>
+                <td class="col2">
+                  <td><img id="status-image-stand2" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col3">
+                  <img src="{{ status_gif_global_stand2 }}" alt="stat_pic" width="32" height="32">
+                </td>
+              </tr>
+            </table>
+          </button>
+        </h2>
+        <div id="collapsestand2" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+          <div class="accordion-body-global" style="text-align: left;">
+    <div class="col-4 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">Test WorkStation (stand2)
+        <div class="card-header">Hardware overview (stand2-202)
           <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal2">
             <i class="fas fa-info"></i>
         </button>
@@ -1233,32 +1305,8 @@
             <br></br>
 
 
-            <form method="POST" action="/run-command-stand2">
-              <style>
-                  .btn-start, .btn-stop, .btn-ok {
-                      color: #ffffff;
-                  }
-                  .btn-start {
-                      background-color: #465645;
-                  }
-                  .btn-start:hover {
-                      background-color: #47ca6a;
-                  }
-                  .btn-stop {
-                      background-color: #564745;
-                  }
-                  .btn-stop:hover {
-                      background-color: #ca5747;
-                  }
-                  .btn-ok {
-                      background-color: #465645;
-                  }
-                  .btn-ok:hover {
-                      background-color: #47ca6a;
-                  }
-              </style>
-              
-              <div class="btn-group" role="group" aria-label="Basic example">
+            <form method="POST" action="/run-command-stand2">             
+              <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                   <button id="start-btn2" class="btn btn-start" name="command2" type="submit" value="start">Запустить</button>
                   <button id="stop-btn2" class="btn btn-stop" name="command2" type="submit" value="stop">Остановить</button>
                   <!-- <button id="ok-btn2" class="btn btn-ok" style="display: none;" name="command2" type="submit" value="ok">Ок</button> -->
@@ -1270,15 +1318,37 @@
         </div>
       </div>
     </div>
-    
+  </div>
+</div>
+</div>
 
 
 
+     
 
-
-    <div class="col-2 stands">
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand3" aria-expanded="false" aria-controls="collapseStandThre">
+            <table class="accordion-table">
+              <tr>
+                <td class="col1">
+                  LowServer (stand3-59-204)
+                </td>
+                <td class="col2">
+                  <td><img id="status-image-stand3" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col3">
+                  <img src="{{ status_gif_global_stand3 }}" alt="stat_pic" width="32" height="32">
+                </td>
+              </tr>
+            </table>
+          </button>
+        </h2>
+        <div id="collapsestand3" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+          <div class="accordion-body-global" style="text-align: left;">
+    <div class="col-4 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">LowServer (stand3-59-204)
+        <div class="card-header">Hardware overview (stand3-59-204)
           <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal3">
             <i class="fas fa-info"></i>
         </button>
@@ -1557,9 +1627,15 @@
                   .btn-ok:hover {
                       background-color: #47ca6a;
                   }
+                  .btn-group-specific {
+                    display: flex;
+                    justify-content: center;
+                    max-width: 250px; 
+                    margin: 0 auto;
+                  }
               </style>
               
-              <div class="btn-group" role="group" aria-label="Basic example">
+              <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                   <button id="start-btn3" class="btn btn-start" name="command3" type="submit" value="start">Запустить</button>
                   <button id="stop-btn3" class="btn btn-stop" name="command3" type="submit" value="stop">Остановить</button>
                   <!-- <button id="ok-btn3" class="btn btn-ok" style="display: none;" name="command3" type="submit" value="ok">Ок</button> -->
@@ -1571,14 +1647,37 @@
         </div>
       </div>
     </div>
-    
+  </div>
+</div>
+</div>
 
 
 
+     
 
-    <div class="col-2 stands">
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand4" aria-expanded="false" aria-controls="collapseStandFor">
+            <table class="accordion-table">
+              <tr>
+                <td class="col1">
+                  MiddleServer (stand4-58-203)
+                </td>
+                <td class="col2">
+                  <td><img id="status-image-stand4" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col3">
+                  <img src="{{ status_gif_global_stand4 }}" alt="stat_pic" width="32" height="32">
+                </td>
+              </tr>
+            </table>
+          </button>
+        </h2>
+        <div id="collapsestand4" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+          <div class="accordion-body-global" style="text-align: left;">
+    <div class="col-4 stands">
       <div class="card text-bg-dark mb-3">
-        <div class="card-header">MiddleServer (stand4-58-203)
+        <div class="card-header">Hardware overview (stand4-58-203)
           <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal4">
             <i class="fas fa-info"></i>
         </button>
@@ -1921,32 +2020,8 @@
             <br></br>
 
 
-            <form method="POST" action="/run-command-stand4">
-              <style>
-                  .btn-start, .btn-stop, .btn-ok {
-                      color: #ffffff;
-                  }
-                  .btn-start {
-                      background-color: #465645;
-                  }
-                  .btn-start:hover {
-                      background-color: #47ca6a;
-                  }
-                  .btn-stop {
-                      background-color: #564745;
-                  }
-                  .btn-stop:hover {
-                      background-color: #ca5747;
-                  }
-                  .btn-ok {
-                      background-color: #465645;
-                  }
-                  .btn-ok:hover {
-                      background-color: #47ca6a;
-                  }
-              </style>
-              
-              <div class="btn-group" role="group" aria-label="Basic example">
+            <form method="POST" action="/run-command-stand4">              
+              <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                   <button id="start-btn4" class="btn btn-start" name="command4" type="submit" value="start">Запустить</button>
                   <button id="stop-btn4" class="btn btn-stop" name="command4" type="submit" value="stop">Остановить</button>
               </div>
@@ -1957,15 +2032,37 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+</div>
 
 
 
+     
 
-
-
-<div class="col-2 stands">
-  <div class="card text-bg-dark mb-3">
-    <div class="card-header">HighServer (stand5)
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand5" aria-expanded="false" aria-controls="collapseStandFive">
+            <table class="accordion-table">
+              <tr>
+                <td class="col1">
+                  HighServer (stand5-91-205)
+                </td>
+                <td class="col2">
+                  <td><img id="status-image-stand5" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col3">
+                  <img src="{{ status_gif_global_stand5 }}" alt="stat_pic" width="32" height="32">
+                </td>
+              </tr>
+            </table>
+          </button>
+        </h2>
+        <div id="collapsestand5" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+          <div class="accordion-body-global" style="text-align: left;">
+    <div class="col-4 stands">
+      <div class="card text-bg-dark mb-3">
+        <div class="card-header">Hardware overview (stand5-91-205)
       <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal5">
         <i class="fas fa-info"></i>
     </button>
@@ -2221,32 +2318,8 @@
         <br></br>
 
 
-        <form method="POST" action="/run-command-stand5">
-          <style>
-              .btn-start, .btn-stop, .btn-ok {
-                  color: #ffffff;
-              }
-              .btn-start {
-                  background-color: #465645;
-              }
-              .btn-start:hover {
-                  background-color: #47ca6a;
-              }
-              .btn-stop {
-                  background-color: #564745;
-              }
-              .btn-stop:hover {
-                  background-color: #ca5747;
-              }
-              .btn-ok {
-                  background-color: #465645;
-              }
-              .btn-ok:hover {
-                  background-color: #47ca6a;
-              }
-          </style>
-          
-          <div class="btn-group" role="group" aria-label="Basic example">
+        <form method="POST" action="/run-command-stand5">          
+          <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
               <button id="start-btn5" class="btn btn-start" name="command5" type="submit" value="start">Запустить</button>
               <button id="stop-btn5" class="btn btn-stop" name="command5" type="submit" value="stop">Остановить</button>
               <!-- <button id="ok-btn5" class="btn btn-ok" style="display: none;" name="command5" type="submit" value="ok">Ок</button> -->
@@ -2257,6 +2330,8 @@
       </div>
     </div>
   </div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -2428,19 +2503,17 @@ $(document).ready(function() {
 <!-- input class="btn btn-primary" type="button" value="Input" -->
 
 
-{% if test_list %}
+<!-- {% if test_list %}
 <div id="alert" class="alert alert-info" role="alert" style="margin-top: 1rem; max-width: 18%; background-color: #00121a; border-color: #00121a;">
   <img src="http://10.177.103.10:8000/static/31.gif" alt="gif image">
-  <!-- {{ test_list }}
-  {{ stand }} -->
 </div>
-{% endif %}
+{% endif %} 
 
 <script>
   setTimeout(function() {
     document.getElementById("alert").style.display = "none";
   }, 2000);
-</script>
+</script> -->
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ENjdO4Dr2bkBIFxQpeoTz1HIcje39Wm4jDKdf19U8gI4ddQ3GYNS7NTKfAdVQSZe" crossorigin="anonymous"></script>
 

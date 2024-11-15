@@ -61,9 +61,13 @@ brest_options = sorted(brest_tests)
 
 #main_url = generate_random_string(60)
 red_gif = 'http://10.177.103.10:8000/static/red_ring_64.gif'
+red_gif_global = 'http://10.177.103.10:8000/static/wait.gif'
 ping_gif = 'http://10.177.103.10:8000/static/ping.gif'
+ping_gif_global = ''
 green_gif = 'http://10.177.103.10:8000/static/blue_ring_64.gif'
+green_gif_global = 'http://10.177.103.10:8000/static/testing.gif'
 done_gif = 'http://10.177.103.10:8000/static/done.gif'
+done_gif_global = 'http://10.177.103.10:8000/static/done2.gif'
 
 with open('/home/u/url', 'r') as r:
     main_url = r.read().replace('\n', '').replace('\r', '')
@@ -170,15 +174,19 @@ def info_collector(page, ajax=None):
     progress_logs = {}
     sett_logs = {}
     status_gif_logs = {}
+    status_gif_global_logs = {}
     gif_mapping = {'Остановлен': red_gif, 
                    'Запущен': green_gif, 
                    'Готово': done_gif}
-    stands_dict = {'main':main_stands,
-                   'brest':brest_stands,
-                   'mobile':mobile_stands}
-    options = {'main':main_options,
-               'brest':brest_options,
-               'mobile':main_options}
+    gif_mapping_global = {'Остановлен': red_gif_global, 
+                          'Запущен': green_gif_global, 
+                          'Готово': done_gif_global}
+    stands_dict = {'main': main_stands,
+                   'brest': brest_stands,
+                   'mobile': mobile_stands}
+    options = {'main': main_options,
+               'brest': brest_options,
+               'mobile': main_options}
     status_logs = {f'status_{stand}':'-' for stand in stands_dict[page]}
         
     
@@ -210,6 +218,7 @@ def info_collector(page, ajax=None):
         with open(f'conf/work_status_{stand}.conf', 'r') as rs:
             status = rs.read()
             status_logs[f'status_{stand}'] = status
+            status_gif_global_logs[f'status_gif_global_{stand}'] = gif_mapping_global.get(status, ping_gif)
             status_gif_logs[f'status_gif_{stand}'] = gif_mapping.get(status, ping_gif)
             if status_gif_logs[f'status_gif_{stand}'] == ping_gif:
                 status_logs[f'status_{stand}'] = 'Нераспознан'
@@ -221,6 +230,7 @@ def info_collector(page, ajax=None):
         return jsonify({**status_logs,
                         **logs,
                         **status_gif_logs,
+                        **status_gif_global_logs,
                         **sett_logs,
                         **progress_logs})    
 
@@ -285,6 +295,7 @@ def info_collector(page, ajax=None):
                                 **status_logs,
                                 **logs,
                                 **status_gif_logs,
+                                **status_gif_global_logs,
                                 **sett_logs,
                                 **progress_logs)
     else:
@@ -303,6 +314,7 @@ def info_collector(page, ajax=None):
                                 **status_logs,
                                 **logs,
                                 **status_gif_logs,
+                                **status_gif_global_logs,
                                 **sett_logs,
                                 **progress_logs,                                                        
                                 main_url=main_url,

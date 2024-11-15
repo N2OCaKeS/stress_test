@@ -160,7 +160,7 @@ class VBox(VirtualMashines):
         with open('balance/vars.yml', 'r') as vars_file:
             vars_template = Template(vars_file.read())
             new_vars = vars_template.substitute(pg_version=pg_version,
-                                                lvirt='false')
+                                                lvirt='true')
             print(new_vars)
 
         with open('balance/inventories/middle_hosts.yml', 'r') as file:

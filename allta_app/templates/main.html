@@ -1345,7 +1345,7 @@
                   LowServer (stand3-59-204)
                 </td>
                 <td class="col2">
-                  <td><img id="status-image-stand3" src="" alt='Status image' width='100' height='30'></td>
+                  <td><img id="status-image-stand3-global" src="" alt='Status image' width='100' height='30'></td>
                 </td>
                 <td class="col3">
                   <img src="{{ status_gif_global_stand3 }}" alt="stat_pic" width="32" height="32">
@@ -1466,23 +1466,28 @@
         <script>
           function updatePowerStatus3() {
             $.ajax({
-                url: '/update_power_status/stand3',
-                type: 'get',
-                dataType: 'json',
-                success: function(response){
-                    var status_image = document.getElementById("status-image-stand3");
-                    if (response.is_running){
-                        status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                    } else {
-                        status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                    }
+              url: '/update_power_status/stand3',
+              type: 'get',
+              dataType: 'json',
+              success: function(response) {
+                var statusImageStand3 = document.getElementById("status-image-stand3");
+                var statusImageStand3Global = document.getElementById("status-image-stand3-global");
+                
+                if (response.is_running) {
+                  statusImageStand3.src = "http://10.177.103.10:8000/static/status_on.png";
+                  statusImageStand3Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                } else {
+                  statusImageStand3.src = "http://10.177.103.10:8000/static/status_off.png";
+                  statusImageStand3Global.src = "http://10.177.103.10:8000/static/status_off.png";
                 }
+              }
             });
-        }   
-        $(document).ready(function(){
+          }
+          
+          $(document).ready(function() {
             updatePowerStatus3(); 
             setInterval(updatePowerStatus3, 5000);
-        });
+          });
         </script>
           <!-- <br></br> -->
 
@@ -1674,7 +1679,7 @@
                   MiddleServer (stand4-58-203)
                 </td>
                 <td class="col2">
-                  <td><img id="status-image-stand4" src="" alt='Status image' width='100' height='30'></td>
+                  <td><img id="status-image-stand4-global" src="" alt='Status image' width='100' height='30'></td>
                 </td>
                 <td class="col3">
                   <img src="{{ status_gif_global_stand4 }}" alt="stat_pic" width="32" height="32">
@@ -1882,23 +1887,28 @@
         <script>
           function updatePowerStatus4() {
             $.ajax({
-                url: '/update_power_status/stand4',
-                type: 'get',
-                dataType: 'json',
-                success: function(response){
-                    var status_image = document.getElementById("status-image-stand4");
-                    if (response.is_running){
-                        status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                    } else {
-                        status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                    }
+              url: '/update_power_status/stand4',
+              type: 'get',
+              dataType: 'json',
+              success: function(response) {
+                var statusImageStand4 = document.getElementById("status-image-stand4");
+                var statusImageStand4Global = document.getElementById("status-image-stand4-global");
+                
+                if (response.is_running) {
+                  statusImageStand4.src = "http://10.177.103.10:8000/static/status_on.png";
+                  statusImageStand4Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                } else {
+                  statusImageStand4.src = "http://10.177.103.10:8000/static/status_off.png";
+                  statusImageStand4Global.src = "http://10.177.103.10:8000/static/status_off.png";
                 }
+              }
             });
-        }   
-        $(document).ready(function(){
+          }
+          
+          $(document).ready(function() {
             updatePowerStatus4(); 
             setInterval(updatePowerStatus4, 5000);
-        });
+          });
         </script>
           <!-- <br></br> -->
 
@@ -2059,7 +2069,7 @@
                   HighServer (stand5-91-205)
                 </td>
                 <td class="col2">
-                  <td><img id="status-image-stand5" src="" alt='Status image' width='100' height='30'></td>
+                  <td><img id="status-image-stand5-global" src="" alt='Status image' width='100' height='30'></td>
                 </td>
                 <td class="col3">
                   <img src="{{ status_gif_global_stand5 }}" alt="stat_pic" width="32" height="32">
@@ -2180,23 +2190,28 @@
     <script>
       function updatePowerStatus5() {
         $.ajax({
-            url: '/update_power_status/stand5',
-            type: 'get',
-            dataType: 'json',
-            success: function(response){
-                var status_image = document.getElementById("status-image-stand5");
-                if (response.is_running){
-                    status_image.src = "http://10.177.103.10:8000/static/status_on.png";
-                } else {
-                    status_image.src = "http://10.177.103.10:8000/static/status_off.png";
-                }
+          url: '/update_power_status/stand5',
+          type: 'get',
+          dataType: 'json',
+          success: function(response) {
+            var statusImageStand5 = document.getElementById("status-image-stand5");
+            var statusImageStand5Global = document.getElementById("status-image-stand5-global");
+            
+            if (response.is_running) {
+              statusImageStand5.src = "http://10.177.103.10:8000/static/status_on.png";
+              statusImageStand5Global.src = "http://10.177.103.10:8000/static/status_on.png";
+            } else {
+              statusImageStand5.src = "http://10.177.103.10:8000/static/status_off.png";
+              statusImageStand5Global.src = "http://10.177.103.10:8000/static/status_off.png";
             }
+          }
         });
-    }   
-    $(document).ready(function(){
+      }
+      
+      $(document).ready(function() {
         updatePowerStatus5(); 
         setInterval(updatePowerStatus5, 5000);
-    });
+      });
     </script>
       <!-- <br></br> -->
 

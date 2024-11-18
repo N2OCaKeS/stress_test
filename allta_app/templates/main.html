@@ -700,16 +700,31 @@
         }
 
         .accordion-table .col1 {
-          width: 70%; 
+          width: 10%; 
           text-align: left;
         }
 
         .accordion-table .col2 {
+          width: 10%; 
+          text-align: left;
+        }
+
+        .accordion-table .col3 {
+          width: 40%; 
+          text-align: left;
+        }
+
+        .accordion-table .col4 {
+          width: 10%; 
+          text-align: right;
+        }
+
+        .accordion-table .col5 {
           width: 15%; 
           text-align: center;
         }
 
-        .accordion-table .col3 {
+        .accordion-table .col6 {
           width: 15%; 
           text-align: center;
         }
@@ -723,12 +738,21 @@
           <table class="accordion-table">
             <tr>
               <td class="col1">
-                Test WorkStation (stand1-201)
+                Test WorkStation
               </td>
               <td class="col2">
-                <td><img id="status-image-stand1-global" src="" alt='Status image' width='100' height='30'></td>
+                stand1-201
               </td>
               <td class="col3">
+                
+              </td>
+              <td class="col4">
+                {{ chmod_author_stand1 }}
+              </td>
+              <td class="col5">
+                <td><img id="status-image-stand1-global" src="" alt='Status image' width='100' height='30'></td>
+              </td>
+              <td class="col6">
                 <img src="{{ status_gif_global_stand1 }}" alt="stat_pic" width="32" height="32">
               </td>
             </tr>
@@ -796,6 +820,15 @@
                 {% endfor %}
               </ul>
             </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList">
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus1('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus1('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+              </ul>
+            </div>
           </div>
 
           <script>
@@ -835,6 +868,50 @@
                 .then(data => {
                     document.getElementById('loading-spinner').style.display = 'none';
                     console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
+
+          <script>
+            let isStopped = false;
+
+            function toggleStatus1(name) {
+              let userList = document.getElementById('userList');
+              userList.innerHTML = '';
+
+              if (!isStopped) {
+                busy_status(name);
+
+                userList.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus1(); return false;">Остановить</a></li>`;
+              } else {
+                busy_status("stop");
+
+                userList.innerHTML = `
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus1('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus1('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+                `;
+              }
+
+              isStopped = !isStopped;
+            }
+          </script>
+          <script>
+            function busy_status(name) {
+                document.getElementById('loading-spinner').style.display = 'block';
+
+                fetch('/busy_status/stand1/' + name, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Set status completed:', data);
                 })
                 .catch((error) => {
                     document.getElementById('loading-spinner').style.display = 'none';
@@ -1040,12 +1117,21 @@
             <table class="accordion-table">
               <tr>
                 <td class="col1">
-                  Test WorkStation (stand2-202)
+                  Test WorkStation
                 </td>
                 <td class="col2">
-                  <td><img id="status-image-stand2-global" src="" alt='Status image' width='100' height='30'></td>
+                  stand2-202
                 </td>
                 <td class="col3">
+                  
+                </td>
+                <td class="col4">
+                  {{ chmod_author_stand2 }}
+                </td>
+                <td class="col5">
+                  <td><img id="status-image-stand2-global" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col6">
                   <img src="{{ status_gif_global_stand2 }}" alt="stat_pic" width="32" height="32">
                 </td>
               </tr>
@@ -1098,6 +1184,15 @@
                 {% endfor %}
               </ul>
             </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList2">
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus2('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus2('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+              </ul>
+            </div>
           </div>
 
           <script>
@@ -1137,6 +1232,51 @@
                 .then(data => {
                     document.getElementById('loading-spinner').style.display = 'none';
                     console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
+
+
+          <script>
+            let isStopped2 = false;
+
+            function toggleStatus2(name) {
+              let userList2 = document.getElementById('userList2');
+              userList2.innerHTML = '';
+
+              if (!isStopped2) {
+                busy_status2(name);
+
+                userList2.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus2(); return false;">Остановить</a></li>`;
+              } else {
+                busy_status2("stop");
+
+                userList2.innerHTML = `
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus2('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus2('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+                `;
+              }
+
+              isStopped2 = !isStopped2;
+            }
+          </script>
+          <script>
+            function busy_status2(name) {
+                document.getElementById('loading-spinner').style.display = 'block';
+
+                fetch('/busy_status/stand2/' + name, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Set status completed:', data);
                 })
                 .catch((error) => {
                     document.getElementById('loading-spinner').style.display = 'none';
@@ -1342,12 +1482,21 @@
             <table class="accordion-table">
               <tr>
                 <td class="col1">
-                  LowServer (stand3-59-204)
+                  LowServer
                 </td>
                 <td class="col2">
-                  <td><img id="status-image-stand3-global" src="" alt='Status image' width='100' height='30'></td>
+                  stand3-59-204
                 </td>
                 <td class="col3">
+                  
+                </td>
+                <td class="col4">
+                  {{ chmod_author_stand3 }}
+                </td>
+                <td class="col5">
+                  <td><img id="status-image-stand3-global" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col6">
                   <img src="{{ status_gif_global_stand3 }}" alt="stat_pic" width="32" height="32">
                 </td>
               </tr>
@@ -1400,6 +1549,15 @@
                 {% endfor %}
               </ul>
             </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList3">
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus3('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus3('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+              </ul>
+            </div>
           </div>
 
           <script>
@@ -1448,6 +1606,52 @@
             }
           </script>
           <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand3">iLO</button> -->
+
+
+          <script>
+            let isStopped3 = false;
+
+            function toggleStatus3(name) {
+              let userList3 = document.getElementById('userList3');
+              userList3.innerHTML = '';
+
+              if (!isStopped3) {
+                busy_status3(name);
+
+                userList3.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus3(); return false;">Остановить</a></li>`;
+              } else {
+                busy_status3("stop");
+
+                userList3.innerHTML = `
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus3('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus3('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+                `;
+              }
+
+              isStopped3 = !isStopped3;
+            }
+          </script>
+          <script>
+            function busy_status3(name) {
+                document.getElementById('loading-spinner').style.display = 'block';
+
+                fetch('/busy_status/stand3/' + name, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Set status completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
+
 
           <table class="table table-dark table-striped-columns">
             <thead>
@@ -1676,12 +1880,21 @@
             <table class="accordion-table">
               <tr>
                 <td class="col1">
-                  MiddleServer (stand4-58-203)
+                  MiddleServer
                 </td>
                 <td class="col2">
-                  <td><img id="status-image-stand4-global" src="" alt='Status image' width='100' height='30'></td>
+                  stand4-58-203
                 </td>
                 <td class="col3">
+                  
+                </td>
+                <td class="col4">
+                  {{ chmod_author_stand4 }}
+                </td>
+                <td class="col5">
+                  <td><img id="status-image-stand4-global" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col6">
                   <img src="{{ status_gif_global_stand4 }}" alt="stat_pic" width="32" height="32">
                 </td>
               </tr>
@@ -1735,6 +1948,15 @@
                 {% endfor %}
               </ul>
             </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList4">
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus4('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus4('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+              </ul>
+            </div>
           </div>
 
           <script>
@@ -1774,6 +1996,51 @@
                 .then(data => {
                     document.getElementById('loading-spinner').style.display = 'none';
                     console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
+
+
+          <script>
+            let isStopped4 = false;
+
+            function toggleStatus4(name) {
+              let userList4 = document.getElementById('userList4');
+              userList4.innerHTML = '';
+
+              if (!isStopped4) {
+                busy_status4(name);
+
+                userList4.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus4(); return false;">Остановить</a></li>`;
+              } else {
+                busy_status4("stop");
+
+                userList4.innerHTML = `
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus4('dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus4('ivelikanov'); return false;">ivelikanov</a>
+                  </li>
+                `;
+              }
+
+              isStopped4 = !isStopped4;
+            }
+          </script>
+          <script>
+            function busy_status4(name) {
+                document.getElementById('loading-spinner').style.display = 'block';
+
+                fetch('/busy_status/stand4/' + name, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Set status completed:', data);
                 })
                 .catch((error) => {
                     document.getElementById('loading-spinner').style.display = 'none';
@@ -2066,12 +2333,21 @@
             <table class="accordion-table">
               <tr>
                 <td class="col1">
-                  HighServer (stand5-91-205)
+                  HighServer
                 </td>
                 <td class="col2">
-                  <td><img id="status-image-stand5-global" src="" alt='Status image' width='100' height='30'></td>
+                  stand5-91-205
                 </td>
                 <td class="col3">
+                  
+                </td>
+                <td class="col4">
+                  {{ chmod_author_stand5 }}
+                </td>
+                <td class="col5">
+                  <td><img id="status-image-stand5-global" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col6">
                   <img src="{{ status_gif_global_stand5 }}" alt="stat_pic" width="32" height="32">
                 </td>
               </tr>
@@ -2124,6 +2400,15 @@
             {% endfor %}
           </ul>
         </div>
+        <div class="dropdown d-inline-block">
+          <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList5">
+              <li>
+                <a class="dropdown-item" href="#" onclick="toggleStatus5('dtimonin'); return false;">dtimonin</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus5('ivelikanov'); return false;">ivelikanov</a>
+              </li>
+          </ul>
+        </div>
       </div>
 
       <script>
@@ -2163,6 +2448,51 @@
             .then(data => {
                 document.getElementById('loading-spinner').style.display = 'none';
                 console.log('Backup completed:', data);
+            })
+            .catch((error) => {
+                document.getElementById('loading-spinner').style.display = 'none';
+                console.error('Error:', error);
+            });
+        }
+      </script>
+
+
+      <script>
+        let isStopped5 = false;
+
+        function toggleStatus5(name) {
+          let userList5 = document.getElementById('userList5');
+          userList5.innerHTML = '';
+
+          if (!isStopped5) {
+            busy_status5(name);
+
+            userList5.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus5(); return false;">Остановить</a></li>`;
+          } else {
+            busy_status5("stop");
+
+            userList5.innerHTML = `
+              <li>
+                <a class="dropdown-item" href="#" onclick="toggleStatus5('dtimonin'); return false;">dtimonin</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus5('ivelikanov'); return false;">ivelikanov</a>
+              </li>
+            `;
+          }
+
+          isStopped5 = !isStopped5;
+        }
+      </script>
+      <script>
+        function busy_status5(name) {
+            document.getElementById('loading-spinner').style.display = 'block';
+
+            fetch('/busy_status/stand5/' + name, {
+                method: 'GET'
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('loading-spinner').style.display = 'none';
+                console.log('Set status completed:', data);
             })
             .catch((error) => {
                 document.getElementById('loading-spinner').style.display = 'none';

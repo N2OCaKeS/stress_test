@@ -26,6 +26,7 @@ from libs.liballta import (index_page,
                           update_settings_block,
                           get_kernels_from_rc,
                           backup_snapshot,
+                          busy_status_control,
                           main_url,
                           mobile_url,
                           brest_url,
@@ -245,6 +246,15 @@ def backup(stand, version):
     Загрузить нужный снимок
     """
     backup_snapshot(stand, version)
+    return index_page('main')
+
+
+@app.route('/busy_status/<stand>/<name>')
+def busy_status(stand, name):
+    """
+    установить нужный статус
+    """
+    busy_status_control(stand, name)
     return index_page('main')
 
 

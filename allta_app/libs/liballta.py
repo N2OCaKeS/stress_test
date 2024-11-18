@@ -68,6 +68,8 @@ green_gif = 'http://10.177.103.10:8000/static/blue_ring_64.gif'
 green_gif_global = 'http://10.177.103.10:8000/static/testing.gif'
 done_gif = 'http://10.177.103.10:8000/static/done.gif'
 done_gif_global = 'http://10.177.103.10:8000/static/done2.gif'
+busy_gif = 'http://10.177.103.10:8000/static/hend_testing.gif'
+busy_gif_global = 'http://10.177.103.10:8000/static/hend_testing.gif'
 
 with open('/home/u/url', 'r') as r:
     main_url = r.read().replace('\n', '').replace('\r', '')
@@ -175,12 +177,15 @@ def info_collector(page, ajax=None):
     sett_logs = {}
     status_gif_logs = {}
     status_gif_global_logs = {}
+    chmod_author = {}
     gif_mapping = {'Остановлен': red_gif, 
                    'Запущен': green_gif, 
-                   'Готово': done_gif}
+                   'Готово': done_gif,
+                   'Занят': red_gif}
     gif_mapping_global = {'Остановлен': red_gif_global, 
                           'Запущен': green_gif_global, 
-                          'Готово': done_gif_global}
+                          'Готово': done_gif_global,
+                          'Занят': busy_gif_global}
     stands_dict = {'main': main_stands,
                    'brest': brest_stands,
                    'mobile': mobile_stands}
@@ -225,14 +230,24 @@ def info_collector(page, ajax=None):
             if status == 'Остановлен':
                 progress_logs[f'progress_{stand}'] = ''
                 logs[f'{stand}_log'] = ''
+
+    for stand in stands_dict[page]:
+        try:
+            with open(f'conf/chmod_author_{stand}.conf', 'r') as r:
+                author = r.read()
+                chmod_author[f'chmod_author_{stand}'] = author
+        except FileNotFoundError:
+            chmod_author[f'chmod_author_{stand}'] = ''
     
+
     if ajax == True:
         return jsonify({**status_logs,
                         **logs,
                         **status_gif_logs,
                         **status_gif_global_logs,
                         **sett_logs,
-                        **progress_logs})    
+                        **progress_logs,
+                        **chmod_author})    
 
     if page == 'mobile':
         test_list, releas_list, kernel_list = create_args('main')
@@ -297,7 +312,8 @@ def info_collector(page, ajax=None):
                                 **status_gif_logs,
                                 **status_gif_global_logs,
                                 **sett_logs,
-                                **progress_logs)
+                                **progress_logs,
+                                **chmod_author)
     else:
         return render_template(f'{page}.html',
                                 allta_version=allta_version(), 
@@ -316,7 +332,8 @@ def info_collector(page, ajax=None):
                                 **status_gif_logs,
                                 **status_gif_global_logs,
                                 **sett_logs,
-                                **progress_logs,                                                        
+                                **progress_logs,
+                                **chmod_author,                                                        
                                 main_url=main_url,
                                 mobile_url=mobile_url,
                                 brest_url=brest_url,
@@ -401,6 +418,25 @@ def run_command_on_stand(num, http=True):
 
     if http:
         return index_page(prefix)
+
+
+
+def busy_status_control(stand, name):
+    if name == 'stop':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Остановлен')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('')
+    elif name == 'dtimonin':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('Дмитрий Тимонин')
+    elif name == 'ivelikanov':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('Иван Великанов')
 
 
 

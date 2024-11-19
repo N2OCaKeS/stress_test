@@ -33,10 +33,8 @@ class BootOrder:
         self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
         self.client = redfish.RedfishClient(base_url=self.address, username=self.login, password=self.password)
         
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(name="BootOrder")
         self.logger.setLevel(logging.DEBUG)
-        self.logger.debug("Тестовое сообщение")
-        self.logger.info("Тестовое сообщение INFO")
 
     def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
@@ -44,7 +42,6 @@ class BootOrder:
     
     def set_boot_order(self):
         if self.stand == 'stand3' or self.stand == 'stand4':
-            self.logger.info("ТЕСТОВОЕ СООБЩЕНИЕ 3")
             self.__set_boot_order_ilo()
         elif self.stand == 'stand5':
             self.__set_boot_order_idrac()
@@ -53,6 +50,7 @@ class BootOrder:
         try:
             for i in range(0, self.slot_count + 1, 1):
                 answer = self.cmd(f'{self.ssh_command} {self.show_config}{i}')
+                self.logger.info(f"ANSWER = {answer}")
                 if self.boot_type in answer and i == 1:
                     self.logger.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
                     break

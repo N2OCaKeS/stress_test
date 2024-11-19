@@ -822,11 +822,17 @@
             </div>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
-              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList">
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList1">
+                {% if chmod_author_stand1 == '' %}
                   <li>
                     <a class="dropdown-item" href="#" onclick="toggleStatus1('dtimonin'); return false;">dtimonin</a>
                     <a class="dropdown-item" href="#" onclick="toggleStatus1('ivelikanov'); return false;">ivelikanov</a>
                   </li>
+                {% else %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus1('stop'); return false;">Остановить</a>
+                  </li>
+                {% endif %}
               </ul>
             </div>
           </div>
@@ -876,50 +882,7 @@
             }
           </script>
 
-          <script>
-            let isStopped = false;
-
-            function toggleStatus1(name) {
-              let userList = document.getElementById('userList');
-              userList.innerHTML = '';
-
-              if (!isStopped) {
-                busy_status(name);
-
-                userList.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus1(); return false;">Остановить</a></li>`;
-              } else {
-                busy_status("stop");
-
-                userList.innerHTML = `
-                  <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus1('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus1('ivelikanov'); return false;">ivelikanov</a>
-                  </li>
-                `;
-              }
-
-              isStopped = !isStopped;
-            }
-          </script>
-          <script>
-            function busy_status(name) {
-                document.getElementById('loading-spinner').style.display = 'block';
-
-                fetch('/busy_status/stand1/' + name, {
-                    method: 'GET'
-                })
-                .then(response => response.text())
-                .then(data => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.log('Set status completed:', data);
-                })
-                .catch((error) => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.error('Error:', error);
-                });
-            }
-          </script>
-
+          
           <table class="table table-dark table-striped-columns">
             <thead>
                 <tr>               
@@ -1187,10 +1150,16 @@
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList2">
+                {% if chmod_author_stand2 == '' %}
                   <li>
                     <a class="dropdown-item" href="#" onclick="toggleStatus2('dtimonin'); return false;">dtimonin</a>
                     <a class="dropdown-item" href="#" onclick="toggleStatus2('ivelikanov'); return false;">ivelikanov</a>
                   </li>
+                {% else %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus2('stop'); return false;">Остановить</a>
+                  </li>
+                {% endif %}
               </ul>
             </div>
           </div>
@@ -1240,50 +1209,7 @@
             }
           </script>
 
-
-          <script>
-            let isStopped2 = false;
-
-            function toggleStatus2(name) {
-              let userList2 = document.getElementById('userList2');
-              userList2.innerHTML = '';
-
-              if (!isStopped2) {
-                busy_status2(name);
-
-                userList2.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus2(); return false;">Остановить</a></li>`;
-              } else {
-                busy_status2("stop");
-
-                userList2.innerHTML = `
-                  <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus2('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus2('ivelikanov'); return false;">ivelikanov</a>
-                  </li>
-                `;
-              }
-
-              isStopped2 = !isStopped2;
-            }
-          </script>
-          <script>
-            function busy_status2(name) {
-                document.getElementById('loading-spinner').style.display = 'block';
-
-                fetch('/busy_status/stand2/' + name, {
-                    method: 'GET'
-                })
-                .then(response => response.text())
-                .then(data => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.log('Set status completed:', data);
-                })
-                .catch((error) => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.error('Error:', error);
-                });
-            }
-          </script>
+        
 
           <table class="table table-dark table-striped-columns">
             <thead>
@@ -1552,10 +1478,16 @@
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList3">
+                {% if chmod_author_stand3 == '' %}
                   <li>
                     <a class="dropdown-item" href="#" onclick="toggleStatus3('dtimonin'); return false;">dtimonin</a>
                     <a class="dropdown-item" href="#" onclick="toggleStatus3('ivelikanov'); return false;">ivelikanov</a>
                   </li>
+                {% else %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus3('stop'); return false;">Остановить</a>
+                  </li>
+                {% endif %}
               </ul>
             </div>
           </div>
@@ -1606,51 +1538,6 @@
             }
           </script>
           <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand3">iLO</button> -->
-
-
-          <script>
-            let isStopped3 = false;
-
-            function toggleStatus3(name) {
-              let userList3 = document.getElementById('userList3');
-              userList3.innerHTML = '';
-
-              if (!isStopped3) {
-                busy_status3(name);
-
-                userList3.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus3(); return false;">Остановить</a></li>`;
-              } else {
-                busy_status3("stop");
-
-                userList3.innerHTML = `
-                  <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus3('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus3('ivelikanov'); return false;">ivelikanov</a>
-                  </li>
-                `;
-              }
-
-              isStopped3 = !isStopped3;
-            }
-          </script>
-          <script>
-            function busy_status3(name) {
-                document.getElementById('loading-spinner').style.display = 'block';
-
-                fetch('/busy_status/stand3/' + name, {
-                    method: 'GET'
-                })
-                .then(response => response.text())
-                .then(data => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.log('Set status completed:', data);
-                })
-                .catch((error) => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.error('Error:', error);
-                });
-            }
-          </script>
 
 
           <table class="table table-dark table-striped-columns">
@@ -1951,10 +1838,16 @@
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList4">
+                {% if chmod_author_stand4 == '' %}
                   <li>
                     <a class="dropdown-item" href="#" onclick="toggleStatus4('dtimonin'); return false;">dtimonin</a>
                     <a class="dropdown-item" href="#" onclick="toggleStatus4('ivelikanov'); return false;">ivelikanov</a>
                   </li>
+                {% else %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus4('stop'); return false;">Остановить</a>
+                  </li>
+                {% endif %}
               </ul>
             </div>
           </div>
@@ -2004,51 +1897,7 @@
             }
           </script>
 
-
-          <script>
-            let isStopped4 = false;
-
-            function toggleStatus4(name) {
-              let userList4 = document.getElementById('userList4');
-              userList4.innerHTML = '';
-
-              if (!isStopped4) {
-                busy_status4(name);
-
-                userList4.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus4(); return false;">Остановить</a></li>`;
-              } else {
-                busy_status4("stop");
-
-                userList4.innerHTML = `
-                  <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus4('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus4('ivelikanov'); return false;">ivelikanov</a>
-                  </li>
-                `;
-              }
-
-              isStopped4 = !isStopped4;
-            }
-          </script>
-          <script>
-            function busy_status4(name) {
-                document.getElementById('loading-spinner').style.display = 'block';
-
-                fetch('/busy_status/stand4/' + name, {
-                    method: 'GET'
-                })
-                .then(response => response.text())
-                .then(data => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.log('Set status completed:', data);
-                })
-                .catch((error) => {
-                    document.getElementById('loading-spinner').style.display = 'none';
-                    console.error('Error:', error);
-                });
-            }
-          </script>
-
+        
           <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand4">iLO</button> -->
           <!-- <script>
             $(document).ready(function(){
@@ -2403,10 +2252,16 @@
         <div class="dropdown d-inline-block">
           <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
           <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList5">
+            {% if chmod_author_stand5 == '' %}
               <li>
                 <a class="dropdown-item" href="#" onclick="toggleStatus5('dtimonin'); return false;">dtimonin</a>
                 <a class="dropdown-item" href="#" onclick="toggleStatus5('ivelikanov'); return false;">ivelikanov</a>
               </li>
+            {% else %}
+              <li>
+                <a class="dropdown-item" href="#" onclick="toggleStatus5('stop'); return false;">Остановить</a>
+              </li>
+            {% endif %}
           </ul>
         </div>
       </div>
@@ -2457,49 +2312,53 @@
       </script>
 
 
+      <!-- Status block set authors-->
       <script>
-        let isStopped5 = false;
+        function toggleStatus(standNumber, name) {
+          const userList = document.getElementById(`userList${standNumber}`);
+          const isStopped = window[`isStopped${standNumber}`];
+          userList.innerHTML = ''; 
 
-        function toggleStatus5(name) {
-          let userList5 = document.getElementById('userList5');
-          userList5.innerHTML = '';
-
-          if (!isStopped5) {
-            busy_status5(name);
-
-            userList5.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus5(); return false;">Остановить</a></li>`;
+          if (!isStopped) {
+            busy_status(standNumber, name);
+            userList.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'stop'); return false;">Остановить</a></li>`;
           } else {
-            busy_status5("stop");
-
-            userList5.innerHTML = `
+            busy_status(standNumber, '');
+            userList.innerHTML = `
               <li>
-                <a class="dropdown-item" href="#" onclick="toggleStatus5('dtimonin'); return false;">dtimonin</a>
-                <a class="dropdown-item" href="#" onclick="toggleStatus5('ivelikanov'); return false;">ivelikanov</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'dtimonin'); return false;">dtimonin</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'ivelikanov'); return false;">ivelikanov</a>
               </li>
             `;
           }
 
-          isStopped5 = !isStopped5;
+          window[`isStopped${standNumber}`] = !isStopped;
         }
-      </script>
-      <script>
-        function busy_status5(name) {
-            document.getElementById('loading-spinner').style.display = 'block';
 
-            fetch('/busy_status/stand5/' + name, {
-                method: 'GET'
-            })
-            .then(response => response.text())
-            .then(data => {
-                document.getElementById('loading-spinner').style.display = 'none';
-                console.log('Set status completed:', data);
-            })
-            .catch((error) => {
-                document.getElementById('loading-spinner').style.display = 'none';
-                console.error('Error:', error);
-            });
+        function busy_status(standNumber, name) {
+          document.getElementById('loading-spinner').style.display = 'block';
+
+          fetch(`/busy_status/stand${standNumber}/` + name, {
+              method: 'GET'
+          })
+          .then(response => response.text())
+          .then(data => {
+              document.getElementById('loading-spinner').style.display = 'none';
+              console.log('Set status completed:', data);
+          })
+          .catch(error => {
+              document.getElementById('loading-spinner').style.display = 'none';
+              console.error('Error:', error);
+          });
+        }
+
+        const standCount = 5;
+        for (let i = 1; i <= standCount; i++) {
+          window[`isStopped${i}`] = document.querySelector(`{{ chmod_author_stand${i} }}`) !== "";
         }
       </script>
+
+
 
       <!-- <button class="commandButton btn btn-dark" data-command="/ilo/stand5">iLO</button> -->
 

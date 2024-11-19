@@ -254,8 +254,7 @@ def busy_status(stand, name):
     """
     установить нужный статус
     """
-    busy_status_control(stand, name)
-    return index_page('main')
+    return busy_status_control(stand, name)
 
 
 @app.route('/backup/allta', methods=['POST'])

@@ -150,6 +150,7 @@ def create_full_snap(restore_version: str, version_to_update: str, password_cs: 
                        get_snapshot.si(password_clonezilla_server=password_cs, snap_name=snap_name_backup)
                        )
     result = chain_task.apply_async()
-    status = result.status # или result.state
+    # status = result.status # или result.state
     
-    return {"chain_task_id": result.id, "status": status, "state": result.state}
+    # return {"chain_task_id": result.id, "status": result.status, "state": result.state}
+    return {"status": "success"}

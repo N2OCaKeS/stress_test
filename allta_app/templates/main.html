@@ -2671,10 +2671,20 @@ function updateInfo() {
               $('#collapseThree' + standNum + ' .accordion-body').html(data['stand' + standNum + '_log']);
               setStatus(standNum, data['status_stand' + standNum]);
 
-              $('.accordion-table .col4:contains("stand' + standNum + '")').text(data['chmod_author_stand' + standNum]);
-              $('.accordion-table .col6:contains("stand' + standNum + '") img').attr('src', data['status_gif_global_stand' + standNum]); 
-          });
-      }
+              console.log("Data for stand " + standNum, data);
+        
+              const col4Element = $('.accordion-table .col4').eq(standNum - 1);
+              console.log("col4 Element found: ", col4Element);
+              col4Element.text(data['chmod_author_stand' + standNum]);
+
+              const col6Element = $('.accordion-table .col6 img').eq(standNum - 1);
+              console.log("col6 Image found: ", col6Element);
+              col6Element.attr('src', data['status_gif_global_stand' + standNum]);
+            });
+          },
+          error: function(jqXHR, textStatus, errorThrown) {
+            console.error("Ошибка при обновлении данных: " + textStatus);
+          }
   });
 }
 $(document).ready(function() {

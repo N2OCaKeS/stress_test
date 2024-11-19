@@ -156,15 +156,16 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
         command = RESTORE_DISK_COMMAND.format(ip_address=stand[3], snapshot_name=snap_name, stand_disk=stand[2])
     else:
         command = SAVE_DISK_COMMAND.format(ip_address=stand[3], snapshot_name=snap_name, stand_disk=stand[2])
-    print(command)
+    logging.info(command)
     result = remote_cmd(command=command, host="10.177.103.10", user="u", passwd=password_cs, read=False)
-    print(result)
-    print(time() - start_time)
+    logging.info(result)
+    logging.info(time() - start_time)
     sleep(15)
     try:
         remote_cmd(command="sudo reboot", host=stand[3], user=stand[4], passwd=stand[5])
         sleep(15)
     except ssh_exception.NoValidConnectionsError:
         socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
+    socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
     sleep(15)
     # return result

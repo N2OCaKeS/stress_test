@@ -822,15 +822,15 @@
             </div>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
-              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList1">
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1" id="userList1">
                 {% if chmod_author_stand1 == '' %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus1('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus1('ivelikanov'); return false;">ivelikanov</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(1, 'dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(1, 'ivelikanov'); return false;">ivelikanov</a>
                   </li>
                 {% else %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus1('stop'); return false;">Остановить</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(1, 'stop'); return false;">Остановить</a>
                   </li>
                 {% endif %}
               </ul>
@@ -1149,15 +1149,15 @@
             </div>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
-              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList2">
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton2" id="userList2">
                 {% if chmod_author_stand2 == '' %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus2('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus2('ivelikanov'); return false;">ivelikanov</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(2, 'dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(2, 'ivelikanov'); return false;">ivelikanov</a>
                   </li>
                 {% else %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus2('stop'); return false;">Остановить</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(2, 'stop'); return false;">Остановить</a>
                   </li>
                 {% endif %}
               </ul>
@@ -1477,15 +1477,15 @@
             </div>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
-              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList3">
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton3" id="userList3">
                 {% if chmod_author_stand3 == '' %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus3('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus3('ivelikanov'); return false;">ivelikanov</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(3, 'dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(3, 'ivelikanov'); return false;">ivelikanov</a>
                   </li>
                 {% else %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus3('stop'); return false;">Остановить</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(3, 'stop'); return false;">Остановить</a>
                   </li>
                 {% endif %}
               </ul>
@@ -1837,15 +1837,15 @@
             </div>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
-              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList4">
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton4" id="userList4">
                 {% if chmod_author_stand4 == '' %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus4('dtimonin'); return false;">dtimonin</a>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus4('ivelikanov'); return false;">ivelikanov</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(4, 'dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(4, 'ivelikanov'); return false;">ivelikanov</a>
                   </li>
                 {% else %}
                   <li>
-                    <a class="dropdown-item" href="#" onclick="toggleStatus4('stop'); return false;">Остановить</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(4, 'stop'); return false;">Остановить</a>
                   </li>
                 {% endif %}
               </ul>
@@ -2251,15 +2251,15 @@
         </div>
         <div class="dropdown d-inline-block">
           <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
-          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton" id="userList5">
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton5" id="userList5">
             {% if chmod_author_stand5 == '' %}
               <li>
-                <a class="dropdown-item" href="#" onclick="toggleStatus5('dtimonin'); return false;">dtimonin</a>
-                <a class="dropdown-item" href="#" onclick="toggleStatus5('ivelikanov'); return false;">ivelikanov</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'dtimonin'); return false;">dtimonin</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'ivelikanov'); return false;">ivelikanov</a>
               </li>
             {% else %}
               <li>
-                <a class="dropdown-item" href="#" onclick="toggleStatus5('stop'); return false;">Остановить</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'stop'); return false;">Остановить</a>
               </li>
             {% endif %}
           </ul>

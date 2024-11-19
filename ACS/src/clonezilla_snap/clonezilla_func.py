@@ -11,6 +11,10 @@ from src.tasks.tasks import celery
 
 
 class BootOrder:
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
     def __init__(self,
                  stand=None,
                  boottype='PXE'):
@@ -47,16 +51,16 @@ class BootOrder:
             for i in range(0, self.slot_count + 1, 1):
                 answer = self.cmd(f'{self.ssh_command} {self.show_config}{i}')
                 if self.boot_type in answer and i == 1:
-                    logging.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
+                    self.logger.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
                     break
                 elif self.boot_type in answer and i != 1:
-                    logging.debug(f'\033[93m{answer}\033[0m')
+                    self.logger.debug(f'\033[93m{answer}\033[0m')
                     result = self.cmd(f'{self.ssh_command} {self.set_new_config}'.format(i))
                     if 'Bootorder being set' in result:
-                        logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
+                        self.logger.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
                     break
         except Exception as e:
-            logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+            self.logger.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
 
     def __set_boot_order_idrac(self):
         self.client.login(auth="session")
@@ -64,11 +68,11 @@ class BootOrder:
         try:
             response = self.client.get('/redfish/v1/Systems/System.Embedded.1')
             system_info = response.dict
-            logging.debug("System Information: ", system_info)
+            self.logger.debug("System Information: ", system_info)
 
             response = self.client.get('/redfish/v1/Systems/System.Embedded.1/BootSources')
             boot_sources = response.dict
-            logging.debug("Boot Sources: ", boot_sources)
+            self.logger.debug("Boot Sources: ", boot_sources)
 
             body = {
                 "Boot": {
@@ -78,9 +82,9 @@ class BootOrder:
             }
             response = self.client.patch('/redfish/v1/Systems/System.Embedded.1', body=body)
             if response.status == 200:
-                logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
+                self.logger.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
         except Exception as e:
-            logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+            self.logger.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
         finally:
             self.client.logout()
 
@@ -94,11 +98,11 @@ class BootOrder:
             }
             response = self.client.post('/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset', body=body)
             if response.status in [200, 204]:
-                logging.debug('execute IPMI iDRAC hard reboot successfully')
+                self.logger.debug('execute IPMI iDRAC hard reboot successfully')
             else:
-                logging.error(f'execute IPMI iDRAC hard reboot failed, status: {response.status}')
+                self.logger.error(f'execute IPMI iDRAC hard reboot failed, status: {response.status}')
         except Exception as e:
-            logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
+            self.logger.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
         finally:
             self.client.logout()
 
@@ -109,16 +113,16 @@ class BootOrder:
             sleep(interval)
             if not func.is_alive():
                 return 0
-        logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
+        self.logger.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
         if self.stand == 'stand3' or self.stand == 'stand4':
-            logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+            self.logger.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
         elif self.stand == 'stand5':
             self.__reboot_idrac()
 
     def reset(self):
         if self.stand == 'stand3' or self.stand == 'stand4':
-            logging.debug('execute IPMI hard reboot')
-            logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
+            self.logger.debug('execute IPMI hard reboot')
+            self.logger.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
         elif self.stand == 'stand5':
             self.__reboot_idrac()
 

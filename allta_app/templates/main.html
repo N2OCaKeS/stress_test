@@ -2335,7 +2335,7 @@
             busy_status(standNumber, name);
             userList.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'stop'); return false;">Остановить</a></li>`;
           } else {
-            busy_status(standNumber, '');
+            busy_status(standNumber, 'stop');
             userList.innerHTML = `
               <li>
                 <a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'dtimonin'); return false;">dtimonin</a>

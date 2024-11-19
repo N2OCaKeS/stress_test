@@ -12,11 +12,6 @@ from src.tasks.tasks import celery
 
 class BootOrder:
 
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("Тестовое сообщение")
-    logger.info("Тестовое сообщение INFO")
-
     def __init__(self,
                  stand=None,
                  boottype='PXE'):
@@ -37,6 +32,11 @@ class BootOrder:
         self.address = self.ilo[self.stand]['ip']
         self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
         self.client = redfish.RedfishClient(base_url=self.address, username=self.login, password=self.password)
+        
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.debug("Тестовое сообщение")
+        self.logger.info("Тестовое сообщение INFO")
 
     def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")

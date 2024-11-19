@@ -50,6 +50,7 @@ class BootOrder:
         try:
             for i in range(0, self.slot_count + 1, 1):
                 answer = self.cmd(f'{self.ssh_command} {self.show_config}{i}')
+                self.logger.info(f"COMMAND = {self.ssh_command} {self.show_config}{i}")
                 self.logger.info(f"ANSWER = {answer}")
                 if self.boot_type in answer and i == 1:
                     self.logger.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')

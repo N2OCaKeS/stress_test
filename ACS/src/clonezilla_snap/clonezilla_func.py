@@ -5,6 +5,7 @@ import subprocess
 import redfish
 
 from time import time, sleep
+from fabric import Connection
 from paramiko import ssh_exception
 from src.utils.secondary_func import remote_cmd, socket_available
 from src.clonezilla_snap.conf import RESTORE_DISK_COMMAND, SAVE_DISK_COMMAND
@@ -169,3 +170,13 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
     sleep(15)
     # return result
+
+
+@celery.task(bind=True)
+def get_snapshot(password_clonezilla_server: str, snap_name: str):
+    result = Connection("10.177.103.10", user="u", connect_kwargs={"password": f"{password_clonezilla_server}"}).run("ls /home/partimag", hide=True)
+    snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
+    if not snap_name in snaps:
+        self.update_state(state='FAILURE', meta={'exc': "Снимок не создался"})
+        
+        

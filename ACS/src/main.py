@@ -3,6 +3,7 @@
 import sys
 import os
 from celery import chain
+from celery.result import AsyncResult
 from fastapi import FastAPI, Depends, HTTPException
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +14,7 @@ from src.schemas import Stand, Version, Snapshot, Repo
 from src.database import get_async_session
 from src.models import versions, stands, repos
 
-from src.clonezilla_snap.clonezilla_func import backup_image
+from src.clonezilla_snap.clonezilla_func import backup_image, get_snapshot
 from src.clonezilla_snap.router import router as clonezilla_router
 from src.add_tuning.router import router as add_tunning_router
 from src.add_tuning.router import get_info_stand
@@ -126,6 +127,15 @@ async def get_snapshots():
 async def add_snapshots():
     pass
 
+@app.get("/result_full_snap/{task_id}")
+def check_status_task(task_id):
+    task_result = AsyncResult(task_id)
+    if not task_result.ready():
+        return {"status": "Выполняется"}
+    else:
+        return {"status": "Снимок готов"}
+
+
 @app.post("/create_full_snap")
 def create_full_snap(restore_version: str, version_to_update: str, password_cs: str, stand = Depends(get_info_stand)):
     restore_version_for_cs = func_filter_version(restore_version)
@@ -133,12 +143,13 @@ def create_full_snap(restore_version: str, version_to_update: str, password_cs: 
 
     new_version_for_cs = func_filter_version(version_to_update)
     snap_name_backup = stand[1] + "-" + new_version_for_cs
-    import logging
-    logging.error(f"{version_to_update} это версия")
-    print("EEEEEEEE", version_to_update)
+
     chain_task = chain(backup_image.si(stand=list(stand), snap_name=snap_name_restore, password_cs=password_cs, restore=True),
                        astra_version_update.si(new_version=version_to_update, stand=list(stand)),
                        backup_image.si(stand=list(stand), snap_name=snap_name_backup, password_cs=password_cs, restore=False),
+                       get_snapshot.si(password_clonezilla_server=password_cs, snap_name=snap_name_backup)
                        )
     result = chain_task.apply_async()
-    return {"status": "success"}
+    status = result.status # или result.state
+    
+    return {"chain_task_id": result.id, "status": status, "state": result.state}

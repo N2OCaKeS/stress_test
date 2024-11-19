@@ -5,6 +5,7 @@ import subprocess
 import redfish
 
 from time import time, sleep
+from paramiko import ssh_exception
 from src.utils.secondary_func import remote_cmd, socket_available
 from src.clonezilla_snap.conf import RESTORE_DISK_COMMAND, SAVE_DISK_COMMAND
 from src.tasks.tasks import celery
@@ -160,8 +161,10 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     print(result)
     print(time() - start_time)
     sleep(15)
-    remote_cmd(command="sudo reboot", host=stand[3], user=stand[4], passwd=stand[5])
-    sleep(15)
-    socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
+    try:
+        remote_cmd(command="sudo reboot", host=stand[3], user=stand[4], passwd=stand[5])
+        sleep(15)
+    except ssh_exception.NoValidConnectionsError:
+        socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
     sleep(15)
     # return result

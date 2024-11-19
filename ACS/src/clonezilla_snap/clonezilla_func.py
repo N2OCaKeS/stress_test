@@ -162,11 +162,12 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     logging.info(result)
     logging.info(time() - start_time)
     sleep(15)
-    try:
-        remote_cmd(command="sudo reboot", host=stand[3], user=stand[4], passwd=stand[5])
-        sleep(15)
-    except ssh_exception.NoValidConnectionsError:
-        socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
+    # try:
+    #     remote_cmd(command="sudo reboot", host=stand[3], user=stand[4], passwd=stand[5])
+    #     sleep(15)
+    # except ssh_exception.NoValidConnectionsError:
+    #     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
+    change_boot_order.reset()
     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
     sleep(15)
     # return result

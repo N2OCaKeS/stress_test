@@ -60,6 +60,8 @@ class BootOrder:
                     if 'Bootorder being set' in result:
                         self.logger.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
                     break
+                else:
+                    self.logger.info("В условия мы даже не зашли")
         except Exception as e:
             self.logger.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
 

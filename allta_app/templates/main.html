@@ -2314,11 +2314,23 @@
 
       <!-- Status block set authors-->
       <script>
+        const initialStates = {
+          1: "{{ chmod_author_stand1 }}",
+          2: "{{ chmod_author_stand2 }}",
+          3: "{{ chmod_author_stand3 }}",
+          4: "{{ chmod_author_stand4 }}",
+          5: "{{ chmod_author_stand5 }}"
+        };
+      
+        for (let i = 1; i <= 5; i++) {
+          window[`isStopped${i}`] = initialStates[i] !== "";
+        }
+      
         function toggleStatus(standNumber, name) {
           const userList = document.getElementById(`userList${standNumber}`);
           const isStopped = window[`isStopped${standNumber}`];
           userList.innerHTML = ''; 
-
+      
           if (!isStopped) {
             busy_status(standNumber, name);
             userList.innerHTML = `<li><a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'stop'); return false;">Остановить</a></li>`;
@@ -2331,13 +2343,13 @@
               </li>
             `;
           }
-
+      
           window[`isStopped${standNumber}`] = !isStopped;
         }
-
+      
         function busy_status(standNumber, name) {
           document.getElementById('loading-spinner').style.display = 'block';
-
+      
           fetch(`/busy_status/stand${standNumber}/` + name, {
               method: 'GET'
           })
@@ -2350,11 +2362,6 @@
               document.getElementById('loading-spinner').style.display = 'none';
               console.error('Error:', error);
           });
-        }
-
-        const standCount = 5;
-        for (let i = 1; i <= standCount; i++) {
-          window[`isStopped${i}`] = document.querySelector(`{{ chmod_author_stand${i} }}`) !== "";
         }
       </script>
 

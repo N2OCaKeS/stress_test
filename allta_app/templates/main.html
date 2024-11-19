@@ -2670,6 +2670,9 @@ function updateInfo() {
               $('#collapseTwo' + standNum + ' .accordion-body .line-break').html(data['progress_stand' + standNum]);
               $('#collapseThree' + standNum + ' .accordion-body').html(data['stand' + standNum + '_log']);
               setStatus(standNum, data['status_stand' + standNum]);
+
+              $('#status-image-stand' + standNum + '-global').attr('src', data['status_gif_global_stand' + standNum]);
+              $('.col4:contains("stand' + standNum + '")').text(data['chmod_author_stand' + standNum]); 
           });
       }
   });

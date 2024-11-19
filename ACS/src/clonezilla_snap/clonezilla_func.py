@@ -14,6 +14,8 @@ class BootOrder:
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
+    logger.debug("Тестовое сообщение")
+    logger.info("Тестовое сообщение INFO")
 
     def __init__(self,
                  stand=None,
@@ -42,6 +44,7 @@ class BootOrder:
     
     def set_boot_order(self):
         if self.stand == 'stand3' or self.stand == 'stand4':
+            self.logger.info("ТЕСТОВОЕ СООБЩЕНИЕ 3")
             self.__set_boot_order_ilo()
         elif self.stand == 'stand5':
             self.__set_boot_order_idrac()

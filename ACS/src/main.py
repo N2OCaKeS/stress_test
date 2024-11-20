@@ -119,13 +119,6 @@ async def delete_repos(id_repo: int, session: AsyncSession = Depends(get_async_s
     await session.commit()
     return {"status": "success"} if result.rowcount else {"status": "not found"}
 
-# app.include_router(clonezilla_router)
-
-async def get_snapshots():
-    pass
-
-async def add_snapshots():
-    pass
 
 @app.get("/result_full_snap/{task_id}")
 def check_status_task(task_id):

@@ -167,6 +167,10 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
 
 @celery.task(bind=True)
 def get_snapshot(password_clonezilla_server: str, snap_name: str, *args, **kwargs):
+    logging.info(f"password_clonezilla_server !!! = {password_clonezilla_server}")
+    logging.info(f"SNAP NAME = {snap_name}")
+    logging.info(f"ARGS = {args}")
+    logging.info(f"KWARGS = {kwargs}")
     result = Connection("10.177.103.10", user="u", connect_kwargs={"password": f"{password_clonezilla_server}"}).run("ls /home/partimag", hide=True)
     snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
     if not snap_name in snaps:

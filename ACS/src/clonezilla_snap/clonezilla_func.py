@@ -166,7 +166,7 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
 
 
 @celery.task(bind=True)
-def get_snapshot(password_clonezilla_server: str, snap_name: str, *args, **kwargs):
+def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, **kwargs):
     logging.info(f"password_clonezilla_server !!! = {password_clonezilla_server}")
     logging.info(f"SNAP NAME = {snap_name}")
     logging.info(f"ARGS = {args}")

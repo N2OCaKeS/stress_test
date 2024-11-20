@@ -11,6 +11,9 @@ from src.utils.secondary_func import remote_cmd, socket_available, busy_status_o
 from src.clonezilla_snap.conf import RESTORE_DISK_COMMAND, SAVE_DISK_COMMAND
 from src.tasks.tasks import celery
 
+class CustomException(Exception):
+    """Custom exception for specific error handling."""
+    pass
 
 class BootOrder:
 
@@ -174,7 +177,7 @@ def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, *
     result = Connection("10.177.103.10", user="u", connect_kwargs={"password": f"{password_clonezilla_server}"}).run("ls /home/partimag", hide=True)
     snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
     if not snap_name in snaps:
-        self.update_state(state='FAILURE', meta={'exc': "Снимок не создался"})
+        self.update_state(state='FAILURE', meta={'exc_type': 'CustomException', 'exc': "Снимок не создался"})
     
     num_stand = convert_stand_name(stand_name=snap_name.split("-")[0])
     busy_status_off(stand=num_stand)

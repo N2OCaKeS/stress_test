@@ -165,8 +165,11 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     logging.info(result)
     logging.info(time() - start_time)
     sleep(15)
+    logging.info("*****СЕЙЧАС ПОЙДЕТ РЕСЕТ****")
     change_boot_order.reset()
+    logging.info("****!!!!РЕСЕТ ЗАКОНЧЕН!!!!*****")
     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
+    logging.inof("*****SOCKET AVAILABLE*******")
     sleep(15)
     # return result
 

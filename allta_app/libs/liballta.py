@@ -437,6 +437,11 @@ def busy_status_control(stand, name):
             w.write('Занят')
         with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('Иван Великанов')
+    elif name == 'ACS':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('ACS')
 
 
 

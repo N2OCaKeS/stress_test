@@ -13,7 +13,10 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import re
-from libs.liballta import ReleaseToRepo, get_kernels_from_rc, run_command_on_stand
+from libs.liballta import (ReleaseToRepo, 
+                           get_kernels_from_rc, 
+                           run_command_on_stand,
+                           busy_status_control)
 from libs.zefir import ZefirResultTable, ZefirTestRun
 from allta_image_conf import JIRA_URL, LowServer_group, MiddleServer_group
 from time import sleep
@@ -228,6 +231,7 @@ def acs_create_snapshot(version: str, stand):
     res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
     data_repos = json.loads(res_all_repos)
     needed_repos = data_repos.get(version)
+    busy_status_control(stand, 'ACS')
 
     if needed_repos:
         repos_to_one_str = "\n".join(needed_repos)

@@ -4,12 +4,14 @@ import logging
 import subprocess
 import redfish
 
+from celery import states
 from time import time, sleep
 from fabric import Connection
 from paramiko import ssh_exception
 from src.utils.secondary_func import remote_cmd, socket_available, busy_status_off, convert_stand_name
 from src.clonezilla_snap.conf import RESTORE_DISK_COMMAND, SAVE_DISK_COMMAND
 from src.tasks.tasks import celery
+
 
 class CustomException(Exception):
     """Custom exception for specific error handling."""
@@ -178,7 +180,7 @@ def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, *
     snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
     if not snap_name in snaps:
         logging.info("ЗАШЛИ В УСЛОВИЕ, ЗНАЧИТ НЕ НАЙДЕН СНИМОК")
-        self.update_state(state='FAILURE', meta={'exc_type': 'CustomException', 'exc': "Снимок не создался"})
+        self.update_state(state=states.FAILURE, meta={'exc_type': 'CustomException', 'exc': "Снимок не создался"})
     
     num_stand = convert_stand_name(stand_name=snap_name.split("-")[0])
     busy_status_off(stand=num_stand)

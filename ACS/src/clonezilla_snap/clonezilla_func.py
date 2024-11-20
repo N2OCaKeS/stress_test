@@ -181,7 +181,7 @@ def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, *
     snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
     if not snap_name in snaps:
         logging.info("ЗАШЛИ В УСЛОВИЕ, ЗНАЧИТ НЕ НАЙДЕН СНИМОК")
-        self.update_state(state=states.FAILURE, meta={'exc_type': 'CustomException', 'exc': "Снимок не создался"})
+        self.update_state(state='SOME-CUSTOM-STATE', meta={'custom': '...'})
         raise Ignore()
     
     num_stand = convert_stand_name(stand_name=snap_name.split("-")[0])

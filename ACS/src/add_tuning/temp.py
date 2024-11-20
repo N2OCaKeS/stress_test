@@ -110,4 +110,3 @@ def astra_version_update(new_version: str, stand, *args, **kwargs):
     time.sleep(15)
     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5])
     time.sleep(15)
-

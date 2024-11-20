@@ -7,7 +7,7 @@ import redfish
 from time import time, sleep
 from fabric import Connection
 from paramiko import ssh_exception
-from src.utils.secondary_func import remote_cmd, socket_available
+from src.utils.secondary_func import remote_cmd, socket_available, busy_status_off, convert_stand_name
 from src.clonezilla_snap.conf import RESTORE_DISK_COMMAND, SAVE_DISK_COMMAND
 from src.tasks.tasks import celery
 
@@ -139,12 +139,9 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     """
         TODO Дописать преобразование
     """
-    if stand[1] == "LowServer": 
-        num_stand = "stand3"
-    elif stand[1] == "MiddleServer":
-        num_stand = "stand4"
-    elif stand[1] == "HighServer":
-        num_stand = "stand5"
+
+    num_stand = convert_stand_name(stand_name=stand[1])
+    
     change_boot_order = BootOrder(stand=num_stand)
     change_boot_order.set_boot_order()
 
@@ -169,10 +166,14 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
 
 
 @celery.task(bind=True)
-def get_snapshot(password_clonezilla_server: str, snap_name: str):
+def get_snapshot(password_clonezilla_server: str, snap_name: str, *args, **kwargs):
     result = Connection("10.177.103.10", user="u", connect_kwargs={"password": f"{password_clonezilla_server}"}).run("ls /home/partimag", hide=True)
     snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
     if not snap_name in snaps:
         self.update_state(state='FAILURE', meta={'exc': "Снимок не создался"})
+    
+    num_stand = convert_stand_name(stand_name=snap_name.split("-")[0])
+    busy_status_off(stand=num_stand)
+    
         
         

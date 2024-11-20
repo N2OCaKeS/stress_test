@@ -1,6 +1,7 @@
 import paramiko
 import socket
 import logging
+import requests
 from time import sleep
 from paramiko import ssh_exception
 
@@ -119,6 +120,7 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_
             sleep(30)
             continue
 
+
 def func_filter_version(version: str):
     temp = version.split(".")
     if len(temp) > 3 and "UU" not in temp:
@@ -131,3 +133,17 @@ def func_filter_version(version: str):
         cl_version = version
         # print(cl_version)
     return cl_version.replace(".", "")
+
+
+def convert_stand_name(stand_name):
+    if stand_name == "LowServer": 
+        num_stand = "stand3"
+    elif stand_name == "MiddleServer":
+        num_stand = "stand4"
+    elif stand_name == "HighServer":
+        num_stand = "stand5"
+    return num_stand
+
+
+def busy_status_off(stand):
+    res = requests.get(f"http://allta.devos.astralinux.ru/rest/api/busy_status_off/{stand}")

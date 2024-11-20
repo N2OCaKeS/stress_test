@@ -5,6 +5,7 @@ import subprocess
 import redfish
 
 from celery import states
+from celery.exceptions import Ignore
 from time import time, sleep
 from fabric import Connection
 from paramiko import ssh_exception
@@ -181,6 +182,7 @@ def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, *
     if not snap_name in snaps:
         logging.info("ЗАШЛИ В УСЛОВИЕ, ЗНАЧИТ НЕ НАЙДЕН СНИМОК")
         self.update_state(state=states.FAILURE, meta={'exc_type': 'CustomException', 'exc': "Снимок не создался"})
+        raise Ignore()
     
     num_stand = convert_stand_name(stand_name=snap_name.split("-")[0])
     busy_status_off(stand=num_stand)

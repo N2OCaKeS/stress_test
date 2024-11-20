@@ -432,7 +432,7 @@ def run_command_on_stand(num, http=True):
 
 
 
-def busy_status_control(stand, name):
+def busy_status_control(stand, name, version=None):
     if name == 'stop':
         with open(f'conf/work_status_{stand}.conf', 'w') as w:
             w.write('Остановлен')
@@ -456,7 +456,7 @@ def busy_status_control(stand, name):
         with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('ACS')
         with open(f'conf/col3_body_{stand}.conf', 'w') as w:
-            w.write('Create clonezilla snapshot')
+            w.write(f'Create clonezilla snapshot {version}')
     elif name == 'TestRunner':
         with open(f'conf/work_status_{stand}.conf', 'w') as w:
             w.write('Занят')

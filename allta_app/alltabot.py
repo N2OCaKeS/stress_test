@@ -231,7 +231,7 @@ def acs_create_snapshot(version: str, stand):
     res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
     data_repos = json.loads(res_all_repos)
     needed_repos = data_repos.get(version)
-    busy_status_control(stand, 'ACS')
+    busy_status_control(stand, 'ACS', version=version)
 
     if needed_repos:
         repos_to_one_str = "\n".join(needed_repos)

@@ -14,7 +14,7 @@ from src.schemas import Stand, Version, Snapshot, Repo
 from src.database import get_async_session
 from src.models import versions, stands, repos
 
-from src.clonezilla_snap.clonezilla_func import backup_image, get_snapshot
+from src.clonezilla_snap.clonezilla_func import backup_image, get_snapshot, debug_task
 from src.clonezilla_snap.router import router as clonezilla_router
 from src.add_tuning.router import router as add_tunning_router
 from src.add_tuning.router import get_info_stand
@@ -140,10 +140,24 @@ def create_full_snap(restore_version: str, version_to_update: str, password_cs: 
     chain_task = chain(backup_image.si(stand=list(stand), snap_name=snap_name_restore, password_cs=password_cs, restore=True),
                        astra_version_update.si(new_version=version_to_update, stand=list(stand)),
                        backup_image.si(stand=list(stand), snap_name=snap_name_backup, password_cs=password_cs, restore=False),
-                       #get_snapshot.si(password_clonezilla_server=password_cs, snap_name=snap_name_backup)
+                       get_snapshot.si(password_clonezilla_server=password_cs, snap_name=snap_name_backup)
                        )
     result = chain_task.apply_async()
     # status = result.status # или result.state
     
     # return {"chain_task_id": result.id, "status": result.status, "state": result.state}
     return {"status": "success"}
+
+
+@app.get("/check_task/id")
+def check_task(task_id: str):
+    task_result = AsyncResult(task_id)
+    return {"res": task_result.state}
+
+@app.get("/test_debug_task")
+def test_debug_task():
+    # res = debug_task.apply_async()
+    chain_task = chain(debug_task.si(), debug_task.si())
+    result = chain_task.apply_async()
+    return {"id": result.id, "state": result.state, "status": result.status}
+    

@@ -1,3 +1,10 @@
+allta_app - v2.31.2
+* Add finally block in paramiko
+  socket close
+
+
+  
+
 allta_app - v2.31.1
 * Add ACS busy status
   Add API busy status off

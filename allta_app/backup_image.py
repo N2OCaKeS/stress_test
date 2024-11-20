@@ -336,14 +336,16 @@ class GrubCommand:
 
 
     def ex_command(self, grubcommand):
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(hostname=self.hostname, username=self.username, password=self.password, port=self.port)
-        stdin, stdout, stderr = client.exec_command(grubcommand)
-        data_out = stdout.read().decode('utf-8') 
-        data_err = stderr.read().decode('utf-8')
-        logging.error(data_err)
-        client.close()
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(hostname=self.hostname, username=self.username, password=self.password, port=self.port)
+            stdin, stdout, stderr = client.exec_command(grubcommand)
+            data_out = stdout.read().decode('utf-8') 
+            data_err = stderr.read().decode('utf-8')
+            logging.error(data_err)
+        finally:
+            client.close()
         return data_out
 
 
@@ -408,13 +410,15 @@ def jira_send_status(FTI, TCYC, TCAS, TCV, status):
 
 #@pysnooper.snoop()
 def ssh_command(command, stand_ip=stand_ip):
-    client = paramiko.SSHClient()
-    
-    client.set_missing_host_key_policy(paramiko.WarningPolicy())
-    client.connect(stand_ip, port=port, username=user, password='1')
-    stdin, stdout, stderr = client.exec_command(command)
-    response = stdout.read().decode().strip()
-    client.close()
+    try:
+        client = paramiko.SSHClient()
+        
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
+        client.connect(stand_ip, port=port, username=user, password='1')
+        stdin, stdout, stderr = client.exec_command(command)
+        response = stdout.read().decode().strip()
+    finally:
+        client.close()
     return response
 
 #@pysnooper.snoop()
@@ -459,6 +463,9 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3):
             logging.error('Error reading SSH protocol banner')
             sleep(30)
             continue
+        finally:
+            sock.close()
+
 
 def check_running_system():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -480,6 +487,8 @@ def check_running_system():
         pass
     except ssh_exception.NoValidConnectionsError:
         pass
+    finally:
+        sock.close()
 
 # def output_remote_load(stand):
 #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -504,7 +513,10 @@ def check_running_system():
 #         pass
 def output_remote_load(stand):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    result = sock.connect_ex((stands_ip[stand], 22))
+    try:
+        result = sock.connect_ex((stands_ip[stand], 22))
+    finally:
+        sock.close()
     
     if result != 0:
         output_cpu = '-'
@@ -548,14 +560,16 @@ def output_remote_load(stand):
 #@pysnooper.snoop()
 def grub_default(kernel, host):
     def client_command(command):
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(hostname=host, username=user, password=password, port=port)
-        stdin, stdout, stderr = client.exec_command(command)
-        data_out = stdout.read().decode('utf-8') 
-        data_err = stderr.read().decode('utf-8')
-        logging.error(data_err)
-        client.close()
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(hostname=host, username=user, password=password, port=port)
+            stdin, stdout, stderr = client.exec_command(command)
+            data_out = stdout.read().decode('utf-8') 
+            data_err = stderr.read().decode('utf-8')
+            logging.error(data_err)
+        finally:
+            client.close()
         return data_out
 
     client_command(f"dpkg -s linux-image-{kernel} &> /dev/null || sudo apt-get install linux-image-{kernel} -y")
@@ -570,28 +584,32 @@ def grub_default(kernel, host):
 
 #@pysnooper.snoop()
 def create_remote_file(local_file_path, remote_file_path):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname=stand_ip, username=user, password=password, port=port)
-    ftp = client.open_sftp()
-    files = ftp.put(local_file_path, remote_file_path)
-    ftp.close()
-    client.close()
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=stand_ip, username=user, password=password, port=port)
+        ftp = client.open_sftp()
+        files = ftp.put(local_file_path, remote_file_path)
+    finally:
+        ftp.close()
+        client.close()
 
 #@pysnooper.snoop()
 def send_remote_command(command):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
-    ssh.get_transport().set_keepalive(60)
-    chanel = ssh.get_transport().open_session()
-    chanel.get_pty()
-    chanel.exec_command(command)
-    output = chanel.makefile().read().decode('utf-8')
-    err_output = chanel.makefile_stderr().read().decode('utf-8')
-    logging.debug(output)
-    logging.error(err_output)
-    ssh.close()
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname=stand_ip, username=user, password=password, port=port)
+        ssh.get_transport().set_keepalive(60)
+        chanel = ssh.get_transport().open_session()
+        chanel.get_pty()
+        chanel.exec_command(command)
+        output = chanel.makefile().read().decode('utf-8')
+        err_output = chanel.makefile_stderr().read().decode('utf-8')
+        logging.debug(output)
+        logging.error(err_output)
+    finally:
+        ssh.close()
 
 
 

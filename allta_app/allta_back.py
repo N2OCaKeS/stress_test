@@ -222,7 +222,7 @@ else:
 try:          
     for i in range(0, len(dates_list)):  
         start_time = datetime.datetime.now().replace(microsecond=0)  
-        busy_status_control(stand, 'TestRunner')
+        busy_status_control(__stand, 'TestRunner')
         save_all_output('---------------\n')
         print('-----' * 20)
         save_all_output(f'Итерация № {i + 1}\n')
@@ -282,7 +282,7 @@ try:
                             testlist = f'-aud useraud'
                         save_all_output('Выполняется...\n')
                         print('Выполняется...')
-                        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+                        with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
                             w.write(f'{tests[dates_list[i][1]]}')
                         #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                         if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
@@ -404,7 +404,7 @@ try:
                         testlist = f'-aud useraud'
                     save_all_output('Выполняется...\n')
                     print('Выполняется...')
-                    with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+                    with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
                             w.write(f'{tests[dates_list[i][1]]}')
                     
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
@@ -495,7 +495,7 @@ try:
     bot_results(bot_head)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
     conf.send_comment()
-    busy_status_control(stand, 'stop')
+    busy_status_control(__stand, 'stop')
 except Exception as e:
     print(e)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
@@ -503,5 +503,5 @@ except Exception as e:
     bot_results('Прогон завершен исключением')
     bot_results(bot_head)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
-    busy_status_control(stand, 'stop')
+    busy_status_control(__stand, 'stop')
 

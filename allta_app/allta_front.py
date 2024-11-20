@@ -259,7 +259,7 @@ def busy_status(stand, name):
 
 
 @app.route('/rest/api/busy_status_off/<stand>')
-def busy_status(stand):
+def busy_status_stop(stand):
     """
     установить статус в состояние "Остановить"
     """

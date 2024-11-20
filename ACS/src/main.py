@@ -151,7 +151,8 @@ def create_full_snap(restore_version: str, version_to_update: str, password_cs: 
 
 @app.get("/check_task/id")
 def check_task(task_id: str):
-    task_result = AsyncResult(task_id)
+    from src.tasks.tasks import celery
+    task_result = celery.AsyncResult(task_id)
     return {"res": task_result.state}
 
 @app.get("/test_debug_task")

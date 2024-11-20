@@ -169,7 +169,7 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     change_boot_order.reset()
     logging.info("****!!!!РЕСЕТ ЗАКОНЧЕН!!!!*****")
     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
-    logging.inof("*****SOCKET AVAILABLE*******")
+    logging.info("*****SOCKET AVAILABLE*******")
     sleep(15)
     # return result
 
@@ -194,17 +194,14 @@ def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, *
 def debug_task(self):
     a = 5
     b = 0
-    sleep(30)
-    try:
-        c = a / b
-    except ZeroDivisionError as ex:
+    
+    if a > b:
         self.update_state(
-            state=states.FAILURE,
-            meta={
-                'exc_type': type(ex).__name__,
-                'exc_message': "Ошибка",
-                'custom': '...'
-            })
+            state="PIZDEC",
+            meta={'pizdec vse propalo': "pizdec"})
+    sleep(30)
+    raise Ignore()
+        
         
         
         

@@ -144,9 +144,9 @@ def create_full_snap(restore_version: str, version_to_update: str, password_cs: 
     new_version_for_cs = func_filter_version(version_to_update)
     snap_name_backup = stand[1] + "-" + new_version_for_cs
 
-    chain_task = chain(backup_image.si(stand=list(stand), snap_name=snap_name_restore, password_cs=password_cs, restore=True),
-                       astra_version_update.si(new_version=version_to_update, stand=list(stand)),
-                       backup_image.si(stand=list(stand), snap_name=snap_name_backup, password_cs=password_cs, restore=False),
+    chain_task = chain(#backup_image.si(stand=list(stand), snap_name=snap_name_restore, password_cs=password_cs, restore=True),
+                       #astra_version_update.si(new_version=version_to_update, stand=list(stand)),
+                       #backup_image.si(stand=list(stand), snap_name=snap_name_backup, password_cs=password_cs, restore=False),
                        get_snapshot.si(password_clonezilla_server=password_cs, snap_name=snap_name_backup)
                        )
     result = chain_task.apply_async()

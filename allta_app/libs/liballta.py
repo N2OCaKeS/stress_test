@@ -178,6 +178,7 @@ def info_collector(page, ajax=None):
     status_gif_logs = {}
     status_gif_global_logs = {}
     chmod_author = {}
+    col3_body = {}
     gif_mapping = {'Остановлен': red_gif, 
                    'Запущен': green_gif, 
                    'Готово': done_gif,
@@ -238,7 +239,14 @@ def info_collector(page, ajax=None):
                 chmod_author[f'chmod_author_{stand}'] = author
         except FileNotFoundError:
             chmod_author[f'chmod_author_{stand}'] = ''
-    
+
+    for stand in stands_dict[page]:
+        try:
+            with open(f'conf/col3_body_{stand}.conf', 'r') as r:
+                body = r.read()
+                col3_body[f'col3_body_{stand}'] = body
+        except FileNotFoundError:
+            col3_body[f'col3_body_{stand}'] = ''
 
     if ajax == True:
         return jsonify({**status_logs,
@@ -247,7 +255,8 @@ def info_collector(page, ajax=None):
                         **status_gif_global_logs,
                         **sett_logs,
                         **progress_logs,
-                        **chmod_author})    
+                        **chmod_author,
+                        **col3_body})    
 
     if page == 'mobile':
         test_list, releas_list, kernel_list = create_args('main')
@@ -313,7 +322,8 @@ def info_collector(page, ajax=None):
                                 **status_gif_global_logs,
                                 **sett_logs,
                                 **progress_logs,
-                                **chmod_author)
+                                **chmod_author,
+                                **col3_body)
     else:
         return render_template(f'{page}.html',
                                 allta_version=allta_version(), 
@@ -333,7 +343,8 @@ def info_collector(page, ajax=None):
                                 **status_gif_global_logs,
                                 **sett_logs,
                                 **progress_logs,
-                                **chmod_author,                                                        
+                                **chmod_author,
+                                **col3_body,                                                        
                                 main_url=main_url,
                                 mobile_url=mobile_url,
                                 brest_url=brest_url,
@@ -427,6 +438,8 @@ def busy_status_control(stand, name):
             w.write('Остановлен')
         with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('')
+        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+            w.write('')
     elif name == 'dtimonin':
         with open(f'conf/work_status_{stand}.conf', 'w') as w:
             w.write('Занят')
@@ -442,7 +455,14 @@ def busy_status_control(stand, name):
             w.write('Занят')
         with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('ACS')
-
+        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+            w.write('Create clonezilla snapshot')
+    elif name == 'TestRunner':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('TestRunner')
+        
 
 
 def create_args(page):

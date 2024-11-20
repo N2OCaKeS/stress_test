@@ -744,7 +744,7 @@
                 stand1-201
               </td>
               <td class="col3">
-                
+                {{ col3_body_stand1 }}
               </td>
               <td class="col4">
                 {{ chmod_author_stand1 }}
@@ -1086,7 +1086,7 @@
                   stand2-202
                 </td>
                 <td class="col3">
-                  
+                  {{ col3_body_stand2 }}
                 </td>
                 <td class="col4">
                   {{ chmod_author_stand2 }}
@@ -1414,7 +1414,7 @@
                   stand3-59-204
                 </td>
                 <td class="col3">
-                  
+                  {{ col3_body_stand3 }}
                 </td>
                 <td class="col4">
                   {{ chmod_author_stand3 }}
@@ -1773,7 +1773,7 @@
                   stand4-58-203
                 </td>
                 <td class="col3">
-                  
+                  {{ col3_body_stand4 }}
                 </td>
                 <td class="col4">
                   {{ chmod_author_stand4 }}
@@ -2188,7 +2188,7 @@
                   stand5-91-205
                 </td>
                 <td class="col3">
-                  
+                  {{ col3_body_stand5 }}
                 </td>
                 <td class="col4">
                   {{ chmod_author_stand5 }}
@@ -2650,6 +2650,9 @@ function setStatus(standNum, status) {
     }
 }
 
+
+const prevGlobalStatusGifs = [null, null, null, null, null]; 
+
 function updateInfo() {
   $.ajax({
       url: '/update_page_info_main',
@@ -2670,16 +2673,19 @@ function updateInfo() {
               $('#collapseTwo' + standNum + ' .accordion-body .line-break').html(data['progress_stand' + standNum]);
               $('#collapseThree' + standNum + ' .accordion-body').html(data['stand' + standNum + '_log']);
               setStatus(standNum, data['status_stand' + standNum]);
-
-              // console.log("Data for stand " + standNum, data);
         
-              const col4Element = $('.accordion-table .col4').eq(standNum - 1);
-              // console.log("col4 Element found: ", col4Element);
-              col4Element.text(data['chmod_author_stand' + standNum]);
+              const newGlobalGif = data['status_gif_global_stand' + standNum];
+              if (prevGlobalStatusGifs[standNum - 1] !== newGlobalGif) {
+                const col6Element = $('.accordion-table .col6 img').eq(standNum - 1);
+                col6Element.attr('src', newGlobalGif);
+                prevGlobalStatusGifs[standNum - 1] = newGlobalGif; 
+              }
 
-              const col6Element = $('.accordion-table .col6 img').eq(standNum - 1);
-              // console.log("col6 Image found: ", col6Element);
-              col6Element.attr('src', data['status_gif_global_stand' + standNum]);
+              const col3Element = $('.accordion-table .col3').eq(standNum - 1);
+              col3Element.text(data['col3_body_stand' + standNum]);
+
+              const col4Element = $('.accordion-table .col4').eq(standNum - 1);
+              col4Element.text(data['chmod_author_stand' + standNum]);
             });
           },
           error: function(jqXHR, textStatus, errorThrown) {

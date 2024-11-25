@@ -14,7 +14,7 @@ sudo apt-get install sshpass -y
 
 #virtualbox
 wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/vbox7
-#wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
+wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
 wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1n-0+deb10u6_amd64.deb
 sudo apt-get install plymouth-themes -y
 sudo apt install gcc make perl rsync -y
@@ -25,19 +25,35 @@ sudo apt install libsdl1.2debian -y
 sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb 
 sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
 sudo apt install psmisc -y
-sudo dpkg -i virtualbox-7.0_7.0.20*.deb
-if [[ $? != 0 ]]; then
-    sudo apt install -fy
-    sudo dpkg -i virtualbox-7.0_7.0.20*.deb
-fi
 sudo apt install pkexec -y
 sudo apt install policykit-1 -y
-sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-7.0.20*.vbox-extpack
+
+
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+  sudo dpkg -i virtualbox-7.0_7.0.20*.deb
+  if [[ $? != 0 ]]; then
+    sudo apt install -fy
+    sudo dpkg -i virtualbox-7.0_7.0.20*.deb
+  fi
+  sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-7.0.20*.vbox-extpack
+elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
+  sudo dpkg -i virtualbox-6.1*.deb
+  if [[ $? != 0 ]]; then
+    sudo apt install -fy
+    sudo dpkg -i virtualbox-6.1*.deb
+  fi
+  sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-6.1*.vbox-extpack
+fi
+
+
 
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-#sudo dpkg -i vagrant_2.2.19_x86_64.deb
-sudo dpkg -i vagrant_2.4.1-1_x86_64.deb
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+  sudo dpkg -i vagrant_2.4.1-1_x86_64.deb
+elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
+  sudo dpkg -i vagrant_2.2.19_x86_64.deb
+fi
 
 
 #source "provision/env_provision.sh"

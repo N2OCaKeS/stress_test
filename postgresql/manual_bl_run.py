@@ -1,7 +1,7 @@
 import argparse
 import json
 import requests
-from balance.bl_lib import VBox, LVirt, bl
+from balance.bl_lib import VBox, LVirt, bl, system
 from psb_conf import REPORT_PATH
 
 
@@ -36,7 +36,7 @@ with open('box-config.json', 'r') as r:
 
 
 box_name, box_url = bl.box_wrapper(args.SET_BOX, dates)
-kernel = '6.1.90-1-generic'
+kernel = system.check_output_command('uname -r')
 vms = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 ansible_commands = [
     'cd balance && ansible-playbook bl_contrprimer.yml -vvv > bl_contrprimer.log',
@@ -84,6 +84,6 @@ vm_dates = {
 provider.prepare()
 provider.build(box_name=box_name, box_url=box_url, kernel=kernel, rc=args.SET_BOX, vms=vms)
 provider.check(vm_dates=vm_dates, vms=vms)
-#provider.execute(ansible_commands=ansible_commands, vm_dates=vm_dates, vms=vms)
+provider.execute(ansible_commands=ansible_commands, vm_dates=vm_dates, vms=vms)
 
 

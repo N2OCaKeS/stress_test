@@ -127,17 +127,6 @@ class VBox(VirtualMashines):
         def _check_vm_list():
             return system.check_output_command('vboxmanage list vms')
         
-
-        if rc.startswith('1.7'):
-            pg_version = 11
-        elif rc.startswith('1.8'):
-            pg_version = 15
-
-        with open('balance/vars.yml', 'r') as vars_file:
-            vars_template = Template(vars_file.read())
-            new_vars = vars_template.substitute(pg_version=pg_version,
-                                                lvirt='false')
-            print(new_vars)
             
         with open('balance/vars.yml', 'w') as vars_file:
             vars_file.write(new_vars)
@@ -160,7 +149,7 @@ class VBox(VirtualMashines):
         with open('balance/vars.yml', 'r') as vars_file:
             vars_template = Template(vars_file.read())
             new_vars = vars_template.substitute(pg_version=pg_version,
-                                                lvirt='yes')
+                                                lvirt='true')
             print(new_vars)
 
         with open('balance/inventories/middle_hosts.yml', 'r') as file:

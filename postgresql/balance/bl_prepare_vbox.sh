@@ -139,15 +139,28 @@ if [ ! -d ~/.vagrant.d/ ]; then
 fi
 
 # check 'vbguest' (Vbox Guests) plugin, install
-for plugin in vagrant-vbguest; do
-  if test ! "$(vagrant plugin list | grep $plugin)"; then
-    wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
-    mkdir -p ~/.vagrant.d/gems/3.1.4
-    tar -C "$HOME/.vagrant.d/gems/3.1.4" -xvf /tmp/gems.tar.gz
-    wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json
-    [ $? != 0 ] && exit 1
-  fi
-done
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+  for plugin in vagrant-vbguest; do
+    if test ! "$(vagrant plugin list | grep $plugin)"; then
+      wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
+      mkdir -p ~/.vagrant.d/gems/3.1.4
+      tar -C "$HOME/.vagrant.d/gems/3.1.4" -xvf /tmp/gems.tar.gz
+      wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json
+      [ $? != 0 ] && exit 1
+    fi
+  done
+elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
+  for plugin in vagrant-vbguest; do
+    if test ! "$(vagrant plugin list | grep $plugin)"; then
+      wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
+      mkdir -p ~/.vagrant.d/gems/2.7.4
+      tar -C "$HOME/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
+      wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json
+      [ $? != 0 ] && exit 1
+    fi
+  done
+fi
+
 
 # important group for vbox environment
 if test ! "$(cat /etc/group | grep vboxusers)"; then

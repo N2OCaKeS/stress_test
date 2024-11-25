@@ -126,10 +126,7 @@ class VBox(VirtualMashines):
 
         def _check_vm_list():
             return system.check_output_command('vboxmanage list vms')
-        
-            
-        with open('balance/vars.yml', 'w') as vars_file:
-            vars_file.write(new_vars)
+                
 
         if os.path.isfile('/home/iface/iface'):
             with open('/home/iface/iface', 'r') as r:
@@ -151,6 +148,9 @@ class VBox(VirtualMashines):
             new_vars = vars_template.substitute(pg_version=pg_version,
                                                 lvirt='true')
             print(new_vars)
+
+        with open('balance/vars.yml', 'w') as vars_file:
+            vars_file.write(new_vars)
 
         with open('balance/inventories/middle_hosts.yml', 'r') as file:
             hosts_template = Template(file.read())

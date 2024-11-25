@@ -1,3 +1,10 @@
+allta_app - v2.31.7
+* Add known bugs API
+* Fix status errs in testrunner
+* Del balane test from middle group
+
+
+
 allta_app - v2.31.6
 * Add kernel in col3
 

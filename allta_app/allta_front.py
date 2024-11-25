@@ -35,7 +35,7 @@ from libs.liballta import (index_page,
                           psyc,
                           stands_ip,
                           user_app)
-from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL
+from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs
 from backup.backuplibs import Backup, check_command
 import requests
 
@@ -358,6 +358,11 @@ def get_ping1_pic():
 @app.route('/rest/api/get-ping2-pic', methods=['GET'])
 def get_ping2_pic():
     return send_from_directory('static', 'ping2.jpg')
+
+
+@app.route('/rest/api/known-bugs', methods=['GET'])
+def get_known_bugs():
+    return jsonify(known_bugs), 200
 
 
 # if __name__ == '__main__':

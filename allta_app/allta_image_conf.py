@@ -277,8 +277,9 @@ testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-s
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
                    'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
-MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'psql balance', 'FreeIPA auth',
-                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm']
+MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'FreeIPA auth',
+                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm'] #'psql balance',
+
 
 #testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
 #testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
@@ -380,3 +381,31 @@ def cz_comm():
 def allta_version():
     with open("ChangeLog", "r") as r:
         return r.readline().split(" ")[-1]
+    
+
+
+#################################################################################################################################################
+#Найденные баги
+#################################################################################################################################################
+known_bugs = {
+    "PostgreSQL": {
+        "BT-51261": "https://jira.astralinux.ru/browse/BT-51261",
+        "BT-37797": "https://jira.astralinux.ru/browse/BT-37797",
+        "BT-40316": "https://jira.astralinux.ru/browse/BT-40316",
+        "BT-35869": "https://jira.astralinux.ru/browse/BT-35869",
+        "BT-48408": "https://jira.astralinux.ru/browse/BT-48408",
+        "BT-61532": "https://jira.astralinux.ru/browse/BT-61532"
+    },
+    "Файловые системы": {
+        "BT-38366": "https://jira.astralinux.ru/browse/BT-38366",
+        "BT-54712": "https://jira.astralinux.ru/browse/BT-54712"
+    },
+    "Parsec": {
+        "BT-61530": "https://jira.astralinux.ru/browse/BT-61530",
+        "BT-52579": "https://jira.astralinux.ru/browse/BT-52579"
+    },
+    "Apache": {
+        "BT-64331": "https://jira.astralinux.ru/browse/BT-64331"
+    }
+}
+

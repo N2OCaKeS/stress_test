@@ -358,6 +358,45 @@ def info_collector(page, ajax=None):
 
 
 
+def busy_status_control(stand, name, version=None):
+    if name == 'stop':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Остановлен')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('')
+        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+            w.write('')
+    elif name == 'dtimonin':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('Дмитрий Тимонин')
+    elif name == 'ivelikanov':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('Иван Великанов')
+    elif name == 'ACS':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('ACS')
+        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+            w.write(f'Create clonezilla snapshot {version}')
+    elif name == 'TestRunner':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('TestRunner')
+    elif name == 'testrun done':
+        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+            w.write('Прогон завершен')
+    elif name == 'testrun fail':
+        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+            w.write('Прогон завершен исключением')
+
+
+
 def run_command_on_stand(num, http=True):
     process_manager = globals()[f'process_manager{num}']
     process_list = globals()[f'process_list{num}']
@@ -406,8 +445,7 @@ def run_command_on_stand(num, http=True):
             w.write('')
 
     elif command == 'ok':
-        with open(f'conf/work_status_stand{num}.conf', 'w') as w:
-            w.write('Остановлен')
+        busy_status_control(f'stand{num}', 'stop')
 
     elif command == 'stop':
         ppid = check_output_command(f"ps -fad -N | grep stand{num} | awk {{'print $2'}}")
@@ -424,46 +462,12 @@ def run_command_on_stand(num, http=True):
 
         if path.isfile(f'conf/{prefix}_kernel_args.conf'):
             remove(f'conf/{prefix}_kernel_args.conf')
-        with open(f'conf/work_status_stand{num}.conf', 'w') as w:
-            w.write('Остановлен')
+        busy_status_control(f'stand{num}', 'stop')
 
     if http:
         return index_page(prefix)
 
-
-
-def busy_status_control(stand, name, version=None):
-    if name == 'stop':
-        with open(f'conf/work_status_{stand}.conf', 'w') as w:
-            w.write('Остановлен')
-        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
-            w.write('')
-        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
-            w.write('')
-    elif name == 'dtimonin':
-        with open(f'conf/work_status_{stand}.conf', 'w') as w:
-            w.write('Занят')
-        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
-            w.write('Дмитрий Тимонин')
-    elif name == 'ivelikanov':
-        with open(f'conf/work_status_{stand}.conf', 'w') as w:
-            w.write('Занят')
-        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
-            w.write('Иван Великанов')
-    elif name == 'ACS':
-        with open(f'conf/work_status_{stand}.conf', 'w') as w:
-            w.write('Занят')
-        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
-            w.write('ACS')
-        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
-            w.write(f'Create clonezilla snapshot {version}')
-    elif name == 'TestRunner':
-        with open(f'conf/work_status_{stand}.conf', 'w') as w:
-            w.write('Занят')
-        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
-            w.write('TestRunner')
-        
-
+      
 
 def create_args(page):
     with open(f'conf/{page}_tests_args.conf', 'r') as r:

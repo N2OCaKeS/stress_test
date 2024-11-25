@@ -495,13 +495,13 @@ try:
     bot_results(bot_head)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
     conf.send_comment()
-    busy_status_control(__stand, 'stop')
+    busy_status_control(__stand, 'testrun done')
 except Exception as e:
     print(e)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
-        wr.write('Остановлен')
+        wr.write('Готово')
     bot_results('Прогон завершен исключением')
     bot_results(bot_head)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
-    busy_status_control(__stand, 'stop')
+    busy_status_control(__stand, 'testrun fail')
 

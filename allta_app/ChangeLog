@@ -1,3 +1,10 @@
+allta_app - v2.31.8
+* Fix err with IPMI reset in
+  FreeIPA test
+* Add preset to new test times
+  html
+
+
 allta_app - v2.31.7
 * Add known bugs API
 * Fix status errs in testrunner

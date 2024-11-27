@@ -12,3 +12,4 @@ prettytable
 psycopg2-binary
 paramiko
 setuptools
+ansible==9.4.0

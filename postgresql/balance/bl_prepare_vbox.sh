@@ -6,7 +6,7 @@
 sudo mkdir -p /home/iface
 
 #ansible
-sudo apt-get install ansible -y
+#sudo apt-get install ansible -y
 sudo apt-get install sshpass -y
 
 #python

@@ -61,7 +61,7 @@
             "Total time": "0:00:00"
         },
         "stand4": {
-            "FIO": "5:41:20",
+            "FIO": "4:41:20",
             "FreeIPA auth": "1:49:30",
             "OCFS2": "0:58:51",
             "postgresql": "2:58:51",

@@ -3,7 +3,7 @@
 import subprocess
 from allta_image_conf import branches, cycle_tree_index, tests, parent_page_list, JIRA_URL
 from libs.libconfluence import SendCommentToConfluence
-from libs.liballta import busy_status_control
+from libs.liballta import busy_status_control, TestTimeWatchdog
 import requests
 import json
 import argparse
@@ -56,6 +56,16 @@ total_start_time = datetime.datetime.now().replace(microsecond=0)
 conf = SendCommentToConfluence(rc_name=__pt_version,
                                username=__username,
                                token=__conf_token)
+
+
+if str(__pt_version).startswith('1.7'):
+     update_version = '1.7'
+elif str(__pt_version).startswith('1.8'):
+     update_version = '1.8'
+else: update_version = ''
+
+tt_watchdog = TestTimeWatchdog(upd_version=update_version,
+                               stand=str(__stand))
 
 check_len_version = __pt_version.split('.')
 if len(check_len_version) == 4 and check_len_version[3] != 'UU':
@@ -283,7 +293,8 @@ try:
                         save_all_output('Выполняется...\n')
                         print('Выполняется...')
                         with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
-                            w.write(f'{dates_list[i][0][2]}_{tests[dates_list[i][1]]}')
+                            w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
+                            
                         #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                         if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
@@ -356,7 +367,8 @@ try:
                         print(f'Время завершения: {end_time}')
                         save_all_output(f'Затрачено времени: {end_time - start_time}\n')
                         print(f'Затрачено времени: {end_time - start_time}')
-                        #save_status_output(f'Затрачено времени: {end_time - start_time}\n')
+                        tt_watchdog.transfer_test_time(test_name=tests[dates_list[i][1]], time=f'{end_time - start_time}')
+                        tt_watchdog.create_html()
                     else: 
                         save_all_output(f'Ядро: {dates_list[i][0][2]} игнорируется\n')
                         print(f'Ядро: \033[91m{dates_list[i][0][2]}\033[0m игнорируется')
@@ -405,7 +417,7 @@ try:
                     save_all_output('Выполняется...\n')
                     print('Выполняется...')
                     with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
-                            w.write(f'{dates_list[i][0][2]}_{tests[dates_list[i][1]]}')
+                            w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
                     
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
@@ -478,7 +490,8 @@ try:
                     print(f'Время завершения: {end_time}')
                     save_all_output(f'Затрачено времени: {end_time - start_time}\n')
                     print(f'Затрачено времени: {end_time - start_time}')
-                    #save_status_output(f'Затрачено времени: {end_time - start_time}\n')
+                    tt_watchdog.transfer_test_time(test_name=tests[dates_list[i][1]], time=f'{end_time - start_time}')
+                    tt_watchdog.create_html()
             else: 
                 save_all_output(f'Тест: {tests[dates_list[i][1]]} игнорируется\n')
                 print(f'Тест: \033[91m{tests[dates_list[i][1]]}\033[0m игнорируется')

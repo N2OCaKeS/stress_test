@@ -3,7 +3,7 @@
 class TypeTest:
     type_test_dict = {
         "unix": "UnixBench",
-        "unix_parsec": "UnixBench parsec",
+        "unix parsec": "UnixBench parsec",
         "auditd-p": "Auditd-procces",
         "auditd-u": "Auditd-user",
         "auditd-f": "Auditd-files",

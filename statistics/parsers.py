@@ -26,19 +26,23 @@ class MainParser:
         src_html = self.CP.get_page_as_html(page_space=CONFLUENCE_SPACE, page_title=title)
         data = src_html.get("body").get("view").get("value")
         soup = BeautifulSoup(data, 'lxml')
-        title_data = title.replace(" ", "_").split("_")
-        set_titles = {"parsec", "vanilla", "balance", "impact-fs", "auth", "time", "time-sm"}
-        if title_data[1] == "impact-fs" and title_data[2] == "aud-off":
-            parsec_or_the_rest = None
-            type_test, astra_version, sec_mode, kernel, stand = f"{title_data[0]}_{title_data[1]}-{title_data[2]}", title_data[3], title_data[4], title_data[5], title_data[6]
-        elif title_data[1] in set_titles:
-            type_test, parsec_or_the_rest, astra_version, sec_mode, kernel, stand = title_data[0], title_data[1], title_data[2], title_data[3], title_data[4], title_data[5]
-        else:
-            parsec_or_the_rest = None
-            type_test, astra_version, sec_mode, kernel, stand = title_data[0], title_data[1], title_data[2], title_data[3], title_data[4]
+        """
+            TODO тут заменяем пробельный символ подчерникаванием, это лишнее, надо от этого избавиться и внести везде правки связанные с этим доработками
+        """
+        # title_data = title.replace(" ", "_").split("_")
+        title_data = title.split("_")
+        # set_titles = {"parsec", "vanilla", "balance", "impact-fs", "auth", "time", "time-sm"}
+        # if title_data[1] == "impact-fs" and title_data[2] == "aud-off":
+        #     parsec_or_the_rest = None
+        #     type_test, astra_version, sec_mode, kernel, stand = f"{title_data[0]}_{title_data[1]}-{title_data[2]}", title_data[3], title_data[4], title_data[5], title_data[6]
+        # elif title_data[1] in set_titles:
+        #     type_test, parsec_or_the_rest, astra_version, sec_mode, kernel, stand = title_data[0], title_data[1], title_data[2], title_data[3], title_data[4], title_data[5]
+        # else:
+        # parsec_or_the_rest = None
+        type_test, astra_version, sec_mode, kernel, stand = title_data[0], title_data[1], title_data[2], title_data[3], title_data[4]
 
-        if parsec_or_the_rest:
-            type_test = f"{type_test}_{parsec_or_the_rest}"
+        # if parsec_or_the_rest:
+        #     type_test = f"{type_test}_{parsec_or_the_rest}"
 
         title_data_dict = {
             "type_test": type_test,
@@ -210,7 +214,7 @@ class VirtParser(BaseParser):
     def find_score(self, html_page, type_test=None) -> tuple:
         if type_test == "FIO":
             score = self.fio_find_score(html_page=html_page)
-        elif type_test == "steal_time" or type_test == "steal_time-sm":
+        elif type_test == "steal time" or type_test == "steal time-sm":
             score = self.steal_time_find_score(html_page=html_page)
         elif type_test == "vPingPong":
             score = self.vpp_find_score(html_page=html_page)
@@ -244,7 +248,7 @@ class PostgreSQLParser(BaseParser):
         return (number_of_failed_queries, percent_of_failed_queries)
     
     def find_score(self, html_page, re_template: str = "[Tt]otal rating", type_test=None, ind=2) -> tuple:
-        if type_test == "psql_balance":
+        if type_test == "psql balance":
             score = self.find_score_psql_balance(html_page=html_page)
         else:
             score = super().find_score(html_page=html_page)

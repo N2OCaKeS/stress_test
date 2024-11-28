@@ -1,4 +1,5 @@
 import os
+import traceback
 from collections import deque
 
 from logging_conf import main_logger
@@ -29,3 +30,12 @@ class UtilForReadLogs:
             if reverse:
                 lines = lines[::-1]
         return lines
+    
+
+class UtilGetTraceback:
+    @staticmethod
+    def get_traceback(e):
+        full_traceback = traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)
+        # for line in full_traceback:
+        #     print(line, end="")
+        return full_traceback

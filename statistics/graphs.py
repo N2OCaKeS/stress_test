@@ -34,9 +34,9 @@ class MainGraph(Graphs):
     """
         Класс предназначен для построение главной столбчатой диаграммы
     """
-    def __init__(self, list_of_score, scale_txt, type_test, saver):
+    def __init__(self, list_of_score, scale_txt, type_test, saver, ylabel = "Значение рейтинга"):
         self.list_of_score = list_of_score
-        self.ylabel = "Значение рейтинга"
+        self.ylabel = ylabel
         self.grid = False
         self.scale_x = [x for x in range(1, len(self.list_of_score) + 1, 1)]
         self.scale_txt = scale_txt
@@ -46,7 +46,7 @@ class MainGraph(Graphs):
         main_logger.debug(f"Отработал конструктор scale_x = {self.scale_x}, шкала = {self.scale_txt}")
         
 
-    def __get_colors(self):
+    def _get_colors(self):
         colors = []
         for score_value in self.list_of_score:
             if score_value < np.mean(self.list_of_score) - 1.5 * np.std(self.list_of_score):
@@ -57,7 +57,7 @@ class MainGraph(Graphs):
                 colors.append(Colors.GOOD)
         return colors
     
-    def __create_legend(self):
+    def _create_legend(self):
         red_patch = mpatches.Patch(color=Colors.BAD, label='Рейтинг ниже мат. ожидания на величину x1.5 превышающую стандартное отклонение')
         green_patch = mpatches.Patch(color=Colors.GOOD, label='Рейтинг соответвует доверительному интервалу')
         yellow_patch = mpatches.Patch(color=Colors.WARNING, label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
@@ -65,7 +65,7 @@ class MainGraph(Graphs):
     
     def draw(self):
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
-        rect = ax.bar(self.scale_x, self.list_of_score, color=self.__get_colors())
+        rect = ax.bar(self.scale_x, self.list_of_score, color=self._get_colors())
         ax.grid(self.grid)
         ax.set_xticks(self.scale_x)
         lower, upper = 0, max(self.list_of_score) + max(self.list_of_score) * 0.15
@@ -78,7 +78,7 @@ class MainGraph(Graphs):
         ax.set_ylabel(self.ylabel)
         ax.set_title(f"{TypeTest.get_full_name_test_without_df(self.type_test)}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования.")
         ax.bar_label(rect, label_type="center", fmt="%d", rotation=90, fontweight=500)
-        ax.legend(handles=self.__create_legend())
+        ax.legend(handles=self._create_legend())
         """
             TODO Сделать сохранение графика
         """
@@ -87,6 +87,39 @@ class MainGraph(Graphs):
         main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
         plt.close()
         
+
+class MainGraphH(MainGraph):
+    """
+        Класс предназначен для построение ПЕРЕВЕРНУТОЙ главной столбчатой диаграммы
+    """
+    def __init__(self, list_of_score, scale_txt, type_test, saver, xlabel = "Значение рейтинга"):
+        self.xlabel = xlabel
+        super().__init__(list_of_score, scale_txt, type_test, saver, xlabel)
+
+    def draw(self):
+        fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
+        pos = ax.get_position()
+        new_pos = [pos.x0 + 0.05, pos.y0, pos.width, pos.height]  # Сдвиг на 0.1 вправо
+        ax.set_position(new_pos)
+
+        rect = ax.barh(self.scale_x, self.list_of_score, color=self._get_colors())
+        ax.grid(self.grid)
+        ax.set_yticks(self.scale_x)
+        ax.set_ylim([0, max(self.scale_x) + 6])
+        plt.gca().set_yticklabels(self.scale_txt, rotation=0, horizontalalignment='right')
+        main_logger.debug("Задан угол наклон шкалы 0 градусов, горизонтальное выравнивание справа")
+        ax.set_xlabel(self.ylabel)
+
+        ax.set_title(f"{TypeTest.get_full_name_test_without_df(self.type_test)}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования.")
+        ax.bar_label(rect, label_type="center", fmt="%d", rotation=0, fontweight=500)
+        ax.legend(handles=self._create_legend())
+        self.saver.save(plot=plt, 
+                        name=f"{self.type_test}_{self.__class__.__name__}")
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
+        plt.close()
+
+
+
 
 class SummaryGraph(Graphs):
     """
@@ -112,7 +145,7 @@ class SummaryGraph(Graphs):
         self.bar_width = 0.8
         self.scale_x = np.arange(len(scale_txt))
 
-    def draw(self) -> None:
+    def draw(self, *args, **kwargs) -> None:
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
         max_score = 1 # Единица чтобы не было предупреждения  "UserWarning: Attempting to set identical low and high ylims makes transformation singular; automatically expanding"
         for ind, scale_of_score in enumerate(self.comparison_scale_of_score):
@@ -135,7 +168,20 @@ class SummaryGraph(Graphs):
         ax.set_xticklabels(self.scale_txt, rotation=20, horizontalalignment='right')
         ax.legend()
         fig.tight_layout()
-        self.saver.save(plot=plt, name=f"{self.graph_name}_{self.__class__.__name__}")
+
+        if kwargs.get("y_label"):
+            y_label = kwargs.get("y_label")
+            ax.set_ylabel(y_label)
+            main_logger.debug("в kwargs было передано y_label, задаем описание y_label")
+
+        if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
+            graph_name = f"{self.graph_name}_{kwargs.get("graph_ind")}"
+            main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
+        else:
+            graph_name = f"{self.graph_name}"
+            main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
+
+        self.saver.save(plot=plt, name=f"{graph_name}_{self.__class__.__name__}")
         main_logger.info(f"Сохранен {self.__class__.__name__} для {' '.join(self.comparison_names)}")
         plt.close()
 

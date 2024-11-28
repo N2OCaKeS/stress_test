@@ -38,14 +38,14 @@ class MainTable(Table):
 
     def __combine_cells_for_build_link_to_the_report(self, ind, dataframe):
         title = "_".join(dataframe.iloc[ind - 1, [0, 1, 3, 2, 4]].astype(str))
-        set_titles = {"parsec", "vanilla", "balance", "auth", "time"}
-        for item in set_titles:
-            if item in title:
-                if "parsec_impact-fs-aud-off" in title:
-                    title = title.replace("parsec_impact-fs-aud-off", "parsec impact-fs aud-off")
-                    break
-                title = title.replace("_", " ", 1)
-                break
+        # set_titles = {"parsec", "vanilla", "balance", "auth", "time"}
+        # for item in set_titles:
+        #     if item in title:
+        #         if "parsec_impact-fs-aud-off" in title:
+        #             title = title.replace("parsec_impact-fs-aud-off", "parsec impact-fs aud-off")
+        #             break
+        #         title = title.replace("_", " ", 1)
+        #         break
         link = f"https://{CONFLUENCE_URL}/display/{CONFLUENCE_SPACE}/" + title
         value_with_link = f'<a href="{link}">{ind}</a>'
 
@@ -156,15 +156,29 @@ class SummaryTableNew(Table):
     def __init__(self, dataframes, score = "Рейтинг"):
         self.dataframes = dataframes
         self.score = score
+        self.sfx_tuple = ("x", "y", "z", "w", "e", "t", "u", "i")
 
     def build(self):
-        df_merged = reduce(lambda left,right: pd.merge(left[['Релиз', 'Ядро', 'Стенд', self.score]], 
-                                                       right[['Релиз', 'Ядро', 'Стенд', self.score]], 
-                                                       how='outer', 
-                                                       on=["Релиз", "Ядро", "Стенд"]), self.dataframes)
+        sfx_iter = iter(self.sfx_tuple)
+        df_merged = reduce(
+            lambda left, right: pd.merge(
+                left[['Релиз', 'Ядро', 'Стенд', self.score]], 
+                right[['Релиз', 'Ядро', 'Стенд', self.score]], 
+                how='outer', 
+                on=["Релиз", "Ядро", "Стенд"],
+                suffixes=(f'_{next(sfx_iter)}', '')
+            ),
+            self.dataframes)
         main_logger.info(f"Построена {self.__class__.__name__}")
         main_logger.debug(f"{df_merged}")
-        # print(df_merged.columns)
+
+        df_score = df_merged.drop(columns=['Релиз', 'Ядро', 'Стенд'])
+        list_score = [df_score[col].fillna(0) for col in df_score.columns]
+        # print(df_score.columns, flush=True)
+        # print(list_score, flush=True)
+        return (df_merged["Стенд"].mode()[0], 
+                df_merged['Релиз'] + '_' + df_merged['Ядро'],
+                list_score)
 
 
 class TableSeparatelyByKernel(Table):

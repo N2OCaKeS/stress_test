@@ -64,24 +64,25 @@ class BaseStatistics(Statistics):
                     comparison_separate_kernel_line_graph.draw()
                     main_logger.info(f"Отработало  сравнение по ядрам {self.stat_title} - {type_test} (Заданное при вызове класса) {','.join(self.comparison_kernel_list)}")
      
-     def _compare_scores(self, dct_wttaidf: dict, stat_rc_vers: str):
+     def _compare_scores(self, dct_wttaidf: dict, stat_rc_vers: str, score_columns: list = ["Рейтинг"]):
           if self.comparison_list:
                for comporison_item in self.comparison_list:
                     df1 = dct_wttaidf.get(comporison_item[0])
                     df2 = dct_wttaidf.get(comporison_item[1])
                     condition = (isinstance(df1, pd.DataFrame) and isinstance(df2, pd.DataFrame)) and (not df1.empty and not df2.empty)
                     if condition:
-                         sum_table = SummaryTable(dataframes=[df1, df2])
-                         result_data = sum_table.build()
-                         saver_comparison_graph = SaveGraph(main_folder=self.stat_title, stat_rc_vers=stat_rc_vers)
-                         sum_graph = SummaryGraph(saver=saver_comparison_graph,
-                                                  stand_grade=result_data[0],
-                                                  comparison_scale_of_score=[result_data[1], result_data[2]],
-                                                  scale_txt=result_data[3],
-                                                  comparison_names=[comporison_item[0], comporison_item[1]],
-                                                  graph_name=" vs ".join([comporison_item[0], comporison_item[1]]))
-                         sum_graph.draw()
-                         main_logger.info(f"Отработало сравнение {self.stat_title} (Заданное при вызове класса)")
+                         for ind, score_col in enumerate(score_columns):
+                              sum_table = SummaryTableNew(dataframes=[df1, df2], score=score_col)
+                              result_data = sum_table.build()
+                              saver_comparison_graph = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_vers)
+                              sum_graph = SummaryGraph(saver=saver_comparison_graph,
+                                                       stand_grade=result_data[0],
+                                                       comparison_scale_of_score=result_data[2],
+                                                       scale_txt=result_data[1],
+                                                       comparison_names=[comporison_item[0], comporison_item[1]],
+                                                       graph_name=" vs ".join([comporison_item[0], comporison_item[1]]))
+                              sum_graph.draw(graph_ind=ind, y_label=score_col)
+                              main_logger.info(f"Отработало сравнение {self.stat_title} (Заданное при вызове класса)")
 
      def _upload_to_confluence(self, stat_rc_vers: str, pp_title: str):
           uploader = BaseUploader(username=self.username, 
@@ -128,7 +129,6 @@ class BaseStatistics(Statistics):
                     TODO Добавить логирование
                """
                flag, df = self.unique_functionality(type_test=type_test, data_for_tables=data_for_tables, rc_version=stat_rc_version)
-               print(type_test, flag)
                """"""
                # Здесь сравнение по ядрам
                if flag:
@@ -182,7 +182,7 @@ class PostgreSQLStatistics(BaseStatistics):
           balance_columns_score = ["Number of failed queries", "Percent of failed queries"]
           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
-          if not type_test == "psql_balance":
+          if not type_test == "psql balance":
                return super().unique_functionality(type_test, data_for_tables, rc_version)
           table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=balance_columns_score)
           df = table.build()
@@ -245,11 +245,14 @@ class VirtStatistics(BaseStatistics):
                        "1 VM latency-avg write", "70 VM latency-avg write", "1 VM latency-avg read", "70 VM latency-avg read"],
                "vPingPong": ["Рейтинг"],
                "vUnixBench": ["Рейтинг 4 ядер", "Рейтинг 8 ядер", "Рейтинг 12 ядер"],
-               "steal_time": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"],
-               "steal_time-sm": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"]
+               "steal time": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"],
+               "steal time-sm": ["1 VM mean instructions", "70 VM mean instuctions", "1 VM mean steal time", "70 VM mean steal time"]
           }
           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
      
+     def _compare_scores(self, dct_wttaidf: dict, stat_rc_vers: str, score_column: list = ["Рейтинг"]):
+          return super()._compare_scores(dct_wttaidf, stat_rc_vers, ["70 VM mean instuctions", "70 VM mean steal time"])
+
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
           main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")
           saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
@@ -283,10 +286,13 @@ class ParsecStatistics(BaseStatistics):
      def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = ParsecParser):
           super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
           self.score_columns = {
-               "parsec_impact-fs": ["Total used by parsec func in %"],
-               "parsec_impact-fs-aud-off": ["Total used by parsec func in %"]
+               "parsec impact-fs": ["Total used by parsec func in %"],
+               "parsec impact-fs aud-off": ["Total used by parsec func in %"]
           }
           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
+     
+     def _compare_scores(self, dct_wttaidf: dict, stat_rc_vers: str, score_column: str = ["Рейтинг"]):
+          return super()._compare_scores(dct_wttaidf, stat_rc_vers, ["Total used by parsec func in %"])
      
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
           main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")

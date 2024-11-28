@@ -76,11 +76,12 @@ class BaseUploader:
         base_html_file = {}
         for file in sorted(os.listdir(self.folder)):
             part_header = file.split("_")
-            set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time", "auth", "time-sm"}
-            if part_header[1] in set_titles:
-                type_stat = part_header[0] + "_" + part_header[1]
-            else:
-                type_stat = part_header[0]
+            # set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time", "auth", "time-sm"}
+            # if part_header[1] in set_titles:
+                # type_stat = part_header[0] + "_" + part_header[1]
+            # else:
+                # type_stat = part_header[0]
+            type_stat = part_header[0]
 
             self.confluence_stat.attache_files(file=f"{self.folder}/{file}",
                                                page_space=CONFLUENCE_SPACE,

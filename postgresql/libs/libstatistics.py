@@ -44,6 +44,4 @@ class PSQLStatistics:
         
 
 
-if __name__ == "__main__":
-    stat = PSQLStatistics(username="ivelikanov", token="MDU1MTE3OTUwODIxOmr0OiMQFYNxnZrMgIz16KVcyX9j")
-    stat.update_statistics()
+

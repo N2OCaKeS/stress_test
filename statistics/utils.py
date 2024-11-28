@@ -35,7 +35,8 @@ class UtilForReadLogs:
 class UtilGetTraceback:
     @staticmethod
     def get_traceback(e):
-        full_traceback = traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)
+        # full_traceback = traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)
+        full_traceback = traceback.format_exception(type(e), e, e.__traceback__)
         # for line in full_traceback:
         #     print(line, end="")
         return full_traceback

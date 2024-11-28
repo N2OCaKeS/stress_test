@@ -3,7 +3,7 @@ import json
 import requests
 from balance.bl_lib import VBox, LVirt, bl
 from libs.zefir import UploaderZC
-from psb_conf import REPORT_PATH
+from psb_conf import REPORT_PATH, VENV_PATH_ANSIBLE
 import pandas
 import os
 
@@ -25,7 +25,7 @@ https://github.com/pgpool/pgpool2/commit/4aa657e055250da9db9a4c5cde7260e8f24707c
 """
 
 
-provider = LVirt
+provider = VBox
 """
 SETTINGS
 
@@ -132,10 +132,10 @@ box_name, box_url = bl.box_wrapper(args.SET_BOX, dates)
 kernel = str(args.TCYC).split('_')[2]
 vms = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 ansible_commands = [
-    'cd balance && ansible-playbook bl_contrprimer.yml -vvv',
-    'cd balance && ansible-playbook tasks/checks/db/replication.yml -vvv',
-    'cd balance && ansible-playbook tasks/checks/db/load_balancing.yml -vvv',
-    'cd balance && ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml -vvv'
+    f'cd balance && {VENV_PATH_ANSIBLE} bl_contrprimer.yml -vvv',
+    f'cd balance && {VENV_PATH_ANSIBLE} tasks/checks/db/replication.yml -vvv',
+    f'cd balance && {VENV_PATH_ANSIBLE} tasks/checks/db/load_balancing.yml -vvv',
+    f'cd balance && {VENV_PATH_ANSIBLE} tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml -vvv'
 ]
 
 vm_dates = {

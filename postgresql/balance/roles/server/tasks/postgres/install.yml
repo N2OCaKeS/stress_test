@@ -69,6 +69,11 @@
       register: result
       until: result is not failed
 
+    - name: Set 63lvl integrety
+      become: true
+      shell: |
+        pdpl-user -i 63 postgres
+
     - name: Install postgresql-{{ server.pg.version }}-pgpool2
       apt:
         name:

@@ -126,21 +126,39 @@ class VBox(VirtualMashines):
 
         def _check_vm_list():
             return system.check_output_command('vboxmanage list vms')
-        
+                
 
-        if rc.startswith('1.7'):
-            pg_version = 11
-        elif rc.startswith('1.8'):
-            pg_version = 15
+        if os.path.isfile('/home/iface/iface'):
+            with open('/home/iface/iface', 'r') as r:
+                if_name = r.read().strip()
+                if rc.startswith('1.7'):
+                    pg_version = 11
+                elif rc.startswith('1.8'):
+                    pg_version = 15
+        else:
+            if rc.startswith('1.7'):
+                pg_version = 11
+                if_name = 'eth0'
+            elif rc.startswith('1.8'):
+                pg_version = 15
+                if_name = 'ens5'
 
         with open('balance/vars.yml', 'r') as vars_file:
             vars_template = Template(vars_file.read())
             new_vars = vars_template.substitute(pg_version=pg_version,
-                                                lvirt='false')
+                                                lvirt='true')
             print(new_vars)
-            
+
         with open('balance/vars.yml', 'w') as vars_file:
             vars_file.write(new_vars)
+
+        with open('balance/inventories/middle_hosts.yml', 'r') as file:
+            hosts_template = Template(file.read())
+            hosts = hosts_template.substitute(if_name=if_name)
+            print(hosts)
+
+        with open('balance/inventories/middle_hosts.yml', 'w') as file:
+            file.write(hosts)
 
 
         system.cmd('apt install -fy')
@@ -259,13 +277,45 @@ class LVirt(VirtualMashines):
         vms_ip = {
             vm_name: _vms_ip(vm_name).split('/')[0] for vm_name in find_vms
         }
-        print(vms_ip)
+        print(f'VMs IP: {vms_ip}')
+        chunk_ip = str(vms_ip['test'].split('.')[-1])
+        print(f'Chunk IP: {chunk_ip}')
+
+        def __pgpool_ip():
+            loop = 0
+            base_ip = '.'.join(vms_ip['test'].split('.')[:3])
+            current_ip = int(chunk_ip)
+            
+            # Start looking for a free IP address
+            while True:
+                if current_ip < 254:
+                    current_ip += 1
+                else:
+                    current_ip = 11
+                    loop += 1
+                    if loop >= 2:
+                        pgpool_ip = '"Not found free IP"'
+                        break  
+                
+                pgpool_ip = base_ip + '.' + str(current_ip)
+                
+                if pgpool_ip not in vms_ip.values():
+                    print(f'Found free IP: {pgpool_ip}')
+                    break
+                else:
+                    print(f'Tried IP: {pgpool_ip} - already in use')
+
+            return pgpool_ip
+
+        print(f'pgpool IP define is {__pgpool_ip()}')
 
 
         if rc.startswith('1.7'):
             pg_version = 11
+            if_name = 'eth0'
         elif rc.startswith('1.8'):
             pg_version = 15
+            if_name = 'ens5'
 
         with open('balance/vars.yml', 'r') as vars_file:
             vars_template = Template(vars_file.read())
@@ -286,10 +336,11 @@ class LVirt(VirtualMashines):
                                               lbdb1=vms_ip['lbdb1'],
                                               lbdb2=vms_ip['lbdb2'],
                                               lbdb3=vms_ip['lbdb3'],
-                                              pgpool=vms_ip['test'],
+                                              pgpool=__pgpool_ip(),
                                               web1=vms_ip['web1'],
                                               web2=vms_ip['web2'],
-                                              client=vms_ip['client'])
+                                              client=vms_ip['client'],
+                                              if_name=if_name)
             print(hosts)
 
         with open('balance/inventories/middle_hosts.yml', 'w') as file:

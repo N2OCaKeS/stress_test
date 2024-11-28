@@ -42,10 +42,31 @@ sudo apt-get install htop -y
 sudo apt-get install -y gcc make perl
 sudo apt-get install linux-[5-6].*-generic -y
 sudo apt-get install linux-[5-6].*-lowlatency -y
-sudo apt-get install -y python3-pip
-python3 -m pip install --upgrade pip
-python3 -m pip install psycopg2-binary
 dpkg -s ntpsec &> /dev/null || sudo apt-get install ntpsec -y
+sudo apt-get install -y python3-pip
+
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+    python3 -m pip install --upgrade pip --break-system-packages
+    if [[ $? != 0 ]]; then
+        python3 -m pip install --upgrade pip --break-system-packages
+    fi
+
+    python3 -m pip install psycopg2-binary --break-system-packages
+    if [[ $? != 0 ]]; then
+        python3 -m pip install psycopg2-binary --break-system-packages
+    fi
+elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
+    python3 -m pip install --upgrade pip
+    if [[ $? != 0 ]]; then
+        python3 -m pip install --upgrade pip
+    fi
+
+    python3 -m pip install psycopg2-binary
+    if [[ $? != 0 ]]; then
+        python3 -m pip install psycopg2-binary
+    fi
+fi
+
 
 
 main_user=vagrant

@@ -16,12 +16,12 @@ class PSQLStatistics:
             'title_statistics':'PostgreSQL',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':['postgresql', 'postgresql-sm', 'postgresql-aud-off', 'psql_parsec', 'psql_vanilla', 'tantor_vanilla', 'psql_balance'],
+            'set_of_test_types':['postgresql', 'postgresql-sm', 'postgresql-aud-off', 'psql parsec', 'psql vanilla', 'tantor vanilla', 'psql balance'],
             'comparison_list':[
                 ['postgresql', 'postgresql-sm'], 
                 ['postgresql', 'postgresql-aud-off'], 
-                ['postgresql', 'psql_parsec'], 
-                ['postgresql', 'psql_vanilla']
+                ['postgresql', 'psql parsec'], 
+                ['postgresql', 'psql vanilla']
             ],
             'comparison_kernel_list':['postgresql']
         }
@@ -30,5 +30,20 @@ class PSQLStatistics:
             'Content-Type': 'application/json'
             }
         
-        requests.post(url=self.url, data=json.dumps(data), headers=headers)
+        res = requests.post(url=self.url, data=json.dumps(data), headers=headers)
+        print("\n############\nSTATISTICS LOGS START\n")
+        if res.status_code == 200:
+            response = res.json()
+            
+            print(f"STATUS: {response.get('status')}")
+            print(f"MESSAGE\n{''.join(response.get('message'))}")
+           
+        else:
+            print("НЕизвестная ошибка, даже request на URL не сделался")
+        print("\n############\nSTATISTICS LOGS END\n")
+        
 
+
+if __name__ == "__main__":
+    stat = PSQLStatistics(username="ivelikanov", token="MDU1MTE3OTUwODIxOmr0OiMQFYNxnZrMgIz16KVcyX9j")
+    stat.update_statistics()

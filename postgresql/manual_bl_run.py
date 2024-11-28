@@ -2,7 +2,7 @@ import argparse
 import json
 import requests
 from balance.bl_lib import VBox, LVirt, bl, system
-from psb_conf import REPORT_PATH
+from psb_conf import REPORT_PATH, VENV_PATH_ANSIBLE
 
 
 
@@ -39,10 +39,10 @@ box_name, box_url = bl.box_wrapper(args.SET_BOX, dates)
 kernel = system.check_output_command('uname -r')
 vms = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa']
 ansible_commands = [
-    'cd balance && ansible-playbook bl_contrprimer.yml -vvv > bl_contrprimer.log',
-    'cd balance && ansible-playbook tasks/checks/db/replication.yml -vvv > replication.log',
-    'cd balance && ansible-playbook tasks/checks/db/load_balancing.yml -vvv > load_balancing.log',
-    'cd balance && ansible-playbook tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml -vvv > high_availability_db_upgrade.log'
+    f'cd balance && {VENV_PATH_ANSIBLE} bl_contrprimer.yml -vvv > bl_contrprimer.log',
+    f'cd balance && {VENV_PATH_ANSIBLE} tasks/checks/db/replication.yml -vvv > replication.log',
+    f'cd balance && {VENV_PATH_ANSIBLE} tasks/checks/db/load_balancing.yml -vvv > load_balancing.log',
+    f'cd balance && {VENV_PATH_ANSIBLE} tasks/tests/HA_DB_upgrade/high_availability_db_upgrade.yml -vvv > high_availability_db_upgrade.log'
 ]
 
 vm_dates = {

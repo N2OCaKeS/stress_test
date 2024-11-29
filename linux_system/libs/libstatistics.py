@@ -16,11 +16,22 @@ class UnixBenchStatistics:
             'title_statistics':'UnixBench',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':['unix', 'unix_parsec']
+            'set_of_test_types':['unix', 'unix parsec'],
+            'comparison_list':[["unix", "unix parsec"]]
         }
 
         headers = {
             'Content-Type': 'application/json'
             }
         
-        requests.post(url=self.url, data=json.dumps(data), headers=headers)
+        res = requests.post(url=self.url, data=json.dumps(data), headers=headers)
+        print("\n############\nSTATISTICS LOGS START\n")
+        if res.status_code == 200:
+            response = res.json()
+            
+            print(f"STATUS: {response.get('status')}")
+            print(f"MESSAGE\n{''.join(response.get('message'))}")
+           
+        else:
+            print("НЕизвестная ошибка, даже request на URL не сделался")
+        print("\n############\nSTATISTICS LOGS END\n")

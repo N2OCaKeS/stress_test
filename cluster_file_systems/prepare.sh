@@ -61,6 +61,9 @@ source venv/bin/activate
 cd /home/u/git/stress_test/$1
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r req.txt
+if [[ $? != 0 ]]; then
+    python3.12 -m pip install -r req.txt
+fi
 
 sudo apt-get install -y nfs-kernel-server
 

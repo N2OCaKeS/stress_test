@@ -65,7 +65,8 @@ def initialization_freeipa_server():
         Инициализация домена
     """    
     # cmd(f"astra-freeipa-server --dogtag -p {DC_PASSWORD} -d {DOMAIN} -y")
-    cmd(f"astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y")
+    # cmd(f"astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y")
+    cmd(f'astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y --par "--allow-zone-overlap"')
 
     file_hosts = open("/etc/hosts", "a")
     file_hosts.write("10.77.103.10\tallta.devos.astralinux.ru\n")

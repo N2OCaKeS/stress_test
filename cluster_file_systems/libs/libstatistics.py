@@ -16,12 +16,28 @@ class FileSystemStatistics:
             'title_statistics':'Файловые системы',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':['EXFAT', 'EXT2', 'EXT4', 'EXT4_parsec', 'FAT', 'NTFS', 'XFS', 'XFS_parsec', 'OCFS2'],
-            'comparison_list':[['EXT4', 'XFS'], ['EXT4', 'EXT4_parsec']]
+            'set_of_test_types':['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2'],
+            'comparison_list':[['EXT4', 'XFS'], ['EXT4', 'EXT4 parsec']]
         }
 
         headers = {
             'Content-Type': 'application/json'
             }
         
-        requests.post(url=self.url, data=json.dumps(data), headers=headers)
+        res = requests.post(url=self.url, data=json.dumps(data), headers=headers)
+        print("\n############\nSTATISTICS LOGS START\n")
+        if res.status_code == 200:
+            response = res.json()
+            print(response)
+            
+            print(f"STATUS: {response.get('status')}")
+            print(f"MESSAGE\n{''.join(response.get('message'))}")
+           
+        else:
+            print("НЕизвестная ошибка, даже request на URL не сделался")
+        print("\n############\nSTATISTICS LOGS END\n")
+
+
+if __name__ == "__main__":
+    stat = FileSystemStatistics(username="ivelikanov", token="MDU1MTE3OTUwODIxOmr0OiMQFYNxnZrMgIz16KVcyX9j")
+    stat.update_statistics()

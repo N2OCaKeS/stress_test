@@ -16,13 +16,23 @@ class VirtStatistics:
             'title_statistics':'Qemu/KVM/Libvirt',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':["FIO", "vPingPong", "vUnixBench", "steal_time"]
+            'set_of_test_types':["FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm"],
+            'comparison_list':[["steal time", "steal time-sm"]]
         }
 
         headers = {
             'Content-Type': 'application/json'
             }
         
-        requests.post(url=self.url, data=json.dumps(data), headers=headers)
-        
+        res = requests.post(url=self.url, data=json.dumps(data), headers=headers)
+        print("\n############\nSTATISTICS LOGS START\n")
+        if res.status_code == 200:
+            response = res.json()
+            
+            print(f"STATUS: {response.get('status')}")
+            print(f"MESSAGE\n{''.join(response.get('message'))}")
+           
+        else:
+            print("НЕизвестная ошибка, даже request на URL не сделался")
+        print("\n############\nSTATISTICS LOGS END\n")
 

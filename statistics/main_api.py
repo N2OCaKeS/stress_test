@@ -65,7 +65,7 @@ def base_statistics_api(body: Statistics):
         response["status"] = "error"
         response["message"] = message_error
 
-    return {"OK"}
+    return response
 
 @app.post("/freeipa-statistics")
 def freeipa_statistics_api(body: Statistics):

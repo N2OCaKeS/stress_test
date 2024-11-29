@@ -28,7 +28,6 @@ class FileSystemStatistics:
         print("\n############\nSTATISTICS LOGS START\n")
         if res.status_code == 200:
             response = res.json()
-            print(response)
             
             print(f"STATUS: {response.get('status')}")
             print(f"MESSAGE\n{''.join(response.get('message'))}")
@@ -36,8 +35,3 @@ class FileSystemStatistics:
         else:
             print("НЕизвестная ошибка, даже request на URL не сделался")
         print("\n############\nSTATISTICS LOGS END\n")
-
-
-if __name__ == "__main__":
-    stat = FileSystemStatistics(username="ivelikanov", token="MDU1MTE3OTUwODIxOmr0OiMQFYNxnZrMgIz16KVcyX9j")
-    stat.update_statistics()

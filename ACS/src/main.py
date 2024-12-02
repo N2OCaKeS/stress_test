@@ -159,6 +159,10 @@ def check_task(task_id: str):
 def test_debug_task():
     # res = debug_task.apply_async()
     chain_task = chain(debug_task.si(), debug_task.si())
+    
     result = chain_task.apply_async()
-    return {"id": result.id, "state": result.state, "status": result.status}
+
+    task_ids = [task.id for task in result.children] if result.children else []
+
+    return {"id": result.id, "state": result.state, "status": result.status, "task_ids": task_ids}
     

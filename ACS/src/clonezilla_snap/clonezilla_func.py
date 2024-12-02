@@ -14,9 +14,11 @@ from src.clonezilla_snap.conf import RESTORE_DISK_COMMAND, SAVE_DISK_COMMAND
 from src.tasks.tasks import celery
 
 
-class CustomException(Exception):
-    """Custom exception for specific error handling."""
-    pass
+class SnapshotNotCreated(FileNotFoundError):
+
+    def __init__(self, message, errors=None):
+        super().__init__(message)
+        self.errors = errors
 
 class BootOrder:
 
@@ -184,8 +186,7 @@ def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, *
     snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
     if not snap_name in snaps:
         logging.info("ЗАШЛИ В УСЛОВИЕ, ЗНАЧИТ НЕ НАЙДЕН СНИМОК")
-        # self.update_state(state='SOME-CUSTOM-STATE', meta={'custom': '...'})
-        # raise Ignore()
+        raise SnapshotNotCreated(f"Снимок {snap_name} не создался!")
     
     num_stand = convert_stand_name(stand_name=snap_name.split("-")[0])
     busy_status_off(stand=num_stand)
@@ -197,8 +198,8 @@ def debug_task(self):
     
     if a > b:
         self.update_state(
-            state="PIZDEC",
-            meta={'pizdec vse propalo': "pizdec"})
+            state="test",
+            meta={'test': "test"})
     sleep(30)
     raise Ignore()
         

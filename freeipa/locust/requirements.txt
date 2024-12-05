@@ -14,5 +14,7 @@ fabric
 setuptools
 locust
 locust_plugins
+locust-plugins[dashboards]
 bonsai
 psycopg2-binary
+psycogreen

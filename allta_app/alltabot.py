@@ -346,9 +346,9 @@ def add_testrun_folder(rc):
             print(response.status_code)
             print(response.text)
             value = response.json()
-            config['cycle_tree_index'][name] = str(value['id'])
-            config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
-            write_allta_conf(config)
+            #config['cycle_tree_index'][name] = str(value['id'])
+            #config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
+            #write_allta_conf(config)
 
     while counter < 2:
         counter += 1

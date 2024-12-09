@@ -338,8 +338,7 @@ def add_testrun_folder(rc):
             data = {
                     "name": name,
                     "projectId": 11200,
-                    "parentId": int(parentid),
-                    "index": 1
+                    "parentId": int(parentid)
                     }
 
             print(data)

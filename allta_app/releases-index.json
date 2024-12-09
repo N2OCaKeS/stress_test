@@ -1,5 +1,5 @@
 {
-  "date": "2024-11-20 10:11:14.272461",
+  "date": "2024-12-06 18:45:32.584350",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -49,7 +49,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/7.7/7.7.0/7.7.0.1"
+          "path": "frozen/7.7/7.7.0/7.7.0.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -83,7 +84,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/7.6/7.6.0/7.6.0.1"
+          "path": "frozen/7.6/7.6.0/7.6.0.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -123,7 +125,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.4/1.6.4.1"
+          "path": "frozen/1.6/1.6.4/1.6.4.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.7": {
@@ -161,7 +164,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.7/1.6.7.1"
+          "path": "frozen/1.6/1.6.7/1.6.7.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.0": {
@@ -193,7 +197,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.0/1.6.0.1"
+          "path": "frozen/1.6/1.6.0/1.6.0.1",
+          "is_main_symlinked": false
         },
         "1.6.0.FSB1.1": {
           "astra_lists_commit": null,
@@ -223,7 +228,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.0/1.6.0.FSB1.1"
+          "path": "frozen/1.6/1.6.0/1.6.0.FSB1.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.2": {
@@ -261,7 +267,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.2/1.6.2.1"
+          "path": "frozen/1.6/1.6.2/1.6.2.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.5": {
@@ -299,7 +306,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.5/1.6.5.1"
+          "path": "frozen/1.6/1.6.5/1.6.5.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.12": {
@@ -343,7 +351,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.12/1.6.12.1"
+          "path": "frozen/1.6/1.6.12/1.6.12.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.1": {
@@ -381,7 +390,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.1/1.6.1.1"
+          "path": "frozen/1.6/1.6.1/1.6.1.1",
+          "is_main_symlinked": false
         },
         "1.6.1.FSB1.1": {
           "astra_lists_commit": null,
@@ -411,7 +421,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.1/1.6.1.FSB1.1"
+          "path": "frozen/1.6/1.6.1/1.6.1.FSB1.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.9": {
@@ -464,7 +475,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.9/1.6.9.1"
+          "path": "frozen/1.6/1.6.9/1.6.9.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.15": {
@@ -517,7 +529,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.15/1.6.15.6"
+          "path": "frozen/1.6/1.6.15/1.6.15.6",
+          "is_main_symlinked": false
         },
         "1.6.15.3": {
           "astra_lists_commit": null,
@@ -568,7 +581,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.15/1.6.15.3"
+          "path": "frozen/1.6/1.6.15/1.6.15.3",
+          "is_main_symlinked": false
         },
         "1.6.15.4": {
           "astra_lists_commit": null,
@@ -619,7 +633,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.15/1.6.15.4"
+          "path": "frozen/1.6/1.6.15/1.6.15.4",
+          "is_main_symlinked": false
         },
         "1.6.15.1": {
           "astra_lists_commit": null,
@@ -670,7 +685,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.15/1.6.15.1"
+          "path": "frozen/1.6/1.6.15/1.6.15.1",
+          "is_main_symlinked": false
         },
         "1.6.15.2": {
           "astra_lists_commit": null,
@@ -721,7 +737,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.15/1.6.15.2"
+          "path": "frozen/1.6/1.6.15/1.6.15.2",
+          "is_main_symlinked": false
         },
         "1.6.15.5": {
           "astra_lists_commit": null,
@@ -772,7 +789,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.15/1.6.15.5"
+          "path": "frozen/1.6/1.6.15/1.6.15.5",
+          "is_main_symlinked": false
         }
       },
       "1.6.8": {
@@ -825,7 +843,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.8/1.6.8.1"
+          "path": "frozen/1.6/1.6.8/1.6.8.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.14": {
@@ -878,7 +897,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.14/1.6.14.1"
+          "path": "frozen/1.6/1.6.14/1.6.14.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.3": {
@@ -916,7 +936,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.3/1.6.3.1"
+          "path": "frozen/1.6/1.6.3/1.6.3.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.13": {
@@ -969,7 +990,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.13/1.6.13.3"
+          "path": "frozen/1.6/1.6.13/1.6.13.3",
+          "is_main_symlinked": false
         },
         "1.6.13.2": {
           "astra_lists_commit": null,
@@ -1005,7 +1027,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.13/1.6.13.2"
+          "path": "frozen/1.6/1.6.13/1.6.13.2",
+          "is_main_symlinked": false
         },
         "1.6.13.1": {
           "astra_lists_commit": null,
@@ -1041,7 +1064,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.13/1.6.13.1"
+          "path": "frozen/1.6/1.6.13/1.6.13.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.11": {
@@ -1085,7 +1109,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.11/1.6.11.4"
+          "path": "frozen/1.6/1.6.11/1.6.11.4",
+          "is_main_symlinked": false
         },
         "1.6.11.2": {
           "astra_lists_commit": null,
@@ -1115,7 +1140,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.11/1.6.11.2"
+          "path": "frozen/1.6/1.6.11/1.6.11.2",
+          "is_main_symlinked": false
         },
         "1.6.11.1": {
           "astra_lists_commit": null,
@@ -1145,7 +1171,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.11/1.6.11.1"
+          "path": "frozen/1.6/1.6.11/1.6.11.1",
+          "is_main_symlinked": false
         },
         "1.6.11.3": {
           "astra_lists_commit": null,
@@ -1187,7 +1214,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.11/1.6.11.3"
+          "path": "frozen/1.6/1.6.11/1.6.11.3",
+          "is_main_symlinked": false
         }
       },
       "1.6.10": {
@@ -1240,7 +1268,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.10/1.6.10.1"
+          "path": "frozen/1.6/1.6.10/1.6.10.1",
+          "is_main_symlinked": false
         }
       },
       "1.6.6": {
@@ -1278,7 +1307,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.6/1.6.6/1.6.6.1"
+          "path": "frozen/1.6/1.6.6/1.6.6.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -1348,12 +1378,14 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.9"
+          "path": "frozen/1.8/1.8.0/1.8.0.9",
+          "is_main_symlinked": true
         },
         "1.8.0.1": {
           "astra_lists_commit": null,
           "files": [],
-          "path": "frozen/1.8/1.8.0/1.8.0.1"
+          "path": "frozen/1.8/1.8.0/1.8.0.1",
+          "is_main_symlinked": false
         },
         "1.8.0.13": {
           "astra_lists_commit": null,
@@ -1419,7 +1451,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.13"
+          "path": "frozen/1.8/1.8.0/1.8.0.13",
+          "is_main_symlinked": true
         },
         "1.8.0.8": {
           "astra_lists_commit": null,
@@ -1470,7 +1503,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.8"
+          "path": "frozen/1.8/1.8.0/1.8.0.8",
+          "is_main_symlinked": true
         },
         "1.8.0.5": {
           "astra_lists_commit": null,
@@ -1521,7 +1555,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.5"
+          "path": "frozen/1.8/1.8.0/1.8.0.5",
+          "is_main_symlinked": true
         },
         "1.8.0.6": {
           "astra_lists_commit": null,
@@ -1572,7 +1607,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.6"
+          "path": "frozen/1.8/1.8.0/1.8.0.6",
+          "is_main_symlinked": true
         },
         "1.8.0.10": {
           "astra_lists_commit": null,
@@ -1638,7 +1674,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.10"
+          "path": "frozen/1.8/1.8.0/1.8.0.10",
+          "is_main_symlinked": true
         },
         "1.8.0.7": {
           "astra_lists_commit": null,
@@ -1689,7 +1726,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.7"
+          "path": "frozen/1.8/1.8.0/1.8.0.7",
+          "is_main_symlinked": true
         },
         "1.8.0.3": {
           "astra_lists_commit": null,
@@ -1740,7 +1778,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.3"
+          "path": "frozen/1.8/1.8.0/1.8.0.3",
+          "is_main_symlinked": true
         },
         "1.8.0.4": {
           "astra_lists_commit": null,
@@ -1791,7 +1830,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.4"
+          "path": "frozen/1.8/1.8.0/1.8.0.4",
+          "is_main_symlinked": true
         },
         "1.8.0.14": {
           "astra_lists_commit": null,
@@ -1857,7 +1897,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.14"
+          "path": "frozen/1.8/1.8.0/1.8.0.14",
+          "is_main_symlinked": true
         },
         "1.8.0.11": {
           "astra_lists_commit": null,
@@ -1923,7 +1964,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.11"
+          "path": "frozen/1.8/1.8.0/1.8.0.11",
+          "is_main_symlinked": true
         },
         "1.8.0.2": {
           "astra_lists_commit": null,
@@ -1974,7 +2016,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.2"
+          "path": "frozen/1.8/1.8.0/1.8.0.2",
+          "is_main_symlinked": true
         },
         "1.8.0.12": {
           "astra_lists_commit": null,
@@ -2040,7 +2083,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.0/1.8.0.12"
+          "path": "frozen/1.8/1.8.0/1.8.0.12",
+          "is_main_symlinked": true
         }
       },
       "1.8.1": {
@@ -2108,7 +2152,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.5"
+          "path": "frozen/1.8/1.8.1/1.8.1.5",
+          "is_main_symlinked": true
         },
         "1.8.1.1": {
           "astra_lists_commit": null,
@@ -2159,7 +2204,142 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.1"
+          "path": "frozen/1.8/1.8.1/1.8.1.1",
+          "is_main_symlinked": true
+        },
+        "1.8.1.13": {
+          "astra_lists_commit": "573aafee91d2e120b68cb10e61844728ebead604",
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/installation-1.8.1.13-20.11.24_08.24-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "4893791444468212292c515a3911a5e07bbcc7ba892fb39b25e5ea1cc1f64775",
+                "md5": "6157b2c1dd51ccdeda4fbeb877e06b82"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.13/sources/changelogs/changelog-installation-1.8.1.13.html",
+              "release_notes": "frozen/1.8/1.8.1/1.8.1.13/sources/release-notes/release-notes-installation-1.8.1.13.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/installation-1.8.1.13-20.11.24_08.24.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "76afa414121487185d27a55e1e5f0345ef5da6eaaee05f4feec939d46227f7bc",
+                "md5": "643c88f33a504650e6192b9e260e0a74"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.13/sources/changelogs/changelog-installation-1.8.1.13.html",
+              "release_notes": "frozen/1.8/1.8.1/1.8.1.13/sources/release-notes/release-notes-installation-1.8.1.13.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/devel-1.8.1.13-19.11.24_08.59.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "64628d3537f5a65c6440c1430323015cdee00d4ed83a83fc3ea34af1efbbb67b",
+                "md5": "373ae2e0c15c051ee16cfe52c6f3be5c"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/extended-1.8.1.13-19.11.24_08.59.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "ed207a54b882b7f7e257db4c00cfa5ce18ed295670ff26c6b5f67cd7b722975a",
+                "md5": "f41f3c8f7561c75adc9c9c615556ddc8"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.13/sources/changelogs/changelog-extended-1.8.1.13.html",
+              "release_notes": "frozen/1.8/1.8.1/1.8.1.13/sources/release-notes/release-notes-extended-1.8.1.13.html"
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.13",
+          "is_main_symlinked": true
+        },
+        "1.8.1.14": {
+          "astra_lists_commit": "acd06165b685ac9d0bef55b532fa9d26efef316d",
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.14/iso/installation-1.8.1.14-05.12.24_11.15.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.14/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "b36687db6bb524dd58b1b08b02ae17395c68a34942012fe2f4d30d9a80d6d4ac",
+                "md5": "a985514f1e895bb47687efdc864e2269"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.14/sources/changelogs/changelog-installation-1.8.1.14.html",
+              "release_notes": "frozen/1.8/1.8.1/1.8.1.14/sources/release-notes/release-notes-installation-1.8.1.14.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.14/iso/installation-1.8.1.14-05.12.24_11.15-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.14/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "e20b0b75bc7efb23af742109e5ed0ddd37ce6a1538b993213c0f250e98a1bfdf",
+                "md5": "86a054f31c62b335098a1ac5fc14a23b"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.14/sources/changelogs/changelog-installation-1.8.1.14.html",
+              "release_notes": "frozen/1.8/1.8.1/1.8.1.14/sources/release-notes/release-notes-installation-1.8.1.14.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.14/iso/devel-1.8.1.14-05.12.24_11.15.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.14/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "d0d8c37079c35e3b72666deaf010a929635764c809222320e48dd116ae92c850",
+                "md5": "c07ea8739e4968adfa7d2943c724da3a"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.14/iso/extended-1.8.1.14-05.12.24_11.15.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.14/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "2fc17b275076554bb0054e4447a5947459cd8c6dd9b63fb4af20e557a3162da2",
+                "md5": "8453f5bc41a9a075bb5bb91d5d02ebba"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.14/sources/changelogs/changelog-extended-1.8.1.14.html",
+              "release_notes": "frozen/1.8/1.8.1/1.8.1.14/sources/release-notes/release-notes-extended-1.8.1.14.html"
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.14",
+          "is_main_symlinked": true
         },
         "1.8.1.11": {
           "astra_lists_commit": "3b7aac8ece0d8271213f49cd748cc0f74fab78e2",
@@ -2225,7 +2405,8 @@
               "release_notes": "frozen/1.8/1.8.1/1.8.1.11/sources/release-notes/release-notes-installation-1.8.1.11.html"
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.11"
+          "path": "frozen/1.8/1.8.1/1.8.1.11",
+          "is_main_symlinked": true
         },
         "1.8.1.3": {
           "astra_lists_commit": null,
@@ -2291,7 +2472,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.3"
+          "path": "frozen/1.8/1.8.1/1.8.1.3",
+          "is_main_symlinked": true
         },
         "1.8.1.7": {
           "astra_lists_commit": "635c3e1f857fc8f99ca93e547b18bf8604d152c",
@@ -2357,7 +2539,8 @@
               "release_notes": "frozen/1.8/1.8.1/1.8.1.7/sources/release-notes/release-notes-extended-1.8.1.7.html"
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.7"
+          "path": "frozen/1.8/1.8.1/1.8.1.7",
+          "is_main_symlinked": true
         },
         "1.8.1.10": {
           "astra_lists_commit": "0fb7c5a0c954cd185dec3f4e2c2b693a8b4aebc3",
@@ -2423,7 +2606,8 @@
               "release_notes": "frozen/1.8/1.8.1/1.8.1.10/sources/release-notes/release-notes-installation-1.8.1.10.html"
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.10"
+          "path": "frozen/1.8/1.8.1/1.8.1.10",
+          "is_main_symlinked": true
         },
         "1.8.1.4": {
           "astra_lists_commit": null,
@@ -2489,7 +2673,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.4"
+          "path": "frozen/1.8/1.8.1/1.8.1.4",
+          "is_main_symlinked": true
         },
         "1.8.1.6": {
           "astra_lists_commit": null,
@@ -2555,7 +2740,75 @@
               "release_notes": "frozen/1.8/1.8.1/1.8.1.6/sources/release-notes/release-notes-extended-1.8.1.6.html"
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.6"
+          "path": "frozen/1.8/1.8.1/1.8.1.6",
+          "is_main_symlinked": true
+        },
+        "1.8.1.15": {
+          "astra_lists_commit": "acd06165b685ac9d0bef55b532fa9d26efef316d",
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.15/iso/installation-1.8.1.15-06.12.24_15.58.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.15/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "da3232479e46fd1f49e5fccee8faf0518cc9e887d8f9127fe9f7adfe043a4315",
+                "md5": "9cdc1cdd2f7f1407a06a3fd3ead408c0"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.15/sources/changelogs/changelog-installation-1.8.1.15.html",
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.15/iso/installation-1.8.1.15-06.12.24_15.58-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.15/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": "di",
+              "hashsums": {
+                "gost": "6e32698a3bbe63a80c34ddebee469fc15b40fefe727c794db0c5afffa469778c",
+                "md5": "1c409417fd640e1a9923faf056be75c1"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.15/sources/changelogs/changelog-installation-1.8.1.15.html",
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.15/iso/extended-1.8.1.15-06.12.24_15.58.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.15/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "1a4ac1341571c379b227a4c151d6557ddfb3fcd3d27101a7fdd35cb1d844dbd6",
+                "md5": "6a99539eecfbabdbdbc629726476cd6e"
+              },
+              "changelog": "frozen/1.8/1.8.1/1.8.1.15/sources/changelogs/changelog-extended-1.8.1.15.html",
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.1/1.8.1.15/iso/devel-1.8.1.15-06.12.24_14.08.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.1/1.8.1.15/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "5fa134ea3049c5f4710f39f431740666e939b19d6c0ca5972dbb923e9f242e84",
+                "md5": "c75cfdd5351318a23ab8d9b2ae589acd"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/1.8/1.8.1/1.8.1.15",
+          "is_main_symlinked": true
         },
         "1.8.1.8": {
           "astra_lists_commit": "7983bc309da80c55b080b56dedf1d1dd84acb65",
@@ -2621,7 +2874,8 @@
               "release_notes": "frozen/1.8/1.8.1/1.8.1.8/sources/release-notes/release-notes-extended-1.8.1.8.html"
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.8"
+          "path": "frozen/1.8/1.8.1/1.8.1.8",
+          "is_main_symlinked": true
         },
         "1.8.1.9": {
           "astra_lists_commit": "7983bc309da80c55b080b56dedf1d1dd84acb65c",
@@ -2687,7 +2941,8 @@
               "release_notes": "frozen/1.8/1.8.1/1.8.1.9/sources/release-notes/release-notes-extended-1.8.1.9.html"
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.9"
+          "path": "frozen/1.8/1.8.1/1.8.1.9",
+          "is_main_symlinked": true
         },
         "1.8.1.2": {
           "astra_lists_commit": null,
@@ -2753,7 +3008,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.2"
+          "path": "frozen/1.8/1.8.1/1.8.1.2",
+          "is_main_symlinked": true
         },
         "1.8.1.12": {
           "astra_lists_commit": "3b7aac8ece0d8271213f49cd748cc0f74fab78e2",
@@ -2819,73 +3075,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.8/1.8.1/1.8.1.12"
-        },
-        "1.8.1.13": {
-          "astra_lists_commit": "573aafee91d2e120b68cb10e61844728ebead604",
-          "files": [
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/installation-1.8.1.13-20.11.24_08.24-di.iso",
-              "type": "installation",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/installation-di",
-              "is_iso": true,
-              "is_bootable_iso": true,
-              "is_tarball": false,
-              "device": "di",
-              "hashsums": {
-                "gost": "4893791444468212292c515a3911a5e07bbcc7ba892fb39b25e5ea1cc1f64775",
-                "md5": "6157b2c1dd51ccdeda4fbeb877e06b82"
-              },
-              "changelog": null,
-              "release_notes": null
-            },
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/installation-1.8.1.13-20.11.24_08.24.iso",
-              "type": "installation",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/installation",
-              "is_iso": true,
-              "is_bootable_iso": true,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "76afa414121487185d27a55e1e5f0345ef5da6eaaee05f4feec939d46227f7bc",
-                "md5": "643c88f33a504650e6192b9e260e0a74"
-              },
-              "changelog": null,
-              "release_notes": null
-            },
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/devel-1.8.1.13-19.11.24_08.59.iso",
-              "type": "devel",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/devel-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "64628d3537f5a65c6440c1430323015cdee00d4ed83a83fc3ea34af1efbbb67b",
-                "md5": "373ae2e0c15c051ee16cfe52c6f3be5c"
-              },
-              "changelog": null,
-              "release_notes": null
-            },
-            {
-              "path": "frozen/1.8/1.8.1/1.8.1.13/iso/extended-1.8.1.13-19.11.24_08.59.iso",
-              "type": "extended",
-              "mount_point": "frozen/1.8/1.8.1/1.8.1.13/extended-repository",
-              "is_iso": true,
-              "is_bootable_iso": false,
-              "is_tarball": false,
-              "device": null,
-              "hashsums": {
-                "gost": "ed207a54b882b7f7e257db4c00cfa5ce18ed295670ff26c6b5f67cd7b722975a",
-                "md5": "f41f3c8f7561c75adc9c9c615556ddc8"
-              },
-              "changelog": "frozen/1.8/1.8.1/1.8.1.13/sources/changelogs/changelog-extended-1.8.1.13.html",
-              "release_notes": "frozen/1.8/1.8.1/1.8.1.13/sources/release-notes/release-notes-extended-1.8.1.13.html"
-            }
-          ],
-          "path": "frozen/1.8/1.8.1/1.8.1.13"
+          "path": "frozen/1.8/1.8.1/1.8.1.12",
+          "is_main_symlinked": true
         }
       }
     },
@@ -2919,7 +3110,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.13/2.13.0/2.13.0.1"
+          "path": "frozen/2.13/2.13.0/2.13.0.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -2953,7 +3145,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.2/1.2.0/1.2.0.1"
+          "path": "frozen/1.2/1.2.0/1.2.0.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -3038,7 +3231,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.3/4.7.3.9"
+          "path": "frozen/4.7/4.7.3/4.7.3.9",
+          "is_main_symlinked": false
         },
         "4.7.3.KREA1.1": {
           "astra_lists_commit": null,
@@ -3056,7 +3250,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.3/4.7.3.KREA1.1"
+          "path": "frozen/4.7/4.7.3/4.7.3.KREA1.1",
+          "is_main_symlinked": false
         },
         "4.7.3.8": {
           "astra_lists_commit": null,
@@ -3137,7 +3332,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.3/4.7.3.8"
+          "path": "frozen/4.7/4.7.3/4.7.3.8",
+          "is_main_symlinked": false
         },
         "4.7.3.5": {
           "astra_lists_commit": null,
@@ -3218,7 +3414,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.3/4.7.3.5"
+          "path": "frozen/4.7/4.7.3/4.7.3.5",
+          "is_main_symlinked": false
         },
         "4.7.3.6": {
           "astra_lists_commit": null,
@@ -3299,7 +3496,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.3/4.7.3.6"
+          "path": "frozen/4.7/4.7.3/4.7.3.6",
+          "is_main_symlinked": false
         },
         "4.7.3.7": {
           "astra_lists_commit": null,
@@ -3380,7 +3578,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.3/4.7.3.7"
+          "path": "frozen/4.7/4.7.3/4.7.3.7",
+          "is_main_symlinked": false
         }
       },
       "4.7.4": {
@@ -3457,7 +3656,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.4"
+          "path": "frozen/4.7/4.7.4/4.7.4.4",
+          "is_main_symlinked": false
         },
         "4.7.4.2": {
           "astra_lists_commit": null,
@@ -3538,7 +3738,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.2"
+          "path": "frozen/4.7/4.7.4/4.7.4.2",
+          "is_main_symlinked": false
         },
         "4.7.4.KREA1.1": {
           "astra_lists_commit": null,
@@ -3556,7 +3757,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.KREA1.1"
+          "path": "frozen/4.7/4.7.4/4.7.4.KREA1.1",
+          "is_main_symlinked": false
         },
         "4.7.4.1": {
           "astra_lists_commit": null,
@@ -3637,7 +3839,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.1"
+          "path": "frozen/4.7/4.7.4/4.7.4.1",
+          "is_main_symlinked": false
         },
         "4.7.4.EXT1.2": {
           "astra_lists_commit": null,
@@ -3655,7 +3858,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.EXT1.2"
+          "path": "frozen/4.7/4.7.4/4.7.4.EXT1.2",
+          "is_main_symlinked": false
         },
         "4.7.4.6": {
           "astra_lists_commit": null,
@@ -3730,7 +3934,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.6"
+          "path": "frozen/4.7/4.7.4/4.7.4.6",
+          "is_main_symlinked": false
         },
         "4.7.4.3": {
           "astra_lists_commit": null,
@@ -3805,7 +4010,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.3"
+          "path": "frozen/4.7/4.7.4/4.7.4.3",
+          "is_main_symlinked": false
         },
         "4.7.4.5": {
           "astra_lists_commit": null,
@@ -3880,7 +4086,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.5"
+          "path": "frozen/4.7/4.7.4/4.7.4.5",
+          "is_main_symlinked": false
         },
         "4.7.4.EXT1.1": {
           "astra_lists_commit": null,
@@ -3898,7 +4105,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.4/4.7.4.EXT1.1"
+          "path": "frozen/4.7/4.7.4/4.7.4.EXT1.1",
+          "is_main_symlinked": false
         }
       },
       "4.7.1": {
@@ -3980,7 +4188,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.1/4.7.1.8"
+          "path": "frozen/4.7/4.7.1/4.7.1.8",
+          "is_main_symlinked": false
         }
       },
       "4.7.0": {
@@ -4000,7 +4209,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.0/4.7.0.KREA1.1"
+          "path": "frozen/4.7/4.7.0/4.7.0.KREA1.1",
+          "is_main_symlinked": false
         },
         "4.7.0.6": {
           "astra_lists_commit": null,
@@ -4057,7 +4267,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.0/4.7.0.6"
+          "path": "frozen/4.7/4.7.0/4.7.0.6",
+          "is_main_symlinked": false
         }
       },
       "4.7.6": {
@@ -4140,7 +4351,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.3"
+          "path": "frozen/4.7/4.7.6/4.7.6.3",
+          "is_main_symlinked": false
         },
         "4.7.6.9": {
           "astra_lists_commit": null,
@@ -4221,7 +4433,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.9"
+          "path": "frozen/4.7/4.7.6/4.7.6.9",
+          "is_main_symlinked": false
         },
         "4.7.6.4": {
           "astra_lists_commit": null,
@@ -4302,7 +4515,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.4"
+          "path": "frozen/4.7/4.7.6/4.7.6.4",
+          "is_main_symlinked": false
         },
         "4.7.6.5": {
           "astra_lists_commit": null,
@@ -4383,7 +4597,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.5"
+          "path": "frozen/4.7/4.7.6/4.7.6.5",
+          "is_main_symlinked": false
         },
         "4.7.6.EXT1.3": {
           "astra_lists_commit": null,
@@ -4404,7 +4619,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.EXT1.3"
+          "path": "frozen/4.7/4.7.6/4.7.6.EXT1.3",
+          "is_main_symlinked": false
         },
         "4.7.6.6": {
           "astra_lists_commit": null,
@@ -4485,7 +4701,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.6"
+          "path": "frozen/4.7/4.7.6/4.7.6.6",
+          "is_main_symlinked": false
         },
         "4.7.6.EXT1.1": {
           "astra_lists_commit": null,
@@ -4506,7 +4723,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.EXT1.1"
+          "path": "frozen/4.7/4.7.6/4.7.6.EXT1.1",
+          "is_main_symlinked": false
         },
         "4.7.6.7": {
           "astra_lists_commit": null,
@@ -4587,7 +4805,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.7"
+          "path": "frozen/4.7/4.7.6/4.7.6.7",
+          "is_main_symlinked": false
         },
         "4.7.6.8": {
           "astra_lists_commit": null,
@@ -4668,7 +4887,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.8"
+          "path": "frozen/4.7/4.7.6/4.7.6.8",
+          "is_main_symlinked": false
         },
         "4.7.6.KREA1.1": {
           "astra_lists_commit": null,
@@ -4689,7 +4909,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.KREA1.1"
+          "path": "frozen/4.7/4.7.6/4.7.6.KREA1.1",
+          "is_main_symlinked": false
         },
         "4.7.6.2": {
           "astra_lists_commit": null,
@@ -4770,7 +4991,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.2"
+          "path": "frozen/4.7/4.7.6/4.7.6.2",
+          "is_main_symlinked": false
         },
         "4.7.6.1": {
           "astra_lists_commit": null,
@@ -4851,7 +5073,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.1"
+          "path": "frozen/4.7/4.7.6/4.7.6.1",
+          "is_main_symlinked": false
         },
         "4.7.6.EXT1.2": {
           "astra_lists_commit": null,
@@ -4872,7 +5095,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.6/4.7.6.EXT1.2"
+          "path": "frozen/4.7/4.7.6/4.7.6.EXT1.2",
+          "is_main_symlinked": false
         }
       },
       "4.7.5": {
@@ -4895,7 +5119,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.EXT1.2"
+          "path": "frozen/4.7/4.7.5/4.7.5.EXT1.2",
+          "is_main_symlinked": false
         },
         "4.7.5.2": {
           "astra_lists_commit": null,
@@ -4976,7 +5201,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.2"
+          "path": "frozen/4.7/4.7.5/4.7.5.2",
+          "is_main_symlinked": false
         },
         "4.7.5.1": {
           "astra_lists_commit": null,
@@ -5051,7 +5277,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.1"
+          "path": "frozen/4.7/4.7.5/4.7.5.1",
+          "is_main_symlinked": false
         },
         "4.7.5.3": {
           "astra_lists_commit": null,
@@ -5132,7 +5359,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.3"
+          "path": "frozen/4.7/4.7.5/4.7.5.3",
+          "is_main_symlinked": false
         },
         "4.7.5.EXT1.1": {
           "astra_lists_commit": null,
@@ -5153,7 +5381,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.EXT1.1"
+          "path": "frozen/4.7/4.7.5/4.7.5.EXT1.1",
+          "is_main_symlinked": false
         },
         "4.7.5.5": {
           "astra_lists_commit": null,
@@ -5234,7 +5463,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.5"
+          "path": "frozen/4.7/4.7.5/4.7.5.5",
+          "is_main_symlinked": false
         },
         "4.7.5.EXT1.3": {
           "astra_lists_commit": null,
@@ -5255,7 +5485,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.EXT1.3"
+          "path": "frozen/4.7/4.7.5/4.7.5.EXT1.3",
+          "is_main_symlinked": false
         },
         "4.7.5.4": {
           "astra_lists_commit": null,
@@ -5336,7 +5567,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.5/4.7.5.4"
+          "path": "frozen/4.7/4.7.5/4.7.5.4",
+          "is_main_symlinked": false
         }
       },
       "4.7.2": {
@@ -5419,7 +5651,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.2/4.7.2.4"
+          "path": "frozen/4.7/4.7.2/4.7.2.4",
+          "is_main_symlinked": false
         },
         "4.7.2.5": {
           "astra_lists_commit": null,
@@ -5500,7 +5733,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.7/4.7.2/4.7.2.5"
+          "path": "frozen/4.7/4.7.2/4.7.2.5",
+          "is_main_symlinked": false
         }
       }
     },
@@ -5537,7 +5771,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.0/1.7.0.18"
+          "path": "frozen/1.7/1.7.0/1.7.0.18",
+          "is_main_symlinked": false
         }
       },
       "1.7.3": {
@@ -5584,7 +5819,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.4"
+          "path": "frozen/1.7/1.7.3/1.7.3.4",
+          "is_main_symlinked": false
         },
         "1.7.3.11": {
           "astra_lists_commit": null,
@@ -5629,7 +5865,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.11"
+          "path": "frozen/1.7/1.7.3/1.7.3.11",
+          "is_main_symlinked": false
         },
         "1.7.3.KREA1.1": {
           "astra_lists_commit": null,
@@ -5647,7 +5884,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.KREA1.1"
+          "path": "frozen/1.7/1.7.3/1.7.3.KREA1.1",
+          "is_main_symlinked": false
         },
         "1.7.3.KREA4.1": {
           "astra_lists_commit": null,
@@ -5665,7 +5903,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.KREA4.1"
+          "path": "frozen/1.7/1.7.3/1.7.3.KREA4.1",
+          "is_main_symlinked": false
         },
         "1.7.3.13": {
           "astra_lists_commit": null,
@@ -5710,7 +5949,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.13"
+          "path": "frozen/1.7/1.7.3/1.7.3.13",
+          "is_main_symlinked": false
         },
         "1.7.3.5": {
           "astra_lists_commit": null,
@@ -5755,7 +5995,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.5"
+          "path": "frozen/1.7/1.7.3/1.7.3.5",
+          "is_main_symlinked": false
         },
         "1.7.3.12": {
           "astra_lists_commit": null,
@@ -5800,7 +6041,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.12"
+          "path": "frozen/1.7/1.7.3/1.7.3.12",
+          "is_main_symlinked": false
         },
         "1.7.3.KREA6.1": {
           "astra_lists_commit": null,
@@ -5818,7 +6060,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.KREA6.1"
+          "path": "frozen/1.7/1.7.3/1.7.3.KREA6.1",
+          "is_main_symlinked": false
         },
         "1.7.3.8": {
           "astra_lists_commit": null,
@@ -5851,7 +6094,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.8"
+          "path": "frozen/1.7/1.7.3/1.7.3.8",
+          "is_main_symlinked": false
         },
         "1.7.3.EXT1.3": {
           "astra_lists_commit": null,
@@ -5869,7 +6113,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.EXT1.3"
+          "path": "frozen/1.7/1.7.3/1.7.3.EXT1.3",
+          "is_main_symlinked": false
         },
         "1.7.3.10": {
           "astra_lists_commit": null,
@@ -5914,7 +6159,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.10"
+          "path": "frozen/1.7/1.7.3/1.7.3.10",
+          "is_main_symlinked": false
         },
         "1.7.3.9": {
           "astra_lists_commit": null,
@@ -5947,7 +6193,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.9"
+          "path": "frozen/1.7/1.7.3/1.7.3.9",
+          "is_main_symlinked": false
         },
         "1.7.3.7": {
           "astra_lists_commit": null,
@@ -5992,7 +6239,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.7"
+          "path": "frozen/1.7/1.7.3/1.7.3.7",
+          "is_main_symlinked": false
         },
         "1.7.3.6": {
           "astra_lists_commit": null,
@@ -6037,7 +6285,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.6"
+          "path": "frozen/1.7/1.7.3/1.7.3.6",
+          "is_main_symlinked": false
         },
         "1.7.3.1": {
           "astra_lists_commit": null,
@@ -6082,7 +6331,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.1"
+          "path": "frozen/1.7/1.7.3/1.7.3.1",
+          "is_main_symlinked": false
         },
         "1.7.3.3": {
           "astra_lists_commit": null,
@@ -6127,7 +6377,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.3"
+          "path": "frozen/1.7/1.7.3/1.7.3.3",
+          "is_main_symlinked": false
         },
         "1.7.3.2": {
           "astra_lists_commit": null,
@@ -6172,7 +6423,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.3/1.7.3.2"
+          "path": "frozen/1.7/1.7.3/1.7.3.2",
+          "is_main_symlinked": false
         }
       },
       "1.7.5": {
@@ -6195,7 +6447,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.KREA2.1"
+          "path": "frozen/1.7/1.7.5/1.7.5.KREA2.1",
+          "is_main_symlinked": false
         },
         "1.7.5.8": {
           "astra_lists_commit": null,
@@ -6246,7 +6499,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.8"
+          "path": "frozen/1.7/1.7.5/1.7.5.8",
+          "is_main_symlinked": false
         },
         "1.7.5.6": {
           "astra_lists_commit": null,
@@ -6297,7 +6551,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.6"
+          "path": "frozen/1.7/1.7.5/1.7.5.6",
+          "is_main_symlinked": false
         },
         "1.7.5.10": {
           "astra_lists_commit": null,
@@ -6348,7 +6603,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.10"
+          "path": "frozen/1.7/1.7.5/1.7.5.10",
+          "is_main_symlinked": false
         },
         "1.7.5.4": {
           "astra_lists_commit": null,
@@ -6399,7 +6655,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.4"
+          "path": "frozen/1.7/1.7.5/1.7.5.4",
+          "is_main_symlinked": false
         },
         "1.7.5.9": {
           "astra_lists_commit": null,
@@ -6450,7 +6707,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.9"
+          "path": "frozen/1.7/1.7.5/1.7.5.9",
+          "is_main_symlinked": false
         },
         "1.7.5.15": {
           "astra_lists_commit": null,
@@ -6501,7 +6759,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.15"
+          "path": "frozen/1.7/1.7.5/1.7.5.15",
+          "is_main_symlinked": false
         },
         "1.7.5.EXT1.2": {
           "astra_lists_commit": null,
@@ -6519,7 +6778,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.2"
+          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.2",
+          "is_main_symlinked": false
         },
         "1.7.5.16": {
           "astra_lists_commit": null,
@@ -6570,7 +6830,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.16"
+          "path": "frozen/1.7/1.7.5/1.7.5.16",
+          "is_main_symlinked": false
         },
         "1.7.5.1": {
           "astra_lists_commit": null,
@@ -6621,7 +6882,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.1"
+          "path": "frozen/1.7/1.7.5/1.7.5.1",
+          "is_main_symlinked": false
         },
         "1.7.5.KREA1.1": {
           "astra_lists_commit": null,
@@ -6642,7 +6904,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.KREA1.1"
+          "path": "frozen/1.7/1.7.5/1.7.5.KREA1.1",
+          "is_main_symlinked": false
         },
         "1.7.5.11": {
           "astra_lists_commit": null,
@@ -6693,7 +6956,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.11"
+          "path": "frozen/1.7/1.7.5/1.7.5.11",
+          "is_main_symlinked": false
         },
         "1.7.5.3": {
           "astra_lists_commit": null,
@@ -6744,7 +7008,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.3"
+          "path": "frozen/1.7/1.7.5/1.7.5.3",
+          "is_main_symlinked": false
         },
         "1.7.5.7": {
           "astra_lists_commit": null,
@@ -6795,7 +7060,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.7"
+          "path": "frozen/1.7/1.7.5/1.7.5.7",
+          "is_main_symlinked": false
         },
         "1.7.5.5": {
           "astra_lists_commit": null,
@@ -6846,7 +7112,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.5"
+          "path": "frozen/1.7/1.7.5/1.7.5.5",
+          "is_main_symlinked": false
         },
         "1.7.5.EXT1.5": {
           "astra_lists_commit": null,
@@ -6864,7 +7131,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.5"
+          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.5",
+          "is_main_symlinked": false
         },
         "1.7.5.12": {
           "astra_lists_commit": null,
@@ -6915,7 +7183,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.12"
+          "path": "frozen/1.7/1.7.5/1.7.5.12",
+          "is_main_symlinked": false
         },
         "1.7.5.13": {
           "astra_lists_commit": null,
@@ -6966,7 +7235,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.13"
+          "path": "frozen/1.7/1.7.5/1.7.5.13",
+          "is_main_symlinked": false
         },
         "1.7.5.EXT1.1": {
           "astra_lists_commit": null,
@@ -6984,7 +7254,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.1"
+          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.1",
+          "is_main_symlinked": false
         },
         "1.7.5.2": {
           "astra_lists_commit": null,
@@ -7035,7 +7306,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.2"
+          "path": "frozen/1.7/1.7.5/1.7.5.2",
+          "is_main_symlinked": false
         },
         "1.7.5.14": {
           "astra_lists_commit": null,
@@ -7086,7 +7358,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.14"
+          "path": "frozen/1.7/1.7.5/1.7.5.14",
+          "is_main_symlinked": false
         },
         "1.7.5.EXT1.3": {
           "astra_lists_commit": null,
@@ -7104,7 +7377,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.3"
+          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.3",
+          "is_main_symlinked": false
         },
         "1.7.5.EXT1.4": {
           "astra_lists_commit": null,
@@ -7122,7 +7396,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.4"
+          "path": "frozen/1.7/1.7.5/1.7.5.EXT1.4",
+          "is_main_symlinked": false
         }
       },
       "1.7.2": {
@@ -7157,7 +7432,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.6"
+          "path": "frozen/1.7/1.7.2/1.7.2.6",
+          "is_main_symlinked": false
         },
         "1.7.2.EXT2.3": {
           "astra_lists_commit": null,
@@ -7175,7 +7451,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.EXT2.3"
+          "path": "frozen/1.7/1.7.2/1.7.2.EXT2.3",
+          "is_main_symlinked": false
         },
         "1.7.2.EXT2.2": {
           "astra_lists_commit": null,
@@ -7193,7 +7470,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.EXT2.2"
+          "path": "frozen/1.7/1.7.2/1.7.2.EXT2.2",
+          "is_main_symlinked": false
         },
         "1.7.2.10": {
           "astra_lists_commit": null,
@@ -7226,7 +7504,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.10"
+          "path": "frozen/1.7/1.7.2/1.7.2.10",
+          "is_main_symlinked": false
         },
         "1.7.2.EXT1.2": {
           "astra_lists_commit": null,
@@ -7244,7 +7523,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.EXT1.2"
+          "path": "frozen/1.7/1.7.2/1.7.2.EXT1.2",
+          "is_main_symlinked": false
         },
         "1.7.2.3": {
           "astra_lists_commit": null,
@@ -7289,7 +7569,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.3"
+          "path": "frozen/1.7/1.7.2/1.7.2.3",
+          "is_main_symlinked": false
         },
         "1.7.2.1": {
           "astra_lists_commit": null,
@@ -7322,7 +7603,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.1"
+          "path": "frozen/1.7/1.7.2/1.7.2.1",
+          "is_main_symlinked": false
         },
         "1.7.2.8": {
           "astra_lists_commit": null,
@@ -7355,7 +7637,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.8"
+          "path": "frozen/1.7/1.7.2/1.7.2.8",
+          "is_main_symlinked": false
         },
         "1.7.2.7": {
           "astra_lists_commit": null,
@@ -7388,7 +7671,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.7"
+          "path": "frozen/1.7/1.7.2/1.7.2.7",
+          "is_main_symlinked": false
         },
         "1.7.2.EXT1.3": {
           "astra_lists_commit": null,
@@ -7406,7 +7690,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.EXT1.3"
+          "path": "frozen/1.7/1.7.2/1.7.2.EXT1.3",
+          "is_main_symlinked": false
         },
         "1.7.2.2": {
           "astra_lists_commit": null,
@@ -7451,7 +7736,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.2"
+          "path": "frozen/1.7/1.7.2/1.7.2.2",
+          "is_main_symlinked": false
         },
         "1.7.2.EXT1.1": {
           "astra_lists_commit": null,
@@ -7469,7 +7755,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.EXT1.1"
+          "path": "frozen/1.7/1.7.2/1.7.2.EXT1.1",
+          "is_main_symlinked": false
         },
         "1.7.2.4": {
           "astra_lists_commit": null,
@@ -7514,7 +7801,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.4"
+          "path": "frozen/1.7/1.7.2/1.7.2.4",
+          "is_main_symlinked": false
         },
         "1.7.2.5": {
           "astra_lists_commit": null,
@@ -7559,7 +7847,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.5"
+          "path": "frozen/1.7/1.7.2/1.7.2.5",
+          "is_main_symlinked": false
         },
         "1.7.2.9": {
           "astra_lists_commit": null,
@@ -7592,7 +7881,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.9"
+          "path": "frozen/1.7/1.7.2/1.7.2.9",
+          "is_main_symlinked": false
         },
         "1.7.2.11": {
           "astra_lists_commit": null,
@@ -7625,7 +7915,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.11"
+          "path": "frozen/1.7/1.7.2/1.7.2.11",
+          "is_main_symlinked": false
         },
         "1.7.2.EXT2.1": {
           "astra_lists_commit": null,
@@ -7643,7 +7934,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.2/1.7.2.EXT2.1"
+          "path": "frozen/1.7/1.7.2/1.7.2.EXT2.1",
+          "is_main_symlinked": false
         }
       },
       "1.7.4": {
@@ -7690,7 +7982,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.7"
+          "path": "frozen/1.7/1.7.4/1.7.4.7",
+          "is_main_symlinked": false
         },
         "1.7.4.5": {
           "astra_lists_commit": null,
@@ -7735,7 +8028,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.5"
+          "path": "frozen/1.7/1.7.4/1.7.4.5",
+          "is_main_symlinked": false
         },
         "1.7.4.10": {
           "astra_lists_commit": null,
@@ -7786,7 +8080,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.10"
+          "path": "frozen/1.7/1.7.4/1.7.4.10",
+          "is_main_symlinked": false
         },
         "1.7.4.9": {
           "astra_lists_commit": null,
@@ -7837,7 +8132,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.9"
+          "path": "frozen/1.7/1.7.4/1.7.4.9",
+          "is_main_symlinked": false
         },
         "1.7.4.11": {
           "astra_lists_commit": null,
@@ -7888,7 +8184,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.11"
+          "path": "frozen/1.7/1.7.4/1.7.4.11",
+          "is_main_symlinked": false
         },
         "1.7.4.8": {
           "astra_lists_commit": null,
@@ -7939,7 +8236,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.8"
+          "path": "frozen/1.7/1.7.4/1.7.4.8",
+          "is_main_symlinked": false
         },
         "1.7.4.1": {
           "astra_lists_commit": null,
@@ -7984,7 +8282,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.1"
+          "path": "frozen/1.7/1.7.4/1.7.4.1",
+          "is_main_symlinked": false
         },
         "1.7.4.EXT1.4": {
           "astra_lists_commit": null,
@@ -8002,7 +8301,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.4"
+          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.4",
+          "is_main_symlinked": false
         },
         "1.7.4.EXT1.1": {
           "astra_lists_commit": null,
@@ -8020,7 +8320,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.1"
+          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.1",
+          "is_main_symlinked": false
         },
         "1.7.4.EXT1.3": {
           "astra_lists_commit": null,
@@ -8038,7 +8339,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.3"
+          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.3",
+          "is_main_symlinked": false
         },
         "1.7.4.3": {
           "astra_lists_commit": null,
@@ -8083,7 +8385,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.3"
+          "path": "frozen/1.7/1.7.4/1.7.4.3",
+          "is_main_symlinked": false
         },
         "1.7.4.4": {
           "astra_lists_commit": null,
@@ -8128,7 +8431,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.4"
+          "path": "frozen/1.7/1.7.4/1.7.4.4",
+          "is_main_symlinked": false
         },
         "1.7.4.KREA2.1": {
           "astra_lists_commit": null,
@@ -8146,7 +8450,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.KREA2.1"
+          "path": "frozen/1.7/1.7.4/1.7.4.KREA2.1",
+          "is_main_symlinked": false
         },
         "1.7.4.6": {
           "astra_lists_commit": null,
@@ -8191,7 +8496,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.6"
+          "path": "frozen/1.7/1.7.4/1.7.4.6",
+          "is_main_symlinked": false
         },
         "1.7.4.KREA1.1": {
           "astra_lists_commit": null,
@@ -8209,7 +8515,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.KREA1.1"
+          "path": "frozen/1.7/1.7.4/1.7.4.KREA1.1",
+          "is_main_symlinked": false
         },
         "1.7.4.EXT1.2": {
           "astra_lists_commit": null,
@@ -8227,7 +8534,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.2"
+          "path": "frozen/1.7/1.7.4/1.7.4.EXT1.2",
+          "is_main_symlinked": false
         },
         "1.7.4.2": {
           "astra_lists_commit": null,
@@ -8272,7 +8580,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.4/1.7.4.2"
+          "path": "frozen/1.7/1.7.4/1.7.4.2",
+          "is_main_symlinked": false
         }
       },
       "1.7.6": {
@@ -8325,7 +8634,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.4"
+          "path": "frozen/1.7/1.7.6/1.7.6.4",
+          "is_main_symlinked": false
         },
         "1.7.6.KREA1.1": {
           "astra_lists_commit": null,
@@ -8346,7 +8656,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.KREA1.1"
+          "path": "frozen/1.7/1.7.6/1.7.6.KREA1.1",
+          "is_main_symlinked": false
         },
         "1.7.6.EXT1.3": {
           "astra_lists_commit": null,
@@ -8382,7 +8693,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.3"
+          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.3",
+          "is_main_symlinked": false
         },
         "1.7.6.13": {
           "astra_lists_commit": "538bdbabd9706b3dae9d456730d8be4032eae1e7",
@@ -8433,7 +8745,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.13"
+          "path": "frozen/1.7/1.7.6/1.7.6.13",
+          "is_main_symlinked": false
         },
         "1.7.6.10": {
           "astra_lists_commit": "c98c87a89ec3c0fba8cf8ea6f7c409f44bc9495a",
@@ -8484,7 +8797,8 @@
               "release_notes": "frozen/1.7/1.7.6/1.7.6.10/sources/release-notes/release-notes-base-1.7.6.10.html"
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.10"
+          "path": "frozen/1.7/1.7.6/1.7.6.10",
+          "is_main_symlinked": false
         },
         "1.7.6.1": {
           "astra_lists_commit": null,
@@ -8535,7 +8849,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.1"
+          "path": "frozen/1.7/1.7.6/1.7.6.1",
+          "is_main_symlinked": false
         },
         "1.7.6.7": {
           "astra_lists_commit": null,
@@ -8586,7 +8901,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.7"
+          "path": "frozen/1.7/1.7.6/1.7.6.7",
+          "is_main_symlinked": false
         },
         "1.7.6.3": {
           "astra_lists_commit": null,
@@ -8637,7 +8953,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.3"
+          "path": "frozen/1.7/1.7.6/1.7.6.3",
+          "is_main_symlinked": false
         },
         "1.7.6.8": {
           "astra_lists_commit": "718fdf95e6dfac32e1ab68fd7e5c7ce7c488ae2f",
@@ -8688,7 +9005,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.8"
+          "path": "frozen/1.7/1.7.6/1.7.6.8",
+          "is_main_symlinked": false
         },
         "1.7.6.EXT1.5": {
           "astra_lists_commit": null,
@@ -8724,7 +9042,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.5"
+          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.5",
+          "is_main_symlinked": false
         },
         "1.7.6.5": {
           "astra_lists_commit": null,
@@ -8775,7 +9094,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.5"
+          "path": "frozen/1.7/1.7.6/1.7.6.5",
+          "is_main_symlinked": false
         },
         "1.7.6.6": {
           "astra_lists_commit": null,
@@ -8826,7 +9146,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.6"
+          "path": "frozen/1.7/1.7.6/1.7.6.6",
+          "is_main_symlinked": false
         },
         "1.7.6.11": {
           "astra_lists_commit": null,
@@ -8877,7 +9198,8 @@
               "release_notes": "frozen/1.7/1.7.6/1.7.6.11/sources/release-notes/release-notes-base-1.7.6.11.html"
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.11"
+          "path": "frozen/1.7/1.7.6/1.7.6.11",
+          "is_main_symlinked": false
         },
         "1.7.6.15": {
           "astra_lists_commit": "88b4794955648f4ec142e659a0223503d863b5e3",
@@ -8928,7 +9250,8 @@
               "release_notes": "frozen/1.7/1.7.6/1.7.6.15/sources/release-notes/release-notes-base-1.7.6.15.html"
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.15"
+          "path": "frozen/1.7/1.7.6/1.7.6.15",
+          "is_main_symlinked": false
         },
         "1.7.6.EXT1.2": {
           "astra_lists_commit": null,
@@ -8964,7 +9287,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.2"
+          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.2",
+          "is_main_symlinked": false
         },
         "1.7.6.14": {
           "astra_lists_commit": "c2a33e115f1e3f1144cccae3ccb23c0ce5dd0f5a",
@@ -9015,7 +9339,8 @@
               "release_notes": "frozen/1.7/1.7.6/1.7.6.14/sources/release-notes/release-notes-base-1.7.6.14.html"
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.14"
+          "path": "frozen/1.7/1.7.6/1.7.6.14",
+          "is_main_symlinked": false
         },
         "1.7.6.EXT1.1": {
           "astra_lists_commit": null,
@@ -9036,7 +9361,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.1"
+          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.1",
+          "is_main_symlinked": false
         },
         "1.7.6.9": {
           "astra_lists_commit": "5da7cec1f1d09cd4ae62b284d7fc7a5402159d9b",
@@ -9087,7 +9413,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.9"
+          "path": "frozen/1.7/1.7.6/1.7.6.9",
+          "is_main_symlinked": false
         },
         "1.7.6.EXT2.1": {
           "astra_lists_commit": null,
@@ -9123,7 +9450,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.EXT2.1"
+          "path": "frozen/1.7/1.7.6/1.7.6.EXT2.1",
+          "is_main_symlinked": false
         },
         "1.7.6.2": {
           "astra_lists_commit": null,
@@ -9174,7 +9502,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.2"
+          "path": "frozen/1.7/1.7.6/1.7.6.2",
+          "is_main_symlinked": false
         },
         "1.7.6.12": {
           "astra_lists_commit": "c192468a126904dd16bc42ecc7f7eb48b2a31b99",
@@ -9225,7 +9554,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.12"
+          "path": "frozen/1.7/1.7.6/1.7.6.12",
+          "is_main_symlinked": false
         },
         "1.7.6.EXT1.4": {
           "astra_lists_commit": null,
@@ -9261,7 +9591,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.4"
+          "path": "frozen/1.7/1.7.6/1.7.6.EXT1.4",
+          "is_main_symlinked": false
         }
       },
       "1.7.1": {
@@ -9308,7 +9639,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.1/1.7.1.8"
+          "path": "frozen/1.7/1.7.1/1.7.1.8",
+          "is_main_symlinked": false
         },
         "1.7.1.EXT2.3": {
           "astra_lists_commit": null,
@@ -9326,7 +9658,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.7/1.7.1/1.7.1.EXT2.3"
+          "path": "frozen/1.7/1.7.1/1.7.1.EXT2.3",
+          "is_main_symlinked": false
         }
       }
     },
@@ -9360,7 +9693,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.4/1.4.0/1.4.0.1"
+          "path": "frozen/1.4/1.4.0/1.4.0.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -9382,7 +9716,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.40/2.12.40.1"
+          "path": "frozen/2.12/2.12.40/2.12.40.1",
+          "is_main_symlinked": false
         }
       },
       "2.12.43": {
@@ -9402,7 +9737,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.43/2.12.43.1"
+          "path": "frozen/2.12/2.12.43/2.12.43.1",
+          "is_main_symlinked": false
         }
       },
       "2.12.22": {
@@ -9422,7 +9758,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.22/2.12.22.1"
+          "path": "frozen/2.12/2.12.22/2.12.22.1",
+          "is_main_symlinked": false
         }
       },
       "2.12.13": {
@@ -9442,7 +9779,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.13/2.12.13.1"
+          "path": "frozen/2.12/2.12.13/2.12.13.1",
+          "is_main_symlinked": false
         }
       },
       "2.12.46": {
@@ -9465,7 +9803,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.KREA3.3"
+          "path": "frozen/2.12/2.12.46/2.12.46.KREA3.3",
+          "is_main_symlinked": false
         },
         "2.12.46.1": {
           "astra_lists_commit": null,
@@ -9483,7 +9822,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.1"
+          "path": "frozen/2.12/2.12.46/2.12.46.1",
+          "is_main_symlinked": false
         },
         "2.12.46.KREA2.1": {
           "astra_lists_commit": null,
@@ -9501,7 +9841,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.KREA2.1"
+          "path": "frozen/2.12/2.12.46/2.12.46.KREA2.1",
+          "is_main_symlinked": false
         },
         "2.12.46.3": {
           "astra_lists_commit": null,
@@ -9519,7 +9860,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.3"
+          "path": "frozen/2.12/2.12.46/2.12.46.3",
+          "is_main_symlinked": false
         },
         "2.12.46.2": {
           "astra_lists_commit": null,
@@ -9537,7 +9879,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.2"
+          "path": "frozen/2.12/2.12.46/2.12.46.2",
+          "is_main_symlinked": false
         },
         "2.12.46.5": {
           "astra_lists_commit": null,
@@ -9555,7 +9898,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.5"
+          "path": "frozen/2.12/2.12.46/2.12.46.5",
+          "is_main_symlinked": false
         },
         "2.12.46.6": {
           "astra_lists_commit": null,
@@ -9573,7 +9917,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.6"
+          "path": "frozen/2.12/2.12.46/2.12.46.6",
+          "is_main_symlinked": false
         },
         "2.12.46.KREA3.1": {
           "astra_lists_commit": null,
@@ -9594,7 +9939,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.KREA3.1"
+          "path": "frozen/2.12/2.12.46/2.12.46.KREA3.1",
+          "is_main_symlinked": false
         },
         "2.12.46.KREA1.1": {
           "astra_lists_commit": null,
@@ -9612,7 +9958,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.KREA1.1"
+          "path": "frozen/2.12/2.12.46/2.12.46.KREA1.1",
+          "is_main_symlinked": false
         },
         "2.12.46.4": {
           "astra_lists_commit": null,
@@ -9630,7 +9977,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.46/2.12.46.4"
+          "path": "frozen/2.12/2.12.46/2.12.46.4",
+          "is_main_symlinked": false
         }
       },
       "2.12.45": {
@@ -9650,7 +9998,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.45/2.12.45.KREA3.1"
+          "path": "frozen/2.12/2.12.45/2.12.45.KREA3.1",
+          "is_main_symlinked": false
         },
         "2.12.45.1": {
           "astra_lists_commit": null,
@@ -9668,7 +10017,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.45/2.12.45.1"
+          "path": "frozen/2.12/2.12.45/2.12.45.1",
+          "is_main_symlinked": false
         },
         "2.12.45.KREA5.1": {
           "astra_lists_commit": null,
@@ -9686,12 +10036,57 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/2.12/2.12.45/2.12.45.KREA5.1"
+          "path": "frozen/2.12/2.12.45/2.12.45.KREA5.1",
+          "is_main_symlinked": false
         }
       }
     },
     "12.8": {
       "12.8.1": {
+        "12.8.1.2": {
+          "astra_lists_commit": "201bced511f098ba93abb3e84b42c29592a0aad1",
+          "files": [
+            {
+              "path": "frozen/12.8/12.8.1/12.8.1.2/iso/installation-12.8.1.2-22.11.2024_15.09.iso",
+              "type": "installation",
+              "mount_point": "frozen/12.8/12.8.1/12.8.1.2/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "0ef4e08fd6de353d80b79a5d96a352270906203e91881d513ffc40a9acbc0929",
+                "md5": "aee72657ba2f57a2a8dc9790c2c2c4dd"
+              },
+              "changelog": "frozen/12.8/12.8.1/12.8.1.2/sources/changelogs/changelog-installation-12.8.1.2.html",
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/12.8/12.8.1/12.8.1.2",
+          "is_main_symlinked": true
+        },
+        "12.8.1.3": {
+          "astra_lists_commit": "79f79d1a9bdda28c976c09f250269319eec3d78e",
+          "files": [
+            {
+              "path": "frozen/12.8/12.8.1/12.8.1.3/iso/installation-12.8.1.3-06.12.2024_15.35.iso",
+              "type": "installation",
+              "mount_point": "frozen/12.8/12.8.1/12.8.1.3/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "2c1c1b4ebfcfab1cecf51c394ae260793915047cc14e3fd9e914079d78b5dceb",
+                "md5": "7fcb5ffbfbc71f3c7c8ba1f98152a832"
+              },
+              "changelog": "frozen/12.8/12.8.1/12.8.1.3/sources/changelogs/changelog-installation-12.8.1.3.html",
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/12.8/12.8.1/12.8.1.3",
+          "is_main_symlinked": true
+        },
         "12.8.1.1": {
           "astra_lists_commit": "e8cb2a528574e3a19fd028e6fcbe45b8c6fd4ab6",
           "files": [
@@ -9711,7 +10106,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/12.8/12.8.1/12.8.1.1"
+          "path": "frozen/12.8/12.8.1/12.8.1.1",
+          "is_main_symlinked": true
         }
       }
     },
@@ -9745,7 +10141,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.3/1.3.0/1.3.0.1"
+          "path": "frozen/1.3/1.3.0/1.3.0.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -9779,7 +10176,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/6.2/6.2.1/6.2.1.1"
+          "path": "frozen/6.2/6.2.1/6.2.1.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -9834,7 +10232,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.3/8.1.3.11"
+          "path": "frozen/8.1/8.1.3/8.1.3.11",
+          "is_main_symlinked": false
         }
       },
       "8.1.0": {
@@ -9866,7 +10265,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.0/8.1.0.1"
+          "path": "frozen/8.1/8.1.0/8.1.0.1",
+          "is_main_symlinked": false
         }
       },
       "8.1.4": {
@@ -9910,7 +10310,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.29"
+          "path": "frozen/8.1/8.1.4/8.1.4.29",
+          "is_main_symlinked": false
         },
         "8.1.4.23": {
           "astra_lists_commit": null,
@@ -9952,7 +10353,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.23"
+          "path": "frozen/8.1/8.1.4/8.1.4.23",
+          "is_main_symlinked": false
         },
         "8.1.4.15": {
           "astra_lists_commit": null,
@@ -9970,7 +10372,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.15"
+          "path": "frozen/8.1/8.1.4/8.1.4.15",
+          "is_main_symlinked": false
         },
         "8.1.4.17": {
           "astra_lists_commit": null,
@@ -10012,7 +10415,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.17"
+          "path": "frozen/8.1/8.1.4/8.1.4.17",
+          "is_main_symlinked": false
         },
         "8.1.4.27": {
           "astra_lists_commit": null,
@@ -10054,7 +10458,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.27"
+          "path": "frozen/8.1/8.1.4/8.1.4.27",
+          "is_main_symlinked": false
         },
         "8.1.4.19": {
           "astra_lists_commit": null,
@@ -10096,7 +10501,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.19"
+          "path": "frozen/8.1/8.1.4/8.1.4.19",
+          "is_main_symlinked": false
         },
         "8.1.4.9": {
           "astra_lists_commit": null,
@@ -10138,7 +10544,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.9"
+          "path": "frozen/8.1/8.1.4/8.1.4.9",
+          "is_main_symlinked": false
         },
         "8.1.4.22": {
           "astra_lists_commit": null,
@@ -10180,7 +10587,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.22"
+          "path": "frozen/8.1/8.1.4/8.1.4.22",
+          "is_main_symlinked": false
         },
         "8.1.4.28": {
           "astra_lists_commit": null,
@@ -10222,7 +10630,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.28"
+          "path": "frozen/8.1/8.1.4/8.1.4.28",
+          "is_main_symlinked": false
         },
         "8.1.4.25": {
           "astra_lists_commit": null,
@@ -10264,7 +10673,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.25"
+          "path": "frozen/8.1/8.1.4/8.1.4.25",
+          "is_main_symlinked": false
         },
         "8.1.4.10": {
           "astra_lists_commit": null,
@@ -10306,7 +10716,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.10"
+          "path": "frozen/8.1/8.1.4/8.1.4.10",
+          "is_main_symlinked": false
         },
         "8.1.4.26": {
           "astra_lists_commit": null,
@@ -10348,7 +10759,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.26"
+          "path": "frozen/8.1/8.1.4/8.1.4.26",
+          "is_main_symlinked": false
         },
         "8.1.4.11": {
           "astra_lists_commit": null,
@@ -10390,7 +10802,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.11"
+          "path": "frozen/8.1/8.1.4/8.1.4.11",
+          "is_main_symlinked": false
         },
         "8.1.4.24": {
           "astra_lists_commit": null,
@@ -10432,7 +10845,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.24"
+          "path": "frozen/8.1/8.1.4/8.1.4.24",
+          "is_main_symlinked": false
         },
         "8.1.4.12": {
           "astra_lists_commit": null,
@@ -10450,7 +10864,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.12"
+          "path": "frozen/8.1/8.1.4/8.1.4.12",
+          "is_main_symlinked": false
         },
         "8.1.4.18": {
           "astra_lists_commit": null,
@@ -10492,7 +10907,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.4/8.1.4.18"
+          "path": "frozen/8.1/8.1.4/8.1.4.18",
+          "is_main_symlinked": false
         }
       },
       "8.1.1": {
@@ -10524,7 +10940,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.1/8.1.1.FSB1.1"
+          "path": "frozen/8.1/8.1.1/8.1.1.FSB1.1",
+          "is_main_symlinked": false
         },
         "8.1.1.1": {
           "astra_lists_commit": null,
@@ -10554,7 +10971,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.1/8.1.1.1"
+          "path": "frozen/8.1/8.1.1/8.1.1.1",
+          "is_main_symlinked": false
         }
       },
       "8.1.2": {
@@ -10574,7 +10992,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.2/8.1.2.FSB1.1"
+          "path": "frozen/8.1/8.1.2/8.1.2.FSB1.1",
+          "is_main_symlinked": false
         },
         "8.1.2.1": {
           "astra_lists_commit": null,
@@ -10604,7 +11023,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.2/8.1.2.1"
+          "path": "frozen/8.1/8.1.2/8.1.2.1",
+          "is_main_symlinked": false
         }
       },
       "8.1.5": {
@@ -10657,7 +11077,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.7"
+          "path": "frozen/8.1/8.1.5/8.1.5.7",
+          "is_main_symlinked": false
         },
         "8.1.5.2": {
           "astra_lists_commit": null,
@@ -10708,7 +11129,60 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.2"
+          "path": "frozen/8.1/8.1.5/8.1.5.2",
+          "is_main_symlinked": false
+        },
+        "8.1.5.16": {
+          "astra_lists_commit": null,
+          "files": [
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.16/iso/devel_update-8.1.5.16-28.11.2024_16.12.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.16/devel-update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "fcd5e506de6efb812a2d2d44f7f55412a1201c3f9bf2b6a7484f7163fcfe6423",
+                "md5": "25a43dba71da4a4a2b17f6272353fe07"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.16/iso/main_update-8.1.5.16-28.11.2024_16.12.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.16/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "4a17ef0160cc11dd100438f7c3baa58ceb06ebebbd5c5615e6268ff811b88c58",
+                "md5": "7d00e6e4ed868be682b24920327fb2d4"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.16/iso/installation-8.1.5.16-28.11.2024_16.12.iso",
+              "type": "installation",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.16/installation",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "0979fe70aad43d5344c272d2f1b5c485b93b504e2c7db0f99db72408f6620d29",
+                "md5": "3930bccea9f8849d7fdb12cf3d27498a"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/8.1/8.1.5/8.1.5.16",
+          "is_main_symlinked": false
         },
         "8.1.5.14": {
           "astra_lists_commit": null,
@@ -10759,7 +11233,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.14"
+          "path": "frozen/8.1/8.1.5/8.1.5.14",
+          "is_main_symlinked": false
         },
         "8.1.5.10": {
           "astra_lists_commit": null,
@@ -10810,7 +11285,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.10"
+          "path": "frozen/8.1/8.1.5/8.1.5.10",
+          "is_main_symlinked": false
         },
         "8.1.5.9": {
           "astra_lists_commit": null,
@@ -10861,7 +11337,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.9"
+          "path": "frozen/8.1/8.1.5/8.1.5.9",
+          "is_main_symlinked": false
         },
         "8.1.5.12": {
           "astra_lists_commit": null,
@@ -10912,7 +11389,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.12"
+          "path": "frozen/8.1/8.1.5/8.1.5.12",
+          "is_main_symlinked": false
         },
         "8.1.5.11": {
           "astra_lists_commit": null,
@@ -10963,7 +11441,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.11"
+          "path": "frozen/8.1/8.1.5/8.1.5.11",
+          "is_main_symlinked": false
         },
         "8.1.5.13": {
           "astra_lists_commit": null,
@@ -11014,7 +11493,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.13"
+          "path": "frozen/8.1/8.1.5/8.1.5.13",
+          "is_main_symlinked": false
         },
         "8.1.5.8": {
           "astra_lists_commit": null,
@@ -11065,7 +11545,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.8"
+          "path": "frozen/8.1/8.1.5/8.1.5.8",
+          "is_main_symlinked": false
         },
         "8.1.5.4": {
           "astra_lists_commit": null,
@@ -11116,7 +11597,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.4"
+          "path": "frozen/8.1/8.1.5/8.1.5.4",
+          "is_main_symlinked": false
         },
         "8.1.5.6": {
           "astra_lists_commit": null,
@@ -11167,7 +11649,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.6"
+          "path": "frozen/8.1/8.1.5/8.1.5.6",
+          "is_main_symlinked": false
         },
         "8.1.5.5": {
           "astra_lists_commit": null,
@@ -11218,7 +11701,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.5"
+          "path": "frozen/8.1/8.1.5/8.1.5.5",
+          "is_main_symlinked": false
         },
         "8.1.5.15": {
           "astra_lists_commit": null,
@@ -11269,7 +11753,112 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/8.1/8.1.5/8.1.5.15"
+          "path": "frozen/8.1/8.1.5/8.1.5.15",
+          "is_main_symlinked": false
+        },
+        "8.1.5.17": {
+          "astra_lists_commit": null,
+          "files": [
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.17/iso/installation-8.1.5.17-05.12.2024_13.15.iso",
+              "type": "installation",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.17/installation",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "cc39aa4a8bee7ff61940280e238712545e79440c947b21d8e6828b81c28f22ac",
+                "md5": "d6a56e0bf028a09c571ecff75e0fad6c"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.17/iso/devel_update-8.1.5.17-05.12.2024_13.15.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.17/devel-update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "a5bc2b1bab9bfb5124474e3677986edebb7c8893f7c0a1ed673a8cb8baf07347",
+                "md5": "9ba31b59870aa791aa471f4a7bd13c09"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.17/iso/main_update-8.1.5.17-05.12.2024_13.15.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.17/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "9851af902e85fd9117b1c1916940897b39a9be20c6690a831fb606495c7ef009",
+                "md5": "494f9d697b68859670a18b643e3e228e"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/8.1/8.1.5/8.1.5.17",
+          "is_main_symlinked": false
+        },
+        "8.1.5.18": {
+          "astra_lists_commit": null,
+          "files": [
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.18/iso/installation-8.1.5.18-06.12.2024_12.16.iso",
+              "type": "installation",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.18/installation",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "4c8d3bce74b01a4671cd28a6e0eaa8105c56d3c75dcfc1c57e9589419f164a62",
+                "md5": "959ac9fe8940cb8becf15553e8444f1e"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.18/iso/devel_update-8.1.5.18-06.12.2024_12.16.iso",
+              "type": "devel_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.18/devel-update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "aea8fecd9fbb77d1eb1f2dfed311c93bef5293631ab6560fd7f38552ecdb1dcf",
+                "md5": "778a746aec35a4cc81ca5e55da2f571f"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/8.1/8.1.5/8.1.5.18/iso/main_update-8.1.5.18-06.12.2024_12.16.iso",
+              "type": "main_update",
+              "mount_point": "frozen/8.1/8.1.5/8.1.5.18/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "device": null,
+              "hashsums": {
+                "gost": "eee7c6aa0b2762edf43a7a9b663c9920fb087333244b7efaa622ae979dc861c2",
+                "md5": "4317b88b419a8526f7f57c7dd965d732"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/8.1/8.1.5/8.1.5.18",
+          "is_main_symlinked": false
         }
       }
     },
@@ -11315,7 +11904,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/14.7/14.7.4/14.7.4.1"
+          "path": "frozen/14.7/14.7.4/14.7.4.1",
+          "is_main_symlinked": false
         },
         "14.7.4.3": {
           "astra_lists_commit": null,
@@ -11366,7 +11956,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/14.7/14.7.4/14.7.4.3"
+          "path": "frozen/14.7/14.7.4/14.7.4.3",
+          "is_main_symlinked": false
         },
         "14.7.4.4": {
           "astra_lists_commit": null,
@@ -11417,7 +12008,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/14.7/14.7.4/14.7.4.4"
+          "path": "frozen/14.7/14.7.4/14.7.4.4",
+          "is_main_symlinked": false
         },
         "14.7.4.2": {
           "astra_lists_commit": null,
@@ -11459,7 +12051,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/14.7/14.7.4/14.7.4.2"
+          "path": "frozen/14.7/14.7.4/14.7.4.2",
+          "is_main_symlinked": false
         }
       }
     },
@@ -11493,7 +12086,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.11/1.11.0/1.11.0.1"
+          "path": "frozen/1.11/1.11.0/1.11.0.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -11518,7 +12112,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/4.1/4.1.1/4.1.1.1"
+          "path": "frozen/4.1/4.1.1/4.1.1.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -11552,7 +12147,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.5/1.5.8/1.5.8.1"
+          "path": "frozen/1.5/1.5.8/1.5.8.1",
+          "is_main_symlinked": false
         }
       },
       "1.5.0": {
@@ -11584,7 +12180,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.5/1.5.0/1.5.0.1"
+          "path": "frozen/1.5/1.5.0/1.5.0.1",
+          "is_main_symlinked": false
         }
       },
       "1.5.9": {
@@ -11616,7 +12213,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/1.5/1.5.9/1.5.9.1"
+          "path": "frozen/1.5/1.5.9/1.5.9.1",
+          "is_main_symlinked": false
         }
       }
     },
@@ -11686,7 +12284,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/3.8/3.8.0/3.8.0.2"
+          "path": "frozen/3.8/3.8.0/3.8.0.2",
+          "is_main_symlinked": false
         },
         "3.8.0.1": {
           "astra_lists_commit": null,
@@ -11737,7 +12336,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/3.8/3.8.0/3.8.0.1"
+          "path": "frozen/3.8/3.8.0/3.8.0.1",
+          "is_main_symlinked": false
         }
       },
       "3.8.1": {
@@ -11805,7 +12405,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/3.8/3.8.1/3.8.1.3"
+          "path": "frozen/3.8/3.8.1/3.8.1.3",
+          "is_main_symlinked": false
         },
         "3.8.1.4": {
           "astra_lists_commit": "8d88a7b92ae4ad39a711f11d317054eac98663a5",
@@ -11871,7 +12472,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/3.8/3.8.1/3.8.1.4"
+          "path": "frozen/3.8/3.8.1/3.8.1.4",
+          "is_main_symlinked": false
         },
         "3.8.1.1": {
           "astra_lists_commit": null,
@@ -11937,7 +12539,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/3.8/3.8.1/3.8.1.1"
+          "path": "frozen/3.8/3.8.1/3.8.1.1",
+          "is_main_symlinked": false
         },
         "3.8.1.2": {
           "astra_lists_commit": "55dac78d1af37b6d2bfb07890d9e62d57987fc85",
@@ -12003,7 +12606,8 @@
               "release_notes": null
             }
           ],
-          "path": "frozen/3.8/3.8.1/3.8.1.2"
+          "path": "frozen/3.8/3.8.1/3.8.1.2",
+          "is_main_symlinked": false
         }
       }
     }
@@ -12297,6 +12901,10 @@
             }
           },
           "UU": {
+            "1.7.6.UU2": {
+              "path": "stable/1.7/1.7.6/UU2",
+              "release_candidate": "1.7.6.15"
+            },
             "1.7.6.UU1": {
               "path": "stable/1.7/1.7.6/UU1",
               "release_candidate": "1.7.6.14"

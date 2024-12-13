@@ -6,7 +6,7 @@ def write_allta_conf(data):
         json.dump(data, w, indent=4)
 
 
-
+__basic = 'Bearer NzczOTM4MTkwMjE0Oo3C5by4fDOYW0/HMo53S13OIUVu'
 
 def add_testrun_folder(rc):
     main_folder = 2744
@@ -54,13 +54,14 @@ def add_testrun_folder(rc):
 
             print(data)
             response = requests.post(add_folder_url, headers=headers, json=data)
-            #print(response.status_code)
-            #print(response.text)
+            print(response.status_code)
+            print(response.text)
             value = response.json()
-            config['cycle_tree_index'][name] = __get_folder_tree_id(name, headers)
-            config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
+            print(value)
+            #config['cycle_tree_index'][name] = __get_folder_tree_id(name, headers)
+            #config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
             #print(config['cycle_tree_index'])
-            write_allta_conf(config)
+            #write_allta_conf(config)
 
     while counter < 2:
         counter += 1
@@ -88,7 +89,7 @@ def add_testrun_folder(rc):
 
 
 
-#add_testrun_folder('1.8.1.UU.2.4')
+add_testrun_folder('1.8.1.UU.2.5')
 
 
 
@@ -191,11 +192,11 @@ def __get_folder_tree_id(rc, headers):
 
 
 
-add_folder_url = f'https://jira.astralinux.ru/rest/tests/1.0/folders/testrun'
-headers = {
-    'Authorization': __basic
-}
+#add_folder_url = f'https://jira.astralinux.ru/rest/tests/1.0/folders/testrun'
+#headers = {
+#    'Authorization': __basic
+#}
 
-response = requests.get(add_folder_url, headers=headers)
-print(response.status_code)
-print(response.text)
+#response = requests.get(add_folder_url, headers=headers)
+#print(response.status_code)
+#print(response.text)

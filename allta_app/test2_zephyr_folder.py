@@ -6,7 +6,7 @@ def write_allta_conf(data):
         json.dump(data, w, indent=4)
 
 
-__basic = 'Bearer NzczOTM4MTkwMjE0Oo3C5by4fDOYW0/HMo53S13OIUVu'
+__basic = ''
 
 def add_testrun_folder(rc):
     main_folder = 2744

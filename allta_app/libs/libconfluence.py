@@ -63,6 +63,11 @@ class ConfluenceAPI():
                        page_id):
         return self.__confluence.get_page_by_id(page_id=page_id)
     
+    def get_full_page_by_id(self,
+                            page_id):
+        return self.__confluence.get_page_by_id(page_id=page_id,
+                                                expand="body.storage")
+    
 
 
 

@@ -509,3 +509,40 @@
 #                                time='4:41:20')
 # tt_watchdog.create_html()
 
+
+from libs.libconfluence import ConfluenceAPI
+
+
+conf = ConfluenceAPI(username='dtimonin', token='MjEyOTcxNzIwOTY3OrXcjTH2BpyzcE8+4avH2EkN8U29')
+
+#status_page = conf.get_full_page_by_id(page_id='347765252')
+#html_content = status_page.get('body', {}).get('storage', {}).get('value', '')
+
+#with open('status.html', 'w') as w:
+#    w.write(html_content)
+#span.css-14v6hkl:nth-child(15)
+#css-14v6hkl e16vi2nm1
+#print(status_page)
+
+
+
+import requests
+from bs4 import BeautifulSoup
+
+__basic = ''
+
+url = 'https://jira.astralinux.ru/rest/api/2/user/properties/ZEPHYR_SCALE_SETTINGS.PROJECT.11200?userKey=JIRAUSER38882'
+headers = {
+                'Authorization': __basic
+            }
+
+response = requests.get(url, headers=headers)
+soup = BeautifulSoup(response.text, 'html.parser')
+element = soup.select('.css-14v6hkl.e16vi2nm1')
+
+print(response.text)
+
+if element:
+    print(element[0].text)
+else:
+    print("Элемент не найден")

@@ -1,10 +1,12 @@
+import json
+import requests
 import pandas as pd
 import numpy as np
 from abc import abstractmethod
 from functools import reduce
 
 from confluence.confluence_conf import CONFLUENCE_URL, CONFLUENCE_SPACE
-from errors import NoDataAvailableForThisTestType
+from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent
 from grade import Grade
 from sorting import SortMainTable, SortUniqueMajorKernel
 from typetest import TypeTest
@@ -196,3 +198,43 @@ class TableSeparatelyByKernel(Table):
         main_logger.info(f"Построена {self.__class__.__name__}")
         main_logger.debug(f"{separate_by_kernel_df}")
         return separate_by_kernel_df
+    
+
+class BugsTable(Table):
+    def __init__(self, saver, component):
+        self.saver = saver
+        self.component = component
+        self.url = 'http://allta.devos.astralinux.ru/rest/api/known-bugs'
+        self.response = requests.get(url=self.url)
+
+    def build(self):
+        if self.response.status_code == 200:
+            data = self.response.json()
+
+            macros = """<ac:structured-macro ac:name="jira" ac:schema-version="1" ac:macro-id="e586f42e-cab2-426c-97d5-692afd3dee26">
+                <ac:parameter ac:name="server">Jira - Astra Linux</ac:parameter>
+                <ac:parameter ac:name="serverId">d19f6132-65dc-37bb-94ca-4be05d9bb688</ac:parameter>
+                <ac:parameter ac:name="key">{task_id}</ac:parameter>
+                <ac:parameter ac:name="columns">key,summary,type,created,updated,due,assignee,reporter,priority,status,resolution</ac:parameter>
+                </ac:structured-macro>"""
+            rows = []
+            for component, tasks in data.items():
+                for task_id, link in tasks.items():
+                    rows.append({"Компонент": component,
+                                 "Ошибка": macros.format(task_id=task_id)
+                                 })
+            
+            df = pd.DataFrame(rows)
+            """
+                Сортировка по компоненту на данный момент отключена
+            """
+            df = df[df['Компонент'] == self.component]
+            if df.empty:
+                raise NoBugsFoundForComponent
+            df['№'] = range(1, df.shape[0] + 1)
+            df = df[["№", "Ошибка"]]
+            self.saver.save(dataframe=df,
+                            name=f"{self.__class__.__name__}.html",
+                            desc=f"<h2>Таблица найденных ошибок</h2>")
+            main_logger.info(f"Сохранена таблица {self.__class__.__name__}")
+            

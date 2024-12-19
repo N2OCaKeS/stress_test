@@ -7,3 +7,4 @@ atlassian-python-api
 setuptools
 fastapi[standard]
 gunicorn
+requests

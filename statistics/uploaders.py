@@ -74,6 +74,7 @@ class BaseUploader:
 
     def _find_files(self):
         base_html_file = {}
+        end_of_page = {}
         for file in sorted(os.listdir(self.folder)):
             part_header = file.split("_")
             # set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time", "auth", "time-sm"}
@@ -86,25 +87,29 @@ class BaseUploader:
             self.confluence_stat.attache_files(file=f"{self.folder}/{file}",
                                                page_space=CONFLUENCE_SPACE,
                                                page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}")
-
-            base_html_file.setdefault(type_stat, {})
+            if not "BugsTable" in type_stat:
+                base_html_file.setdefault(type_stat, {})
             temp_var = part_header[-1].split(".")[0]
             if file.endswith(".png"):
                 base_html_file[type_stat].setdefault(temp_var, [])
                 image = TemplateImage.template.format(page_id=self.confluence_stat.get_confluence_page_id(page_space=CONFLUENCE_SPACE, page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}"), img_png=file, CONFLUENCE_URL=CONFLUENCE_URL)
                 base_html_file[type_stat][temp_var].append(image)
             elif file.endswith(".html"):
+                if "BugsTable" in file:
+                    end_of_page["bugs"] = self._read_html_file(file_name=file)
+                    continue
                 base_html_file[type_stat][temp_var] =  self._read_html_file(file_name=file)
+            if not "BugsTable" in type_stat:
+                base_html_file[type_stat]["Header"] = f"<h1 id='{TypeTest.get_full_name_test_without_df(type_stat)}'><b>{TypeTest.get_full_name_test_without_df(type_stat)}</b></h1>"
             
-            base_html_file[type_stat]["Header"] = f"<h1 id='{TypeTest.get_full_name_test_without_df(type_stat)}'><b>{TypeTest.get_full_name_test_without_df(type_stat)}</b></h1>"
-            
-        return base_html_file
+        return {"base_html_file": base_html_file, "end_of_page": end_of_page}
     
     def collect_a_single_html(self):
         self._create_page()
         html_list = []
         nav_lst = []
-        for type_test, html_src_images_and_tables in self._find_files().items():
+        fined_files = self._find_files()
+        for type_test, html_src_images_and_tables in fined_files.get("base_html_file").items():
             type_test = TypeTest.get_full_name_test_without_df(type_test)
             
             nav_lst.append(self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
@@ -142,10 +147,14 @@ class BaseUploader:
                 for graph in summary_graph:
                     html_list.append(graph)
                     main_logger.debug("Добавлен SummaryGraph в html")
-            
+        
         nav_items = "".join(nav_lst)
         nav = self.NAV_START + nav_items  + self.NAV_END
         html_list.insert(0, nav)
+        
+        bugs = fined_files.get("end_of_page").get("bugs")
+
+        html_list.append(bugs)
         main_logger.debug("Сформирован и вставлен в начала NAV")
         html_list = [str(item) for item in html_list if item is not None]
         self.html_page = "".join(html_list)

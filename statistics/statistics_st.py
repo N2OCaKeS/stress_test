@@ -6,13 +6,13 @@ from abc import abstractmethod
 from confluence.confluence_conf import ID_ROOT_PAGES
 from pages import Pages
 from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser
-from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew
+from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew, BugsTable
 from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph
 from sorting import Scale
 from savers import SaveTableToFile, SaveGraph
 from uploaders import BaseUploader
 from typetest import TypeTest
-from errors import NoDataAvailableForThisTestType
+from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent
 
 from logging_conf import main_logger
 
@@ -140,6 +140,13 @@ class BaseStatistics(Statistics):
           # Здесь сравнение
           self._compare_scores(dct_wttaidf=dct_with_type_test_and_its_df,
                                stat_rc_vers=stat_rc_version)
+          
+          try:
+               saver_bugs_table = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
+               bugs_table = BugsTable(saver=saver_bugs_table, component=self.stat_title)
+               bugs_table.build()
+          except NoBugsFoundForComponent:
+               main_logger.info(f"Не найдено багов для компонента {self.stat_title}")
           # Здесь выкладывание в confluence
           self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 

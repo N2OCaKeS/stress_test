@@ -365,6 +365,11 @@ def get_known_bugs():
     return jsonify(known_bugs), 200
 
 
+@app.route('/rest/api/available-kernels-from-<rc>', methods=['POST'])
+def available_kernels_from_rc(rc):
+    return get_kernels_from_rc(version_rc=rc, get_list=True)
+
+
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)
 

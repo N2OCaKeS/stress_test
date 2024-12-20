@@ -3,6 +3,7 @@ import json
 import os.path
 import logging
 import subprocess
+import requests
 from asyncio import get_event_loop
 
 from celery import chain
@@ -61,10 +62,15 @@ def install_kernels(version_name, stand):
         kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
     elif version_name.startswith("1.7.6"):
         kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
+    # временное решение
+    elif version_name.startswith("1.7.7"):
+        kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
     elif version_name.startswith("1.8.1"):
         kernel = "linux-6.6-generic"
     else:
         kernel = None
+    
+    res_get_kernel = requests.post(f"allta.devos.astralinux.ru/rest/api/available-kernels-from-{version_name}")
 
     components = " ".join(COMPONENTS_INSTALL)
     install_components = remote_cmd(command=f"sudo apt update && sudo apt install -y {components}", 

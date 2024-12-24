@@ -30,7 +30,7 @@ class Graphs:
         pass
 
 
-class MainGraph(Graphs):
+class MainGraphW(Graphs):
     """
         Класс предназначен для построение главной столбчатой диаграммы
     """
@@ -88,7 +88,7 @@ class MainGraph(Graphs):
         plt.close()
         
 
-class MainGraphH(MainGraph):
+class MainGraph(MainGraphW):
     """
         Класс предназначен для построение ПЕРЕВЕРНУТОЙ главной столбчатой диаграммы
     """
@@ -97,22 +97,29 @@ class MainGraphH(MainGraph):
         super().__init__(list_of_score, scale_txt, type_test, saver, xlabel)
 
     def draw(self):
-        fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
+        fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT + 8))
+        # fig.set_facecolor("#bbbbbb")
         pos = ax.get_position()
         new_pos = [pos.x0 + 0.05, pos.y0, pos.width, pos.height]  # Сдвиг на 0.1 вправо
         ax.set_position(new_pos)
 
         rect = ax.barh(self.scale_x, self.list_of_score, color=self._get_colors())
+        # Добавление меток слева от столбцов
+        for bar, value in zip(rect, self.list_of_score):
+            ax.text(bar.get_x() + 1, bar.get_y() + bar.get_height() / 2,  # Позиция слева от столбца
+                    f'{value}', ha='left', va='center')
         ax.grid(self.grid)
         ax.set_yticks(self.scale_x)
-        ax.set_ylim([0, max(self.scale_x) + 6])
+        # ax.set_ylim([0, max(self.scale_x) + 6])
+        ax.set_ylim(ymin=-1, ymax=max(self.scale_x) + 2)
         plt.gca().set_yticklabels(self.scale_txt, rotation=0, horizontalalignment='right')
         main_logger.debug("Задан угол наклон шкалы 0 градусов, горизонтальное выравнивание справа")
         ax.set_xlabel(self.ylabel)
 
         ax.set_title(f"{TypeTest.get_full_name_test_without_df(self.type_test)}. Сравнительная диаграмма значений рейтингов, \nвычисленных на основании результатов нагрузочного тестирования.")
-        ax.bar_label(rect, label_type="center", fmt="%d", rotation=0, fontweight=500)
+        # ax.bar_label(rect, label_type="center", fmt="%d", rotation=0, fontweight=500)
         ax.legend(handles=self._create_legend())
+        # fig.tight_layout()
         self.saver.save(plot=plt, 
                         name=f"{self.type_test}_{self.__class__.__name__}")
         main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
@@ -121,7 +128,7 @@ class MainGraphH(MainGraph):
 
 
 
-class SummaryGraph(Graphs):
+class SummaryGraphW(Graphs):
     """
         Класс предназначен для построения графика сравнений с любым количеством данных
         Например:
@@ -184,6 +191,60 @@ class SummaryGraph(Graphs):
         self.saver.save(plot=plt, name=f"{graph_name}_{self.__class__.__name__}")
         main_logger.info(f"Сохранен {self.__class__.__name__} для {' '.join(self.comparison_names)}")
         plt.close()
+
+
+class SummaryGraph(SummaryGraphW):
+    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76']):
+        super().__init__(saver, stand_grade, comparison_scale_of_score, scale_txt, comparison_names, graph_name, colors)
+
+    def draw(self, *args, **kwargs) -> None:
+        fig, ax = plt.subplots(figsize=(FigSize.WIDTH + 2, FigSize.HEIGHT + 12))
+        max_score = 1 # Единица чтобы не было предупреждения  "UserWarning: Attempting to set identical low and high ylims makes transformation singular; automatically expanding"
+        # fig.set_facecolor("#bbbbbb")
+
+        for ind, scale_of_score in enumerate(self.comparison_scale_of_score):
+            if max_score < max(scale_of_score):
+                max_score = max(scale_of_score)
+    
+            width = self.bar_width / self.comparison_len
+            expression = self.scale_x + ind * width - width * (len(self.comparison_scale_of_score) - 1) /2
+            rects = ax.barh(y=expression, 
+                            width=scale_of_score, 
+                            color=self.colors[ind],
+                            alpha=0.8, 
+                            height=width,
+                            label=self.comparison_names[ind])
+            # rect=ax.bar()
+            # ax.bar_label(rects, label_type="center", fmt="%d", rotation=90)
+            # Добавление меток слева от столбцов
+            for bar, value in zip(rects, scale_of_score):
+                ax.text(bar.get_x() + 1, bar.get_y() + bar.get_height() / 2,  # Позиция слева от столбца
+                        f'{value}', ha='left', va='center')
+            
+        # ax.set_xlim([0, max_score + max_score * 0.15])
+        ax.set_ylim(ymin=-1, ymax=max(self.scale_x) + 2)
+        ax.set_yticks(self.scale_x)
+        ax.set_title(f"{" - ".join(self.comparison_names)}.\n{self.stand_grade}\nСравнительная диаграмма значений, вычисленных на основании результатов нагрузочного тестирования.")
+        ax.set_yticklabels(self.scale_txt, rotation=0, horizontalalignment='right')
+        ax.legend()
+        fig.tight_layout()
+
+        if kwargs.get("y_label"):
+            y_label = kwargs.get("y_label")
+            ax.set_xlabel(y_label)
+            main_logger.debug("в kwargs было передано y_label, задаем описание y_label")
+
+        if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
+            graph_name = f"{self.graph_name}_{kwargs.get("graph_ind")}"
+            main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
+        else:
+            graph_name = f"{self.graph_name}"
+            main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
+
+        self.saver.save(plot=plt, name=f"{graph_name}_{self.__class__.__name__}")
+        main_logger.info(f"Сохранен {self.__class__.__name__} для {' '.join(self.comparison_names)}")
+        plt.close()
+        
 
 
 class SummaryLineGraph(SummaryGraph):

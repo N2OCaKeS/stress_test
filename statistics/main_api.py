@@ -287,7 +287,7 @@ def all_statistics(body: Auth):
     except Exception as error:
         message_error = UtilGetTraceback.get_traceback(e=error)
         response["status"] = "were_errors"
-        response["message"].append(f"\Apache - {message_error}\n")
+        response["message"].append(f"\nApache - {message_error}\n")
 
     parsec_stat = ParsecStatistics(stat_title="Parsec",
                                    username=body.username, 
@@ -307,7 +307,7 @@ def all_statistics(body: Auth):
     except Exception as error:
         message_error = UtilGetTraceback.get_traceback(e=error)
         response["status"] = "were_errors"
-        response["message"].append(f"\Parsec - {message_error}\n")
+        response["message"].append(f"\nParsec - {message_error}\n")
 
     freeipa_stat = FreeIpaStatistics(stat_title="FreeIPA",
                                      username=body.username, 
@@ -326,7 +326,7 @@ def all_statistics(body: Auth):
     except Exception as error:
         message_error = UtilGetTraceback.get_traceback(e=error)
         response["status"] = "were_errors"
-        response["message"].append(f"\FreeIPA - {message_error}\n")
+        response["message"].append(f"\nFreeIPA - {message_error}\n")
 
     virt_stat = VirtStatistics(stat_title="Qemu/KVM/Libvirt",
                                username=body.username, 
@@ -345,7 +345,7 @@ def all_statistics(body: Auth):
     except Exception as error:
         message_error = UtilGetTraceback.get_traceback(e=error)
         response["status"] = "were_errors"
-        response["message"].append(f"\Qemu/KVM/Libvirt - {message_error}\n")
+        response["message"].append(f"\nQemu/KVM/Libvirt - {message_error}\n")
 
     return response
 

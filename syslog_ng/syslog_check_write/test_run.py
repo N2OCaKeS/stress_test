@@ -1,0 +1,73 @@
+import argparse
+
+from libs.libs import send_remote_command, get_remote_file, create_remote_file
+from manage_vm import ManageVM
+from conf import vCPU, RAM
+
+"""
+    1) Поднимаем 1 ВМ с 2 ядра 2 гига
+    2) Перекидываем туда checker_logs и запускаем
+    3) с ВМ на хост перекидываем файл status.txt и смотрим статус
+    4) Выключаем и удаляем ВМ
+"""
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('-vbox', 
+                    action='store',
+                    required=True,
+                    help='vbox name',
+                    dest='VBOX')
+
+args = parser.parse_args()
+
+# 1 ---
+vm  = ManageVM(rc_vbox="1.7.1", #args.VBOX,
+               #testdir=...,
+               vm_count=1,
+               kernel="5.10",
+               vcpu=vCPU,
+               ram=RAM)
+
+vm.prepare_and_start_vm()
+data_vm = vm.vm_dates
+print(data_vm)
+
+# 2 ***
+create_remote_file(local_file_path="conf.py", 
+                   remote_file_path="/home/vagrant/conf.py",
+                   ip=data_vm['ip'],
+                   user=data_vm['login'],
+                   password=data_vm['password'])
+
+create_remote_file(local_file_path="generator_logs.py", 
+                   remote_file_path="/home/vagrant/generator_logs.py",
+                   ip=data_vm['ip'],
+                   user=data_vm['login'],
+                   password=data_vm['password'])
+
+create_remote_file(local_file_path="checker_logs.py", 
+                   remote_file_path="/home/vagrant/checker_logs.py",
+                   ip=data_vm['ip'],
+                   user=data_vm['login'],
+                   password=data_vm['password'])
+
+send_remote_command(command="sudo python3 checker_logs.py",
+                    ip=data_vm['ip'],
+                    user=data_vm['login'],
+                    password=data_vm['password'])
+# 3 |||
+get_remote_file(remote_file_path="/home/vagrant/status.txt",
+                local_file_path="status.txt",
+                ip=data_vm['ip'],
+                user=data_vm['login'],
+                password=data_vm['password'])
+
+with open("status.txt", 'r') as status_file:
+    status = status_file.readline()
+    print(f"STATUS: {status}")
+# 4 +++
+#vm.destroy_vm()
+
+
+

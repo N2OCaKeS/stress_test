@@ -29,7 +29,8 @@ def initialization_freeipa_server():
         Обновление списка пакетов
     """    
     cmd("sudo apt update -y")
-    cmd("sudo apt install python3-pip -y")
+    cmd("sudo apt install python3-venv -y")
+    cmd("sudo apt install libkrb5-dev -y")
 
     """
         Установка пакетов astra-freeipa-server
@@ -71,10 +72,12 @@ def initialization_freeipa_server():
     """
         Установка либы для создания пользователей
     """
-    if int(check_output_command("python3 --version").split()[1].split(".")[1]) >= 11:
-        cmd("sudo pip3 install python-freeipa --break-system-packages")
-    else:
-        cmd("sudo pip3 install python-freeipa")
+    # if int(check_output_command("python3 --version").split()[1].split(".")[1]) >= 11:
+    #     cmd("sudo pip3 install python-freeipa --break-system-packages")
+    # else:
+    #     cmd("sudo pip3 install python-freeipa")
+    cmd("sudo python3 -m venv venv")
+    cmd("sudo venv/bin/pip3 install python-freeipa")
     """
         Перезапуск контроллера домена
     """

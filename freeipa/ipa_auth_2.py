@@ -30,23 +30,23 @@ def auth(user_id, array_for_ldap_error):
     except ldap.INVALID_CREDENTIALS as e:
         # print("Your username or password is incorrect.")
 
-        try:
-            # Подключается с новым паролем
-            # l.simple_bind_s(username, password)
-            # Выполнить смену пароля
-            l.passwd_s(username, password, new_pass)
-            print("Password changed successfully.")
+        # try:
+        #     # Подключается с новым паролем
+        #     # l.simple_bind_s(username, password)
+        #     # Выполнить смену пароля
+        #     l.passwd_s(username, password, new_pass)
+        #     print("Password changed successfully.")
 
-            # После смены пароля можно попробовать снова связать
-            l.simple_bind_s(username, new_pass)
+        #     # После смены пароля можно попробовать снова связать
+        #     l.simple_bind_s(username, new_pass)
 
-        except ldap.LDAPError as change_error:
-            array_for_ldap_error[user_id] = change_error
-            print(f"Failed to change password: {change_error}")
-            return False
+        # except ldap.LDAPError as change_error:
+        #     array_for_ldap_error[user_id] = change_error
+        #     print(f"Failed to change password: {change_error}")
+        #     return False
 
-       # array_for_ldap_error[user_id] = e
-       # return False
+       array_for_ldap_error[user_id] = e
+       return False
 
 
     except ldap.LDAPError as e:

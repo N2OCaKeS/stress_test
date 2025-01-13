@@ -406,6 +406,9 @@ known_bugs = {
     },
     "Apache": {
         "BT-64331": "https://jira.astralinux.ru/browse/BT-64331"
+    },
+    "FreeIPA": {
+        "BT-66518": "https://jira.astralinux.ru/browse/BT-66518"
     }
 }
 

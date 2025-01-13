@@ -67,7 +67,7 @@ def initialization_freeipa_server():
     cmd(f'astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y --par "--allow-zone-overlap"')
 
     file_hosts = open("/etc/hosts", "a")
-    file_hosts.write("10.77.103.10\tallta.devos.astralinux.ru\n")
+    file_hosts.write("10.177.103.10\tallta.devos.astralinux.ru\n")
     file_hosts.close()
     """
         Установка либы для создания пользователей

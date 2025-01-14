@@ -37,6 +37,7 @@ from libs.liballta import (index_page,
                           user_app)
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs
 from backup.backuplibs import Backup, check_command
+from statistics_conf import statistics_conf
 import requests
 
 
@@ -293,6 +294,163 @@ def all_statistics():
     data = {
         'username':request.form.get('username'),
         'token':request.form.get('token')
+    }
+
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+
+# Apache statistics
+@app.route("/apache-statistics", methods=['POST'])
+def apache_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
+    data = {
+            'title_statistics':'Apache',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['Apache']["set_of_test_types"]
+    }
+
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+
+# FreeIPA statistics
+@app.route("/freeipa-statistics", methods=['POST'])
+def freeipa_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/freeipa-statistics'
+    data = {
+            'title_statistics':'FreeIPA',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['FreeIPA']["set_of_test_types"]
+    }
+
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+# Parsec statistics
+@app.route("/parsec-statistics", methods=['POST'])
+def parsec_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/parsec-statistics'
+    data = {
+            'title_statistics': 'Parsec',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['Parsec']["set_of_test_types"],
+            'comparison_list': statistics_conf['Parsec']["comparison_list"]
+    }
+    
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+
+# PostgreSQL statistics
+@app.route("/postgresql-statistics", methods=['POST'])
+def postgresql_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/postgresql-statistics'
+    data = {
+            'title_statistics': 'PostgreSQL',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['PostgreSQL']["set_of_test_types"],
+            'comparison_list': statistics_conf['PostgreSQL']["comparison_list"],
+            'comparison_kernel_list': statistics_conf['PostgreSQL']["comparison_kernel_list"]
+    }
+
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+
+# Qemu/KVM/Libvirt statistics
+@app.route("/virt-statistics", methods=['POST'])
+def virt_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/virt-statistics'
+    data = {
+            'title_statistics': 'Qemu/KVM/Libvirt',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['Qemu/KVM/Libvirt']["set_of_test_types"],
+            'comparison_list': statistics_conf['Qemu/KVM/Libvirt']["comparison_list"]
+    }
+
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+
+# UnixBench statistics
+@app.route("/unixbench-statistics", methods=['POST'])
+def unixbench_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
+    data = {
+            'title_statistics': 'UnixBench',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['UnixBench']["set_of_test_types"],
+            'comparison_list': statistics_conf['UnixBench']["comparison_list"]
+    }
+
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+
+# Системные службы statistics
+@app.route("/systemservices-statistics", methods=['POST'])
+def systemservices_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
+    data = {
+            'title_statistics':'Системные службы',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['Системные службы']["set_of_test_types"]
+    }
+
+    headers = {
+    'Content-Type': 'application/json'
+    }
+
+    requests.post(url=url, data=json.dumps(data), headers=headers)
+    return {"status": "success", "message": "Command successfully done"}, 200
+
+
+# Файловые системы statistics
+@app.route("/filesystems-statistics", methods=['POST'])
+def filesystems_statistics():
+    url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
+    data = {
+            'title_statistics':'Файловые системы',
+            'username': request.form.get('username'),
+            'token': request.form.get('token'),
+            'set_of_test_types': statistics_conf['Файловые системы']["set_of_test_types"],
+            'comparison_list': statistics_conf['Файловые системы']["comparison_list"]
     }
 
     headers = {

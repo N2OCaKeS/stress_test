@@ -53,18 +53,20 @@ psql -c "MAC LABEL ON CLUSTER IS '{2,0}';"
 psql -c "MAC LABEL ON TABLESPACE pg_global IS '{2,0}';"
 psql -c "MAC CCR ON CLUSTER IS OFF;"
 psql -c "CREATE DATABASE test;"
-psql -c "MAC LABEL ON DATABASE test is '{2,0}';"
-psql -c "MAC CCR ON DATABASE test is OFF;"
-psql -c "MAC CCR ON SCHEMA public is Off;"
-psql -c "MAC LABEL ON SCHEMA public is '{2,0}';"
+psql -d test -c "MAC LABEL ON DATABASE test is '{2,0}';"
+psql -d test -c "MAC CCR ON DATABASE test is OFF;"
+psql -d test -c "MAC CCR ON SCHEMA public is Off;"
+psql -d test -c "MAC LABEL ON SCHEMA public is '{2,0}';"
 EOF
 
 
 sudo tar -xzvf sql/test.tar.gz -C /var/lib/postgresql
-#sudo chown postgres:postgres $CURRENT_PATH/test.sql
 
 sudo -u postgres -i << EOF
 psql -d test < test.sql 
 EOF
 
+
+#sudo -u postgres -i << EOF
 #select am289.form_am289n04()
+#EOF

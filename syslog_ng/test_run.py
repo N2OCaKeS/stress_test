@@ -19,13 +19,19 @@ parser.add_argument('-vbox',
                     help='vbox name',
                     dest='VBOX')
 
+parser.add_argument('-kernel', 
+                    action='store',
+                    required=True,
+                    help='kernel version',
+                    dest='KERNEL')
+
 args = parser.parse_args()
 
 # 1 ---
-vm  = ManageVM(rc_vbox="1.7.1", #args.VBOX,
+vm  = ManageVM(rc_vbox=args.VBOX, #args.VBOX,
                #testdir=...,
                vm_count=1,
-               kernel="5.10",
+               kernel=args.KERNEL,
                vcpu=vCPU,
                ram=RAM)
 

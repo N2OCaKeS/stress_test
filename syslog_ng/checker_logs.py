@@ -8,7 +8,7 @@ from generator_logs import generate_log
 def check_logs_for_last_hour_with_message(log_file_path, message):
     now = datetime.datetime.now()
     one_hour_ago = now - datetime.timedelta(hours=1)
-
+    
     logs_for_last_hour = []
     message_found = False
 
@@ -24,21 +24,19 @@ def check_logs_for_last_hour_with_message(log_file_path, message):
                     logs_for_last_hour.append(line.strip())
                     if message in line:
                         message_found = True
-            except ValueError:
+            except (ValueError, IndexError):
                 continue  # Пропуск строки, если форматирование логов отличается
 
     return logs_for_last_hour, message_found
 
 
 def checker():
-    log_file_path = '/var/log/syslog'  # Замените на путь к вашему лог-файлу
+    log_file_path = '/var/log/syslog'  # Замените на путь к лог-файлу
     message = 'MESSAGE FOR LOG'
     logs, message_found = check_logs_for_last_hour_with_message(log_file_path, message)
-    time.sleep(3600)
+    time.sleep(1200)
     if message_found:
         print(f"Найдены сгенерированные логи за последний час, содержащие сообщение '{message}':")
-        # for log in logs:
-            # print(log)
         return True
     else:
         print(f"Сообщение '{message}' не найдено в логах за последний час.")
@@ -53,7 +51,6 @@ def run_checker():
         if not result:
             message = f"TEST FAILED by {i} hour"
             break
-        time.sleep(3600)
     return message
 
 

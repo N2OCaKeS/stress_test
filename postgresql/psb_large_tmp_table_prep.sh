@@ -42,8 +42,8 @@ sudo setfacl -m u:postgres:rx /etc/parsec/capdb
 
 
 
-sed -i 's/.*ac_ignore_socket_maclabel*/ac_ignore_socket_maclabel = false/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-sed -i 's/.*ac_enable_grant_options*/ac_enable_grant_options = true/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/.*ac_ignore_socket_maclabel*/ac_ignore_socket_maclabel = false/g' /etc/postgresql/$PG_VERSION/main/postgresql.conf
+sed -i 's/.*ac_enable_grant_options*/ac_enable_grant_options = true/g' /etc/postgresql/$PG_VERSION/main/postgresql.conf
 
 
 sudo systemctl restart parsec
@@ -64,9 +64,8 @@ EOF
 sudo -u postgres -i << EOF
 psql -c "MAC LABEL ON CLUSTER IS '{2,0}';"
 psql -c "MAC LABEL ON TABLESPACE pg_global IS '{2,0}';"
-psql -c "MAC CCR ON CLUSTER IS OFF; "
-psql -c "CREATE DATABASE test; "
-psql -c "\c test;"
+psql -c "MAC CCR ON CLUSTER IS OFF;"
+psql -c "CREATE DATABASE test;"
 psql -c "MAC LABEL ON DATABASE test is '{2,0}';"
 psql -c "MAC CCR ON DATABASE test is OFF;"
 psql -c "MAC CCR ON SCHEMA public is Off;"
@@ -74,8 +73,10 @@ psql -c "MAC LABEL ON SCHEMA public is '{2,0}';"
 EOF
 
 
+tar -xzvf sql/test.tar.gz
 
+sudo -u postgres -i << EOF
+psql -d test < sql/test.sql 
+EOF
 
-
-
-
+#select am289.form_am289n04()

@@ -23,3 +23,18 @@
 -  /addrc_acs <1.7.5.4> <'password'>
 -  Дождаться выполнения   
 
+
+## Обновления
+### Порядок действий перед выпуском
+- Записать изменения в Changelog (**Важно**: не более 6 строк).
+- Коммитом должен быть номер обновления, например **allta_app - v2.31.15**.
+- Провести слияние **dev** ветки с **master**, см. [Daily work report](https://life.astralinux.ru/display/DEVQA/Daily+work+report).
+
+### Применение изменений
+При выходе очередного обновления **ALLTA**, требуется заново клонировать репозиторий и перезапустить сервис:
+- *cd git/*
+- *./git_clone.py*
+- *cd stress_test/*
+- *git checkout allta_app*
+- *cd allta_app/*
+- *python3 restart_services.py*

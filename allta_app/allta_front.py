@@ -301,7 +301,7 @@ def all_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate all statistics successfully done"}, 200
 
 
 # Apache statistics
@@ -320,7 +320,7 @@ def apache_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate Apache statistics successfully done"}, 200
 
 
 # FreeIPA statistics
@@ -339,7 +339,7 @@ def freeipa_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate FreeIPA statistics successfully done"}, 200
 
 # Parsec statistics
 @app.route("/parsec-statistics", methods=['POST'])
@@ -358,7 +358,7 @@ def parsec_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate Parsec statistics successfully done"}, 200
 
 
 # PostgreSQL statistics
@@ -379,7 +379,7 @@ def postgresql_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate PostgreSQL statistics successfully done"}, 200
 
 
 # Qemu/KVM/Libvirt statistics
@@ -399,7 +399,7 @@ def virt_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate Qemu/KVM/Libvirt statistics successfully done"}, 200
 
 
 # UnixBench statistics
@@ -419,7 +419,7 @@ def unixbench_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate UnixBench statistics successfully done"}, 200
 
 
 # Системные службы statistics
@@ -438,7 +438,7 @@ def systemservices_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate System services statistics successfully done"}, 200
 
 
 # Файловые системы statistics
@@ -458,7 +458,7 @@ def filesystems_statistics():
     }
 
     requests.post(url=url, data=json.dumps(data), headers=headers)
-    return {"status": "success", "message": "Command successfully done"}, 200
+    return {"status": "success", "message": "Recalculate File systems statistics successfully done"}, 200
 
 
 @app.route('/rest/api/get-testname-columns', methods=['GET'])

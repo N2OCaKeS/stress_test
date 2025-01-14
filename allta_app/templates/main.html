@@ -80,6 +80,14 @@
       <li><a class="dropdown-item" href="http://10.177.103.10:9999/docs" target="_blank">ACS</a></li>
       <li><a class="dropdown-item" href="http://10.177.103.10:8888" target="_blank">ACS tasks</a></li>
       <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#allstatisticsModal">Пересчитать всю статистику</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#apachestatisticsModal">Пересчитать статистику Apache</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#freeipastatisticsModal">Пересчитать статистику FreeIPA</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#parsecstatisticsModal">Пересчитать статистику Parsec</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#postgresqlstatisticsModal">Пересчитать статистику PostgreSQL</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#virtstatisticsModal">Пересчитать статистику Qemu/KVM/Libvirt</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#unixstatisticsModal">Пересчитать статистику UnixBench</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#sysstatisticsModal">Пересчитать статистику Системные службы</a></li>
+      <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#fsstatisticsModal">Пересчитать статистику Файловые системы</a></li>
       <li><a class="dropdown-item" href="javascript:update_cpumeminfo()">Перезапустить мониторинг ресурсов</a></li>
       <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#backupcredsModal">ALLTA Backup. Основные компоненты</a></li>
     </ul>
@@ -138,6 +146,249 @@
       </div>
       <div class="modal-body text-start">
         <form id="allstatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="apachestatisticsModal" tabindex="-1" aria-labelledby="apachestatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="apachestatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="apachestatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="freeipastatisticsModal" tabindex="-1" aria-labelledby="freeipastatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="freeipastatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="freeipastatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="freeipastatisticsModal" tabindex="-1" aria-labelledby="freeipastatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="freeipastatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="freeipastatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="parsecstatisticsModal" tabindex="-1" aria-labelledby="parsecstatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="parsecstatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="parsecstatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="postgresqlstatisticsModal" tabindex="-1" aria-labelledby="postgresqlstatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="postgresqlstatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="postgresqlstatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="virtstatisticsModal" tabindex="-1" aria-labelledby="virtstatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="virtstatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="virtstatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="unixstatisticsModal" tabindex="-1" aria-labelledby="unixstatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="unixstatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="unixstatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="sysstatisticsModal" tabindex="-1" aria-labelledby="sysstatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="sysstatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="sysstatisticsForm">
+          <div class="mb-3">
+              <label for="username" class="form-label">Имя пользователя</label>
+              <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
+          </div>
+          <div class="mb-3">
+              <label for="token" class="form-label">Токен</label>
+              <input type="token" class="form-control" id="token" name="token" placeholder="Введите токен">
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="fsstatisticsModal" tabindex="-1" aria-labelledby="fsstatisticsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="fsstatisticsModalLabel">Идентификатор</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-start">
+        <form id="fsstatisticsForm">
           <div class="mb-3">
               <label for="username" class="form-label">Имя пользователя</label>
               <input type="text" class="form-control" id="username" name="username" placeholder="Введите имя пользователя">
@@ -262,6 +513,198 @@
               $('#allstatisticsModal').modal('hide');
               $.ajax({
                   url: '/all-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#apachestatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#apachestatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/apache-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#freeipastatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#freeipastatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/freeipa-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#parsecstatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#parsecstatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/parsec-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#postgresqlstatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#postgresqlstatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/postgresql-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#virtstatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#virtstatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/virt-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#unixstatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#unixstatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/unixbench-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#sysstatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#sysstatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/systemservices-statistics',
+                  type: 'POST',
+                  data: $(this).serialize(),
+                  timeout: 1200000,
+                  success: function(response){
+                    alert(response.message)
+                  },
+                  error: function(jqXHR, textStatus, errorThrown){
+                    if(textStatus==="timeout") {
+                        alert("Запрос превысил максимальное время ожидания");
+                    } else {
+                        alert("Error: " + textStatus + ": " + jqXHR.status + " - " + errorThrown);
+                    }
+                  }
+              });
+          });
+      });
+    </script>
+    <script>
+      $(document).ready(function(){
+          $("#fsstatisticsForm").submit(function(e){
+              e.preventDefault();
+              $('#fsstatisticsModal').modal('hide');
+              $.ajax({
+                  url: '/filesystems-statistics',
                   type: 'POST',
                   data: $(this).serialize(),
                   timeout: 1200000,

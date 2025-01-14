@@ -173,7 +173,7 @@ class SummaryTableNew(Table):
             self.dataframes)
         main_logger.info(f"Построена {self.__class__.__name__}")
         main_logger.debug(f"{df_merged}")
-
+        df_merged = df_merged.iloc[::-1]
         df_score = df_merged.drop(columns=['Релиз', 'Ядро', 'Стенд'])
         list_score = [df_score[col].fillna(0) for col in df_score.columns]
         # print(df_score.columns, flush=True)

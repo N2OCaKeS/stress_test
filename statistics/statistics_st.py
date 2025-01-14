@@ -107,8 +107,9 @@ class BaseStatistics(Statistics):
                math_table = MathTable(dataframe=df, saver=saver)
                math_table.build()
 
-               graph = MainGraph(list_of_score=df.iloc[:, -1], 
-                                   scale_txt=Scale.get_base_scale_text(dataframe=df), 
+               reversed_df = df.iloc[::-1]
+               graph = MainGraph(list_of_score=reversed_df.iloc[:, -1], 
+                                   scale_txt=Scale.get_base_scale_text(dataframe=reversed_df), 
                                    type_test=TypeTest.get_type_test(dataframe=df),
                                    saver=saver_graph)
                graph.draw()

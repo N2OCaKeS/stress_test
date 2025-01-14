@@ -1,28 +1,15 @@
+for user in am289 data ab122 ott1g ott32; do
+    yes 1 | sudo adduser ${user}
+    sudo pdpl-user -l 0:2 ${user}
+done
+
+for user in data_db data_common; do
+    yes 1 | sudo adduser ${user}
+    sudo pdpl-user -l 0:0 ${user}
+done
 
 
-sudo adduser am289
-sudo pdpl-user -l 0:2 am289
-
-sudo adduser data
-sudo pdpl-user -l 0:2 data
-
-sudo adduser data_db
-sudo pdpl-user -l 0:0 data_db
-
-sudo adduser data_common
-sudo pdpl-user -l 0:0 data_common
-
-sudo adduser ab122
-sudo pdpl-user -l 0:2 ab122
-
-sudo adduser ott1g
-sudo pdpl-user -l 0:2 ott1g
-
-sudo adduser ott32
-sudo pdpl-user -l 0:2 ott32
-
-
-
+CURRENT_PATH=`pwd`
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
   PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION_18 =' | awk '{print $3}')
 else
@@ -42,8 +29,8 @@ sudo setfacl -m u:postgres:rx /etc/parsec/capdb
 
 
 
-sed -i 's/.*ac_ignore_socket_maclabel*/ac_ignore_socket_maclabel = false/g' /etc/postgresql/$PG_VERSION/main/postgresql.conf
-sed -i 's/.*ac_enable_grant_options*/ac_enable_grant_options = true/g' /etc/postgresql/$PG_VERSION/main/postgresql.conf
+sed -i 's/.*ac_ignore_socket_maclabel.*/ac_ignore_socket_maclabel = false/g' /etc/postgresql/$PG_VERSION/main/postgresql.conf
+sed -i 's/.*ac_enable_grant_options.*/ac_enable_grant_options = true/g' /etc/postgresql/$PG_VERSION/main/postgresql.conf
 
 
 sudo systemctl restart parsec
@@ -73,10 +60,11 @@ psql -c "MAC LABEL ON SCHEMA public is '{2,0}';"
 EOF
 
 
-tar -xzvf sql/test.tar.gz
+sudo tar -xzvf sql/test.tar.gz -C /var/lib/postgresql
+#sudo chown postgres:postgres $CURRENT_PATH/test.sql
 
 sudo -u postgres -i << EOF
-psql -d test < sql/test.sql 
+psql -d test < test.sql 
 EOF
 
 #select am289.form_am289n04()

@@ -7,7 +7,7 @@ from generator_logs import generate_log
 
 def check_logs_for_last_hour_with_message(log_file_path, message):
     now = datetime.datetime.now()
-    one_hour_ago = now - datetime.timedelta(hours=1)
+    one_hour_ago = now - datetime.timedelta(hours=1.1)
     
     logs_for_last_hour = []
     message_found = False
@@ -55,6 +55,8 @@ def run_checker():
 
 
 if __name__ == "__main__":
+    start_time = datetime.datetime.now()
+    print(start_time)
     log_gen_tread = threading.Thread(target=generate_log)
     log_gen_tread.start()
     with open("status.txt", "w") as status_file:
@@ -62,3 +64,7 @@ if __name__ == "__main__":
     message = run_checker()
     with open("status.txt", "w") as status_file:
         status_file.write(f"{message}")
+
+    end_time = datetime.datetime.now()
+    print(end_time)
+

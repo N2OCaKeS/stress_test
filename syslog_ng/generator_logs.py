@@ -11,14 +11,15 @@ def generate_log(duration_hours=QTY_HOURS_CHECK):
 
     # Настройка обработчика для syslog
     syslog_handler = logging.handlers.SysLogHandler(address='/dev/log')
-    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    syslog_handler.setFormatter(formatter)
+    # formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    # syslog_handler.setFormatter(formatter)
 
     # Добавление обработчика к логгеру
     logger.addHandler(syslog_handler)
 
     # Количество минут для работы
-    minutes_to_run = duration_hours * 60
+    # minutes_to_run = duration_hours * 60 + 10
+    minutes_to_run = 10
     minutes_passed = 0
 
     while minutes_passed < minutes_to_run:

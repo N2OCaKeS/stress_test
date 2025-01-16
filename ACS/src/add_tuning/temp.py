@@ -54,24 +54,30 @@ async def change_repos(version_name, stand):
     return {"Репозитории изменены"}
 
 def install_kernels(version_name, stand):
-    if version_name.startswith("1.7.2"):
-        kernel = "linux-5.15-generic"
-    elif version_name.startswith("1.7.3") or version_name.startswith("174"):
-        kernel = "linux-5.15-generic linux-5.15-lowlatency"
-    elif version_name.startswith("1.7.5"):
-        kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
-    elif version_name.startswith("1.7.6"):
-        kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
-    # временное решение
-    elif version_name.startswith("1.7.7"):
-        kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
-    elif version_name.startswith("1.8.1"):
-        kernel = "linux-6.6-generic"
-    else:
-        kernel = None
+    # if version_name.startswith("1.7.2"):
+    #     kernel = "linux-5.15-generic"
+    # elif version_name.startswith("1.7.3") or version_name.startswith("174"):
+    #     kernel = "linux-5.15-generic linux-5.15-lowlatency"
+    # elif version_name.startswith("1.7.5"):
+    #     kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
+    # elif version_name.startswith("1.7.6"):
+    #     kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
+    # # временное решение
+    # elif version_name.startswith("1.7.7"):
+    #     kernel = "linux-5.15-generic linux-5.15-lowlatency linux-6.1-generic"
+    # elif version_name.startswith("1.8.1"):
+    #     kernel = "linux-6.6-generic"
+    # else:
+    #     kernel = None
     
-    res_get_kernel = requests.post(f"allta.devos.astralinux.ru/rest/api/available-kernels-from-{version_name}")
-
+    res_get_kernel = requests.post(f"http://allta.devos.astralinux.ru/rest/api/available-kernels-from-{version_name}", data={"rc": version_name})
+    if res_get_kernel.status_code == 200:
+        data = res_get_kernel.json()
+        kernel = " ".join(data)
+        print(f"ЯДРА ДЛЯ УСТАНОВКИ - {kernel}")
+    else:
+        print("API KERNEL не отработало")
+    
     components = " ".join(COMPONENTS_INSTALL)
     install_components = remote_cmd(command=f"sudo apt update && sudo apt install -y {components}", 
                                     host=stand[3], 

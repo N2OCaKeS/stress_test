@@ -7,7 +7,7 @@ from generator_logs import generate_log
 
 def check_logs_for_last_hour_with_message(log_file_path, message):
     now = datetime.datetime.now()
-    one_hour_ago = now - datetime.timedelta(minutes=10)
+    one_hour_ago = now - datetime.timedelta(hours=1)
 
     logs_for_last_hour = []
 
@@ -43,12 +43,12 @@ if __name__ == "__main__":
     start_time = datetime.datetime.now()
     print(start_time)
 
-    log_gen_tread = threading.Thread(target=generate_log)
+    log_gen_tread = threading.Thread(target=generate_log, daemon=True)
     log_gen_tread.start()
     
-    #for hour in range(QTY_HOURS_CHECK):
-    for hour in range(10):
-        time.sleep(60)
+    for hour in range(QTY_HOURS_CHECK):
+    # for hour in range(20):
+        time.sleep(3600)
         logs, mess_found = check_logs_for_last_hour_with_message("/var/log/syslog", message="MESSAGE FOR LOG")
         if not mess_found:
             status = f"TEST FAILED by {hour} min"

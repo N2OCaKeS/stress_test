@@ -19,17 +19,19 @@ def generate_log(duration_hours=QTY_HOURS_CHECK):
 
     # Количество минут для работы
     # minutes_to_run = duration_hours * 60 + 10
-    minutes_to_run = 10
-    minutes_passed = 0
+    
+    # minutes_to_run = 20
+    # minutes_passed = 0
 
-    while minutes_passed < minutes_to_run:
+    # while minutes_passed < minutes_to_run:
+    while True:
         # Запись лога
         logger.info("MESSAGE FOR LOG")
         # Ожидание 1 минуты (60 секунд)
         time.sleep(60)
-        minutes_passed += 1
+        # minutes_passed += 1
     
-    logger.info(f"Завершение записи логов после {duration_hours} часов.")
+    # logger.info(f"Завершение записи логов после {duration_hours} часов.")
 
 
 if __name__ == "__main__":

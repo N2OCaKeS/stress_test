@@ -1,5 +1,5 @@
 import argparse
-
+import datetime
 from libs.libs import send_remote_command, get_remote_file, create_remote_file
 from manage_vm import ManageVM
 from conf import vCPU, RAM
@@ -19,19 +19,13 @@ parser.add_argument('-vbox',
                     help='vbox name',
                     dest='VBOX')
 
-parser.add_argument('-kernel', 
-                    action='store',
-                    required=True,
-                    help='kernel version',
-                    dest='KERNEL')
-
 args = parser.parse_args()
 
 # 1 ---
 vm  = ManageVM(rc_vbox=args.VBOX, #args.VBOX,
                #testdir=...,
                vm_count=1,
-               kernel=args.KERNEL,
+               kernel="5.10",
                vcpu=vCPU,
                ram=RAM)
 
@@ -40,25 +34,28 @@ data_vm = vm.vm_dates
 print(data_vm)
 
 # 2 ***
+start_time = datetime.datetime.now()
+print(start_time)
+
 create_remote_file(local_file_path="conf.py", 
                    remote_file_path="/home/vagrant/conf.py",
                    ip=data_vm['ip'],
                    user=data_vm['login'],
                    password=data_vm['password'])
 
-create_remote_file(local_file_path="generator_logs.py", 
-                   remote_file_path="/home/vagrant/generator_logs.py",
+# create_remote_file(local_file_path="generator_logs.py", 
+#                    remote_file_path="/home/vagrant/generator_logs.py",
+#                    ip=data_vm['ip'],
+#                    user=data_vm['login'],
+#                    password=data_vm['password'])
+
+create_remote_file(local_file_path="new_checker_logs.py", 
+                   remote_file_path="/home/vagrant/new_checker_logs.py",
                    ip=data_vm['ip'],
                    user=data_vm['login'],
                    password=data_vm['password'])
 
-create_remote_file(local_file_path="checker_logs.py", 
-                   remote_file_path="/home/vagrant/checker_logs.py",
-                   ip=data_vm['ip'],
-                   user=data_vm['login'],
-                   password=data_vm['password'])
-
-send_remote_command(command="sudo python3 checker_logs.py",
+send_remote_command(command="sudo python3 new_checker_logs.py",
                     ip=data_vm['ip'],
                     user=data_vm['login'],
                     password=data_vm['password'])
@@ -72,6 +69,9 @@ get_remote_file(remote_file_path="/home/vagrant/status.txt",
 with open("status.txt", 'r') as status_file:
     status = status_file.readline()
     print(f"STATUS: {status}")
+
+end_time = datetime.datetime.now()
+print(end_time)
 # 4 +++
 #vm.destroy_vm()
 

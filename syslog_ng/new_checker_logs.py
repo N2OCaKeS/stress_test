@@ -1,9 +1,27 @@
 import time
 import datetime
 import threading
-
+import logging
+import logging.handlers
 from conf import QTY_HOURS_CHECK
-from generator_logs import generate_log
+# from generator_logs import generate_log
+
+def generate_log():
+    # Создание логгера
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Настройка обработчика для syslog
+    syslog_handler = logging.handlers.SysLogHandler(address='/dev/log')
+
+    # Добавление обработчика к логгеру
+    logger.addHandler(syslog_handler)
+
+    while True:
+        # Запись лога
+        logger.info("MESSAGE FOR LOG")
+        # Ожидание 1 минуты (60 секунд)
+        time.sleep(60)
 
 def check_logs_for_last_hour_with_message(log_file_path, message):
     now = datetime.datetime.now()
@@ -27,7 +45,7 @@ def check_logs_for_last_hour_with_message(log_file_path, message):
                     logs_for_last_hour.append(line.strip())
 
             except ValueError as err:
-                print(f"ОШИБКА: {err}")
+                print(f"ОШИБКА: {err}:::: {line}")
         
     message_found = False
     for line in logs_for_last_hour:

@@ -68,5 +68,5 @@ EOF
 
 
 #sudo -u postgres -i << EOF
-#select am289.form_am289n04()
+#psql -d test -c "select am289.form_am289n04()"
 #EOF

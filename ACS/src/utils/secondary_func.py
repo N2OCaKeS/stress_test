@@ -49,9 +49,12 @@ def ssh_command(command: str, host: str, user: str = "u", passwd: str = "1", por
         client.close()
     except ssh_exception.SSHException as err:
         response = err
+    except TimeoutError as err:
+        sleep(60)
+        response = err
     return response
 
-def socket_available(reboot_counter=0, max_reboot_attempts=3, stand_ip=None, cs_pass=None, user: str = "u", passwd: str = "1", port: int = 22):
+def socket_available(reboot_counter=0, max_reboot_attempts=4, stand_ip=None, cs_pass=None, user: str = "u", passwd: str = "1", port: int = 22):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = sock.connect_ex((stand_ip, 22))
     count_for_boot_local = 0

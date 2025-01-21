@@ -1,5 +1,25 @@
 #!/bin/bash
 
+18repo() {
+cat << EOF > /etc/apt/sources.list
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/extended-repository 1.8_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/devel-repository 1.8_x86-64 main contrib non-free
+EOF
+}
+
+17repo() {
+cat << EOF > /etc/apt/sources.list
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/installation/ 1.7_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/ 1.7_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/update-repository/ 1.7_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/EXT_latest/extended-repository/ 1.7_x86-64 main contrib non-free
+EOF
+}
+
+test "$(grep 1.7 /etc/astra_version)" && 17repo && sudo apt update
+test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
+
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
 sudo jq -r ".\"$2\"[]" releases.json > /etc/apt/sources.list
@@ -14,10 +34,20 @@ Pin-Priority: 500
 EOF
 sudo apt update
 
-# create venv in script_dir
-sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
-sudo apt-get install -y libffi-dev strace syslog-ng htop liblzma-dev
+# create venv 
+sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
+sudo apt-get install -y libffi-dev strace 
+sudo apt-get install -y libcurl4-gnutls-dev
+sudo apt-get install -y rustc cargo
 sudo apt-get install -y python3-requests
+
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+    sudo apt-get install -y linux-tools-6.1*-generic
+    sudo apt-get install -y linux-tools-common-6.*
+else
+    sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
+    sudo apt-get install -y linux-tools-5.15*-lowlatency
+fi
 
 sudo mkdir /home/u/python
 cd /home/u/python
@@ -38,35 +68,38 @@ if [[ $? != 0 ]]; then
     python3.12 -m pip install -r req.txt
 fi
 
-sudo mkdir /home/u/modules
-sudo wget -P /home/u/modules ftp://10.177.103.10/modules/*
-sudo dpkg -i /home/u/modules/*.deb
-sudo apt install -fy
+#ansible
+sudo apt-get install ansible -y
+sudo apt-get install sshpass -y
+
+#lvirt
+apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
+
+#vagrant
+wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
+sudo dpkg -i vagrant_2.2.19_x86_64.deb
+sudo adduser $USER libvirt
+
+for group in kvm libvirt libvirt-qemu libvirt-admin; do
+  if test ! "$(groups | grep ${group})"; then
+    sudo usermod -aG ${group} $USER 
+  fi
+done
+
+# check 'vbguest' (Vbox Guests) plugin, install
+for plugin in vagrant-vbguest; do
+  if test ! "$(vagrant plugin list | grep $plugin)"; then
+    wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
+    mkdir -p ~/.vagrant.d/gems/2.7.4
+    tar -C "$HOME/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
+    wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json  
+    [ $? != 0 ] && exit 1
+  fi
+done
 
 
-
-
-
-
-
-
-
-# # create venv in script_dir
-# sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev syslog-ng
-# sudo apt-get install -y python3-numpy python3-scipy python3-matplotlib python3-lxml python3-pil python3-bs4
-# #python3-pandas
-# #python3 -m venv venv
-# sudo mkdir /home/u/modules
-# sudo wget -P /home/u/modules ftp://10.177.103.10/modules/*
-# sudo dpkg -i /home/u/modules/*.deb
-# sudo apt install -fy
-
-# # install python dependencies in venv
-# #source venv/bin/activate
-# if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-#     python3 -m pip install --upgrade pip --break-system-packages
-#     python3 -m pip install -r req.txt --break-system-packages
-# else
-#     python3 -m pip install --upgrade pip
-#     python3 -m pip install -r req.txt
-# fi
+if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
+    echo "supports hardware virtualization is ok"
+else 
+    echo "system does not supports hardware virtualization" 
+fi

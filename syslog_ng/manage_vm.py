@@ -135,10 +135,10 @@ class ManageVM:
 
 if __name__ == "__main__":
     from conf import vCPU, RAM
-    vm  = ManageVM(rc_vbox="1.7.1",
+    vm  = ManageVM(rc_vbox="1.8.1",
                 #testdir=...,
                 vm_count=1,
-                kernel="5.10",
+                kernel="6.1",
                 vcpu=vCPU,
                 ram=RAM)
 

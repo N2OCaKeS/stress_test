@@ -30,7 +30,7 @@ def trycorator(function):
 
     return wrapper
 
-@trycorator
+# @trycorator
 def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -40,7 +40,7 @@ def create_remote_file(local_file_path, remote_file_path, ip, user, password):
     ftp.close()
     client.close()
 
-@trycorator
+# @trycorator
 def send_remote_command(command, ip, user, password):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -57,7 +57,7 @@ def send_remote_command(command, ip, user, password):
         print(f'STDERR:\n{err_output}')
     ssh.close()
 
-@trycorator
+# @trycorator
 def get_remote_file(remote_file_path, local_file_path, ip, user, password):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())

@@ -44,7 +44,7 @@ def check_logs_for_last_hour_with_message(log_file_path, message):
                 if log_timestamp >= one_hour_ago:
                     logs_for_last_hour.append(line.strip())
 
-            except ValueError as err:
+            except (ValueError, IndexError) as err:
                 print(f"ОШИБКА: {err}:::: {line}")
         
     message_found = False

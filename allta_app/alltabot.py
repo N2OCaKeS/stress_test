@@ -330,15 +330,59 @@ def add_testrun_folder(rc):
     main_folder = 2744
     counter = 0
 
-    def __create_testrun_folder(name, parentid=main_folder):
-            add_folder_url = f'https://{JIRA_URL}/rest/tests/1.0/folder/testrun'
+    # def __create_testrun_folder(name, parentid=main_folder):
+    #         add_folder_url = f'https://{JIRA_URL}/rest/tests/1.0/folder/testrun'
+    #         headers = {
+    #             'Authorization': __basic
+    #         }
+    #         data = {
+    #                 "name": name,
+    #                 "projectId": 11200,
+    #                 "parentId": int(parentid)
+    #                 }
+
+    #         print(data)
+    #         response = requests.post(add_folder_url, headers=headers, json=data)
+    #         print(response.status_code)
+    #         print(response.text)
+    #         value = response.json()
+            #config['cycle_tree_index'][name] = str(value['id'])
+            #config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
+            #write_allta_conf(config)
+
+    # while counter < 2:
+    #     counter += 1
+    #     with open('./allta_conf.json', 'r') as r:
+    #         config = json.load(r)
+
+    #     print(config['cycle_tree_index'].keys())
+    #     if rc not in config['cycle_tree_index'].keys():
+    #         check_len_version = rc.split('.')
+    #         if len(check_len_version) == 4 and check_len_version[3] != 'UU':
+    #             if '.'.join(check_len_version[:3]) in config['cycle_tree_index'].keys():
+    #                 parentid = config['cycle_tree_index']['.'.join(check_len_version[:3])]
+    #                 name = rc
+    #                 __create_testrun_folder(name, parentid)
+    #             else: __create_testrun_folder('.'.join(check_len_version[:3]))
+    #         elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
+    #             if '.'.join(check_len_version[:5]) in config['cycle_tree_index'].keys():
+    #                 parentid = config['cycle_tree_index']['.'.join(check_len_version[:5])]
+    #                 name = rc
+    #                 __create_testrun_folder(name, parentid)
+    #             else: __create_testrun_folder('.'.join(check_len_version[:5]))
+    #         else: 
+    #             name = rc
+    #             __create_testrun_folder(name)
+
+    def __create_testrun_folder(name: str):
+            add_folder_url = f'https://jira.astralinux.ru/rest/atm/1.0/folder'
             headers = {
                 'Authorization': __basic
             }
             data = {
-                    "name": name,
-                    "projectId": 11200,
-                    "parentId": int(parentid)
+                    "projectKey": "BT",
+                    "name": f"/stress_test/{name}",
+                    "type": "TEST_RUN"
                     }
 
             print(data)
@@ -346,9 +390,12 @@ def add_testrun_folder(rc):
             print(response.status_code)
             print(response.text)
             value = response.json()
-            #config['cycle_tree_index'][name] = str(value['id'])
-            #config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
-            #write_allta_conf(config)
+            print(value)
+            print(f'vers {name.split('/')[-1]}')
+            config['cycle_tree_index'][name.split('/')[-1]] = str(value['id'])
+            config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
+            print(config['cycle_tree_index'])
+            write_allta_conf(config)
 
     while counter < 2:
         counter += 1
@@ -360,15 +407,15 @@ def add_testrun_folder(rc):
             check_len_version = rc.split('.')
             if len(check_len_version) == 4 and check_len_version[3] != 'UU':
                 if '.'.join(check_len_version[:3]) in config['cycle_tree_index'].keys():
-                    parentid = config['cycle_tree_index']['.'.join(check_len_version[:3])]
+                    parentfolder = '.'.join(check_len_version[:3])
                     name = rc
-                    __create_testrun_folder(name, parentid)
+                    __create_testrun_folder(f'{parentfolder}/{name}')
                 else: __create_testrun_folder('.'.join(check_len_version[:3]))
             elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
                 if '.'.join(check_len_version[:5]) in config['cycle_tree_index'].keys():
-                    parentid = config['cycle_tree_index']['.'.join(check_len_version[:5])]
+                    parentfolder = '.'.join(check_len_version[:5])
                     name = rc
-                    __create_testrun_folder(name, parentid)
+                    __create_testrun_folder(f'{parentfolder}/{name}')
                 else: __create_testrun_folder('.'.join(check_len_version[:5]))
             else: 
                 name = rc
@@ -604,7 +651,7 @@ async def process_callback(query: types.CallbackQuery):
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
     password = None
-    uu_value = None
+    uu_value = None #Использовать только если UU, иначе игнорировать
     if command.args is None:
         await message.reply('❌ Укажите версию RC и пароль')
         return

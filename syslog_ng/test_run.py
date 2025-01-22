@@ -43,6 +43,7 @@ print(data_vm)
 start_time = datetime.datetime.now()
 print(start_time)
 
+status = "TEST STARTED"
 try:
     create_remote_file(local_file_path="conf.py", 
                     remote_file_path=f"/home/{data_vm['login']}/conf.py",
@@ -75,15 +76,13 @@ try:
 except Exception as err:
     status = "TEST ERROR"
     print(err)
-
-with open("status.txt", 'r') as status_file:
-    status = status_file.readline()
-    print(f"STATUS: {status}")
+    
+if status != "TEST ERROR":
+    with open("status.txt", 'r') as status_file:
+        status = status_file.readline()
+        print(f"STATUS: {status}")
 
 end_time = datetime.datetime.now()
 print(end_time)
 # 4 +++
 #vm.destroy_vm()
-
-
-

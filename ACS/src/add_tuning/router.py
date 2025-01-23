@@ -119,7 +119,7 @@ def set_network(version_name: str, stand = Depends(get_info_stand)):
 """
 # TODO продумать
 @router.get("/install-new-kernel/{version_name}")
-def install_kernels(version_name: str, stand = Depends(get_info_stand)):
+def install_kernels_api(version_name: str, stand = Depends(get_info_stand)):
     # Для 1.7.2 install linux-5.15-generic
     # Для 1.7.3 install linux-5.15-lowlatency
     # Для 1.7.5 install linux-6.1-generic

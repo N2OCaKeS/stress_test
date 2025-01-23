@@ -75,7 +75,7 @@ def install_kernels(version_name, stand):
         data = res_get_kernel.json()
         packages = []
         for image in data:
-            package = f'linux-{image.split("-")[0].split(".")[0]}.{image.split("-")[0].split(".")[1]}-{image.split("-")[2]}'
+            package = f'linux-{image.split("-")[0].split(".")[0]}.{image.split("-")[0].split(".")[1]}-{image.split("-")[-1]}'
             packages.append(package)
         kernel = " ".join(packages)
     else:

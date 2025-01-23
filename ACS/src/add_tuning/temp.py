@@ -85,7 +85,7 @@ def install_kernels(version_name, stand):
                                     passwd=stand[5])
     print(install_components)
     if kernel:
-        command = f"sudo apt install -y {kernel}"
+        command = f"sudo apt install -y linux-{kernel}"
         print(command)
         data = remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
         print(data)

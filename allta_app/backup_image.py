@@ -572,7 +572,7 @@ def grub_default(kernel, host):
             client.close()
         return data_out
 
-    client_command(f"dpkg -s linux-image-{kernel} &> /dev/null || sudo apt-get install linux-image-{kernel} -y")
+    client_command(f"dpkg -s linux-image-{kernel} &> /dev/null || sudo apt-get install linux-{kernel} -y")
     kernel_conf = client_command("sudo cat /boot/grub/grub.cfg | grep menuentry_id | \
                                     awk '{{print $17}}' | grep {} | tr -d \"'\"".format(kernel)).rstrip('\n')
     client_command(f'''sudo sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT={kernel_conf}/' /etc/default/grub''')

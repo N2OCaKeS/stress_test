@@ -41,7 +41,7 @@ sudo -u postgres -i << EOF
 psql -c "CREATE user am289 with password 'useram289';"
 psql -c "CREATE user data with password 'userdata';"
 psql -c "CREATE user data_db with password 'userdata_db';"
-psql -c "CREATE user data_com with password 'userdata_com';"
+psql -c "CREATE user data_common with password 'userdata_com';"
 psql -c "CREATE USER ab122 with password 'userab122';"
 psql -c "CREATE USER ott1g with password 'userott1g';"
 psql -c "CREATE USER ott32 with password 'userott32';"
@@ -68,5 +68,5 @@ EOF
 
 
 #sudo -u postgres -i << EOF
-#psql -d test -c "select am289.form_am289n04()"
+#psql -d test -c "select am289.form_am289n04()" -с  "select am289.form_am289n04()" -с "select am289.form_am289n04()" -с "select am289.form_am289n04()"
 #EOF

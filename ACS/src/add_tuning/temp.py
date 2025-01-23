@@ -70,22 +70,28 @@ def install_kernels(version_name, stand):
     # else:
     #     kernel = None
     
-    res_get_kernel = requests.post(f"http://allta.devos.astralinux.ru/rest/api/available-kernels-from-{version_name}", data={"rc": version_name})
-    if res_get_kernel.status_code == 200:
-        data = res_get_kernel.json()
-        packages = []
-        for image in data:
-            package = f'linux-{image.split("-")[0].split(".")[0]}.{image.split("-")[0].split(".")[1]}-{image.split("-")[-1]}'
-            packages.append(package)
-        kernel = " ".join(packages)
-    else:
-        print("API KERNEL не отработало")
-    
     components = " ".join(COMPONENTS_INSTALL)
     install_components = remote_cmd(command=f"sudo apt update && sudo apt install -y {components}", 
                                     host=stand[3], 
                                     user=stand[4], 
                                     passwd=stand[5])
+    
+    kernel = ""
+    res_get_kernel = requests.post(f"http://allta.devos.astralinux.ru/rest/api/available-kernels-from-{version_name}", data={"rc": version_name})
+    if res_get_kernel.status_code == 200:
+        data = res_get_kernel.json()
+        packages = []
+        if len(data) > 0:
+            try:
+                for image in data:
+                    package = f'linux-{image.split("-")[0].split(".")[0]}.{image.split("-")[0].split(".")[1]}-{image.split("-")[-1]}'
+                    packages.append(package)
+                kernel = " ".join(packages)
+            except IndexError:
+                return {"Нет доп ядер"}
+    else:
+        print("API KERNEL не отработало")
+
     print(install_components)
     if kernel:
         command = f"sudo apt install -y {kernel}"

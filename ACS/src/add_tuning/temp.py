@@ -73,9 +73,11 @@ def install_kernels(version_name, stand):
     res_get_kernel = requests.post(f"http://allta.devos.astralinux.ru/rest/api/available-kernels-from-{version_name}", data={"rc": version_name})
     if res_get_kernel.status_code == 200:
         data = res_get_kernel.json()
-        package = f"linux-{data.split("-")[0].split(".")[0]}.{data.split("-")[0].split(".")[1]}-{data.split("-")[1]}"
-        kernel = " ".join(package)
-        print(f"ЯДРА ДЛЯ УСТАНОВКИ - {kernel}")
+        packages = []
+        for image in data:
+            package = f'linux-{image.split("-")[0].split(".")[0]}.{image.split("-")[0].split(".")[1]}-{image.split("-")[2]}'
+            packages.append(package)
+        kernel = " ".join(packages)
     else:
         print("API KERNEL не отработало")
     

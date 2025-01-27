@@ -1,0 +1,93 @@
+# -*- mode: ruby -*-
+
+def repo_configure(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+      18repo() {
+      cat << EOF > /etc/apt/sources.list
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/extended-repository 1.8_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/devel-repository 1.8_x86-64 main contrib non-free
+EOF
+      }
+
+      17repo() {
+      echo "grub-pc grub-pc/install_devices multiselect /dev/sda" | sudo debconf-set-selections
+      cat << EOF > /etc/apt/sources.list
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/installation/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/update-repository/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/EXT_latest/extended-repository/ 1.7_x86-64 main contrib non-free
+EOF
+      }
+
+      test "$(grep 1.7 /etc/astra_version)" && 17repo && sudo apt update
+      test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
+      dpkg -s jq &> /dev/null || sudo apt-get install jq -y
+      wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
+      sudo jq -r ".\"$3\"[]" releases.json > /etc/apt/sources.list
+      cat << EOF | sudo tee /etc/apt/preferences.d/devel
+      Package: *
+      Pin: release l=devel
+      Pin-Priority: 500
+
+      Package: *
+      Pin: release l=extended
+      Pin-Priority: 500
+EOF
+  SHELL
+end
+
+def upgrade(machine)
+  machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+      sudo apt update
+      sudo astra-update -A -T -r
+  SHELL
+end
+
+def perf_func(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    cat << P_EOF > /home/$USER/test.sh
+    sudo -u postgres -i << C_EOF
+    psql -d test -c "select am289.form_am289n04()"
+    C_EOF
+P_EOF
+  SHELL
+end
+
+def date_harvester(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    cat /parsec/log/astra/events | grep oom > /home/results
+    test "$(grep 1.7 /etc/astra_version)" && cat /var/lib/postgresql/11/main/pg_log/postgresql* | grep крах >> /home/results
+    test "$(grep 1.8 /etc/astra_version)" && cat /var/lib/postgresql/15/main/pg_log/postgresql* | grep крах >> /home/results
+  SHELL
+
+
+Vagrant.configure("2") do |config|
+  config.vm.box = ENV['UPDATE']
+  config.vm.box_url = ENV['BOX_URL']
+  config.vm.synced_folder "/home", "/home"
+    
+
+  config.vm.provider "virtualbox" do |v|
+      v.memory = 4096
+      v.cpus = 1
+      v.customize ["storagectl", :id, "--name", "SATA Controller", "--hostiocache", "on"]
+  end
+
+  config.vm.define "node" do |node|
+      node.vm.provider "virtualbox" do |vb|
+          vb.name = "node_oom"
+      end
+
+      repo_configure(node)
+      upgrade(node)
+      perf_func(node)
+
+      node.vm.provision "shell", path:"../psb_large_tmp_table_prep.sh"
+      node.vm.provision "shell", inline:<<-SHELL
+          sudo bash /home/$USER/test.sh  
+      SHELL
+
+      date_harvester(node)
+  end
+end

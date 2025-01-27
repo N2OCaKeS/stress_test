@@ -70,3 +70,8 @@ EOF
 #sudo -u postgres -i << EOF
 #psql -d test -c "select am289.form_am289n04()" -c  "select am289.form_am289n04()" -c "select am289.form_am289n04()" -c "select am289.form_am289n04()"
 #EOF
+
+
+#cat /parsec/log/astra/events | grep oom
+#cat /var/lib/postgresql/11/main/pg_log/postgresql-Mon.log | grep крах
+

@@ -11,9 +11,9 @@ done
 
 CURRENT_PATH=`pwd`
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-  PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION_18 =' | awk '{print $3}')
+  PG_VERSION=15
 else
-  PG_VERSION=$(cat psb_conf.py | grep 'PG_VERSION =' | awk '{print $3}')
+  PG_VERSION=11
 fi
 
 apt-get install -y postgresql-${PG_VERSION}
@@ -60,7 +60,7 @@ psql -d test -c "MAC LABEL ON SCHEMA public is '{2,0}';"
 EOF
 
 
-sudo tar -xzvf sql/test.tar.gz -C /var/lib/postgresql
+sudo tar -xzvf /home/vagrant/test.tar.gz -C /var/lib/postgresql
 
 sudo -u postgres -i << EOF
 psql -d test < test.sql 

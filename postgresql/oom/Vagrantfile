@@ -40,6 +40,7 @@ end
 
 def upgrade(machine)
   machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+      mkdir /home/tests
       sudo cat /etc/apt/sources.list
       sudo apt update
       sudo astra-update -A -T -r
@@ -51,16 +52,17 @@ def perf_func(machine)
     cat << P_EOF > /home/test.sh
     sudo -u postgres -i << C_EOF
     psql -d test -c "select am289.form_am289n04()"
-    C_EOF
+C_EOF
 P_EOF
   SHELL
 end
 
 def date_harvester(machine)
   machine.vm.provision "shell", inline:<<-SHELL
-    cat /parsec/log/astra/events | grep oom > /home/results
+    cat /parsec/log/astra/events | grep oom > /home/tests/results
     test "$(grep 1.7 /etc/astra_version)" && cat /var/lib/postgresql/11/main/pg_log/postgresql* | grep крах >> /home/results
     test "$(grep 1.8 /etc/astra_version)" && cat /var/lib/postgresql/15/main/pg_log/postgresql* | grep крах >> /home/results
+    exit 0
   SHELL
 end
 
@@ -90,12 +92,16 @@ Vagrant.configure("2") do |config|
 
         repo_configure(machine, ENV['RC'])
         upgrade(machine)
+
+        machine.vm.synced_folder "/home/tests", "/home/tests"
+
         perf_func(machine)
 
         machine.vm.provision "file", source: "../sql/test.tar.gz", destination: "/home/vagrant/test.tar.gz"
         machine.vm.provision "shell", path:"psb_large_tmp_table_prep.sh"
         machine.vm.provision "shell", inline:<<-SHELL
             sudo bash /home/test.sh  
+            exit 0
         SHELL
 
         date_harvester(machine)

@@ -53,3 +53,20 @@ class VBox():
             return 1
     
         return 0
+    
+    @classmethod
+    def check(cls) -> int:
+        found_values = ['oom', 'крах']
+
+        if os.path.isfile('/home/tests/results'):
+            with open('/home/tests/results', 'r') as r:
+                text = r.read()
+            for i in found_values:
+                if i in text:
+                    print('Failed')
+                    return 1
+                else:
+                    print('Pass')
+                    return 0
+                
+                

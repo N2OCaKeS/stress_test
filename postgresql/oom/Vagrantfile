@@ -44,6 +44,7 @@ def upgrade(machine)
       sudo cat /etc/apt/sources.list
       sudo apt update
       sudo astra-update -A -T -r
+      exit 0
   SHELL
 end
 
@@ -51,7 +52,7 @@ def perf_func(machine)
   machine.vm.provision "shell", inline:<<-SHELL
     cat << P_EOF > /home/test.sh
     sudo -u postgres -i << C_EOF
-    psql -d test -c "select am289.form_am289n04()"
+    psql -d test -c "select am289.form_am289n04()" -c "select am289.form_am289n04()" -c "select am289.form_am289n04()"
 C_EOF
 P_EOF
   SHELL

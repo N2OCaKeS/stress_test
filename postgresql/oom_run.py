@@ -35,3 +35,4 @@ box_name, box_url = bl.box_wrapper(args.SET_BOX, dates)
 
 provider.prepare()
 provider.build(box_name=box_name, box_url=box_url, kernel='kernel', rc=args.SET_BOX)
+provider.check()

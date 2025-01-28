@@ -33,7 +33,7 @@ class VBox():
         return system.cmd_with_returncode("sudo bash balance/bl_prepare_vbox.sh")
 
     @classmethod
-    def build(cls, box_name: str, box_url: str, kernel: str, rc: str, vms: list) -> int:
+    def build(cls, box_name: str, box_url: str, kernel: str, rc: str) -> int:
         def _check_vm_list():
             return system.check_output_command('vboxmanage list vms')
                 
@@ -49,7 +49,7 @@ class VBox():
         
         if system.cmd_with_returncode(f'cd oom && vagrant box add {box_name} {box_url} --force') != 0:
             return 1
-        if system.cmd_with_returncode(f'cd oom && UPDATE={box_name} BOX_URL={box_url} vagrant up --provider=virtualbox') != 0:
+        if system.cmd_with_returncode(f'cd oom && UPDATE={box_name} BOX_URL={box_url} RC={rc} vagrant up --provider=virtualbox') != 0:
             return 1
     
         return 0

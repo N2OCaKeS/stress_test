@@ -1,6 +1,7 @@
 import re
 import shutil
 import os.path
+import threading
 import subprocess
 # import numpy as np
 import pandas as pd
@@ -233,10 +234,41 @@ class SNGBenchMarkTest():
 
 
 class SNGCheckWriteLogsTest():
-    def __init__(self, vbox, kernel) -> None:
+    def __init__(self, vmcount, vbox, kernel) -> None:
+        self.vmcount = vmcount
         self.vbox = vbox
         self.kernel = kernel
         self.status = "TEST STARTED"
+
+    def task_test(self, thr_index):
+        create_remote_file(local_file_path="conf.py", 
+                           remote_file_path=f"/home/{self.data_vm['login']}/conf.py",
+                           ip=self.data_vm['ip'],
+                           user=self.data_vm['login'],
+                           password=self.data_vm['password'])
+
+        # create_remote_file(local_file_path="generator_logs.py", 
+        #                    remote_file_path="/home/vagrant/generator_logs.py",
+        #                    ip=data_vm['ip'],
+        #                    user=data_vm['login'],
+        #                    password=data_vm['password'])
+
+        create_remote_file(local_file_path="new_checker_logs.py", 
+                           remote_file_path=f"/home/{self.data_vm['login']}/new_checker_logs.py",
+                           ip=self.data_vm['ip'],
+                           user=self.data_vm['login'],
+                           password=self.data_vm['password'])
+
+        send_remote_command(command="sudo python3 new_checker_logs.py",
+                            ip=self.data_vm['ip'],
+                            user=self.data_vm['login'],
+                            password=self.data_vm['password'])
+        # 3 |||
+        get_remote_file(remote_file_path=f"/home/{self.data_vm['login']}/status.txt",
+                        local_file_path=f"status{thr_index}.txt",
+                        ip=self.data_vm['ip'],
+                        user=self.data_vm['login'],
+                        password=self.data_vm['password'])
 
     def prepare(self):
         vm  = ManageVM(rc_vbox=self.vbox, #args.VBOX,
@@ -256,44 +288,30 @@ class SNGCheckWriteLogsTest():
 
         status = "TEST STARTED"
         try:
-            create_remote_file(local_file_path="conf.py", 
-                               remote_file_path=f"/home/{self.data_vm['login']}/conf.py",
-                               ip=self.data_vm['ip'],
-                               user=self.data_vm['login'],
-                               password=self.data_vm['password'])
+            # th1 = threading.Thread(target=self.task_test)
+            # for index in range(self.vmcount):
+            #     th = threading.Thread(target=self.task_test)
 
-            # create_remote_file(local_file_path="generator_logs.py", 
-            #                    remote_file_path="/home/vagrant/generator_logs.py",
-            #                    ip=data_vm['ip'],
-            #                    user=data_vm['login'],
-            #                    password=data_vm['password'])
+            threads = [threading.Thread(target=self.task_test, args=(threading.get_native_id(),)) in range(self.vmcount)]
+            for thread in threads:
+                thread.start()
 
-            create_remote_file(local_file_path="new_checker_logs.py", 
-                               remote_file_path=f"/home/{self.data_vm['login']}/new_checker_logs.py",
-                               ip=self.data_vm['ip'],
-                               user=self.data_vm['login'],
-                               password=self.data_vm['password'])
+            for thread in threads:
+                thread.join()
 
-            send_remote_command(command="sudo python3 new_checker_logs.py",
-                                ip=self.data_vm['ip'],
-                                user=self.data_vm['login'],
-                                password=self.data_vm['password'])
-            # 3 |||
-            get_remote_file(remote_file_path=f"/home/{self.data_vm['login']}/status.txt",
-                            local_file_path="status.txt",
-                            ip=self.data_vm['ip'],
-                            user=self.data_vm['login'],
-                            password=self.data_vm['password'])
         except Exception as err:
             status = "TEST ERROR"
             print(err)
             
         if status != "TEST ERROR":
-            with open("status.txt", 'r') as status_file:
-                status = status_file.readline()
-                print(f"STATUS: {status}")
+            statuses = []
+            for index in range(threads):
+                with open(f"status{index}.txt", 'r') as status_file:
+                    status = status_file.readline()
+                    statuses.append(status)
+                    print(f"STATUS: {status}")
 
         end_time = datetime.now()
         print(end_time)
         # 4 +++
-        #vm.destroy_vm()
+        # vm.destroy_vm()

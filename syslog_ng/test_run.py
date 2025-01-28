@@ -43,46 +43,46 @@ print(data_vm)
 start_time = datetime.datetime.now()
 print(start_time)
 
-status = "TEST STARTED"
-try:
-    create_remote_file(local_file_path="conf.py", 
-                    remote_file_path=f"/home/{data_vm['login']}/conf.py",
-                    ip=data_vm['ip'],
-                    user=data_vm['login'],
-                    password=data_vm['password'])
+# status = "TEST STARTED"
+# try:
+#     create_remote_file(local_file_path="conf.py", 
+#                     remote_file_path=f"/home/{data_vm['login']}/conf.py",
+#                     ip=data_vm['ip'],
+#                     user=data_vm['login'],
+#                     password=data_vm['password'])
 
-    # create_remote_file(local_file_path="generator_logs.py", 
-    #                    remote_file_path="/home/vagrant/generator_logs.py",
-    #                    ip=data_vm['ip'],
-    #                    user=data_vm['login'],
-    #                    password=data_vm['password'])
+#     # create_remote_file(local_file_path="generator_logs.py", 
+#     #                    remote_file_path="/home/vagrant/generator_logs.py",
+#     #                    ip=data_vm['ip'],
+#     #                    user=data_vm['login'],
+#     #                    password=data_vm['password'])
 
-    create_remote_file(local_file_path="new_checker_logs.py", 
-                       remote_file_path=f"/home/{data_vm['login']}/new_checker_logs.py",
-                       ip=data_vm['ip'],
-                       user=data_vm['login'],
-                       password=data_vm['password'])
+#     create_remote_file(local_file_path="new_checker_logs.py", 
+#                        remote_file_path=f"/home/{data_vm['login']}/new_checker_logs.py",
+#                        ip=data_vm['ip'],
+#                        user=data_vm['login'],
+#                        password=data_vm['password'])
 
-    send_remote_command(command="sudo python3 new_checker_logs.py",
-                        ip=data_vm['ip'],
-                        user=data_vm['login'],
-                        password=data_vm['password'])
-    # 3 |||
-    get_remote_file(remote_file_path=f"/home/{data_vm['login']}/status.txt",
-                    local_file_path="status.txt",
-                    ip=data_vm['ip'],
-                    user=data_vm['login'],
-                    password=data_vm['password'])
-except Exception as err:
-    status = "TEST ERROR"
-    print(err)
+#     send_remote_command(command="sudo python3 new_checker_logs.py",
+#                         ip=data_vm['ip'],
+#                         user=data_vm['login'],
+#                         password=data_vm['password'])
+#     # 3 |||
+#     get_remote_file(remote_file_path=f"/home/{data_vm['login']}/status.txt",
+#                     local_file_path="status.txt",
+#                     ip=data_vm['ip'],
+#                     user=data_vm['login'],
+#                     password=data_vm['password'])
+# except Exception as err:
+#     status = "TEST ERROR"
+#     print(err)
     
-if status != "TEST ERROR":
-    with open("status.txt", 'r') as status_file:
-        status = status_file.readline()
-        print(f"STATUS: {status}")
+# if status != "TEST ERROR":
+#     with open("status.txt", 'r') as status_file:
+#         status = status_file.readline()
+#         print(f"STATUS: {status}")
 
 end_time = datetime.datetime.now()
 print(end_time)
 # 4 +++
-#vm.destroy_vm()
+vm.destroy_vm()

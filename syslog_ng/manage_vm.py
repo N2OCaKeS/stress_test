@@ -37,7 +37,7 @@ class ManageVM:
         self.user = 'vagrant'
         self.password = 'vagrant'
         self.check_vm_ip = "virsh --connect=qemu:///system domifaddr {} | awk '{{print $4}}' | tail -n 2"
-        # self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
+        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
 
     def prepare_and_start_vm(self):
         astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
@@ -80,11 +80,11 @@ class ManageVM:
         #     os.mkdir(self.testdir)
 
         # add_box
-        box_name, box_url = __box_wrapper(self.rc_name, self.mode)
-        print(f'vagrant box add --provider virtualbox {box_name} {box_url}')
-        cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
-        print(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
-        cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
+        self.box_name, self.box_url = __box_wrapper(self.rc_name, self.mode)
+        print(f'vagrant box add --provider virtualbox {self.box_name} {self.box_url}')
+        cmd(f'vagrant box add --provider virtualbox {self.box_name} {self.box_url}')
+        print(f'vagrant mutate {self.box_name} libvirt --input-provider virtualbox --force-virtio')
+        cmd(f'vagrant mutate {self.box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # add define pool
         try:
@@ -97,15 +97,15 @@ class ManageVM:
         # create_vm
     
    
-        print('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
-                                                                                                                box_url,
+        print('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(self.box_name,
+                                                                                                                self.box_url,
                                                                                                                 self.rc_name,
                                                                                                                 self.kernel,
                                                                                                                 self.vm_count,
                                                                                                                 self.vcpu,
                                                                                                                 self.ram))
-        cmd('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
-                                                                                                            box_url,
+        cmd('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(self.box_name,
+                                                                                                            self.box_url,
                                                                                                             self.rc_name,
                                                                                                             self.kernel,
                                                                                                             self.vm_count,
@@ -115,21 +115,29 @@ class ManageVM:
         print('\nWait reboot VMs 180s...\n')
         sleep(180)
 
+        # self.vm_dates = {
+        #     vm: {
+        #     'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+        #     'login':f'{self.user}',
+        #     'password':f'{self.password}'
+        #     } for vm in self.vms
+        # }
         self.vm_dates = {
             'ip': check_output_command(self.check_vm_ip.format("testvm1")).split('/')[0],
             'login':f'{self.user}',
             'password':f'{self.password}'
         }
+
         
     def destroy_vm(self):
-        pass
-        # cmd('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant destroy'.format(box_name,
-        #                                                                                          box_url,
-        #                                                                                          self.rc_name,
-        #                                                                                          self.kernel,
-        #                                                                                          self.vm_count,
-        #                                                                                          self.vcpu,
-        #                                                                                          self.ram))
+        # pass
+        cmd('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant destroy --force'.format(self.box_name,
+                                                                                                         self.box_url,
+                                                                                                         self.rc_name,
+                                                                                                         self.kernel,
+                                                                                                         self.vm_count,
+                                                                                                         self.vcpu,
+                                                                                                         self.ram))
         # print(f'VM dates is:\n{self.vm_dates}')
 
 

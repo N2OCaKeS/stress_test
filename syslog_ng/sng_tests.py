@@ -21,7 +21,7 @@ from libs.libsng import (astra_version,
                          upload_results_to_ftp,
                          response)
 
-
+from libs.libs import send_remote_command, get_remote_file, create_remote_file
 from manage_vm import ManageVM
 from conf import vCPU, RAM
 
@@ -251,4 +251,49 @@ class SNGCheckWriteLogsTest():
         print(self.data_vm)
 
     def run_test(self):
-        pass
+        start_time = datetime.now()
+        print(start_time)
+
+        status = "TEST STARTED"
+        try:
+            create_remote_file(local_file_path="conf.py", 
+                               remote_file_path=f"/home/{self.data_vm['login']}/conf.py",
+                               ip=self.data_vm['ip'],
+                               user=self.data_vm['login'],
+                               password=self.data_vm['password'])
+
+            # create_remote_file(local_file_path="generator_logs.py", 
+            #                    remote_file_path="/home/vagrant/generator_logs.py",
+            #                    ip=data_vm['ip'],
+            #                    user=data_vm['login'],
+            #                    password=data_vm['password'])
+
+            create_remote_file(local_file_path="new_checker_logs.py", 
+                               remote_file_path=f"/home/{self.data_vm['login']}/new_checker_logs.py",
+                               ip=self.data_vm['ip'],
+                               user=self.data_vm['login'],
+                               password=self.data_vm['password'])
+
+            send_remote_command(command="sudo python3 new_checker_logs.py",
+                                ip=self.data_vm['ip'],
+                                user=self.data_vm['login'],
+                                password=self.data_vm['password'])
+            # 3 |||
+            get_remote_file(remote_file_path=f"/home/{self.data_vm['login']}/status.txt",
+                            local_file_path="status.txt",
+                            ip=self.data_vm['ip'],
+                            user=self.data_vm['login'],
+                            password=self.data_vm['password'])
+        except Exception as err:
+            status = "TEST ERROR"
+            print(err)
+            
+        if status != "TEST ERROR":
+            with open("status.txt", 'r') as status_file:
+                status = status_file.readline()
+                print(f"STATUS: {status}")
+
+        end_time = datetime.now()
+        print(end_time)
+        # 4 +++
+        #vm.destroy_vm()

@@ -247,9 +247,9 @@ class SNGCheckWriteLogsTest():
     def task_test(self, thr_index):
         create_remote_file(local_file_path="conf.py", 
                            remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/conf.py",
-                           ip=self.data_vm['ip'],
-                           user=self.data_vm['login'],
-                           password=self.data_vm['password'])
+                           ip=self.data_vm[f"testvm{thr_index}"]['ip'],
+                           user=self.data_vm[f"testvm{thr_index}"]['login'],
+                           password=self.data_vm[f"testvm{thr_index}"]['password'])
 
         # create_remote_file(local_file_path="generator_logs.py", 
         #                    remote_file_path="/home/vagrant/generator_logs.py",
@@ -259,20 +259,20 @@ class SNGCheckWriteLogsTest():
 
         create_remote_file(local_file_path="plug_checker_logs.py", 
                            remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/new_checker_logs.py",
-                           ip=self.data_vm['ip'],
-                           user=self.data_vm['login'],
-                           password=self.data_vm['password'])
+                           ip=self.data_vm[f"testvm{thr_index}"]['ip'],
+                           user=self.data_vm[f"testvm{thr_index}"]['login'],
+                           password=self.data_vm[f"testvm{thr_index}"]['password'])
 
         send_remote_command(command="sudo python3 plug_checker_logs.py",
-                            ip=self.data_vm['ip'],
-                            user=self.data_vm['login'],
-                            password=self.data_vm['password'])
+                            ip=self.data_vm[f"testvm{thr_index}"]['ip'],
+                            user=self.data_vm[f"testvm{thr_index}"]['login'],
+                            password=self.data_vm[f"testvm{thr_index}"]['password'])
         # 3 |||
         get_remote_file(remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/status.txt",
                         local_file_path=f"status{thr_index}.txt",
-                        ip=self.data_vm['ip'],
-                        user=self.data_vm['login'],
-                        password=self.data_vm['password'])
+                        ip=self.data_vm[f"testvm{thr_index}"]['ip'],
+                        user=self.data_vm[f"testvm{thr_index}"]['login'],
+                        password=self.data_vm[f"testvm{thr_index}"]['password'])
 
     def prepare(self):
         vm  = ManageVM(rc_vbox=self.vbox, #args.VBOX,

@@ -1,3 +1,10 @@
+allta_app - v2.33.0
+* Change update version from
+  1.7.1 to 1.7.5
+* Del some snapshots
+
+
+
 allta_app - v2.32.5
 * Add full kernel check & install
   before start test

@@ -234,15 +234,19 @@ class SNGBenchMarkTest():
 
 
 class SNGCheckWriteLogsTest():
+    STATUS_STARTED = "STATUS STARTED"
+    STATUS_ERROR = "TEST ERROR"
+    STATUS_PASSED = "TEST PASSED"
+
     def __init__(self, vmcount, vbox, kernel) -> None:
         self.vmcount = vmcount
         self.vbox = vbox
         self.kernel = kernel
-        self.status = "TEST STARTED"
+        self.status = ""
 
     def task_test(self, thr_index):
         create_remote_file(local_file_path="conf.py", 
-                           remote_file_path=f"/home/{self.data_vm['login']}/conf.py",
+                           remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/conf.py",
                            ip=self.data_vm['ip'],
                            user=self.data_vm['login'],
                            password=self.data_vm['password'])
@@ -253,18 +257,18 @@ class SNGCheckWriteLogsTest():
         #                    user=data_vm['login'],
         #                    password=data_vm['password'])
 
-        create_remote_file(local_file_path="new_checker_logs.py", 
-                           remote_file_path=f"/home/{self.data_vm['login']}/new_checker_logs.py",
+        create_remote_file(local_file_path="plug_checker_logs.py", 
+                           remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/new_checker_logs.py",
                            ip=self.data_vm['ip'],
                            user=self.data_vm['login'],
                            password=self.data_vm['password'])
 
-        send_remote_command(command="sudo python3 new_checker_logs.py",
+        send_remote_command(command="sudo python3 plug_checker_logs.py",
                             ip=self.data_vm['ip'],
                             user=self.data_vm['login'],
                             password=self.data_vm['password'])
         # 3 |||
-        get_remote_file(remote_file_path=f"/home/{self.data_vm['login']}/status.txt",
+        get_remote_file(remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/status.txt",
                         local_file_path=f"status{thr_index}.txt",
                         ip=self.data_vm['ip'],
                         user=self.data_vm['login'],
@@ -273,7 +277,7 @@ class SNGCheckWriteLogsTest():
     def prepare(self):
         vm  = ManageVM(rc_vbox=self.vbox, #args.VBOX,
                #testdir=...,
-               vm_count=1,
+               vm_count=self.vmcount,
                kernel=self.kernel,
                vcpu=vCPU,
                ram=RAM)
@@ -286,13 +290,9 @@ class SNGCheckWriteLogsTest():
         start_time = datetime.now()
         print(start_time)
 
-        status = "TEST STARTED"
+        self.status = self.STATUS_STARTED
         try:
-            # th1 = threading.Thread(target=self.task_test)
-            # for index in range(self.vmcount):
-            #     th = threading.Thread(target=self.task_test)
-
-            threads = [threading.Thread(target=self.task_test, args=(threading.get_native_id(),)) in range(self.vmcount)]
+            threads = [threading.Thread(target=self.task_test, args=(idx,)) for idx in range(1, self.vmcount + 1)]
             for thread in threads:
                 thread.start()
 
@@ -300,17 +300,20 @@ class SNGCheckWriteLogsTest():
                 thread.join()
 
         except Exception as err:
-            status = "TEST ERROR"
+            self.status = self.STATUS_ERROR
             print(err)
             
-        if status != "TEST ERROR":
+        if self.status != self.STATUS_ERROR:
             statuses = []
             for index in range(threads):
                 with open(f"status{index}.txt", 'r') as status_file:
                     status = status_file.readline()
                     statuses.append(status)
-                    print(f"STATUS: {status}")
-
+                    # print(f"STATUS: {status}")
+        else:
+            self.status = self.STATUS_ERROR
+        print(f"STATUSES = {statuses}")
+        print(self.status)
         end_time = datetime.now()
         print(end_time)
         # 4 +++

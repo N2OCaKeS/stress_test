@@ -115,18 +115,18 @@ class ManageVM:
         print('\nWait reboot VMs 180s...\n')
         sleep(180)
 
-        # self.vm_dates = {
-        #     vm: {
-        #     'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
-        #     'login':f'{self.user}',
-        #     'password':f'{self.password}'
-        #     } for vm in self.vms
-        # }
         self.vm_dates = {
-            'ip': check_output_command(self.check_vm_ip.format("testvm1")).split('/')[0],
+            vm: {
+            'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
             'login':f'{self.user}',
             'password':f'{self.password}'
+            } for vm in self.vms
         }
+        # self.vm_dates = {
+        #     'ip': check_output_command(self.check_vm_ip.format("testvm1")).split('/')[0],
+        #     'login':f'{self.user}',
+        #     'password':f'{self.password}'
+        # }
 
         
     def destroy_vm(self):
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     from conf import vCPU, RAM
     vm  = ManageVM(rc_vbox="1.8.1",
                 #testdir=...,
-                vm_count=1,
+                vm_count=3,
                 kernel="6.1",
                 vcpu=vCPU,
                 ram=RAM)

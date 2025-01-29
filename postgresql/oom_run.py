@@ -12,6 +12,12 @@ parser.add_argument('-vbox', '--set-vbox',
                     help='set-vbox to vm',
                     dest='SET_BOX')
 
+parser.add_argument('-tcyc', '--test-cycle-name',
+                    action='store',
+                    required=True,
+                    help='test-cycle-name',
+                    dest='TCYC')
+
 
 """
 VARIABLES
@@ -31,8 +37,13 @@ with open('box-config.json', 'r') as r:
     dates = json.loads(r.read())
 
 
+#kernel = str(args.TCYC).split('_')[2]
 box_name, box_url = bl.box_wrapper(args.SET_BOX, dates)
 
+
+
+
+
 provider.prepare()
-provider.build(box_name=box_name, box_url=box_url, kernel='kernel', rc=args.SET_BOX)
+provider.build(box_name=box_name, box_url=box_url, kernel=args.TCYC, rc=args.SET_BOX)
 provider.check()

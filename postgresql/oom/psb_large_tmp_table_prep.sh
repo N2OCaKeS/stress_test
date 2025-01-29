@@ -1,10 +1,10 @@
 for user in am289 data ab122 ott1g ott32; do
-    yes 1 | sudo adduser ${user}
+    yes 12345678 | sudo adduser ${user}
     sudo pdpl-user -l 0:2 ${user}
 done
 
 for user in data_db data_common; do
-    yes 1 | sudo adduser ${user}
+    yes 12345678 | sudo adduser ${user}
     sudo pdpl-user -l 0:0 ${user}
 done
 

@@ -30,7 +30,7 @@ class VBox():
     """
     @classmethod
     def prepare(cls) -> int:
-        return system.cmd_with_returncode("sudo bash balance/bl_prepare_vbox.sh")
+        return system.cmd_with_returncode("sudo bash oom/oom_prepare_vbox.sh")
 
     @classmethod
     def build(cls, box_name: str, box_url: str, kernel: str, rc: str) -> int:

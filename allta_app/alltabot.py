@@ -651,6 +651,33 @@ async def process_callback(query: types.CallbackQuery):
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
     password = None
+    if command.args is None:
+        await message.reply('❌ Укажите версию RC и пароль')
+        return
+    try:
+        rc, password = command.args.split(' ', maxsplit=1)
+    except ValueError:
+        content = Text('❌ Укажите версию RC, пароль. Пример:\n'
+                            '/addrc <RC> <password>')
+        await message.reply(**content.as_kwargs())
+        return
+    if password == 'bendik$':
+        await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию RC: {rc}')
+        mod_allta_conf(rc)
+        #stand3, stand4 = acs_create_snapshot(rc)
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация RC: "{rc}"'
+        await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
+        #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand3}', parse_mode=None)
+        #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления MiddleServer: {stand4}', parse_mode=None)
+    else: 
+        content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
+        await message.reply(**content.as_kwargs())
+
+
+@dp.message(Command('adduurc'))
+async def addrc(message: types.Message, command: CommandObject):
+    rc = None
+    password = None
     uu_value = None #Использовать только если UU, иначе игнорировать
     if command.args is None:
         await message.reply('❌ Укажите версию RC и пароль')
@@ -659,7 +686,7 @@ async def addrc(message: types.Message, command: CommandObject):
         rc, password, uu_value = command.args.split(' ', maxsplit=2)
     except ValueError:
         content = Text('❌ Укажите версию RC, пароль и UU build version при наличии. Пример:\n'
-                            '/addrc <RC> <password> <UU build version>')
+                            '/adduurc <RC> <password> <UU build version>')
         await message.reply(**content.as_kwargs())
         return
     if password == 'bendik$':

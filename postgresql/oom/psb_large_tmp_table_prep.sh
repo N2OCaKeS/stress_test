@@ -18,7 +18,7 @@ fi
 
 apt-get install -y postgresql-${PG_VERSION}
 
-
+sudo pdpl-user -i 63 postgres
 sudo usermod -a -G shadow postgres
 sudo setfacl -d -m u:postgres:r /etc/parsec/macdb
 sudo setfacl -R -m u:postgres:r /etc/parsec/macdb

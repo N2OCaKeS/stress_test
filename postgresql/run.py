@@ -25,6 +25,12 @@ parser.add_argument('-bl',
                     help='balance mode',
                     dest='BALANCE')
 
+parser.add_argument('-oom',
+                    action='store',
+                    required=False,
+                    help='oom mode',
+                    dest='OOM')
+
 args = parser.parse_args()
 
 if not path.isdir(REPORT_PATH):
@@ -37,6 +43,8 @@ if args.KERNEL:
     subprocess.run(f'sudo {VENV_PATH} diff_kernel_quantity.py {dates}', shell=True)
 elif args.BALANCE:
      subprocess.run(f'sudo {VENV_PATH} bl_run.py {dates}', shell=True)
+elif args.OOM:
+     subprocess.run(f'sudo {VENV_PATH} oom_run.py {dates}', shell=True)
 else:
     #subprocess.run(f'sudo perf record -a -g -F 99 venv/bin/python3 psb_run.py {dates}', shell=True)
     subprocess.run(f'sudo {VENV_PATH} psb_run.py {dates}', shell=True)

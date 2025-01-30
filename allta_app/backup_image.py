@@ -191,6 +191,12 @@ parser.add_argument('-lvirt',
                     help='testlist',
                     dest='LVIRT')
 
+parser.add_argument('-psql-oom',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='PSQL_OOM')
+
 
 args = parser.parse_args()
 
@@ -255,7 +261,7 @@ elif args.PSQL_VANILLA:
 elif args.TANTOR_VANILLA:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {tantor_pkg} {tantor_vanilla}'
-elif args.PSQL_BALANCE:
+elif args.PSQL_BALANCE or args.PSQL_OOM:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox}'
 elif args.PSQL_PARSEC:

@@ -271,6 +271,7 @@ try:
                         psql_aud_off = '-psql_aud off'
                         psql_vanilla = '-psql-vanilla pv'
                         psql_balance = '-psql-bl balance'
+                        psql_oom = '-psql-oom oom'
                         tantor_vanilla = '-tantor-vanilla tv'
                         tantor_kern = '-db-kernels tantor'
                         ram_ovf = '-ovf ram'
@@ -308,6 +309,9 @@ try:
                         elif tests[dates_list[i][1]] == 'psql balance':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_balance}', shell=True)
+                        elif tests[dates_list[i][1]] == 'psql oom':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_oom}', shell=True)
                         elif tests[dates_list[i][1]] == 'psql kernels':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_kern}', shell=True)
@@ -395,6 +399,7 @@ try:
                     psql_aud_off = '-psql_aud off'
                     psql_vanilla = '-psql-vanilla pv'
                     psql_balance = '-psql-bl balance'
+                    psql_oom = '-psql-oom oom'
                     tantor_vanilla = '-tantor-vanilla tv'
                     tantor_kern = '-db-kernels tantor'
                     ram_ovf = '-ovf ram'
@@ -431,6 +436,9 @@ try:
                     elif tests[dates_list[i][1]] == 'psql balance':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_balance}', shell=True)
+                    elif tests[dates_list[i][1]] == 'psql oom':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_oom}', shell=True)
                     elif tests[dates_list[i][1]] == 'psql kernels':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {psql_kern}', shell=True)

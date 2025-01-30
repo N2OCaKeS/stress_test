@@ -1,0 +1,125 @@
+# -*- mode: ruby -*-
+
+def repo_configure(machine, rc)
+  machine.vm.provision "shell", inline:<<-SHELL
+      18repo() {
+      cat << EOF > /etc/apt/sources.list
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/extended-repository 1.8_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/devel-repository 1.8_x86-64 main contrib non-free
+EOF
+      }
+
+      17repo() {
+      echo "grub-pc grub-pc/install_devices multiselect /dev/sda" | sudo debconf-set-selections
+      cat << EOF > /etc/apt/sources.list
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/installation/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/update-repository/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/EXT_latest/extended-repository/ 1.7_x86-64 main contrib non-free
+EOF
+      }
+
+      RC=#{rc}
+      test "$(grep 1.7 /etc/astra_version)" && 17repo && sudo apt update
+      test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
+      dpkg -s jq &> /dev/null || sudo apt-get install jq -y
+      wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
+      sudo jq -r '."'"$RC"'"[]' releases.json > /etc/apt/sources.list
+      cat << EOF | sudo tee /etc/apt/preferences.d/devel
+      Package: *
+      Pin: release l=devel
+      Pin-Priority: 500
+
+      Package: *
+      Pin: release l=extended
+      Pin-Priority: 500
+EOF
+  SHELL
+end
+
+def upgrade(machine)
+  machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+      mkdir /home/tests
+      sudo cat /etc/apt/sources.list
+      sudo apt update
+      sudo astra-update -A -T -r
+      exit 0
+  SHELL
+end
+
+def set_kernel(machine, kernel)
+  machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+      kernel=#{kernel}
+      dpkg -s linux-image-$kernel &> /dev/null || sudo apt-get install linux-image-$kernel linux-astra-modules-$kernel -y
+      kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "'")
+      sudo sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT='$kernel_conf'/' /etc/default/grub
+      sudo update-grub
+      cat /etc/default/grub | grep GRUB_DEFAULT
+      exit 0
+  SHELL
+end
+
+def perf_func(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    cat << P_EOF > /home/test.sh
+    sudo -u postgres -i << C_EOF
+    psql -d test -c "select am289.form_am289n04()" -c "select am289.form_am289n04()" -c "select am289.form_am289n04()" -c "select am289.form_am289n04()"
+C_EOF
+P_EOF
+  SHELL
+end
+
+def date_harvester(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    cat /parsec/log/astra/events | grep oom > /home/tests/results
+    test "$(grep 1.7 /etc/astra_version)" && cat /var/lib/postgresql/11/main/pg_log/postgresql* | grep крах >> /home/results
+    test "$(grep 1.8 /etc/astra_version)" && cat /var/lib/postgresql/15/main/pg_log/postgresql* | grep крах >> /home/results
+    exit 0
+  SHELL
+end
+
+
+Vagrant.configure("2") do |config|
+  config.vm.box = ENV['UPDATE']
+  config.vm.box_url = ENV['BOX_URL']
+  #config.vm.guest = :debian
+  #config.vm.synced_folder "/home", "/home"
+  
+  vms = [
+    { :name => "database1", :hostname => "database1.oom.rbt", :args => "database1", :cpus => "2", :memory => "4096", :ip => "10.177.103.211" }
+  ]
+
+  vms.each do |vm|
+    if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
+      config.vm.define vm[:name] do |machine|
+        machine.vm.hostname = vm[:hostname]
+        machine.vm.provider "virtualbox" do |vb|
+          vb.check_guest_additions = false
+          vb.name = vm[:name]
+          vb.memory = vm[:memory]
+          vb.cpus = vm[:cpus]
+          vb.customize ["modifyvm", :id, "--usb", "off"]
+          vb.customize ["modifyvm", :id, "--usbehci", "off"]
+        end
+
+        repo_configure(machine, ENV['RC'])
+        upgrade(machine)
+        set_kernel(machine, ENV['KL'])
+
+        machine.vm.synced_folder "/home/tests", "/home/tests"
+
+        perf_func(machine)
+
+        machine.vm.provision "file", source: "../sql/test.tar.gz", destination: "/home/vagrant/test.tar.gz"
+        machine.vm.provision "shell", path:"psb_large_tmp_table_prep.sh"
+        machine.vm.provision "shell", inline:<<-SHELL
+            sudo bash /home/test.sh  
+            exit 0
+        SHELL
+
+        date_harvester(machine)
+      end
+    end
+  end
+end

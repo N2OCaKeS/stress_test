@@ -51,7 +51,7 @@ modes = {
 #################################################################################################################################################
 def parent_page_list():
     tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
-                                    'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels'],
+                                    'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
                 'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
                 'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
                 'UnixBench':       ['unix', 'unix parsec'],
@@ -101,6 +101,7 @@ branches = {
     'file system benchmark. XFS':'file_systems',
     'postgresql benchmark':'postgresql',
     'postgresql benchmark balance':'postgresql',
+    'postgresql benchmark oom':'postgresql',
     'postgresql benchmark kernels':'postgresql',
     'postgresql benchmark parsec':'postgresql',
     'postgresql benchmark vanilla':'postgresql',
@@ -156,6 +157,7 @@ tests = {
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
     'postgresql benchmark balance':'psql balance',
+    'postgresql benchmark oom':'psql oom',
     'postgresql benchmark kernels':'psql kernels',
     'postgresql benchmark parsec':'psql parsec',
     'postgresql benchmark vanilla':'psql vanilla',
@@ -216,7 +218,7 @@ group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm']
+              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom']
 
 
 
@@ -273,12 +275,12 @@ testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd
                                 'parsec impact-fs aud-off', 'apache-rp']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2',
                                'psql balance', 'FreeIPA auth', 'steal time', 'FIO', 'vUnixBench', 'vPingPong'] #'tantor vanilla', 'tantor kernels'
-testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-sm']
+testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
                    'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'FreeIPA auth',
-                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm'] #'psql balance',
+                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom'] #'psql balance',
 
 
 #testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
@@ -323,7 +325,8 @@ tests_case_zefir_key = {
     'vUnixBench':'BT-T14097',
     'vPingPong':'BT-T14145',
     'OCFS2':'BT-T7848',
-    'steal time-sm':'BT-T15186'
+    'steal time-sm':'BT-T15186',
+    'psql oom':'BT-T16134'
 }
 
 
@@ -347,7 +350,8 @@ testname_columns = {
                     'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
                     'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off',
                     'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
-                    'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm'
+                    'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm',
+                    'postgresql benchmark oom':'PSQL_OOM',
                     }
 
 
@@ -363,7 +367,7 @@ def releases_dict():
 #################################################################################################################################################
 #Перечень ядер, используемых для отображения в списке ядер
 #################################################################################################################################################
-startswith_kernel_list = ['6.1', '6.6', '5.15', '5.10']
+startswith_kernel_list = ['6.1', '6.6', '6.12', '5.15', '5.10']
 
 
 

@@ -257,13 +257,13 @@ class SNGCheckWriteLogsTest():
         #                    user=data_vm['login'],
         #                    password=data_vm['password'])
 
-        create_remote_file(local_file_path="plug_checker_logs.py", 
+        create_remote_file(local_file_path="new_checker_logs.py", 
                            remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/new_checker_logs.py",
                            ip=self.data_vm[f"testvm{thr_index}"]['ip'],
                            user=self.data_vm[f"testvm{thr_index}"]['login'],
                            password=self.data_vm[f"testvm{thr_index}"]['password'])
 
-        send_remote_command(command="sudo python3 plug_checker_logs.py",
+        send_remote_command(command="sudo python3 new_checker_logs.py",
                             ip=self.data_vm[f"testvm{thr_index}"]['ip'],
                             user=self.data_vm[f"testvm{thr_index}"]['login'],
                             password=self.data_vm[f"testvm{thr_index}"]['password'])
@@ -273,6 +273,12 @@ class SNGCheckWriteLogsTest():
                         ip=self.data_vm[f"testvm{thr_index}"]['ip'],
                         user=self.data_vm[f"testvm{thr_index}"]['login'],
                         password=self.data_vm[f"testvm{thr_index}"]['password'])
+
+    def final_result(self, statuses):
+        for status in statuses:
+            if status != self.STATUS_PASSED:
+                return status
+        return self.STATUS_PASSED
 
     def prepare(self):
         vm  = ManageVM(rc_vbox=self.vbox, #args.VBOX,
@@ -305,7 +311,7 @@ class SNGCheckWriteLogsTest():
             
         if self.status != self.STATUS_ERROR:
             statuses = []
-            for index in range(threads):
+            for index in range(1, len(threads) + 1):
                 with open(f"status{index}.txt", 'r') as status_file:
                     status = status_file.readline()
                     statuses.append(status)
@@ -316,5 +322,7 @@ class SNGCheckWriteLogsTest():
         print(self.status)
         end_time = datetime.now()
         print(end_time)
+        itog_status = self.final_result(statuses=statuses)
+        print(f"ITOG_STATUS = {itog_status}")
         # 4 +++
         # vm.destroy_vm()

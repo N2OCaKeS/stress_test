@@ -378,6 +378,16 @@ def busy_status_control(stand, name, version=None):
             w.write('Занят')
         with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('Иван Великанов')
+    elif name == 'mfilippenko':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('Максим Филиппенко')
+    elif name == 'amedvedev':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('Александр Медведев')
     elif name == 'ACS':
         with open(f'conf/work_status_{stand}.conf', 'w') as w:
             w.write('Занят')

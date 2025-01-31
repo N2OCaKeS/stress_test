@@ -31,6 +31,8 @@ if [ "$4" == "kernel" ]; then
     python3 run.py -n "$2" -kn "$4"
 elif [ "$4" == "balance" ]; then
     python3 run.py -n "$2" -bl "$4"
+elif [ "$4" == "oom" ]; then
+    python3 run.py -n "$2" -oom "$4"
 else
     python3 run.py -n "$2"
 fi

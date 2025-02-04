@@ -142,12 +142,9 @@ def check_running_system(stand_ip):
 
 def check_collector(stand_ip):
     def __check_status():
-        output, err_output = check_remote_command(
-            command=f'systemctl is-active {exporter_name_service}',
-            ip=stand_ip,
-            user=std_user,
-            password=std_password)
-        
+        output = remote_ssh_command(f'systemctl is-active {exporter_name_service}',
+                                    stand_ip=stand_ip)
+                
         if 'active' in output:
             return 0
 
@@ -162,10 +159,9 @@ def check_collector(stand_ip):
                             ip=stand_ip,
                             user=std_user,
                             password=std_password)
-            logger.debug(check_remote_command(command=f'sudo bash /home/{collector_name}',
-                                            ip=stand_ip,
-                                            user=std_user,
-                                            password=std_password))
+            logger.debug(remote_ssh_command(command=f'sudo bash /home/{collector_name}',
+                                            stand_ip=stand_ip))
+    
             if __check_status() == 0:
                 logger.info(f'{exporter_name_service} обнаружен, статус active')
                 return 0

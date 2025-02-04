@@ -146,8 +146,9 @@ def check_collector(stand_ip):
         output = remote_ssh_command(f'systemctl is-active {exporter_name_service}',
                                     stand_ip=stand_ip)
                 
-        if 'active' in output:
+        if output != None and 'active' in output:
             return 0
+        else: return 1
 
     if check_running_system(stand_ip):
         if __check_status() == 0:

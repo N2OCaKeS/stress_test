@@ -1,7 +1,7 @@
 #!/bin/bash
 set -vx
 
-export GRAFANA_HOST="${GRAFANA_HOST:=http://localhost:3000}"
+export GRAFANA_HOST="${GRAFANA_HOST:=http://localhost:3001}"
 export GRAFANA_CRED="${GRAFANA_CRED:=admin:admin}"
 export GRAFANA_OVERWRITE="${GRAFANA_OVERWRITE:=false}"
 export DS_NAME="${DS_NAME:=Prometheus}"

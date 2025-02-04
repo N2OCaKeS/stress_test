@@ -1,5 +1,5 @@
-SERVICE_NAME=infocollector.service
-S_PATH=/home/u/infocollector
+SERVICE_NAME=allta_infocollector.service
+S_PATH=/home/u/folder_git_for_infocollector/stress_test/allta_infocollector
 
 
 install() {
@@ -10,7 +10,7 @@ install() {
 
     sudo tee /etc/systemd/system/$SERVICE_NAME > /dev/null << EOF
 [Unit]
-Description=Docker Compose InfoCollector Service
+Description=Docker InfoCollector Service
 Requires=docker.service
 After=docker.service
 

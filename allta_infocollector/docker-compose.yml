@@ -1,0 +1,26 @@
+version: '3'
+services:
+  app:
+    build: .
+    container_name: allta_infocollector_app
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - infocollector
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "18181:18181"
+    volumes:
+      - ./src/aggregator/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - app
+    networks:
+      - infocollector
+
+networks:
+  infocollector:
+    driver: bridge

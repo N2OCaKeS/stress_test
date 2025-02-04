@@ -10,7 +10,7 @@ sudo apt-get install jq -y
 
 sudo tee /etc/systemd/system/grafana_prometheus.service > /dev/null << EOF
 [Unit]
-Description=Docker Compose Grafana & Prometheus Service
+Description=Docker Grafana & Prometheus Service
 Requires=docker.service
 After=docker.service
 
@@ -34,7 +34,5 @@ sudo systemctl status grafana_prometheus.service
 echo waiting...
 sleep 15
 sudo bash import_dashboard.sh
-
-# http://10.177.5.23:3000/d/rYdddlPWk/node-exporter-full?orgId=1&from=now-5m&to=now&timezone=browser&var-datasource=default&var-job=node_exporter&var-node=10.177.5.32:9100&var-diskdevices=%5Ba-z%5D%2B%7Cnvme%5B0-9%5D%2Bn%5B0-9%5D%2B%7Cmmcblk%5B0-9%5D%2B&refresh=5s&kiosk
 
 

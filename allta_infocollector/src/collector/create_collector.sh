@@ -21,7 +21,7 @@ EOF
 
 sudo tee /etc/systemd/system/node_exporter.service > /dev/null << EOF
 [Unit]
-Description=Docker Compose Node Exporter Service
+Description=Docker node exporter service
 Requires=docker.service
 After=docker.service
 

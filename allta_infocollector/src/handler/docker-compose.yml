@@ -1,0 +1,48 @@
+version: '3.7'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - monitoring
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.enable-lifecycle
+      - --web.enable-admin-api
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    ports:
+      - 3001:3001
+    networks:
+      - monitoring
+    volumes:
+      - ./import_dashboard.sh:/import_dashboard.sh
+      - ./grafana_dashboard.json:/grafana_dashboard.json
+    environment:
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_LOG_LEVEL=warn 
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "18180:18180"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge

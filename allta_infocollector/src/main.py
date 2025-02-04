@@ -1,5 +1,5 @@
-from aggregator.libs import check_collector
-from aggregator.conf import full_dashboard
+from src.aggregator.libs import check_collector
+from src.aggregator.conf import full_dashboard
 from flask import (Flask, 
                    redirect, 
                    url_for, 

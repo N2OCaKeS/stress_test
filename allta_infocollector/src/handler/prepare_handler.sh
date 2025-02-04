@@ -1,12 +1,12 @@
-G_PATH=/home/grafana_handler
+G_PATH=/home/u/folder_git_for_infocollector/stress_test/allta_infocollector/src/handler
 CP=`pwd`
-mkdir -p $G_PATH
+#mkdir -p $G_PATH
 cd $G_PATH
-cp $CP/* $G_PATH
+#cp -r $CP/* $G_PATH
 
-sudo apt-get install docker.io -y
-sudo apt-get install docker-compose -y
-sudo apt-get install jq -y
+dpkg -s docker.io || sudo apt-get install docker.io -y
+dpkg -s docker-compose || sudo apt-get install docker-compose -y
+dpkg -s jq || sudo apt-get install jq -y
 
 sudo tee /etc/systemd/system/grafana_prometheus.service > /dev/null << EOF
 [Unit]

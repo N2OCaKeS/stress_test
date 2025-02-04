@@ -83,7 +83,6 @@ def check_remote_command(command, ip, user, password):
     return output, err_output
 
 
-@trycorator
 def remote_ssh_command(command, stand_ip):
     try:
         client = paramiko.SSHClient()
@@ -152,12 +151,13 @@ def check_collector(stand_ip):
         output = ''
         output = remote_ssh_command(f'systemctl is-active {exporter_name_service}',
                                     stand_ip=stand_ip)
-                
+        logger.info(f'Output debug: {output}')
+
         if output != None and 'active' in output:
-            logger.info(output)
+            logger.info(f'__check_status(active): {output}')
             return 0
         else: 
-            logger.info(output)
+            logger.info(f'__check_status: {output}')
             return 1
 
     if check_running_system(stand_ip):

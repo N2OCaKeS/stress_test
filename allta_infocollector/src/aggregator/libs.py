@@ -1,8 +1,8 @@
 import subprocess
 from os import linesep
 import paramiko
-from conf import *
-from logger import logger
+from src.aggregator.conf import *
+from src.aggregator.logger import logger
 import socket
 from paramiko import ssh_exception
 
@@ -84,6 +84,20 @@ def check_remote_command(command, ip, user, password):
 
 
 @trycorator
+def remote_ssh_command(command, stand_ip):
+    try:
+        client = paramiko.SSHClient()
+        
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
+        client.connect(stand_ip, port=22, username=std_user, password='1')
+        stdin, stdout, stderr = client.exec_command(command)
+        response = stdout.read().decode().strip()
+    finally:
+        client.close()
+    return response
+
+
+@trycorator
 def get_remote_file(remote_file_path, local_file_path, ip, user, password):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -106,16 +120,15 @@ def check_running_system(stand_ip):
         return False
 
     try:
-        output, err = check_remote_command(command='systemctl is-system-running',
-                                           ip=stand_ip,
-                                           user=std_user,
-                                           password=std_password)
-        if output == 'running':
+        system_status = remote_ssh_command('systemctl is-system-running',
+                                           stand_ip=stand_ip)
+                
+        if system_status == 'running':
             logger.info('system is running')
             sock.close()
             return True
         else:
-            logger.error(f'System is not fully loaded yet: {output}')
+            logger.error(f'System is not fully loaded yet: {system_status}')
             return True
     except paramiko.AuthenticationException:
         logger.error('Authentication failed')

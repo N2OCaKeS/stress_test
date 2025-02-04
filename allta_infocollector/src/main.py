@@ -17,6 +17,6 @@ app.config['SECRET_KEY'] = 'info_1381'
 def get_dashboard(stand, board_name):
     if check_collector(stand) == 0:
         if board_name == 'full':
-            return redirect(url_for(full_dashboard.format(stand_ip=stand))), 200
+            return redirect(url_for(full_dashboard.format(stand))), 200
     else: return 'Запрос получен и обработан, но запрашиваемый сервер недоступен или вернул ошибку', 200
 

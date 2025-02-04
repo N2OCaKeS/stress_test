@@ -1,5 +1,5 @@
 import logging
-from conf import log_file
+from src.aggregator.conf import log_file
 
 
 # Настройка логгера

@@ -8,7 +8,7 @@ grafana_name_service = 'grafana_prometheus.service'
 exporter_name_service = 'node_exporter.service'
 log_file = 'logs/infocollector.log'
 collector_name = 'create_collector.sh'
-collector_file = f'{project_path}/collector/{collector_name}'
+collector_file = f'src/collector/{collector_name}'
 server_ip = '10.177.103.10'
 
 full_dashboard = 'http://10.177.103.10:3001/d/rYdddlPWk/node-exporter-full?orgId=1&from=now-5m&to=now&timezone=browser&var\

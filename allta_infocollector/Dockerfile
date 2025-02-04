@@ -5,6 +5,4 @@ COPY . /app
 
 RUN pip install --no-cache-dir flask gunicorn paramiko
 
-#ENV PYTHONPATH="${PYTHONPATH}:/app/src"
-
-CMD ["gunicorn", "-b", "0.0.0.0:5002", "wsgi:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:5002", "wsgi:app", "--timeout", "300"]

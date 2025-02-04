@@ -87,11 +87,18 @@ def check_remote_command(command, ip, user, password):
 def remote_ssh_command(command, stand_ip):
     try:
         client = paramiko.SSHClient()
-        
         client.set_missing_host_key_policy(paramiko.WarningPolicy())
         client.connect(stand_ip, port=22, username=std_user, password='1')
-        stdin, stdout, stderr = client.exec_command(command)
+        
+        stdin, stdout, stderr = client.exec_command(command, timeout=300)
+        
         response = stdout.read().decode().strip()
+        error_message = stderr.read().decode().strip()
+
+        if error_message:
+            logger.info(f"Error: '{error_message}'")
+
+        logger.info(f"Response: '{response}'")
     finally:
         client.close()
     return response
@@ -147,8 +154,11 @@ def check_collector(stand_ip):
                                     stand_ip=stand_ip)
                 
         if output != None and 'active' in output:
+            logger.info(output)
             return 0
-        else: return 1
+        else: 
+            logger.info(output)
+            return 1
 
     if check_running_system(stand_ip):
         if __check_status() == 0:
@@ -157,11 +167,11 @@ def check_collector(stand_ip):
         else:
             logger.warning(f'{exporter_name_service} не найден, устанавливаю')
             create_remote_file(local_file_path=collector_file,
-                            remote_file_path=f'/home/{collector_name}',
+                            remote_file_path=f'/home/u/{collector_name}',
                             ip=stand_ip,
                             user=std_user,
                             password=std_password)
-            logger.debug(remote_ssh_command(command=f'sudo bash /home/{collector_name}',
+            logger.debug(remote_ssh_command(command=f'sudo bash /home/u/{collector_name}',
                                             stand_ip=stand_ip))
     
             if __check_status() == 0:

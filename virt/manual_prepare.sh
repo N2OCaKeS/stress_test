@@ -2,25 +2,32 @@
 
 set -vx
 
+venv(){
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install --upgrade pip 
+    pip install --upgrade setuptools wheel
+    pip install -r req.txt
+}
+
 if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
     pm=apt-get
     wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
     sudo dpkg -i vagrant_2.2.19_x86_64.deb
-    $pm install pip -y
-    if [ "$1" == "astra"]; then
-        if [ grep 1.8 /etc/astra/build_version ]; then
-            python3 -m pip install --upgrade pip --break-system-packages
-            python3 -m pip install --upgrade setuptools wheel --break-system-packages
-            python3 -m pip install -r req.txt --break-system-packages
-        elif [ grep 1.7 /etc/astra/build_version ]; then
-            python3 -m pip install --upgrade pip
-            python3 -m pip install --upgrade setuptools wheel
-            python3 -m pip install -r req.txt
+    $pm install python3-pip python3-venv -y
+    if [ "$1" == "astra" ]; then
+        if grep -q "1.8" /etc/astra/build_version ; then
+            # python3 -m pip install --upgrade pip --break-system-packages
+            # python3 -m pip install --upgrade setuptools wheel --break-system-packages
+            # python3 -m pip install -r req.txt --break-system-packages
+            venv            
+        elif grep -q "1.7" /etc/astra/build_version; then
+            # python3 -m pip install --upgrade pip
+            # python3 -m pip install --upgrade setuptools wheel
+            # python3 -m pip install -r req.txt
+            venv
         fi
     fi
-    # python3 -m pip install --upgrade pip --break-system-packages
-    # python3 -m pip install --upgrade setuptools wheel
-    # python3 -m pip install -r req.txt --break-system-packages
     $pm install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 elif [ "$1" == "alt" ]; then
     pm=apt-get
@@ -65,8 +72,8 @@ for plugin in vagrant-vbguest; do
     fi
 done
 
-rm Vagrantfile
-mv manual_Vagrantfile Vagrantfile
+mv Vagrantfile auto_Vagrantfile
+cp manual_Vagrantfile Vagrantfile
 
 if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
     echo "supports hardware virtualization is ok"

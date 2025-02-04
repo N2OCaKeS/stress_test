@@ -5,4 +5,4 @@ COPY . /app
 
 RUN pip install --no-cache-dir flask gunicorn paramiko
 
-CMD ["gunicorn", "-b", "0.0.0.0:5002", "wsgi:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:5002", "wsgi:app", "--timeout", "300"]

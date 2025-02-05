@@ -1,0 +1,6 @@
+pandas
+numpy
+argparse
+atlassian-python-api
+paramiko
+requests

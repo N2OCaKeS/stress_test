@@ -21,7 +21,7 @@ UB_RESULTS = f'{UB_PATH}/UnixBench/results'
 
 #StealTime
 LOW = 1         #TEST_MASHINES --- # count fot middleserver
-HIGH = 2       #TEST_MASHINES --- # count fot middleserver
+HIGH = 70       #TEST_MASHINES --- # count fot middleserver
 ST_vCPU = 2     #Steal Time vCPU
 ST_RAM = 2048   #Steal Time RAM
 

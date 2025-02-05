@@ -13,14 +13,12 @@ venv() {
 if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
     pm=apt-get
     wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-    # sudo dpkg -i vagrant_2.2.19_x86_64.deb
-    sudo dpkg -i vagrant_2.4.3-1_x86_64.deb
+    sudo dpkg -i vagrant_2.2.19_x86_64.deb
     sudo $pm install python3-pip python3-venv -y
     if [ "$1" == "astra" ]; then
         if grep -q "1.8" /etc/astra/build_version; then
             venv
         elif grep -q "1.7" /etc/astra/build_version; then
-            sudo dpkg -i vagrant_2.2.19_x86_64.deb
             venv
         fi
     fi

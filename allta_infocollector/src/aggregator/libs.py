@@ -153,7 +153,7 @@ def check_collector(stand_ip):
                                     stand_ip=stand_ip)
         logger.info(f'Output debug: {output}')
 
-        if output != None and 'active' in output:
+        if output != None and 'active' in output and not output.startswith('in'):
             logger.info(f'__check_status(active): {output}')
             return 0
         else: 

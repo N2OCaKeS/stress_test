@@ -21,6 +21,7 @@ WorkingDirectory=$S_PATH
 ExecStartPre=/usr/bin/docker-compose pull
 ExecStartPre=/usr/bin/docker-compose build
 ExecStartPre=/bin/systemctl restart grafana_prometheus.service
+ExecStartPre=/bin/sleep 20
 ExecStartPre=/bin/bash $DB_PATH/import_dashboard.sh
 ExecStart=/usr/bin/docker-compose up -d
 ExecStop=/usr/bin/docker-compose down

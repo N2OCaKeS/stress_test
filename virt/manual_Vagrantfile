@@ -13,7 +13,6 @@ Vagrant.configure("2") do |config|
         :args => "testvm#{i}", 
         :cpus => ENV['CPU'], 
         :memory => ENV['RAM'],
-        :ip => "192.168.200.#{i+1}"
       }
       vms.push(new_vm)
     end
@@ -21,7 +20,7 @@ Vagrant.configure("2") do |config|
     vms.each do |machine|
       config.vm.define machine[:name] do |node|
         node.vm.hostname = machine[:hostname]
-        node.vm.network "private_network", ip: machine[:ip]
+        node.vm.network "public_network", bridge: "virbr0", dev: "default"
         node.vm.provider :libvirt do |v|
           v.memory = machine[:memory]
           v.cpus = machine[:cpus]

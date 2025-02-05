@@ -18,7 +18,6 @@ if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
     $pm install python3-pip python3-venv -y
     if [ "$1" == "astra" ]; then
         if grep -q "1.8" /etc/astra/build_version; then
-
             venv
         elif grep -q "1.7" /etc/astra/build_version; then
             sudo dpkg -i vagrant_2.2.19_x86_64.deb
@@ -72,6 +71,9 @@ done
 
 mv Vagrantfile auto_Vagrantfile
 cp manual_Vagrantfile Vagrantfile
+
+virsh -c qemu:///system net-start default
+virsh -c qemu:///system net-autostart default
 
 if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
     echo "supports hardware virtualization is ok"

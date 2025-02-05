@@ -1,9 +1,9 @@
 import argparse
 import subprocess
 import time
-# from libs.zefir import UploaderZC
+from libs.zefir import UploaderZC
 
-
+print(type(UploaderZC))
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-o", "--docker-image",

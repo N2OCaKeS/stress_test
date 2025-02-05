@@ -2,6 +2,7 @@ import argparse
 import subprocess
 import time
 
+ram_worker = 1
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-o", "--docker-image",
@@ -19,11 +20,16 @@ parser.add_argument("-t", "--timer",
                     help="timer for test(default 1 min)",
                     default=1,
                     dest="TIMER")
-parser.add_argument("-l", "--load",
+parser.add_argument("-lcpu", "--load-cpu",
                     type=int,
                     help="CPU load (default 2 workers)",
-                    default=2,
-                    dest="LOAD")
+                    default=0,
+                    dest="LOAD_CPU")
+parser.add_argument("-lram", "--load-ram",
+                    type=str,
+                    help="RAM load (default 256 RAM)",
+                    default=0,
+                    dest="LOAD_RAM")
 args = parser.parse_args()
 
 
@@ -46,7 +52,7 @@ def create_docker_compose():
   {service_name}:
     image: stress_test_image
     container_name: {service_name}
-    command: ["stress", "--cpu", "{args.LOAD}", "--timeout", "{args.TIMER * 60}"]
+    command: ["stress", "--vm", "{ram_worker}", "--vm-bytes", "{args.LOAD_RAM}", "--cpu", "{args.LOAD_CPU}", "--timeout", "{args.TIMER * 60}"]
     stdin_open: true
     tty: true
 """

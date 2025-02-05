@@ -15,7 +15,7 @@ if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
     wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
     # sudo dpkg -i vagrant_2.2.19_x86_64.deb
     sudo dpkg -i vagrant_2.4.3-1_x86_64.deb
-    $pm install python3-pip python3-venv -y
+    sudo $pm install python3-pip python3-venv -y
     if [ "$1" == "astra" ]; then
         if grep -q "1.8" /etc/astra/build_version; then
             venv
@@ -24,7 +24,7 @@ if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
             venv
         fi
     fi
-    $pm install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
+    sudo $pm install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 elif [ "$1" == "alt" ]; then
     pm=apt-get
     wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/upload/timonin/vagrant

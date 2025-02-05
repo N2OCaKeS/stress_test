@@ -21,8 +21,6 @@ from libs.liballta import (index_page,
                           run_command_on_stand,
                           ssh_command,
                           background_task_main,
-                          background_task_brest,
-                          background_stat_storage_main,
                           update_settings_block,
                           get_kernels_from_rc,
                           backup_snapshot,
@@ -52,21 +50,21 @@ __jira_token = tokens['jira_token']
 
 thread_task_main = BackgroundTasks(target=background_task_main)
 #thread_task_brest = BackgroundTasks(target=background_task_brest)
-thread_storage_main = BackgroundTasks(target=background_stat_storage_main)
+#thread_storage_main = BackgroundTasks(target=background_stat_storage_main)
 thread_task_main.start()
 #thread_task_brest.start()
-thread_storage_main.start()
+#thread_storage_main.start()
 
 
 @app.route('/update_cpumeminfo', methods=['GET'])
 def restart_cpumeminfo():
     thread_task_main.stop()
     #thread_task_brest.stop()
-    thread_storage_main.stop()
-    sleep(1)
+ #   thread_storage_main.stop()
+    sleep(5)
     thread_task_main.start()
     #thread_task_brest.start()
-    thread_storage_main.start()
+    #thread_storage_main.start()
     return 0
 
 

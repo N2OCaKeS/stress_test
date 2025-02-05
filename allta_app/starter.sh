@@ -3,7 +3,9 @@
 #
 #Аргументом скрипту следует указать ветку проекта
 #
+localhost=`hostname -I`
 
+echo $localhost
 echo git bench = $1
 echo git bench = $2
 set -vx
@@ -14,6 +16,7 @@ git_directory="stress_test"
 
 #Предустановка пакетов
 dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y
+curl http://10.177.103.10:18181/rest/api/dashboard/$localhost/full
 
 #Клонируем репозиторий, удаляем старый, если есть
 cd /home/u/git

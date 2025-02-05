@@ -2,10 +2,10 @@
 
 set -vx
 
-venv(){
+venv() {
     python3 -m venv .venv
     source .venv/bin/activate
-    pip install --upgrade pip 
+    pip install --upgrade pip
     pip install --upgrade setuptools wheel
     pip install -r req.txt
 }
@@ -13,18 +13,15 @@ venv(){
 if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
     pm=apt-get
     wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-    sudo dpkg -i vagrant_2.2.19_x86_64.deb
+    # sudo dpkg -i vagrant_2.2.19_x86_64.deb
+    sudo dpkg -i vagrant_2.4.3-1_x86_64.deb
     $pm install python3-pip python3-venv -y
     if [ "$1" == "astra" ]; then
-        if grep -q "1.8" /etc/astra/build_version ; then
-            # python3 -m pip install --upgrade pip --break-system-packages
-            # python3 -m pip install --upgrade setuptools wheel --break-system-packages
-            # python3 -m pip install -r req.txt --break-system-packages
-            venv            
+        if grep -q "1.8" /etc/astra/build_version; then
+
+            venv
         elif grep -q "1.7" /etc/astra/build_version; then
-            # python3 -m pip install --upgrade pip
-            # python3 -m pip install --upgrade setuptools wheel
-            # python3 -m pip install -r req.txt
+            sudo dpkg -i vagrant_2.2.19_x86_64.deb
             venv
         fi
     fi
@@ -34,8 +31,9 @@ elif [ "$1" == "alt" ]; then
     wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/upload/timonin/vagrant
     sudo rpm -Uvh vagrant_2.2.19_x86_64.rpm
     $pm install pip -y
-    python3 -m pip install --upgrade pip --break-system-packages
-    python3 -m pip install -r req.txt --break-system-packages
+    venv
+    # python3 -m pip install --upgrade pip --break-system-packages
+    # python3 -m pip install -r req.txt --break-system-packages
     $pm install libvirt libvirt-devel libvirt-client -y
     systemctl enable libvirtd
     systemctl start libvirtd
@@ -44,13 +42,13 @@ elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/upload/timonin/vagrant
     sudo rpm -i vagrant_2.2.19_x86_64.rpm
     $pm install pip -y
-    python3 -m pip install --upgrade pip
-    python3 -m pip install -r req.txt
+    venv
+    # python3 -m pip install --upgrade pip
+    # python3 -m pip install -r req.txt
     $pm install virt-manager libvirt-daemon qemu-img libvirt -y
     systemctl enable libvirtd
     systemctl start libvirtd
 fi
-
 
 #lvirt
 sudo adduser $USER libvirt

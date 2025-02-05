@@ -55,9 +55,9 @@ class CreateVM:
 
         # add define pool
         try:
-            cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
-            cmd('virsh pool-autostart default')
-            cmd('virsh pool-start default')
+            cmd('virsh -c qemu:///system pool-define-as --name default --type dir --target /var/lib/libvirt/images')
+            cmd('virsh -c qemu:///system pool-autostart default')
+            cmd('virsh -c qemu:///system pool-start default')
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
@@ -93,10 +93,10 @@ class StealTime(CreateVM):
         self.vm_count = vm_count
         self.testdir = testdir
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
-        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.check_vm_ip = "virsh -c qemu:///system domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
         self.run_test = 'cd /home/{} && sudo ./cpu_load'
-        self.power_off = 'virsh destroy {}'
+        self.power_off = 'virsh -c qemu:///system destroy {}'
         self.user = 'vagrant'
         self.password = 'vagrant'
         self.stop_host_monitor = False

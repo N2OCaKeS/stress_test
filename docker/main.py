@@ -1,15 +1,13 @@
 import argparse
 import subprocess
 import time
-from libs.zefir import UploaderZC
 
-print(type(UploaderZC))
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-o", "--docker-image",
                     type=str,
                     help="Docker base image for stress testing",
-                    default="alpine:latest",
+                    default="ubuntu:latest",
                     dest="CONT_NAME")
 parser.add_argument("-c", "--count",
                     type=int,
@@ -30,16 +28,23 @@ args = parser.parse_args()
 
 
 def create_docker_compose():
-    compose_content = "version: '3.1'\n\nservices:\n"
-
-    for i in range(1, args.COUNT + 1):
-        service_name = f"stress_{i}"
-        service_content = f"""
-  {service_name}:
+    compose_content = f"version: '3.1'\n\nservices:\n"
+    
+    compose_content += f"""
+  base:
     build:
       context: .
       args:
         BASE_IMAGE: {args.CONT_NAME}
+    image: stress_test_image
+"""
+
+    # Создаем нужное количество сервисов из этого образа
+    for i in range(1, args.COUNT + 1):
+        service_name = f"stress_{i}"
+        service_content = f"""
+  {service_name}:
+    image: stress_test_image
     container_name: {service_name}
     command: ["stress", "--cpu", "{args.LOAD}", "--timeout", "{args.TIMER * 60}"]
     stdin_open: true
@@ -57,17 +62,30 @@ def run_command(command):
     try:
         result = subprocess.run(command, shell=True, check=True, text=True, capture_output=True)
         print(result.stdout.strip())
+        return True
     except subprocess.CalledProcessError as e:
         print("Команда завершилась с ошибкой:")
         print(e)
+        return False
 
 
+try:
+    create_docker_compose()
+    run_command("docker-compose up -d")
+
+    time.sleep(args.TIMER * 60)
+
+finally:
+    run_command("docker-compose down")
+    print("Контейнеры остановлены и удалены.")
 # try:
 #     create_docker_compose()
-#     run_command("docker-compose up -d")
-
-#     time.sleep(args.TIMER * 60)
+    
+#     if not run_command("docker-compose up -d"):
+#         raise RuntimeError("Не удалось запустить контейнеры")
 
 # finally:
-#     run_command("docker-compose down")
-#     print("Контейнеры остановлены и удалены.")
+#     if not run_command("docker-compose down"):
+#         print("Не удалось корректно остановить и удалить контейнеры")
+#     else:
+#         print("Контейнеры остановлены и удалены.")

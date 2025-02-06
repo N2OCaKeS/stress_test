@@ -1,3 +1,4 @@
+#dockerfile.load
 ARG BASE_IMAGE=ubuntu:latest
 FROM ${BASE_IMAGE}
 
@@ -6,5 +7,5 @@ RUN apt-get update && \
     apt-get clean
 
 WORKDIR /opt
-COPY scripts_for_containers/summarize.py .
+COPY static/summarize.py .
 RUN python3 summarize.py

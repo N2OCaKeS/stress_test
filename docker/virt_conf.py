@@ -1,6 +1,7 @@
 import os
 import requests
 
+
 jira_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-jira-url'
 confluence_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-confluence-url'
 response_jira_url = requests.get(jira_url_api)

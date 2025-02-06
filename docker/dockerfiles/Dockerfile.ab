@@ -1,0 +1,2 @@
+ARG BASE_IMAGE=jordi/ab:latest
+FROM jordi/ab:latest

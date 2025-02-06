@@ -1,10 +1,17 @@
 import subprocess
 import argparse
+import core.variables as var
 
 
 ram_worker = 1
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--test",
+                    required=True,
+                    type=str,
+                    choices=["load-test", "http-test", "remove"],
+                    help="Type your test",
+                    dest="TEST_TYPE")
 parser.add_argument("-o", "--docker-image",
                     type=str,
                     help="Docker base image for stress testing",
@@ -13,7 +20,7 @@ parser.add_argument("-o", "--docker-image",
 parser.add_argument("-c", "--count",
                     type=int,
                     help="Choose count of containers",
-                    default=5,
+                    default=2,
                     dest="COUNT")
 parser.add_argument("-t", "--timer",
                     type=int,
@@ -22,19 +29,19 @@ parser.add_argument("-t", "--timer",
                     dest="TIMER")
 parser.add_argument("-lcpu", "--load-cpu",
                     type=int,
-                    help="CPU load (default 2 workers)",
-                    default=0,
+                    help="CPU load (default 1 worker)",
+                    default=1,
                     dest="LOAD_CPU")
 parser.add_argument("-lram", "--load-ram",
                     type=str,
                     help="RAM load (default 256 RAM)",
-                    default=0,
+                    default=256,
                     dest="LOAD_RAM")
 args = parser.parse_args()
 
 
-
 def create_load_docker_compose(content): 
+    run_command("docker build -t stress_test_image ./dockerfiles/load/")
     # Создаем нужное количество сервисов из нагрузочного образа образа
     for i in range(1, args.COUNT + 1):
         service_name = f"stress_{i}"
@@ -48,23 +55,24 @@ def create_load_docker_compose(content):
 """
         content += service_content
 
-    with open('docker-compose.yml', 'w') as file:
+    with open("docker-compose.yml", 'w') as file:
         file.write(content)
 
     print("Файл docker-compose.yml успешно создан.")
     return content
 
-def prepare_http_test(content):
-    http_server = """
-  http_server:
-    image: nginx_image
-    container_name: server
-    ports:
-      - "80:80"
-"""
-    content += http_server
-    return content
 
+def create_http_docker_compose(content):
+    run_command("docker build -t ab ./dockerfiles/http/apache-bench/")
+    run_command("docker build -t nginx ./dockerfiles/http/nginx-server/")
+    content += var.http_content
+
+    with open("docker-compose.yml", 'w') as file:
+        file.write(content)
+    
+    print("Файл docker-compose.yml успешно создан.")
+    return content
+    
 
 def run_command(command):
     try:

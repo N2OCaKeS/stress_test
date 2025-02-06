@@ -1,0 +1,25 @@
+
+version: "3.1"
+services:
+
+  
+  nginx:
+    image: nginx
+    container_name: nginx
+    stdin_open: true
+    tty: true
+    ports:
+      - "80:80"
+    networks:
+      - load-network
+  ab:
+    image: ab
+    container_name: ab
+    stdin_open: true
+    tty: true
+    networks:
+      - load-network
+
+networks:
+  load-network:
+    driver: bridge

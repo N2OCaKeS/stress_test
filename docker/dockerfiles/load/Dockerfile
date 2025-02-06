@@ -8,4 +8,4 @@ RUN apt-get update && \
 
 WORKDIR /opt
 COPY static/summarize.py .
-RUN python3 summarize.py
+CMD ["python3", summarize.pys]

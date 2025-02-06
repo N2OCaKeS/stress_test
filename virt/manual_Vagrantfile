@@ -20,7 +20,6 @@ Vagrant.configure("2") do |config|
     vms.each do |machine|
       config.vm.define machine[:name] do |node|
         node.vm.hostname = machine[:hostname]
-        node.vm.network "public_network", bridge: "virbr0", dev: "default"
         node.vm.provider :libvirt do |v|
           v.memory = machine[:memory]
           v.cpus = machine[:cpus]

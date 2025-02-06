@@ -38,7 +38,7 @@ j2=$(jq '.' ./allta_dashboard.json)
 echo "{\"dashboard\": ${j2},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload2.json
 
 echo waiting...
-sleep 3
+sleep 15
 
 curl -v -k -u "$GRAFANA_CRED" \
   -H "Accept: application/json" \

@@ -71,7 +71,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -135,7 +135,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "time() - node_boot_time_seconds{instance=~\"$node\"}",
           "format": "time_series",
@@ -152,7 +152,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -216,7 +216,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "count(count(node_cpu_seconds_total{instance=~\"$node\", mode='system'}) by (cpu))",
           "format": "time_series",
@@ -233,7 +233,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -305,7 +305,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "100 - (avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"idle\"}[30s])) * 100)",
@@ -325,7 +325,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -397,7 +397,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"iowait\"}[30s])) * 100",
@@ -417,7 +417,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -476,7 +476,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "(1 - (node_memory_MemAvailable_bytes{instance=~\"$node\"} / (node_memory_MemTotal_bytes{instance=~\"$node\"})))* 100",
           "format": "time_series",
@@ -493,7 +493,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -656,7 +656,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_MemTotal_bytes{instance=~\"$node\"}",
           "format": "time_series",
@@ -670,7 +670,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_MemTotal_bytes{instance=~\"$node\"} - node_memory_MemAvailable_bytes{instance=~\"$node\"}",
           "format": "time_series",
@@ -683,7 +683,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_MemFree_bytes{instance=~\"$node\"}",
           "format": "time_series",
@@ -696,7 +696,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_Buffers_bytes{instance=~\"$node\"}",
           "format": "time_series",
@@ -709,7 +709,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_Cached_bytes{instance=~\"$node\"}",
           "format": "time_series",
@@ -722,7 +722,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_MemAvailable_bytes{instance=~\"$node\"}",
           "format": "time_series",
@@ -736,7 +736,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_MemTotal_bytes{instance=~\"$node\"} - (node_memory_Cached_bytes{instance=~\"$node\"} + node_memory_Buffers_bytes{instance=~\"$node\"} + node_memory_MemFree_bytes{instance=~\"$node\"})",
           "format": "time_series",
@@ -751,7 +751,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -812,7 +812,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "node_filefd_allocated{instance=~\"$node\"}",
@@ -829,7 +829,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -894,7 +894,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "100 * (rate(node_disk_io_time_seconds_total{instance=\"$node\", device=\"sda\"}[$__rate_interval]))",
@@ -912,7 +912,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -976,7 +976,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_memory_MemTotal_bytes{instance=~\"$node\"}",
           "format": "time_series",
@@ -993,7 +993,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1096,7 +1096,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "node_filesystem_avail_bytes{instance=~\"$node\", fstype=~\"ext4|xfs\"}",
@@ -1113,7 +1113,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "Read time ms Number of seconds per disk partition read operation\n\nWrite time ms Number of seconds spent per disk partition write operation\n\nIO time ms Number of seconds spent per disk partition input/output operation\n\n IO time weighted Weighted seconds spent per disk partition input/output operation",
       "fieldConfig": {
@@ -1383,7 +1383,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_io_time_seconds_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -1397,7 +1397,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_io_time_weighted_seconds_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -1409,7 +1409,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_read_time_seconds_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -1422,7 +1422,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "irate(node_disk_write_time_seconds_total{instance=~\"$node\"}[1m])",
@@ -1440,7 +1440,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "node_disk_io_time_seconds_total：\nThe number of milliseconds the disk spends on input/output operations. This value is the accumulated value.（Milliseconds Spent Doing I/Os）\n\nirate(node_disk_io_time_seconds_total[1m])：\nCalculate the rate per second: (last value - last previous value) / timestamp difference, that is, the percentage of time that the disk spends on I/O operations in 1 second.",
       "fieldConfig": {
@@ -1750,7 +1750,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"system\"}[1m]))",
           "format": "time_series",
@@ -1763,7 +1763,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"user\"}[1m]))",
           "format": "time_series",
@@ -1775,7 +1775,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"idle\"}[1m]))",
           "format": "time_series",
@@ -1788,7 +1788,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"iowait\"}[1m]))",
           "format": "time_series",
@@ -1800,7 +1800,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_io_time_seconds_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -1815,7 +1815,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1949,7 +1949,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_load1{instance=~\"$node\"}",
           "format": "time_series",
@@ -1965,7 +1965,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_load5{instance=~\"$node\"}",
           "format": "time_series",
@@ -1979,7 +1979,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_load15{instance=~\"$node\"}",
           "format": "time_series",
@@ -1997,7 +1997,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "Read bytes The number of bits read per second per disk partition\nWritten bytes The number of bits written per second per disk partition",
       "fieldConfig": {
@@ -2152,7 +2152,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_read_bytes_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -2165,7 +2165,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_written_bytes_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -2182,7 +2182,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "Reads completed: Reads per second per disk partition\n\nWrites completed: Number of writes per second per disk partition\n\nIO now Number of input/output requests being processed per disk partition per second",
       "fieldConfig": {
@@ -2337,7 +2337,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_reads_completed_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -2351,7 +2351,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_disk_writes_completed_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
@@ -2364,7 +2364,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_disk_io_now{instance=~\"$node\"}",
           "format": "time_series",
@@ -2381,7 +2381,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -2519,7 +2519,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_network_receive_bytes_total{instance=~'$node',device!~'tap.*'}[5m])*8",
           "format": "time_series",
@@ -2531,7 +2531,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_network_transmit_bytes_total{instance=~'$node',device!~'tap.*'}[5m])*8",
           "format": "time_series",
@@ -2547,7 +2547,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "CurrEstab - TCP connections with current state ESTABLISHED or CLOSE-WAIT\n\nActiveOpens - TCP average connections that have been converted from CLOSED state to SYN-SENT state (within 1 minute)\n\nPassiveOpens - Directly from LISTEN state The average number of TCP connections to SYN-RCVD state (within 1 minute)\n\nTCP_all oc - the number of TCP sockets allocated (established, applied to sk_buff)\n\nTCP_inuse - in use (listening The number of TCP sockets \n\nTCP_tw - the number of TCP connections waiting to be closed",
       "fieldConfig": {
@@ -2650,7 +2650,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_netstat_Tcp_CurrEstab{instance=~'$node'}",
           "format": "time_series",
@@ -2664,7 +2664,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_sockstat_TCP_tw{instance=~'$node'}",
           "format": "time_series",
@@ -2675,7 +2675,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_netstat_Tcp_ActiveOpens{instance=~'$node'}[1m])",
           "format": "time_series",
@@ -2687,7 +2687,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "irate(node_netstat_Tcp_PassiveOpens{instance=~'$node'}[1m])",
           "format": "time_series",
@@ -2698,7 +2698,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_sockstat_TCP_alloc{instance=~'$node'}",
           "format": "time_series",
@@ -2709,7 +2709,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_sockstat_TCP_inuse{instance=~'$node'}",
           "format": "time_series",
@@ -2724,7 +2724,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -2982,7 +2982,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "node_filesystem_size_bytes{instance=~'$node',fstype=~\"ext4|xfs\"}",
@@ -2996,7 +2996,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_filesystem_avail_bytes {instance=~'$node',fstype=~\"ext4|xfs\"}",
           "format": "table",
@@ -3010,7 +3010,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "1-(node_filesystem_free_bytes{instance=~'$node',fstype=~\"ext4|xfs\"} / node_filesystem_size_bytes{instance=~'$node',fstype=~\"ext4|xfs\"})",
           "format": "table",
@@ -3023,7 +3023,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "",
           "format": "table",
@@ -3039,7 +3039,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "description": "Get the largest partition by the variable maxmount. ",
       "fieldConfig": {
@@ -3109,7 +3109,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "100 - ((node_filesystem_avail_bytes{instance=~\"$node\",mountpoint=\"$maxmount\",fstype=~\"ext4|xfs\"} * 100) / node_filesystem_size_bytes {instance=~\"$node\",mountpoint=\"$maxmount\",fstype=~\"ext4|xfs\"})",
           "format": "time_series",
@@ -3125,7 +3125,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "fec4t2rm8wx6of"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -3210,7 +3210,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "fec4t2rm8wx6of"
+            "uid": "${datasource}"
           },
           "expr": "node_hwmon_temp_celsius{instance=\"$node\"}",
           "format": "time_series",
@@ -3300,7 +3300,7 @@
           "text": "10.177.103.201:9100",
           "value": "10.177.103.201:9100"
         },
-        "datasource": "fec4t2rm8wx6of",
+        "datasource": "${datasource}",
         "definition": "label_values(node_exporter_build_info{instance=\"10.177.103.202:9100\"},instance)",
         "includeAll": false,
         "label": "node",
@@ -3321,7 +3321,7 @@
           "text": "/etc/hostname",
           "value": "/etc/hostname"
         },
-        "datasource": "fec4t2rm8wx6of",
+        "datasource": "${datasource}",
         "definition": "",
         "hide": 2,
         "includeAll": false,

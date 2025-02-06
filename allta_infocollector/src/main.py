@@ -1,5 +1,6 @@
 from src.aggregator.libs import check_collector
 from src.aggregator.conf import full_dashboard, allta_dashboard
+from flask_cors import CORS
 from flask import (Flask, 
                    redirect, 
                    url_for, 
@@ -10,6 +11,7 @@ from flask import (Flask,
 
 
 app = Flask(__name__)
+CORS(app)
 app.config['SECRET_KEY'] = 'info_1381'
 
 

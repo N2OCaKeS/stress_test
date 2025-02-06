@@ -510,17 +510,162 @@ def ssh_command(command, stand_ip):
     return response
 
 
+#TODO заменено на get_server_load
+# def output_remote_load(stand):
+#     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#     sock.settimeout(2.5)
+#     conn = None
 
-def output_remote_load(stand):
+#     command = """
+#             top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
+#             printf "%s::%s::%s::", 100-$8 "%", $2 "%", $4 "%"}'; 
+#             free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
+#             """
+
+#     try:
+#         result = sock.connect_ex((stands_ip[stand], 22))
+        
+#         if result != 0:
+#             output_cpu = '-'
+#             output_ram = '-'
+#             output_cpu_user = '-'
+#             output_cpu_system = '-'
+#         else:
+#             try:
+#                 cpu_ram_output = ssh_command(command, stand_ip=stands_ip[stand])
+#                 cpu_ram_output = cpu_ram_output.split('::')
+#                 output_cpu = cpu_ram_output[0]
+#                 output_cpu_user = cpu_ram_output[1].replace(',','.')
+#                 output_cpu_system = cpu_ram_output[2].replace(',','.')
+#                 output_ram = cpu_ram_output[3].strip()
+#             except paramiko.AuthenticationException:
+#                 output_cpu = 'Auth Error'
+#                 output_ram = 'Auth Error'
+#                 output_cpu_user = 'Auth Error'
+#                 output_cpu_system = 'Auth Error'
+#             except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException, EOFError):
+#                 output_cpu = 'Connect Error'
+#                 output_ram = 'Connect Error'
+#                 output_cpu_user = 'Connect Error'
+#                 output_cpu_system = 'Connect Error'
+#             except socket.timeout as st:
+#                 print(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
+
+#         conn = psycopg2.connect(
+#                                 host=psyc['host'],
+#                                 database=psyc['database'],
+#                                 user=psyc['user'],
+#                                 password=psyc['password']
+#                                 )
+
+#         cursor = conn.cursor()
+
+#         id = 1 #row number
+#         update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_cpu_user = %s, {stand}_cpu_system = %s, {stand}_ram = %s WHERE id = %s"
+#         data = (output_cpu, output_cpu_user, output_cpu_system, output_ram, id)
+#         cursor.execute(update_query, data)
+
+#         conn.commit()
+#         cursor.close()
+#         conn.close()
+#     except socket.timeout:
+#         pass
+#     except IndexError as e:
+#         print(f'IndexError: {type(e).__name__}, Message: {str(e)}')
+#     except Exception as all_e:
+#         print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
+#     finally:
+#         if conn:
+#             conn.close()
+
+
+# def remote_storage_load(stand):
+#     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#     sock.settimeout(3.7)
+#     conn = None
+
+#     """
+#     Add temp block
+#     """
+#     if stand == 'stand1' or stand == 'stand2':
+#         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone1/temp'
+#     elif stand == 'stand3':
+#         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
+#     elif stand == 'stand4' or stand == 'stand5':
+#         temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
+
+#     try:
+#         result = sock.connect_ex((stands_ip[stand], 22))
+        
+#         if result != 0:
+#             output_nvme = '-'
+#             output_sda = '-'
+#             temp_cpu = '-'
+#         else:
+#             try:
+#                 output_nvme  = ssh_command("""iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); \
+#                                               printf "%.1f%%\\n", $NF}' | tail -n 1""", 
+#                                         stand_ip=stands_ip[stand])
+#                 block_device_name = ssh_command("lsblk | awk 'NR==2' | awk '{print $1;}'",
+#                                                 stand_ip=stands_ip[stand])
+#                 output_sda  = ssh_command("""iostat -dx 1 2 | awk '/""" + str(block_device_name) + """/ {gsub(",", ".", $NF); \
+#                                              printf "%.1f%%\\n", $NF}' | tail -n 1""", 
+#                                         stand_ip=stands_ip[stand])
+#                 temp_cpu = ssh_command(temp_cpu_comm, stand_ip=stands_ip[stand])
+#             except paramiko.AuthenticationException:
+#                 output_nvme = 'Auth Error'
+#                 output_sda = 'Auth Error'
+#                 temp_cpu = 'Auth Error'
+#             except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
+#                 output_nvme = 'Connect Error'
+#                 output_sda = 'Connect Error'
+#                 temp_cpu = 'Connect Error'
+#             except socket.timeout as st:
+#                 print(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
+
+#         conn = psycopg2.connect(
+#                                 host=psyc['host'],
+#                                 database=psyc['database'],
+#                                 user=psyc['user'],
+#                                 password=psyc['password']
+#                                 )
+
+#         cursor = conn.cursor()
+
+#         id = 1 #row number
+#         update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
+#         if temp_cpu == '-' or temp_cpu == 'Auth Error' or temp_cpu == 'Connect Error':
+#             data = (output_nvme, output_sda, temp_cpu, id)
+#         else:
+#             if stand == 'stand1' or stand == 'stand2':
+#                 data = (output_nvme, output_sda, f'{int(float(temp_cpu) / 1000)}°', id)
+#             elif stand == 'stand3' or stand == 'stand4' or stand == 'stand5':
+#                 temp_cpu = temp_cpu.split('\n')
+#                 data = (output_nvme, output_sda, f'{int(float(temp_cpu[0]) / 1000)}° | {int(float(temp_cpu[1]) / 1000)}°', id)
+#         cursor.execute(update_query, data)
+
+#         conn.commit()
+#         cursor.close()
+#         conn.close()
+#     except socket.timeout:
+#         pass
+#     except Exception as all_e:
+#         print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
+#     finally:
+#         if conn:
+#             conn.close()
+
+
+def get_server_load(stand):
+    """
+    Обращается к серверу prometheus для забора интересующих метрик, 
+    записывает собранные данные в БД.
+    """
+    prometheus_url = 'http://10.177.103.10:9090/api/v1/query'
+    server_ip = f'{stands_ip[stand]}:9100'
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2.5)
+    sock.settimeout(1.5)
     conn = None
-
-    command = """
-            top -bn1 | grep '%Cpu' | tail -1 | awk '{gsub(",",".",$8); 
-            printf "%s::%s::%s::", 100-$8 "%", $2 "%", $4 "%"}'; 
-            free -m | awk 'NR==2{printf "%sM\\n", $2-$7}'
-            """
 
     try:
         result = sock.connect_ex((stands_ip[stand], 22))
@@ -530,26 +675,69 @@ def output_remote_load(stand):
             output_ram = '-'
             output_cpu_user = '-'
             output_cpu_system = '-'
+            output_nvme = '-'
+            output_sda = '-'
+            temp_cpu = '-'
         else:
             try:
-                cpu_ram_output = ssh_command(command, stand_ip=stands_ip[stand])
-                cpu_ram_output = cpu_ram_output.split('::')
-                output_cpu = cpu_ram_output[0]
-                output_cpu_user = cpu_ram_output[1].replace(',','.')
-                output_cpu_system = cpu_ram_output[2].replace(',','.')
-                output_ram = cpu_ram_output[3].strip()
-            except paramiko.AuthenticationException:
-                output_cpu = 'Auth Error'
-                output_ram = 'Auth Error'
-                output_cpu_user = 'Auth Error'
-                output_cpu_system = 'Auth Error'
-            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException, EOFError):
-                output_cpu = 'Connect Error'
-                output_ram = 'Connect Error'
-                output_cpu_user = 'Connect Error'
-                output_cpu_system = 'Connect Error'
+                def get_prometheus_data(query):
+                    response = requests.get(prometheus_url, params={'query': query})
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    data_by_instance = {}
+                    #logging.debug(result)
+                    
+                    for metric_data in result['data']['result']:
+                        value = float(metric_data['value'][1])
+                        instance = metric_data['metric'].get('instance', 'unknown')
+                        data_by_instance[instance] = value
+                    
+                    return data_by_instance
+
+                # Запросы метрик
+                cpu_user = get_prometheus_data(f'rate(node_cpu_seconds_total{{mode="user", instance="{server_ip}"}}[5s])')
+                cpu_system = get_prometheus_data(f'rate(node_cpu_seconds_total{{mode="system", instance="{server_ip}"}}[5s])')
+                mem_total = get_prometheus_data(f'node_memory_MemTotal_bytes{{instance="{server_ip}"}}')
+                mem_available = get_prometheus_data(f'node_memory_MemAvailable_bytes{{instance="{server_ip}"}}')
+                cpu_temp1 = get_prometheus_data(f'node_hwmon_temp_celsius{{instance="{server_ip}", sensor="temp1"}}')
+                cpu_temp2 = get_prometheus_data(f'node_hwmon_temp_celsius{{instance="{server_ip}", sensor="temp2"}}')
+                nvme_usage = get_prometheus_data(f'rate(node_disk_io_time_seconds_total{{device="nvme0n1", instance="{server_ip}"}}[5s])')
+                sda_usage = get_prometheus_data(f'rate(node_disk_io_time_seconds_total{{device="sda", instance="{server_ip}"}}[5s])')
+
+                cpu_total_usage = abs(round((1 - (cpu_user.get(server_ip, 0.0) + cpu_system.get(server_ip, 0.0))) * 100 -100, 1))
+                mem_usage_mb = round((mem_total.get(server_ip, 0.0) - mem_available.get(server_ip, 0.0)) / 1024 / 1024)
+                cpu_temp_str = f'{cpu_temp1.get(server_ip, 0.0):.1f}°C / {cpu_temp2.get(server_ip, 0.0):.1f}°C'
+                nvme_usage_str = f'{nvme_usage.get(server_ip, 0.0) * 100:.1f}%'
+                sda_usage_str = f'{sda_usage.get(server_ip, 0.0) * 100:.1f}%'
+
+                logging.debug(f'Instance: {server_ip}')
+                logging.debug(f'CPU Total Usage: {cpu_total_usage}%')
+                logging.debug(f'CPU User Mode: {cpu_user.get(server_ip, 0.0) * 100:.2f}%')
+                logging.debug(f'CPU System Mode: {cpu_system.get(server_ip, 0.0) * 100:.2f}%')
+                logging.debug(f'Memory Usage: {mem_usage_mb}M')
+                logging.debug(f'CPU Temperature: {cpu_temp_str}')
+                logging.debug(f'NVMe Usage: {nvme_usage_str}')
+                logging.debug(f'SDA Usage: {sda_usage_str}')
+                
+                output_cpu = f'{cpu_total_usage}%'
+                output_cpu_user = f'{cpu_user.get(server_ip, 0.0) * 100:.2f}%'
+                output_cpu_system = f'{cpu_system.get(server_ip, 0.0) * 100:.2f}%'
+                output_ram = f'{mem_usage_mb}M'
+                temp_cpu = f'{cpu_temp_str}'
+                output_nvme = f'{nvme_usage_str}'
+                output_sda = f'{sda_usage_str}'
             except socket.timeout as st:
-                print(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
+                logging.error(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
+            except Exception as e:
+                logging.error(f'IndexError: {type(e).__name__}, Message: {str(e)}')
+                output_cpu = f'{type(e).__name__}'
+                output_ram = f'{type(e).__name__}'
+                output_cpu_user = f'{type(e).__name__}'
+                output_cpu_system = f'{type(e).__name__}'
+                output_nvme = f'{type(e).__name__}'
+                output_sda = f'{type(e).__name__}'
+                temp_cpu = f'{type(e).__name__}'
 
         conn = psycopg2.connect(
                                 host=psyc['host'],
@@ -561,8 +749,8 @@ def output_remote_load(stand):
         cursor = conn.cursor()
 
         id = 1 #row number
-        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_cpu_user = %s, {stand}_cpu_system = %s, {stand}_ram = %s WHERE id = %s"
-        data = (output_cpu, output_cpu_user, output_cpu_system, output_ram, id)
+        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_cpu_user = %s, {stand}_cpu_system = %s, {stand}_ram = %s {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
+        data = (output_cpu, output_cpu_user, output_cpu_system, output_ram, output_nvme, output_sda, temp_cpu, id)
         cursor.execute(update_query, data)
 
         conn.commit()
@@ -571,89 +759,13 @@ def output_remote_load(stand):
     except socket.timeout:
         pass
     except IndexError as e:
-        print(f'IndexError: {type(e).__name__}, Message: {str(e)}')
+        logging.error(f'IndexError: {type(e).__name__}, Message: {str(e)}')
     except Exception as all_e:
-        print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
+        logging.error(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
     finally:
         if conn:
             conn.close()
 
-
-def remote_storage_load(stand):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3.7)
-    conn = None
-
-    """
-    Add temp block
-    """
-    if stand == 'stand1' or stand == 'stand2':
-        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone1/temp'
-    elif stand == 'stand3':
-        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
-    elif stand == 'stand4' or stand == 'stand5':
-        temp_cpu_comm = 'cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp'
-
-    try:
-        result = sock.connect_ex((stands_ip[stand], 22))
-        
-        if result != 0:
-            output_nvme = '-'
-            output_sda = '-'
-            temp_cpu = '-'
-        else:
-            try:
-                output_nvme  = ssh_command("""iostat -dx 1 2 | awk '/nvme0n1|nvme0c0n1/ {gsub(",", ".", $NF); \
-                                              printf "%.1f%%\\n", $NF}' | tail -n 1""", 
-                                        stand_ip=stands_ip[stand])
-                block_device_name = ssh_command("lsblk | awk 'NR==2' | awk '{print $1;}'",
-                                                stand_ip=stands_ip[stand])
-                output_sda  = ssh_command("""iostat -dx 1 2 | awk '/""" + str(block_device_name) + """/ {gsub(",", ".", $NF); \
-                                             printf "%.1f%%\\n", $NF}' | tail -n 1""", 
-                                        stand_ip=stands_ip[stand])
-                temp_cpu = ssh_command(temp_cpu_comm, stand_ip=stands_ip[stand])
-            except paramiko.AuthenticationException:
-                output_nvme = 'Auth Error'
-                output_sda = 'Auth Error'
-                temp_cpu = 'Auth Error'
-            except (ssh_exception.NoValidConnectionsError, ssh_exception.SSHException):
-                output_nvme = 'Connect Error'
-                output_sda = 'Connect Error'
-                temp_cpu = 'Connect Error'
-            except socket.timeout as st:
-                print(f'{type(st).__name__}\nНедоступен {stands_ip[stand]}, перезагружается или выключен.\n')
-
-        conn = psycopg2.connect(
-                                host=psyc['host'],
-                                database=psyc['database'],
-                                user=psyc['user'],
-                                password=psyc['password']
-                                )
-
-        cursor = conn.cursor()
-
-        id = 1 #row number
-        update_query = f"UPDATE main_table SET {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
-        if temp_cpu == '-' or temp_cpu == 'Auth Error' or temp_cpu == 'Connect Error':
-            data = (output_nvme, output_sda, temp_cpu, id)
-        else:
-            if stand == 'stand1' or stand == 'stand2':
-                data = (output_nvme, output_sda, f'{int(float(temp_cpu) / 1000)}°', id)
-            elif stand == 'stand3' or stand == 'stand4' or stand == 'stand5':
-                temp_cpu = temp_cpu.split('\n')
-                data = (output_nvme, output_sda, f'{int(float(temp_cpu[0]) / 1000)}° | {int(float(temp_cpu[1]) / 1000)}°', id)
-        cursor.execute(update_query, data)
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except socket.timeout:
-        pass
-    except Exception as all_e:
-        print(f'Error: {type(all_e).__name__}, Message: {str(all_e)}')
-    finally:
-        if conn:
-            conn.close()
 
 
 def remote_sysstat_available(stand):
@@ -661,20 +773,20 @@ def remote_sysstat_available(stand):
                 stand_ip=stands_ip[stand])
    
 
-def background_stat_storage_main():
-    stands = main_stands
-
-    while True:
-        [remote_storage_load(str(stand)) for stand in stands]
-        sleep(4)
+#def background_stat_storage_main():
+#    stands = main_stands
+#
+#    while True:
+#        [get_server_load(str(stand)) for stand in stands]
+#        sleep(4)
 
 
 def background_task_main():
     stands = main_stands
 
     while True:
-        [output_remote_load(str(stand)) for stand in stands]
-        sleep(3)
+        [get_server_load(str(stand)) for stand in stands]
+        sleep(4)
 
 
 # def background_stat_storage_main():
@@ -703,12 +815,12 @@ def background_task_main():
 #             executor.map(output_remote_load, [str(stand) for stand in stands])
 #         sleep(3)
 
-def background_task_brest():
-    stands = brest_stands
-
-    while True:
-        [output_remote_load(str(stand)) for stand in stands]
-        sleep(3)
+#def background_task_brest():
+#    stands = brest_stands
+#
+#    while True:
+#        [output_remote_load(str(stand)) for stand in stands]
+#        sleep(3)
 
 
 def update_settings_block():

@@ -3,7 +3,7 @@
 #
 #Аргументом скрипту следует указать ветку проекта
 #
-localhost=`hostname -I`
+localhost=`hostname -I | awk '{print $1}'`
 
 echo $localhost
 echo git bench = $1

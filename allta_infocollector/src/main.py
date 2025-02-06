@@ -1,5 +1,5 @@
 from src.aggregator.libs import check_collector
-from src.aggregator.conf import full_dashboard
+from src.aggregator.conf import full_dashboard, allta_dashboard
 from flask import (Flask, 
                    redirect, 
                    url_for, 
@@ -18,5 +18,7 @@ def get_dashboard(stand, board_name):
     if check_collector(stand) == 0:
         if board_name == 'full':
             return redirect(full_dashboard.format(stand)), 302
+        elif board_name == 'allta':
+            return redirect(allta_dashboard.format(stand)), 302
     else: return 'Запрос получен и обработан, но запрашиваемый сервер недоступен или вернул ошибку', 200
 

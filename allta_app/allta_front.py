@@ -8,6 +8,7 @@ from flask import (Flask,
                    url_for, 
                    jsonify,
                    send_file)
+from flask_cors import CORS
 import socket
 from libs.zefir import ZefirResultTable
 import psycopg2
@@ -40,6 +41,7 @@ import requests
 
 
 app = Flask(__name__)
+CORS(app)
 app.config['SECRET_KEY'] = 'srv_2413'
 
 with open('/home/u/tokens.json', 'r') as r:

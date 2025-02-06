@@ -749,7 +749,7 @@ def get_server_load(stand):
         cursor = conn.cursor()
 
         id = 1 #row number
-        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_cpu_user = %s, {stand}_cpu_system = %s, {stand}_ram = %s {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
+        update_query = f"UPDATE main_table SET {stand}_cpu = %s, {stand}_cpu_user = %s, {stand}_cpu_system = %s, {stand}_ram = %s, {stand}_nvme = %s, {stand}_sda = %s, {stand}_temp_cpu = %s WHERE id = %s"
         data = (output_cpu, output_cpu_user, output_cpu_system, output_ram, output_nvme, output_sda, temp_cpu, id)
         cursor.execute(update_query, data)
 

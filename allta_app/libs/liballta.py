@@ -713,16 +713,16 @@ def get_server_load(stand):
 
                 logging.debug(f'Instance: {server_ip}')
                 logging.debug(f'CPU Total Usage: {cpu_total_usage}%')
-                logging.debug(f'CPU User Mode: {cpu_user.get(server_ip, 0.0) * 100:.2f}%')
-                logging.debug(f'CPU System Mode: {cpu_system.get(server_ip, 0.0) * 100:.2f}%')
+                logging.debug(f'CPU User Mode: {cpu_user.get(server_ip, 0.0) * 100:.1f}%')
+                logging.debug(f'CPU System Mode: {cpu_system.get(server_ip, 0.0) * 100:.1f}%')
                 logging.debug(f'Memory Usage: {mem_usage_mb}M')
                 logging.debug(f'CPU Temperature: {cpu_temp_str}')
                 logging.debug(f'NVMe Usage: {nvme_usage_str}')
                 logging.debug(f'SDA Usage: {sda_usage_str}')
                 
                 output_cpu = f'{cpu_total_usage}%'
-                output_cpu_user = f'{cpu_user.get(server_ip, 0.0) * 100:.2f}%'
-                output_cpu_system = f'{cpu_system.get(server_ip, 0.0) * 100:.2f}%'
+                output_cpu_user = f'{cpu_user.get(server_ip, 0.0) * 100:.1f}%'
+                output_cpu_system = f'{cpu_system.get(server_ip, 0.0) * 100:.1f}%'
                 output_ram = f'{mem_usage_mb}M'
                 temp_cpu = f'{cpu_temp_str}'
                 output_nvme = f'{nvme_usage_str}'

@@ -134,5 +134,10 @@
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/extended-repository 1.8_x86-64 main contrib non-free",
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/installation 1.8_x86-64 main contrib non-free",
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/devel-repository 1.8_x86-64 main contrib non-free"
+    ],
+    "1.8.2.2": [
+        "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.2/1.8.2.2/installation 1.8_x86-64 main contrib non-free",
+        "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.2/1.8.2.2/devel-repository 1.8_x86-64 main contrib non-free",
+        "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.2/1.8.2.2/extended-repository 1.8_x86-64 main contrib non-free"
     ]
 }

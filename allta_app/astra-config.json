@@ -92,7 +92,10 @@
                     "4.7-testing.o",
                     "4.7.5.s",
                     "4.7.5.v",
-                    "4.7.5.o"
+                    "4.7.5.o",
+                    "4.7.6.s",
+                    "4.7.6.v",
+                    "4.7.6.o"
                 ]
             },
             {
@@ -478,21 +481,39 @@
                 ]
             },
             {
+                "4.7.6.s": [
+                    "smolensk-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.6.json"
+                ]
+            },
+            {
+                "4.7.6.v": [
+                    "voronezh-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.6.json"
+                ]
+            },
+            {
+                "4.7.6.o": [
+                    "orel-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.6.json"
+                ]
+            },
+            {
                 "4.7-testing.s": [
-                    "smolensk-vanilla-gui/4.7.5.5",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.5.json"
+                    "smolensk-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.6.json"
                 ]
             },
             {
                 "4.7-testing.v": [
-                    "voronezh-vanilla-gui/4.7.5.5",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.5.json"
+                    "voronezh-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.6.json"
                 ]
             },
             {
                 "4.7-testing.o": [
-                    "orel-vanilla-gui/4.7.5.5",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.5.json"
+                    "orel-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.6.json"
                 ]
             },
             {

@@ -1280,46 +1280,18 @@
                 {% endif %}
               </ul>
             </div>
-            <!--need testing -->
             <div class="dropdown d-inline-block">
-              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb1" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
                 <li>
-                  <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#stand1dashboardModal" data-dashboard-url="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.201/full">Full</a>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.201/allta" target="_blank">ALLTA</a>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.201/full" target="_blank">Full</a>
                 </li>
               </ul>
             </div>
           </div>
             
-            <div class="modal fade" id="stand1dashboardModal" tabindex="-1" aria-labelledby="stand1dashboardModalLabel" aria-hidden="true">
-              <div class="modal-dialog">
-                <div class="modal-content">
-                  <div class="modal-header">
-                    <h5 class="modal-title" id="stand1dashboardModalLabel">Grafana Dashboard</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
-                  </div>
-                  <div class="modal-body">
-                  </div>
-                  <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <script>
-              document.querySelector('.dropdown-menu a[data-dashboard-url]').addEventListener('click', function(event) {
-                event.preventDefault();
-                const url = this.getAttribute('data-dashboard-url');
-                const modalBodySelector = '#stand1dashboardModal .modal-body';
-            
-                fetch(url)
-                  .then(response => response.text())
-                  .then(data => {
-                    document.querySelector(modalBodySelector).innerHTML = data;
-                  })
-                  .catch(error => console.error('Ошибка загрузки данных:', error));
-              });
-            </script>
+           
 
 
           <script>
@@ -1647,6 +1619,15 @@
                     <a class="dropdown-item" href="#" onclick="toggleStatus(2, 'stop'); return false;">Остановить</a>
                   </li>
                 {% endif %}
+              </ul>
+            </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb2" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                <li>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.202/allta" target="_blank">ALLTA</a>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.202/full" target="_blank">Full</a>
+                </li>
               </ul>
             </div>
           </div>
@@ -1977,6 +1958,15 @@
                     <a class="dropdown-item" href="#" onclick="toggleStatus(3, 'stop'); return false;">Остановить</a>
                   </li>
                 {% endif %}
+              </ul>
+            </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb3" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                <li>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.204/allta" target="_blank">ALLTA</a>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.204/full" target="_blank">Full</a>
+                </li>
               </ul>
             </div>
           </div>
@@ -2339,6 +2329,15 @@
                     <a class="dropdown-item" href="#" onclick="toggleStatus(4, 'stop'); return false;">Остановить</a>
                   </li>
                 {% endif %}
+              </ul>
+            </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb4" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                <li>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.203/allta" target="_blank">ALLTA</a>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.203/full" target="_blank">Full</a>
+                </li>
               </ul>
             </div>
           </div>
@@ -2755,6 +2754,15 @@
                 <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'stop'); return false;">Остановить</a>
               </li>
             {% endif %}
+          </ul>
+        </div>
+        <div class="dropdown d-inline-block">
+          <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb5" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+            <li>
+              <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.205/allta" target="_blank">ALLTA</a>
+              <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.205/full" target="_blank">Full</a>
+            </li>
           </ul>
         </div>
       </div>

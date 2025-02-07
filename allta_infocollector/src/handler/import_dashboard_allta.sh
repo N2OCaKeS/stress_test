@@ -11,11 +11,22 @@ export DS_NAME="${DS_NAME:=Prometheus}"
 export PROMETHEUS_URL="${PROMETHEUS_URL:=http://prometheus:9090}"
 
 
+# Создание источника данных
+curl -X POST -H "Content-Type: application/json" -u "$GRAFANA_CRED" \
+  -d '{
+        "name":"'"$DS_NAME"'",
+        "type":"prometheus",
+        "access":"proxy",
+        "url":"'"$PROMETHEUS_URL"'",
+        "isDefault":true
+      }' \
+  "$GRAFANA_HOST/api/datasources"
+
 j=$(jq '.' ./allta_dashboard.json)
 echo "{\"dashboard\": ${j},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload2.json
 
 echo waiting...
-sleep 15
+sleep 5
 
 curl -v -k -u "$GRAFANA_CRED" \
   -H "Accept: application/json" \

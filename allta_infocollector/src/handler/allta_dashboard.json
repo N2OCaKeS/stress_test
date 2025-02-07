@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 3,
+  "id": 2,
   "links": [],
   "panels": [
     {
@@ -871,7 +871,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "irate(node_disk_io_time_seconds_total{instance=\"$node\",job=\"$job\",device=~\"$diskdevices\"} [$__rate_interval])",
+          "expr": "100 * irate(node_disk_io_time_seconds_total{instance=\"$node\",job=\"$job\",device=~\"$diskdevices\"} [$__rate_interval])",
           "hide": false,
           "instant": false,
           "legendFormat": "{{device}}",
@@ -1399,8 +1399,9 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "dec8taw27oum8c"
+        "uid": "${datasource}"
       },
+      "description": "Reads completed: Reads per second per disk partition\n\nWrites completed: Number of writes per second per disk partition\n\nIO now Number of input/output requests being processed per disk partition per second",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1410,24 +1411,28 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "percentage",
+            "axisLabel": "Read (-) / write（+）I/O ops/sec",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 0,
-            "gradientMode": "none",
+            "drawStyle": "line",
+            "fillOpacity": 40,
+            "gradientMode": "opacity",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
+            "lineStyle": {
+              "fill": "solid"
+            },
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
-              "type": "linear"
+              "log": 2,
+              "type": "log"
             },
             "showPoints": "never",
             "spanNulls": false,
@@ -1440,7 +1445,6 @@
             }
           },
           "mappings": [],
-          "max": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1454,9 +1458,77 @@
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "iops"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "vda_write"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*_read $/"
+            },
+            "properties": [
+              {
+                "id": "custom.transform",
+                "value": "negative-Y"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byValue",
+              "options": {
+                "op": "gte",
+                "reducer": "allIsZero",
+                "value": 0
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": true,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byValue",
+              "options": {
+                "op": "gte",
+                "reducer": "allIsNull",
+                "value": 0
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": true,
+                  "viz": false
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 10,
@@ -1464,14 +1536,13 @@
         "x": 10,
         "y": 6
       },
-      "id": 175,
+      "id": 161,
       "options": {
         "legend": {
           "calcs": [
-            "mean",
             "lastNotNull",
             "max",
-            "min"
+            "mean"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -1480,39 +1551,63 @@
         "tooltip": {
           "hideZeros": false,
           "mode": "multi",
-          "sort": "desc"
+          "sort": "none"
         }
       },
       "pluginVersion": "11.5.1",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "editorMode": "code",
-          "expr": "sum by(instance) (irate(node_cpu_guest_seconds_total{instance=\"$node\",job=\"$job\", mode=\"user\"}[1m])) / on(instance) group_left sum by (instance)((irate(node_cpu_seconds_total{instance=\"$node\",job=\"$job\"}[1m])))",
-          "legendFormat": "Guest - Time spent running a virtual CPU for a guest operating system",
+          "expr": "irate(node_disk_reads_completed_total{instance=~\"$node\",job=\"$job\",device=~\"$diskdevices\"}[1m])",
+          "format": "time_series",
+          "hide": false,
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{device}}_read",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "step": 10
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "dec8taw27oum8c"
+            "uid": "${datasource}"
+          },
+          "expr": "irate(node_disk_writes_completed_total{instance=~\"$node\"}[1m])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 2,
+          "legendFormat": "{{device}}_write",
+          "refId": "B",
+          "step": 10
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by(instance) (irate(node_cpu_guest_seconds_total{instance=\"$node\",job=\"$job\", mode=\"nice\"}[1m])) / on(instance) group_left sum by (instance)((irate(node_cpu_seconds_total{instance=\"$node\",job=\"$job\"}[1m])))",
+          "expr": "node_disk_io_now{instance=~\"$node\",job=\"$job\",device=~\"$diskdevices\"}",
+          "format": "time_series",
           "hide": false,
-          "instant": false,
-          "legendFormat": "GuestNice - Time spent running a niced guest  (virtual CPU for guest operating system)",
+          "interval": "",
+          "intervalFactor": 1,
+          "legendFormat": "{{device}}",
           "range": true,
-          "refId": "B"
+          "refId": "C"
         }
       ],
-      "title": "CPU spent seconds in guests (VMs)",
+      "title": "Disk read and write rate（IOPS）",
       "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "dec8taw27oum8c"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1610,7 +1705,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "dec8taw27oum8c"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "irate(node_disk_written_bytes_total{instance=\"$node\",job=\"$job\",device=~\"$diskdevices\"}[$__rate_interval])",
@@ -1743,11 +1838,10 @@
         "legend": {
           "calcs": [
             "mean",
-            "lastNotNull",
             "max"
           ],
           "displayMode": "table",
-          "placement": "right",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
@@ -1781,6 +1875,7 @@
           },
           "expr": "node_load5{instance=~\"$node\"}",
           "format": "time_series",
+          "hide": true,
           "instant": false,
           "interval": "10s",
           "intervalFactor": 2,
@@ -1952,8 +2047,8 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 30,
-            "gradientMode": "none",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
@@ -2209,7 +2304,7 @@
           },
           "expr": "irate(node_disk_io_time_seconds_total{instance=~\"$node\"}[1m])",
           "format": "time_series",
-          "hide": true,
+          "hide": false,
           "interval": "",
           "intervalFactor": 2,
           "legendFormat": "{{device}}",
@@ -2927,7 +3022,6 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Reads completed: Reads per second per disk partition\n\nWrites completed: Number of writes per second per disk partition\n\nIO now Number of input/output requests being processed per disk partition per second",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2937,23 +3031,20 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Read (-) / write（+）I/O ops/sec",
+            "axisLabel": "percentage",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 50,
-            "gradientMode": "opacity",
+            "drawStyle": "bars",
+            "fillOpacity": 0,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineStyle": {
-              "fill": "solid"
-            },
+            "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -2970,6 +3061,7 @@
             }
           },
           "mappings": [],
+          "max": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2983,77 +3075,9 @@
               }
             ]
           },
-          "unit": "iops"
+          "unit": "percentunit"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "vda_write"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#6ED0E0",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/.*_read $/"
-            },
-            "properties": [
-              {
-                "id": "custom.transform",
-                "value": "negative-Y"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 7,
@@ -3061,13 +3085,14 @@
         "x": 12,
         "y": 32
       },
-      "id": 161,
+      "id": 175,
       "options": {
         "legend": {
           "calcs": [
+            "mean",
             "lastNotNull",
             "max",
-            "mean"
+            "min"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -3076,53 +3101,33 @@
         "tooltip": {
           "hideZeros": false,
           "mode": "multi",
-          "sort": "none"
+          "sort": "desc"
         }
       },
       "pluginVersion": "11.5.1",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "irate(node_disk_reads_completed_total{instance=~\"$node\"}[1m])",
-          "format": "time_series",
-          "hide": false,
-          "interval": "",
-          "intervalFactor": 2,
-          "legendFormat": "{{device}}_read",
-          "refId": "A",
-          "step": 10
+          "editorMode": "code",
+          "expr": "sum by(instance) (irate(node_cpu_guest_seconds_total{instance=\"$node\",job=\"$job\", mode=\"user\"}[1m])) / on(instance) group_left sum by (instance)((irate(node_cpu_seconds_total{instance=\"$node\",job=\"$job\"}[1m])))",
+          "legendFormat": "Guest - Time spent running a virtual CPU for a guest operating system",
+          "range": true,
+          "refId": "A"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "irate(node_disk_writes_completed_total{instance=~\"$node\"}[1m])",
-          "format": "time_series",
+          "editorMode": "code",
+          "expr": "sum by(instance) (irate(node_cpu_guest_seconds_total{instance=\"$node\",job=\"$job\", mode=\"nice\"}[1m])) / on(instance) group_left sum by (instance)((irate(node_cpu_seconds_total{instance=\"$node\",job=\"$job\"}[1m])))",
           "hide": false,
-          "intervalFactor": 2,
-          "legendFormat": "{{device}}_write",
-          "refId": "B",
-          "step": 10
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "node_disk_io_now{instance=~\"$node\"}",
-          "format": "time_series",
-          "hide": true,
-          "interval": "",
-          "intervalFactor": 1,
-          "legendFormat": "{{device}}",
-          "refId": "C"
+          "instant": false,
+          "legendFormat": "GuestNice - Time spent running a niced guest  (virtual CPU for guest operating system)",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "Disk read and write rate（IOPS）",
+      "title": "CPU spent seconds in guests (VMs)",
       "type": "timeseries"
     },
     {
@@ -3328,7 +3333,7 @@
       {
         "current": {
           "text": "Prometheus",
-          "value": "dec8taw27oum8c"
+          "value": "${datasource}"
         },
         "label": "Datasource",
         "name": "datasource",
@@ -3359,20 +3364,20 @@
       },
       {
         "current": {
-          "text": "[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+",
-          "value": "[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+"
+          "text": "[a-z]+|nvme.*|[a-z]+|mmcblk[0-9]+",
+          "value": "[a-z]+|nvme.*|[a-z]+|mmcblk[0-9]+"
         },
         "description": "",
         "hide": 2,
         "name": "diskdevices",
         "options": [
           {
-            "selected": false,
-            "text": "[a-z]+|nvme[0-9]+n[0-9]+|[a-z]+|nvme[0-9]+c[0-9]+n[0-9]|mmcblk[0-9]+",
-            "value": "[a-z]+|nvme[0-9]+n[0-9]+|[a-z]+|nvme[0-9]+c[0-9]+n[0-9]|mmcblk[0-9]+"
+            "selected": true,
+            "text": "[a-z]+|nvme.*|[a-z]+|mmcblk[0-9]+",
+            "value": "[a-z]+|nvme.*|[a-z]+|mmcblk[0-9]+"
           }
         ],
-        "query": "[a-z]+|nvme[0-9]+n[0-9]+|[a-z]+|nvme[0-9]+c[0-9]+n[0-9]|mmcblk[0-9]+",
+        "query": "[a-z]+|nvme.*|[a-z]+|mmcblk[0-9]+",
         "type": "custom"
       }
     ]
@@ -3385,6 +3390,6 @@
   "timezone": "browser",
   "title": "Node Exporter by ALLTA",
   "uid": "dec64yvju0dtsf",
-  "version": 21,
+  "version": 10,
   "weekStart": ""
 }

@@ -1,3 +1,10 @@
+allta_app - v2.35.0
+* Add infocollector microservice
+* Add grafana dashboards
+* Rebuild cards load metrics 
+  on node exporter
+
+
 allta_app - v2.34.3
 * Fix. Add OOM in starter
 

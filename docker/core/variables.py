@@ -12,21 +12,30 @@ http_content = f"""
     tty: true
     ports:
       - "80:80"
+    environment:
+      - NGINX_HOST=http-test.com
+      - NGINX_PORT=80
     networks:
-      - load-network
-  ab:
-    image: ab
-    container_name: ab
-    stdin_open: true
-    tty: true
-    networks:
-      - load-network
+      load-network:
+        ipv4_address: 172.21.0.2
+
 
 networks:
   load-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
 """
 
+  # ab:
+  #   image: ab
+  #   container_name: ab
+  #   stdin_open: true
+  #   tty: true
+  #   networks:
+  #     load-network:
+  #       ipv4_address: 172.21.0.3
 
 
 

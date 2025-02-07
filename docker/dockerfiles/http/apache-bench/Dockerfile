@@ -8,6 +8,5 @@ WORKDIR /app
 COPY ./load_http.sh  .
 
 RUN chmod +x load_http.sh
-RUN sh load_http.sh
 
 CMD ["sh", "/app/load_test.sh"]

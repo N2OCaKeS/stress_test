@@ -7,5 +7,5 @@ RUN apt-get update && \
     apt-get clean
 
 WORKDIR /opt
-COPY static/summarize.py .
-CMD ["python3", summarize.pys]
+COPY static .
+CMD ["python3", summarize.py]

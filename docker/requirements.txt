@@ -4,3 +4,6 @@ argparse
 atlassian-python-api
 paramiko
 requests
+matplotlib
+psutil
+docker

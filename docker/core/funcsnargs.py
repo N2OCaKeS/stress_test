@@ -14,7 +14,6 @@ ram_worker = 1
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
-                    required=True,
                     type=str,
                     choices=["load", "http", "remove", "load-http"],
                     help="Type your test",
@@ -44,6 +43,11 @@ parser.add_argument("-ram", "--load-ram",
                     help="RAM load (default 256 RAM)",
                     default=256,
                     dest="LOAD_RAM")
+parser.add_argument("-u", "--users",
+                    type=str,
+                    help="Users for http requests.",
+                    default=1,
+                    dest="USERS")
 args = parser.parse_args()
 
 

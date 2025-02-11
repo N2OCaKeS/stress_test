@@ -13,7 +13,6 @@ http_content = f"""
     ports:
       - "80:80"
     environment:
-      - NGINX_HOST=http-test.com
       - NGINX_PORT=80
     networks:
       load-network:

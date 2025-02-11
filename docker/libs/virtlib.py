@@ -2,7 +2,7 @@ import subprocess
 from os import linesep
 import paramiko
 from os.path import exists
-from virt_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL
+from docker.libs.virt_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL
 import requests
 
 

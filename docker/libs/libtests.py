@@ -11,7 +11,7 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
-from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
+from docker.libs.virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x, \
                       FIOVERS_18x, TEMPLATE_PATH, FIO_PATH, UB_ARHIVE, STEP, \
                       LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML, UB_RESULTS, \
                       VM_RESULTS_PATH

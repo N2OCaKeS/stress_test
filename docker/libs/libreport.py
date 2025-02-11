@@ -1,6 +1,6 @@
 from shutil import unpack_archive
 from atlassian import Confluence, Jira
-from virt_conf import JIRA_URL, CONFLUENCE_URL
+from docker.libs.virt_conf import JIRA_URL, CONFLUENCE_URL
 
 
 class ReportToConfluence():

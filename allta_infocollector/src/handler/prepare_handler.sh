@@ -1,6 +1,6 @@
 G_PATH=/home/u/folder_git_for_infocollector/stress_test/allta_infocollector/src/handler
 CP=`pwd`
-#mkdir -p $G_PATH
+mkdir -p /home/partimag/prometheus-data
 cd $G_PATH
 #cp -r $CP/* $G_PATH
 

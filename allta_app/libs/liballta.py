@@ -694,6 +694,10 @@ def get_server_load(stand):
                         data_by_instance[instance] = value
                     
                     return data_by_instance
+                
+                if stands_ip[stand] == '10.177.103.204' or stands_ip[stand] == '10.177.103.205':
+                    device_name = 'nvme0c0n1'
+                else: device_name = 'nvme0n1'
 
                 # Запросы метрик
                 cpu_user = get_prometheus_data(f'rate(node_cpu_seconds_total{{mode="user", instance="{server_ip}"}}[5s])')
@@ -702,7 +706,7 @@ def get_server_load(stand):
                 mem_available = get_prometheus_data(f'node_memory_MemAvailable_bytes{{instance="{server_ip}"}}')
                 cpu_temp1 = get_prometheus_data(f'node_hwmon_temp_celsius{{instance="{server_ip}", sensor="temp1"}}')
                 cpu_temp2 = get_prometheus_data(f'node_hwmon_temp_celsius{{instance="{server_ip}", sensor="temp2"}}')
-                nvme_usage = get_prometheus_data(f'rate(node_disk_io_time_seconds_total{{device="nvme0n1", instance="{server_ip}"}}[5s])')
+                nvme_usage = get_prometheus_data(f'rate(node_disk_io_time_seconds_total{{device="{device_name}", instance="{server_ip}"}}[5s])')
                 sda_usage = get_prometheus_data(f'rate(node_disk_io_time_seconds_total{{device="sda", instance="{server_ip}"}}[5s])')
 
                 cpu_total_usage = abs(round((1 - (cpu_user.get(server_ip, 0.0) + cpu_system.get(server_ip, 0.0))) * 100 -100, 1))

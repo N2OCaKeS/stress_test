@@ -46,9 +46,14 @@ settings_vagrant() {
 
 }
 
-vagrant_prepare(){
-    vagrant box add --force --provider virtualbox $1 ftp://10.177.103.10/boxes/box/$1.box
-    vagrant mutate $1  libvirt --input-provider virtualbox --force-virtio
+vagrant_prepare(){  
+    if [ "$1" == "astra" ]; then
+        vagrant box add --force --provider virtualbox "$1" ftp://10.177.103.10/boxes/box/orel_1.8.2.2.box
+        vagrant mutate "$1" libvirt --input-provider virtualbox --force-virtio
+    else
+        vagrant box add --force --provider virtualbox "$1" ftp://10.177.103.10/boxes/box/"$1".box
+        vagrant mutate "$1" libvirt --input-provider virtualbox --force-virtio
+    fi
 }
 
 

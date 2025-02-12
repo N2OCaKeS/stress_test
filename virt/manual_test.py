@@ -48,7 +48,7 @@ class CreateVM:
             box_url = 'ftp://10.177.103.10/boxes/box/alt.box'
         elif self.rc_name == 'astra':
             box_name = 'astra'
-            box_url = 'ftp://10.177.103.10/boxes/box/1816s.box'
+            box_url = 'ftp://10.177.103.10/boxes/box/orel_1.8.2.2.box'
 
 
         

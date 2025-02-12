@@ -28,7 +28,7 @@ git checkout $1
 
 #Настраиваем окружение и запускаем тест
 cd $1
-bash prepare.sh $1 $3 $5
+DEBIAN_FRONTEND=noninteractive bash prepare.sh $1 $3 $5
 
 if [ "$4" == "kernel" ]; then
     python3 run.py -n "$2" -kn "$4"

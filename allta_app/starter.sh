@@ -28,7 +28,8 @@ git checkout $1
 
 #Настраиваем окружение и запускаем тест
 cd $1
-DEBIAN_FRONTEND=noninteractive bash prepare.sh $1 $3 $5
+sed -i '2i export DEBIAN_FRONTEND=noninteractive' prepare.sh
+bash prepare.sh $1 $3 $5
 
 if [ "$4" == "kernel" ]; then
     python3 run.py -n "$2" -kn "$4"

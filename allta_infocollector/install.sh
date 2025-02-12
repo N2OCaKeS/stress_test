@@ -1,7 +1,4 @@
 SERVICE_NAME=allta_infocollector.service
-S_PATH=/home/u/folder_git_for_infocollector/stress_test/allta_infocollector
-DB_PATH=/home/u/folder_git_for_infocollector/stress_test/allta_infocollector/src/handler
-
 
 install() {
     dpkg -s docker.io || sudo apt-get install docker.io -y
@@ -17,7 +14,7 @@ After=docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=$S_PATH
+WorkingDirectory=$PROJECT_PATH
 ExecStartPre=/usr/bin/docker-compose pull
 ExecStartPre=/usr/bin/docker-compose build
 ExecStartPre=/bin/systemctl restart grafana_prometheus.service

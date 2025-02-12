@@ -441,6 +441,39 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-green",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 4
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    0,
+                    10
+                  ],
+                  "fill": "dot"
+                }
+              },
+              {
+                "id": "custom.gradientMode",
+                "value": "opacity"
+              }
+            ]
           }
         ]
       },
@@ -454,9 +487,10 @@
       "options": {
         "legend": {
           "calcs": [
-            "last",
-            "lastNotNull",
-            "max"
+            "min",
+            "max",
+            "mean",
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -493,6 +527,19 @@
           "legendFormat": "User",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"system\"}[1m])) + avg(irate(node_cpu_seconds_total{instance=~\"$node\",mode=\"user\"}[1m]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "Total",
+          "range": true,
+          "refId": "C"
         }
       ],
       "title": "CPU usage（%）",
@@ -642,7 +689,7 @@
           "refId": "B"
         }
       ],
-      "title": "The average system load",
+      "title": "Average system load",
       "type": "timeseries"
     },
     {
@@ -1180,7 +1227,8 @@
           "calcs": [
             "min",
             "max",
-            "mean"
+            "mean",
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -1426,7 +1474,12 @@
       "id": 13,
       "options": {
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "min",
+            "max",
+            "mean",
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -1464,7 +1517,7 @@
           "refId": "B"
         }
       ],
-      "title": "I/O Usage Read / Write",
+      "title": "I/O Usage read / write (bytes)",
       "type": "timeseries"
     },
     {
@@ -1538,7 +1591,9 @@
       "options": {
         "legend": {
           "calcs": [
+            "min",
             "max",
+            "mean",
             "lastNotNull"
           ],
           "displayMode": "table",
@@ -1591,7 +1646,7 @@
           "refId": "C"
         }
       ],
-      "title": "Disk IO read and write time",
+      "title": "Disk IO read / write (time)",
       "type": "timeseries"
     },
     {
@@ -1758,7 +1813,7 @@
           "refId": "E"
         }
       ],
-      "title": "TCP Connection situation",
+      "title": "TCP connections",
       "type": "timeseries"
     },
     {
@@ -1832,7 +1887,8 @@
       "options": {
         "legend": {
           "calcs": [
-            "last",
+            "min",
+            "max",
             "mean",
             "lastNotNull"
           ],
@@ -1948,7 +2004,9 @@
       "options": {
         "legend": {
           "calcs": [
+            "min",
             "max",
+            "mean",
             "lastNotNull"
           ],
           "displayMode": "table",
@@ -2001,7 +2059,7 @@
           "refId": "C"
         }
       ],
-      "title": "Disk read and write rate（IOPS）",
+      "title": "Disk read / write rate（IOPS）",
       "type": "timeseries"
     }
   ],
@@ -2105,6 +2163,6 @@
   "timezone": "browser",
   "title": "ALLTA dashboard",
   "uid": "fecn0mamdcsg0f",
-  "version": 1,
+  "version": 8,
   "weekStart": ""
 }

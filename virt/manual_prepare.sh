@@ -91,4 +91,7 @@ elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     congig_libvirt
     settings_vagrant
     vagrant_prepare $1
+else
+    echo "Ошибка: Неверный аргумент '$1'. Пожалуйста, используйте один из следующих вариантов: debian, astra, alt, rhel или redos."
+    exit 1
 fi

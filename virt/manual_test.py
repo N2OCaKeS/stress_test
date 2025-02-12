@@ -48,18 +48,12 @@ class CreateVM:
             box_url = 'ftp://10.177.103.10/boxes/box/alt.box'
         elif self.rc_name == 'astra':
             box_name = 'astra'
-            box_url = 'ftp://10.177.103.10/boxes/box/1816s.box'
+            box_url = 'ftp://10.177.103.10/boxes/box/orel_1.8.2.2.box'
 
-        cmd(f'vagrant box add --force --provider virtualbox {box_name} {box_url}')
-        cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
-        # add define pool
-        try:
-            cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
-            cmd('virsh pool-autostart default')
-            cmd('virsh pool-start default')
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        
+        # cmd(f'vagrant box add --force --provider virtualbox {box_name} {box_url}')
+        # cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # create_vm
         print('UPDATE={} BOX_URL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
@@ -93,10 +87,10 @@ class StealTime(CreateVM):
         self.vm_count = vm_count
         self.testdir = testdir
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
-        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.check_vm_ip = "virsh -c qemu:///system domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
         self.run_test = 'cd /home/{} && sudo ./cpu_load'
-        self.power_off = 'virsh destroy {}'
+        self.power_off = 'virsh -c qemu:///system destroy {}'
         self.user = 'vagrant'
         self.password = 'vagrant'
         self.stop_host_monitor = False

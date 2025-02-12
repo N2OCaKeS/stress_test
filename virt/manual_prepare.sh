@@ -61,7 +61,7 @@ if [ "$1" == "debian" ] || [ "$1" == "astra" ]; then
     sudo $pm install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
     congig_libvirt
     settings_vagrant
-    vagrant_prepare
+    vagrant_prepare $1
 elif [ "$1" == "alt" ]; then
     pm=apt-get
     wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/upload/timonin/vagrant
@@ -73,7 +73,7 @@ elif [ "$1" == "alt" ]; then
     systemctl start libvirtd
     congig_libvirt
     settings_vagrant
-    vagrant_prepare
+    vagrant_prepare $1
 elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     pm=yum
     wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/upload/timonin/vagrant
@@ -85,5 +85,5 @@ elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
     systemctl start libvirtd
     congig_libvirt
     settings_vagrant
-    vagrant_prepare
+    vagrant_prepare $1
 fi

@@ -15,6 +15,7 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=$PROJECT_PATH
+ExecStartPre=/usr/bin/python3 $PROJECT_PATH/config_handler.py
 ExecStartPre=/usr/bin/docker-compose pull
 ExecStartPre=/usr/bin/docker-compose build
 ExecStartPre=/bin/systemctl restart grafana_prometheus.service

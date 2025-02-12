@@ -1,10 +1,9 @@
 #!/bin/bash
 set -vx
 
-DB_PATH=/home/u/folder_git_for_infocollector/stress_test/allta_infocollector/src/handler
 cd $DB_PATH
 
-export GRAFANA_HOST="${GRAFANA_HOST:=http://10.177.103.10:3000}"
+export GRAFANA_HOST="${GRAFANA_HOST:=http://$SERVER_IP:3000}"
 export GRAFANA_CRED="${GRAFANA_CRED:=admin:admin}"
 export GRAFANA_OVERWRITE="${GRAFANA_OVERWRITE:=false}"
 export DS_NAME="${DS_NAME:=Prometheus}"

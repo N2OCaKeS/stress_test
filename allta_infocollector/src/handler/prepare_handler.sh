@@ -1,8 +1,5 @@
-G_PATH=/home/u/folder_git_for_infocollector/stress_test/allta_infocollector/src/handler
-CP=`pwd`
-mkdir -p /home/partimag/prometheus-data
-cd $G_PATH
-#cp -r $CP/* $G_PATH
+mkdir -p $PM_DB_PATH
+cd $DB_PATH
 
 dpkg -s docker.io || sudo apt-get install docker.io -y
 dpkg -s docker-compose || sudo apt-get install docker-compose -y
@@ -16,7 +13,7 @@ After=docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=$G_PATH
+WorkingDirectory=$DB_PATH
 ExecStartPre=/usr/bin/docker-compose pull
 ExecStart=/usr/bin/docker-compose up -d
 ExecStop=/usr/bin/docker-compose down

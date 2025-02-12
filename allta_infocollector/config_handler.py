@@ -1,10 +1,16 @@
 from string import Template
+import os
 
-
+script_dir = os.path.dirname(os.path.abspath(__file__))
 changing_files = {
-     'install.sh': ['PROJECT_PATH', 'DB_PATH']
+     f'{script_dir}/install.sh': ['PROJECT_PATH', 'DB_PATH'],
+     f'{script_dir}/src/handler/prometheus.yml': ['SERVERS'],
+     f'{script_dir}/src/handler/prepare_handler.sh': ['PM_DB_PATH', 'DB_PATH'],
+     f'{script_dir}/src/handler/import_dashboard_full.sh': ['DB_PATH', 'SERVER_IP'],
+     f'{script_dir}/src/handler/import_dashboard_allta.sh': ['DB_PATH', 'SERVER_IP'],
+     f'{script_dir}/src/handler/docker-compose.yml': ['PM_DB_PATH'],
+     f'{script_dir}/src/aggregator/conf.py': ['STD_USER', 'STD_PASSWD', 'PROJECT_PATH', 'SERVER_IP']
 }
-
 
 
 def var_wrapper(file_name: str, dates: dict):
@@ -23,7 +29,7 @@ def var_wrapper(file_name: str, dates: dict):
 
 
 
-with open('infocollector.conf', 'r') as r:
+with open(f'{script_dir}/infocollector.conf', 'r') as r:
     config = r.readlines()
 #print(config)
 

@@ -50,16 +50,10 @@ class CreateVM:
             box_name = 'astra'
             box_url = 'ftp://10.177.103.10/boxes/box/1816s.box'
 
-        cmd(f'vagrant box add --force --provider virtualbox {box_name} {box_url}')
-        cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
-        # add define pool
-        try:
-            cmd('virsh -c qemu:///system pool-define-as --name default --type dir --target /var/lib/libvirt/images')
-            cmd('virsh -c qemu:///system pool-autostart default')
-            cmd('virsh -c qemu:///system pool-start default')
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        
+        # cmd(f'vagrant box add --force --provider virtualbox {box_name} {box_url}')
+        # cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # create_vm
         print('UPDATE={} BOX_URL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,

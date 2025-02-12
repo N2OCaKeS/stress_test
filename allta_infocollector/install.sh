@@ -15,12 +15,11 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=$PROJECT_PATH
-ExecStartPre=/usr/bin/python3 $PROJECT_PATH/config_handler.py
 ExecStartPre=/usr/bin/docker-compose pull
 ExecStartPre=/usr/bin/docker-compose build
 ExecStartPre=/bin/systemctl restart grafana_prometheus.service
 ExecStartPre=/bin/sleep 20
-ExecStartPre=/bin/bash $DB_PATH/import_dashboard_allta.sh
+ExecStartPre=/bin/bash $DB_PATH/import_dashboard_full.sh
 ExecStart=/usr/bin/docker-compose up -d
 ExecStop=/usr/bin/docker-compose down
 RemainAfterExit=yes

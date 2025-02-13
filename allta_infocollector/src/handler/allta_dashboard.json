@@ -999,7 +999,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 2,
+            "fillOpacity": 30,
             "gradientMode": "opacity",
             "hideFrom": {
               "legend": false,
@@ -1014,8 +1014,7 @@
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
-              "log": 10,
-              "type": "log"
+              "type": "linear"
             },
             "showPoints": "never",
             "spanNulls": false,
@@ -2163,6 +2162,6 @@
   "timezone": "browser",
   "title": "ALLTA dashboard",
   "uid": "fecn0mamdcsg0f",
-  "version": 8,
+  "version": 2,
   "weekStart": ""
 }

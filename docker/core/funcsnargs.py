@@ -15,7 +15,7 @@ ram_worker = 1
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
                     type=str,
-                    choices=["load", "http", "remove", "load-http"],
+                    choices=["load", "http", "remove", "load-http", "apache"],
                     help="Type your test",
                     dest="TEST_TYPE")
 parser.add_argument("-o", "--docker-image",
@@ -74,9 +74,9 @@ def create_load_docker_compose(content):
 
 
 def create_http_docker_compose(content):
-    run_command("docker build -t nginx ./dockerfiles/http/nginx-server/")
+    run_command("docker build -t apache ./dockerfiles/http/apache-httpd/")
     # run_command("docker build --no-cache -t ab ./dockerfiles/http/apache-bench/")
-    content += var.http_content
+    content += var.apache_content
 
     with open("docker-compose.yml", 'w') as file:
         file.write(content)

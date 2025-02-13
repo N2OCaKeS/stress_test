@@ -16,7 +16,6 @@ git_directory="stress_test"
 
 #Предустановка пакетов
 dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y
-curl http://10.177.103.10:18181/rest/api/dashboard/$localhost/full
 
 #Клонируем репозиторий, удаляем старый, если есть
 cd /home/u/git
@@ -28,7 +27,8 @@ git checkout $1
 
 #Настраиваем окружение и запускаем тест
 cd $1
-sed -i '2i export DEBIAN_FRONTEND=noninteractive' prepare.sh
+#sed -i '2i export DEBIAN_FRONTEND=noninteractive' prepare.sh
+echo curl http://10.177.103.10:18181/rest/api/dashboard/$localhost/full >> prepare.sh
 bash prepare.sh $1 $3 $5
 
 if [ "$4" == "kernel" ]; then

@@ -1,10 +1,18 @@
-compose_content = f"""
+compose_content = """
 version: "3.1"
+
+networks:
+  load-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
 services:
 
 """
 
-http_content = f"""  
+nginx_content = """  
   nginx:
     image: nginx
     container_name: nginx
@@ -13,19 +21,28 @@ http_content = f"""
     ports:
       - "80:80"
     environment:
-      - NGINX_PORT=80
+      - NGINX_PORT: "80"
     networks:
       load-network:
         ipv4_address: 172.21.0.2
 
-
-networks:
-  load-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.21.0.0/16
 """
+
+# apache_content = """
+#   apache:
+#     image: apache
+#     container_name: apache
+#     stdin_open: true
+#     tty: true
+#     ports:
+#       - "80:80"
+#     environment:
+#       HTTPD_PORT: "80"
+#     networks:
+#       load-network:
+#         ipv4_address: 172.21.0.3
+
+# """
 
   # ab:
   #   image: ab

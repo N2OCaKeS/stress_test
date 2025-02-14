@@ -1,0 +1,17 @@
+@import url('fonts.css');
+
+body {
+    background: #212121;
+    color: aliceblue;
+}
+
+h1 {
+    font-family: Montserrat, sans-serif;
+    font-weight: 400;
+}
+
+.header__img{
+    display: block;
+    width: 48px;
+    height: 48px;
+}

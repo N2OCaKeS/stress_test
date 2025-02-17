@@ -20,17 +20,8 @@ sudo apt-get install -y libffi-dev strace time
 sudo apt-get install -y libcurl4-gnutls-dev
 sudo apt-get install -y rustc cargo
 sudo apt-get install -y python3-requests
+sudo apt-get install -y linux-tools-`uname -r`
 
-if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-    sudo apt-get install -y linux-tools-6.1*
-    sudo apt-get install -y linux-tools-6.6*
-    sudo apt-get install -y linux-tools-6.12*
-    sudo apt-get install -y linux-tools-6*
-    sudo apt-get install -y linux-tools-common-6.*
-else
-    sudo apt-get install -y linux-tools-5.10* linux-tools-5.15* linux-tools-common-5.15*
-    sudo apt-get install -y linux-tools-5.15*
-fi
 
 sudo mkdir /home/u/python
 cd /home/u/python

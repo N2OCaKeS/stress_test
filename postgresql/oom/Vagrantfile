@@ -86,7 +86,7 @@ Vagrant.configure("2") do |config|
   #config.vm.guest = :debian
   #config.vm.synced_folder "/home", "/home"
   
-  ENV['RC'].start_with?('1.7') ? vms = [
+  ENV['RC'].nil? || ENV['RC'].start_with?('1.7') ? vms = [
     { :name => "database1", :hostname => "database1.oom.rbt", :args => "database1", :cpus => "2", :memory => "4096", :ip => "10.177.103.211" }
   ] : vms = [
     { :name => "database1", :hostname => "database1.oom.rbt", :args => "database1", :cpus => "3", :memory => "8192", :ip => "10.177.103.211" }

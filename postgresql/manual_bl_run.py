@@ -23,16 +23,26 @@ parser.add_argument('-vbox', '--set-vbox',
 
 
 args = parser.parse_args()
-astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
-response_ac = requests.get(astra_config_url)
-if response_ac.status_code == 200:
-    with open('box-config.json', 'wb') as acb:
-        acb.write(response_ac.content)
-else:
-    print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
+# astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
+# response_ac = requests.get(astra_config_url)
+# if response_ac.status_code == 200:
+#     with open('box-config.json', 'wb') as acb:
+#         acb.write(response_ac.content)
+# else:
+#     print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
 
-with open('box-config.json', 'r') as r:
-    dates = json.loads(r.read())
+# with open('box-config.json', 'r') as r:
+#     dates = json.loads(r.read())
+
+
+# Открываем файл с жесткого диска
+try:
+    with open('box-config.json', 'r') as r:
+        dates = json.load(r)
+except FileNotFoundError:
+    print("Файл 'box-config.json' не найден на жестком диске.")
+except json.JSONDecodeError:
+    print("Ошибка при чтении JSON из файла.")
 
 
 box_name, box_url = bl.box_wrapper(args.SET_BOX, dates)

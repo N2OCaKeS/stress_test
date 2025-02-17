@@ -1,0 +1,33 @@
+{% extends 'main/base.html' %}
+
+{% block title %}Темы
+    <!-- <img class="content" src="{{ url_for('static', filename='img/cat.png') }}" alt="cat"> -->
+{% endblock %}
+
+{% block style %}<link rel="stylesheet" href="{{ url_for('static', filename='css/blocks/table.css') }}">{% endblock %}
+
+{% block content %}
+<div class="table-responsive custom-table-responsive">
+    <table class="table custom-table">
+        <thead>
+            <th scope="col">Преподаватель</th>
+            <th scope="col">Тема</th>
+            <th scope="col">Студент</th>
+            <th scope="col">Действия</th>
+        </thead>
+        <tbody>
+            {% for post in posts %}
+            <tr scope="row">
+                <td>{{ post.teacher }}</td>
+                <td>{{ post.subject }}</td>
+                <td>{{ post.student }}</td>
+                <td>
+                    <a href="{{ url_for('post.update', id=post.id) }}" class="btn btn-sm btn-secondary">Ред.</a>
+                    <a href="{{ url_for('post.delete', id=post.id) }}" class="btn btn-sm btn-danger">Удалить.</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

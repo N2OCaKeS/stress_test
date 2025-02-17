@@ -10,6 +10,10 @@ docker
 locust
 flask
 flask_sqlalchemy
+flask_migrate
+flask_wtf
+flask_bcrypt
 python-dotenv
 psycopg2
 psycopg2-binary
+Pillow

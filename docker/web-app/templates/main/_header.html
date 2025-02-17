@@ -1,18 +1,15 @@
 <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start">
-    <a href="/" class="d-flex align-items-center mb-2 mb-lg-0 text-white text-decoration-none">
-      <img class="header__img" src="{{ url_for('static', filename='img/astra_star_white.png') }}" alt="cat">
+    <a href="{{ url_for('post.all') }}" class="d-flex align-items-center mb-2 mb-lg-0 text-white text-decoration-none">
+      <img class="header__img" src="{{ url_for('static', filename='img/astra_star_white.png') }}" alt="logo">
     </a>
 
     <ul class="nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
-      <li><a href="#" class="nav-link px-2 text-secondary">Home</a></li>
-      <li><a href="#" class="nav-link px-2 text-white">Features</a></li>
-      <li><a href="#" class="nav-link px-2 text-white">Pricing</a></li>
-      <li><a href="#" class="nav-link px-2 text-white">FAQs</a></li>
-      <li><a href="#" class="nav-link px-2 text-white">About</a></li>
+      <li><a href="{{ url_for('post.all') }}" class="nav-link px-2 text-secondary">Главная</a></li>
+      <li><a href="{{ url_for('post.create') }}" class="nav-link px-2 text-white">Добавить тему</a></li>
     </ul>
 
     <div class="text-end">
-      <button type="button" class="btn btn-outline-light me-2">Login</button>
-      <button type="button" class="btn btn-warning">Sign-up</button>
+      <a href="{{ url_for('user.login') }}" type="button" class="btn btn-outline-light me-2">Войти</a>
+      <a href="{{ url_for('user.register') }}" type="button" class="btn btn-warning">Регистрация</a>
     </div>
   </div>

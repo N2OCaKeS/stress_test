@@ -28,6 +28,12 @@ setup_db(){
     GRANT ALL ON schema public TO u;
 }
 
+migrate(){
+    flask db init
+    flask db migrate
+    flask db upgrade
+}
+
 
 case $1 in 
     load)

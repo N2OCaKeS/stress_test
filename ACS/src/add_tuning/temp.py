@@ -96,7 +96,8 @@ def install_kernels(version_name, stand):
     if kernel:
         command = f"sudo apt install -y {kernel}"
         print(command)
-        data = remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
+        #TODO расскоментировать, когда будет решение с проверкой версии ядер в docker
+        #data = remote_cmd(command=command, host=stand[3], user=stand[4], passwd=stand[5])
         print(data)
         print("ЯДРА ДОЛЖНЫ БЫЛИ УСТАНОВИТЬСЯ")
         return {"ok"}

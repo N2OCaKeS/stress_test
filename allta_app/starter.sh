@@ -1,18 +1,53 @@
 #!/bin/bash
 
+set -vx
+
 #
 #Аргументом скрипту следует указать ветку проекта
 #
 localhost=`hostname -I | awk '{print $1}'`
+current_kernel=`uname -r`
+
+cleanup_kernel() {
+installed_kernels=$(dpkg --list | grep 'linux-image-[0-9]' | awk '{print $2}')
+for kernel in $installed_kernels; do
+    if [[ "$kernel" != *"$current_kernel"* ]]; then
+        echo "Removing $kernel..."
+        sudo apt remove --purge -y $kernel
+    fi
+done
+
+installed_headers=$(dpkg --list | grep 'linux-headers-[0-9]' | awk '{print $2}')
+for header in $installed_headers; do
+    if [[ "$header" != *"$current_kernel"* ]]; then
+        echo "Removing $header..."
+        sudo apt remove --purge -y $header
+    fi
+done
+
+installed_lam=$(dpkg --list | grep 'linux-astra-modules-[0-9]' | awk '{print $2}')
+for lam in $installed_lam; do
+    if [[ "$lam" != *"$current_kernel"* ]]; then
+        echo "Removing $lam..."
+        sudo apt remove --purge -y $lam
+    fi
+done
+
+
+echo "Cleaning up..."
+sudo apt autoremove -y
+}
 
 echo $localhost
 echo git bench = $1
 echo git bench = $2
-set -vx
 
 git_directory="stress_test"
 #dates_file="/home/u/dates.txt"
 #args=`cat "$dates_file"`
+
+#Удаление неиспользуемых ядер
+cleanup_kernel
 
 #Предустановка пакетов
 dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y

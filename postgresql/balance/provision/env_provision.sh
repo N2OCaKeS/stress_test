@@ -11,7 +11,7 @@ EOF
 }
 
 17repo() {
-echo "grub-pc grub-pc/install_devices multiselect /dev/sda" | sudo debconf-set-selections
+    echo "grub-pc grub-pc/install_devices multiselect /dev/sda" | sudo debconf-set-selections
 cat << EOF > /etc/apt/sources.list
 deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/installation/ 1.7_x86-64 main contrib non-free
 deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/ 1.7_x86-64 main contrib non-free
@@ -43,9 +43,14 @@ sudo apt-get install -y gcc make perl
 sudo apt-get install linux-[5-6].*-generic -y
 sudo apt-get install linux-[5-6].*-lowlatency -y
 sudo apt-get install -y python3-pip
-python3 -m pip install --upgrade pip
-python3 -m pip install psycopg2-binary
-dpkg -s ntpsec &> /dev/null || sudo apt-get install ntpsec -y
+if (grep -q 1.8 /etc/astra_version); then
+    python3 -m pip install --upgrade pip --break-system-packages
+    python3 -m pip install psycopg2-binary --break-system-packages
+else
+    python3 -m pip install --upgrade pip
+    python3 -m pip install psycopg2-binary
+fi
+dpkg -s ntpsec &>/dev/null || sudo apt-get install ntpsec -y
 
 
 #mount second storage
@@ -65,8 +70,8 @@ pass=1
 
 # groups for 'u' user
 ugroups=(\
-  cdrom floppy audio dip video plugdev netdev lpadmin
-  scanner astra-console astra-admin
+    cdrom floppy audio dip video plugdev netdev lpadmin
+    scanner astra-console astra-admin
 )
 
 
@@ -105,22 +110,22 @@ declare -A pgpool=( [ip]=10.0.0.31 [domain]=pgpool.balance.rbt [host]=pgpool [dn
 declare -A dcfreeipa=( [ip]=10.0.0.10 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.0.0.10, 8.8.8.8" )
 declare -A test=( [ip]=10.0.0.10 [domain]=test.balance.rbt [host]=test [dns]="10.0.0.10, 8.8.8.8" )
 
-# declare -A database1_br=( [ip_br]=10.177.103.111 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0) 
+# declare -A database1_br=( [ip_br]=10.177.103.111 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0)
 # declare -A database2_br=( [ip_br]=10.177.103.112 [server-port]=3422 [forward-port]=2022 [mac]=08:00:27:64:AF:57 [net]=int0)
 # declare -A database3_br=( [ip_br]=10.177.103.113 [server-port]=3423 [forward-port]=2025 [mac]=08:00:27:35:FB:4D [net]=int0)
 # declare -A lbdb1_br=(     [ip_br]=10.177.103.141 [server-port]=3424 [forward-port]=2024 [mac]=08:00:27:93:D3:2B [net]=int0)
 # declare -A lbdb2_br=(     [ip_br]=10.177.103.142 [server-port]=3425 [forward-port]=2023 [mac]=08:00:27:73:E5:1C [net]=int0)
 # declare -A lbdb3_br=(     [ip_br]=10.177.103.143 [server-port]=3431 [forward-port]=2026 [mac]=08:00:27:15:29:EA [net]=int0)
-# declare -A pgpool_br=(    [ip_br]=10.177.103.131 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0) 
+# declare -A pgpool_br=(    [ip_br]=10.177.103.131 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0)
 # declare -A dcfreeipa_br=( [ip_br]=10.177.103.110 [server-port]=3434 [forward-port]=2029 [mac]=08:00:27:D3:CB:DD [net]=int0)
 
-# declare -A database1=( [ip]=10.0.0.11 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0) 
+# declare -A database1=( [ip]=10.0.0.11 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0)
 # declare -A database2=( [ip]=10.0.0.12 [server-port]=3422 [forward-port]=2022 [mac]=08:00:27:64:AF:57 [net]=int0)
 # declare -A database3=( [ip]=10.0.0.13 [server-port]=3423 [forward-port]=2025 [mac]=08:00:27:35:FB:4D [net]=int0)
 # declare -A lbdb1=(     [ip]=10.0.0.41 [server-port]=3424 [forward-port]=2024 [mac]=08:00:27:93:D3:2B [net]=int0)
 # declare -A lbdb2=(     [ip]=10.0.0.42 [server-port]=3425 [forward-port]=2023 [mac]=08:00:27:73:E5:1C [net]=int0)
 # declare -A lbdb3=(     [ip]=10.0.0.43 [server-port]=3431 [forward-port]=2026 [mac]=08:00:27:15:29:EA [net]=int0)
-# declare -A pgpool=(    [ip]=10.0.0.31 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0) 
+# declare -A pgpool=(    [ip]=10.0.0.31 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0)
 # declare -A dcfreeipa=( [ip]=10.0.0.10 [server-port]=3434 [forward-port]=2029 [mac]=08:00:27:D3:CB:DD [net]=int0)
 
 # sudo systemctl restart networking
@@ -129,7 +134,7 @@ declare -A test=( [ip]=10.0.0.10 [domain]=test.balance.rbt [host]=test [dns]="10
 # cat << EOF > /etc/hosts
 # 10.177.5.111    qa111.devos.astralinux.ru
 # 10.177.43.1    releases.devos.astralinux.ru
-# 127.0.0.1   localhost 
+# 127.0.0.1   localhost
 # ${database1_br[ip]} ${database1_br[domain]} ${database1_br[host]}
 # ${database2_br[ip]} ${database2_br[domain]} ${database2_br[host]}
 # ${database3_br[ip]} ${database3_br[domain]} ${database3_br[host]}

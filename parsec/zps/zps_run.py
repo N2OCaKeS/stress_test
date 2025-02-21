@@ -74,6 +74,7 @@ command = system()
 #Run Test
 ###
 
+command.cmd('sudo bash vbox_prepare.sh')
 command.cmd(f'vagrant box add {box_name} {box_url} --force')
 command.cmd(f'UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant up --provider=virtualbox')
 

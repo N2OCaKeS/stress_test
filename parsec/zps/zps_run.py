@@ -64,7 +64,7 @@ else:
 with open('box-config.json', 'r') as r:
     dates = json.loads(r.read())
 
-box = '1.8.1.16'
+box = '1.8.1.UU.2.4'
 kernel = '6.1.90-1-generic'
 box_name, box_url = box_wrapper(box, dates)
 command = system()

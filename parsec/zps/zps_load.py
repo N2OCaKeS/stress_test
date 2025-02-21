@@ -1,9 +1,9 @@
 import os
 import concurrent.futures
 
-MAX = 8192
+MAX = 16384
 PROG = "/usr/bin/ssh"
-WORKERS = 20
+WORKERS = 10
 
 
 def create_hard_link(x):

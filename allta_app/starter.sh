@@ -11,7 +11,7 @@ current_kernel=`uname -r`
 cleanup_kernel() {
 installed_kernels=$(dpkg --list | grep 'linux-image-[0-9]' | awk '{print $2}')
 for kernel in $installed_kernels; do
-    if [[ "$kernel" != *"$current_kernel"* && "$kernel" != linux-image-5.10*]]; then
+    if [[ "$kernel" != *"$current_kernel"* && "$kernel" != linux-image-5.10* ]]; then
         echo "Removing $kernel..."
         sudo apt remove --purge -y $kernel
     fi

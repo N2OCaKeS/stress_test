@@ -34,7 +34,7 @@ from libs.liballta import (index_page,
                           psyc,
                           stands_ip,
                           user_app)
-from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs
+from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs, annotations
 from backup.backuplibs import Backup, check_command
 from statistics_conf import statistics_conf
 import requests
@@ -526,6 +526,10 @@ def get_known_bugs():
 @app.route('/rest/api/available-kernels-from-<rc>', methods=['POST'])
 def available_kernels_from_rc(rc):
     return get_kernels_from_rc(version_rc=rc, get_list=True)
+
+@app.route('/rest/api/annotations', methods=['GET'])
+def get_known_bugs():
+    return jsonify(annotations), 200
 
 
 # if __name__ == '__main__':

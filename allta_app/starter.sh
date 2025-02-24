@@ -11,7 +11,7 @@ current_kernel=`uname -r`
 cleanup_kernel() {
 installed_kernels=$(dpkg --list | grep 'linux-image-[0-9]' | awk '{print $2}')
 for kernel in $installed_kernels; do
-    if [[ "$kernel" != *"$current_kernel"* ]]; then
+    if [[ "$kernel" != *"$current_kernel"* && "$kernel" != linux-image-5.10*]]; then
         echo "Removing $kernel..."
         sudo apt remove --purge -y $kernel
     fi
@@ -19,7 +19,7 @@ done
 
 installed_headers=$(dpkg --list | grep 'linux-headers-[0-9]' | awk '{print $2}')
 for header in $installed_headers; do
-    if [[ "$header" != *"$current_kernel"* ]]; then
+    if [[ "$header" != *"$current_kernel"* && "$header" != linux-headers-5.10* ]]; then
         echo "Removing $header..."
         sudo apt remove --purge -y $header
     fi
@@ -27,7 +27,7 @@ done
 
 installed_lam=$(dpkg --list | grep 'linux-astra-modules-[0-9]' | awk '{print $2}')
 for lam in $installed_lam; do
-    if [[ "$lam" != *"$current_kernel"* ]]; then
+    if [[ "$lam" != *"$current_kernel"* && "$lam" != linux-astra-modules-5.10* ]]; then
         echo "Removing $lam..."
         sudo apt remove --purge -y $lam
     fi

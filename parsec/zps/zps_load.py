@@ -10,7 +10,7 @@ def create_hard_link(x):
     dest = f"/home/x.{x}"
     try:
         os.link(PROG, dest)
-        print(f"Created link {x}")
+        #print(f"Created link {x}")
     except Exception as e:
         print(f"Failed to create link {x}: {e}")
 
@@ -18,7 +18,7 @@ def execute_program(x):
     prog = f"/home/x.{x}"
     try:
         os.system(prog)
-        print(f"Executed {x}")
+        #print(f"Executed {x}")
     except Exception as e:
         print(f"Failed to execute {x}: {e}")
 
@@ -26,7 +26,7 @@ def remove_hard_link(x):
     dest = f"/home/x.{x}"
     try:
         os.remove(dest)
-        print(f"Removed link {x}")
+        #print(f"Removed link {x}")
     except Exception as e:
         print(f"Failed to remove link {x}: {e}")
 

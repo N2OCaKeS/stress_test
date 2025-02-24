@@ -80,6 +80,9 @@ def mod_exec_file(machine)
     $name_file --help
 
     cp $name_file $name_file.bak
+
+    echo "Смотрим последний байт файла..."
+    tail -c 1 $name_file | hexdump -v -e '/1 "%02x"'
     dd if=<(echo -n $(printf '\\x%02x' $((0x$(tail -c 1 $name_file | hexdump -v -e '/1 "%02x"') |\
     1)))) of=$name_file bs=1 seek=$(($(stat -c %s $name_file) - 1)) count=1 conv=notrunc
 

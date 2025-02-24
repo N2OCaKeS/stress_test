@@ -528,7 +528,7 @@ def available_kernels_from_rc(rc):
     return get_kernels_from_rc(version_rc=rc, get_list=True)
 
 @app.route('/rest/api/annotations', methods=['GET'])
-def get_known_bugs():
+def get_annotations():
     return jsonify(annotations), 200
 
 

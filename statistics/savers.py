@@ -28,3 +28,15 @@ class SaveGraph:
 
     def save(self, plot, name):
         plot.savefig(f"{UtilForBuildPath.build_path(self.main_folder, stat_rc_vers=self.stat_rc_vers)}/{name}.png")
+
+
+class SaveText:
+    def __init__(self, main_folder, stat_rc_vers):
+        self.main_folder = main_folder
+        self.stat_rc_vers = stat_rc_vers
+    
+    def save(self, text: str, name: str):
+        paragraph_html = f'<hr/><h1>Аннотация</h1><pre>{text}</pre>'
+        file = open(f"{UtilForBuildPath.build_path(self.main_folder, stat_rc_vers=self.stat_rc_vers)}/{name}", "w")
+        file.writelines(paragraph_html)
+        file.close()

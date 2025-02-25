@@ -6,13 +6,13 @@ from abc import abstractmethod
 from confluence.confluence_conf import ID_ROOT_PAGES
 from pages import Pages
 from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser
-from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew, BugsTable
+from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew, BugsTable, Annotations
 from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph
 from sorting import Scale
-from savers import SaveTableToFile, SaveGraph
+from savers import SaveTableToFile, SaveGraph, SaveText
 from uploaders import BaseUploader
 from typetest import TypeTest
-from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent
+from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent, NoAnnotationsForComponent
 
 from logging_conf import main_logger
 
@@ -148,6 +148,12 @@ class BaseStatistics(Statistics):
                bugs_table.build()
           except NoBugsFoundForComponent:
                main_logger.info(f"Не найдено багов для компонента {self.stat_title}")
+          try:
+               saver_annotations = SaveText(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
+               annotations = Annotations(saver=saver_annotations, component=self.stat_title)
+               annotations.build()
+          except NoAnnotationsForComponent:
+               main_logger.info(f"Не найдено аннотации для компонента {self.stat_title}")
           # Здесь выкладывание в confluence
           self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 

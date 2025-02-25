@@ -1,3 +1,5 @@
+
+import re
 import json
 import requests
 import pandas as pd
@@ -6,7 +8,7 @@ from abc import abstractmethod
 from functools import reduce
 
 from confluence.confluence_conf import CONFLUENCE_URL, CONFLUENCE_SPACE
-from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent
+from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent, NoAnnotationsForComponent
 from grade import Grade
 from sorting import SortMainTable, SortUniqueMajorKernel
 from typetest import TypeTest
@@ -237,4 +239,35 @@ class BugsTable(Table):
                             name=f"{self.__class__.__name__}.html",
                             desc=f"<h2>Таблица найденных ошибок</h2>")
             main_logger.info(f"Сохранена таблица {self.__class__.__name__}")
+
+
+class Annotations(Table):
+    def __init__(self, saver, component):
+        self.saver = saver
+        self.component = component
+        self.url = 'http://allta.devos.astralinux.ru/rest/api/annotations'
+        self.response = requests.get(url=self.url)
+    
+    def build(self):
+        if self.response.status_code == 200:
+            data = self.response.json()
+            try:
+                text_annotation = data[self.component]
+            except KeyError:
+                raise NoAnnotationsForComponent
+            
+            # macros = r"""<ac:structured-macro ac:name="jira" ac:schema-version="1" ac:macro-id="e586f42e-cab2-426c-97d5-692afd3dee26">
+            #     <ac:parameter ac:name="server">Jira - Astra Linux</ac:parameter>
+            #     <ac:parameter ac:name="serverId">d19f6132-65dc-37bb-94ca-4be05d9bb688</ac:parameter>
+            #     <ac:parameter ac:name="key">\1</ac:parameter>
+            #     <ac:parameter ac:name="columns">key,summary,type,created,updated,due,assignee,reporter,priority,status,resolution</ac:parameter>
+            #     </ac:structured-macro>"""
+
+            pattern = r'\b(BT-\d+)\b'
+            replacement = r'<a href="https://jira.astralinux.ru/browse/\1">\1</a>'
+            result = re.sub(pattern, replacement, text_annotation)
+
+            # print(result, flush=True)
+            self.saver.save(text=result, name=f"{self.__class__.__name__}.html")
+            main_logger.info(f"Сохранена аннотация для {self.component}")
             

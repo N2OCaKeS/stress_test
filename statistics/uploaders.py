@@ -87,7 +87,7 @@ class BaseUploader:
             self.confluence_stat.attache_files(file=f"{self.folder}/{file}",
                                                page_space=CONFLUENCE_SPACE,
                                                page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}")
-            if not "BugsTable" in type_stat:
+            if "BugsTable" not in type_stat and "Annotations" not in type_stat:
                 base_html_file.setdefault(type_stat, {})
             temp_var = part_header[-1].split(".")[0]
             if file.endswith(".png"):
@@ -97,6 +97,9 @@ class BaseUploader:
             elif file.endswith(".html"):
                 if "BugsTable" in file:
                     end_of_page["bugs"] = self._read_html_file(file_name=file)
+                    continue
+                if "Annotations" in file:
+                    end_of_page["annotations"] = self._read_html_file(file_name=file)
                     continue
                 base_html_file[type_stat][temp_var] =  self._read_html_file(file_name=file)
             if not "BugsTable" in type_stat:
@@ -153,8 +156,11 @@ class BaseUploader:
         html_list.insert(0, nav)
         
         bugs = fined_files.get("end_of_page").get("bugs")
+        annotations = fined_files.get("end_of_page").get("annotations")
 
         html_list.append(bugs)
+        html_list.append(annotations)
+        
         main_logger.debug("Сформирован и вставлен в начала NAV")
         html_list = [str(item) for item in html_list if item is not None]
         self.html_page = "".join(html_list)

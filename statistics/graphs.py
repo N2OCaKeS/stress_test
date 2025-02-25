@@ -291,7 +291,7 @@ class ComparisonKernelLineGraph(Graphs):
             ax.set_ylabel(y_label)
             main_logger.debug("в kwargs было передано y_label, задаем описание y_label")
         ax.set_title(f"Линейная диаграмма сравнения по ядрам.\n{self.type_test}")
-        colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c', 'green', 'red']
+        colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c', 'green', 'purple', 'grey']
         for index in range(ratings_for_plt_graph.shape[1]):
             ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
         plt.legend(self.separate_by_kernel_data.keys())

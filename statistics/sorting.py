@@ -46,6 +46,7 @@ class SortUniqueMajorKernel(Sort):
     @staticmethod
     def filter_by_kernel_version(df, kernel):
         kernel_major_vers, kernel_end_vers = kernel.split("-")
+        kernel_major_vers = f"{kernel_major_vers}."
         return df[(df["Ядро"].str.startswith(kernel_major_vers)) & (df["Ядро"].str.endswith(kernel_end_vers))]
     
     @classmethod

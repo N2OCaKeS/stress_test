@@ -165,6 +165,11 @@ class BaseUploader:
                                                 type_stat_header_without_probel="Таблица найденных ошибок".replace(" ", ""),
                                                 type_stat_header="Таблица найденных ошибок"))
         annotations = fined_files.get("end_of_page").get("annotations")
+        if annotations:
+            nav_lst.append(self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
+                                                stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
+                                                type_stat_header_without_probel="Аннотация".replace(" ", ""),
+                                                type_stat_header="Аннотация"))
 
         html_list.append(bugs)
         html_list.append(annotations)

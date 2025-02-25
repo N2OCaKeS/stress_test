@@ -133,9 +133,6 @@ class VBox(VirtualMashines):
         elif rc.startswith('1.8'):
             pg_version = 15
 
-        with open('balance/inventories/middle_hosts.yml', 'w') as file:
-            file.write(hosts)
-
         system.cmd('apt install -fy')
         if system.cmd_with_returncode('cd balance && mv Vagrantfile_vbox Vagrantfile') != 0:
             return 1
@@ -178,6 +175,9 @@ class VBox(VirtualMashines):
             hosts_template = Template(file.read())
             hosts = hosts_template.substitute(if_name=if_name)
             print(hosts)
+        
+        with open('balance/inventories/middle_hosts.yml', 'w') as file:
+            file.write(hosts)        
 
         return 0
 

@@ -43,7 +43,6 @@ import requests
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'srv_2413'
-app.config['JSON_AS_ASCII'] = False
 
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)
@@ -530,7 +529,9 @@ def available_kernels_from_rc(rc):
 
 @app.route('/rest/api/annotations', methods=['GET'])
 def get_annotations():
-    return jsonify(annotations), 200
+    response = jsonify(annotations)
+    response.headers['Content-Type'] = 'application/json; charset=utf-8'
+    return response, 200
 
 
 # if __name__ == '__main__':

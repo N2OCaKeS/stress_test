@@ -43,6 +43,7 @@ import requests
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'srv_2413'
+app.config['JSON_AS_ASCII'] = False
 
 with open('/home/u/tokens.json', 'r') as r:
     tokens = json.load(r)

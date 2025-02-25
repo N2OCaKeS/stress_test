@@ -1,0 +1,20 @@
+FROM httpd:latest
+
+RUN apt-get update && apt-get install -y \
+    apache2-utils apache2-dev build-essential libpq-dev systemctl apache2 libapache2-mod-wsgi-py3 \
+    && apt-get clean \
+    && systemctl start apache2
+
+
+COPY . .
+COPY ./apache-config/httpd.conf /usr/local/apache2/conf/httpd.conf
+COPY ./apache-config/web-app.conf /usr/local/apache2/conf/extra/web-app.conf
+
+RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
+RUN service apache2 restart
+RUN a2enmod wsgi
+RUN a2enmod mpm_event
+
+EXPOSE 80
+
+CMD ["httpd-foreground"]

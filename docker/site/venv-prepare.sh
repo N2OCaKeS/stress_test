@@ -1,8 +1,8 @@
 #!/bin/bash
 docker_prepare(){
-    sudo usermod -aG docker u
-    sudo apt-get install docker.io docker-compose python3-venv apache2-utils pip postgresql postgresql-contrib libpq-dev- y
-    sudo service postgresql start
+    # usermod -aG docker u
+    # apt-get install python3 docker.io docker-compose python3-venv python3.11-venv apache2-utils pip postgresql postgresql-contrib libpq-dev -y
+    # sudo service postgresql start
     python3 -m venv .venv
     source .venv/bin/activate
     pip install --upgrade pip

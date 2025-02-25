@@ -1,7 +1,7 @@
 import os
 
 class Config(object):
-    APPNAME = 'web-app'
+    APPNAME = 'web_app'
     ROOT = os.path.abspath(APPNAME)
     WEB_UPLOAD = '/static/upload'
     SERVER_PATH = ROOT + WEB_UPLOAD

@@ -3,7 +3,6 @@ import core.variables as var
 import core.test_http as lc
 import time
 
-fcs.run_command("docker network create --subnet=172.21.0.0/16 load-network")
 
 try:
     if fcs.args.TEST_TYPE == "load":
@@ -23,8 +22,7 @@ try:
         time.sleep(60)
 
     if fcs.args.TEST_TYPE == "remove":
-        fcs.run_command("docker stop $(docker ps -q)")
-        fcs.run_command("docker container prune -f")
+        pass
 
 except Exception as e:
     print(f"Произошла ошибка {e}")
@@ -36,6 +34,7 @@ except KeyboardInterrupt:
 finally:
     fcs.run_command("docker stop $(docker ps -q)")
     fcs.run_command("docker container prune -f")
+    fcs.run_command("docker rmi $(docker images -q)")
     print("Контейнеры остановлены и удалены.")
 
 

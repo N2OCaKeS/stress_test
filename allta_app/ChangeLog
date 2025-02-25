@@ -1,3 +1,10 @@
+allta_app - v2.35.11
+* Fixed API annotations response in utf-8 not global, but in one function
+
+
+
+
+
 allta_app - v2.35.10
 * Fixed annotations API response in utf-8
 

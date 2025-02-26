@@ -20,7 +20,7 @@ def create():
     if request.method == 'POST':
         subject = request.form.get('subject')
 
-        post = Post(teacher=current_user.name, subject=subject)
+        post = Post(name=current_user.name, subject=subject, user_id=current_user.id)
 
         try:
             db.session.add(post)

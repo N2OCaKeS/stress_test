@@ -16,6 +16,13 @@ load_test(){
 }
 
 
+drop_db(){
+    sudo -u postgres psql
+    \c postgres
+    DROP DATABASE mydb;
+    \q
+}
+
 setup_db(){
     echo "postgres:1" | sudo chpasswd
     su - postgres -c 'psql'

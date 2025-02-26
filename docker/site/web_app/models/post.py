@@ -4,7 +4,10 @@ from ..extensions import db
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    teacher = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"))
+    name = db.Column(db.String(250))
     subject = db.Column(db.String(250))
     date = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-    teacher_user = db.relationship("User", backref="teacher_posts", foreign_keys=[teacher])
+    
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'))  # Добавляем внешний ключ для связи с таблицей User
+
+    user = db.relationship('User', backref='user_posts', foreign_keys=[user_id])  # Связь с пользователем

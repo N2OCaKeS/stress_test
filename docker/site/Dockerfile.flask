@@ -19,7 +19,7 @@ RUN mkdir -p /usr/local/apache2/htdocs
 RUN mkdir -p /usr/local/apache2/logs
 
 # Настройка ServerName
-RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
+RUN echo "ServerName 10.177.103.205" >> /etc/apache2/apache2.conf
 
 # Копирование конфигурации Apache
 COPY ./apache-config/web-app.conf /etc/apache2/sites-available/web-app.conf

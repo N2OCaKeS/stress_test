@@ -304,7 +304,7 @@ class SNGCheckWriteLogsTest():
                             user=self.user, 
                             password=self.password)
         
-        send_remote_command(command="dpkg -l syslog-ng | awk '{print $3}' | tail -n1 > /home/{self.user}/package_version.txt".format(self.user),
+        send_remote_command(command="dpkg -l syslog-ng | awk '{print $3}' | tail -n1 > /home/{user}/package_version.txt".format(user=self.user),
                             ip=self.data_vm[f'testvm1']['ip'], 
                             user=self.user, 
                             password=self.password)

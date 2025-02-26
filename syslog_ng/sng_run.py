@@ -29,7 +29,8 @@ from libs.libsng import (astra_version,
 from libs.zefir import UploaderZC
 from libs.libpublic import Public
 from sng_conf import SERVICE_COUNT, TIME_EXEC, TIME_EXEC_ST3_ST4, REPORT_PATH, IMAGE_WIDTH, IMAGE_HEIGHT, INFO_FILENAME, REPORT_FILENAME, VENV_PATH
-
+from conf import VMCOUNT
+from sng_tests import SNGBenchMarkTest, SNGCheckWriteLogsTest
 
 # TIME_START_SCRIPT = datetime.now()
 
@@ -125,6 +126,12 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     required=True,
                     help='test-cycle-version',
                     dest='TCV')
+
+parser.add_argument('-cwl', '--check-write-log',
+                    action='store',
+                    required=False,
+                    help='check-write-log',
+                    dest='CWL')
 args = parser.parse_args()
 
 def cmd(command):
@@ -152,6 +159,23 @@ if __name__ == '__main__':
     """
         TODO Здесь запускаем тесты
     """
+    if args.CWL:
+        vbox, kernel = args.NPAGE.split("_")[1], args.NPAGE.split("_")[3]
+        syslog_test = SNGCheckWriteLogsTest(
+            vmcount=VMCOUNT,
+            vbox=vbox,
+            kernel=kernel
+        )
+    else:
+        syslog_test = SNGBenchMarkTest(
+            log_level=args.LOG_LEVEL,
+            stand=args.STAND,
+            tcv=args.TCV,
+            tcyc=args.TCYC,
+        )
+
+    syslog_test.prepare()
+    syslog_test.run_test()
 
     uzs.public = True
     uzs.statistics = True

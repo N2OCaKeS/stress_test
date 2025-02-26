@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
 from sng_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH
+from conf import VMCOUNT, VM_KERNEL, VM_INFONAME
 
 
 class Public:
@@ -106,39 +107,75 @@ class Public:
             confluence_report.attache_files(f'{REPORT_PATH}/{file}',
                                             self.c_space,
                                             c_np)
+        if self.testname == 'syslog-ng':
+            #генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        package_name='syslog-ng',
+                                                        package_vers=info_lst[2],
+                                                        param_time_exec=TIME_EXEC,
+                                                        param_service_count=SERVICE_COUNT,
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'],
+                                                        lead_time=info_lst[3])       
+
+            with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
+                rating_temp = template.read()
+                rating = rating_temp.format(r=TOTAL_RATING)   
+
+            with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
+                images_lst = []
+                img_temp = template.read()
+                for file in os.listdir(REPORT_PATH):
+                    if file.endswith('png'):
+                        images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np), 
+                                                        img_png=file,
+                                                        description=GRAPH_DESCRIPTIONS[file]))
+                images = '\n'.join(images_lst)
+
+            html_page = '\n'.join([header_table, rating, images])
+
+        elif self.testname == 'syslog-ng cwl':
+            """
+                TODO INFO_FILENAME ЗДЕСЬ ПОКА ПОД ВОПРОСОМ !!!!
+            """
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+
+            with open(f'{VM_INFONAME}') as info:
+                vm_info = info.read()
+
+            with open(f'{VM_KERNEL}') as info:
+                vm_kernel = info.read()
+
+            with open(f'package_version.txt') as info:
+                package_version = info.read()
+
+            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        vm_av=vm_info,
+                                                        vm_kernel=vm_kernel,
+                                                        vm_count=VMCOUNT,
+                                                        package_name='syslog-ng',
+                                                        package_vers=package_version,
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'],
+                                                        lead_time=info_lst[3]
+                                                        )
+            itog_status = ...
+            html_page = '\n'.join([header_table, itog_status])
             
-        #генерация вступительной таблицы
-        with open(INFO_FILENAME) as info:
-            info_lst = info.read().split('\n')
-        with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
-            header_table_temp = file.read()
-            header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],
-                                                    package_name='syslog-ng',
-                                                    package_vers=info_lst[2],
-                                                    param_time_exec=TIME_EXEC,
-                                                    param_service_count=SERVICE_COUNT,
-                                                    arm_num=self.stands[self.grade_stand]['grade'],
-                                                    arm_proc=self.stands[self.grade_stand]['cpu'],
-                                                    arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'],
-                                                    lead_time=info_lst[3])       
 
-        with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
-            rating_temp = template.read()
-            rating = rating_temp.format(r=TOTAL_RATING)   
-
-        with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
-            images_lst = []
-            img_temp = template.read()
-            for file in os.listdir(REPORT_PATH):
-                if file.endswith('png'):
-                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np), 
-                                                    img_png=file,
-                                                    description=GRAPH_DESCRIPTIONS[file]))
-            images = '\n'.join(images_lst)
-
-        html_page = '\n'.join([header_table, rating, images]) 
 
         #выкладываем информацию на страницу
         if release_pp and release_np:

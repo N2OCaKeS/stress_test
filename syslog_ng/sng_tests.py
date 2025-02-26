@@ -24,7 +24,7 @@ from libs.libsng import (astra_version,
 
 from libs.libs import send_remote_command, get_remote_file, create_remote_file
 from manage_vm import ManageVM
-from conf import vCPU, RAM
+from conf import vCPU, RAM, VM_INFONAME, VM_KERNEL, STATUS_FILENAME
 
 class SNGBenchMarkTest():
     def __init__(self, log_level, stand, tcv, tcyc) -> None:
@@ -38,7 +38,7 @@ class SNGBenchMarkTest():
         if os.path.exists(REPORT_PATH) is False:
             mkdir(REPORT_PATH)
     
-    def prepare_settings(self):
+    def prepare(self):
         '''
             Установка необходимого уровня логирования
         '''
@@ -243,6 +243,7 @@ class SNGCheckWriteLogsTest():
         self.vbox = vbox
         self.kernel = kernel
         self.status = ""
+        self.time_start_script = datetime.now()
 
     def task_test(self, thr_index):
         create_remote_file(local_file_path="conf.py", 
@@ -275,22 +276,68 @@ class SNGCheckWriteLogsTest():
                         password=self.data_vm[f"testvm{thr_index}"]['password'])
 
     def final_result(self, statuses):
-        for status in statuses:
+        status_error = []
+        status_fail = []
+        for vmname, status in statuses.items():
             if status != self.STATUS_PASSED:
-                return status
-        return self.STATUS_PASSED
+                if status == self.STATUS_ERROR:
+                    status_error.append(vmname, status)
+                elif "FAILED" in status:
+                    status_fail.append(vmname, status)
+        if len(status_error) > 0:
+            return f'{self.STATUS_ERROR} on {len(status_error)} VM'
+        elif len(status_fail) > 0:
+            return f'TEST FAILED on {len(status_fail)} VM'
+        elif len(status_error) > 0 and len(status_fail) > 0:
+            return f'{self.STATUS_ERROR} on {len(status_error)} VM and TEST FAILED on {len(status_fail)} VM'
+        else:
+            return self.STATUS_PASSED
+    
+    def get_info_from_vms(self):
+        send_remote_command(command=f'cat /etc/astra/build_version > /home/{self.user}/av.txt',
+                            ip=self.data_vm[f'testvm1']['ip'], 
+                            user=self.user, 
+                            password=self.password)
+        
+        send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
+                            ip=self.data_vm[f'testvm1']['ip'], 
+                            user=self.user, 
+                            password=self.password)
+        
+        send_remote_command(command="dpkg -l syslog-ng | awk '{print $3}' | tail -n1 > /home/{self.user}/package_version.txt".format(self.user),
+                            ip=self.data_vm[f'testvm1']['ip'], 
+                            user=self.user, 
+                            password=self.password)
+
+        get_remote_file(remote_file_path=f'/home/{self.user}/av.txt',
+                        local_file_path=f'{VM_INFONAME}',
+                        ip=self.data_vm[f'testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password) 
+        
+        get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
+                        local_file_path=f'{VM_KERNEL}',
+                        ip=self.data_vm[f'testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password)
+
+        get_remote_file(remote_file_path=f'/home/{self.user}/package_version.txt',
+                        local_file_path=f'{VM_KERNEL}',
+                        ip=self.data_vm[f'testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password)  
 
     def prepare(self):
-        vm  = ManageVM(rc_vbox=self.vbox, #args.VBOX,
-               #testdir=...,
-               vm_count=self.vmcount,
-               kernel=self.kernel,
-               vcpu=vCPU,
-               ram=RAM)
+        self.vm  = ManageVM(rc_vbox=self.vbox,
+                            vm_count=self.vmcount,
+                            kernel=self.kernel,
+                            vcpu=vCPU,
+                            ram=RAM)
 
-        vm.prepare_and_start_vm()
-        self.data_vm = vm.vm_dates
+        self.vm.prepare_and_start_vm()
+        self.data_vm = self.vm.vm_dates
         print(self.data_vm)
+        self.get_info_from_vms()
 
     def run_test(self):
         start_time = datetime.now()
@@ -310,19 +357,27 @@ class SNGCheckWriteLogsTest():
             print(err)
             
         if self.status != self.STATUS_ERROR:
-            statuses = []
+            statuses_dct = {}
             for index in range(1, len(threads) + 1):
                 with open(f"status{index}.txt", 'r') as status_file:
                     status = status_file.readline()
-                    statuses.append(status)
-                    # print(f"STATUS: {status}")
+                    statuses_dct[f'testvm{index}'] = status
+            self.status = self.final_result(statuses=statuses_dct)
+            
         else:
             self.status = self.STATUS_ERROR
-        print(f"STATUSES = {statuses}")
-        print(self.status)
+        
+        with open(STATUS_FILENAME, "w") as itog_status_file:
+            itog_status_file.write(self.status)
+        
+        # 4 +++
+        self.vm.destroy_vm()
+
         end_time = datetime.now()
         print(end_time)
-        itog_status = self.final_result(statuses=statuses)
-        print(f"ITOG_STATUS = {itog_status}")
-        # 4 +++
-        # vm.destroy_vm()
+        '''
+            Запись информации о тестовом стенде
+        '''
+        info_file = open(INFO_FILENAME, 'w')
+        info_file.close()
+        put_system_info_in_file(self.time_start_script, INFO_FILENAME)

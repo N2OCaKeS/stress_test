@@ -1,9 +1,16 @@
 import os
 import concurrent.futures
+import time
+from subprocess import run
 
-MAX = 16384
+
+MAX = 4096
 PROG = "/usr/bin/ssh"
 WORKERS = 10
+
+
+def cmd(command: str):
+        return run(command, shell=True)
 
 
 def create_hard_link(x):
@@ -31,6 +38,7 @@ def remove_hard_link(x):
         print(f"Failed to remove link {x}: {e}")
 
 
+start_time = time.time()
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
     executor.map(create_hard_link, range(1, MAX + 1))
@@ -40,4 +48,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
     executor.map(remove_hard_link, range(1, MAX + 1))
+
+end_time = time.time()
+print(f"Время выполнения: {end_time - start_time} сек")
+
+
+
+cmd('sudo dmesg -HTx | grep DIGSIG | grep ssh | wc -l')
 

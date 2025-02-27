@@ -273,7 +273,7 @@ class SNGCheckWriteLogsTest():
                             password=self.data_vm[f"testvm{thr_index}"]['password'])
         # 3 |||
         get_remote_file(remote_file_path=f"/home/{self.data_vm[f"testvm{thr_index}"]['login']}/status.txt",
-                        local_file_path=f"status{thr_index}.txt",
+                        local_file_path=f"{REPORT_PATH}/status{thr_index}.txt",
                         ip=self.data_vm[f"testvm{thr_index}"]['ip'],
                         user=self.data_vm[f"testvm{thr_index}"]['login'],
                         password=self.data_vm[f"testvm{thr_index}"]['password'])
@@ -313,19 +313,19 @@ class SNGCheckWriteLogsTest():
                             password=self.data_vm[f"testvm1"]['password'])
 
         get_remote_file(remote_file_path=f'/home/{self.data_vm[f"testvm1"]['login']}/av.txt',
-                        local_file_path=f'{VM_INFONAME}',
+                        local_file_path=f'{REPORT_PATH}/{VM_INFONAME}',
                         ip=self.data_vm[f'testvm1']['ip'], 
                         user=self.data_vm[f"testvm1"]['login'], 
                         password=self.data_vm[f"testvm1"]['password']) 
         
         get_remote_file(remote_file_path=f'/home/{self.data_vm[f"testvm1"]['login']}/kernel.txt',
-                        local_file_path=f'{VM_KERNEL}',
+                        local_file_path=f'{REPORT_PATH}/{VM_KERNEL}',
                         ip=self.data_vm[f'testvm1']['ip'], 
                         user=self.data_vm[f"testvm1"]['login'], 
                         password=self.data_vm[f"testvm1"]['password'])
 
         get_remote_file(remote_file_path=f'/home/{self.data_vm[f"testvm1"]['login']}/package_version.txt',
-                        local_file_path=f'{VM_PACKAGE_VERS}',
+                        local_file_path=f'{REPORT_PATH}/{VM_PACKAGE_VERS}',
                         ip=self.data_vm[f'testvm1']['ip'], 
                         user=self.data_vm[f"testvm1"]['login'], 
                         password=self.data_vm[f"testvm1"]['password'])  
@@ -362,7 +362,7 @@ class SNGCheckWriteLogsTest():
         if self.status != self.STATUS_ERROR:
             statuses_dct = {}
             for index in range(1, len(threads) + 1):
-                with open(f"status{index}.txt", 'r') as status_file:
+                with open(f"{REPORT_PATH}/status{index}.txt", 'r') as status_file:
                     status = status_file.readline()
                     statuses_dct[f'testvm{index}'] = status
             self.status = self.final_result(statuses=statuses_dct)
@@ -370,7 +370,7 @@ class SNGCheckWriteLogsTest():
         else:
             self.status = self.STATUS_ERROR
         
-        with open(STATUS_FILENAME, "w") as itog_status_file:
+        with open(f"{REPORT_PATH}/{STATUS_FILENAME}", "w") as itog_status_file:
             itog_status_file.write(self.status)
         
         # 4 +++

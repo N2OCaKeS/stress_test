@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
 from sng_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH
-from conf import VMCOUNT, VM_KERNEL, VM_INFONAME
+from conf import VMCOUNT, VM_KERNEL, VM_INFONAME, VM_PACKAGE_VERS
 
 
 class Public:
@@ -148,13 +148,13 @@ class Public:
             with open(INFO_FILENAME) as info:
                 info_lst = info.read().split('\n')
 
-            with open(f'{VM_INFONAME}') as info:
+            with open(f'{REPORT_PATH}/{VM_INFONAME}') as info:
                 vm_info = info.read()
 
-            with open(f'{VM_KERNEL}') as info:
+            with open(f'{REPORT_PATH}/{VM_KERNEL}') as info:
                 vm_kernel = info.read()
 
-            with open(f'package_version.txt') as info:
+            with open(f'{REPORT_PATH}/{VM_PACKAGE_VERS}') as info:
                 package_version = info.read()
 
             with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:

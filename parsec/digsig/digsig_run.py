@@ -1,7 +1,7 @@
 import requests
 import json
 
-from zpslib import system
+from digsiglib import system
 
 
   

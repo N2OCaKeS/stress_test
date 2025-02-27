@@ -74,17 +74,28 @@ end
 
 def mod_exec_file(machine)
   machine.vm.provision "shell", inline:<<-SHELL
-    /usr/bin/ssh --help
+    prog=/usr/bin/perl
+    sleep 1
+    $prog --help
 
-    cp /usr/bin/ssh /usr/bin/ssh.bak
+    cp $prog $prog.bak
+    sleep 1
     echo "Смотрим последний байт файла..."
-    tail -c 1 /usr/bin/ssh | hexdump -v -e '/1 "%02x"'
-    dd if=<(echo -n $(printf '\\x%02x' $((0x$(tail -c 1 /usr/bin/ssh | hexdump -v -e '/1 "%02x"') |\
-    1)))) of=/usr/bin/ssh bs=1 seek=$(($(stat -c %s /usr/bin/ssh) - 1)) count=1 conv=notrunc
+    tail -c 1 $prog | hexdump -v -e '/1 "%02x"'
+    sleep 1
+    dd if=<(echo -n $(printf '\\x%02x' $((0x$(tail -c 1 $prog | hexdump -v -e '/1 "%02x"') |\
+    1)))) of=$prog bs=1 seek=$(($(stat -c %s $prog) - 1)) count=1 conv=notrunc
 
-    /usr/bin/ssh --help
-    dmesg -HTx | grep DIGSIG | grep ssh
-    dmesg -HTx | grep DIGSIG | grep ssh | wc -l
+    $prog --help
+    dmesg -HTx | grep DIGSIG | grep perl
+    dmesg -HTx | grep DIGSIG | grep perl | wc -l
+    exit 0
+  SHELL
+end
+
+def check_prog(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    dpkg -s perl &> /dev/null || sudo apt-get install perl -y
     exit 0
   SHELL
 end
@@ -93,13 +104,11 @@ end
 Vagrant.configure("2") do |config|
   config.vm.box = ENV['UPDATE']
   config.vm.box_url = ENV['BOX_URL']
-  #config.vm.guest = :debian
-  #config.vm.synced_folder "/home", "/home"
   
   ENV['RC'].nil? || ENV['RC'].start_with?('1.7') ? vms = [
-    { :name => "zps1", :hostname => "zps1.zps.rbt", :args => "zps1", :cpus => "2", :memory => "4096", :ip => "10.177.103.211" }
+    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "2", :memory => "4096", :ip => "10.177.103.211" }
   ] : vms = [
-    { :name => "zps1", :hostname => "zps1.zps.rbt", :args => "zps1", :cpus => "3", :memory => "4096", :ip => "10.177.103.211" }
+    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "3", :memory => "4096", :ip => "10.177.103.211" }
   ]
 
   vms.each do |vm|
@@ -118,17 +127,18 @@ Vagrant.configure("2") do |config|
         repo_configure(machine, ENV['RC'])
         upgrade(machine)
         set_kernel(machine, ENV['KL'])
+        check_prog(machine)
         set_digsig(machine)
         
-        machine.vm.provision "file", source: "zps_load.py", destination: "/home/vagrant/zps_load.py"
+        machine.vm.provision "file", source: "digsig_cache_load.py", destination: "/home/vagrant/digsig_cache_load.py"
         machine.vm.provision "shell", inline:<<-SHELL
-            sudo python3 zps_load.py  
+            sudo python3 digsig_cache_load.py  
             exit 0
         SHELL
         
         mod_exec_file(machine)
         machine.vm.provision "shell", inline:<<-SHELL
-            sudo python3 zps_load.py  
+            sudo python3 digsig_cache_load.py  
             exit 0
         SHELL
 

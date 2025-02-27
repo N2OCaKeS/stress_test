@@ -54,11 +54,14 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
     executor.map(remove_hard_link, range(1, MAX + 1))
 
 end_time = time.time()
-print(f"Время выполнения: {round(end_time - start_time, 1)} сек")
+total_time = round(end_time - start_time, 1)
+digsig_count = check_output_command('sudo dmesg -HTx | grep DIGSIG | grep digsig_x | wc -l')
 
-
-
-print(check_output_command('sudo dmesg -HTx | grep DIGSIG | grep digsig_x | wc -l'))
-
+print(f"Время выполнения: {total_time} сек")
+print(digsig_count)
 print(check_output_command('mv /usr/bin/perl.bak /usr/bin/perl'))
+
+with open('/vagrant/results.txt', 'a') as w:
+    w.write(str(total_time))
+    w.write(str(digsig_count))
 

@@ -1,8 +1,7 @@
 import requests
 import json
 
-from digsiglib import system
-
+from digsiglib import system, get_remote_file
 
   
 
@@ -56,5 +55,12 @@ command = system()
 command.cmd('sudo bash vbox_prepare.sh')
 command.cmd(f'vagrant box add {box_name} {box_url} --force')
 command.cmd(f'UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant up --provider=virtualbox')
+
+get_remote_file(remote_file_path='/vagrant/results.txt',
+                local_file_path='results.txt',
+                ip='10.177.103.211', 
+                user='u', 
+                password='1') 
+                            
 
 

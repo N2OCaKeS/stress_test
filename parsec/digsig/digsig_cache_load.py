@@ -62,6 +62,6 @@ print(digsig_count)
 print(check_output_command('mv /usr/bin/perl.bak /usr/bin/perl'))
 
 with open('/vagrant/results.txt', 'a') as w:
-    w.write(str(total_time))
-    w.write(str(digsig_count))
+    w.write(f'{total_time}\n')
+    w.write(f'{digsig_count}\n')
 

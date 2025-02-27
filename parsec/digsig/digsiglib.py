@@ -14,6 +14,7 @@ def trycorator(function):
     return wrapper
 
 
+
 class system:
     """
     Класс для обращения к системе

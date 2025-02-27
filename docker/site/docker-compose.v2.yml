@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile.postgres
     container_name: postgres
     volumes:
-      - ./pg/web-data:/var/lib/postgresql/data
+      - ./pg-data:/var/lib/postgresql/data
     env_file:
       - .env
     environment:
@@ -44,6 +44,22 @@ services:
     networks:
       - httpnet
     command: ["apache2ctl", "-D", "FOREGROUND"]
+
+  locust:
+    build:
+      context: .
+      dockerfile: Dockerfile.locust
+    container_name: locust
+    volumes:
+      - .:/app
+    ports:
+      - "8089:8089"
+    environment:
+      - LOCUST_FILE=locustfile.py
+    depends_on:
+      - flask
+    networks:
+      - httpnet
 
 networks:
   httpnet:

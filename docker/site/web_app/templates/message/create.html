@@ -1,0 +1,30 @@
+{% extends 'main/base.html' %}
+
+{% block title %}Создание сообщения{% endblock %}
+
+{% block content %}
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+    <ul class="alert alert-success">
+        {% for message in messages %}
+            <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+{% endif %}
+{% endwith %}
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form method="post" class="form-control d-flex flex-column gap-2">
+<textarea name="content" placeholder="Введите текст сообщения" class="form-control" rows="5"></textarea>
+<input value="Отправить сообщение" type="submit" class="btn btn-primary">
+</form>
+
+{% if error %}
+    <div class="alert alert-danger mt-3">{{ error }}</div>
+{% endif %}
+{% endblock %}
+
+<script src="{{ url_for('static', filename='js/message.js') }}"></script>

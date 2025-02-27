@@ -8,10 +8,9 @@ from ..models.user import User
 post = Blueprint("post", __name__)
 
 @post.route('/', methods=['POST', 'GET'])
-@login_required
 def all():
     posts = Post.query.order_by(Post.date.desc()).all()
-    return render_template('post/all.html', posts=posts)
+    return render_template('post/all.html', posts=posts), 200
 
 
 @post.route("/post/create", methods=['POST', 'GET'])

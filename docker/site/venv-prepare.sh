@@ -21,6 +21,10 @@ drop_db(){
     \c postgres
     DROP DATABASE mydb;
     \q
+    # обновление migrations:
+    # sudo rm -rf migrations/
+    # psql -U u -h 127.0.0.1 -d mydb
+    # delete from alembic_version;
 }
 
 setup_db(){

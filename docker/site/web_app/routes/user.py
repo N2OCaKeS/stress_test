@@ -28,7 +28,8 @@ def register():
         except Exception as e:
             print(e)
             flash("При регистрации произошла ошибка!", "danger")
-    return render_template('user/register.html', form=form)
+            return render_template('user/register.html', form=form), 401
+    return render_template('user/register.html', form=form), 200
 
 
 @user.route("/user/login", methods=['POST', 'GET'])
@@ -43,7 +44,8 @@ def login():
             return redirect(next_page) if next_page else redirect(url_for('post.all'))
         else:
             flash(f"Ошибка входа!", "danger")
-    return render_template('user/login.html', form=form)
+            return render_template('user/login.html', form=form), 401            
+    return render_template('user/login.html', form=form), 200
 
 
 @user.route("/user/logout", methods=['POST', 'GET'])

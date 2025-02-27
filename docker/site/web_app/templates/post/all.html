@@ -19,7 +19,7 @@
         <tbody>
             {% for post in posts %}
             <tr>
-                <td>{{ post.author.name }}</td>
+                <td>{{ post.user.name }}</td>
                 <td>{{ post.subject }}</td>
                 <td>
                     <a href="{{ url_for('post.update', id=post.id) }}" class="btn btn-sm btn-secondary">Ред.</a>

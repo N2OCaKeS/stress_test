@@ -8,32 +8,26 @@ RUN apt-get update && apt-get install -y \
     libapache2-mod-wsgi-py3 \
     && apt-get clean
 
-# Установка зависимостей
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
 COPY . /app
 
-# Создание необходимых директорий
 RUN mkdir -p /usr/local/apache2/htdocs
 RUN mkdir -p /usr/local/apache2/logs
 
-# Настройка ServerName
-RUN echo "ServerName 10.177.103.205" >> /etc/apache2/apache2.conf
+RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
-# Копирование конфигурации Apache
 COPY ./apache-config/web-app.conf /etc/apache2/sites-available/web-app.conf
 RUN a2ensite web-app.conf
 
-# Включение модулей Apache
 RUN a2enmod wsgi
 
-# Настройка прав доступа
 RUN chown -R www-data:www-data /app/web_app
 RUN chmod -R 755 /app/web_app
 
-# Открытие порта 80
+RUN chmod +x migrate.sh
+
 EXPOSE 80
 
-# Запуск Apache
-CMD ["apache2ctl", "-D", "FOREGROUND"]
+CMD ["bash", "migrate.sh"]

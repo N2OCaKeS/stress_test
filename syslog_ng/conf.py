@@ -7,3 +7,4 @@ RAM = 2048
 VM_INFONAME = 'av.info'
 VM_KERNEL = 'kernel.info'
 STATUS_FILENAME = 'itog_status.txt'
+VM_PACKAGE_VERS = "package_version.info"

@@ -24,7 +24,7 @@ from libs.libsng import (astra_version,
 
 from libs.libs import send_remote_command, get_remote_file, create_remote_file
 from manage_vm import ManageVM
-from conf import vCPU, RAM, VM_INFONAME, VM_KERNEL, STATUS_FILENAME
+from conf import vCPU, RAM, VM_INFONAME, VM_KERNEL, STATUS_FILENAME, VM_PACKAGE_VERS
 
 class SNGBenchMarkTest():
     def __init__(self, log_level, stand, tcv, tcyc) -> None:
@@ -244,6 +244,9 @@ class SNGCheckWriteLogsTest():
         self.kernel = kernel
         self.status = ""
         self.time_start_script = datetime.now()
+        # Если отстуствует директория для отчета, необходимо создать
+        if os.path.exists(REPORT_PATH) is False:
+            mkdir(REPORT_PATH)
 
     def task_test(self, thr_index):
         create_remote_file(local_file_path="conf.py", 
@@ -322,7 +325,7 @@ class SNGCheckWriteLogsTest():
                         password=self.data_vm[f"testvm1"]['password'])
 
         get_remote_file(remote_file_path=f'/home/{self.data_vm[f"testvm1"]['login']}/package_version.txt',
-                        local_file_path=f'{VM_KERNEL}',
+                        local_file_path=f'{VM_PACKAGE_VERS}',
                         ip=self.data_vm[f'testvm1']['ip'], 
                         user=self.data_vm[f"testvm1"]['login'], 
                         password=self.data_vm[f"testvm1"]['password'])  

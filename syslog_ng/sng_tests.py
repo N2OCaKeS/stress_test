@@ -294,38 +294,38 @@ class SNGCheckWriteLogsTest():
             return self.STATUS_PASSED
     
     def get_info_from_vms(self):
-        send_remote_command(command=f'cat /etc/astra/build_version > /home/{self.user}/av.txt',
+        send_remote_command(command=f'cat /etc/astra/build_version > /home/{self.data_vm[f"testvm1"]['login']}/av.txt',
                             ip=self.data_vm[f'testvm1']['ip'], 
-                            user=self.user, 
-                            password=self.password)
+                            user=self.data_vm[f"testvm1"]['login'], 
+                            password=self.data_vm[f"testvm1"]['password'])
         
-        send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
+        send_remote_command(command=f'uname -r > /home/{self.data_vm[f"testvm1"]['login']}/kernel.txt',
                             ip=self.data_vm[f'testvm1']['ip'], 
-                            user=self.user, 
-                            password=self.password)
+                            user=self.data_vm[f"testvm1"]['login'], 
+                            password=self.data_vm[f"testvm1"]['password'])
         
-        send_remote_command(command="dpkg -l syslog-ng | awk '{print $3}' | tail -n1 > /home/{user}/package_version.txt".format(user=self.user),
+        send_remote_command(command="dpkg -l syslog-ng | awk '{print $3}' | tail -n1 > /home/{user}/package_version.txt".format(user=self.data_vm[f"testvm1"]['login']),
                             ip=self.data_vm[f'testvm1']['ip'], 
-                            user=self.user, 
-                            password=self.password)
+                            user=self.data_vm[f"testvm1"]['login'], 
+                            password=self.data_vm[f"testvm1"]['password'])
 
-        get_remote_file(remote_file_path=f'/home/{self.user}/av.txt',
+        get_remote_file(remote_file_path=f'/home/{self.data_vm[f"testvm1"]['login']}/av.txt',
                         local_file_path=f'{VM_INFONAME}',
                         ip=self.data_vm[f'testvm1']['ip'], 
-                        user=self.user, 
-                        password=self.password) 
+                        user=self.data_vm[f"testvm1"]['login'], 
+                        password=self.data_vm[f"testvm1"]['password']) 
         
-        get_remote_file(remote_file_path=f'/home/{self.user}/kernel.txt',
+        get_remote_file(remote_file_path=f'/home/{self.data_vm[f"testvm1"]['login']}/kernel.txt',
                         local_file_path=f'{VM_KERNEL}',
                         ip=self.data_vm[f'testvm1']['ip'], 
-                        user=self.user, 
-                        password=self.password)
+                        user=self.data_vm[f"testvm1"]['login'], 
+                        password=self.data_vm[f"testvm1"]['password'])
 
-        get_remote_file(remote_file_path=f'/home/{self.user}/package_version.txt',
+        get_remote_file(remote_file_path=f'/home/{self.data_vm[f"testvm1"]['login']}/package_version.txt',
                         local_file_path=f'{VM_KERNEL}',
                         ip=self.data_vm[f'testvm1']['ip'], 
-                        user=self.user, 
-                        password=self.password)  
+                        user=self.data_vm[f"testvm1"]['login'], 
+                        password=self.data_vm[f"testvm1"]['password'])  
 
     def prepare(self):
         self.vm  = ManageVM(rc_vbox=self.vbox,

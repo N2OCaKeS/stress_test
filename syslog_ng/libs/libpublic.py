@@ -158,7 +158,7 @@ class Public:
             with open(f'{REPORT_PATH}/{VM_PACKAGE_VERS}') as info:
                 package_version = info.read()
 
-            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+            with open(f'{TEMPLATE_PATH}/header_table_template_cwl.html', 'r') as file:
                 header_table_temp = file.read()
                 header_table = header_table_temp.format(av=info_lst[0],
                                                         kernel=info_lst[1],

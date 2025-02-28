@@ -24,7 +24,7 @@ from libs.libsng import (astra_version,
 
 from libs.libs import send_remote_command, get_remote_file, create_remote_file
 from manage_vm import ManageVM
-from conf import vCPU, RAM, VM_INFONAME, VM_KERNEL, STATUS_FILENAME, VM_PACKAGE_VERS
+from conf import vCPU, RAM, VM_INFONAME, VM_KERNEL, STATUS_FILENAME, VM_PACKAGE_VERS, TABLE_STATUSES
 
 class SNGBenchMarkTest():
     def __init__(self, log_level, stand, tcv, tcyc) -> None:
@@ -365,6 +365,8 @@ class SNGCheckWriteLogsTest():
                 with open(f"{REPORT_PATH}/status{index}.txt", 'r') as status_file:
                     status = status_file.readline()
                     statuses_dct[f'testvm{index}'] = status
+                    status_table = pd.DataFrame(list(statuses_dct.items()), columns=["VM name", "Test status"])
+                    status_table.to_html(TABLE_STATUSES, escape=False, index=False)
             self.status = self.final_result(statuses=statuses_dct)
             
         else:

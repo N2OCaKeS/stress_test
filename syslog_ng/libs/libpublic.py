@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
 from sng_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH
-from conf import VMCOUNT, VM_KERNEL, VM_INFONAME, VM_PACKAGE_VERS
+from conf import VMCOUNT, VM_KERNEL, VM_INFONAME, VM_PACKAGE_VERS, STATUS_FILENAME, TABLE_STATUSES
 
 
 class Public:
@@ -172,9 +172,17 @@ class Public:
                                                         arm_st=self.stands[self.grade_stand]['storage'],
                                                         lead_time=info_lst[3]
                                                         )
-            itog_status = ...
-            html_page = '\n'.join([header_table, itog_status])
             
+            with open(f'{REPORT_PATH}/{STATUS_FILENAME}') as status_file:
+                itog_status = status_file.read()
+            
+            if os.path.isfile(f'{TEMPLATE_PATH}/{TABLE_STATUSES}'):
+                with open(f'{TEMPLATE_PATH}/{TABLE_STATUSES}', 'r') as table_statuses_html:
+                    table_statuses = table_statuses_html.read()
+            else:
+                table_statuses = ""
+            
+            html_page = '\n'.join([header_table, table_statuses, itog_status])
 
 
         #выкладываем информацию на страницу

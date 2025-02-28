@@ -3,7 +3,7 @@
         "stand3": {
             "EXFAT": "3:53:37",
             "EXT2": "0:42:36",
-            "EXT3": "0:49:25",
+            "EXT3": "1:04:19",
             "EXT4": "0:49:48",
             "FAT": "2:12:13",
             "NTFS": "10:24:33",
@@ -22,19 +22,20 @@
             "Total time": "0:00:00"
         },
         "stand4": {
-            "FIO": "5:41:20",
+            "FIO": "1:23:06",
             "FreeIPA auth": "1:48:41",
-            "OCFS2": "2:50:30",
+            "OCFS2": "2:47:06",
             "postgresql": "4:01:26",
             "postgresql-aud-off": "3:01:26",
             "postgresql-sm": "0:38:27",
             "psql kernels": "2:55:25",
             "psql parsec": "2:52:18",
             "psql vanilla": "2:50:23",
-            "steal time": "3:13:11",
-            "steal time-sm": "2:49:43",
-            "vPingPong": "2:12:18",
-            "vUnixBench": "2:58:27",
+            "steal time": "2:47:19",
+            "steal time-sm": "2:50:11",
+            "vPingPong": "0:37:34",
+            "vUnixBench": "2:58:03",
+            "psql oom": "0:54:11",
             "Total time": "0:00:00"
         }
     },
@@ -74,8 +75,8 @@
             "steal time-sm": "1:09:25",
             "vPingPong": "1:10:25",
             "vUnixBench": "3:32:39",
-            "Total time": "0:00:00",
-            "psql oom": "1:19:54"
+            "psql oom": "1:19:54",
+            "Total time": "0:00:00"
         }
     }
 }

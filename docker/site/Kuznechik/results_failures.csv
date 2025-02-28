@@ -1,7 +1,0 @@
-Method,Name,Error,Occurrences
-GET,/,"ConnectionRefusedError(111, 'Connection refused')",702
-GET,/message/create,"ConnectionRefusedError(111, 'Connection refused')",702
-POST,/message/create,"ConnectionRefusedError(111, 'Connection refused')",1391
-GET,/post/all,"ConnectionRefusedError(111, 'Connection refused')",702
-POST,/user/register,"ConnectionRefusedError(111, 'Connection refused')",237
-POST,/user/login,"ConnectionRefusedError(111, 'Connection refused')",227

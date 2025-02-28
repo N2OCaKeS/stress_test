@@ -25,7 +25,7 @@ on_local_docker(){
     sed -i 's/^ServerName 10.177.103.205$/ServerName localhost/' ./apache-config/web-app.conf
     sed -i 's/^ServerName 10.177.103.205$/ServerRoot localhost/' ./apache-config/httpd.conf
     sed -i 's/^POSTGRES_HOST=127.0.0.1$/POSTGRES_HOST=postgres/' .env
-    docker-compose -f docker-compose.v2.yml up --build 
+    docker-compose -f docker-compose.v2.yml up --build --scale worker=4
 }
 
 

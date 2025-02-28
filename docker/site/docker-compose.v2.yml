@@ -6,8 +6,6 @@ services:
       context: .
       dockerfile: Dockerfile.postgres
     container_name: postgres
-    volumes:
-      - ./pg-data:/var/lib/postgresql/data
     env_file:
       - .env
     environment:
@@ -33,7 +31,7 @@ services:
     ports:
       - "80:80"
     environment:
-      - FLASK_APP=web_app:app
+      - FLASK_APP=web_app:create_app
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOST=${POSTGRES_HOST}
@@ -45,21 +43,32 @@ services:
       - httpnet
     command: ["apache2ctl", "-D", "FOREGROUND"]
 
-  locust:
-    build:
-      context: .
-      dockerfile: Dockerfile.locust
-    container_name: locust
+  master:
+    image: locustio/locust
+    user: root
     volumes:
       - .:/app
     ports:
       - "8089:8089"
-    environment:
-      - LOCUST_FILE=locustfile.py
     depends_on:
       - flask
     networks:
       - httpnet
+    command: >
+      -f /app/Kuznechik/for_docker/locustfile.py
+      --master
+      --config /app/Kuznechik/for_docker/.locust.conf
+
+  worker:
+    image: locustio/locust
+    user: root
+    depends_on:
+      - master
+    volumes:
+      - .:/app
+    networks:
+      - httpnet
+    command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master --config /app/Kuznechik/for_docker/.locust.conf
 
 networks:
   httpnet:

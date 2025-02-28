@@ -29,5 +29,3 @@ RUN chmod -R 755 /app/web_app
 RUN chmod +x migrate.sh
 
 EXPOSE 80
-
-CMD ["bash", "migrate.sh"]

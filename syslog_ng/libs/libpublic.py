@@ -33,6 +33,8 @@ class Public:
         self.fs=file_system
         self.ts=test_set
         self.tcv = test_cycle_version
+        self.testname = self.c_np.split("_")[0]
+        
 
         self.stands = {
             '1':{'grade':'low(141)',
@@ -56,15 +58,6 @@ class Public:
     def preset_publish(self, c_pp, c_np, release_pp=False, release_np=False):
 
         confluence_report = ReportToConfluence(username=self.username, password=None, token=self.token)
-
-        with open('{}/{}'.format(REPORT_PATH, 'sng_report.txt')) as report_txt:
-            for line in report_txt:
-                if "Load_time_execution" in line:
-                    TIME_EXEC = line.split(" ")[1]
-                if "Service_count" in line:
-                    SERVICE_COUNT = line.split(" ")[1]
-                if "Total_rating" in line:
-                    TOTAL_RATING = line.split(" ")[1]
 
         #создать страницу confluence
         def name_page(arg):
@@ -108,6 +101,14 @@ class Public:
                                             self.c_space,
                                             c_np)
         if self.testname == 'syslog-ng':
+            with open('{}/{}'.format(REPORT_PATH, 'sng_report.txt')) as report_txt:
+                for line in report_txt:
+                    if "Load_time_execution" in line:
+                        TIME_EXEC = line.split(" ")[1]
+                    if "Service_count" in line:
+                        SERVICE_COUNT = line.split(" ")[1]
+                    if "Total_rating" in line:
+                        TOTAL_RATING = line.split(" ")[1]
             #генерация вступительной таблицы
             with open(INFO_FILENAME) as info:
                 info_lst = info.read().split('\n')
@@ -176,8 +177,8 @@ class Public:
             with open(f'{REPORT_PATH}/{STATUS_FILENAME}') as status_file:
                 itog_status = status_file.read()
             
-            if os.path.isfile(f'{TEMPLATE_PATH}/{TABLE_STATUSES}'):
-                with open(f'{TEMPLATE_PATH}/{TABLE_STATUSES}', 'r') as table_statuses_html:
+            if os.path.isfile(f'{REPORT_PATH}/{TABLE_STATUSES}'):
+                with open(f'{REPORT_PATH}/{TABLE_STATUSES}', 'r') as table_statuses_html:
                     table_statuses = table_statuses_html.read()
             else:
                 table_statuses = ""

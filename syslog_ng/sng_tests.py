@@ -366,7 +366,7 @@ class SNGCheckWriteLogsTest():
                     status = status_file.readline()
                     statuses_dct[f'testvm{index}'] = status
                     status_table = pd.DataFrame(list(statuses_dct.items()), columns=["VM name", "Test status"])
-                    status_table.to_html(TABLE_STATUSES, escape=False, index=False)
+                    status_table.to_html(f"{REPORT_PATH}/{TABLE_STATUSES}", escape=False, index=False)
             self.status = self.final_result(statuses=statuses_dct)
             
         else:

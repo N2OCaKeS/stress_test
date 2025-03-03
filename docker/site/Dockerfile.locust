@@ -4,5 +4,5 @@ WORKDIR /app
 
 COPY . .
 
-
-CMD ["locust", "-f", "locustfile.py", "--config", ".locust.conf", "--headless"]
+WORKDIR /app/Kuznechik/for_docker
+# CMD ["locust", "-f", "locustfile.py", "--config", ".locust.conf", "--headless"]

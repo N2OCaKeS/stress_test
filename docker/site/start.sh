@@ -21,15 +21,26 @@ on_local(){
 
 on_local_docker(){
     sudo apt install -y docker.io docker-compose
-    sed -i 's/^ServerName 10.177.103.205$/ServerName localhost/' Dockerfile.flask
-    sed -i 's/^ServerName 10.177.103.205$/ServerName localhost/' ./apache-config/web-app.conf
-    sed -i 's/^ServerName 10.177.103.205$/ServerRoot localhost/' ./apache-config/httpd.conf
-    sed -i 's/^POSTGRES_HOST=127.0.0.1$/POSTGRES_HOST=postgres/' .env
-    docker-compose -f docker-compose.v2.yml up --build --scale worker=4
+    # sed -i 's/^ServerName 10.177.103.205$/ServerName localhost/' Dockerfile.flask
+    # sed -i 's/^ServerName 10.177.103.205$/ServerName localhost/' ./apache-config/web-app.conf
+    # # sed -i 's/^ServerName 10.177.103.205$/ServerRoot localhost/' ./apache-config/httpd.conf
+    # sed -i 's/^POSTGRES_HOST=127.0.0.1$/POSTGRES_HOST=postgres/' .env
+    docker-compose -f docker-compose.v2.yml up --build --scale worker=8
+}
+
+
+close_and_delete(){
+    docker stop $(docker ps -q)
+    docker container prune -f
+    docker rmi $(docker images -q)
+    echo Контейнеры остановлены и удалены
 }
 
 
 case $1 in
+    close)
+        close_and_delete
+        ;;
     local)
         on_localhost
         ;;

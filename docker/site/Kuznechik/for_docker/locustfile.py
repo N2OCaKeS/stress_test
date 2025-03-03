@@ -2,43 +2,50 @@ from locust import HttpUser, task, between, SequentialTaskSet
 import json
 
 
-# class PostJsonUser(HttpUser):
-#     wait_time = between(1, 3)
-#     host = HOST
+class PostJsonUser(HttpUser):
+    wait_time = between(1, 3.5)
 
-#     @task
-#     def create_message(self):
-#         payload = {"content": "Test Json Message"}
-#         self.client.post("/message/create", json=payload)
+    @task
+    def create_message_json(self):
+        payload = {"content": "Test Json Message"}
+        headers = {"Content-Type": "application/json"}
+        self.client.post("/message/create", json=payload, headers=headers)
 
 
-# class PostFormUser(HttpUser):
-#     wait_time = between(1, 3)
+class PostFormUser(HttpUser):
+    wait_time = between(1, 3.5)
 
-#     @task
-#     def create_message(self):
-#         data = {"content": "Test Form Message"}
-#         self.client.post("/message/create", data=data)
+    @task
+    def create_message_form(self):
+        data = {"content": "Test Form Message"}
+        self.client.post("/message/create", data=data)
 
 
 class GetUser(HttpUser):
-    wait_time = between(1, 3)
+    wait_time = between(1, 3.5)
 
     @task(2)
     def get_main(self):
         self.client.get("/", name="GET /")
 
     
-    @task(1)
-    def create_message(self):
+class MultiUser(HttpUser):
+    wait_time = between(1, 3.5)
+
+    @task(3)
+    def create_message_json(self):
         payload = {"content": "Test Json Message"}
-        self.client.post("/message/create", json=payload, name="POST message_json on /message/create")
+        headers = {"Content-Type": "application/json"}
+        self.client.post("/message/create", json=payload, headers=headers, name="POST message_json on /message/create")
 
-
-    @task(1)
-    def create_message(self):
+    @task(3)
+    def create_message_form(self):
         data = {"content": "Test Form Message"}
         self.client.post("/message/create", data=data, name="POST message_form on /message/create")
+
+    @task(2)
+    def get_create(self):
+        self.client.get("/message/create", name="GET MESSAGE")
 
 
 

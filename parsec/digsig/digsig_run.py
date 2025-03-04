@@ -58,7 +58,7 @@ command.cmd(f'UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant u
 
 get_remote_file(remote_file_path='/vagrant/results.txt',
                 local_file_path='results.txt',
-                ip='10.177.103.211', 
+                ip='192.168.56.11', 
                 user='u', 
                 password='1') 
                             

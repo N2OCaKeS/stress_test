@@ -3,7 +3,7 @@ import json
 
 
 class PostJsonUser(HttpUser):
-    wait_time = between(1, 3.5)
+    wait_time = between(1, 3)
 
     @task
     def create_message_json(self):
@@ -13,7 +13,7 @@ class PostJsonUser(HttpUser):
 
 
 class PostFormUser(HttpUser):
-    wait_time = between(1, 3.5)
+    wait_time = between(1, 3)
 
     @task
     def create_message_form(self):
@@ -22,7 +22,7 @@ class PostFormUser(HttpUser):
 
 
 class GetUser(HttpUser):
-    wait_time = between(1, 3.5)
+    wait_time = between(1, 3)
 
     @task(2)
     def get_main(self):
@@ -30,7 +30,7 @@ class GetUser(HttpUser):
 
     
 class MultiUser(HttpUser):
-    wait_time = between(1, 3.5)
+    wait_time = between(1, 3)
 
     @task(3)
     def create_message_json(self):

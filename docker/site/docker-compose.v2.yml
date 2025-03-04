@@ -14,11 +14,6 @@ services:
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_DB=${POSTGRES_DB}
-    command: >
-      bash -c "PGPASSWORD=${POSTGRES_PASSWORD} 
-      psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} 
-      -h localhost -c 'DROP SCHEMA public CASCADE; 
-      CREATE SCHEMA public;' && exec postgres"
     ports:
       - "54321:5432"
     networks:
@@ -74,7 +69,10 @@ services:
     networks:
       - httpnet
     command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master --config /app/Kuznechik/for_docker/.locust.conf
+    deploy:
+      replicas: 3
 
 networks:
   httpnet:
+    name: httpnet
     driver: bridge

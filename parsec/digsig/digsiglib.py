@@ -38,10 +38,10 @@ class system:
 
 
 @trycorator
-def get_remote_file(remote_file_path, local_file_path, ip, user, password):
+def get_remote_file(remote_file_path, local_file_path, ip, user, password, port):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname=ip, username=user, password=password, port=22)
+    client.connect(hostname=ip, username=user, password=password, port=port)
     ftp = client.open_sftp()
     files = ftp.get (remote_file_path, local_file_path)
     ftp.close()

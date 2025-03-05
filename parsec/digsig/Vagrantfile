@@ -102,9 +102,10 @@ end
 
 def set_network(machine)
   machine.vm.provision "shell", inline:<<-SHELL
-    sudo nmcli connection add type ethernet con-name eth1 ifname eth1 ipv4.method manual ip4 "192.168.56.11/24"
-    sudo nmcli connection modify eth1 autoconnect yes
-    sudo nmcli connection up eth1
+    sudo nmcli connection modify "Проводное соединение 1" ipv4.method manual ip4 192.168.56.11/24
+    sudo nmcli connection modify "Проводное соединение 1" gw4 10.177.103.254
+    sudo nmcli connection modify "Проводное соединение 1" ipv4.dns "10.177.103.110, 10.177.128.198"
+    ip a
     nmcli connection show
     exit 0
   SHELL
@@ -117,15 +118,16 @@ Vagrant.configure("2") do |config|
   config.vm.synced_folder "./", "/vagrant"
   
   ENV['RC'].nil? || ENV['RC'].start_with?('1.7') ? vms = [
-    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "2", :memory => "4096", :ip => "192.168.56.11" }
+    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "2", :memory => "4096", :ip => "192.168.56.11", :host => "2204" }
   ] : vms = [
-    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "3", :memory => "4096", :ip => "192.168.56.11" }
+    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "3", :memory => "4096", :ip => "192.168.56.11", :host => "2204" }
   ]
 
   vms.each do |vm|
     if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
       config.vm.define vm[:name] do |machine|
         machine.vm.hostname = vm[:hostname]
+        machine.vm.network "forwarded_port", guest: 22, host: vm[:host]
         #machine.vm.network "private_network", ip: vm[:ip]
         machine.vm.provider "virtualbox" do |vb|
           vb.check_guest_additions = false
@@ -137,7 +139,7 @@ Vagrant.configure("2") do |config|
         end
 
         repo_configure(machine, ENV['RC'])
-        set_network(machine)
+        #set_network(machine)
         upgrade(machine)
         set_kernel(machine, ENV['KL'])
         check_prog(machine)

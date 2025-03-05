@@ -60,7 +60,8 @@ get_remote_file(remote_file_path='/vagrant/results.txt',
                 local_file_path='results.txt',
                 ip='192.168.56.11', 
                 user='u', 
-                password='1') 
+                password='1',
+                port='2204') 
                             
 
 

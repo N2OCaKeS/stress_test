@@ -284,9 +284,9 @@ class SNGCheckWriteLogsTest():
         for vmname, status in statuses.items():
             if status != self.STATUS_PASSED:
                 if status == self.STATUS_ERROR:
-                    status_error.append(vmname, status)
+                    status_error.append((vmname, status))
                 elif "FAILED" in status:
-                    status_fail.append(vmname, status)
+                    status_fail.append((vmname, status))
         if len(status_error) > 0:
             return f'{self.STATUS_ERROR} on {len(status_error)} VM'
         elif len(status_fail) > 0:

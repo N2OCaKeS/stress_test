@@ -16,7 +16,7 @@ def generate_log():
 
     # Добавление обработчика к логгеру
     logger.addHandler(syslog_handler)
-
+    
     while True:
         # Запись лога
         logger.info("MESSAGE FOR LOG")
@@ -35,11 +35,14 @@ def check_logs_for_last_hour_with_message(log_file_path, message):
             try:
                 # timestamp_str = line.split(': ')[1].split(' - ')[0]
                 timestamp_str_lst = line.split(' ')
+                timestamp_str_lst = [item for item in timestamp_str_lst if item != ""]
                 timestamp_str = f"{timestamp_str_lst[0]} {timestamp_str_lst[1]} {timestamp_str_lst[2]}"
                 # print(timestamp_str)
-                current_year = datetime.datetime.now().year
+                #current_year = datetime.datetime.now().year
                 log_timestamp = datetime.datetime.strptime(timestamp_str, "%b %d %H:%M:%S")
-                log_timestamp = log_timestamp.replace(year=current_year)
+                log_timestamp = log_timestamp.replace(year=now.year)
+                if log_timestamp > now:
+                    log_timestamp = log_timestamp.replace(now.year - 1)
                 # print(log_timestamp)
                 if log_timestamp >= one_hour_ago:
                     logs_for_last_hour.append(line.strip())
@@ -69,7 +72,7 @@ if __name__ == "__main__":
         time.sleep(3600)
         logs, mess_found = check_logs_for_last_hour_with_message("/var/log/syslog", message="MESSAGE FOR LOG")
         if not mess_found:
-            status = f"TEST FAILED by {hour} min"
+            status = f"TEST FAILED by {hour} hour"
             break
         else:
             status = "TEST PASSED"

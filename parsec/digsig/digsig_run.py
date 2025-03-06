@@ -1,9 +1,19 @@
 import requests
 import json
+import argparse
 
-from digsiglib import system, get_remote_file
+from digsiglib import (system, 
+                       get_remote_file, 
+                       results_handler)
 
   
+parser = argparse.ArgumentParser()
+parser.add_argument('-ph',
+                    action='store',
+                    required=True,
+                    help='results path',
+                    dest='PATH')
+args = parser.parse_args()
 
 
 def box_wrapper(box: str, dates: dict) -> tuple:
@@ -58,10 +68,10 @@ command.cmd(f'UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant u
 
 get_remote_file(remote_file_path='/vagrant/results.txt',
                 local_file_path='results.txt',
-                ip='192.168.56.11', 
+                ip='127.0.0.1', 
                 user='u', 
                 password='1',
                 port='2204') 
                             
-
+results_handler('results.txt', args.PATH)
 

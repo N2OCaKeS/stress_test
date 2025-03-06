@@ -1,7 +1,7 @@
 import subprocess
 from os import linesep
 import paramiko
-
+import pandas as pd
 
 
 def trycorator(function):
@@ -47,4 +47,25 @@ def get_remote_file(remote_file_path, local_file_path, ip, user, password, port)
     ftp.close()
     client.close()
 
+
+
+def results_handler(file, name):
+    with open(file, 'r') as r:
+        results = r.readlines()
+
+    print(f'Необработанные результаты: \n{results}')
+
+    data = {
+        'Время проверки подписи, сек': {
+            'Подписано': results[0].strip(),
+            'Не подписано': results[2].strip()},
+        'Количество записей \"DIGSIG:[ERROR]  VERIFICATION FAILED\"': {
+            'Подписано': results[1].strip(),
+            'Не подписано': results[3].strip()}
+    }
+
+    df = pd.DataFrame(data).T
+    df = df[['Подписано', 'Не подписано']]
+    print(df)
+    df.to_html(name)
 

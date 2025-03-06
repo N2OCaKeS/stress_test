@@ -1,7 +1,5 @@
 Method,Name,Error,Occurrences
-POST,/message/create,HTTPError('500 Server Error: Internal Server Error for url: /message/create'),1
-POST,/message/create,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",1527
-GET,GET MESSAGE,"ConnectionResetError(104, 'Connection reset by peer')",1
-GET,GET /,HTTPError('500 Server Error: Internal Server Error for url: GET /'),2
-GET,GET MESSAGE,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",1473
-GET,GET /,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",2245
+POST,/message/create,"ConnectionResetError(104, 'Connection reset by peer')",1
+POST,/message/create,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",3710
+GET,GET MESSAGE,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",769
+GET,GET /,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",756

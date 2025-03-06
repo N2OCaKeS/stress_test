@@ -7,10 +7,25 @@ from ..models.user import User
 
 post = Blueprint("post", __name__)
 
-@post.route('/', methods=['POST', 'GET'])
+@post.route('/', methods=['GET', 'POST'])
 def all():
-    posts = Post.query.order_by(Post.date.desc()).all()
-    return render_template('post/all.html', posts=posts), 200
+    page = request.args.get("page", 1, type=int)  # Получаем номер страницы (по умолчанию 1)
+    per_page = request.args.get("per_page", 10, type=int)  # Количество записей на странице (по умолчанию 10)
+
+    posts = Post.query.order_by(Post.date.desc()).paginate(page=page, per_page=per_page, error_out=False)
+
+    if request.is_json:
+        return jsonify({
+            "posts": [
+                {"id": post.id, "content": post.content, "date": post.date.isoformat()}
+                for post in posts.items
+            ],
+            "page": posts.page,
+            "total_pages": posts.pages,
+            "total_items": posts.total
+        }), 200
+
+    return render_template('post/all.html', posts=posts.items, page=posts), 200
 
 
 @post.route("/post/create", methods=['POST', 'GET'])

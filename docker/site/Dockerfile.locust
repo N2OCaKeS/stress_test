@@ -1,8 +1,0 @@
-FROM locustio/locust
-
-WORKDIR /app
-
-COPY . .
-
-WORKDIR /app/Kuznechik/for_docker
-# CMD ["locust", "-f", "locustfile.py", "--config", ".locust.conf", "--headless"]

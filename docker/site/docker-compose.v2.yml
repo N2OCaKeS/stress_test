@@ -1,4 +1,4 @@
-version: '3.1'
+version: '3.5'
 
 services:
   postgres:
@@ -16,8 +16,14 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     ports:
       - "54321:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf
     networks:
       - httpnet
+    command: >
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+      -c shared_preload_libraries=pg_stat_statements
 
   flask:
     build:
@@ -68,9 +74,9 @@ services:
       - .:/app
     networks:
       - httpnet
-    command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master --config /app/Kuznechik/for_docker/.locust.conf
-    deploy:
-      replicas: 3
+    command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master
+    deploy:  
+      replicas: 4
 
 networks:
   httpnet:

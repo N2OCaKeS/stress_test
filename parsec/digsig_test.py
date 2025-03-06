@@ -2,9 +2,10 @@ import requests
 import json
 import argparse
 
-from digsiglib import (system, 
-                       get_remote_file, 
-                       results_handler)
+from libs.libparsec import info_list
+from digsig.digsiglib import (system, 
+                              get_remote_file, 
+                              results_handler)
 
   
 parser = argparse.ArgumentParser()
@@ -62,16 +63,16 @@ command = system()
 #Run Test
 ###
 
-command.cmd('sudo bash vbox_prepare.sh')
-command.cmd(f'vagrant box add {box_name} {box_url} --force')
-command.cmd(f'UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant up --provider=virtualbox')
+command.cmd('cd digsig && sudo bash vbox_prepare.sh')
+command.cmd(f'cd digsig && vagrant box add {box_name} {box_url} --force')
+command.cmd(f'cd digsig && UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant up --provider=virtualbox')
 
 get_remote_file(remote_file_path='/vagrant/results.txt',
-                local_file_path='results.txt',
+                local_file_path='digsig/results.txt',
                 ip='127.0.0.1', 
                 user='u', 
                 password='1',
                 port='2204') 
                             
-results_handler('results.txt', args.PATH)
-
+results_handler('digsig/results.txt', args.PATH)
+info_list()

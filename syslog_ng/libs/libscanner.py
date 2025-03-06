@@ -34,7 +34,7 @@ class Scanner:
                 with open('/proc/stat', 'r') as procfile:
                     temp_str = []
                     for _ in range(num_kernel + 1):
-                        if num_kernel is 0:
+                        if num_kernel == 0:
                             temp_str = procfile.readline().split(' ')[2:-1]
                         else:
                             temp_str = procfile.readline().split(' ')[1:-1]

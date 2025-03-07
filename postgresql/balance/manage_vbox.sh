@@ -123,6 +123,18 @@ if [ "$1" == "snapshot_list" ]; then
     done
     exit 0
 fi
+if [ "$1" == "snapshot_new" ]; then
+    echo "Введите имя нового снимка (оставьте пустым для имени по умолчанию):"
+    read CUSTOM_SNAPSHOT_NAME
+    if [ -z "$CUSTOM_SNAPSHOT_NAME" ]; then
+        CUSTOM_SNAPSHOT_NAME="snapshot_$(date +%Y%m%d_%H%M%S)"
+    fi
+    for VM in $VMS; do
+        VBoxManage snapshot "$VM" take "$CUSTOM_SNAPSHOT_NAME" --live
+        echo "Создан новый снимок: $CUSTOM_SNAPSHOT_NAME для ВМ: $VM"
+    done
+    exit 0
+fi
 
 if [ "$1" == "snapshot_restore" ]; then
     # Выводим список снимков для первой ВМ
@@ -153,6 +165,7 @@ if [ "$1" == "snapshot_restore" ]; then
 
     # Применяем восстановление ко всем ВМ
     for VM in $VMS; do
+        VBoxManage controlvm "$VM" poweroff
         VBoxManage snapshot "$VM" restore "$SELECTED_SNAPSHOT"
         echo "ВМ $VM восстановлена к снимку: $SELECTED_SNAPSHOT"
     done
@@ -190,19 +203,6 @@ if [ "$1" == "snapshot_delete" ]; then
     for VM in $VMS; do
         VBoxManage snapshot "$VM" delete "$SELECTED_SNAPSHOT"
         echo "Для ВМ $VM удален снимок: $SELECTED_SNAPSHOT"
-    done
-    exit 0
-fi
-
-if [ "$1" == "snapshot_new" ]; then
-    echo "Введите имя нового снимка (оставьте пустым для имени по умолчанию):"
-    read CUSTOM_SNAPSHOT_NAME
-    if [ -z "$CUSTOM_SNAPSHOT_NAME" ]; then
-        CUSTOM_SNAPSHOT_NAME="snapshot_$(date +%Y%m%d_%H%M%S)"
-    fi
-    for VM in $VMS; do
-        VBoxManage snapshot "$VM" take "$CUSTOM_SNAPSHOT_NAME" --live
-        echo "Создан новый снимок: $CUSTOM_SNAPSHOT_NAME для ВМ: $VM"
     done
     exit 0
 fi

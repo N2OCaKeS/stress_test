@@ -58,16 +58,6 @@
     file_type: any
   register: db_data_contents
 
-- name: User settings
-  shell: |
-    sudo usermod -a -G shadow postgres
-    sudo setfacl -d -m u:postgres:r /etc/parsec/macdb
-    sudo setfacl -R -m u:postgres:r /etc/parsec/macdb
-    sudo setfacl -m u:postgres:rx /etc/parsec/macdb
-    sudo setfacl -d -m u:postgres:r /etc/parsec/capdb
-    sudo setfacl -R -m u:postgres:r /etc/parsec/capdb
-    sudo setfacl -m u:postgres:rx /etc/parsec/capdb
-
 - name: Create contrprimer cluster
   shell: |
     pg_dropcluster --stop {{ server.pg.version }} {{ server.pg.db_name }}

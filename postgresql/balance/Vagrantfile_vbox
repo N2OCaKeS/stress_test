@@ -29,7 +29,7 @@ Vagrant.configure("2") do |config|
 
           #Add new storage
           unless File.exist?("/root/VirtualBox VMs/#{vm[:name]}/#{vm[:name]}_disk.vdi")
-            ctrl_type = ENV['RC'].nil? || ENV['RC'].start_with?('1.8') ? "sas" : "sata"
+            ctrl_type = ENV['RC'].nil? || ENV['RC'].start_with?('1.8') ? "sas" : "sas"
             ctrl_name = "#{ctrl_type.upcase} Controller #{vm[:name]}"
           
             vb.customize ['createhd', '--filename', "./#{vm[:name]}_disk.vdi", '--size', 40960 ]

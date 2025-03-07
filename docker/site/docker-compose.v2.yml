@@ -17,13 +17,31 @@ services:
     ports:
       - "54321:5432"
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./pg/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - httpnet
-    command: >
-      postgres -c config_file=/etc/postgresql/postgresql.conf
-      -c shared_preload_libraries=pg_stat_statements
+
+  pgbouncer:
+    image: edoburu/pgbouncer
+    container_name: pgbouncer
+    restart: always
+    environment:
+      DB_HOST: postgres
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      ADMIN_USERS: "u"
+      AUTH_TYPE: md5
+      POOL_MODE: transaction
+    depends_on:
+      - postgres
+    volumes:
+      - ./pg/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./pg/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt
+    networks:
+      - httpnet
+    ports:
+      - "6432:5432"
 
   flask:
     build:
@@ -40,11 +58,11 @@ services:
       - FLASK_APP=web_app:create_app
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_HOST=${PGBOUNCER_HOST}
+      - POSTGRES_PORT=${PGBOUNCER_PORT}
       - POSTGRES_DB=${POSTGRES_DB}
     depends_on:
-      - postgres
+      - pgbouncer
     networks:
       - httpnet
     command: ["apache2ctl", "-D", "FOREGROUND"]

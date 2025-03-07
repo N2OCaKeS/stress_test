@@ -3,32 +3,33 @@ import random
 
 class PostJsonUser(HttpUser):
     wait_time = between(1, 3)
+    stop_timeout = 20
 
     @task(3)  # Этот таск выполняется чаще
     def create_single_message_json(self):
         payload = {"content": "Test Json Message"}
         headers = {"Content-Type": "application/json"}
-        self.client.post("/message/create", json=payload, headers=headers)
+        self.client.post("/message/create", json=payload, headers=headers, timeout=50)
 
     @task(1)  # Этот таск реже, но тестирует массовую отправку
     def create_bulk_messages_json(self):
         num_messages = random.randint(5, 10)  # Отправляем случайное число сообщений
         payload = [{"content": f"Bulk Message {i}"} for i in range(num_messages)]
         headers = {"Content-Type": "application/json"}
-        self.client.post("/message/create", json=payload, headers=headers)
+        self.client.post("/message/create", json=payload, headers=headers, timeout=50)
 
     @task
     def create_message_form(self):
         data = {"content": "Test Form Message"}
-        self.client.post("/message/create", data=data)
+        self.client.post("/message/create", data=data, timeout=50)
 
     @task
     def get_main(self):
-        self.client.get("/", name="GET /")
+        self.client.get("/", name="GET /", timeout=50)
 
     @task
     def get_create(self):
-        self.client.get("/message/create", name="GET MESSAGE")
+        self.client.get("/message/create", name="GET MESSAGE", timeout=50)
 
 
 # class AdminTasks(SequentialTaskSet):

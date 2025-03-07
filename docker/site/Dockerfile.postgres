@@ -1,6 +1,20 @@
 FROM postgres:15
 
-RUN apt-get update && apt-get install -y postgresql-client systemd net-tools postgresql postgresql-contrib
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    systemd \
+    net-tools \
+    postgresql \
+    postgresql-contrib
+
 RUN mkdir -p /etc/postgresql/
+
+COPY ./pg/postgresql.conf /etc/postgresql/postgresql.conf
+# COPY ./pg/pg_hba.conf /etc/postgresql/pg_hba.conf
+
+COPY ./pg/pg_reset_password.sh /docker-entrypoint-initdb.d/pg_reset_password.sh
+RUN chmod +x /docker-entrypoint-initdb.d/pg_reset_password.sh
+
+CMD ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "shared_preload_libraries=pg_stat_statements"]
 
 EXPOSE 5432

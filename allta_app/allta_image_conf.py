@@ -406,7 +406,8 @@ known_bugs = {
     },
     "Parsec": {
         "BT-61530": "https://jira.astralinux.ru/browse/BT-61530",
-        "BT-52579": "https://jira.astralinux.ru/browse/BT-52579"
+        "BT-52579": "https://jira.astralinux.ru/browse/BT-52579",
+        "BT-69978": "https://jira.astralinux.ru/browse/BT-69978"
     },
     "Apache": {
         "BT-64331": "https://jira.astralinux.ru/browse/BT-64331"

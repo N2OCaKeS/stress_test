@@ -27,6 +27,5 @@ RUN a2enmod wsgi
 RUN chown -R www-data:www-data /app/web_app
 RUN chmod -R 755 /app/web_app
 
-RUN chmod +x migrate.sh
 
 EXPOSE 80

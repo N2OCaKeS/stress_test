@@ -55,6 +55,9 @@ services:
     ports:
       - "80:80"
     environment:
+      - FLASK_APP=web_app
+      - FLASK_ENV=production
+      - FLASK_DEBUG=False
       - FLASK_APP=web_app:create_app
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -63,6 +66,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     depends_on:
       - pgbouncer
+      - postgres
     networks:
       - httpnet
     command: ["apache2ctl", "-D", "FOREGROUND"]

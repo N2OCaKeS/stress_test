@@ -38,8 +38,15 @@ close_and_delete(){
     echo Контейнеры остановлены и удалены
 }
 
+delete_all_img(){
+    docker system prune -a -f
+}
+
 
 case $1 in
+    delete)
+        delete_all_img
+        ;;
     close)
         close_and_delete
         ;;

@@ -27,7 +27,7 @@
             "OCFS2": "1:25:28",
             "postgresql": "4:01:26",
             "postgresql-aud-off": "3:01:26",
-            "postgresql-sm": "0:38:27",
+            "postgresql-sm": "3:01:36",
             "psql kernels": "1:53:51",
             "psql parsec": "2:49:25",
             "psql vanilla": "2:50:23",

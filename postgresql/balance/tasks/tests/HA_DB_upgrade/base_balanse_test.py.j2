@@ -24,7 +24,8 @@ mkdir $dir
 for c in $clients; do
     echo "pgbench_${c}_${t}.txt"
     echo "start test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
-    pgbench -h pgpool.balance.rbt -p 5440 -U user0 --random-seed=13 -T $t -j $c -c $c contrprimer >> "${dir}/pgbench_result.txt"
+    echo "12345678" | sudo kinit user0 
+    pgbench -h pgpool.balance.rbt -p 5440 -U user0@BALANCE.RBT --random-seed=13 -T $t -j $c -c $c contrprimer >> "${dir}/pgbench_result.txt"
     echo "stop test: "`date +"%Y.%m.%d_%H:%M:%S"` >> "${dir}/pgbench_${c}.txt"
 done
 """

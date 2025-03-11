@@ -28,8 +28,8 @@
             login_user: postgres
             port: '{{ server.pg.port }}'
             db: '{{ server.pg.db_name }}'
-            # query: GRANT ALL ON SCHEMA public TO {{ domain.user_template }}0  # ac_enable_grant_options is false by default
-            query: ALTER SCHEMA public OWNER TO {{ domain.user_template }}0
+            # query: GRANT ALL ON SCHEMA public TO {{ domain.user_template }}@BALANCE.RBT  # ac_enable_grant_options is false by default
+            query: ALTER SCHEMA public OWNER TO {{ domain.user_template }}@BALANCE.RBT
 
         - name: Create testing script
           become: yes
@@ -38,9 +38,14 @@
             dest: /usr/share/contrprimer/base_balanse_test.py
             mode: u=rwx,g=rx,o=rx
 
+        - name: Get kinit
+          shell: echo "{{ domain.admin_password }}" | kinit {{ domain.admin }}
+          register: kinit_result
+          failed_when: kinit_result.rc != 0
+
         - name: Pgbench init
           command: >-
-            pgbench -U {{ domain.user_template }}0 -h {{ virtual_domain_name }}.{{ astra_domain }}
+            pgbench -U {{ domain.user_template }}@BALANCE.RBT -h {{ virtual_domain_name }}.{{ astra_domain }}
             -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} -F 100 {{ server.pg.db_name }}
 
         - name: Set signal that pgbench has started

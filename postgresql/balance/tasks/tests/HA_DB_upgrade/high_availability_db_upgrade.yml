@@ -57,7 +57,7 @@
             port: '{{ server.pg.port }}'
             db: '{{ server.pg.db_name }}'
             # query: GRANT ALL ON SCHEMA public TO {{ domain.user_template }}0  # ac_enable_grant_options is false by default
-            query: ALTER SCHEMA public OWNER TO {{ domain.user_template }}0
+            query: ALTER SCHEMA public OWNER TO {{ domain.user_template }}@BALANCE.RBT'
 
         - name: Create testing script
           become: yes
@@ -68,7 +68,7 @@
 
         - name: Pgbench init
           command: >-
-            pgbench -U {{ domain.user_template }}0 -h {{ virtual_domain_name }}.{{ astra_domain }}
+            pgbench -U {{ domain.user_template }}0@BALANCE.RBT -h {{ virtual_domain_name }}.{{ astra_domain }}
             -p {{ server.pg.port }} --initialize --scale={{ scale_factor }} -F 100 {{ server.pg.db_name }}
 
         - name: Set signal that pgbench has started

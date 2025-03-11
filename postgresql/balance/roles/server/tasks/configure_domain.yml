@@ -20,7 +20,7 @@
 - block:
     - name: Set users list
       set_fact:
-        users_list: "{{ [domain.user_template] | product(range(domain.num_of_users)) | map('join') }}"
+        users_list: "{{ [domain.user_template] | product(range(domain.num_of_users)) | map('join') | map('regex_replace', '(.*)', '\\1@BALANCE.RBT') }}"
 
     - name: Create freeipa users
       ipa_user:
@@ -32,6 +32,21 @@
         ipa_pass: '{{ domain.admin_password }}'
         update_password: on_create
       loop: '{{ users_list }}'
+      
+    - name: Set attributes for freeipa users
+      block:
+        - name: Authenticate as admin
+          shell: echo "{{ domain.admin_password }}" | kinit {{ domain.admin }}
+          register: kinit_result
+          failed_when: kinit_result.rc != 0
+
+        - name: Modify user attributes
+          shell: ipa user-mod {{ item }} --miclevel=63 --macmin=0 --macmax=3
+          loop: '{{ users_list }}'
+          register: user_mod_result
+          failed_when: user_mod_result.rc != 0
+      when: kinit_result.rc == 0    
+      
 
     - name: Update freeipa users astra specific configuration
       vars:

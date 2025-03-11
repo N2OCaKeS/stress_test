@@ -157,22 +157,22 @@ class BaseUploader:
         #                                     type_stat_header="Таблица найденных ошибок"))
 
         
-        
-        bugs = fined_files.get("end_of_page").get("bugs")
-        if bugs:
-            nav_lst.append(self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
-                                                stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
-                                                type_stat_header_without_probel="Таблица найденных ошибок".replace(" ", ""),
-                                                type_stat_header="Таблица найденных ошибок"))
         annotations = fined_files.get("end_of_page").get("annotations")
         if annotations:
-            nav_lst.append(self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
-                                                stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
-                                                type_stat_header_without_probel="Аннотация".replace(" ", ""),
-                                                type_stat_header="Аннотация"))
-
-        html_list.append(bugs)
-        html_list.append(annotations)
+            nav_lst.insert(0, self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
+                                                   stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
+                                                   type_stat_header_without_probel="Аннотация".replace(" ", ""),
+                                                   type_stat_header="Аннотация"))
+            
+        bugs = fined_files.get("end_of_page").get("bugs")
+        if bugs:
+            nav_lst.insert(0, self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
+                                                   stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
+                                                   type_stat_header_without_probel="Таблица найденных ошибок".replace(" ", ""),
+                                                   type_stat_header="Таблица найденных ошибок"))
+        
+        html_list.insert(0, annotations)
+        html_list.insert(0, bugs)
 
         nav_items = "".join(nav_lst)
         nav = self.NAV_START + nav_items  + self.NAV_END

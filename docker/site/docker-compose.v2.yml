@@ -43,6 +43,15 @@ services:
     ports:
       - "6432:5432"
 
+  redis:
+    image: redis
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - httpnet
+
   flask:
     build:
       context: .
@@ -55,7 +64,6 @@ services:
     ports:
       - "80:80"
     environment:
-      - FLASK_APP=web_app
       - FLASK_ENV=production
       - FLASK_DEBUG=False
       - FLASK_APP=web_app:create_app
@@ -67,6 +75,7 @@ services:
     depends_on:
       - pgbouncer
       - postgres
+      - redis
     networks:
       - httpnet
     command: ["apache2ctl", "-D", "FOREGROUND"]
@@ -74,6 +83,7 @@ services:
   master:
     image: locustio/locust
     user: root
+    container_name: master
     volumes:
       - .:/app
     ports:
@@ -84,8 +94,9 @@ services:
       - httpnet
     command: >
       -f /app/Kuznechik/for_docker/locustfile.py
-      --master
+      --master --expect-workers 4
       --config /app/Kuznechik/for_docker/.locust.conf
+      --headless
 
   worker:
     image: locustio/locust
@@ -96,9 +107,10 @@ services:
       - .:/app
     networks:
       - httpnet
-    command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master
+    command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master --master-port 5557
     deploy:  
       replicas: 4
+    restart: on-failure
 
 networks:
   httpnet:

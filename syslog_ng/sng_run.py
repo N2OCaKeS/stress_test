@@ -128,7 +128,7 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     dest='TCV')
 
 parser.add_argument('-cwl', '--check-write-log',
-                    action='store',
+                    action='store_true',
                     required=False,
                     help='check-write-log',
                     dest='CWL')

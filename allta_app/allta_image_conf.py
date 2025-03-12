@@ -53,7 +53,7 @@ def parent_page_list():
     tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
                                     'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
                 'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
-                'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow'],
+                'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
                 'UnixBench':       ['unix', 'unix parsec'],
                 'FreeIPA':         ['FreeIPA auth'],
                 'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off'],
@@ -122,6 +122,7 @@ branches = {
     'auditd benchmark. fileaud':'auditd',
     'auditd benchmark. useraud':'auditd',
     'syslog-ng benchmark':'syslog_ng',
+    'syslog-ng benchmark check-write-log':'syslog_ng',
     'linux_system_benchmark. UnixBench':'linux_system',
     'linux_system_benchmark. UnixBench parsec':'linux_system',
     'ram overflow':'overflow',
@@ -178,6 +179,7 @@ tests = {
     'auditd benchmark. fileaud':'auditd-f',
     'auditd benchmark. useraud':'auditd-u',
     'syslog-ng benchmark':'syslog-ng',
+    'syslog-ng benchmark check-write-log':'syslog-ng-cwl',
     'linux_system_benchmark. UnixBench':'unix',
     'linux_system_benchmark. UnixBench parsec':'unix parsec',
     'storage drive overflow':'SD-overflow',
@@ -216,7 +218,7 @@ psyc_conf = {
 #################################################################################################################################################
 group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
-              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla',
+              'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom']
 
@@ -273,13 +275,13 @@ def stp_version():
 testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
                                 'parsec impact-fs aud-off', 'apache-rp']
-testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2',
+testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2', 'syslog-ng-cwl',
                                'psql balance', 'FreeIPA auth', 'steal time', 'FIO', 'vUnixBench', 'vPingPong'] #'tantor vanilla', 'tantor kernels'
 testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
                    'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
-MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'FreeIPA auth',
+MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'FreeIPA auth', 'syslog-ng-cwl',
                       'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom'] #'psql balance',
 
 
@@ -311,6 +313,7 @@ tests_case_zefir_key = {
     'auditd-p':'BT-T8213',
     'auditd-u':'BT-T8214',
     'syslog-ng':'BT-T8119',
+    'syslog-ng-cwl':'BT-T16383',
     'psql balance':'BT-T13362',
     'FreeIPA auth':'BT-T13481',
     'parsec impact-fs':'BT-T13486',
@@ -351,7 +354,7 @@ testname_columns = {
                     'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off',
                     'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
                     'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm',
-                    'postgresql benchmark oom':'PSQL_OOM',
+                    'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl'
                     }
 
 

@@ -9,7 +9,7 @@ from digsig.digsiglib import (system,
 
   
 parser = argparse.ArgumentParser()
-parser.add_argument('-ph',
+parser.add_argument('-path',
                     action='store',
                     required=True,
                     help='results path',

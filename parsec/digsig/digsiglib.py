@@ -4,6 +4,7 @@ import paramiko
 import pandas as pd
 
 
+
 def trycorator(function):
     def wrapper(*args, **kwargs):
         try: 
@@ -35,6 +36,35 @@ class system:
     def cmd(command: str):
         return subprocess.run(command, shell=True)
     
+
+
+@trycorator
+def create_remote_file(local_file_path, remote_file_path, ip, user, password, port):
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(hostname=ip, username=user, password=password, port=port)
+    ftp = client.open_sftp()
+    files = ftp.put(local_file_path, remote_file_path)
+    ftp.close()
+    client.close()
+
+
+@trycorator
+def send_remote_command(command, ip, user, password, port):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(hostname=ip, username=user, password=password, port=port)
+    ssh.get_transport().set_keepalive(60)
+    chanel = ssh.get_transport().open_session()
+    chanel.get_pty()
+    chanel.exec_command(command)
+    output = chanel.makefile().read().decode('utf-8')
+    err_output = chanel.makefile_stderr().read().decode('utf-8')
+    if output != '':
+        print(f'STDOUT:\n{output}')
+    if err_output != '':
+        print(f'STDERR:\n{err_output}')
+    ssh.close()
 
 
 @trycorator

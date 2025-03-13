@@ -5,7 +5,8 @@ import argparse
 from libs.libparsec import info_list
 from digsig.digsiglib import (system, 
                               get_remote_file, 
-                              results_handler)
+                              results_handler,
+                              send_remote_command)
 
   
 parser = argparse.ArgumentParser()
@@ -68,11 +69,30 @@ command.cmd(f'cd digsig && vagrant box add {box_name} {box_url} --force')
 command.cmd(f'cd digsig && UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant up --provider=virtualbox')
 
 get_remote_file(remote_file_path='/vagrant/results.txt',
-                local_file_path='digsig/results.txt',
+                local_file_path='results.txt',
+                ip='127.0.0.1', 
+                user='u', 
+                password='1',
+                port='2204') 
+
+send_remote_command(command='cat /etc/astra/build_version > /vagrant/vm_info.txt',
+                    ip='127.0.0.1', 
+                    user='u', 
+                    password='1',
+                    port='2204')
+
+send_remote_command(command='uname -r >> /vagrant/vm_info.txt',
+                    ip='127.0.0.1', 
+                    user='u', 
+                    password='1',
+                    port='2204')
+
+get_remote_file(remote_file_path='/vagrant/vm_info.txt',
+                local_file_path='vm_info.txt',
                 ip='127.0.0.1', 
                 user='u', 
                 password='1',
                 port='2204') 
                             
-results_handler('digsig/results.txt', args.PATH)
+results_handler('results.txt', args.PATH)
 info_list()

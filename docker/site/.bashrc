@@ -1,0 +1,5 @@
+export POSTGRES_USER="u"
+export POSTGRES_PASSWORD="1"
+export PGBOUNCER_HOST="127.0.0.1"
+export PGBOUNCER_PORT="6432"
+export POSTGRES_DB="mydb"

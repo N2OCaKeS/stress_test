@@ -1,5 +1,8 @@
 import sys
-sys.path.insert(0, '/app')  # Добавляем путь к проекту в PYTHONPATH
+import os
+#from config import FILEDIR
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, "/home/u/git/stress_test/docker/site")
 
 from web_app import create_app
 

@@ -11,7 +11,7 @@ class Tasks(TaskSet):
 
     @task
     def create_bulk_messages_json(self):
-        num_messages = random.randint(5, 10)
+        num_messages = random.randint(5, 2002)
         payload = [{"content": f"Bulk Message {i}"} for i in range(num_messages)]
         headers = {"Content-Type": "application/json"}
         self.client.post("/message/create", json=payload, headers=headers, timeout=60)

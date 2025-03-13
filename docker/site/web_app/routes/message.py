@@ -1,12 +1,10 @@
 from flask import Blueprint, request, jsonify, Response, render_template, flash, redirect
-from ..extensions import db
+from ..extensions import db, redis_client
 from ..models.message import Message
-import redis
+
 
 message = Blueprint("message", __name__)
 
-# Подключение к Redis
-redis_client = redis.Redis(host="redis", port=6379, decode_responses=True)
 
 def batch_insert(session, messages, batch_size=500):
     """ Вставка сообщений батчами с коммитом каждые batch_size записей """

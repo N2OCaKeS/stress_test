@@ -1,0 +1,35 @@
+version: "3.5"
+services:
+  master:
+    image: locustio/locust
+    user: root
+    container_name: master
+    volumes:
+      - .:/app
+    ports:
+      - "8089:8089"
+    networks:
+      - httpnet
+    command: >
+      -f /app/Kuznechik/for_host/locustfile.py
+      --master --expect-workers 4
+      --config /app/Kuznechik/for_host/.locust.conf
+      --headless
+
+  worker:
+    image: locustio/locust
+    user: root
+    volumes:
+      - .:/app
+    networks:
+      - httpnet
+    command: -f /app/Kuznechik/for_host/locustfile.py --worker --master-host master --master-port 5557
+    deploy:  
+      replicas: 4
+    restart: on-failure
+
+networks:
+  httpnet:
+    name: httpnet
+    driver: bridge
+

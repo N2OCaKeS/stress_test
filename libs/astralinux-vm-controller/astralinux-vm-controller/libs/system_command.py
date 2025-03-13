@@ -1,5 +1,6 @@
 import subprocess
 import os
+import time
 
 class system:
     """
@@ -48,3 +49,42 @@ class system:
             _type_: _description_
         """
         return subprocess.run(command, shell=True)
+    
+    def set_signal(set_signal: str):
+        """
+        Установка сигнала
+
+        Args:
+            set_signal (str): имя сигнала
+        """
+        signal_dir = './signal'
+        signal_file_path = os.path.join(signal_dir, set_signal)
+        
+        os.makedirs(signal_dir, exist_ok=True)
+        
+        with open(signal_file_path, 'w') as file:
+            file.write('1')
+
+    def get_signal(get_signal: str):
+        """
+        Получение сигнала
+
+        Args:
+            get_signal (str): имя сигнала
+        """
+        signal_dir = './signal'
+        signal_file_path = os.path.join(signal_dir, get_signal)
+        timeout = 10 * 60  # 10 minutes
+        interval = 5  # 5 seconds
+        elapsed_time = 0
+
+        while elapsed_time < timeout:
+            if os.path.isfile(signal_file_path):
+                with open(signal_file_path, 'r') as file:
+                    content = file.read().strip()
+                    if content == '1':
+                        return True
+            time.sleep(interval)
+            elapsed_time += interval
+        
+        return False

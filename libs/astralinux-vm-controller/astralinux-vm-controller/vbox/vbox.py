@@ -1,10 +1,14 @@
+import paramiko
+import threading
 import VirtualMashines
 import libs.vagrant as vagrant
+import libs.decorators as decorators
+from libs.system_command import lib_system
 
 from vbox_manage import vbox_manage
 from commands.apt import AptManager
-
 from os import system
+
 
 
 class vbox(VirtualMashines):
@@ -87,7 +91,7 @@ class vbox(VirtualMashines):
             return 0        
     
     @classmethod
-    def execute(cls, vms: list, vms_groups: dict,vm_dates: dict, commands: list) -> int: # TODO НЕ реализовано
+    def execute(cls, vms: list, vms_groups: dict, vm_dates: dict, commands: list, username: str, password: str) -> int:
         """
         Выполнение команд
 
@@ -117,12 +121,50 @@ class vbox(VirtualMashines):
                         'signal name'
                     }, ...}
 
+            username (str): имя пользователя для подключения к ВМ
+            password (str): пароль для подключения к ВМ
         """
+        def execute_command(host, command, signal_set=None, signal_get=None):
+            if signal_get:
+                lib_system.get_signal(signal_get)
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(hostname=vm_dates[host]['ip'], username=username, password=password)
+            stdin, stdout, stderr = ssh.exec_command(command)
+            output = stdin.read().decode() + stdout.read().decode() + stderr.read().decode()
+            ssh.close()
+            if signal_set and not stderr.read():
+                lib_system.set_signal(signal_set)
+
+            return {'output': output}
+
+        @decorators.log_task
+        def threaded_execution(host, command, task_name, signal_set=None, signal_get=None):
+            return execute_command(host, command, signal_set, signal_get)
+
+        threads = []
+        for task_name, task_commands in commands.items():
+            for host, command_info in task_commands.items():
+                command = command_info.get('command')
+                signal_set = command_info.get('signal set')
+                signal_get = command_info.get('signal get')
+                thread = threading.Thread(target=threaded_execution, kwargs={
+                    'host': host, 
+                    'command': command, 
+                    'task_name': task_name, 
+                    'signal_set': signal_set, 
+                    'signal_get': signal_get
+                })
+                threads.append(thread)
+                thread.start()
+
+        for thread in threads:
+            thread.join()
 
         return 0
     
     @classmethod
-    def apt(cls) -> int:
+    def apt(cls) -> int: # TODO НЕ РЕАЛИЗОВАНО
         """
         Заглушка для метода apt, переопределение происходит через вложенный класс AptManager.
         Реальная логика работы с пакетами будет использовать методы install и remove.

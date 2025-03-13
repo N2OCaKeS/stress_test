@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  devpi:
+    build: .
+    ports:
+      - "3141:3141"
+    volumes:
+      - devpi-data:/data
+    # restart: always
+
+volumes:
+  devpi-data:

@@ -1,0 +1,49 @@
+Vagrant.configure("2") do |config|
+    config.vm.box = ENV['UPDATE']
+    config.vm.box_url = ENV['BOX_URL']
+    config.vm.synced_folder "/home/iface", "/home/iface"
+    
+    vms = [
+      { :name => "database1", :hostname => "database1.balance.rbt", :args => "database1", :cpus => "4", :memory => "32768", :ip => "10.177.103.111" },
+      { :name => "database2", :hostname => "database2.balance.rbt", :args => "database2", :cpus => "4", :memory => "32768", :ip => "10.177.103.112" },
+      { :name => "database3", :hostname => "database3.balance.rbt", :args => "database3", :cpus => "8", :memory => "32768", :ip => "10.177.103.113" },
+      { :name => "lbdb1", :hostname => "lbdb1.balance.rbt", :args => "lbdb1", :cpus => "8", :memory => "32768", :ip => "10.177.103.141" },
+      { :name => "lbdb2", :hostname => "lbdb2.balance.rbt", :args => "lbdb2", :cpus => "8", :memory => "32768", :ip => "10.177.103.142" },
+      { :name => "lbdb3", :hostname => "lbdb3.balance.rbt", :args => "lbdb3", :cpus => "8", :memory => "32768", :ip => "10.177.103.143" },
+      { :name => "dcfreeipa", :hostname => "dcfreeipa.balance.rbt", :args => "dcfreeipa", :cpus => "8", :memory => "32768", :ip => "10.177.103.110" },
+      { :name => "test", :hostname => "test.balance.rbt", :args => "test", :cpus => "2", :memory => "2048", :ip => "10.177.103.116" }
+    ]
+  
+    vms.each do |vm|
+      if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
+        config.vm.define vm[:name] do |machine|
+          machine.vm.hostname = vm[:hostname]
+          #machine.vm.network "public_network", ip: vm[:ip]
+          machine.vm.provider "virtualbox" do |vb|
+            vb.check_guest_additions = false
+            vb.name = vm[:name]
+            vb.memory = vm[:memory]
+            vb.cpus = vm[:cpus]
+            vb.customize ["modifyvm", :id, "--usb", "off"]
+            vb.customize ["modifyvm", :id, "--usbehci", "off"]
+
+            #Add new storage
+            unless File.exist?("/root/VirtualBox VMs/#{vm[:name]}/#{vm[:name]}_disk.vdi")
+              ctrl_type = ENV['RC'].nil? || ENV['RC'].start_with?('1.8') ? "sas" : "sas"
+              ctrl_name = "#{ctrl_type.upcase} Controller #{vm[:name]}"
+            
+              vb.customize ['createhd', '--filename', "./#{vm[:name]}_disk.vdi", '--size', 40960 ]
+              vb.customize ["storagectl", :id, "--name", ctrl_name, "--add", ctrl_type, '--portcount', 1]
+              vb.customize ['storageattach', :id,  '--storagectl', ctrl_name, '--port', 0, '--device', 0, '--type', 'hdd', '--medium', "./#{vm[:name]}_disk.vdi"]
+            end
+          end
+  
+          machine.vm.provision "shell", inline: <<-SHELL
+              mkdir -p /home/iface && ip link show | grep -e '2: e' | tail -n 1 | awk '{print$2}' | sed s'/://'g > /home/iface/iface
+            SHELL
+          #machine.vm.provision "shell", path:"bl_sources.sh"
+          machine.vm.provision "shell", path:"provision/env_provision.sh", args: [vm[:args], ENV['KERNEL'], ENV['RC']]
+        end
+      end
+    end
+  end

@@ -75,13 +75,13 @@ get_remote_file(remote_file_path='/vagrant/results.txt',
                 password='1',
                 port='2204') 
 
-send_remote_command(command='cat /etc/astra/build_version > /vagrant/vm_info.txt',
+send_remote_command(command='cat /etc/astra/build_version | sudo tee /vagrant/vm_info.txt',
                     ip='127.0.0.1', 
                     user='u', 
                     password='1',
                     port='2204')
 
-send_remote_command(command='uname -r >> /vagrant/vm_info.txt',
+send_remote_command(command='uname -r | sudo tee -a /vagrant/vm_info.txt',
                     ip='127.0.0.1', 
                     user='u', 
                     password='1',

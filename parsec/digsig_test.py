@@ -1,21 +1,11 @@
 import requests
 import json
-import argparse
 
 from libs.libparsec import info_list
 from digsig.digsiglib import (system, 
                               get_remote_file, 
                               results_handler,
                               send_remote_command)
-
-  
-parser = argparse.ArgumentParser()
-parser.add_argument('-path',
-                    action='store',
-                    required=True,
-                    help='results path',
-                    dest='PATH')
-args = parser.parse_args()
 
 
 def box_wrapper(box: str, dates: dict) -> tuple:
@@ -54,45 +44,63 @@ else:
 with open('box-config.json', 'r') as r:
     dates = json.loads(r.read())
 
-box = '1.8.1.UU.2.4'
-kernel = '6.1.90-1-generic'
-box_name, box_url = box_wrapper(box, dates)
-command = system()
+#box = '1.8.1.UU.2.4'
+#kernel = '6.1.90-1-generic'
+
+
 
 
 ###
-#Run Test
+#Test
 ###
 
-command.cmd('cd digsig && sudo bash vbox_prepare.sh')
-command.cmd(f'cd digsig && vagrant box add {box_name} {box_url} --force')
-command.cmd(f'cd digsig && UPDATE={box_name} BOX_URL={box_url} KL={kernel} RC={box} vagrant up --provider=virtualbox')
+class Digsig(system):
+    def __init__(self,
+                 kernel=None,
+                 rc=None,
+                 path=None):
+        
+        """
+        :param rc: Параметр rc, значение по умолчанию None.
+        :param kernel: Параметр kernel, значение по умолчанию None.
+        """
+        
+        self.kernel = kernel
+        self.rc = rc
+        self.box_name, self.box_url = box_wrapper(self.rc, dates)
+        self.path = path
 
-get_remote_file(remote_file_path='/vagrant/results.txt',
-                local_file_path='results.txt',
-                ip='127.0.0.1', 
-                user='u', 
-                password='1',
-                port='2204') 
 
-send_remote_command(command='cat /etc/astra/build_version | sudo tee /vagrant/vm_info.txt',
-                    ip='127.0.0.1', 
-                    user='u', 
-                    password='1',
-                    port='2204')
+    def run_test(self):
+        self.cmd('cd digsig && sudo bash vbox_prepare.sh')
+        self.cmd(f'cd digsig && vagrant box add {self.box_name} {self.box_url} --force')
+        self.cmd(f'cd digsig && UPDATE={self.box_name} BOX_URL={self.box_url} KL={self.kernel} RC={self.rc} vagrant up --provider=virtualbox')
 
-send_remote_command(command='uname -r | sudo tee -a /vagrant/vm_info.txt',
-                    ip='127.0.0.1', 
-                    user='u', 
-                    password='1',
-                    port='2204')
+        get_remote_file(remote_file_path='/vagrant/results.txt',
+                        local_file_path='results.txt',
+                        ip='127.0.0.1', 
+                        user='u', 
+                        password='1',
+                        port='2204') 
 
-get_remote_file(remote_file_path='/vagrant/vm_info.txt',
-                local_file_path='vm_info.txt',
-                ip='127.0.0.1', 
-                user='u', 
-                password='1',
-                port='2204') 
-                            
-results_handler('results.txt', args.PATH)
-info_list()
+        send_remote_command(command='cat /etc/astra/build_version | sudo tee /vagrant/vm_info.txt',
+                            ip='127.0.0.1', 
+                            user='u', 
+                            password='1',
+                            port='2204')
+
+        send_remote_command(command='uname -r | sudo tee -a /vagrant/vm_info.txt',
+                            ip='127.0.0.1', 
+                            user='u', 
+                            password='1',
+                            port='2204')
+
+        get_remote_file(remote_file_path='/vagrant/vm_info.txt',
+                        local_file_path='vm_info.txt',
+                        ip='127.0.0.1', 
+                        user='u', 
+                        password='1',
+                        port='2204') 
+                                    
+        results_handler('results.txt', self.path)
+        info_list()

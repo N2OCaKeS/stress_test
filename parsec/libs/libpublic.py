@@ -20,7 +20,8 @@ class Public:
                  test_cycle_version=None,
                  storage=False,
                  kernel_check=False,
-                 balance=False):
+                 balance=False,
+                 digsig=False):
     
         self.username = username
         self.token = token
@@ -33,6 +34,7 @@ class Public:
         self.storage = storage
         self.kernel_check = kernel_check
         self.balance = balance
+        self.digsig = digsig
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -100,40 +102,65 @@ class Public:
                                                      c_np)
 
             
-        
-        #прикрепить файлы к странице confluence
-        for file in os.listdir(REPORT_PATH):
-            confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
-                                            self.c_space,
-                                            c_np)
+        if self.digsig:
+            #генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+                
+            with open('vm_info.txt', 'r') as vm_info:
+                vm_info_lst = vm_info.read().split('\n')
             
-        #генерация вступительной таблицы
-        with open(INFO_FILENAME) as info:
-            info_lst = info.read().split('\n')
-        
-        with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
-            header_table_temp = file.read()
-            header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],                                                    
-                                                    concurency=CONC,
-                                                    counter=COUNTER,
-                                                    fs=FILE_SYSTEM,
-                                                    arm_num=self.stands[self.grade_stand]['grade'],
-                                                    arm_proc=self.stands[self.grade_stand]['cpu'],
-                                                    arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'])
+            with open(f'{TEMPLATE_PATH}/digsig_header_table_template.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        vm_av=vm_info_lst[0],                                                    
+                                                        vm_kernel=vm_info_lst[1],
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
             
-        #создание страницы отчета
-        with open(f'{TIMEDF_NAME}', 'r') as file:
-            impact_table_time = file.read()
-        with open(f'{TOTALDF_NAME}', 'r') as file:
-            impact_table_total = file.read()
-        with open(f'{DETAILDF_NAME}', 'r') as file:
-            impact_table_detail = file.read()
-        head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-        head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты утилизации CPU утилитой "time":</b></h3></p>'
-        head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции модуля Parsec:</b></h3></p>'
-        html_page = '\n'.join([header_table, head_row, impact_table_total, head_row2, impact_table_time, head_row3, impact_table_detail])
+            #создание страницы отчета
+            with open('templates/digsig.html', 'r') as file:
+                digsig_table = file.read()
+            
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            html_page = '\n'.join([header_table, head_row, digsig_table])
+        else:
+            #прикрепить файлы к странице confluence
+            for file in os.listdir(REPORT_PATH):
+                confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
+                                                self.c_space,
+                                                c_np)
+                
+            #генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+            
+            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],                                                    
+                                                        concurency=CONC,
+                                                        counter=COUNTER,
+                                                        fs=FILE_SYSTEM,
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
+                
+            #создание страницы отчета
+            with open(f'{TIMEDF_NAME}', 'r') as file:
+                impact_table_time = file.read()
+            with open(f'{TOTALDF_NAME}', 'r') as file:
+                impact_table_total = file.read()
+            with open(f'{DETAILDF_NAME}', 'r') as file:
+                impact_table_detail = file.read()
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты утилизации CPU утилитой "time":</b></h3></p>'
+            head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции модуля Parsec:</b></h3></p>'
+            html_page = '\n'.join([header_table, head_row, impact_table_total, head_row2, impact_table_time, head_row3, impact_table_detail])
         
 
         #выкладываем информацию на страницу

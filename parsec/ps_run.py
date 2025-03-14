@@ -1,6 +1,9 @@
-from ps_test import ParsecImpactTest
 import argparse
+
+from ps_test import ParsecImpactTest
 from libs.zefir import UploaderZC
+from digsig_test import Digsig
+from ps_conf import DIGSIG_NAME
 
 
 test = ParsecImpactTest()
@@ -72,6 +75,12 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     help='test-cycle-version',
                     dest='TCV')
 
+parser.add_argument('-ds', '--digsig',
+                    action='store_true',
+                    required=False,
+                    help='testname',
+                    dest='DIGSIG')
+
 args = parser.parse_args()
 
 uzs = UploaderZC(folder_tree_id=args.FTI,
@@ -84,13 +93,21 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 grade_stand=args.STAND,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
-                conf_new_page_name=args.NPAGE)
+                conf_new_page_name=args.NPAGE,
+                digsig=args.DIGSIG)
+
+digsig = Digsig(kernel=str(args.TCYC).split('_')[2],
+                rc=str(args.TCYC).split('_')[0],
+                path=DIGSIG_NAME)
 
 
 uzs.upload_test_cycle_status(zefir_status='progress')
-test.parsec_impact_by_fs_load()
+if args.DIGSIG:
+    digsig.run_test()
+else:
+    test.parsec_impact_by_fs_load()
 uzs.public = True
-uzs.statistics = True
+#uzs.statistics = True
 uzs.upload_test_cycle_status(zefir_status='pass')
 
 

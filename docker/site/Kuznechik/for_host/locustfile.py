@@ -1,19 +1,17 @@
 from locust import HttpUser, task, between, TaskSet
 import random
 
+class Tasks(TaskSet):
 
-class PostJsonUser(HttpUser):
-    wait_time = between(1, 3)
-
-    @task  # Этот таск выполняется чаще
+    @task
     def create_single_message_json(self):
         payload = {"content": "Test Json Message"}
         headers = {"Content-Type": "application/json"}
         self.client.post("/message/create", json=payload, headers=headers, timeout=60)
 
-    @task  # Этот таск реже, но тестирует массовую отправку
+    @task
     def create_bulk_messages_json(self):
-        num_messages = random.randint(5, 10)  # Отправляем случайное число сообщений
+        num_messages = random.randint(5, 2002)
         payload = [{"content": f"Bulk Message {i}"} for i in range(num_messages)]
         headers = {"Content-Type": "application/json"}
         self.client.post("/message/create", json=payload, headers=headers, timeout=60)
@@ -31,6 +29,10 @@ class PostJsonUser(HttpUser):
     def get_create(self):
         self.client.get("/message/create", name="GET MESSAGE", timeout=60)
 
+
+class MyUser(HttpUser):
+    wait_time = between(1, 3)
+    tasks = [Tasks]
 
 
 # class AdminTasks(SequentialTaskSet):

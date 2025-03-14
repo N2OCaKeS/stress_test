@@ -28,4 +28,3 @@ class Config(object):
 
 
 REDIS_HOST = "127.0.0.1"
-FILEDIR = ["/app", "/home/u/git/stress_test/docker/site/web_app"]

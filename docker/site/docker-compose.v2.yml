@@ -41,7 +41,7 @@ services:
     networks:
       - httpnet
     ports:
-      - "6432:5432"
+      - "6432:6432"
 
   redis:
     image: redis

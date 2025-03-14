@@ -1,6 +1,1 @@
 Method,Name,Error,Occurrences
-POST,/message/create,HTTPError('500 Server Error: Internal Server Error for url: /message/create'),2
-GET,GET /,"ReadTimeout(ReadTimeoutError(""HTTPConnectionPool(host='flask', port=80): Read timed out. (read timeout=50)""))",33
-GET,GET MESSAGE,"ReadTimeout(ReadTimeoutError(""HTTPConnectionPool(host='flask', port=80): Read timed out. (read timeout=60)""))",19
-GET,GET MESSAGE,HTTPError('500 Server Error: Internal Server Error for url: GET MESSAGE'),1
-POST,/message/create,"ReadTimeout(ReadTimeoutError(""HTTPConnectionPool(host='flask', port=80): Read timed out. (read timeout=60)""))",123

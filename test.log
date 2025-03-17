@@ -1,0 +1,297 @@
+TASK [apt install on susrv: susrv] **********************************************************
+Сущ:1 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64 InRelease
+Сущ:2 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/extended-repository 1.8_x86-64 InRelease
+Чтение списков пакетов…
+Чтение списков пакетов…
+Построение дерева зависимостей…
+Чтение информации о состоянии…
+Будут установлены следующие дополнительные пакеты:
+  libcommon-sense-perl libjson-perl libjson-xs-perl libllvm16 libpq5
+  libtypes-serialiser-perl postgresql-15 postgresql-client-15
+  postgresql-client-common postgresql-common sysstat
+Предлагаемые пакеты:
+  postgresql-doc postgresql-doc-15 isag
+Следующие НОВЫЕ пакеты будут установлены:
+  libcommon-sense-perl libjson-perl libjson-xs-perl libllvm16
+  libtypes-serialiser-perl postgresql postgresql-15 postgresql-client-15
+  postgresql-client-common postgresql-common sysstat
+Следующие пакеты будут обновлены:
+  libpq5
+Обновлено 1 пакетов, установлено 11 новых пакетов, для удаления отмечено 0 пакетов, и 1105 пакетов не обновлено.
+Необходимо скачать 42,9 MB/43,3 MB архивов.
+После данной операции объём занятого дискового пространства возрастёт на 191 MB.
+Пол:1 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 libtypes-serialiser-perl all 1.01-1+b1 [12,5 kB]
+Пол:2 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 libjson-xs-perl amd64 4.030-2+b1 [92,5 kB]
+Пол:3 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 libllvm16 amd64 1:16.0.6-19+astra15 [23,0 MB]
+Пол:4 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 libpq5 amd64 15.10-astra.se1 [188 kB]
+Пол:5 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 postgresql-client-15 amd64 15.10-astra.se1 [1 719 kB]
+Пол:6 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 postgresql-15 amd64 15.10-astra.se1 [17,3 MB]
+Пол:7 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 postgresql all 15+246astra3+ci1 [10,0 kB]
+Пол:8 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64/main amd64 sysstat amd64 12.6.1-1ubuntu1+b1 [597 kB]
+Получено 42,9 MB за 5с (9 185 kB/s)
+Выбор ранее не выбранного пакета libjson-perl.
+(Чтение базы данных … (Чтение базы данных … 5%(Чтение базы данных … 10%(Чтение базы данных … 15%(Чтение базы данных … 20%(Чтение базы данных … 25%(Чтение базы данных … 30%(Чтение базы данных … 35%(Чтение базы данных … 40%(Чтение базы данных … 45%(Чтение базы данных … 50%(Чтение базы данных … 55%(Чтение базы данных … 60%(Чтение базы данных … 65%(Чтение базы данных … 70%(Чтение базы данных … 75%(Чтение базы данных … 80%(Чтение базы данных … 85%(Чтение базы данных … 90%(Чтение базы данных … 95%(Чтение базы данных … 100%(Чтение базы данных … на данный момент установлено 267359 файлов и каталогов.)
+Подготовка к распаковке …/00-libjson-perl_4.10000-1+b1_all.deb …
+Распаковывается libjson-perl (4.10000-1+b1) …
+Выбор ранее не выбранного пакета postgresql-client-common.
+Подготовка к распаковке …/01-postgresql-client-common_246astra3+ci1_all.deb …
+Распаковывается postgresql-client-common (246astra3+ci1) …
+Выбор ранее не выбранного пакета postgresql-common.
+Подготовка к распаковке …/02-postgresql-common_246astra3+ci1_all.deb …
+Добавляется «отклонение /usr/bin/pg_config в /usr/bin/pg_config.libpq-dev из-за postgresql-common»
+Распаковывается postgresql-common (246astra3+ci1) …
+Выбор ранее не выбранного пакета libcommon-sense-perl:amd64.
+Подготовка к распаковке …/03-libcommon-sense-perl_3.75-3+b1_amd64.deb …
+Распаковывается libcommon-sense-perl:amd64 (3.75-3+b1) …
+Выбор ранее не выбранного пакета libtypes-serialiser-perl.
+Подготовка к распаковке …/04-libtypes-serialiser-perl_1.01-1+b1_all.deb …
+Распаковывается libtypes-serialiser-perl (1.01-1+b1) …
+Выбор ранее не выбранного пакета libjson-xs-perl.
+Подготовка к распаковке …/05-libjson-xs-perl_4.030-2+b1_amd64.deb …
+Распаковывается libjson-xs-perl (4.030-2+b1) …
+Выбор ранее не выбранного пакета libllvm16:amd64.
+Подготовка к распаковке …/06-libllvm16_1%3a16.0.6-19+astra15_amd64.deb …
+Распаковывается libllvm16:amd64 (1:16.0.6-19+astra15) …
+Подготовка к распаковке …/07-libpq5_15.10-astra.se1_amd64.deb …
+Распаковывается libpq5:amd64 (15.10-astra.se1) на замену (15.6-astra.se2+b1) …
+Выбор ранее не выбранного пакета postgresql-client-15.
+Подготовка к распаковке …/08-postgresql-client-15_15.10-astra.se1_amd64.deb …
+Распаковывается postgresql-client-15 (15.10-astra.se1) …
+Выбор ранее не выбранного пакета postgresql-15.
+Подготовка к распаковке …/09-postgresql-15_15.10-astra.se1_amd64.deb …
+Распаковывается postgresql-15 (15.10-astra.se1) …
+Выбор ранее не выбранного пакета postgresql.
+Подготовка к распаковке …/10-postgresql_15+246astra3+ci1_all.deb …
+Распаковывается postgresql (15+246astra3+ci1) …
+Выбор ранее не выбранного пакета sysstat.
+Подготовка к распаковке …/11-sysstat_12.6.1-1ubuntu1+b1_amd64.deb …
+Распаковывается sysstat (12.6.1-1ubuntu1+b1) …
+Настраивается пакет postgresql-client-common (246astra3+ci1) …
+Настраивается пакет libpq5:amd64 (15.10-astra.se1) …
+Настраивается пакет libcommon-sense-perl:amd64 (3.75-3+b1) …
+Настраивается пакет postgresql-client-15 (15.10-astra.se1) …
+update-alternatives: используется /usr/share/postgresql/15/man/man1/psql.1.gz для предоставления /usr/share/man/man1/psql.1.gz (psql.1.gz) в автоматическом режиме
+Настраивается пакет libtypes-serialiser-perl (1.01-1+b1) …
+Настраивается пакет libjson-perl (4.10000-1+b1) …
+Настраивается пакет libllvm16:amd64 (1:16.0.6-19+astra15) …
+Настраивается пакет sysstat (12.6.1-1ubuntu1+b1) …
+debconf: не удалось инициализировать интерфейс: Dialog
+debconf: (Интерфейс dialog не будет работать на неуправляемом (dumb) терминале, из буфера emacs shell или в отсутствие контролирующего терминала.)
+debconf: будет использован интерфейс: Readline
+debconf: не удалось инициализировать интерфейс: Readline
+debconf: (Этот интерфейс работает только с управляющего терминала.)
+debconf: будет использован интерфейс: Teletype
+
+Creating config file /etc/default/sysstat with new version
+update-alternatives: используется /usr/bin/sar.sysstat для предоставления /usr/bin/sar (sar) в автоматическом режиме
+Created symlink /etc/systemd/system/sysstat.service.wants/sysstat-collect.timer → /lib/systemd/system/sysstat-collect.timer.
+Created symlink /etc/systemd/system/sysstat.service.wants/sysstat-summary.timer → /lib/systemd/system/sysstat-summary.timer.
+Created symlink /etc/systemd/system/multi-user.target.wants/sysstat.service → /lib/systemd/system/sysstat.service.
+Настраивается пакет libjson-xs-perl (4.030-2+b1) …
+Настраивается пакет postgresql-common (246astra3+ci1) …
+debconf: не удалось инициализировать интерфейс: Dialog
+debconf: (Интерфейс dialog не будет работать на неуправляемом (dumb) терминале, из буфера emacs shell или в отсутствие контролирующего терминала.)
+debconf: будет использован интерфейс: Readline
+debconf: не удалось инициализировать интерфейс: Readline
+debconf: (Этот интерфейс работает только с управляющего терминала.)
+debconf: будет использован интерфейс: Teletype
+su: Доступ запрещен
+
+Creating config file /etc/postgresql-common/createcluster.conf with new version
+Building PostgreSQL dictionaries from installed myspell/hunspell packages...
+  en_us
+  ru_ru
+Removing obsolete dictionary files:
+Created symlink /etc/systemd/system/multi-user.target.wants/postgresql.service → /lib/systemd/system/postgresql.service.
+Настраивается пакет postgresql-15 (15.10-astra.se1) …
+debconf: не удалось инициализировать интерфейс: Dialog
+debconf: (Интерфейс dialog не будет работать на неуправляемом (dumb) терминале, из буфера emacs shell или в отсутствие контролирующего терминала.)
+debconf: будет использован интерфейс: Readline
+debconf: не удалось инициализировать интерфейс: Readline
+debconf: (Этот интерфейс работает только с управляющего терминала.)
+debconf: будет использован интерфейс: Teletype
+Creating new PostgreSQL cluster 15/main ...
+/usr/lib/postgresql/15/bin/initdb -D /var/lib/postgresql/15/main --auth-local peer --auth-host scram-sha-256 --no-instructions
+Файлы, относящиеся к этой СУБД, будут принадлежать пользователю "postgres".
+От его имени также будет запускаться процесс сервера.
+
+Кластер баз данных будет инициализирован с локалью "ru_RU.UTF-8".
+Кодировка БД по умолчанию, выбранная в соответствии с настройками: "UTF8".
+Выбрана конфигурация текстового поиска по умолчанию "russian".
+
+Контроль целостности страниц данных отключён.
+
+исправление прав для существующего каталога /var/lib/postgresql/15/main... ок
+создание подкаталогов... ок
+выбирается реализация динамической разделяемой памяти... posix
+выбирается значение max_connections по умолчанию... 100
+выбирается значение shared_buffers по умолчанию... 128MB
+выбирается часовой пояс по умолчанию... Europe/Moscow
+создание конфигурационных файлов... ок
+выполняется подготовительный скрипт... ок
+выполняется заключительная инициализация... созданние внутренних правил аудита ...ок
+сохранение данных на диске... ок
+update-alternatives: используется /usr/share/postgresql/15/man/man1/postmaster.1.gz для предоставления /usr/share/man/man1/postmaster.1.gz (postmaster.1.gz) в автоматическом режиме
+Настраивается пакет postgresql (15+246astra3+ci1) …
+Обрабатываются триггеры для xserver-xorg-core (2:21.1.7-1ubuntu4astra.se28+b1) …
+update exec ids due to /usr/bin changed
+Обрабатываются триггеры для man-db (2.11.2-2+b1) …
+Обрабатываются триггеры для libc-bin (2.36-9+deb12u7+ci202405171200+astra5+b1) …
+debconf: не удалось инициализировать интерфейс: Dialog
+debconf: (Интерфейс dialog не будет работать на неуправляемом (dumb) терминале, из буфера emacs shell или в отсутствие контролирующего терминала.)
+debconf: будет использован интерфейс: Readline
+debconf: не удалось инициализировать интерфейс: Readline
+debconf: (Этот интерфейс работает только с управляющего терминала.)
+debconf: будет использован интерфейс: Teletype
+dpkg-preconfigure: не удалось заново открыть stdin: 
+
+ **********************************************************
+
+
+TASK [apt install on suac: suac] **********************************************************
+Сущ:1 http://releases.devos.astralinux.ru/frozen/1.8/latest/latest/main-repository 1.8_x86-64 InRelease
+Сущ:2 http://releases.devos.astralinux.ru/frozen/1.8/latest/latest/devel-repository 1.8_x86-64 InRelease
+Чтение списков пакетов…
+E: Работа dpkg была прервана, вы должны вручную запустить «sudo dpkg --configure -a» для устранения проблемы. 
+
+ **********************************************************
+
+
+TASK [apt install on susrv: susrv] **********************************************************
+Сущ:1 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/main-repository 1.8_x86-64 InRelease
+Сущ:2 https://releases.devos.astralinux.ru/frozen/1.8/1.8.1/1.8.1.16/extended-repository 1.8_x86-64 InRelease
+Чтение списков пакетов…
+Чтение списков пакетов…
+Построение дерева зависимостей…
+Чтение информации о состоянии…
+Уже установлен пакет postgresql самой новой версии (15+246astra3+ci1).
+Будут установлены следующие дополнительные пакеты:
+  apache2-bin apache2-data apache2-utils libapr1 libaprutil1
+  libaprutil1-dbd-sqlite3 libaprutil1-ldap liblua5.3-0
+Предлагаемые пакеты:
+  apache2-doc apache2-suexec-pristine | apache2-suexec-custom
+Следующие НОВЫЕ пакеты будут установлены:
+  apache2 apache2-bin apache2-data apache2-utils libapr1 libaprutil1
+  libaprutil1-dbd-sqlite3 libaprutil1-ldap liblua5.3-0
+Обновлено 0 пакетов, установлено 9 новых пакетов, для удаления отмечено 0 пакетов, и 1105 пакетов не обновлено.
+Необходимо скачать 0 B/2 316 kB архивов.
+После данной операции объём занятого дискового пространства возрастёт на 8 300 kB.
+Выбор ранее не выбранного пакета libapr1:amd64.
+(Чтение базы данных … (Чтение базы данных … 5%(Чтение базы данных … 10%(Чтение базы данных … 15%(Чтение базы данных … 20%(Чтение базы данных … 25%(Чтение базы данных … 30%(Чтение базы данных … 35%(Чтение базы данных … 40%(Чтение базы данных … 45%(Чтение базы данных … 50%(Чтение базы данных … 55%(Чтение базы данных … 60%(Чтение базы данных … 65%(Чтение базы данных … 70%(Чтение базы данных … 75%(Чтение базы данных … 80%(Чтение базы данных … 85%(Чтение базы данных … 90%(Чтение базы данных … 95%(Чтение базы данных … 100%(Чтение базы данных … на данный момент установлено 269752 файла и каталога.)
+Подготовка к распаковке …/0-libapr1_1.7.2-3+b1_amd64.deb …
+Распаковывается libapr1:amd64 (1.7.2-3+b1) …
+Выбор ранее не выбранного пакета libaprutil1:amd64.
+Подготовка к распаковке …/1-libaprutil1_1.6.3-1+b3_amd64.deb …
+Распаковывается libaprutil1:amd64 (1.6.3-1+b3) …
+Выбор ранее не выбранного пакета libaprutil1-dbd-sqlite3:amd64.
+Подготовка к распаковке …/2-libaprutil1-dbd-sqlite3_1.6.3-1+b3_amd64.deb …
+Распаковывается libaprutil1-dbd-sqlite3:amd64 (1.6.3-1+b3) …
+Выбор ранее не выбранного пакета libaprutil1-ldap:amd64.
+Подготовка к распаковке …/3-libaprutil1-ldap_1.6.3-1+b3_amd64.deb …
+Распаковывается libaprutil1-ldap:amd64 (1.6.3-1+b3) …
+Выбор ранее не выбранного пакета liblua5.3-0:amd64.
+Подготовка к распаковке …/4-liblua5.3-0_5.3.6-2+b1_amd64.deb …
+Распаковывается liblua5.3-0:amd64 (5.3.6-2+b1) …
+Выбор ранее не выбранного пакета apache2-bin.
+Подготовка к распаковке …/5-apache2-bin_2.4.57-2+astra.se1+ci1+b2_amd64.deb …
+Распаковывается apache2-bin (2.4.57-2+astra.se1+ci1+b2) …
+Выбор ранее не выбранного пакета apache2-data.
+Подготовка к распаковке …/6-apache2-data_2.4.57-2+astra.se1+ci1+b2_all.deb …
+Распаковывается apache2-data (2.4.57-2+astra.se1+ci1+b2) …
+Выбор ранее не выбранного пакета apache2-utils.
+Подготовка к распаковке …/7-apache2-utils_2.4.57-2+astra.se1+ci1+b2_amd64.deb …
+Распаковывается apache2-utils (2.4.57-2+astra.se1+ci1+b2) …
+Выбор ранее не выбранного пакета apache2.
+Подготовка к распаковке …/8-apache2_2.4.57-2+astra.se1+ci1+b2_amd64.deb …
+Распаковывается apache2 (2.4.57-2+astra.se1+ci1+b2) …
+Настраивается пакет libapr1:amd64 (1.7.2-3+b1) …
+Настраивается пакет liblua5.3-0:amd64 (5.3.6-2+b1) …
+Настраивается пакет apache2-data (2.4.57-2+astra.se1+ci1+b2) …
+Настраивается пакет libaprutil1:amd64 (1.6.3-1+b3) …
+Настраивается пакет libaprutil1-ldap:amd64 (1.6.3-1+b3) …
+Настраивается пакет libaprutil1-dbd-sqlite3:amd64 (1.6.3-1+b3) …
+Настраивается пакет apache2-utils (2.4.57-2+astra.se1+ci1+b2) …
+Настраивается пакет apache2-bin (2.4.57-2+astra.se1+ci1+b2) …
+Настраивается пакет apache2 (2.4.57-2+astra.se1+ci1+b2) …
+Enabling module mpm_prefork.
+Enabling module authz_core.
+Enabling module authz_host.
+Enabling module authn_core.
+Enabling module auth_basic.
+Enabling module access_compat.
+Enabling module authn_file.
+Enabling module authz_user.
+Enabling module alias.
+Enabling module dir.
+Enabling module autoindex.
+Enabling module env.
+Enabling module mime.
+Enabling module negotiation.
+Enabling module setenvif.
+Enabling module filter.
+Enabling module deflate.
+Enabling module status.
+Enabling module reqtimeout.
+Enabling conf charset.
+Enabling conf localized-error-pages.
+Enabling conf other-vhosts-access-log.
+Enabling conf security.
+Enabling conf serve-cgi-bin.
+Enabling site 000-default.
+Created symlink /etc/systemd/system/multi-user.target.wants/apache2.service → /lib/systemd/system/apache2.service.
+Created symlink /etc/systemd/system/multi-user.target.wants/apache-htcacheclean.service → /lib/systemd/system/apache-htcacheclean.service.
+Обрабатываются триггеры для xserver-xorg-core (2:21.1.7-1ubuntu4astra.se28+b1) …
+update exec ids due to /usr/bin changed
+Обрабатываются триггеры для man-db (2.11.2-2+b1) …
+Обрабатываются триггеры для libc-bin (2.36-9+deb12u7+ci202405171200+astra5+b1) …
+debconf: не удалось инициализировать интерфейс: Dialog
+debconf: (Интерфейс dialog не будет работать на неуправляемом (dumb) терминале, из буфера emacs shell или в отсутствие контролирующего терминала.)
+debconf: будет использован интерфейс: Readline
+debconf: не удалось инициализировать интерфейс: Readline
+debconf: (Этот интерфейс работает только с управляющего терминала.)
+debconf: будет использован интерфейс: Teletype
+dpkg-preconfigure: не удалось заново открыть stdin: 
+
+ **********************************************************
+
+
+TASK [apt remove on susrv: susrv] **********************************************************
+Чтение списков пакетов…
+Построение дерева зависимостей…
+Чтение информации о состоянии…
+Следующие пакеты будут УДАЛЕНЫ:
+  postgresql
+Обновлено 0 пакетов, установлено 0 новых пакетов, для удаления отмечено 1 пакетов, и 1105 пакетов не обновлено.
+После данной операции объём занятого дискового пространства уменьшится на 15,4 kB.
+(Чтение базы данных … (Чтение базы данных … 5%(Чтение базы данных … 10%(Чтение базы данных … 15%(Чтение базы данных … 20%(Чтение базы данных … 25%(Чтение базы данных … 30%(Чтение базы данных … 35%(Чтение базы данных … 40%(Чтение базы данных … 45%(Чтение базы данных … 50%(Чтение базы данных … 55%(Чтение базы данных … 60%(Чтение базы данных … 65%(Чтение базы данных … 70%(Чтение базы данных … 75%(Чтение базы данных … 80%(Чтение базы данных … 85%(Чтение базы данных … 90%(Чтение базы данных … 95%(Чтение базы данных … 100%(Чтение базы данных … на данный момент установлено 270475 файлов и каталогов.)
+Удаляется postgresql (15+246astra3+ci1) …
+
+ **********************************************************
+
+
+TASK [apt remove on suac: suac] **********************************************************
+E: Работа dpkg была прервана, вы должны вручную запустить «sudo dpkg --configure -a» для устранения проблемы. 
+
+ **********************************************************
+
+
+TASK [apt remove on susrv: susrv] **********************************************************
+Чтение списков пакетов…
+Построение дерева зависимостей…
+Чтение информации о состоянии…
+Пакет «postgresql» не установлен, поэтому не может быть удалён
+Следующие пакеты устанавливались автоматически и больше не требуются:
+  apache2-bin apache2-data apache2-utils libapr1 libaprutil1
+  libaprutil1-dbd-sqlite3 libaprutil1-ldap liblua5.3-0
+Для их удаления используйте «sudo apt autoremove».
+Следующие пакеты будут УДАЛЕНЫ:
+  apache2
+Обновлено 0 пакетов, установлено 0 новых пакетов, для удаления отмечено 1 пакетов, и 1105 пакетов не обновлено.
+После данной операции объём занятого дискового пространства уменьшится на 581 kB.
+(Чтение базы данных … (Чтение базы данных … 5%(Чтение базы данных … 10%(Чтение базы данных … 15%(Чтение базы данных … 20%(Чтение базы данных … 25%(Чтение базы данных … 30%(Чтение базы данных … 35%(Чтение базы данных … 40%(Чтение базы данных … 45%(Чтение базы данных … 50%(Чтение базы данных … 55%(Чтение базы данных … 60%(Чтение базы данных … 65%(Чтение базы данных … 70%(Чтение базы данных … 75%(Чтение базы данных … 80%(Чтение базы данных … 85%(Чтение базы данных … 90%(Чтение базы данных … 95%(Чтение базы данных … 100%(Чтение базы данных … на данный момент установлено 270472 файла и каталога.)
+Удаляется apache2 (2.4.57-2+astra.se1+ci1+b2) …
+Обрабатываются триггеры для man-db (2.11.2-2+b1) …
+
+ **********************************************************
+
+

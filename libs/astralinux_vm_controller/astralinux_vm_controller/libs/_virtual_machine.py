@@ -24,6 +24,6 @@ class _VirtualMashines(ABC):
     def execute(cls, vms: list, commands: list, vm_dates: dict) -> int:
         pass
 
-    # @abstractmethod
-    # def apt(cls, vms: list, commands: list, vm_dates: dict) -> int:
-    #     pass
+    @abstractmethod
+    def apt(cls, vms: list, commands: list, vm_dates: dict) -> int:
+        pass

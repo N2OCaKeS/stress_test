@@ -16,7 +16,6 @@ vms_date = {
         'cpus':'4',
         'memory':'4096'
     },
-
 }
 
 groups = {
@@ -39,6 +38,19 @@ commands = {
         }
     }
 }
+
+
+apt_install = {
+    'susrv': ['postgresql'],
+    'g_databases': ['postgresql', 'apache2']
+}
+
 pro = VBox()
-pro.execute(vms_date, commands, groups)
+pro.apt.remove(apt_install, vms_date, groups)
+# pro.execute(vms_date, commands, groups)
+
+
+
+
+
 

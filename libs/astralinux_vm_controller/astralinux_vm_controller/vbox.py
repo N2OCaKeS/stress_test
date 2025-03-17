@@ -2,7 +2,10 @@ from libs._virtual_machine import _VirtualMashines
 from libs._vagrant import _Vagrant 
 from libs._system_commands import _system_commands as system_commands
 from libs._ssh_comand import _ssh_command as ssh_command
-from VirtualBox._vbox_manage import _Vbox_manager as vbox_manager
+
+from base_commands._apt import _apt_manager as apt_manager
+
+from vBox._vbox_manage import _Vbox_manager as vbox_manager
 
 from os import system
 
@@ -38,7 +41,7 @@ class VBox(_VirtualMashines):
                     'cpus':'*',
                     'memory':'*'}
                     } 
-        """ # TODO доработать
+        """
 
         vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms, vms_date)
 
@@ -94,6 +97,7 @@ class VBox(_VirtualMashines):
     
     @classmethod
     def execute(cls, vm_dates: dict, commands: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
+        # TODO спросить совет по рефакторингу этой части кода (для будущей поддержки libvirt)
         """
         Выполнение команд
 
@@ -181,4 +185,4 @@ class VBox(_VirtualMashines):
     # Переопределяем apt на уровне класса,
     # чтобы можно было обращаться напрямую к методам install и remove:
 
-    # apt = AptManager()
+    apt = apt_manager()

@@ -8,8 +8,8 @@ class Config(object):
 
     USER = os.environ.get("POSTGRES_USER", "u")
     PASSWORD = os.environ.get("POSTGRES_PASSWORD", "1")
-    HOST = os.environ.get("PGBOUNCER_HOST", "127.0.0.1")
-    PORT = os.environ.get("PGBOUNCER_PORT", "6432")
+    HOST = os.environ.get("POSTGRES_HOST", "127.0.0.1")
+    PORT = os.environ.get("POSTGRES_PORT", "6432")
     DB = os.environ.get("POSTGRES_DB", "mydb")
 
     SQLALCHEMY_DATABASE_URI = f"postgresql://{USER}:{PASSWORD}@{HOST}:{PORT}/{DB}"
@@ -27,4 +27,4 @@ class Config(object):
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 
-REDIS_HOST = "127.0.0.1"
+REDIS_HOST = "redis" # добавить обновление под 127.0.0.1

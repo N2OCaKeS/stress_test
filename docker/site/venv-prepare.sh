@@ -30,7 +30,7 @@ drop_db(){
     # delete from alembic_version;
 }
 
-setup_db(){
+app_settings(){
     md5_pass=$(echo -n "1postgres" | md5sum | awk '{print "md5"$1}')
 
     sudo apt-get update
@@ -56,7 +56,7 @@ EOF
     sudo sed -i 's/^\(local\s\+all\s\+postgres\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
     sudo sed -i 's/^\(host\s\+all\s\+all\s\+127.0.0.1\/32\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
     sudo sed -i 's/^\(host\s\+all\s\+all\s\+::1\/128\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
-
+    sudo sed -i 's/^REDIS_HOST = "redis"/REDIS_HOST = "127.0.0.1"/' web_app/config.py
     sudo cp pg/postgresql.conf /etc/postgresql/*/main/postgresql.conf 
     echo "data_directory = '/var/lib/postgresql/15/main'" | sudo tee -a /etc/postgresql/15/main/postgresql.conf
 
@@ -67,7 +67,7 @@ EOF
 
     sudo cp pg/pgbouncer/pgbouncer_host/* /etc/pgbouncer/
     sudo systemctl restart pgbouncer
-
+    sudo rm -f /etc/apache2/sites-available/*
     sudo cp apache-config/config_host/apache2.conf /etc/apache2/apache2.conf
     sudo cp apache-config/config_host/web-app.conf /etc/apache2/sites-available/
     sudo chown www-data:www-data /etc/apache2/sites-available/web-app.conf
@@ -93,6 +93,6 @@ case $1 in
         ;;
     prepare)
         venv
-	setup_db
+	    app_settings
         ;;
 esac

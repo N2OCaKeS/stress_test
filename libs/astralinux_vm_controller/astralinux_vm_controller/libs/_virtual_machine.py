@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-class VirtualMashines(ABC):
+class _VirtualMashines(ABC):
     """
     Абстрактный конвейер\n
     prepare: Подготовка окружения
@@ -24,6 +24,6 @@ class VirtualMashines(ABC):
     def execute(cls, vms: list, commands: list, vm_dates: dict) -> int:
         pass
 
-    @abstractmethod
-    def apt(cls, vms: list, commands: list, vm_dates: dict) -> int:
-        pass
+    # @abstractmethod
+    # def apt(cls, vms: list, commands: list, vm_dates: dict) -> int:
+    #     pass

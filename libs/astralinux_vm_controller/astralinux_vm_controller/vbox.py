@@ -1,17 +1,15 @@
-import paramiko
-import threading
-import VirtualMashines
-import libs.vagrant as vagrant
-import libs.decorators as decorators
-from libs.system_command import lib_system
+from libs._virtual_machine import _VirtualMashines
+from libs._vagrant import _Vagrant 
+from libs._system_commands import _system_commands as system_commands
+from libs._ssh_comand import _ssh_command as ssh_command
+from VirtualBox._vbox_manage import _Vbox_manager as vbox_manager
 
-from vbox_manage import vbox_manage
-from commands.apt import AptManager
 from os import system
 
+import threading
 
 
-class vbox(VirtualMashines):
+class VBox(_VirtualMashines):
     @classmethod
     def prepare(cls, path_prepare) -> int:
         """
@@ -23,11 +21,12 @@ class vbox(VirtualMashines):
         return system.cmd_with_returncode(f"sudo bash {path_prepare}")    
     
     @classmethod
-    def build(cls, box: str, rc: str, vms: list, vms_date: list) -> int:
+    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list) -> int: # TODO переработать после реализации Vagrant_constructor
         """
         Сборка VM
 
         Args:
+            path_to_vagrantfile (str): путь до Vagrantfile 
             box (str): имя образа
             rc (str): версия ос
             vms (list): список имен ВМ
@@ -37,17 +36,20 @@ class vbox(VirtualMashines):
                     'sshnum':'',
                     'ip_bridge':'*.*.*.*',
                     'cpus':'*',
-                    'memory':'*'}, 
-                    ...
-                    }
-        """
-        vagrant.vagrant(box, rc ,vms)
-        vbox_manage.set_bridge_network(vms)
-        vbox_manage.create_snapshots_all_vm
-        system.cmd('vboxmanage natnetwork list')
-        system.cmd('vboxmanage list hostonlyifs')
-        system.cmd('vboxmanage list bridgedifs')
-        system.cmd('vboxmanage list vms')
+                    'memory':'*'}
+                    } 
+        """ # TODO доработать
+
+        vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms, vms_date)
+
+        vagrant.vagrant_up()
+
+        vbox_manager.set_bridge_network(vms)
+        vbox_manager.create_snapshots_all_vm(vms)
+        system_commands.cmd('vboxmanage natnetwork list')
+        system_commands.cmd('vboxmanage list hostonlyifs')
+        system_commands.cmd('vboxmanage list bridgedifs')
+        system_commands.cmd('vboxmanage list vms')
 
         #TODO Узнать нужен ли этот блок
 
@@ -91,14 +93,13 @@ class vbox(VirtualMashines):
             return 0        
     
     @classmethod
-    def execute(cls, vms: list, vms_groups: dict, vm_dates: dict, commands: list, username: str, password: str) -> int:
+    def execute(cls, vm_dates: dict, commands: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
         Выполнение команд
 
         Args:
-            vms (list): список имен ВМ
             vms_groups (dict): словарь с группами хостов пример:
-                hosts = {
+                groups = {
                     'group_name': ['host1', 'host2'],
                     ...
                     }
@@ -115,48 +116,54 @@ class vbox(VirtualMashines):
 
             commands (dict): команды для выполнения на ВМ пример:
                 commands = {
-                    'hostname': {
-                        'command',
-                        'set/get signal',
-                        'signal name'
-                    }, ...}
+                    'hostname': { # имя хоста или имя группы хостов на которых нужно выполнить команду имя группы будет называться с g_ в начале
+                        'task_name': { # имя задачи
+                            'command':'yes 1 | adduser user0',  # Command to execute
+                            'signal set': 'User created',       # Signal to set
+                            'signal get': ''                    # Signal to get
+                        }    
+                    }, 
+                    ...
+                    }
 
             username (str): имя пользователя для подключения к ВМ
             password (str): пароль для подключения к ВМ
         """
-        def execute_command(host, command, signal_set=None, signal_get=None):
-            if signal_get:
-                lib_system.get_signal(signal_get)
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(hostname=vm_dates[host]['ip'], username=username, password=password)
-            stdin, stdout, stderr = ssh.exec_command(command)
-            output = stdin.read().decode() + stdout.read().decode() + stderr.read().decode()
-            ssh.close()
-            if signal_set and not stderr.read():
-                lib_system.set_signal(signal_set)
-
-            return {'output': output}
-
-        @decorators.log_task
-        def threaded_execution(host, command, task_name, signal_set=None, signal_get=None):
-            return execute_command(host, command, signal_set, signal_get)
+        
+        def _threaded_execution(host: str, task_name: str, task: dict):
+            ssh_command._cmd(
+                host=host,
+                command=task['command'],
+                username=username,
+                password=password,
+                vm_dates=vm_dates,
+                signal_set=task.get('signal set'),
+                signal_get=task.get('signal get'),
+                task_name=task_name
+            )
 
         threads = []
-        for task_name, task_commands in commands.items():
-            for host, command_info in task_commands.items():
-                command = command_info.get('command')
-                signal_set = command_info.get('signal set')
-                signal_get = command_info.get('signal get')
-                thread = threading.Thread(target=threaded_execution, kwargs={
-                    'host': host, 
-                    'command': command, 
-                    'task_name': task_name, 
-                    'signal_set': signal_set, 
-                    'signal_get': signal_get
-                })
-                threads.append(thread)
-                thread.start()
+
+        # Итерация по ключам в словаре commands
+        for target, tasks in commands.items():
+            if target.startswith("g_"):
+                # Если ключ начинается с "g_", это команды для группы хостов
+                group_name = target[2:]  # убираем префикс "g_"
+                if vms_groups and group_name in vms_groups:
+                    for host in vms_groups[group_name]:
+                        for task_name, task in tasks.items():
+                            thread = threading.Thread(target=_threaded_execution, args=(host, task_name, task))
+                            threads.append(thread)
+                            thread.start()
+                else:
+                    print(f"Группа '{group_name}' не найдена в vms_groups.")
+            else:
+                # Если ключ не начинается с "g_", это имя конкретного хоста
+                host = target
+                for task_name, task in tasks.items():
+                    thread = threading.Thread(target=_threaded_execution, args=(host, task_name, task))
+                    threads.append(thread)
+                    thread.start()
 
         for thread in threads:
             thread.join()
@@ -173,4 +180,5 @@ class vbox(VirtualMashines):
 
     # Переопределяем apt на уровне класса,
     # чтобы можно было обращаться напрямую к методам install и remove:
-    apt = AptManager()
+
+    # apt = AptManager()

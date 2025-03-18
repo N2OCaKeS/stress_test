@@ -31,3 +31,6 @@ class _VirtualMashines(ABC):
     @abstractmethod
     def scp(cls, vms: list, commands: list, vm_dates: dict) -> int:
         pass
+    @abstractmethod
+    def hosts(cls, vms: list, vm_dates: dict) -> int:
+        pass

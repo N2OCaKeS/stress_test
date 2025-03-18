@@ -69,6 +69,8 @@ class Digsig(system):
         self.rc = rc
         self.box_name, self.box_url = box_wrapper(self.rc, dates)
         self.path = path
+        self.user = 'vagrant'
+        self.password = 'vagrant'
 
 
     def run_test(self):
@@ -79,27 +81,27 @@ class Digsig(system):
         get_remote_file(remote_file_path='/vagrant/results.txt',
                         local_file_path='results.txt',
                         ip='127.0.0.1', 
-                        user='u', 
-                        password='1',
+                        user=self.user, 
+                        password=self.password,
                         port='2204') 
 
         send_remote_command(command='cat /etc/astra/build_version | sudo tee /vagrant/vm_info.txt',
                             ip='127.0.0.1', 
-                            user='u', 
-                            password='1',
+                            user=self.user, 
+                            password=self.password,
                             port='2204')
 
         send_remote_command(command='uname -r | sudo tee -a /vagrant/vm_info.txt',
                             ip='127.0.0.1', 
-                            user='u', 
-                            password='1',
+                            user=self.user, 
+                            password=self.password,
                             port='2204')
 
         get_remote_file(remote_file_path='/vagrant/vm_info.txt',
                         local_file_path='vm_info.txt',
                         ip='127.0.0.1', 
-                        user='u', 
-                        password='1',
+                        user=self.user, 
+                        password=self.password,
                         port='2204') 
                                     
         results_handler('results.txt', self.path)

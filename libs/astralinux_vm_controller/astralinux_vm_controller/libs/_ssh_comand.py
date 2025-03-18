@@ -5,9 +5,10 @@ import paramiko
 class _ssh_command:
 
     @astralinux_decorators.trycorator.trycorator
-    @astralinux_decorators.ansible_log.log_task
+    @astralinux_decorators.ansible_log.ansible
     @staticmethod
-    def _cmd(host: str, command: str, username: str, password: str, vm_dates: dict, signal_set: str = None, signal_get: str = None, task_name: str = None) -> dict:
+    def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',
+             signal_set: str = None, signal_get: str = None, task_name: str = None) -> dict:
         """
         Выполнение команды на одном хосте с обработкой ошибок.
 
@@ -19,9 +20,10 @@ class _ssh_command:
             vm_dates (dict): полная информация о ВМ
             signal_set (str, optional): сигнал для установки
             signal_get (str, optional): сигнал для получения
+            task_name (str, optional): имя задачи для логирования
 
         Returns:
-            dict: результат выполнения команды
+            dict: результат выполнения команды с ключами 'output' и 'status'
         """
         ssh = None
         try:
@@ -39,19 +41,21 @@ class _ssh_command:
             )
 
             stdin, stdout, stderr = ssh.exec_command(command)
-            output = stdout.read().decode() + stderr.read().decode()
-            error = stderr.read().decode()
+            output_stdout = stdout.read().decode()
+            output_stderr = stderr.read().decode()
+            output = output_stdout + output_stderr
 
-            if error:
-                print(f"[{host}] Ошибка при выполнении {command}: {error}")
-                return {'output': error, 'status': 'error'}
-            
-            print(f"[{host}] Команда успешно выполнена: {command}")
-            
+            # Если в stderr есть вывод — считаем, что произошла ошибка
+            if output_stderr:
+                print(f"[{host}] Ошибка при выполнении {command}: {output_stderr}")
+                return {'output': output_stderr, 'status': 'error'}
+
+            print(f"[{host}] Команда закончила выполнение: {command}")
+
             if signal_set:
                 signals.set(signal_set)
 
-            return {'output': output, 'status': 'success'}
+            return {'output': output, 'status': 'ok'}
 
         except paramiko.AuthenticationException:
             print(f"[{host}] Ошибка аутентификации.")

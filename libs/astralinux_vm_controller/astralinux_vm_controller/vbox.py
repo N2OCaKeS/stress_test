@@ -2,10 +2,11 @@ from libs._virtual_machine import _VirtualMashines
 from libs._vagrant import _Vagrant 
 from libs._system_commands import _system_commands as system_commands
 from libs._ssh_comand import _ssh_command as ssh_command
+from libs._scp_comand import _scp_command as scp_command
 
 from base_commands._apt import _apt_manager as apt_manager
 
-from vBox._vbox_manage import _Vbox_manager as vbox_manager
+from vbox_manage._vbox_manage import _Vbox_manager as vbox_manager
 
 from os import system
 
@@ -134,8 +135,8 @@ class VBox(_VirtualMashines):
             password (str): пароль для подключения к ВМ
         """
         
-        def _threaded_execution(host: str, task_name: str, task: dict):
-            ssh_command._cmd(
+        def _threaded_execution(host: str, task_name: str, task: dict, username: str, password: str):
+            ssh_command.cmd(
                 host=host,
                 command=task['command'],
                 username=username,
@@ -184,5 +185,9 @@ class VBox(_VirtualMashines):
 
     # Переопределяем apt на уровне класса,
     # чтобы можно было обращаться напрямую к методам install и remove:
-
     apt = apt_manager()
+
+    def scp(cls) -> int:
+        pass
+
+    scp = scp_command()

@@ -27,3 +27,7 @@ class _VirtualMashines(ABC):
     @abstractmethod
     def apt(cls, vms: list, commands: list, vm_dates: dict) -> int:
         pass
+    
+    @abstractmethod
+    def scp(cls, vms: list, commands: list, vm_dates: dict) -> int:
+        pass

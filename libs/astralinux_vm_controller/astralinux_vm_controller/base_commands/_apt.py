@@ -29,7 +29,7 @@ class _apt_manager:
         def _threaded_install(host: str, packages: list):
             # Формирование команды: обновление репозиториев и установка пакетов
             cmd = f"sudo apt-get update && sudo apt-get install -y {' '.join(packages)}"
-            ssh_command._cmd(
+            ssh_command.cmd(
                 host=host,
                 command=cmd,
                 username=username,
@@ -72,7 +72,7 @@ class _apt_manager:
         """
         def _threaded_remove(host: str, packages: list):
             cmd = f"sudo apt-get remove -y {' '.join(packages)}"
-            ssh_command._cmd(
+            ssh_command.cmd(
                 host=host,
                 command=cmd,
                 username=username,
@@ -113,7 +113,7 @@ class _apt_manager:
         """
         def _threaded_reinstall(host: str, packages: list):
             cmd = f"sudo apt-get install --reinstall -y {' '.join(packages)}"
-            ssh_command._cmd(
+            ssh_command.cmd(
                 host=host,
                 command=cmd,
                 username=username,

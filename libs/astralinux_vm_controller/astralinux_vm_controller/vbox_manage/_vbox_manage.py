@@ -1,12 +1,12 @@
-import astralinux_decorators
+from astralinux_decorators import trycorator as trycorator
+from libs._system_commands import _system_commands as system_command
 
-from os import system
 from time import sleep
 
 class _Vbox_manager():
 
 
-    @astralinux_decorators.trycorator.trycorator
+    @trycorator.trycorator
     @staticmethod 
     def poweron_vms(vms):
         """
@@ -21,12 +21,12 @@ class _Vbox_manager():
         
         # Включаем каждую ВМ
         for vm in vms:
-            system.cmd(f'vboxmanage startvm {vm} --type headless')
+            system_command.cmd(f'vboxmanage startvm {vm} --type headless')
         return 0
 
     
 
-    @astralinux_decorators.trycorator.trycorator
+    @trycorator.trycorator
     @staticmethod 
     def poweroff_vms(vms):
         """
@@ -41,12 +41,12 @@ class _Vbox_manager():
         
         # Выключаем каждую ВМ
         for vm in vms:
-            system.cmd(f'vboxmanage controlvm {vm} poweroff')
+            system_command.cmd(f'vboxmanage controlvm {vm} poweroff')
         return 0
     
 
 
-    @astralinux_decorators.trycorator.trycorator
+    @trycorator.trycorator
     @staticmethod 
     def create_snapshots_all_vm(vms):
         """
@@ -56,10 +56,10 @@ class _Vbox_manager():
             vms (list): список имен ВМ
         """
         for vm in vms:
-            system.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
+            system_command.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
 
 
-    @astralinux_decorators.trycorator.trycorator
+    @trycorator.trycorator
     @staticmethod    
     def set_bridge_network(vms: list):
         """ 
@@ -68,32 +68,32 @@ class _Vbox_manager():
         Args:
             vms (list): список ВМ
         """
-        adapter_name = system.check_output_command(
+        adapter_name = system_command.check_output_command(
             "vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
         print(f'Bridge interface found as: {adapter_name}')
 
         for vm in vms:
             try:
                 num_interface = '1'
-                system.cmd(f'vboxmanage controlvm {vm} poweroff')
+                system_command.cmd(f'vboxmanage controlvm {vm} poweroff')
                 sleep(1)
-                system.cmd(
+                system_command.cmd(
                     f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
-                system.cmd(
+                system_command.cmd(
                     f'vboxmanage modifyvm {vm} --bridgeadapter{num_interface} {adapter_name}')
-                system.cmd(f'vboxmanage startvm {vm} --type headless')
+                system_command.cmd(f'vboxmanage startvm {vm} --type headless')
             except Exception as e:
                 print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
             return 1
     
 
-    @astralinux_decorators.trycorator.trycorator
+    @trycorator.trycorator
     @staticmethod   
     def _check_vm_list():
         """
         Показывает список доступных ВМ
         """
-        return system.check_output_command('vboxmanage list vms')
+        return system_command.check_output_command('vboxmanage list vms')
     
 
 

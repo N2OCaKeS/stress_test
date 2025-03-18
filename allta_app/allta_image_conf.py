@@ -56,7 +56,7 @@ def parent_page_list():
                 'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
                 'UnixBench':       ['unix', 'unix parsec'],
                 'FreeIPA':         ['FreeIPA auth'],
-                'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off'],
+                'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
                 'Apache':          ['apache-rp'],
                 'Qemu/KVM/Libvirt':['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong']}
 
@@ -129,6 +129,7 @@ branches = {
     'storage drive overflow':'overflow',
     'Parsec impact fs benchmark':'parsec',
     'Parsec impact fs benchmark audit-off':'parsec',
+    'DIGSIG. Check digsig time':'parsec',
     'Apache_ReverseProxy':'apache2',
     'Steal time':'virt',
     'Steal time smolensk':'virt',
@@ -153,6 +154,7 @@ def cycle_tree_index():
 tests = {
     'Parsec impact fs benchmark audit-off':'parsec impact-fs aud-off',
     'Parsec impact fs benchmark':'parsec impact-fs',
+    'DIGSIG. Check digsig time': 'digsig-cdt',
     'freeipa authentication test':'FreeIPA auth',
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
@@ -220,7 +222,8 @@ group_tests = ['_LowServer group', '_MiddleServer group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom']
+              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
+              'digsig-cdt']
 
 
 
@@ -277,12 +280,12 @@ testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd
                                 'parsec impact-fs aud-off', 'apache-rp']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2', 'syslog-ng-cwl',
                                'psql balance', 'FreeIPA auth', 'steal time', 'FIO', 'vUnixBench', 'vPingPong'] #'tantor vanilla', 'tantor kernels'
-testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom']
+testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom', 'digsig-cdt']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
                    'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'FreeIPA auth', 'syslog-ng-cwl',
-                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom'] #'psql balance',
+                      'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom', 'digsig-cdt'] #'psql balance',
 
 
 #testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
@@ -329,7 +332,8 @@ tests_case_zefir_key = {
     'vPingPong':'BT-T14145',
     'OCFS2':'BT-T7848',
     'steal time-sm':'BT-T15186',
-    'psql oom':'BT-T16134'
+    'psql oom':'BT-T16134',
+    'digsig-cdt': 'BT-T16391'
 }
 
 
@@ -354,7 +358,8 @@ testname_columns = {
                     'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off',
                     'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
                     'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm',
-                    'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl'
+                    'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl',
+                    'DIGSIG. Check digsig time': 'DIGSIG-cdt'
                     }
 
 

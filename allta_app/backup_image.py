@@ -296,6 +296,9 @@ elif args.FREEIPA_AUTH:
 elif args.PARSEC_IMPACT or args.PARSEC_IMPACT_AO:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
+elif args.TEST == 'digsig-cdt':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} -ds'
 elif args.APACHE == 'rp':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

@@ -27,20 +27,33 @@ check_containers() {
     echo "Ожидание 10 секунд перед проверкой контейнеров..."
     sleep 10
 
-    for container in "${expected_containers[@]}"; do
-        if ! docker ps --format "{{.Names}}" | grep -q; then
-            echo "Контейнер $container не запущен. Перезапускаем..."
-            docker-compose -f "$compose_file" up -d
-            echo "Ждем 5 секунд после попытки перезапуска контейнера "
-            sleep 5
-        else
-            echo "Контейнер $container работает."
+    while true; do
+        all_running=true  # Флаг, указывающий, что все контейнеры запущены
+
+        for container in "${expected_containers[@]}"; do
+            if ! docker ps --format "{{.Names}}" | grep -q "^${container}$"; then
+                echo "Контейнер $container не запущен. Перезапускаем весь стек..."
+                docker-compose -f "$compose_file" up -d
+                all_running=false  # Хотя бы один контейнер не запущен
+                echo "Ждем 10 секунд после перезапуска стека..."
+                sleep 10
+                break  # Выходим из цикла for, чтобы начать проверку заново
+            else
+                echo "Контейнер $container работает."
+            fi
+        done
+
+        # Если все контейнеры запущены, выходим из цикла
+        if $all_running; then
+            echo "Все контейнеры успешно запущены."
+            break
         fi
     done
 }
 
 
 app_settings(){
+    sudo docker-compose -f docker-compose.v2.yml down
     sudo apt-get update
     sudo apt-get install postgresql postgresql-contrib redis-server pgbouncer apache2 apache2-utils -y  
 #    export PGPASSWORD="1postgres"
@@ -79,6 +92,7 @@ EOF
 
     sudo cp pg/pgbouncer/pgbouncer_host/* /etc/pgbouncer/
     sudo systemctl restart pgbouncer
+    sudo systemctl start redis
     sudo rm -f /etc/apache2/sites-available/*
     sudo cp apache-config/config_host/apache2.conf /etc/apache2/apache2.conf
     sudo cp apache-config/config_host/web-app.conf /etc/apache2/sites-available/
@@ -156,7 +170,7 @@ pg_remove(){
     sudo rm -rf /etc/pgbouncer/
     sudo rm -rf /var/log/pgbouncer/
 
-    sudo apt-get autoremove
+    sudo apt-get autoremove -y
 
     sudo apt-get clean
 
@@ -177,8 +191,8 @@ case $1 in
         close_and_delete
         ;;
     pgrm)
-        pg_remove
-        ;;
+	pg_remove
+	;;
     local)
         on_localhost
         ;;
@@ -192,4 +206,9 @@ case $1 in
         venv
         app_settings
         ;;
+    test)
+	venv
+	app_settings
+	on_local_docker
+	;;
 esac

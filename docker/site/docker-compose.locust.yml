@@ -12,7 +12,7 @@ services:
       - httpnet
     command: >
       -f /app/Kuznechik/for_host/locustfile.py
-      --master --expect-workers 4
+      --master --expect-workers 3
       --config /app/Kuznechik/for_host/.locust.conf
       --headless
 

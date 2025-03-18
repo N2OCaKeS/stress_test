@@ -69,8 +69,8 @@ services:
       - FLASK_APP=web_app:create_app
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_HOST=${PGBOUNCER_HOST}
+      - POSTGRES_PORT=${PGBOUNCER_PORT}
       - POSTGRES_DB=${POSTGRES_DB}
     depends_on:
       - pgbouncer
@@ -94,7 +94,7 @@ services:
       - httpnet
     command: >
       -f /app/Kuznechik/for_docker/locustfile.py
-      --master --expect-workers 4
+      --master --expect-workers 3
       --config /app/Kuznechik/for_docker/.locust.conf
       --headless
 
@@ -116,3 +116,4 @@ networks:
   httpnet:
     name: httpnet
     driver: bridge
+

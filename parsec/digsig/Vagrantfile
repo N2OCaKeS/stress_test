@@ -1,0 +1,164 @@
+# -*- mode: ruby -*-
+
+def repo_configure(machine, rc)
+  machine.vm.provision "shell", inline:<<-SHELL
+      18repo() {
+      cat << EOF > /etc/apt/sources.list
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/extended-repository 1.8_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/devel-repository 1.8_x86-64 main contrib non-free
+EOF
+      }
+
+      17repo() {
+      echo "grub-pc grub-pc/install_devices multiselect /dev/sda" | sudo debconf-set-selections
+      cat << EOF > /etc/apt/sources.list
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/installation/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/update-repository/ 1.7_x86-64 main contrib non-free
+      deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/EXT_latest/extended-repository/ 1.7_x86-64 main contrib non-free
+EOF
+      }
+
+      RC=#{rc}
+      test "$(grep 1.7 /etc/astra_version)" && 17repo && sudo apt update
+      test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
+      dpkg -s jq &> /dev/null || sudo apt-get install jq -y
+      wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
+      echo jq -r '."'"$RC"'"[]' releases.json
+      sudo jq -r '."'"$RC"'"[]' releases.json > /etc/apt/sources.list
+      cat << EOF | sudo tee /etc/apt/preferences.d/devel
+      Package: *
+      Pin: release l=devel
+      Pin-Priority: 500
+
+      Package: *
+      Pin: release l=extended
+      Pin-Priority: 500
+EOF
+  SHELL
+end
+
+def upgrade(machine)
+  machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+      mkdir /home/tests
+      sudo cat /etc/apt/sources.list
+      sudo apt update
+      sudo astra-update -A -T -r
+      exit 0
+  SHELL
+end
+
+def set_kernel(machine, kernel)
+  machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+      kernel=#{kernel}
+      dpkg -s linux-image-$kernel &> /dev/null || sudo apt-get install linux-image-$kernel linux-astra-modules-$kernel -y
+      kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "'")
+      sudo sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT='$kernel_conf'/' /etc/default/grub
+      sudo update-grub
+      cat /etc/default/grub | grep GRUB_DEFAULT
+      exit 0
+  SHELL
+end
+
+def set_digsig(machine)
+  machine.vm.provision "shell", reboot: true, inline:<<-SHELL
+    astra-modeswitch set 2 
+    astra-mac-control enable 
+    astra-mic-control enable 
+    astra-digsig-control enable 
+    astra-digsig-control status
+    exit 0
+  SHELL
+end
+
+def mod_exec_file(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    prog=/usr/bin/perl
+    sleep 1
+    $prog --help
+
+    cp $prog $prog.bak
+    sleep 1
+    echo "Смотрим последний байт файла..."
+    tail -c 1 $prog | hexdump -v -e '/1 "%02x"'
+    sleep 1
+    dd if=<(echo -n $(printf '\\x%02x' $((0x$(tail -c 1 $prog | hexdump -v -e '/1 "%02x"') |\
+    1)))) of=$prog bs=1 seek=$(($(stat -c %s $prog) - 1)) count=1 conv=notrunc
+
+    $prog --help
+    dmesg -HTx | grep DIGSIG | grep perl
+    dmesg -HTx | grep DIGSIG | grep perl | wc -l
+    exit 0
+  SHELL
+end
+
+def check_prog(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    dpkg -s perl &> /dev/null || sudo apt-get install perl -y
+    exit 0
+  SHELL
+end
+
+def set_network(machine)
+  machine.vm.provision "shell", inline:<<-SHELL
+    sudo nmcli connection modify "Проводное соединение 1" ipv4.method manual ip4 192.168.56.11/24
+    sudo nmcli connection modify "Проводное соединение 1" gw4 10.177.103.254
+    sudo nmcli connection modify "Проводное соединение 1" ipv4.dns "10.177.103.110, 10.177.128.198"
+    ip a
+    nmcli connection show
+    exit 0
+  SHELL
+end
+
+
+Vagrant.configure("2") do |config|
+  config.vm.box = ENV['UPDATE']
+  config.vm.box_url = ENV['BOX_URL']
+  config.vm.synced_folder "./", "/vagrant"
+  
+  ENV['RC'].nil? || ENV['RC'].start_with?('1.7') ? vms = [
+    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "2", :memory => "4096", :ip => "192.168.56.11", :host => "2204" }
+  ] : vms = [
+    { :name => "digsig1", :hostname => "digsig1.digsig.rbt", :args => "digsig1", :cpus => "3", :memory => "4096", :ip => "192.168.56.11", :host => "2204" }
+  ]
+
+  vms.each do |vm|
+    if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
+      config.vm.define vm[:name] do |machine|
+        machine.vm.hostname = vm[:hostname]
+        machine.vm.network "forwarded_port", guest: 22, host: vm[:host]
+        #machine.vm.network "private_network", ip: vm[:ip]
+        machine.vm.provider "virtualbox" do |vb|
+          vb.check_guest_additions = false
+          vb.name = vm[:name]
+          vb.memory = vm[:memory]
+          vb.cpus = vm[:cpus]
+          vb.customize ["modifyvm", :id, "--usb", "off"]
+          vb.customize ["modifyvm", :id, "--usbehci", "off"]
+        end
+
+        repo_configure(machine, ENV['RC'])
+        #set_network(machine)
+        upgrade(machine)
+        set_kernel(machine, ENV['KL'])
+        check_prog(machine)
+        set_digsig(machine)
+        
+        machine.vm.provision "file", source: "digsig_cache_load.py", destination: "/home/vagrant/digsig_cache_load.py"
+        machine.vm.provision "shell", inline:<<-SHELL
+            sudo python3 digsig_cache_load.py  
+            exit 0
+        SHELL
+        
+        mod_exec_file(machine)
+        machine.vm.provision "shell", inline:<<-SHELL
+            sudo python3 digsig_cache_load.py  
+            exit 0
+        SHELL
+
+        
+      end
+    end
+  end
+end

@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, render_template, flash
+from flask import Blueprint, request, jsonify, render_template, flash, redirect
 from ..extensions import db, redis_client
 from ..models.message import Message
 import logging
@@ -43,16 +43,17 @@ def create():
         if not messages:
             return jsonify({"error": "Нет сообщений для сохранения"}), 400
 
-        # Проверяем дубликаты в Redis
+        # Проверяем наличие сообщений в Redis
         msg_keys = [f"message:{msg['content']}" for msg in messages]
         cached_results = redis_client.pipeline().exists(*msg_keys).execute()
 
+        # Отфильтровываем дубликаты
         filtered_messages = [msg for i, msg in enumerate(messages) if not cached_results[i]]
 
         if not filtered_messages:
-            return jsonify({"message": "Сообщение уже было отправлено недавно", "status": "exists"}), 200
+            return jsonify({"message": "Все сообщения уже были отправлены недавно"}), 200
 
-        # Кэшируем новые сообщения
+        # Кэшируем новые сообщения с TTL 30 секунд
         pipeline = redis_client.pipeline()
         for msg in filtered_messages:
             pipeline.setex(f"message:{msg['content']}", 30, "1")
@@ -61,9 +62,10 @@ def create():
         # Вставляем в БД
         batch_insert(db.session, filtered_messages, batch_size=500)
 
-        return jsonify({"message": "Сообщение успешно создано", "status": "success"}), 201
+        return jsonify({"message": "Сообщение(я) успешно создано"}), 201
 
     except Exception as e:
         db.session.rollback()
         logger.error(f"Ошибка в обработке запроса: {e}")
         return jsonify({"error": f"Ошибка при обработке сообщения: {str(e)}"}), 500
+

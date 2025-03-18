@@ -4,7 +4,7 @@ high_server="10.177.103.205"
 localhost="localhost"
 LOCAL_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3")
 APP_CONTAINERS=("flask" "redis" "postgres" "pgbouncer")
-CPATH="/home/u/git/stress_test/docker/site/"
+
 
 venv(){
     # usermod -aG docker u
@@ -54,8 +54,8 @@ check_containers() {
 
 app_settings(){
     sudo docker-compose -f docker-compose.v2.yml down
-    sudo apt update
-    sudo apt install postgresql postgresql-contrib redis-server pgbouncer apache2 apache2-utils docker.io docker-compose -y  
+    sudo apt-get update
+    sudo apt-get install postgresql postgresql-contrib redis-server pgbouncer apache2 apache2-utils -y  
 #    export PGPASSWORD="1postgres"
 
 #    sudo -u postgres psql -c "ALTER USER postgres WITH ENCRYPTED PASSWORD '${md5_pass}';"
@@ -65,9 +65,9 @@ app_settings(){
 #    sudo -u postgres psql -c "ALTER USER u CREATEDB;"
 #    sudo -u postgres psql -d mydb -c "GRANT ALL ON schema public TO u;"
 
-md5_pass_postgres=$(echo -n "1postgres" | md5sum | awk '{print "md5"$1}')
+md5_pass_postgres=$(echo -n "postgres1postgres" | md5sum | awk '{print "md5"$1}')
 md5_pass_u=$(echo -n "1u" | md5sum | awk '{print "md5"$1}')
-    sudo cp ${CPATH}/pg/pg_hba.conf /etc/postgresql/*/main/pg_hba.conf
+    sudo cp /home/u/git/stress_test/docker/site/pg/pg_hba.conf /etc/postgresql/*/main/pg_hba.conf
     sudo -u postgres psql <<EOF
     ALTER USER postgres WITH ENCRYPTED PASSWORD '${md5_pass_postgres}';
     CREATE DATABASE mydb;
@@ -76,20 +76,18 @@ md5_pass_u=$(echo -n "1u" | md5sum | awk '{print "md5"$1}')
     ALTER USER u CREATEDB;
     \c mydb
     GRANT ALL ON schema public TO u;
-    CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
 EOF
-
-    sudo sed -i 's#sys.path.insert(0, "/app")#sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))\nsys.path.insert(0, "/home/u/git/stress_test/docker/site")#' ${CPATH}web_app/wsgi.py
+    sudo sed -i 's#sys.path.insert(0, "/app")#sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))\nsys.path.insert(0, "/home/u/git/stress_test/docker/site")#' /home/u/git/stress_test/docker/site/web_app/wsgi.py
     sudo sed -i 's/^\(local\s\+all\s\+postgres\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
     sudo sed -i 's/^\(host\s\+all\s\+all\s\+127.0.0.1\/32\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
     sudo sed -i 's/^\(host\s\+all\s\+all\s\+::1\/128\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
-    sudo sed -i 's/^REDIS_HOST = "redis"/REDIS_HOST = "127.0.0.1"/' ${CPATH}web_app/config.py
+    sudo sed -i 's/^REDIS_HOST = "redis"/REDIS_HOST = "127.0.0.1"/' /home/u/git/stress_test/docker/site/web_app/config.py
     sudo cp pg/postgresql.conf /etc/postgresql/*/main/postgresql.conf 
-    sudo echo "data_directory = '/var/lib/postgresql/15/main'" | sudo tee -a /etc/postgresql/*/main/postgresql.conf
+    sudo echo "data_directory = '/var/lib/postgresql/15/main'" | sudo tee -a /etc/postgresql/15/main/postgresql.conf
 
     sudo chown -R postgres:postgres /var/lib/postgresql/
     sudo chmod -R 700 /var/lib/postgresql/
+
     sudo systemctl restart postgresql
 
     sudo cp pg/pgbouncer/pgbouncer_host/* /etc/pgbouncer/
@@ -101,16 +99,12 @@ EOF
     sudo chown www-data:www-data /etc/apache2/sites-available/web-app.conf
     sudo chmod 644 /etc/apache2/sites-available/web-app.conf
     sudo chown -R www-data:www-data /home/u/git/stress_test/docker/site/
-    sudo chmod -R 755 ${CPATH}
+    sudo chmod -R 755 /home/u/git/stress_test/docker/site/
     sudo a2enmod wsgi
     sudo a2ensite web-app
     sudo apachectl configtest
     sudo apachectl -M | grep astra
     sudo systemctl restart apache2
-    sleep 5
-    #sudo psql -U postgres -d mydb -f ./pg/init.sql
-    #sudo -u postgres psql -d mydb -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
-    #sudo -u postgres psql -d mydb -c "CREATE INDEX IF NOT EXISTS idx_message_content ON message (content);"
     sudo docker-compose -f docker-compose.locust.yml up --build -d
     check_containers "docker-compose.locust.yml" "${LOCAL_DOCKER_CONTAINERS[@]}"
 }
@@ -157,6 +151,7 @@ on_local_docker(){
 close_and_delete(){
     docker stop $(docker ps -q)
     docker container prune -f
+    docker rmi $(docker images -q)
     echo Контейнеры остановлены и удалены
 }
 
@@ -217,4 +212,3 @@ case $1 in
 	on_local_docker
 	;;
 esac
-

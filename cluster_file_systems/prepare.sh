@@ -70,3 +70,4 @@ sudo apt-get install -y nfs-kernel-server
 echo '/home/u/git/stress_test/ *(rw,sync,no_root_squash,no_subtree_check)' | sudo tee -a /etc/exports
 # sudo service nfs-kernel-server restart
 sudo systemctl restart nfs-kernel-server
+

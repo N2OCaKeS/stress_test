@@ -7,7 +7,7 @@ def readme():
 
 
 setup(
-  name='astralinux-vm-control',
+  name='astralinux-vm-controller',
   version='0.0.1',
   author='mfilippenko',
   author_email='mfilippenko@astralinux.ru',

@@ -1,8 +1,8 @@
-from ._system_commands import _system_commands
+from ._system_commands import _System_Commands
 import threading
-from allta_decorators.ansible_log import _ansible_logger
+from .._decotator._ansible_log import ansible_logger
 
-class _scp_command:
+class _SCP_Command:
     """
     Класс для копирования файлов между локальной системой и виртуальными машинами с помощью SCP.
 
@@ -28,7 +28,7 @@ class _scp_command:
     """
 
     @staticmethod
-    @_ansible_logger
+    @ansible_logger
     def _execute_scp(mode: str, host: str, path_host: str, path_vm: str,
                      vms_date: dict, task_name: str, username: str = 'u', password: str = '1', **kwargs) -> dict:
         """
@@ -72,7 +72,7 @@ class _scp_command:
             else:  # mode == 'pull'
                 command = f"sshpass -p {password} scp -P {port} -o StrictHostKeyChecking=no {username}@{ip}:{path_vm} {path_host}"
 
-            output = _system_commands.check_output_command(command)
+            output = _System_Commands.check_output_command(command)
             return {
                 "output": output,
                 "status": "OK",
@@ -111,7 +111,7 @@ class _scp_command:
         threads = []
 
         def worker(mode, host, path_host, path_vm, task_name):
-            result = _scp_command._execute_scp(mode, host, path_host, path_vm,
+            result = _SCP_Command._execute_scp(mode, host, path_host, path_vm,
                                                 vms_date, task_name, username, password)
             log_messages.append(result.get("output", ""))
 

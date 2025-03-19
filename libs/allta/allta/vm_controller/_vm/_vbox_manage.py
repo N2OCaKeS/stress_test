@@ -1,16 +1,16 @@
-from ...decorators.trycorator import trycorator
-from .._libs._system_commands import _system_commands as system_command
+from ...decorators.decorators import BaseDecorators
+from .._libs._system_commands import _System_Commands as system_command
 
 from time import sleep
 
-class _Vbox_manager():
+class _Vboxmanager():
     """Управляющий класс для машин внутри VBox
 
     Returns:
         _type_: _description_
     """
 
-    @trycorator
+    @BaseDecorators.trycorator
     @staticmethod 
     def poweron_vms(vms):
         """
@@ -30,7 +30,7 @@ class _Vbox_manager():
 
     
 
-    @trycorator
+    @BaseDecorators.trycorator
     @staticmethod 
     def poweroff_vms(vms):
         """
@@ -50,7 +50,7 @@ class _Vbox_manager():
     
 
 
-    @trycorator
+    @BaseDecorators.trycorator
     @staticmethod 
     def create_snapshots_all_vm(vms):
         """
@@ -63,7 +63,7 @@ class _Vbox_manager():
             system_command.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
 
 
-    @trycorator
+    @BaseDecorators.trycorator
     @staticmethod    
     def set_bridge_network(vms: list):
         """ 
@@ -91,7 +91,7 @@ class _Vbox_manager():
             return 1
     
 
-    @trycorator
+    @BaseDecorators.trycorator
     @staticmethod   
     def _check_vm_list():
         """

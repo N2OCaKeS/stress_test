@@ -1,6 +1,6 @@
-from ._libs._system_commands import _system_commands as system_commands
-from ._libs._ssh_comand import _ssh_command as ssh_command
-from ._libs._scp_comand import _scp_command as scp_command
+from ._libs._system_commands import _System_Commands as system_commands
+from ._libs._ssh_comand import _SSH_Command as ssh_command
+from ._libs._scp_comand import _SCP_Command as scp_command
 
 # from ._base_commands._apt._apt import _apt_manager as apt_manager
 from ._base_commands._apt._apt_prorocol import _AptManagerProtocol
@@ -13,7 +13,7 @@ from ._base_commands._set_hosts import _HostsManager
 
 from ._vm._vagrant import _Vagrant 
 from ._vm._virtual_machine import _VirtualMashines
-from ._vm._vbox_manage import _Vbox_manager as vbox_manager
+from ._vm._vbox_manage import _Vboxmanager as vbox_manager
 
 from os import system
 from typing import cast
@@ -223,7 +223,7 @@ class VBox(_VirtualMashines):
             password=password
         )
 
-    apt: _AptManagerProtocol = cast(_AptManagerProtocol, _apt._apt_manager())
+    apt: _AptManagerProtocol = cast(_AptManagerProtocol, _apt._AptManager())
     hosts: _HostsManagerProtocol = cast(_HostsManagerProtocol, _HostsManager())
 
 

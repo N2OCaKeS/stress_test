@@ -1,7 +1,7 @@
 import os
 import time
 
-class _signals():
+class _Signals():
 
     @staticmethod        
     def set(set_signal: str):

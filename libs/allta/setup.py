@@ -6,7 +6,7 @@ def readme(): # TODO ПЕРЕПИСАТЬ README FILE
 
 setup(
   name='allta',
-  version='0.0.2',
+  version='0.0.1',
   author='team13',
   author_email='mfilippenko@astralinux.ru',
   description='Библиотеки для stress тестов',

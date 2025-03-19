@@ -1,11 +1,11 @@
-from ....decorators.trycorator import trycorator
+from ....decorators.decorators import BaseDecorators
 from ..._decotator._ansible_log import ansible_logger
-from ..._libs._ssh_comand import _ssh_command
+from ..._libs._ssh_comand import _SSH_Command
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-class _set_hosts:
+class _SetHosts:
     @staticmethod
-    @trycorator
+    @BaseDecorators.trycorator
     @ansible_logger
     def set_hosts(domain: str, vms_dates: dict, username: str = "u", password: str = "1",
                   task_name: str = "Set /etc/hosts") -> dict:
@@ -62,7 +62,7 @@ class _set_hosts:
             )
             
             # Выполнение команды через готовый класс _ssh_command
-            result = _ssh_command.cmd(
+            result = _SSH_Command.cmd(
                 host=vm_name,
                 command=remote_command,
                 vm_dates=vms_dates,

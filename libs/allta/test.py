@@ -1,4 +1,4 @@
-from .Allta.vm_controller.VBox import VBox
+from allta 
 
 pro = VBox
 

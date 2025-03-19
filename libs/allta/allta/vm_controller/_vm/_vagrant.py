@@ -1,7 +1,7 @@
 import os
 import requests
 import json
-from .._libs._system_commands import _system_commands as system_commands
+from .._libs._system_commands import _System_Commands as system_commands
 
 class _Vagrant():
     def __init__(self, path_to_vagrantfile: str, box: str, rc: str, vms_date: dict = None):

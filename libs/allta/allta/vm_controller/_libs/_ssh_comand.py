@@ -1,13 +1,13 @@
-from ...decorators.trycorator import trycorator
-from ._signals import _signals as signals
+from ...decorators.decorators import BaseDecorators
+from ._signals import _Signals as signals
 import paramiko
 
 # Новый декоратор для логирования
 from .._decotator._ansible_log import ansible_logger
 
-class _ssh_command:
+class _SSH_Command:
 
-    @trycorator
+    @BaseDecorators.trycorator
     @ansible_logger
     @staticmethod
     def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',

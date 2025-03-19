@@ -1,10 +1,10 @@
 from ..._decotator._ansible_log import ansible_logger
-from ..._libs._ssh_comand import _ssh_command as ssh_command
+from ..._libs._ssh_comand import _SSH_Command as ssh_command
 import threading
 
 
 
-class _apt_manager:  
+class _AptManager:  
     @ansible_logger
     @staticmethod
     def install(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:

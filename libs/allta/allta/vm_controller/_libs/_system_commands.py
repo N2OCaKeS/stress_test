@@ -1,7 +1,7 @@
 import subprocess
 import os
 
-class _system_commands:
+class _System_Commands:
     """
     Класс для обращения к системе
     """

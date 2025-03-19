@@ -2,15 +2,15 @@
 
 high_server="10.177.103.205"
 localhost="localhost"
-LOCAL_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3")
-APP_CONTAINERS=("flask" "redis" "postgres" "pgbouncer")
+LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3")
+APP_CONTAINERS=("postgres" "pgbouncer" "redis" "flask" "nginx")
 CPATH="/home/u/git/stress_test/docker/site/"
 
 venv(){
     # usermod -aG docker u
     # apt-get install python3 docker.io docker-compose python3-venv python3.11-venv apache2-utils pip postgresql postgresql-contrib libpq-dev -y
     # sudo service postgresql start
-    sudo apt-get install libpq-dev gcc python3-dev python3-pip python3.11-venv libapache2-mod-wsgi-py3 -y 
+    sudo apt-get install libpq-dev gcc python3-dev python3-pip python3.11-venv libapache2-mod-wsgi-py3 docker.io docker-compose  -y 
     python3 -m venv .venv
     source .venv/bin/activate
     pip install --upgrade pip
@@ -52,21 +52,13 @@ check_containers() {
 }
 
 
-app_settings(){
-    sudo docker-compose -f docker-compose.v2.yml down
+apache2_server(){
+    sudo docker-compose -f docker-compose.apache2.yml down
     sudo apt update
     sudo apt install postgresql postgresql-contrib redis-server pgbouncer apache2 apache2-utils docker.io docker-compose -y  
-#    export PGPASSWORD="1postgres"
 
-#    sudo -u postgres psql -c "ALTER USER postgres WITH ENCRYPTED PASSWORD '${md5_pass}';"
-#    sudo -u postgres psql -c "CREATE DATABASE mydb;"
-#    sudo -u postgres psql -c "CREATE ROLE u WITH LOGIN ENCRYPTED PASSWORD '${md5_pass}';"
-#    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE mydb TO u;"
-#    sudo -u postgres psql -c "ALTER USER u CREATEDB;"
-#    sudo -u postgres psql -d mydb -c "GRANT ALL ON schema public TO u;"
-
-md5_pass_postgres=$(echo -n "1postgres" | md5sum | awk '{print "md5"$1}')
-md5_pass_u=$(echo -n "1u" | md5sum | awk '{print "md5"$1}')
+    md5_pass_postgres=$(echo -n "1postgres" | md5sum | awk '{print "md5"$1}')
+    md5_pass_u=$(echo -n "1u" | md5sum | awk '{print "md5"$1}')
     sudo cp ${CPATH}/pg/pg_hba.conf /etc/postgresql/*/main/pg_hba.conf
     sudo -u postgres psql <<EOF
     ALTER USER postgres WITH ENCRYPTED PASSWORD '${md5_pass_postgres}';
@@ -109,31 +101,12 @@ EOF
     sudo apachectl -M | grep astra
     sudo systemctl restart apache2
     sleep 5
-    #sudo psql -U postgres -d mydb -f ./pg/init.sql
-    #sudo -u postgres psql -d mydb -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
-    #sudo -u postgres psql -d mydb -c "CREATE INDEX IF NOT EXISTS idx_message_content ON message (content);"
-    sudo docker-compose -f docker-compose.locust.yml up --build -d
-    check_containers "docker-compose.locust.yml" "${LOCAL_DOCKER_CONTAINERS[@]}"
+    sudo -u postgres psql -d mydb -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+    sudo docker-compose -f ./docker-storage/docker-compose.locust.yml up --build -d
+    check_containers "docker-compose.locust.yml" "${LOAD_DOCKER_CONTAINERS[@]}"
 }
 
-
-on_high_server(){
-    apt install -y docker.io docker-compose
-    sed -i 's/^ServerName 10.177.103.205$/ServerName $high_server/' Dockerfile.flask
-    sed -i 's/^ServerName 10.177.103.205$/ServerName $high_server/' ./apache-config/web-app.conf
-    sed -i 's/^ServerName 10.177.103.205$/ServerRoot $high_server/' ./apache-config/httpd.conf
-    sed -i 's/^POSTGRES_HOST=127.0.0.1$/POSTGRES_HOST=postgres/' .env
-    docker-compose -f docker-compose.v2.yml up --build -d
-}
-
-
-on_local(){
-    sed -i 's/^POSTGRES_HOST=postgres$/POSTGRES_HOST=127.0.0.1/' .env
-    flask run
-}
-
-
-on_local_docker(){
+apache2_docker(){
     sed -i '/sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))/ {
     N
     /sys.path.insert(0, "\/home\/u\/git\/stress_test\/docker\/site")/ {
@@ -143,17 +116,34 @@ on_local_docker(){
     sudo systemctl stop apache2.service redis-server.service redis.service postgresql.service pgbouncer.service
     sudo apt install -y docker.io docker-compose
     sudo sed -i 's/^REDIS_HOST = "127.0.0.1"/REDIS_HOST = "redis"/' web_app/config.py
-    # sed -i 's/^ServerName 10.177.103.205$/ServerName localhost/' Dockerfile.flask
-    # sed -i 's/^ServerName 10.177.103.205$/ServerName localhost/' ./apache-config/web-app.conf
-    # # sed -i 's/^ServerName 10.177.103.205$/ServerRoot localhost/' ./apache-config/httpd.conf
-    # sed -i 's/^POSTGRES_HOST=127.0.0.1$/POSTGRES_HOST=postgres/' .env
-    sudo docker-compose -f docker-compose.v2.yml up --build -d
+    sudo docker-compose -f ./docker-storage/docker-compose.apache2.yml up --build -d
     check_containers "docker-compose.locust.yml" "${APP_CONTAINERS[@]}"
-    check_containers "docker-compose.v2.yml" "${LOCAL_DOCKER_CONTAINERS[@]}"
+    check_containers "docker-compose.apache2.yml" "${LOAD_DOCKER_CONTAINERS[@]}"
 
-    # docker-compose -f docker-compose.v2.yml logs -f --tail=100
+    # docker-compose -f docker-compose.apache2.yml logs -f --tail=100
+    # --scale worker=8
 }
-# --scale worker=8
+
+nginx_server(){
+    pass
+
+}
+
+nginx_docker(){
+    sudo systemctl stop apache2.service redis-server.service redis.service postgresql.service pgbouncer.service nginx.service
+    sudo docker-compose -f ./docker-storage/docker-compose.nginx.yml down 
+    sudo docker volume prune -f
+    sudo sed -i 's/^REDIS_HOST = "127.0.0.1"/REDIS_HOST = "redis"/' web_app/config.py
+    sudo docker-compose -f ./docker-storage/docker-compose.nginx.yml up --build -d
+    check_containers "docker-compose.locust.yml" "${APP_CONTAINERS[@]}"
+    check_containers "docker-compose.apache2.yml" "${LOAD_DOCKER_CONTAINERS[@]}"
+}
+
+
+on_local(){
+    sed -i 's/^POSTGRES_HOST=postgres$/POSTGRES_HOST=127.0.0.1/' .env
+    flask run
+}
 
 close_and_delete(){
     docker stop $(docker ps -q)
@@ -197,25 +187,28 @@ case $1 in
         close_and_delete
         ;;
     pgrm)
-	pg_remove
-	;;
+	    pg_remove
+	    ;;
     local)
         on_localhost
         ;;
-    server)
-        on_high_server
+#a2d - apache2 в контейнерах
+    a2d)
+        apache2_docker
         ;;
-    local_docker)
-        on_local_docker
-        ;;
-    local_server)
+#a2s - в сервисах
+    a2s)
         venv
-        app_settings
+        apache2_server
+        ;;
+#nd - nginx в контейнерах
+    nd)
+        nginx_docker
         ;;
     test)
-	venv
-	app_settings
-	on_local_docker
-	;;
+	    venv
+        apache2_server
+	    apache2_docker
+	    ;;
 esac
 

@@ -9,7 +9,7 @@ from .routes.home import home_bp
 
 
 def create_app(config_class=Config):
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder="static")
     app.config.from_object(config_class)
 
     app.register_blueprint(user)
@@ -25,8 +25,8 @@ def create_app(config_class=Config):
     login_manager.login_message = 'Вы не можете получить доступ к странице, войдите в аккаунт'
     login_manager.login_message_category = 'info'
 
-    with app.app_context():
-        db.create_all()
+    # with app.app_context():
+    #     db.create_all()
 
     return app
 

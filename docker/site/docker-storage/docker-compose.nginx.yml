@@ -1,0 +1,128 @@
+version: '3.5'
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    container_name: postgres
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "54321:5432"
+    volumes:
+      - ./pg/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - httpnet
+
+  pgbouncer:
+    image: edoburu/pgbouncer
+    container_name: pgbouncer
+    restart: always
+    environment:
+      DB_HOST: postgres
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      ADMIN_USERS: "u"
+      AUTH_TYPE: md5
+      POOL_MODE: transaction
+    depends_on:
+      - postgres
+    volumes:
+      - ./pg/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./pg/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt
+    networks:
+      - httpnet
+    ports:
+      - "6432:5432"
+
+  redis:
+    image: redis
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - httpnet
+
+  flask:
+    build:
+      context: .
+      dockerfile: Dockerfile.flask.nginx
+    container_name: flask
+    volumes:
+      - ./flask-upload:/app/web_app/static/upload
+      - ./web_app:/app/web_app
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=False
+      - FLASK_APP=web_app:create_app
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${PGBOUNCER_HOST}
+      - POSTGRES_PORT=${PGBOUNCER_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+    depends_on:
+      - pgbouncer
+      - postgres
+      - redis
+    networks:
+      - httpnet
+
+  nginx:
+    image: nginx
+    container_name: nginx
+    volumes:
+    - ./web_app/static:/app/web_app/static
+    - ./nginx-config:/etc/nginx/conf.d
+    ports:
+      - "80:80"
+    depends_on:
+      - flask
+    networks:
+      - httpnet
+
+  master:
+    image: locustio/locust
+    user: root
+    container_name: master
+    volumes:
+      - .:/app
+    ports:
+      - "8089:8089"
+    depends_on:
+      - flask
+    networks:
+      - httpnet
+    command: >
+      -f /app/Kuznechik/for_docker/locustfile.py
+      --master --expect-workers 3
+      --config /app/Kuznechik/for_docker/.locust.conf
+      --headless
+
+  worker:
+    image: locustio/locust
+    user: root
+    depends_on:
+      - master
+    volumes:
+      - .:/app
+    networks:
+      - httpnet
+    command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master --master-port 5557
+    deploy:  
+      replicas: 3
+    restart: on-failure
+
+networks:
+  httpnet:
+    name: httpnet
+    driver: bridge
+

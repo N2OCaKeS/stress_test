@@ -24,6 +24,7 @@ for header in $installed_headers; do
         sudo apt remove --purge -y $header
     fi
 done
+sudo apt-get install linux-headers-$current_kernel -y
 
 installed_lam=$(dpkg --list | grep 'linux-astra-modules-[0-9]' | awk '{print $2}')
 for lam in $installed_lam; do

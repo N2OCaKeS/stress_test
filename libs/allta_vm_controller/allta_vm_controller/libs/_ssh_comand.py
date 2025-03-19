@@ -1,5 +1,5 @@
 import astralinux_decorators
-from libs._signals import _signals as signals
+from ._signals import _signals as signals
 import paramiko
 
 class _ssh_command:

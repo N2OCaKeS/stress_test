@@ -1,4 +1,4 @@
-from libs._system_commands import _system_commands
+from ._system_commands import _system_commands
 import astralinux_decorators 
 
 class _scp_command:

@@ -1,5 +1,5 @@
 from astralinux_decorators import ansible_log
-from libs._system_commands import _system_commands
+from ..libs._system_commands import _system_commands
 
 class _set_hosts:
     @staticmethod

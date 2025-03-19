@@ -7,7 +7,7 @@ def readme(): # TODO ПЕРЕПИСАТЬ README FILE
 
 
 setup(
-  name='astralinux-vm-controller',
+  name='allta-vm-controller',
   version='0.0.1',
   author='mfilippenko',
   author_email='mfilippenko@astralinux.ru',

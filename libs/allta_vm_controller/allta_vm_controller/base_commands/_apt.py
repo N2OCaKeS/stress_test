@@ -1,4 +1,4 @@
-from libs._ssh_comand import _ssh_command as ssh_command
+from ..libs._ssh_comand import _ssh_command as ssh_command
 import threading
 
 class _apt_manager:

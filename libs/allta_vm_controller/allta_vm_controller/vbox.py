@@ -1,13 +1,13 @@
-from libs._virtual_machine import _VirtualMashines
-from libs._vagrant import _Vagrant 
-from libs._system_commands import _system_commands as system_commands
-from libs._ssh_comand import _ssh_command as ssh_command
-from libs._scp_comand import _scp_command as scp_command
+from .libs._virtual_machine import _VirtualMashines
+from .libs._vagrant import _Vagrant 
+from .libs._system_commands import _system_commands as system_commands
+from .libs._ssh_comand import _ssh_command as ssh_command
+from .libs._scp_comand import _scp_command as scp_command
 
-from base_commands._apt import _apt_manager as apt_manager
-from base_commands._set_hosts import _set_hosts as set_hosts
+from .base_commands._apt import _apt_manager as apt_manager
+from .base_commands._set_hosts import _set_hosts as set_hosts
 
-from vbox_manage._vbox_manage import _Vbox_manager as vbox_manager
+from .vbox_manage._vbox_manage import _Vbox_manager as vbox_manager
 
 from os import system
 

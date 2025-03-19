@@ -1,5 +1,5 @@
 from astralinux_decorators import trycorator as trycorator
-from libs._system_commands import _system_commands as system_command
+from ..libs._system_commands import _system_commands as system_command
 
 from time import sleep
 

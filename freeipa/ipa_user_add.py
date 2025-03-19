@@ -17,6 +17,11 @@ admin_password = '12345678'
 
 print('Создаются пользователи\n')
 
+# subprocess.run("python3 -m venv venv", 
+#                shell=True,
+#                stdout=subprocess.PIPE,
+#                encoding="utf-8").stdout.strip('\n')
+
 client = ClientMeta(hostname, verify_ssl=False)
 
 client.login(admin_username, admin_password)

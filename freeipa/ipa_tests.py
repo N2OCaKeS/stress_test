@@ -16,7 +16,7 @@ class AutentificationTest():
             Создание пользователей
         """
         remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_user_add.py', "ipa_user_add.py")
-        remote_exec("python3 ipa_user_add.py", 'server')
+        remote_exec("sudo venv/bin/python3 ipa_user_add.py", 'server')
         # remote_cmd("python3 ipa_user_add.py", HOSTS['server']['ip'])    
         
     def run(self):

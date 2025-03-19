@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     out_rep = remote_cmd("ip a", HOSTS['clients']['ip'])
     print(out_rep)
-    sleep(20)
+    sleep(300)
 
     # #     out_hostname_replica = remote_cmd("hostname", HOSTS['replica']['ip']).strip("\n")
     # # #     print(out_hostname_replica)

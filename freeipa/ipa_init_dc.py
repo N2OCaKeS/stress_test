@@ -29,11 +29,9 @@ def initialization_freeipa_server():
         Обновление списка пакетов
     """    
     cmd("sudo apt update -y")
-    cmd("sudo apt install python3-pip -y")
-    if int(check_output_command("python3 --version").split()[1].split(".")[1]) >= 11:
-        cmd("sudo pip3 install python-freeipa --break-system-packages")
-    else:
-        cmd("sudo pip3 install python-freeipa")
+    cmd("sudo apt install python3-venv -y")
+    cmd("sudo apt install libkrb5-dev -y")
+
     """
         Установка пакетов astra-freeipa-server
     """    
@@ -69,8 +67,17 @@ def initialization_freeipa_server():
     cmd(f'astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y --par "--allow-zone-overlap"')
 
     file_hosts = open("/etc/hosts", "a")
-    file_hosts.write("10.77.103.10\tallta.devos.astralinux.ru\n")
+    file_hosts.write("10.177.103.10\tallta.devos.astralinux.ru\n")
     file_hosts.close()
+    """
+        Установка либы для создания пользователей
+    """
+    # if int(check_output_command("python3 --version").split()[1].split(".")[1]) >= 11:
+    #     cmd("sudo pip3 install python-freeipa --break-system-packages")
+    # else:
+    #     cmd("sudo pip3 install python-freeipa")
+    cmd("sudo python3 -m venv venv")
+    cmd("sudo venv/bin/pip3 install python-freeipa")
     """
         Перезапуск контроллера домена
     """

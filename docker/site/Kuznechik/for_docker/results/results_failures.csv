@@ -1,6 +1,4 @@
 Method,Name,Error,Occurrences
-POST,POST JSON MESSAGE,"gaierror(-2, 'Name or service not known')",561
-GET,GET /home,"gaierror(-2, 'Name or service not known')",603
-POST,POST FORM,"gaierror(-2, 'Name or service not known')",617
-GET,GET /message/create,"gaierror(-2, 'Name or service not known')",553
-POST,POST BULK MESSAGE,"gaierror(-2, 'Name or service not known')",591
+POST,POST BULK MESSAGE,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: POST BULK MESSAGE'),11
+POST,POST JSON MESSAGE,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: POST JSON MESSAGE'),10
+POST,POST FORM,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: POST FORM'),12

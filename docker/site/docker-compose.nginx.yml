@@ -94,7 +94,7 @@ services:
     user: root
     container_name: master
     volumes:
-      - .:/app
+      - ./:/app
     ports:
       - "8089:8089"
     depends_on:
@@ -113,7 +113,7 @@ services:
     depends_on:
       - master
     volumes:
-      - .:/app
+      - ./:/app
     networks:
       - httpnet
     command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master --master-port 5557
@@ -125,4 +125,5 @@ networks:
   httpnet:
     name: httpnet
     driver: bridge
+
 

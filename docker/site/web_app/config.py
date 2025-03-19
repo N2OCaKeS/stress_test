@@ -27,4 +27,4 @@ class Config(object):
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 
-REDIS_HOST = "redis" # добавить обновление под 127.0.0.1
+REDIS_HOST = "127.0.0.1" # добавить обновление под 127.0.0.1

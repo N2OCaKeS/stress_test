@@ -2,15 +2,37 @@
 
 high_server="10.177.103.205"
 localhost="localhost"
+NGINX_DC="docker-compose.nginx.yml"
 LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3")
 APP_CONTAINERS=("postgres" "pgbouncer" "redis" "flask" "nginx")
 CPATH="/home/u/git/stress_test/docker/site/"
+VENV=".venv/bin/"
+
+md5_pass_postgres=$(echo -n "1postgres" | md5sum | awk '{print "md5"$1}')
+md5_pass_u=$(echo -n "1u" | md5sum | awk '{print "md5"$1}')
+
+sudo apt update
+sudo apt-get install libpq-dev gcc python3-dev python3-pip python3.11-venv libapache2-mod-wsgi-py3 docker.io docker-compose nginx  postgresql postgresql-contrib redis-server pgbouncer apache2 apache2-utils -y 
+
+psql_settings(){
+    sudo -u postgres psql <<EOF
+ALTER USER postgres WITH ENCRYPTED PASSWORD '${md5_pass_postgres}';
+CREATE DATABASE mydb;
+CREATE ROLE u WITH LOGIN ENCRYPTED PASSWORD '${md5_pass_u}';
+GRANT ALL PRIVILEGES ON DATABASE mydb TO u;
+ALTER USER u CREATEDB;
+\c mydb
+GRANT ALL ON schema public TO u;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+EOF
+}
 
 venv(){
     # usermod -aG docker u
     # apt-get install python3 docker.io docker-compose python3-venv python3.11-venv apache2-utils pip postgresql postgresql-contrib libpq-dev -y
     # sudo service postgresql start
-    sudo apt-get install libpq-dev gcc python3-dev python3-pip python3.11-venv libapache2-mod-wsgi-py3 docker.io docker-compose  -y 
+    sudo apt update
+    sudo apt-get install libpq-dev gcc python3-dev python3-pip python3.11-venv libapache2-mod-wsgi-py3 docker.io docker-compose nginx  postgresql postgresql-contrib redis-server pgbouncer apache2 apache2-utils -y 
     python3 -m venv .venv
     source .venv/bin/activate
     pip install --upgrade pip
@@ -54,24 +76,10 @@ check_containers() {
 
 apache2_server(){
     sudo docker-compose -f docker-compose.apache2.yml down
-    sudo apt update
-    sudo apt install postgresql postgresql-contrib redis-server pgbouncer apache2 apache2-utils docker.io docker-compose -y  
-
-    md5_pass_postgres=$(echo -n "1postgres" | md5sum | awk '{print "md5"$1}')
-    md5_pass_u=$(echo -n "1u" | md5sum | awk '{print "md5"$1}')
     sudo cp ${CPATH}/pg/pg_hba.conf /etc/postgresql/*/main/pg_hba.conf
-    sudo -u postgres psql <<EOF
-    ALTER USER postgres WITH ENCRYPTED PASSWORD '${md5_pass_postgres}';
-    CREATE DATABASE mydb;
-    CREATE ROLE u WITH LOGIN ENCRYPTED PASSWORD '${md5_pass_u}';
-    GRANT ALL PRIVILEGES ON DATABASE mydb TO u;
-    ALTER USER u CREATEDB;
-    \c mydb
-    GRANT ALL ON schema public TO u;
-    CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
-EOF
-
+    psql_settings
+    
     sudo sed -i 's#sys.path.insert(0, "/app")#sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))\nsys.path.insert(0, "/home/u/git/stress_test/docker/site")#' ${CPATH}web_app/wsgi.py
     sudo sed -i 's/^\(local\s\+all\s\+postgres\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
     sudo sed -i 's/^\(host\s\+all\s\+all\s\+127.0.0.1\/32\s\+\).*/\1md5/' /etc/postgresql/*/main/pg_hba.conf
@@ -125,18 +133,46 @@ apache2_docker(){
 }
 
 nginx_server(){
-    pass
+    sudo docker-compose -f ${NGINX_DC} down
+    sudo docker volume prune -f
+    sudo cp ${CPATH}/pg/postgresql.conf /etc/postgresql/*/main/postgresql.conf
+    sudo cp ${CPATH}/pg/pg_hba.conf /etc/postgresql/*/main/pg_hba.conf
+    sudo echo "data_directory = '/var/lib/postgresql/15/main'" | sudo tee -a /etc/postgresql/*/main/postgresql.conf
+    psql_settings
+    sudo chown -R postgres:postgres /var/lib/postgresql/
+    sudo chmod -R 700 /var/lib/postgresql/
+    sudo systemctl restart postgresql
+    sudo sed -i 's/^REDIS_HOST = "redis"/REDIS_HOST = "127.0.0.1"/' ${CPATH}web_app/config.py
+    sudo cp ${CPATH}/pg/pgbouncer/pgbouncer_host/* /etc/pgbouncer/
+    sudo systemctl restart pgbouncer
+    sudo redis-cli flushall
+    sudo systemctl start redis
+    sudo rm -f /etc/nginx/conf.d/*
+    sudo cp ${CPATH}/nginx-config/web-app.conf /etc/nginx/conf.d/
+    sudo sed -i 's/http:\/\/flask/http:\/\/127.0.0.1/g' /etc/nginx/conf.d/web-app.conf
+    sudo chown www-data:www-data /etc/nginx/conf.d/web-app.conf
+    sudo chmod 644 /etc/nginx/conf.d/web-app.conf
+    sudo systemctl restart nginx
+    sudo -u postgres psql -d mydb -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+    sudo nginx -t
 
+    #sudo nohup gunicorn -w 4 -b 127.0.0.1:8000 --chdir ${CPATH}web_app wsgi:application > /tmp/gunicorn.log 2>&1 &
+    sudo ${CPATH}${VENV}gunicorn -w 4 -b 127.0.0.1:8000 --chdir ${CPATH}web_app wsgi:application
+    sudo ${CPATH}${VENV}locust -f ${CPATH}Kuznechik/for_host/locustfile.py --config ${CPATH}Kuznechik/for_host/.locust.conf --processes 3
+
+    echo "Настройка nginx и запуск Locust в распределенном режиме завершены."
 }
 
 nginx_docker(){
+    sudo sed -i 's/http:\/\/127.0.0.1/http:\/\/flask/g' /etc/nginx/conf.d/web-app.conf
+    sed -i 's|http://flask|http://nginx|g' ./Kuznechik/for_docker/.locust.conf 
     sudo systemctl stop apache2.service redis-server.service redis.service postgresql.service pgbouncer.service nginx.service
-    sudo docker-compose -f ./docker-storage/docker-compose.nginx.yml down 
+    sudo docker-compose -f ${NGINX_DC} down 
     sudo docker volume prune -f
     sudo sed -i 's/^REDIS_HOST = "127.0.0.1"/REDIS_HOST = "redis"/' web_app/config.py
-    sudo docker-compose -f ./docker-storage/docker-compose.nginx.yml up --build -d
-    check_containers "docker-compose.locust.yml" "${APP_CONTAINERS[@]}"
-    check_containers "docker-compose.apache2.yml" "${LOAD_DOCKER_CONTAINERS[@]}"
+    sudo docker-compose -f ${NGINX_DC} up --build -d
+    check_containers "${NGINX_DC}" "${APP_CONTAINERS[@]}"
+    check_containers "${NGINX_DC}" "${LOAD_DOCKER_CONTAINERS[@]}"
 }
 
 
@@ -187,8 +223,8 @@ case $1 in
         close_and_delete
         ;;
     pgrm)
-	    pg_remove
-	    ;;
+	pg_remove
+	;;
     local)
         on_localhost
         ;;
@@ -205,10 +241,14 @@ case $1 in
     nd)
         nginx_docker
         ;;
+    ns)
+	venv
+	nginx_server
+	;;
     test)
-	    venv
+	venv
         apache2_server
-	    apache2_docker
-	    ;;
+	apache2_docker
+	;;
 esac
 

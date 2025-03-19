@@ -145,11 +145,11 @@ class _Vagrant():
         rc = self.rc
         box_name, box_url = self._box_wrapper(self)
         kernel = system_commands.check_output_command('uname -r')
-        # system_commands.cmd('apt install -fy')
-        # if system_commands.cmd_with_returncode(f'cd {path_to_vagrantfile} && vagrant box add {box_name} {box_url} --force') != 0:
-        #     return 1
-        # if system_commands.cmd_with_returncode(
-        #     f'cd {path_to_vagrantfile} && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=virtualbox'
-        # ) != 0:
-        #     return 1    
-        # return 0
+        system_commands.cmd('apt install -fy')
+        if system_commands.cmd_with_returncode(f'cd {path_to_vagrantfile} && vagrant box add {box_name} {box_url} --force') != 0:
+            return 1
+        if system_commands.cmd_with_returncode(
+            f'cd {path_to_vagrantfile} && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=virtualbox'
+        ) != 0:
+            return 1    
+        return 0

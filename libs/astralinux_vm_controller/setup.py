@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-def readme():
+def readme(): # TODO ПЕРЕПИСАТЬ README FILE
   with open('README.md', 'r') as f:
     return f.read()
 

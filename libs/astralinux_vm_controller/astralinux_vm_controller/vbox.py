@@ -26,7 +26,7 @@ class VBox(_VirtualMashines):
         return system.cmd_with_returncode(f"sudo bash {path_prepare}")    
     
     @classmethod
-    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list, provision_script: str) -> int: # TODO переработать после реализации Vagrant_constructor
+    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list, provision_script: str) -> int: 
         """
         Сборка VM
 
@@ -53,12 +53,12 @@ class VBox(_VirtualMashines):
 
         vagrant.vagrant_up(provision_script)
 
-        # vbox_manager.set_bridge_network(vms)
-        # vbox_manager.create_snapshots_all_vm(vms)
-        # system_commands.cmd('vboxmanage natnetwork list')
-        # system_commands.cmd('vboxmanage list hostonlyifs')
-        # system_commands.cmd('vboxmanage list bridgedifs')
-        # system_commands.cmd('vboxmanage list vms')
+        vbox_manager.set_bridge_network(vms)
+        vbox_manager.create_snapshots_all_vm(vms)
+        system_commands.cmd('vboxmanage natnetwork list')
+        system_commands.cmd('vboxmanage list hostonlyifs')
+        system_commands.cmd('vboxmanage list bridgedifs')
+        system_commands.cmd('vboxmanage list vms')
 
         #TODO Узнать нужен ли этот блок
 
@@ -103,7 +103,6 @@ class VBox(_VirtualMashines):
     
     @classmethod
     def execute(cls, vm_dates: dict, commands: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
-        # TODO спросить совет по рефакторингу этой части кода (для будущей поддержки libvirt)
         """
         Выполнение команд
 
@@ -181,7 +180,7 @@ class VBox(_VirtualMashines):
         return 0
     
     @classmethod
-    def apt(cls) -> int: # TODO НЕ РЕАЛИЗОВАНО
+    def apt(cls) -> int: 
         """
         Заглушка для метода apt, переопределение происходит через вложенный класс AptManager.
         Реальная логика работы с пакетами будет использовать методы install и remove.

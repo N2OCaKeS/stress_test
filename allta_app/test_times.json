@@ -24,7 +24,7 @@
         "stand4": {
             "FIO": "1:23:06",
             "FreeIPA auth": "0:01:25",
-            "OCFS2": "1:26:55",
+            "OCFS2": "2:51:31",
             "postgresql": "3:07:49",
             "postgresql-aud-off": "2:43:08",
             "postgresql-sm": "3:03:28",
@@ -36,7 +36,8 @@
             "vPingPong": "1:27:32",
             "vUnixBench": "2:54:36",
             "psql oom": "0:55:50",
-            "Total time": "0:00:00"
+            "Total time": "0:00:00",
+            "digsig-cdt": "1:19:49"
         }
     },
     "1.8": {

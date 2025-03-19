@@ -579,6 +579,7 @@ def grub_default(kernel, host):
             stdin, stdout, stderr = client.exec_command(command)
             data_out = stdout.read().decode('utf-8') 
             data_err = stderr.read().decode('utf-8')
+            logging.info(data_out)
             logging.error(data_err)
         finally:
             client.close()

@@ -30,7 +30,7 @@ VBox.prepare(path_prepare)
 ```python
 # Параметры для создания ВМ
 path_to_vagrantfile = "/path/to/Vagrantfile"
-box = "astralinux/1.8"
+box = "1.8.0.s"
 rc = "1.8.1"
 vms = ["database1", "database2"]
 vms_date = {

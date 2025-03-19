@@ -1,8 +1,6 @@
 from libs._ssh_comand import _ssh_command as ssh_command
 import threading
 
-import threading
-
 class _apt_manager:
     @staticmethod
     def install(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
@@ -35,7 +33,7 @@ class _apt_manager:
                 username=username,
                 password=password,
                 vm_dates=vm_dates,
-                task_name=f"apt install on {host}"
+                task_name=f"apt install {packages}"
             )
 
         # Обрабатываем блок за блоком

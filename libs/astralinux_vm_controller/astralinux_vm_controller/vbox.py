@@ -26,12 +26,13 @@ class VBox(_VirtualMashines):
         return system.cmd_with_returncode(f"sudo bash {path_prepare}")    
     
     @classmethod
-    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list) -> int: # TODO переработать после реализации Vagrant_constructor
+    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list, provision_script: str) -> int: # TODO переработать после реализации Vagrant_constructor
         """
         Сборка VM
 
         Args:
-            path_to_vagrantfile (str): путь до Vagrantfile 
+            path_to_vagrantfile (str): путь куда сохранить и откуда будет запущен Vagrantfile 
+                path_to_vagrantfile = './vagrant'
             box (str): имя образа
             rc (str): версия ос
             vms (list): список имен ВМ
@@ -41,20 +42,23 @@ class VBox(_VirtualMashines):
                     'sshnum':'',
                     'ip_bridge':'*.*.*.*',
                     'cpus':'*',
-                    'memory':'*'}
+                    'memory':'*',
+                    'disk':'*'},
                     } 
+            provision_script (str): путь до provision.sh Vagrant
+                provision_script = ./vagrant/provision/provision.sh
         """
 
-        vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms, vms_date)
+        vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms_date)
 
-        vagrant.vagrant_up()
+        vagrant.vagrant_up(provision_script)
 
-        vbox_manager.set_bridge_network(vms)
-        vbox_manager.create_snapshots_all_vm(vms)
-        system_commands.cmd('vboxmanage natnetwork list')
-        system_commands.cmd('vboxmanage list hostonlyifs')
-        system_commands.cmd('vboxmanage list bridgedifs')
-        system_commands.cmd('vboxmanage list vms')
+        # vbox_manager.set_bridge_network(vms)
+        # vbox_manager.create_snapshots_all_vm(vms)
+        # system_commands.cmd('vboxmanage natnetwork list')
+        # system_commands.cmd('vboxmanage list hostonlyifs')
+        # system_commands.cmd('vboxmanage list bridgedifs')
+        # system_commands.cmd('vboxmanage list vms')
 
         #TODO Узнать нужен ли этот блок
 

@@ -1,3 +1,6 @@
 Method,Name,Error,Occurrences
-POST,POST BULK MESSAGE,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: POST BULK MESSAGE'),1198
-POST,/message/create,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: /message/create'),1143
+GET,GET /message/create,"ConnectionRefusedError(111, 'Connection refused')",471
+POST,POST JSON MESSAGE,"ConnectionRefusedError(111, 'Connection refused')",461
+POST,POST BULK MESSAGE,"ConnectionRefusedError(111, 'Connection refused')",495
+GET,GET /home,"ConnectionRefusedError(111, 'Connection refused')",477
+POST,POST FORM,"ConnectionRefusedError(111, 'Connection refused')",547

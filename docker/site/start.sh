@@ -94,6 +94,7 @@ EOF
 
     sudo cp pg/pgbouncer/pgbouncer_host/* /etc/pgbouncer/
     sudo systemctl restart pgbouncer
+    sudo redis-cli flushall
     sudo systemctl start redis
     sudo rm -f /etc/apache2/sites-available/*
     sudo cp apache-config/config_host/apache2.conf /etc/apache2/apache2.conf

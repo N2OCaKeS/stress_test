@@ -1,4 +1,10 @@
 Method,Name,Error,Occurrences
-GET,GET /,"ReadTimeout(ReadTimeoutError(""HTTPConnectionPool(host='flask', port=80): Read timed out. (read timeout=50)""))",59
-GET,GET MESSAGE,"ReadTimeout(ReadTimeoutError(""HTTPConnectionPool(host='flask', port=80): Read timed out. (read timeout=60)""))",32
-POST,/message/create,"ReadTimeout(ReadTimeoutError(""HTTPConnectionPool(host='flask', port=80): Read timed out. (read timeout=60)""))",98
+POST,POST BULK MESSAGE,HTTPError('500 Server Error: Internal Server Error for url: POST BULK MESSAGE'),1
+POST,POST FORM,HTTPError('500 Server Error: Internal Server Error for url: POST FORM'),2
+GET,GET /home,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",5
+POST,POST BULK MESSAGE,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",7
+POST,POST FORM,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",13
+POST,POST JSON MESSAGE,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",10
+GET,GET /message/create,"ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x....>, 'Connection to flask timed out. (connect timeout=None)')",12
+POST,POST FORM,"ConnectionResetError(104, 'Connection reset by peer')",1
+GET,GET /home,HTTPError('500 Server Error: Internal Server Error for url: GET /home'),1

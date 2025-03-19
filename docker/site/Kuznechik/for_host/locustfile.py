@@ -7,27 +7,27 @@ class Tasks(TaskSet):
     def create_single_message_json(self):
         payload = {"content": "Test Json Message"}
         headers = {"Content-Type": "application/json"}
-        self.client.post("/message/create", "POST JSON MESSAGE", json=payload, headers=headers, timeout=60)
+        self.client.post("/message/create", name="POST JSON MESSAGE", json=payload, headers=headers)
 
     @task
     def create_bulk_messages_json(self):
         num_messages = random.randint(5, 2002)
         payload = [{"content": f"Bulk Message {i}"} for i in range(num_messages)]
         headers = {"Content-Type": "application/json"}
-        self.client.post("/message/create", name="POST BULK MESSAGE", json=payload, headers=headers, timeout=60)
+        self.client.post("/message/create", name="POST BULK MESSAGE", json=payload, headers=headers)
 
     @task
     def create_message_form(self):
         data = {"content": "Test Form Message"}
-        self.client.post("/message/create", name="POST FORM", data=data, timeout=60)
+        self.client.post("/message/create", name="POST FORM", data=data)
 
     @task
     def get_main(self):
-        self.client.get("/home", name="GET /home", timeout=50)
+        self.client.get("/home", name="GET /home")
 
     @task
     def get_create(self):
-        self.client.get("/message/create", name="GET /message/create", timeout=60)
+        self.client.get("/message/create", name="GET /message/create")
 
 
 class MyUser(HttpUser):

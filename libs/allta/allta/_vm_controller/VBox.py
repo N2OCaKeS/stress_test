@@ -14,7 +14,6 @@ from ._vm._vagrant import _Vagrant
 from ._vm._virtual_machine import _VirtualMashines
 from ._vm._vbox_manage import _Vboxmanager as vbox_manager
 
-from os import system
 from typing import cast
 
 import threading
@@ -46,7 +45,7 @@ class VBox(_VirtualMashines):
         Returns:
             int: Код завершения выполнения команды.
         """
-        return system.cmd_with_returncode(f"sudo bash {path_prepare}")    
+        return system_commands.cmd_with_returncode(f"sudo bash {path_prepare}")    
     
     @classmethod
     def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list, provision_script: str) -> int: 
@@ -109,7 +108,7 @@ class VBox(_VirtualMashines):
             int: 0, если все машины доступны, иначе 1.
         """
         def _check_ping():
-            bad_vms = [vm for vm in vms if system.cmd_with_returncode(
+            bad_vms = [vm for vm in vms if system_commands.cmd_with_returncode(
                 f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
             return bad_vms
 

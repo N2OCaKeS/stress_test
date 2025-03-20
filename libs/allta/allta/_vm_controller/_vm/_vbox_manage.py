@@ -1,5 +1,5 @@
 from ..._decorators.Decorators import BaseDecorators
-from .._libs._system_commands import _System_Commands as system_command
+from ..._system_command import _System_Commands as system_commands
 
 from time import sleep
 
@@ -34,7 +34,7 @@ class _Vboxmanager():
         
         # Включаем каждую ВМ
         for vm in vms:
-            system_command.cmd(f'vboxmanage startvm {vm} --type headless')
+            system_commands.cmd(f'vboxmanage startvm {vm} --type headless')
         return 0
 
     
@@ -57,7 +57,7 @@ class _Vboxmanager():
         
         # Выключаем каждую ВМ
         for vm in vms:
-            system_command.cmd(f'vboxmanage controlvm {vm} poweroff')
+            system_commands.cmd(f'vboxmanage controlvm {vm} poweroff')
         return 0
     
 
@@ -75,7 +75,7 @@ class _Vboxmanager():
             None
         """
         for vm in vms:
-            system_command.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
+            system_commands.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
 
 
     @BaseDecorators.trycorator
@@ -90,20 +90,20 @@ class _Vboxmanager():
         Returns:
             int: Код завершения выполнения.
         """
-        adapter_name = system_command.check_output_command(
+        adapter_name = system_commands.check_output_command(
             "vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
         print(f'Bridge interface found as: {adapter_name}')
 
         for vm in vms:
             try:
                 num_interface = '1'
-                system_command.cmd(f'vboxmanage controlvm {vm} poweroff')
+                system_commands.cmd(f'vboxmanage controlvm {vm} poweroff')
                 sleep(1)
-                system_command.cmd(
+                system_commands.cmd(
                     f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
-                system_command.cmd(
+                system_commands.cmd(
                     f'vboxmanage modifyvm {vm} --bridgeadapter{num_interface} {adapter_name}')
-                system_command.cmd(f'vboxmanage startvm {vm} --type headless')
+                system_commands.cmd(f'vboxmanage startvm {vm} --type headless')
             except Exception as e:
                 print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
             return 1
@@ -118,7 +118,7 @@ class _Vboxmanager():
         Returns:
             str: Список виртуальных машин.
         """
-        return system_command.check_output_command('vboxmanage list vms')
+        return system_commands.check_output_command('vboxmanage list vms')
 
 
 

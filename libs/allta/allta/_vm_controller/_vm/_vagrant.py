@@ -1,7 +1,7 @@
 import os
 import requests
 import json
-from .._libs._system_commands import _System_Commands as system_commands
+from ..._system_command import _System_Commands as system_commands
 
 class _Vagrant():
     """

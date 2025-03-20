@@ -1,7 +1,7 @@
 __version__ = "0.0.1"
 
 from ._decorators.Decorators import BaseDecorators 
-from ._system_command import SystemCommands
+from ._system_command.SystemCommands import SystemCommands
 from ._vm_controller.VBox import VBox as VBoxManager
 
 

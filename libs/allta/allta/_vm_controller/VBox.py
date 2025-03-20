@@ -1,4 +1,4 @@
-from .._system_command import _System_Commands as system_commands
+from .._system_command import SystemCommands as system_commands
 from ._libs._ssh_comand import _SSH_Command as ssh_command
 from ._libs._scp_comand import _SCP_Command as scp_command
 

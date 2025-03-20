@@ -6,7 +6,7 @@ from ._base_commands._apt._apt_prorocol import _AptManagerProtocol
 from ._base_commands._apt import _apt 
 
 from ._base_commands._set_hosts._set_hosts_protocol import _HostsManagerProtocol
-from ._base_commands._set_hosts import _HostsManager
+from ._base_commands._set_hosts._set_hosts import _SetHosts
 
 
 
@@ -244,7 +244,7 @@ class VBox(_VirtualMashines):
         )
 
     apt: _AptManagerProtocol = cast(_AptManagerProtocol, _apt._AptManager())
-    hosts: _HostsManagerProtocol = cast(_HostsManagerProtocol, _HostsManager())
+    hosts: _HostsManagerProtocol = cast(_HostsManagerProtocol, _SetHosts())
 
 
 

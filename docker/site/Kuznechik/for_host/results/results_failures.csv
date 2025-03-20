@@ -1,6 +1,4 @@
 Method,Name,Error,Occurrences
-GET,GET /message/create,"ConnectionRefusedError(111, 'Connection refused')",471
-POST,POST JSON MESSAGE,"ConnectionRefusedError(111, 'Connection refused')",461
-POST,POST BULK MESSAGE,"ConnectionRefusedError(111, 'Connection refused')",495
-GET,GET /home,"ConnectionRefusedError(111, 'Connection refused')",477
-POST,POST FORM,"ConnectionRefusedError(111, 'Connection refused')",547
+POST,POST BULK MESSAGE,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: POST BULK MESSAGE'),10
+POST,POST JSON MESSAGE,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: POST JSON MESSAGE'),13
+POST,POST FORM,HTTPError('500 Server Error: INTERNAL SERVER ERROR for url: POST FORM'),12

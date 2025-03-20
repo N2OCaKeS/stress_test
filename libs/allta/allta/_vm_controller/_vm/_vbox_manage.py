@@ -1,23 +1,32 @@
-from ...decorators.decorators import BaseDecorators
+from ..._decorators.Decorators import BaseDecorators
 from .._libs._system_commands import _System_Commands as system_command
 
 from time import sleep
 
 class _Vboxmanager():
-    """Управляющий класс для машин внутри VBox
+    """
+    Класс для управления виртуальными машинами в VirtualBox.
 
-    Returns:
-        _type_: _description_
+    Основные функции:
+    - Включение и выключение ВМ.
+    - Создание снимков всех настроенных ВМ.
+    - Настройка сетевого интерфейса ВМ на мостовой режим.
+    - Получение списка доступных ВМ.
+
+    Этот класс использует команды VirtualBox для управления ВМ.
     """
 
     @BaseDecorators.trycorator
     @staticmethod 
     def poweron_vms(vms):
         """
-        Включает одну или несколько ВМ.
+        Включает одну или несколько виртуальных машин.
 
         Args:
-            vms (str or list): имя одной ВМ (str) или список имён ВМ (list).
+            vms (str or list): Имя одной виртуальной машины (str) или список имён виртуальных машин (list).
+
+        Returns:
+            int: Код завершения выполнения.
         """
         # Преобразуем строку в список, если передана только одна ВМ
         if isinstance(vms, str):
@@ -34,10 +43,13 @@ class _Vboxmanager():
     @staticmethod 
     def poweroff_vms(vms):
         """
-        Выключает одну или несколько ВМ.
+        Выключает одну или несколько виртуальных машин.
 
         Args:
-            vms (str or list): имя одной ВМ (str) или список имён ВМ (list).
+            vms (str or list): Имя одной виртуальной машины (str) или список имён виртуальных машин (list).
+
+        Returns:
+            int: Код завершения выполнения.
         """
         # Преобразуем строку в список, если передана только одна ВМ
         if isinstance(vms, str):
@@ -54,10 +66,13 @@ class _Vboxmanager():
     @staticmethod 
     def create_snapshots_all_vm(vms):
         """
-        Создает снимки всех созданных и настроенных ВМ
+        Создаёт снимки всех указанных виртуальных машин.
 
         Args:
-            vms (list): список имен ВМ
+            vms (list): Список имён виртуальных машин.
+
+        Returns:
+            None
         """
         for vm in vms:
             system_command.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
@@ -66,11 +81,14 @@ class _Vboxmanager():
     @BaseDecorators.trycorator
     @staticmethod    
     def set_bridge_network(vms: list):
-        """ 
-        Устанавливает тип сети на мост
+        """
+        Настраивает сетевой интерфейс виртуальных машин на мостовой режим.
 
         Args:
-            vms (list): список ВМ
+            vms (list): Список имён виртуальных машин.
+
+        Returns:
+            int: Код завершения выполнения.
         """
         adapter_name = system_command.check_output_command(
             "vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
@@ -95,15 +113,18 @@ class _Vboxmanager():
     @staticmethod   
     def _check_vm_list():
         """
-        Показывает список доступных ВМ
+        Возвращает список доступных виртуальных машин.
+
+        Returns:
+            str: Список виртуальных машин.
         """
         return system_command.check_output_command('vboxmanage list vms')
-    
-
-
-        
-    
 
 
 
-    
+
+
+
+
+
+

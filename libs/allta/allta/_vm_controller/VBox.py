@@ -2,7 +2,6 @@ from ._libs._system_commands import _System_Commands as system_commands
 from ._libs._ssh_comand import _SSH_Command as ssh_command
 from ._libs._scp_comand import _SCP_Command as scp_command
 
-# from ._base_commands._apt._apt import _apt_manager as apt_manager
 from ._base_commands._apt._apt_prorocol import _AptManagerProtocol
 from ._base_commands._apt import _apt 
 
@@ -22,40 +21,58 @@ import threading
 
 
 class VBox(_VirtualMashines):
+    """
+    Класс VBox предоставляет интерфейс для управления виртуальными машинами (ВМ) с использованием Vagrant и VirtualBox.
+
+    Основные функции:
+    - Подготовка окружения для работы с ВМ.
+    - Создание и настройка ВМ на основе Vagrantfile.
+    - Проверка доступности ВМ через ping.
+    - Выполнение команд на ВМ.
+    - Копирование файлов между локальной системой и ВМ.
+    - Управление пакетами на ВМ через apt.
+    - Настройка файла /etc/hosts на ВМ.
+
+    Этот класс наследуется от абстрактного класса `_VirtualMashines` и реализует его методы.
+    """
     @classmethod
     def prepare(cls, path_prepare) -> int:
         """
-        Прекондишн
+        Выполняет подготовку окружения для работы с виртуальными машинами.
 
         Args:
-            path_prepare (str): путь до прекондишна
+            path_prepare (str): Путь до скрипта подготовки.
+
+        Returns:
+            int: Код завершения выполнения команды.
         """
         return system.cmd_with_returncode(f"sudo bash {path_prepare}")    
     
     @classmethod
     def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list, provision_script: str) -> int: 
         """
-        Сборка VM
+        Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
         Args:
-            path_to_vagrantfile (str): путь куда сохранить и откуда будет запущен Vagrantfile 
-                path_to_vagrantfile = './vagrant'
-            box (str): имя образа
-            rc (str): версия ос
-            vms (list): список имен ВМ
-            vm_dates (dict): полная информация о ВМ пример:
-                vm_dates = {'hostname':{'host-port':'*',
-                    'ip':'10.0.0.11',
+            path_to_vagrantfile (str): Путь для сохранения и запуска Vagrantfile.
+            box (str): Имя образа (бокса).
+            rc (str): Версия операционной системы.
+            vms (list): Список имён виртуальных машин.
+            vms_date (list): Полная информация о виртуальных машинах.
+                vm_dates = {'hostname':{
+                    'host-port':'*',
+                    'ip':'10.0.0.11', #  ip внутренней сети
                     'sshnum':'',
-                    'ip_bridge':'*.*.*.*',
+                    'ip_bridge':'*.*.*.*', # ip моста
                     'cpus':'*',
-                    'memory':'*',
-                    'disk':'*'},
+                    'memory':'*', # RAM
+                    'disk':'*'}
                     } 
-            provision_script (str): путь до provision.sh Vagrant
-                provision_script = ./vagrant/provision/provision.sh
-        """
+            provision_script (str): Путь до скрипта провиженинга.
 
+        Returns:
+            int: Код завершения выполнения.
+        """
         vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms_date)
 
         vagrant.vagrant_up(provision_script)
@@ -82,19 +99,14 @@ class VBox(_VirtualMashines):
     @classmethod
     def check(cls, vms: list, vm_dates: dict):
         """
-        Проверка доступности ВМ через ping
+        Проверяет доступность виртуальных машин через ping.
 
         Args:
-            vms (list): список имен ВМ
-            vm_dates (dict): полная информация о ВМ пример:
-                vm_dates = {'hostname':{'host-port':'*',
-                    'ip':'10.0.0.11',
-                    'sshnum':'',
-                    'ip_bridge':'*.*.*.*',
-                    'cpus':'*',
-                    'memory':'*'}, 
-                    ...
-                    }
+            vms (list): Список имён виртуальных машин.
+            vm_dates (dict): Полная информация о виртуальных машинах.
+
+        Returns:
+            int: 0, если все машины доступны, иначе 1.
         """
         def _check_ping():
             bad_vms = [vm for vm in vms if system.cmd_with_returncode(
@@ -111,26 +123,21 @@ class VBox(_VirtualMashines):
     @classmethod
     def execute(cls, vm_dates: dict, commands: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
-        Выполнение команд
+        Выполняет команды на виртуальных машинах.
 
         Args:
-            vms_groups (dict): словарь с группами хостов пример:
-                groups = {
-                    'group_name': ['host1', 'host2'],
-                    ...
-                    }
-
-            vm_dates (dict): полная информация о ВМ пример:
-                vm_dates = {'hostname':{'host-port':'*',
-                    'ip':'10.0.0.11',
-                    'sshnum':'',
-                    'ip_bridge':'*.*.*.*',
-                    'cpus':'*',
-                    'memory':'*'}, 
-                    ...
-                    }
-
-            commands (dict): команды для выполнения на ВМ пример:
+            vm_dates (dict): Полная информация о виртуальных машинах.
+                vms_date (list): Полная информация о виртуальных машинах.
+                    vm_dates = {'hostname':{
+                        'host-port':'*',
+                        'ip':'10.0.0.11', #  ip внутренней сети
+                        'sshnum':'',
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        'cpus':'*',
+                        'memory':'*', # RAM
+                        'disk':'*'}
+                        }             
+            commands (dict): Команды для выполнения.
                 commands = {
                     'hostname': { # имя хоста или имя группы хостов на которых нужно выполнить команду имя группы будет называться с g_ в начале
                         'task_name': { # имя задачи
@@ -141,9 +148,15 @@ class VBox(_VirtualMashines):
                     }, 
                     ...
                     }
+            vms_groups (dict, optional): Группы виртуальных машин.
+                vms_groups = {
+                    'databases': ['db1', 'db2'],
+                }
+            username (str, optional): Имя пользователя для SSH. По умолчанию "u".
+            password (str, optional): Пароль для SSH. По умолчанию "1".
 
-            username (str): имя пользователя для подключения к ВМ
-            password (str): пароль для подключения к ВМ
+        Returns:
+            int: Код завершения выполнения.
         """
         
         def _threaded_execution(host: str, task_name: str, task: dict, username: str, password: str):
@@ -190,28 +203,35 @@ class VBox(_VirtualMashines):
     def scp(cls, scp_settings: dict, vm_dates: dict, groups: dict = None,
             username: str = "u", password: str = "1") -> int:
         """
-        Выполняет копирование файлов между локальной системой и виртуальными машинами
-        с использованием настроек из словаря scp_settings. Для копирования файлов используется
-        класс _scp_command, который запускает копирование для каждого хоста в отдельном потоке.
-        
+        Выполняет копирование файлов между локальной системой и виртуальными машинами.
+
         Args:
-            scp_settings (dict): Словарь с настройками для копирования файлов.
-                Формат:
-                {
-                    'hostname_or_group': {
-                        'mode': 'push' или 'pull',
-                        'path_host': '/путь/на/локальной/системе',
-                        'path_vm': '/путь/на/виртуальной/машине'
-                    },
-                    ...
+            scp_settings (dict): Настройки для копирования файлов.
+                scp_settings = {
+                    'mode' = '' # pull/push получение или отправка файла
+                    'path_host' = '' # путь на хосте
+                    'path_vm' = '' # путь на ВМ
                 }
-            vm_dates (dict): Словарь с информацией о виртуальных машинах.
-            groups (dict, optional): Словарь групп виртуальных машин для массового копирования.
-            username (str, optional): Имя пользователя для SSH-подключения (по умолчанию "u").
-            password (str, optional): Пароль для SSH-подключения (по умолчанию "1").
-        
+            vm_dates (dict): Полная информация о виртуальных машинах.
+                vms_date (list): Полная информация о виртуальных машинах.
+                    vm_dates = {'hostname':{
+                        'host-port':'*',
+                        'ip':'10.0.0.11', #  ip внутренней сети
+                        'sshnum':'',
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        'cpus':'*',
+                        'memory':'*', # RAM
+                        'disk':'*'}
+                        }    
+            groups (dict, optional): Группы виртуальных машин.
+                vms_groups = {
+                    'databases': ['db1', 'db2'],
+                }
+            username (str, optional): Имя пользователя для SSH. По умолчанию "u".
+            password (str, optional): Пароль для SSH. По умолчанию "1".
+
         Returns:
-            int: 0 при успешном выполнении копирования файлов, иначе возвращается 1.
+            int: Код завершения выполнения.
         """
 
 
@@ -228,4 +248,3 @@ class VBox(_VirtualMashines):
 
 
 
-    

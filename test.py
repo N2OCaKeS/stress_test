@@ -1,4 +1,4 @@
-import allta
+from allta.
 
 
-allta.
+prov = al

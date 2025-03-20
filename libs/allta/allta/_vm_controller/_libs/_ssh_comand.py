@@ -1,4 +1,4 @@
-from ...decorators.decorators import BaseDecorators
+from ..._decorators.Decorators import BaseDecorators
 from ._signals import _Signals as signals
 import paramiko
 
@@ -6,6 +6,15 @@ import paramiko
 from .._decotator._ansible_log import ansible_logger
 
 class _SSH_Command:
+    """
+    Класс для выполнения SSH-команд на удалённых хостах.
+
+    Основные функции:
+    - Выполнение команды на одном хосте с обработкой ошибок.
+    - Поддержка сигналов для синхронизации выполнения задач.
+
+    Этот класс использует библиотеку `paramiko` для выполнения SSH-команд.
+    """
 
     @BaseDecorators.trycorator
     @ansible_logger
@@ -13,25 +22,25 @@ class _SSH_Command:
     def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',
             signal_set: str = None, signal_get: str = None, task_name: str = None) -> dict:
         """
-        Выполнение команды на одном хосте с обработкой ошибок.
+        Выполняет SSH-команду на удалённом хосте с обработкой ошибок.
 
         Args:
-            host (str): имя хоста
-            command (str): команда для выполнения
-            username (str): имя пользователя для подключения к ВМ
-            password (str): пароль для подключения к ВМ
-            vm_dates (dict): полная информация о ВМ
-            signal_set (str, optional): сигнал для установки
-            signal_get (str, optional): сигнал для получения
-            task_name (str, optional): имя задачи для логирования
+            host (str): Имя хоста, на котором выполняется команда.
+            command (str): Команда для выполнения.
+            vm_dates (dict): Словарь с информацией о виртуальных машинах.
+            username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
+            password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
+            signal_set (str, optional): Сигнал для установки после выполнения команды.
+            signal_get (str, optional): Сигнал для ожидания перед выполнением команды.
+            task_name (str, optional): Имя задачи для логирования.
 
         Returns:
-            dict: результат выполнения команды с ключами:
-                - host: имя хоста,
-                - task_name: имя задачи,
-                - command: выполненная команда,
-                - output: вывод команды,
-                - status: статус выполнения.
+            dict: Результат выполнения команды с ключами:
+                - host: Имя хоста.
+                - task_name: Имя задачи.
+                - command: Выполненная команда.
+                - output: Вывод команды.
+                - status: Статус выполнения ("ok" или "error").
         """
         ssh = None
         try:

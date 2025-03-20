@@ -1,45 +1,46 @@
-from ....decorators.decorators import BaseDecorators
+from ...._decorators.Decorators import BaseDecorators
 from ..._decotator._ansible_log import ansible_logger
 from ..._libs._ssh_comand import _SSH_Command
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class _SetHosts:
+    """
+    Класс для настройки файла /etc/hosts на виртуальных машинах.
+
+    Основные функции:
+    - Генерация содержимого файла /etc/hosts для каждой ВМ.
+    - Установка файла /etc/hosts на удалённой машине через SSH.
+    - Поддержка многопоточного выполнения для одновременной настройки нескольких ВМ.
+
+    Этот класс используется для автоматизации настройки сетевых параметров на ВМ.
+    """
     @staticmethod
     @BaseDecorators.trycorator
     @ansible_logger
     def set_hosts(domain: str, vms_dates: dict, username: str = "u", password: str = "1",
                   task_name: str = "Set /etc/hosts") -> dict:
         """
-        Для каждой виртуальной машины из словаря vms_dates генерирует содержимое файла /etc/hosts и
-        устанавливает его на удалённой машине через SSH с использованием класса _ssh_command.
-        Выполнение производится в многопоточном режиме.
-
-        Формат файла /etc/hosts:
-            127.0.0.1       localhost
-            127.0.0.1       {текущий_хост}.{domain}
-            {ip_bridge}     {vm}.{domain}      {vm}
+        Настраивает файл /etc/hosts на всех указанных виртуальных машинах.
 
         Args:
-            domain (str): домен для формирования FQDN, например "example.com".
-            vms_dates (dict): словарь с данными о виртуальных машинах.
-                Пример:
-                {
-                    'database1': {
-                        "host-port": "22",
-                        "ip_bridge": "10.177.103.111",
-                        "cpus": "4",
-                        "memory": "32768",
-                        "disk": "40960"
-                    },
-                    'database2': { ... },
-                    ...
-                }
-            username (str): имя пользователя для подключения по SSH.
-            password (str): пароль для подключения по SSH.
-            task_name (str): имя задачи для логирования.
+            domain (str): Домен для формирования FQDN.
+            vm_dates (dict): Полная информация о виртуальных машинах.
+                vms_date (list): Полная информация о виртуальных машинах.
+                    vm_dates = {'hostname':{
+                        'host-port':'*',
+                        'ip':'10.0.0.11', #  ip внутренней сети
+                        'sshnum':'',
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        'cpus':'*',
+                        'memory':'*', # RAM
+                        'disk':'*'}
+                        }  
+            username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
+            password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
+            task_name (str, optional): Имя задачи для логирования.
 
         Returns:
-            dict: Результаты выполнения команды для каждой ВМ.
+            dict: Результаты выполнения команды для каждой виртуальной машины.
         """
         def process_vm(vm_name: str, vm_info: dict) -> tuple:
             # Генерация содержимого файла /etc/hosts для текущей ВМ

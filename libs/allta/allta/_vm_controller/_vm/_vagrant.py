@@ -4,6 +4,16 @@ import json
 from .._libs._system_commands import _System_Commands as system_commands
 
 class _Vagrant():
+    """
+    Класс для работы с Vagrant.
+
+    Основные функции:
+    - Генерация Vagrantfile с настройками для ВМ.
+    - Добавление образа (бокса) и запуск ВМ.
+    - Определение соответствия версии ОС и доступного бокса.
+
+    Этот класс позволяет автоматизировать процесс создания и настройки ВМ с использованием Vagrant.
+    """
     def __init__(self, path_to_vagrantfile: str, box: str, rc: str, vms_date: dict = None):
         """
         Класс для работы с Vagrant
@@ -29,7 +39,10 @@ class _Vagrant():
     @staticmethod
     def _box_wrapper(self) -> tuple:
         """
-        Определяет соответствие версии ОС и доступного бокса, возвращает имя и URL бокса.
+        Определяет соответствие версии операционной системы и доступного бокса.
+
+        Returns:
+            tuple: Имя и URL бокса.
         """
         box = self.box
         astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
@@ -67,11 +80,13 @@ class _Vagrant():
 
     def vagrant_construct(self, provision_script: str):
         """
-        Генерирует Vagrantfile с требуемой структурой.
-        Если указан путь, которого нет, то директория создаётся.
+        Генерирует Vagrantfile с настройками для виртуальных машин.
 
         Args:
-            provision_script (str): путь до скрипта провиженинга, который будет прописан в Vagrantfile.
+            provision_script (str): Путь до скрипта провиженинга.
+
+        Returns:
+            None
         """
         # Проверяем, существует ли директория, и если нет – создаем её.
         os.makedirs(self.path_to_vagrantfile, exist_ok=True)
@@ -133,10 +148,13 @@ class _Vagrant():
 
     def vagrant_up(self, provision_script: str):
         """
-        Генерирует Vagrantfile (создавая файл при необходимости), добавляет образ и поднимает ВМ.
+        Генерирует Vagrantfile, добавляет образ и запускает виртуальные машины.
 
         Args:
-            provision_script (str): путь до скрипта провиженинга, который будет прописан в Vagrantfile.
+            provision_script (str): Путь до скрипта провиженинга.
+
+        Returns:
+            int: Код завершения выполнения.
         """
         # Генерация Vagrantfile
         self.vagrant_construct(provision_script)

@@ -1,4 +1,5 @@
-from _ssh_comand import _SSH_Command
+
+from ..._libs._ssh_comand import _SSH_Command
 import concurrent.futures
 
 class _Sed:

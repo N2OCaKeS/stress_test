@@ -244,6 +244,25 @@ class VBox(_VirtualMashines):
 
     def set_hosts(domain: str, vms_dates: dict,
             username: str = "u", password: str = "1"):
+        """
+        Настраивает файл /etc/hosts на всех указанных виртуальных машинах.
+
+        Args:
+            domain (str): Домен для формирования FQDN.
+            vm_dates (dict): Полная информация о виртуальных машинах.
+                vms_date (list): Полная информация о виртуальных машинах.
+                    vm_dates = {'hostname':{
+                        'host-port':'*',
+                        'ip':'10.0.0.11', #  ip внутренней сети
+                        'sshnum':'',
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        'cpus':'*',
+                        'memory':'*', # RAM
+                        'disk':'*'}
+                        }  
+            username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
+            password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
+        """
         
         set_hosts.set_hosts(
             domain=domain,
@@ -254,6 +273,40 @@ class VBox(_VirtualMashines):
 
     def sed(sed_conf: dict, vm_dates: dict, groups: dict = None,
             username: str = "u", password: str = "1"):
+        """
+        Выполняет замену строки в файле
+
+        Args:
+            sed_conf (dict): Настройки для копирования файлов.
+                sed_conf = {
+                           'suac': {
+                               'path': '/etc/postgresql/15/main/pg_hba.conf',
+                               'old':'# IPv4 local connections:',
+                               'new':'' 
+                           },
+                           'g_database': { ... }  # если ключ начинается с "g_", то команда выполнится для группы
+                         }
+            vm_dates (dict): Полная информация о виртуальных машинах.
+                vms_date (list): Полная информация о виртуальных машинах.
+                    vm_dates = {'hostname':{
+                        'host-port':'*',
+                        'ip':'10.0.0.11', #  ip внутренней сети
+                        'sshnum':'',
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        'cpus':'*',
+                        'memory':'*', # RAM
+                        'disk':'*'}
+                        }    
+            groups (dict, optional): Группы виртуальных машин.
+                vms_groups = {
+                    'databases': ['db1', 'db2'],
+                }
+            username (str, optional): Имя пользователя для SSH. По умолчанию "u".
+            password (str, optional): Пароль для SSH. По умолчанию "1".
+
+        Returns:
+            int: Код завершения выполнения.
+        """
 
         sed.sed(
             sed_conf=sed_conf,

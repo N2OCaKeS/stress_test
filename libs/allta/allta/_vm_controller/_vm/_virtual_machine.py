@@ -1,5 +1,4 @@
 from .._base_commands._apt._apt_prorocol import _AptManagerProtocol
-from .._base_commands._set_hosts._set_hosts_protocol import _HostsManagerProtocol
 
 from abc import ABC, abstractmethod
 
@@ -21,12 +20,6 @@ class _VirtualMashines(ABC):
     @abstractmethod
     def apt(self) -> _AptManagerProtocol:
         """Должен возвращать экземпляр менеджера apt."""
-        pass
-
-    @property
-    @abstractmethod
-    def hosts(self) -> _HostsManagerProtocol:
-        """Должен возвращать экземпляр менеджера hosts."""
         pass
 
     @abstractmethod
@@ -99,4 +92,14 @@ class _VirtualMashines(ABC):
         Returns:
             int: Код завершения выполнения.
         """
+        pass
+
+    @abstractmethod
+    def set_hosts(cls, domain: str, vms_dates: dict,
+            username: str = "u", password: str = "1") -> int:
+
+        pass
+    @abstractmethod
+    def sed(cls, sed_conf: dict, vm_dates: dict, groups: dict = None,
+            username: str = "u", password: str = "1"):
         pass

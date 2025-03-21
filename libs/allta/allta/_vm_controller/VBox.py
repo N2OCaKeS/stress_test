@@ -1,12 +1,12 @@
-from .._system_command import SystemCommands as system_commands
+from .._system_command.SystemCommands import SystemCommands as system_commands
 from ._libs._ssh_comand import _SSH_Command as ssh_command
 from ._libs._scp_comand import _SCP_Command as scp_command
 
 from ._base_commands._apt._apt_prorocol import _AptManagerProtocol
 from ._base_commands._apt import _apt 
 
-from ._base_commands._set_hosts._set_hosts_protocol import _HostsManagerProtocol
-from ._base_commands._set_hosts._set_hosts import _SetHosts
+from ._base_commands._sed._sed import _Sed as sed
+from ._base_commands._set_hosts._set_hosts import _SetHosts as set_hosts
 
 
 
@@ -242,8 +242,29 @@ class VBox(_VirtualMashines):
             password=password
         )
 
+    def set_hosts(domain: str, vms_dates: dict,
+            username: str = "u", password: str = "1"):
+        
+        set_hosts.set_hosts(
+            domain=domain,
+            vms_dates=vms_dates,
+            username=username,
+            password=password
+        )
+
+    def sed(sed_conf: dict, vm_dates: dict, groups: dict = None,
+            username: str = "u", password: str = "1"):
+
+        sed.sed(
+            sed_conf=sed_conf,
+            vms_dates=vm_dates,
+            groups=groups,
+            username=username,
+            password=password
+        )
+
     apt: _AptManagerProtocol = cast(_AptManagerProtocol, _apt._AptManager())
-    hosts: _HostsManagerProtocol = cast(_HostsManagerProtocol, _SetHosts())
+    
 
 
 

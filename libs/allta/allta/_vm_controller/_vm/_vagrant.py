@@ -1,7 +1,7 @@
 import os
 import requests
 import json
-from ..._system_command import _System_Commands as system_commands
+from ..._system_command.SystemCommands import SystemCommands as system_commands
 
 class _Vagrant():
     """
@@ -35,6 +35,8 @@ class _Vagrant():
         self.box = box
         self.rc = rc 
         self.vms = vms_date or {}
+
+        
 
     @staticmethod
     def _box_wrapper(self) -> tuple:

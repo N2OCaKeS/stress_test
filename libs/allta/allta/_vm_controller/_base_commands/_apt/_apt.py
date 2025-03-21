@@ -15,7 +15,6 @@ class _AptManager:
 
     Этот класс поддерживает многопоточное выполнение для одновременной работы с несколькими хостами.
     """
-    @ansible_logger
     @staticmethod
     def install(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
@@ -49,7 +48,7 @@ class _AptManager:
         """
         def _threaded_install(host: str, packages: list):
             # Формирование команды: обновление репозиториев и установка пакетов
-            cmd = f"sudo apt-get update && sudo apt-get install -y {' '.join(packages)}"
+            cmd = f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(packages)}"
             ssh_command.cmd(
                 host=host,
                 command=cmd,
@@ -58,7 +57,6 @@ class _AptManager:
                 vm_dates=vm_dates,
                 task_name=f"apt install {packages}"
             )
-
         # Обрабатываем блок за блоком
         for target, packages in apt_structure.items():
             block_threads = []
@@ -83,7 +81,7 @@ class _AptManager:
 
         return 0
 
-    @ansible_logger
+
     @staticmethod
     def remove(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
@@ -148,7 +146,7 @@ class _AptManager:
 
         return 0
 
-    @ansible_logger
+
     @staticmethod
     def reinstall(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """

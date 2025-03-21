@@ -1,5 +1,5 @@
 from ..._decorators.Decorators import BaseDecorators
-from ..._system_command import _System_Commands as system_commands
+from ..._system_command.SystemCommands import SystemCommands as system_commands
 
 from time import sleep
 

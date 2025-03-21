@@ -301,7 +301,8 @@ class ParsecStatistics(BaseStatistics):
           super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
           self.score_columns = {
                "parsec impact-fs": ["Total used by parsec func in %"],
-               "parsec impact-fs aud-off": ["Total used by parsec func in %"]
+               "parsec impact-fs aud-off": ["Total used by parsec func in %"],
+               "digsig-cdt": ["Подписано", "Неподписано"]
           }
           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
      
@@ -335,3 +336,27 @@ class ParsecStatistics(BaseStatistics):
           else:
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return False, None
+          
+
+# class DigsigStatistics(BaseStatistics):
+#      def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = VirtParser):
+#           super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
+#           self.score_columns = {
+#                "digsig-cdt": ["Подписано", "Неподписано"]
+#           }
+#           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
+     
+#      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+#           main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")
+#           saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+#           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
+#           try:
+#                score_cols = self.score_columns[type_test]
+#           except KeyError:
+#                score_cols = ["Рейтинг"]
+#           table = MainTable(data=data_for_tables.get(type_test), 
+#                             saver=saver,
+#                             columns=columns,
+#                             columns_scores=score_cols)
+#           df = table.build()
+#           print(df)

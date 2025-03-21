@@ -58,7 +58,7 @@ if __name__ == "__main__":
     parsec_stat = BaseStatistics(stat_title="Parsec",
                                  username=args.USER,
                                  tokenconf=args.TOKEN,
-                                 set_of_test_types={"parsec impact-fs", "parsec impact-fs aud-off"},
+                                 set_of_test_types={"parsec impact-fs", "parsec impact-fs aud-off", "digsig-cdt"},
                                  comparison_list=[["parsec impact-fs", "parsec impact-fs aud-off"]],
                                  score_parser=ParsecParser)
     parsec_stat.create()

@@ -153,6 +153,35 @@ def parsec_statistics_api(body: Statistics):
         response["message"] = message_error
     return response
 
+
+# @app.post("/digsig-statistics")
+# def digsig_statistics_api(body: Statistics):
+#     digsig_stat = DigsigStatistics(stat_title=body.title_statistics,
+#                                    username=body.username,
+#                                    tokenconf=body.token,
+#                                    set_of_test_types=body.set_of_test_types,
+#                                    comparison_list=body.comparison_list,
+#                                    comparison_kernel_list=body.comparison_kernel_list)
+#     response = {
+#         "status": "",
+#         "message": ""
+#     }
+#     try:
+#         digsig_stat.create()
+#         response['status'] = "success"
+#         response["message"] = "Все прошло успешно"
+#     except ApiPermissionError:
+#         main_logger.error("confluence тупит пробуем еще раз")
+#         sleep(60)
+#         digsig_stat.create()
+#         response["status"] = "warning"
+#         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
+#     except Exception as error:
+#         message_error = UtilGetTraceback.get_traceback(e=error)
+#         response["status"] = "error"
+#         response["message"] = message_error
+#     return response
+
 @app.post("/postgresql-statistics")
 def postgresql_statistics_api(body: Statistics):
     postgresql_stat = PostgreSQLStatistics(stat_title=body.title_statistics,
@@ -292,7 +321,7 @@ def all_statistics(body: Auth):
     parsec_stat = ParsecStatistics(stat_title="Parsec",
                                    username=body.username, 
                                    tokenconf=body.token,
-                                   set_of_test_types={"parsec impact-fs", "parsec impact-fs aud-off"},
+                                   set_of_test_types={"parsec impact-fs", "parsec impact-fs aud-off", "digsig-cdt"},
                                    comparison_list=[["parsec impact-fs", "parsec impact-fs aud-off"]],
                                    score_parser=ParsecParser)
     try:

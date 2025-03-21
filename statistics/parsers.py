@@ -95,6 +95,29 @@ class OneRowTwoCollTableParser(ScoreParser):
         except:
             value = 0
         return (value,)
+    
+
+class DigsigParser(ScoreParser):
+    def find_score(self, html_page, re_template: str = None, type_test=None) -> tuple:
+        data_table = []
+        try:
+            table = html_page.find_all("table")[1]
+            # пройдемся по всем строкам таблицы, кроме заголовка
+            for row in table.find_all('tr')[1:]:
+                cols = row.find_all('td')  # найдем все столбцы
+                cols = [col.text.strip() for col in cols]  # очистим от лишних пробелов
+                data_table.append(cols)  # добавим в итоговый список
+        except:
+            pass
+        
+        try:
+            signed = data_table[1][1]
+            notsigned = data_table[1][2]
+        except IndexError:
+            signed = None
+            notsigned = None
+        print(signed, notsigned)
+        return (signed, notsigned)
 
 
 class ApacheParser(OneRowTwoCollTableParser):
@@ -104,9 +127,39 @@ class ApacheParser(OneRowTwoCollTableParser):
     
 
 class ParsecParser(OneRowTwoCollTableParser):
-    def find_score(self, html_page, re_template: str = "Total used by parsec func", type_test=None) -> tuple:
+    def find_score_digsig(self, html_page, re_template: str = None, type_test=None) -> tuple:
+        data_table = []
+        try:
+            table = html_page.find_all("table")[1]
+            # пройдемся по всем строкам таблицы, кроме заголовка
+            for row in table.find_all('tr')[1:]:
+                cols = row.find_all('td')  # найдем все столбцы
+                cols = [col.text.strip() for col in cols]  # очистим от лишних пробелов
+                data_table.append(cols)  # добавим в итоговый список
+        except:
+            pass
+        
+        try:
+            signed = data_table[0][0]
+            notsigned = data_table[0][1]
+        except IndexError:
+            signed = None
+            notsigned = None
+        # print("DATA TABLE", data_table, flush=True)
+        # print(signed, notsigned, flush=True)
+        return (signed, notsigned)
+    
+    def find_score_parsec(self, html_page, re_template: str = "Total used by parsec func", type_test=None) -> tuple:
         total_used_by_parsec_func = super().find_score(html_page=html_page, re_template=re_template)
         return total_used_by_parsec_func
+    
+    def find_score(self, html_page, type_test=None) -> tuple:
+        if type_test == "digsig-cdt":
+            score = self.find_score_digsig(html_page=html_page)
+        else:
+            score = self.find_score_parsec(html_page=html_page)
+        return score
+
 
 
 class FreeIpaParser(BaseParser):

@@ -16,7 +16,7 @@ class ParsecStatistics:
             'title_statistics':'Parsec',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':['parsec impact-fs', 'parsec impact-fs aud-off'],
+            'set_of_test_types':['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
             'comparison_list':[["parsec impact-fs", "parsec impact-fs aud-off"]]
         }
 

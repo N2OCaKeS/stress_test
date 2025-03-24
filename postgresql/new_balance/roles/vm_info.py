@@ -1,6 +1,6 @@
-vms = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa'] # Краткий список ВМ
+VMS = ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa'] # Краткий список ВМ
 
-vms_dates = { # Полный список ВМ
+VMS_DATES = { # Полный список ВМ
         'database1':{'host-port':'2021',
                      'ip':'10.0.0.11',
                      'sshnum':'',
@@ -52,7 +52,7 @@ vms_dates = { # Полный список ВМ
                      'disk': '40960'}
 }
 
-vms_groups = {
+VMS_GROUPS = {
     'all':['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa'],
     'database': ['database1', 'database2', 'database3'],
     'load_balaner': ['lbdb1', 'lbdb2', 'lbdb3'],
@@ -60,4 +60,8 @@ vms_groups = {
     'domain_client': ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3']
 }
 
-domain = 'balance.rbt'
+DOMAIN = 'balance.rbt'
+
+VERSION_OS = ''
+
+DOMAIN_ADMIN_PASSWORD = '12345678'

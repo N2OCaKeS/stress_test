@@ -11,6 +11,13 @@ sudo mkdir -p /home/iface
 #python
 #sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
 
+# venv
+sudo apt install python3-venv -y
+python3 -m venv /home/u/git/stress_test/postgresql/.venv
+source /home/u/git/stress_test/postgresql/.venv/bin/activate
+pip install -i http://10.198.21.31:3141/user/dev --trusted-host 10.198.21.31 allta # TODO Изменить ip после переезда на devpi на 103.10
+
+
 #virtualbox
 wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/vbox7
 wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox

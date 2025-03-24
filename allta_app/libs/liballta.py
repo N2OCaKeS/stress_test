@@ -1127,14 +1127,19 @@ class TestTimeWatchdog:
             data = json.loads(r.read())
 
         def parse_time(time_str):
-            return datetime.strptime(time_str, "%H:%M:%S")
+            if 'day' in time_str:
+                days, time_str = time_str.split(' day, ')
+                days = int(days)
+            else:
+                days = 0
+
+            t = datetime.strptime(time_str.strip(), "%H:%M:%S")
+            return timedelta(days=days, hours=t.hour, minutes=t.minute, seconds=t.second)
 
         def sum_times(times):
             total = timedelta()
             for time_str in times:
-                total += timedelta(hours=parse_time(time_str).hour,
-                                minutes=parse_time(time_str).minute,
-                                seconds=parse_time(time_str).second)
+                total += parse_time(time_str)
             return total
 
         def format_time(total):

@@ -523,6 +523,7 @@ except Exception as e:
         wr.write('Готово')
     bot_results('Прогон завершен исключением')
     bot_results(bot_head)
+    total_end_time = datetime.datetime.now().replace(microsecond=0)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
     busy_status_control(__stand, 'testrun fail')
 

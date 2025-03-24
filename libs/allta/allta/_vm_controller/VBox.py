@@ -40,7 +40,7 @@ class VBox(_VirtualMashines):
         Выполняет подготовку окружения для работы с виртуальными машинами.
 
         Args:
-            path_prepare (str): Путь до скрипта подготовки.
+            path_prepare (str): Путь до файла скрипта подготовки.
 
         Returns:
             int: Код завершения выполнения команды.
@@ -48,12 +48,12 @@ class VBox(_VirtualMashines):
         return system_commands.cmd_with_returncode(f"sudo bash {path_prepare}")    
     
     @classmethod
-    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list, provision_script: str) -> int: 
+    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list) -> int: 
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
         Args:
-            path_to_vagrantfile (str): Путь для сохранения и запуска Vagrantfile.
+            path_to_vagrantfile (str): путь до папки где лежит vagrantfile
             box (str): Имя образа (бокса).
             rc (str): Версия операционной системы.
             vms (list): Список имён виртуальных машин.
@@ -67,14 +67,13 @@ class VBox(_VirtualMashines):
                     'memory':'*', # RAM
                     'disk':'*'}
                     } 
-            provision_script (str): Путь до скрипта провиженинга.
 
         Returns:
             int: Код завершения выполнения.
         """
         vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms_date)
 
-        vagrant.vagrant_up(provision_script)
+        vagrant.vagrant_up()
 
         vbox_manager.set_bridge_network(vms)
         vbox_manager.create_snapshots_all_vm(vms)

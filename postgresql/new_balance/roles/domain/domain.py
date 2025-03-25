@@ -1,42 +1,52 @@
-from vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD
+from allta import VBoxManager
+from vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS
 
-class DomainVM():
-    """Настройка всего что связано с доменом для теста"""
-    def settings():
-        
+
+class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
+
+    def __init__(self):
+        self.provider = VBoxManager()
+
+    def settings(self):
+        '''Полная настройка домена на всех ВМ'''
+        provider = self.provider
         tasks = {
             'domain': {
-                'domain_init':{
-                    'command':f'yes {DOMAIN_ADMIN_PASSWORD} | sudo astra-freeipa-server -d {DOMAIN} -y',
-                    'signal set':'',
-                    'signal get':''
+                'domain_init': {
+                    'command': f'sudo astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -o -y',
+                    'signal set': '',
+                    'signal get': ''
                 },
-                'reboot':{ # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
-                    'command':'',
-                    'signal set':'',
-                    'signal get':'',                    
-                }
+                'reboot': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
+                    'command': '',
+                    'signal set': '',
+                    'signal get': '',
+                },
+                'kinit': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
+                    'command': f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}',
+                    'signal set': '',
+                    'signal get': '',
+                },
             },
-            'domain_client':{
-                'client join domain':{
-                    'command':'',
-                    'signal set':'',
-                    'signal get':'',
+            'g_domain_clien': {
+                'client join domain': {
+                    'command': f'sudo astra-freeipa-client -d ipa.rbt -p {DOMAIN_ADMIN_PASSWORD} -y',
+                    'signal set': '',
+                    'signal get': '',
+                },
+                'reboot': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
+                    'command': '',
+                    'signal set': '',
+                    'signal get': '',
                 }
             }
         }
 
         # генератор словаря создает однотипные задачи в словарь
-        i = 3
-        for n in range(i):
+        for n in range(i=3):
             tasks['domain'][f'create user{n}'] = {
-                'command': f'',
+                'command': f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} --macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"',
                 'signal set': '',
                 'signal get': ''
             }
-            tasks['domain'][f'give privilege user :{n}'] = {
-                'command': f'',
-                'signal set': '',
-                'signal get': ''
-            }
-        
+        provider.execute(vm_dates=VMS_DATES, commands=tasks, vms_groups=VMS_GROUPS, username='u', password='1')

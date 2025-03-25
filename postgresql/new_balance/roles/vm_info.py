@@ -56,12 +56,16 @@ VMS_GROUPS = {
     'all':['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3', 'dcfreeipa'],
     'database': ['database1', 'database2', 'database3'],
     'load_balaner': ['lbdb1', 'lbdb2', 'lbdb3'],
-    'replicas': ['database2', 'database3'],
+    'replica': ['database2', 'database3'],
     'domain_client': ['database1', 'database2', 'database3', 'lbdb1', 'lbdb2', 'lbdb3']
 }
 
-DOMAIN = 'balance.rbt'
+
 
 VERSION_OS = ''
+VERSION_PG = ''
 
+DOMAIN = 'balance.rbt'
+DOMAIN_ADMIN_USER = 'admin'
 DOMAIN_ADMIN_PASSWORD = '12345678'
+DOMAIN_USER_PASSWORD = '1'

@@ -3,3 +3,6 @@ __pycache__/
 __pycache__
 migrations/
 flask-upload/
+results/
+push_results.py
+releases.json

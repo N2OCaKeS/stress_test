@@ -93,6 +93,7 @@ services:
     image: locustio/locust
     user: root
     container_name: master
+    working_dir: /app
     volumes:
       - ./:/app
     ports:
@@ -103,7 +104,7 @@ services:
       - httpnet
     command: >
       -f /app/Kuznechik/for_docker/locustfile.py
-      --master --expect-workers 3
+      --master --master-bind-host 0.0.0.0 --expect-workers 3
       --config /app/Kuznechik/for_docker/.locust.conf
       --headless
 
@@ -117,8 +118,6 @@ services:
     networks:
       - httpnet
     command: -f /app/Kuznechik/for_docker/locustfile.py --worker --master-host master --master-port 5557
-    deploy:  
-      replicas: 3
     restart: on-failure
 
 networks:

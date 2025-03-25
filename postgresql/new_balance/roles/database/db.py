@@ -1,5 +1,5 @@
 from allta import VBoxManager
-from vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS
+from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS
 
 
 class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!

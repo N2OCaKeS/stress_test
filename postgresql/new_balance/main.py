@@ -9,7 +9,12 @@ vagrant_path = './'
 provider = VBoxManager()
 provider.build(vagrant_path, '1.8.0.s', '1.8.0', VMS, VMS_DATES) # TODO Понять почему после сборки ВМ не доступны через shh по ip bridge
 
-Apt.apt_install()
-DomainVM.settings()
-DatabaseVM.settings()
+apt = Apt()
+apt.apt_install()
+
+domain = DomainVM ()
+domain.settings()
+
+database = DatabaseVM()
+database.settings()
 

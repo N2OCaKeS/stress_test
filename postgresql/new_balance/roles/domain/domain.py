@@ -1,5 +1,5 @@
 from allta import VBoxManager
-from vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS
+from roles.vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS
 
 
 class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
@@ -28,7 +28,7 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
                     'signal get': '',
                 },
             },
-            'g_domain_clien': {
+            'g_domain_client': {
                 'client join domain': {
                     'command': f'sudo astra-freeipa-client -d ipa.rbt -p {DOMAIN_ADMIN_PASSWORD} -y',
                     'signal set': '',
@@ -43,7 +43,7 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
         }
 
         # генератор словаря создает однотипные задачи в словарь
-        for n in range(i=3):
+        for n in range(3):
             tasks['domain'][f'create user{n}'] = {
                 'command': f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} --macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"',
                 'signal set': '',

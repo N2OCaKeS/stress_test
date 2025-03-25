@@ -15,7 +15,7 @@ sudo mkdir -p /home/iface
 sudo apt install python3-venv -y
 python3 -m venv /home/u/git/stress_test/postgresql/.venv
 source /home/u/git/stress_test/postgresql/.venv/bin/activate
-pip install -i http://10.198.21.31:3141/user/dev --trusted-host 10.198.21.31 allta # TODO Изменить ip после переезда на devpi на 103.10
+pip install -i http://10.177.5.61:3141/user/dev --trusted-host 10.177.5.61 allta # TODO Изменить ip после переезда на devpi на 103.10
 
 
 #virtualbox

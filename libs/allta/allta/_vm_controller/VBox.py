@@ -1,6 +1,7 @@
 from .._system_command.SystemCommands import SystemCommands as system_commands
 from ._libs._ssh_comand import _SSH_Command as ssh_command
 from ._libs._scp_comand import _SCP_Command as scp_command
+from ._libs._signals import _Signals as signals
 
 from ._base_commands._apt._apt_prorocol import _AptManagerProtocol
 from ._base_commands._apt import _apt
@@ -215,6 +216,8 @@ class VBox(_VirtualMashines):
         for thread in threads:
             thread.join()
 
+        # Удаление всех сигналов после выполнения команд
+        signals.remove_all()
         return 0
     
     @classmethod

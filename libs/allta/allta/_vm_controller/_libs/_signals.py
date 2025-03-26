@@ -8,7 +8,8 @@ class _Signals():
     Основные функции:
     - Установка сигнала (создание файла-сигнала).
     - Ожидание получения сигнала (проверка наличия файла-сигнала).
-
+    - Удаление сигналов (удаление всех файлов-сигналов).
+    
     Этот класс используется для синхронизации выполнения задач между различными процессами.
     """
 
@@ -42,8 +43,8 @@ class _Signals():
         """
         signal_dir = './signal'
         signal_file_path = os.path.join(signal_dir, get_signal)
-        timeout = 10 * 60  # 10 minutes
-        interval = 5  # 5 seconds
+        timeout = 10 * 60  # 10 минут
+        interval = 5       # 5 секунд
         elapsed_time = 0
 
         while elapsed_time < timeout:
@@ -56,3 +57,15 @@ class _Signals():
             elapsed_time += interval
         
         return False
+
+    @staticmethod
+    def remove_all():
+        """
+        Удаляет все сигналы, то есть все файлы из директории './signal'.
+        """
+        signal_dir = './signal'
+        if os.path.exists(signal_dir):
+            for filename in os.listdir(signal_dir):
+                file_path = os.path.join(signal_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)

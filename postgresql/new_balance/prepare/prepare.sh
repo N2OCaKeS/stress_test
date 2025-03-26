@@ -12,9 +12,7 @@ sudo mkdir -p /home/iface
 #sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
 
 # venv
-sudo apt install python3-venv -y
-python3 -m venv /home/u/git/stress_test/postgresql/.venv
-source /home/u/git/stress_test/postgresql/.venv/bin/activate
+source /home/u/python/Python-3.12.1/venv/bin/activate
 pip install -i http://10.177.5.61:3141/user/dev --trusted-host 10.177.5.61 allta # TODO Изменить ip после переезда на devpi на 103.10
 
 

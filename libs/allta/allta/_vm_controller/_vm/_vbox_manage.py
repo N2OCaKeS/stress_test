@@ -95,18 +95,15 @@ class _Vboxmanager():
         print(f'Bridge interface found as: {adapter_name}')
 
         for vm in vms:
-            try:
-                num_interface = '1'
-                system_commands.cmd(f'vboxmanage controlvm {vm} poweroff')
-                sleep(1)
-                system_commands.cmd(
-                    f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
-                system_commands.cmd(
-                    f'vboxmanage modifyvm {vm} --bridgeadapter{num_interface} {adapter_name}')
-                system_commands.cmd(f'vboxmanage startvm {vm} --type headless')
-            except Exception as e:
-                print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
-            return 1
+            num_interface = '1'
+            system_commands.cmd(f'vboxmanage controlvm {vm} poweroff')
+            sleep(1)
+            system_commands.cmd(
+                f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
+            print(f'VM: {vm} установлен тип соединения мост: {num_interface}')
+            system_commands.cmd(
+                f'vboxmanage modifyvm {vm} --bridgeadapter{num_interface} {adapter_name}')
+            system_commands.cmd(f'vboxmanage startvm {vm} --type headless')
     
 
     @BaseDecorators.trycorator

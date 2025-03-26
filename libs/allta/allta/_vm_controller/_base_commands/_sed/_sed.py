@@ -4,7 +4,7 @@ import concurrent.futures
 
 class _Sed:
     @staticmethod
-    def sed(sed_conf: dict, vms: list, vms_dates: dict, groups: dict, username='u', password='1', task_name=None):
+    def sed(sed_conf: dict, vms_dates: dict, groups: dict, username='u', password='1', task_name=None):
         """
         Выполняет замену текста на удалённых хостах согласно переданным настройкам, используя многопоточность.
 

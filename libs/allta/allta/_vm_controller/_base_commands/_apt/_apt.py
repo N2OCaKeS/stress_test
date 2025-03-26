@@ -1,5 +1,6 @@
 from ..._decotator._ansible_log import ansible_logger
 from ..._libs._ssh_comand import _SSH_Command as ssh_command
+from ...._decorators.Decorators import BaseDecorators
 import threading
 
 
@@ -16,6 +17,7 @@ class _AptManager:
     Этот класс поддерживает многопоточное выполнение для одновременной работы с несколькими хостами.
     """
     @staticmethod
+    @BaseDecorators.trycorator    
     def install(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
         Устанавливает пакеты на указанных хостах или группах хостов.

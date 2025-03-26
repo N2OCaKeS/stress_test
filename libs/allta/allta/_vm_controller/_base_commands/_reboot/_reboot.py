@@ -1,11 +1,13 @@
 import threading
 import time
 import paramiko
+from ...._decorators.Decorators import BaseDecorators
 from ..._libs._ssh_comand import _SSH_Command
 from ..._libs._signals import _Signals
 
 class _Reboot:
     @staticmethod
+    @BaseDecorators.trycorator    
     def reboot_vm(host: str, vm_dates: dict, username: str = "u", password: str = "1",
                   timeout: int = 600, interval: int = 10, signal_get: str = None, ready_signal: str = None) -> bool:
         """
@@ -27,7 +29,7 @@ class _Reboot:
         Returns:
             bool: True, если ВМ стала доступной, иначе False.
         """
-        reboot_command = "sudo reboot"
+        reboot_command = "sudo shutdown -r now"
         # Выполняем команду перезагрузки через SSH, передавая signal_get внутрь _SSH_Command.cmd
         result = _SSH_Command.cmd(
             host=host,
@@ -42,7 +44,7 @@ class _Reboot:
             return False
 
         print(f"[{host}] Перезагрузка инициирована, ожидаем доступности...")
-
+        time.sleep(25)
         start_time = time.time()
         while True:
             try:

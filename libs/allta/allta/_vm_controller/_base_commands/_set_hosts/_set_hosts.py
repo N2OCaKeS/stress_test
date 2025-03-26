@@ -16,7 +16,6 @@ class _SetHosts:
     """
     @staticmethod
     @BaseDecorators.trycorator
-    @ansible_logger
     def set_hosts(domain: str, vms_dates: dict, username: str = "u", password: str = "1",
                   task_name: str = "Set /etc/hosts") -> dict:
         """
@@ -46,7 +45,6 @@ class _SetHosts:
             # Генерация содержимого файла /etc/hosts для текущей ВМ
             lines = [
                 "127.0.0.1       localhost",
-                f"127.0.0.1       {vm_name}.{domain}"
             ]
             
             # Добавляем строки для всех ВМ из словаря (включая текущую)
@@ -71,7 +69,6 @@ class _SetHosts:
                 password=password,
                 task_name=f"{task_name} on {vm_name}"
             )
-            print(f"Result for VM {vm_name}: {result.get('output')}")
             return vm_name, result
 
         results = {}

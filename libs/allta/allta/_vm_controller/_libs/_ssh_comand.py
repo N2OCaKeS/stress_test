@@ -45,7 +45,18 @@ class _SSH_Command:
         ssh = None
         try:
             if signal_get:
-                signals.get(signal_get)
+                # Если ожидание сигнала вернуло False, прерываем выполнение
+                if not signals.get(signal_get):
+                    error_msg = f"ОШИБКА СИГНАЛ {signal_get} НЕ НАЙДЕН"
+                    print(f"[{host}] {error_msg}")
+                    return {
+                        'host': host,
+                        'task_name': task_name or 'unknown',
+                        'command': command,
+                        'output': error_msg,
+                        'status': 'error'
+                    }
+
 
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -62,16 +73,29 @@ class _SSH_Command:
             output_stderr = stderr.read().decode()
             output = output_stdout + output_stderr
 
-            # Если в stderr есть вывод — считаем, что произошла ошибка
-            if output_stderr:
-                print(f"[{host}] Ошибка при выполнении {command}: {output_stderr}")
+            # # Если в stderr есть вывод — считаем, что произошла ошибка
+            # if output_stderr:
+            #     print(f"[{host}] Ошибка при выполнении {command}: {output_stderr}")
+            #     return {
+            #         'host': host,
+            #         'task_name': task_name if task_name else 'unknown',
+            #         'command': command,
+            #         'output': output_stderr,
+            #         'status': 'error'
+            #     }
+            exit_status = stdout.channel.recv_exit_status()
+            output = output_stdout + ("\n" + output_stderr if output_stderr else "")
+
+            if exit_status != 0:
+                print(f"[{host}] Ошибка при выполнении '{command}': {output_stderr} (exit status: {exit_status})")
                 return {
                     'host': host,
-                    'task_name': task_name if task_name else 'unknown',
+                    'task_name': task_name or 'unknown',
                     'command': command,
                     'output': output_stderr,
                     'status': 'error'
                 }
+
 
             print(f"[{host}] Команда закончила выполнение: {command}")
 

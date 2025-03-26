@@ -11,8 +11,10 @@ class BaseDecorators():
         """
         def wrapper(*args, **kwargs):
             try: 
-                function(*args, **kwargs)
+                result = function(*args, **kwargs)
+                return result
             except Exception as e:
                 print(f'Function: {function.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+                return result
 
         return wrapper

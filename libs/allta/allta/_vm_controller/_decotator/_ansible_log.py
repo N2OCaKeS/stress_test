@@ -49,7 +49,7 @@ def ansible_logger(func):
             try:
                 with open('test.log', 'a', encoding='utf-8') as log_file:
                     log_file.write(log_entry)
-                print(f"Лог задачи {task_name} на {host} успешно записан")
+                # print(f"Лог задачи {task_name} на {host} успешно записан")
             except IOError as io_error:
                 print(f"Ошибка записи в лог {task_name} на {host}: {io_error}")
             

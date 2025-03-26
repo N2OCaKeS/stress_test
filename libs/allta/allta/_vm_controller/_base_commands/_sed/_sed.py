@@ -1,9 +1,10 @@
-
+from ...._decorators.Decorators import BaseDecorators
 from ..._libs._ssh_comand import _SSH_Command
 import concurrent.futures
 
 class _Sed:
     @staticmethod
+    @BaseDecorators.trycorator
     def sed(sed_conf: dict, vms_dates: dict, groups: dict, username='u', password='1', task_name=None):
         """
         Выполняет замену текста на удалённых хостах согласно переданным настройкам, используя многопоточность.

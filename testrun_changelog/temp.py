@@ -1,7 +1,9 @@
 import requests
+from bs4 import BeautifulSoup
 
 from parse_repo import parse_packages_lines, get_packagetext_from_repo
-from parse_chage_log import parse_version_changes
+from parse_chage_log import extract_packages_from_table
+from temp_check_categories import check_cat
 
 repo_line = "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.7/1.7.7.6/base-repository 1.7_x86-64 main contrib non-free"
 
@@ -32,16 +34,22 @@ def get_chagngelog(url):
 
 url_chlog, url_pckgs = convert_repo(repo_line=repo_line)
 html_change_log = get_chagngelog(url=url_chlog)
-packages_changes = parse_version_changes(html_content=html_change_log)
 
-all_packgs = []
-for url_repo_packg in url_pckgs:
-    text_packg = get_packagetext_from_repo(url_repo_packg)
-    comp_packages = parse_packages_lines(text=text_packg)
-    # print(len(comp_packages))
-    all_packgs.extend(comp_packages)
-    
-random_packg = packages_changes.get('fixed_bugs')[0].get('package')
+soup = BeautifulSoup(html_change_log, 'html.parser')
 
-print(random_packg)
-print(random_packg in all_packgs)
+# Извлекаем пакеты из нужных секций (указываем номер столбца для каждой)
+added_binaries = extract_packages_from_table(soup, 'Added_binaries', package_column=0)  # 1-й столбец
+# changelog = extract_packages_from_table(soup, 'Changelog', package_column=0)          # 1-й столбец
+upgraded_binaries = extract_packages_from_table(soup, 'Upgraded_binaries', package_column=0) # 1-й столбец
+
+# Выводим результаты
+print("=== Added binaries ({} packages) ===".format(len(added_binaries)))
+# for name in sorted(added_binaries):
+#     print(name)
+
+print("\n=== Upgraded binaries ({} packages) ===".format(len(upgraded_binaries)))
+# for name in sorted(upgraded_binaries):
+#     print(name)
+
+check_cat(upgraded_binaries)
+

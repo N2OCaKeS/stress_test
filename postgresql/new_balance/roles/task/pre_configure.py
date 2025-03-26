@@ -8,7 +8,7 @@ class PreConfigure():
 
     def apt_install(self):
         apt_install = {
-            'g_domain_client': ['astra-freeipa-client'],
+            'g_domain_client': ['astra-freeipa-client', 'ntp'],
             'g_database': [f'postgresql-{VERSION_PG}'],
             'g_load_balaner': ['pgpool2'],
             'dcfreeipa': ['astra-freeipa-server']
@@ -18,9 +18,7 @@ class PreConfigure():
         
     def set_hosts(self):
         self.provider.set_hosts(domain='balance.rbt', vms_dates=VMS_DATES, username='u', password='1')
-        command = f'cat <<EOF >> /etc/hosts \
-        10.177.103.131  pgpool.{DOMAIN} pgpool\
-        10.177.103.10   allta.devos.astralinux.ru allta'
+        command = f'echo -e "10.177.103.131  pgpool.{DOMAIN} pgpool\n10.177.103.10   allta.devos.astralinux.ru allta" | tee -a /etc/hosts'
         hosts = {
             'g_all': {
                 'set hosts': {

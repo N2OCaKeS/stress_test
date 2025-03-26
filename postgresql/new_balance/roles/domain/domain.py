@@ -13,7 +13,7 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
         tasks = {
             'dcfreeipa': {
                 'domain_init': {
-                    'command': f'sudo astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -o -y',
+                    'command': f'sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -o -y',
                     'signal set': 'Domain configured',
                     'signal get': ''
                 },
@@ -24,8 +24,8 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
                 },
                 'kinit': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
                     'command': f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}',
-                    'signal set': '',
-                    'signal get': '',
+                    'signal set': 'Kinit',
+                    'signal get': 'Domain ready',
                 },
             },
             'g_domain_client': {
@@ -47,6 +47,6 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
             tasks['dcfreeipa'][f'create user{n}'] = {
                 'command': f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} --macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"',
                 'signal set': '',
-                'signal get': ''
+                'signal get': 'Kinit'
             }
         provider.execute(vm_dates=VMS_DATES, commands=tasks, vms_groups=VMS_GROUPS, username='u', password='1')

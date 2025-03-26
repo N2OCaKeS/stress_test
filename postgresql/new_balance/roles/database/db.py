@@ -55,7 +55,7 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
                     'signal get': ''
                 },
                 'stop main db': {
-                    'command': f'sudo su - postgres -c "pg_dropcluster 15 main --stop',
+                    'command': f'sudo su - postgres -c "pg_dropcluster 15 main --stop"',
                     'signal set': '',
                     'signal get': ''
                 }

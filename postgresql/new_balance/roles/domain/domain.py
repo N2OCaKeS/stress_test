@@ -30,7 +30,7 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
             },
             'g_domain_client': {
                 'client join domain': {
-                    'command': f'sudo astra-freeipa-client -d ipa.rbt -p {DOMAIN_ADMIN_PASSWORD} -y',
+                    'command': f'sudo astra-freeipa-client -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y',
                     'signal set': 'Domain client configured',
                     'signal get': 'Domain ready',
                 },

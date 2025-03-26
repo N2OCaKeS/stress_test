@@ -34,33 +34,28 @@ EOF
 }
 
 
-check_containers() {
-    compose_file=$1       # Файл docker-compose
-    shift                 # Убираем первый аргумент
-    expected_services=("$@")  # Оставшиеся аргументы – это имена сервисов, как они указаны в docker-compose
-
+check_locust_containers() {
     echo "Ожидание 10 секунд перед проверкой контейнеров..."
     sleep 10
 
     while true; do
         all_running=true
 
-        for service in "${expected_services[@]}"; do
-            # Проверяем, запущен ли контейнер, имя которого содержит имя сервиса
-            if ! docker ps --format "{{.Names}}" | grep -q "$service"; then
-                echo "Сервис '$service' не запущен. Перезапускаем его..."
-                docker-compose -f "$compose_file" restart "$service"
+        for name in "${LOAD_DOCKER_CONTAINERS[@]}"; do
+            status=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null)
+
+            if [ "$status" != "running" ]; then
+                echo "Контейнер '$name' не работает (статус: $status). Перезапускаем..."
+                docker restart "$name"
                 all_running=false
-                echo "Ждем 10 секунд после перезапуска сервиса '$service'..."
                 sleep 10
             else
-                echo "Сервис '$service' работает."
+                echo "Контейнер '$name' работает."
             fi
         done
 
-        # Если все сервисы обнаружены, выходим из цикла
         if $all_running; then
-            echo "Все сервисы успешно запущены."
+            echo "Все контейнеры работают."
             break
         fi
     done
@@ -267,7 +262,7 @@ nginx_docker(){
     sed -i 's|http://flask|http:\/\/nginx|g' "$DLOCUST_CONF"
     sudo sed -i 's/^REDIS_HOST = "127.0.0.1"/REDIS_HOST = "redis"/' ${CPATH}web_app/config.py
     sudo docker-compose -f ${NGINX_DC} up -d --build --scale worker=3
-    check_containers "${NGINX_DC}" "${LOAD_DOCKER_CONTAINERS[@]}"
+    check_locust_containers
 
     # Откат конфигурации .locust.conf для docker-теста
     sed -i "s|^csv = .*|csv = /app/Kuznechik/for_docker/results/results|g" "$DLOCUST_CONF"

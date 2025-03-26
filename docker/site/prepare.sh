@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# set pg version in Dockerfile.postgres
+PG_VERSION=$(psql --version | awk '{print $3}' | cut -d'.' -f1)
+sed -i "s|^FROM postgres:.*|FROM postgres:${PG_VERSION}|" Dockerfile.postgres
+
 # set repo
 VERSION_OS=$(cat /etc/astra/build_version | tr -d '[:space:]')
 
@@ -15,18 +19,7 @@ if [[ "$VERSION_OS" == 1.7* ]]; then
 fi
 
 # test packages
-apt-get update
-apt-get install -y sudo apt-get install -y gcc 
-apt-get install -y libapache2-mod-wsgi-py3 
-apt-get install -y docker.io docker-compose 
-apt-get install -y nginx 
-apt-get install -y postgresql postgresql-contrib 
-apt-get install -y redis-server 
-apt-get install -y pgbouncer 
-apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev 
-apt-get install -y libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev 
-apt-get install -y libffi-dev strace libcurl4-gnutls-dev rustc cargo python3-requests 
-apt-get install -y liblzma-dev
+sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 docker.io docker-compose nginx postgresql postgresql-contrib redis-server pgbouncer build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace libcurl4-gnutls-dev rustc cargo python3-requests liblzma-dev
 
 #if test "$(grep -E '1.8.*' /etc/astra_version)"; then
 #    sudo apt-get install -y linux-tools-6.1*-generic
@@ -47,7 +40,7 @@ make -j 6
 sudo make altinstall
 
 python3.12 -m venv venv
-source venv/bin/activate
+source ./Python-3.12.1/venv/bin/activate
 
 cd /home/u/git/stress_test/*/site/
 python3.12 -m pip install --upgrade pip

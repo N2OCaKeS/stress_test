@@ -11,16 +11,16 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
         '''Полная настройка домена на всех ВМ'''
         provider = self.provider
         tasks = {
-            'domain': {
+            'dcfreeipa': {
                 'domain_init': {
                     'command': f'sudo astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -o -y',
-                    'signal set': '',
+                    'signal set': 'Domain configured',
                     'signal get': ''
                 },
                 'reboot': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
                     'command': '',
-                    'signal set': '',
-                    'signal get': '',
+                    'signal set': 'Domain ready',
+                    'signal get': 'Domain configured',
                 },
                 'kinit': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
                     'command': f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}',
@@ -31,20 +31,20 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
             'g_domain_client': {
                 'client join domain': {
                     'command': f'sudo astra-freeipa-client -d ipa.rbt -p {DOMAIN_ADMIN_PASSWORD} -y',
-                    'signal set': '',
-                    'signal get': '',
+                    'signal set': 'Domain client configured',
+                    'signal get': 'Domain ready',
                 },
-                'reboot': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
+                'reboot': {  
                     'command': '',
                     'signal set': '',
-                    'signal get': '',
+                    'signal get': 'Domain client configured',
                 }
             }
         }
 
         # генератор словаря создает однотипные задачи в словарь
         for n in range(3):
-            tasks['domain'][f'create user{n}'] = {
+            tasks['dcfreeipa'][f'create user{n}'] = {
                 'command': f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} --macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"',
                 'signal set': '',
                 'signal get': ''

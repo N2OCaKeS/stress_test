@@ -8,10 +8,10 @@ class Apt():
 
     def apt_install(self):
         apt_install = {
-            'g_domain_client': ['astra-freeipa-client'],
+            'g_domain_client': ['astra-freeipa-client', 'ntp'],
             'g_database': [f'postgresql-{VERSION_PG}'],
             'g_load_balaner': ['pgpool2'],
-            'domain': ['astra-freeipa-server']
+            'dcfreeipa': ['astra-freeipa-server']
         }
         self.provider.apt.install(
             apt_structure=apt_install, vm_dates=VMS_DATES, vms_groups=VMS_GROUPS)

@@ -29,7 +29,7 @@ class _Reboot:
         Returns:
             bool: True, если ВМ стала доступной, иначе False.
         """
-        reboot_command = "sudo shutdown -r now"
+        reboot_command = "(sleep 3 &&sudo shutdown -r now) &" 
         # Выполняем команду перезагрузки через SSH, передавая signal_get внутрь _SSH_Command.cmd
         result = _SSH_Command.cmd(
             host=host,

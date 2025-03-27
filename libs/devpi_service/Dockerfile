@@ -1,8 +1,11 @@
-FROM python:3.9-slim
+FROM python:3.12-slim
+
+WORKDIR /git
+
 
 # Установка devpi-server, devpi-web (для веб-интерфейса) и devpi-client
 RUN pip install --no-cache-dir devpi-server devpi-web devpi-client
-RUN apt update && apt install procps -y
+RUN apt update && apt install git -y
 
 # Открываем порт 3141 (используется как для API, так и для веб-интерфейса)
 EXPOSE 3141
@@ -21,11 +24,14 @@ RUN (devpi-server --host 0.0.0.0 --port 3141 --serverdir /data &) && \
     sleep 15 && \
     devpi use http://localhost:3141 && \
     devpi login root --password=team13 && \
+    devpi index -c astra bases=root/pypi && \
     devpi user -c user password=team13 && \
     devpi login user --password=team13 && \
-    devpi index -c astra bases=root/pypi && \
     devpi index -c dev bases=root/pypi
 RUN kill -TERM 1
 
+COPY ./auto_check_new_version/new_release.py /git/
+
 # При старте контейнера запускается devpi-сервер с включенным веб-интерфейсом (доступным по http://localhost:3141)
-CMD ["devpi-server", "--host", "0.0.0.0", "--port", "3141", "--serverdir", "/data"]
+CMD ["sh", "-c", "(devpi-server --host 0.0.0.0 --port 3141 --serverdir /data &) && python3 new_release.py"]
+

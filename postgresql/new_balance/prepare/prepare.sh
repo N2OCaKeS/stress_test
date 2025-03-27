@@ -13,7 +13,7 @@ sudo mkdir -p /home/iface
 
 # venv
 source /home/u/python/Python-3.12.1/venv/bin/activate
-pip install -i http://10.177.5.61:3141/user/dev --trusted-host 10.177.5.61 allta # TODO Изменить ip после переезда на devpi на 103.10
+
 
 
 #virtualbox

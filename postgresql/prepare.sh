@@ -62,6 +62,7 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
+pip install -i http://10.177.5.61:3141/user/dev --trusted-host 10.177.5.61 allta # TODO Изменить ip после переезда на devpi на 103.10
 
 cd /home/u/git/stress_test/$1
 python3.12 -m pip install --upgrade pip

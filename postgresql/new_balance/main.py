@@ -1,25 +1,31 @@
 from time import sleep
 from allta import VBoxManager
-from roles.vm_info import VMS, VMS_DATES
+from roles.vm_info import VMS, VMS_DATES, VERSION_OS
 
 from roles.task.pre_configure import PreConfigure
 from roles.domain.domain import DomainVM
 from roles.database.db import DatabaseVM
 
-vagrant_path = './'
-provider = VBoxManager()
-provider.build(vagrant_path, '1.8.0.s', '1.8.0', VMS, VMS_DATES) # TODO Понять почему после сборки ВМ не доступны через shh по ip bridge
+def main():
+    vagrant_path = './'
+    prepare_path = './prepare/prepare.sh'
 
-print('Ожидаем 2 мин перед началом теста')
-sleep(120)
+    provider = VBoxManager()
+    provider.prepare(prepare_path)
+    provider.build(vagrant_path, f'1.8.0.s', '1.8.0', VMS, VMS_DATES) # TODO Настроить вместо фиксированных значений 
 
-configure = PreConfigure()
-configure.set_hosts()
-configure.apt_install() # Проверено работает
+    print('Ожидаем 2 мин перед началом теста')
+    sleep(120)
 
-domain = DomainVM ()
-domain.settings() 
+    configure = PreConfigure()
+    configure.set_hosts()
+    configure.apt_install() # Проверено работает
 
-database = DatabaseVM()
-database.settings()
+    domain = DomainVM ()
+    domain.settings() 
 
+    database = DatabaseVM()
+    database.settings()
+
+if __name__ == "__main__":
+    main()

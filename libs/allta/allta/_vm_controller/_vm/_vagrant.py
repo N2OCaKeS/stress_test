@@ -164,7 +164,7 @@ class _Vagrant():
         path_to_vagrantfile = self.path_to_vagrantfile 
         rc = self.rc
         box_name, box_url = self._box_wrapper(self)
-        box_url = 'ftp://10.177.5.111/upload/mfilippenko/astra_smolensk_1.8.0' # ЗАХАРДКОЖЕНО ДЛЯ ОТЛАДКИ ПОТОМ ПЕРЕДЕЛАТЬ
+        box_url = 'ftp://10.177.5.111/upload/mfilippenko/astra_smolensk_1.7.6.UU.2.1' # ЗАХАРДКОЖЕНО ДЛЯ ОТЛАДКИ ПОТОМ ПЕРЕДЕЛАТЬ
         kernel = system_commands.check_output_command('uname -r')
         system_commands.cmd('apt install -fy')
         if system_commands.cmd_with_returncode(f'cd {path_to_vagrantfile} && vagrant box add {box_name} {box_url} --force') != 0:

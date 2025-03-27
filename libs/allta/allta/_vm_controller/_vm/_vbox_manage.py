@@ -37,8 +37,6 @@ class _Vboxmanager():
             system_commands.cmd(f'vboxmanage startvm {vm} --type headless')
         return 0
 
-    
-
     @BaseDecorators.trycorator
     @staticmethod 
     def poweroff_vms(vms):
@@ -60,8 +58,6 @@ class _Vboxmanager():
             system_commands.cmd(f'vboxmanage controlvm {vm} poweroff')
         return 0
     
-
-
     @BaseDecorators.trycorator
     @staticmethod 
     def create_snapshots_all_vm(vms):
@@ -76,7 +72,6 @@ class _Vboxmanager():
         """
         for vm in vms:
             system_commands.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
-
 
     @BaseDecorators.trycorator
     @staticmethod    

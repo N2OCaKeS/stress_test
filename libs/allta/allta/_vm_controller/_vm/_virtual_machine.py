@@ -21,6 +21,8 @@ class _VirtualMashines(ABC):
     def apt(self) -> _AptManagerProtocol:
         """Должен возвращать экземпляр менеджера apt."""
         pass
+    
+
 
     @abstractmethod
     def prepare(cls, path_prepare) -> int:
@@ -111,4 +113,8 @@ class _VirtualMashines(ABC):
             username (str, optional): Пользователеь. Defaults to "u".
             password (str, optional): Пароль. Defaults to "1".
         """
+        pass
+
+    @abstractmethod
+    def freeipa(cls, ):
         pass

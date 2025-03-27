@@ -9,6 +9,7 @@ from ._base_commands._apt import _apt
 from ._base_commands._reboot._reboot import _Reboot as reboot
 from ._base_commands._sed._sed import _Sed as sed
 from ._base_commands._set_hosts._set_hosts import _SetHosts as set_hosts
+from ._base_commands._freeipa._freeipa import _Freeipa as freeipa
 
 
 from ._vm._vagrant import _Vagrant
@@ -342,4 +343,47 @@ class VBox(_VirtualMashines):
         )
         return 0
 
+    @classmethod    
+    def freeipa(cls, domain,vm_dates: dict, groups: dict = None,
+            username: str = "u", password: str = "1"):
+        """_summary_
+
+        Args:
+            domain (dict): Настройка для freeipa 
+                domain = {
+                    'settings': {
+                        'domain': 'example.com',
+                        'admin_password': 'secret'
+                    },
+                    'domain': {
+                        'host': 'domain'
+                    },
+                    'client': {
+                        'host': 'database'  # если значение начинается с "g_", то это группа хостов
+                    }
+                }
+            vm_dates (dict): Полная информация о виртуальных машинах   
+                vm_dates = {'hostname':{
+                    'host-port':'*',
+                    'ip':'10.0.0.11', #  ip внутренней сети
+                    'sshnum':'',
+                    'ip_bridge':'*.*.*.*', # ip моста
+                    'cpus':'*',
+                    'memory':'*', # RAM
+                    'disk':'*'}
+                    }    
+            groups (dict, optional): Группы виртуальных машин.
+                vms_groups = {
+                    'databases': ['db1', 'db2'],
+                }
+            username (str, optional): Имя пользователя для SSH. По умолчанию "u".
+            password (str, optional): Пароль для SSH. По умолчанию "1".
+
+        Returns:
+            _type_: _description_
+        """
+        freeipa.freeipa(domain = domain, vm_dates=vm_dates, vms_groups=groups, ssh_user=username, ssh_password=password)
+        return 0
+
     apt: _AptManagerProtocol = cast(_AptManagerProtocol, _apt._AptManager())
+

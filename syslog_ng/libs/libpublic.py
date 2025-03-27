@@ -142,7 +142,7 @@ class Public:
 
             html_page = '\n'.join([header_table, rating, images])
 
-        elif self.testname == 'syslog-ng cwl':
+        elif self.testname == 'syslog-ng-cwl':
             """
                 TODO INFO_FILENAME ЗДЕСЬ ПОКА ПОД ВОПРОСОМ !!!!
             """

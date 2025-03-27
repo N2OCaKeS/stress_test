@@ -2,6 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /git
 
+# Устанавливаем переменную окружения
+ENV DEVPI_USER=${DEVPI_USER}
+ENV DEVPI_PASSWORD=${DEVPI_PASSWORD}
+ENV DEVPI_ADMIN_PASSWORD=${DEVPI_ADMIN_PASSWORD}
+ENV DEVPISERVER_SERVERDIR=/data
 
 # Установка devpi-server, devpi-web (для веб-интерфейса) и devpi-client
 RUN pip install --no-cache-dir devpi-server devpi-web devpi-client
@@ -14,19 +19,19 @@ EXPOSE 3141
 RUN mkdir -p /data
 
 # Инициализация devpi-сервера
-RUN devpi-init --serverdir /data --root-passwd team13 
+RUN devpi-init --serverdir /data --root-passwd ${DEVPI_ADMIN_PASSWORD} 
 
-# Устанавливаем переменную окружения для использования devpi-client
-ENV DEVPISERVER_SERVERDIR=/data
 
-# Запускаем devpi-сервер в фоне, проводим начальную настройку и завершаем его
+
+# Запускаем devpi-сервер в фоне, проводим начальную настройку и завершаем его 
+
 RUN (devpi-server --host 0.0.0.0 --port 3141 --serverdir /data &) && \
     sleep 15 && \
     devpi use http://localhost:3141 && \
-    devpi login root --password=team13 && \
-    devpi index -c astra bases=root/pypi && \
-    devpi user -c user password=team13 && \
-    devpi login user --password=team13 && \
+    devpi login root --password=${DEVPI_ADMIN_PASSWORD} && \
+    devpi index -c astra bases=root/pypi acl_upload=root acl_toxresult_upload=root && \
+    devpi user -c ${DEVPI_USER} password=${DEVPI_PASSWORD} && \
+    devpi login ${DEVPI_USER} --password=${DEVPI_PASSWORD} && \
     devpi index -c dev bases=root/pypi
 RUN kill -TERM 1
 

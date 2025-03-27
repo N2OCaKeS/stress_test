@@ -103,14 +103,16 @@ class _Freeipa():
         for t in threads:
             t.join()
         print("Настройка клиентов домена завершена")
+        _Signals.remove_all()
 
     @staticmethod
     @ansible_logger
-    def _execute_command(vm_info, command, task_name="Command Execution", username="root", password=None):
+    def _execute_command(host ,vm_info, command, task_name="Command Execution", username="root", password=None):
         """
         Выполняет указанную команду на удалённой машине через SSH.
         """
-        host_ip = vm_info.get('ip')
+        host_ip = vm_info.get('ip_bridge')
+
         port = int(vm_info.get('host-port')) if vm_info.get('host-port', '22') != '*' else 22
 
         ssh = paramiko.SSHClient()
@@ -122,7 +124,7 @@ class _Freeipa():
             output = stdout.read().decode('utf-8') + stderr.read().decode('utf-8')
             ssh.close()
             result = {
-                'host': host_ip,
+                'host': host,
                 'task_name': task_name,
                 'output': output,
                 'status': 'success' if "error" not in output.lower() else 'error', 
@@ -157,11 +159,8 @@ class _Freeipa():
 
         print(f"Настройка клиента домена на {host}")
         client_cmd = f"sudo astra-freeipa-client -d {domain_name} -p {admin_password} -y"
-        result = _Freeipa._execute_command(vm_info, client_cmd, task_name="FreeIPA Client Setup",
+        _Freeipa._execute_command(host ,vm_info, client_cmd, task_name="FreeIPA Client Setup",
                                             username=username, password=password)
-        expected_str = "успешно"
-        if expected_str not in result['output'].lower():
-            print(f"Клиент {host}: ожидаемая строка '{expected_str}' не найдена в выводе.")
 
         # Перезагрузка клиента с использованием _Reboot
         reboot_success = _Reboot.reboot_vm(host, {host: vm_info}, username=username, password=password)

@@ -7,7 +7,12 @@ services:
       - "3141:3141"
     volumes:
       - devpi-data:/data
-    # restart: always
+    environment:
+      - DEVPI_USER=${DEVPI_USER}
+      - DEVPI_PASSWORD=${DEVPI_PASSWORD}
+      - DEVPI_ADMIN_PASSWORD=$(DEVPI_ADMIN_PASSWORD)
+    restart: always
+
 
 volumes:
   devpi-data:

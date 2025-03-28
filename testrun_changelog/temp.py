@@ -1,8 +1,8 @@
 import requests
 from bs4 import BeautifulSoup
 
-from parse_repo import parse_packages_lines, get_packagetext_from_repo
-from parse_chage_log import extract_packages_from_table
+from parse_repo import parse_packages_old, get_packagetext_from_repo
+from parse_change_log import extract_packages_from_table
 from temp_check_categories import check_cat
 
 repo_line = "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.7/1.7.7.6/base-repository 1.7_x86-64 main contrib non-free"

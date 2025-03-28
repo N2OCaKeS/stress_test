@@ -106,5 +106,5 @@ class _Reboot:
 
         all_ready = all(results.get(host, False) for host in hosts)
         if all_ready and ready_signal:
-            _Signals.set(ready_signal)
+            _Signals.set(host, ready_signal)
         return all_ready

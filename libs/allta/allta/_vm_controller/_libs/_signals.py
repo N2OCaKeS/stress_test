@@ -14,11 +14,12 @@ class _Signals():
     """
 
     @staticmethod        
-    def set(set_signal: str):
+    def set(host: str, set_signal: str):
         """
-        Устанавливает сигнал, создавая файл с указанным именем.
+        Устанавливает сигнал, добавляя запись host 1 в файл.
 
         Args:
+            host (str): Имя хоста.
             set_signal (str): Имя сигнала (файла), который будет создан.
         """
         signal_dir = './signal'
@@ -27,32 +28,37 @@ class _Signals():
         if not os.path.exists(signal_dir):
             os.makedirs(signal_dir)
         
-        with open(signal_file_path, 'w') as file:
-            file.write('1')
+        with open(signal_file_path, 'a') as file:
+            file.write(f'{host} 1\n')
 
     @staticmethod  
-    def get(get_signal: str):
+    def get(get_signal: list):
         """
-        Ожидает получения сигнала, проверяя наличие файла с указанным именем.
+        Ожидает получения сигнала, проверяя наличие файла с указанным именем и совпадение содержимого.
 
         Args:
-            get_signal (str): Имя сигнала (файла), который ожидается.
+
+            get_signal (list): Имя сигнала (файла), который ожидается.
+                get_signal = ['hostname', 'signal_name']
 
         Returns:
-            bool: True, если сигнал получен (файл найден), иначе False.
+            bool: True, если сигнал получен (файл найден и содержит нужную запись), иначе False.
         """
         signal_dir = './signal'
-        signal_file_path = os.path.join(signal_dir, get_signal)
+        signal_file_path = os.path.join(signal_dir, get_signal[:2])
         timeout = 10 * 60  # 10 минут
         interval = 5       # 5 секунд
         elapsed_time = 0
+        host = get_signal[:1]
+
 
         while elapsed_time < timeout:
             if os.path.isfile(signal_file_path):
                 with open(signal_file_path, 'r') as file:
-                    content = file.read().strip()
-                    if content == '1':
-                        return True
+                    lines = file.readlines()
+                    for line in lines:
+                        if line.strip() == f'{host} 1':
+                            return True
             time.sleep(interval)
             elapsed_time += interval
         

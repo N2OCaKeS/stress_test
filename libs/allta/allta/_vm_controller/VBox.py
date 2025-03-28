@@ -138,6 +138,8 @@ class VBox(_VirtualMashines):
         Returns:
             int: Код завершения выполнения.
         """
+
+
         threads = []
 
         def _threaded_execution(host: str, task_name: str, task: dict, username: str, password: str):

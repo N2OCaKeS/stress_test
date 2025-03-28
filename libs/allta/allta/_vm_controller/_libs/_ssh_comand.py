@@ -20,7 +20,7 @@ class _SSH_Command:
     @ansible_logger
     @staticmethod
     def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',
-            signal_set: str = None, signal_get: str = None, task_name: str = None) -> dict:
+            signal_set: str = None, signal_get: list = None, task_name: str = None) -> dict:
         """
         Выполняет SSH-команду на удалённом хосте с обработкой ошибок.
 
@@ -31,7 +31,7 @@ class _SSH_Command:
             username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
             password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
             signal_set (str, optional): Сигнал для установки после выполнения команды.
-            signal_get (str, optional): Сигнал для ожидания перед выполнением команды.
+            signal_get (list, optional): Сигнал для ожидания перед выполнением команды.
             task_name (str, optional): Имя задачи для логирования.
 
         Returns:
@@ -100,7 +100,7 @@ class _SSH_Command:
             print(f"[{host}] Команда закончила выполнение: {command}")
 
             if signal_set:
-                signals.set(signal_set)
+                signals.set(host, signal_set)
 
             return {
                 'host': host,

@@ -47,8 +47,8 @@ class _Freeipa():
             {
                 'databases': ['db1', 'db2'],
             }
-          ssh_user: имя пользователя для SSH-подключения (по умолчанию "root")
-          ssh_password: пароль для SSH-подключения (если не указан, используется None)
+          ssh_user: имя пользователя для SSH-подключения (по умолчанию "u")
+          ssh_password: пароль для SSH-подключения (по умолчанию "1")
         """
         # 1. Настройка контроллера домена (однопоточно)
         controller_host = domain['domain']['host']
@@ -61,7 +61,7 @@ class _Freeipa():
         print(f"Настройка контроллера домена на {controller_host}")
         server_cmd = f"sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {domain_name} -p {admin_password} -o -y"
         _Freeipa._execute_command(controller_vm, server_cmd, task_name="FreeIPA Server Setup",
-                                    username=ssh_user, password=ssh_password)
+                                    username=ssh_user, password=ssh_password, vm_name=controller_host)
 
         # 1.2) Перезагрузка контроллера домена с использованием _Reboot
         print(f"Перезагрузка контроллера домена {controller_host}")
@@ -73,7 +73,7 @@ class _Freeipa():
 
         # 1.3) Ждём 20 секунд для полной готовности, затем устанавливаем сигнал о готовности домена
         time.sleep(20)
-        _Signals.set("domain_ready")
+        _Signals.set(controller_host , set_signal="domain_ready")
         print("Контроллер домена готов к работе (сигнал domain_ready установлен)")
 
         # 2. Настройка клиентов домена (многопоточно)
@@ -96,7 +96,7 @@ class _Freeipa():
                 continue
             client_vm = vm_dates[host]
             t = threading.Thread(target=_Freeipa._configure_client,
-                                 args=(host, client_vm, domain_name, admin_password, ssh_user, ssh_password))
+                                 args=(host, client_vm, domain_name, admin_password, controller_host, ssh_user, ssh_password))
             t.start()
             threads.append(t)
 
@@ -107,24 +107,23 @@ class _Freeipa():
 
     @staticmethod
     @ansible_logger
-    def _execute_command(host ,vm_info, command, task_name="Command Execution", username="root", password=None):
+    def _execute_command(vm_info, command, task_name="Command Execution", username="root", password=None, vm_name=None):
         """
         Выполняет указанную команду на удалённой машине через SSH.
+        Параметр vm_name используется для возврата в результате имени ВМ, на которой выполнялась команда.
         """
         host_ip = vm_info.get('ip_bridge')
-
         port = int(vm_info.get('host-port')) if vm_info.get('host-port', '22') != '*' else 22
 
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
-            # Переделать чтоб игнорил ошибку про ntp: 
             ssh.connect(host_ip, port=port, username=username, password=password, timeout=10)
             stdin, stdout, stderr = ssh.exec_command(command)
             output = stdout.read().decode('utf-8') + stderr.read().decode('utf-8')
             ssh.close()
             result = {
-                'host': host,
+                'host': vm_name if vm_name is not None else host_ip,
                 'task_name': task_name,
                 'output': output,
                 'status': 'success' if "error" not in output.lower() else 'error', 
@@ -133,7 +132,7 @@ class _Freeipa():
             return result
         except Exception as e:
             result = {
-                'host': host_ip,
+                'host': vm_name if vm_name is not None else host_ip,
                 'task_name': task_name,
                 'output': str(e),
                 'status': 'error',
@@ -142,25 +141,24 @@ class _Freeipa():
             return result
 
     @staticmethod
-    def _configure_client(host, vm_info, domain_name, admin_password, username="root", password=None):
+    def _configure_client(host, vm_info, domain_name, admin_password, domain, username="root", password=None):
         """
         Настраивает клиента домена.
         
         Шаги:
           1. Ожидание сигнала готовности домена (domain_ready).
           2. Выполнение установки клиента через команду sudo astra-freeipa-client.
-             Проверяется наличие ожидаемой строки в выводе.
           3. Перезагрузка клиента с использованием _Reboot.
         """
         print(f"Клиент {host}: ожидание сигнала domain_ready...")
-        if not _Signals.get("domain_ready"):
+        if not _Signals.get([domain, "domain_ready"]):
             print(f"Клиент {host}: сигнал domain_ready не получен, прерывание настройки.")
             return
 
         print(f"Настройка клиента домена на {host}")
         client_cmd = f"sudo astra-freeipa-client -d {domain_name} -p {admin_password} -y"
-        _Freeipa._execute_command(host ,vm_info, client_cmd, task_name="FreeIPA Client Setup",
-                                            username=username, password=password)
+        _Freeipa._execute_command(vm_info, client_cmd, task_name="FreeIPA Client Setup",
+                                  username=username, password=password, vm_name=host)
 
         # Перезагрузка клиента с использованием _Reboot
         reboot_success = _Reboot.reboot_vm(host, {host: vm_info}, username=username, password=password)

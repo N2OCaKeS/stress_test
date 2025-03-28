@@ -1,0 +1,14 @@
+[Unit]
+Description=Gunicorn instance to serve allta_app
+After=network.target
+ 
+[Service]
+User=u
+Group=www-data
+WorkingDirectory=/home/u/git/stress_test/allta_app
+#ExecStart=gunicorn --workers 4 --bind 10.177.103.10 -m 007 wsgi:app --timeout 120
+ExecStart=/home/u/python/Python-3.12.1/venv/bin/python3.12 -m gunicorn --workers 4 --bind 10.177.103.10 -m 007 wsgi:app --timeout 3600
+#ExecStart=gunicorn --workers 4 --bind 10.177.103.10 -m 007 -k uvicorn.workers.UvicornWorker asgi:app --timeout 120
+ 
+[Install]
+WantedBy=multi-user.target

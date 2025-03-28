@@ -1,0 +1,11 @@
+:sy match my_ok /.*\(ok:\|changed:\).*/
+:hi my_ok ctermfg=green guifg=green
+
+:sy match my_error /.*\(ERROR\|WARNING\|CRITICAL\|fatal\|FAILED|failed=*\).*/
+:hi my_error ctermfg=red guifg=red
+
+:sy match my_w /.*\(task path\|TASK \[\).*/
+:hi my_w ctermfg=yellow guifg=yellow
+
+:sy match my_play /.*\(PLAY RECAP\).*/
+:hi my_play ctermfg=blue guifg=blue

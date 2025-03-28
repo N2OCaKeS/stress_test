@@ -69,6 +69,7 @@ if VERSION_OS == '1.7':
     VERSION_PG = '11'
 elif VERSION_OS == '1.8':
     VERSION_PG = '15'
+VERSION_PG = '11'
 
 
 DOMAIN = 'balance.rbt'

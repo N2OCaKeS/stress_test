@@ -13,20 +13,24 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
         postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
         postgres_data_path = ''
         log = '/tmp/contrprimer'
-        unit_file = f"[Unit]\n \
-            Description=PostgreSQL Cluster contrprimer 15 \n \
-            After=network.target\n\n \
-            [Service] \n \
-            Type=forking\n \
-            User=postgres\n \
-            Group=postgres\n \
-            Environment=PGDATA={postgres_config_path}\n \
-            ExecStart=/usr/lib/postgresql/15/bin/pg_ctl start -D ${{PGDATA}} -s -l ${{PGDATA}}/logfile\n \
-            ExecStop=/usr/lib/postgresql/15/bin/pg_ctl stop -D ${{PGDATA}} -s -m fast\n \
-            ExecReload=/usr/lib/postgresql/15/bin/pg_ctl reload -D ${{PGDATA}} -s\n\n \
-            [Install]\n \
-            WantedBy=multi-user.target\n \
-            "
+        unit_file = f"""sudo tee /etc/systemd/system/postgresql@15-contrprimer.service > /dev/null <<EOF
+        [Unit]
+        Description=PostgreSQL Cluster contrprimer 15
+        After=network.target
+
+        [Service]
+        Type=forking
+        User=postgres
+        Group=postgres
+        Environment=PGDATA={postgres_config_path}
+        ExecStart=/usr/lib/postgresql/15/bin/pg_ctl start -D ${{PGDATA}} -s -l ${{PGDATA}}/logfile
+        ExecStop=/usr/lib/postgresql/15/bin/pg_ctl stop -D ${{PGDATA}} -s -m fast
+        ExecReload=/usr/lib/postgresql/15/bin/pg_ctl reload -D ${{PGDATA}} -s
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF"""
+
 
         prepare = {
             'g_database': {

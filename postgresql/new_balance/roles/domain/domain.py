@@ -10,35 +10,29 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
     def settings(self):
         '''Полная настройка домена на всех ВМ'''
         provider = self.provider
+
+        domain = {
+            'settings': {
+                'domain': DOMAIN,
+                'admin_password': DOMAIN_ADMIN_PASSWORD
+            },
+            'domain': {
+                'host': 'dcfreeipa', 
+            },
+            'client': {
+                'host': 'g_domain_client', # g_ если начинается с такого префикса то это для группы хостов
+            }
+        }
+
+        provider.freeipa(domain=domain, vm_dates=VMS_DATES, groups=VMS_GROUPS)
+
         tasks = {
             'dcfreeipa': {
-                'domain_init': {
-                    'command': f'sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -o -y',
-                    'signal set': 'Domain configured',
-                    'signal get': ''
-                },
-                'reboot': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
-                    'command': '',
-                    'signal set': 'Domain ready',
-                    'signal get': 'Domain configured',
-                },
                 'kinit': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
                     'command': f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}',
                     'signal set': 'Kinit',
-                    'signal get': 'Domain ready',
+                    'signal get': '',
                 },
-            },
-            'g_domain_client': {
-                'client join domain': {
-                    'command': f'sudo astra-freeipa-client -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y',
-                    'signal set': 'Domain client configured',
-                    'signal get': 'Domain ready',
-                },
-                'reboot': {  
-                    'command': '',
-                    'signal set': '',
-                    'signal get': 'Domain client configured',
-                }
             }
         }
 

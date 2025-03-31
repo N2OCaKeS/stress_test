@@ -11,11 +11,11 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
         """Настройка БД + репликация"""
         provider = self.provider
         postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
-        postgres_data_path = ''
+        postgres_data_path = f'/var/lib/postgresql/{VERSION_PG}/contrprimer'
         log = '/tmp/contrprimer'
-        unit_file = f"""sudo tee /etc/systemd/system/postgresql@15-contrprimer.service > /dev/null <<EOF
+        unit_file = f"""sudo tee /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service > /dev/null <<EOF
         [Unit]
-        Description=PostgreSQL Cluster contrprimer 15
+        Description=PostgreSQL Cluster contrprimer {VERSION_PG}
         After=network.target
 
         [Service]
@@ -23,9 +23,9 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
         User=postgres
         Group=postgres
         Environment=PGDATA={postgres_config_path}
-        ExecStart=/usr/lib/postgresql/15/bin/pg_ctl start -D ${{PGDATA}} -s -l ${{PGDATA}}/logfile
-        ExecStop=/usr/lib/postgresql/15/bin/pg_ctl stop -D ${{PGDATA}} -s -m fast
-        ExecReload=/usr/lib/postgresql/15/bin/pg_ctl reload -D ${{PGDATA}} -s
+        ExecStart=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D ${{PGDATA}} -s -l ${{PGDATA}}/logfile
+        ExecStop=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl stop -D ${{PGDATA}} -s -m fast
+        ExecReload=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl reload -D ${{PGDATA}} -s
 
         [Install]
         WantedBy=multi-user.target
@@ -35,14 +35,8 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
         prepare = {
             'g_database': {
                 'create unit file': {
-                    'command': f'sudo touch /etc/systemd/system/postgresql@15-contrprimer.service && \
-                        echo {unit_file} | sudo tee /etc/systemd/system/postgresql@15-contrprimer.service',
-                    'signal set': '',
-                    'signal get': ''
-                },
-                'create log file': {
-                    'command': f'sudo touch {postgres_config_path}/logfile && \
-                        chown postgres:postgres {postgres_config_path}/logfile',
+                    'command': f'sudo touch /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service && \
+                        {unit_file}',
                     'signal set': '',
                     'signal get': ''
                 },
@@ -59,28 +53,35 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
                     'signal get': ''
                 },
                 'stop main db': {
-                    'command': f'sudo su - postgres -c "pg_dropcluster 15 main --stop"',
+                    'command': f'sudo su - postgres -c "pg_dropcluster {VERSION_PG} main --stop"',
                     'signal set': '',
-                    'signal get': ''
+                    'signal get': ['g_database' ,'Postgres privilege']
                 }
             },
             'database1': {
-                'create_folder and change owner to postgres': {
-                    'command': f'sudo mkdir {postgres_config_path} && \
-                        sudo chown postgres:postgres {postgres_config_path}',
+                'create folder and change owner to postgres': {
+                    'command': f'sudo mkdir {postgres_config_path} {postgres_data_path} && \
+                        sudo chown postgres:postgres {postgres_config_path} {postgres_data_path}',
                     'signal set': 'Database 1: Created db path',
-                    'signal get': 'Postgres privilege'
+                    'signal get': ['database1' ,'Postgres privilege']
                 },
                 'create wal folder': {
-                    'command': f'sudo mkdir -p /var/lib/postgresql/15/contrprimer/wal_archive && \
-                        sudo chown postgres:postgres /var/lib/postgresql/15/contrprimer/wal_archive',
-                    'signal set': 'Database 1: Created db path',
+                    'command': f'sudo mkdir -p {postgres_data_path}/wal_archive && \
+                        sudo chown postgres:postgres {postgres_data_path}/contrprimer/wal_archive',
+                    'signal set': '',
                     'signal get': ''
                 },
-                'init db': {
-                    'command': f'sudo su - postgres -c "pg_createcluster 15 contrprimer --datadir={postgres_config_path} --port=5440"',
+                'create log file': {
+                    'command': f'sudo chown postgres:postgres {postgres_config_path} && \
+                        sudo touch {postgres_config_path}/logfile && \
+                        sudo chown postgres:postgres {postgres_config_path}/logfile',
                     'signal set': '',
-                    'signal get': 'Database 1: Created db path'
+                    'signal get': ['database1', 'Database created']
+                },
+                'init db': {
+                    'command': f'sudo su - postgres -c "pg_createcluster {VERSION_PG} contrprimer --datadir={postgres_data_path} --port=5440"',
+                    'signal set': 'Database created',
+                    'signal get': ['database1', 'Database 1: Created db path']
                 },
             }
         }
@@ -89,11 +90,11 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
         sed_master_config = {  # TODO Написать конфигурацию
 
             # postgresql.conf
-            'database1': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#port = 5432				# (change requires restart)',
-                'new': 'port = 5440'
-            },
+            # 'database1': {
+            #     'path': f'{postgres_config_path}/postgresql.conf',
+            #     'old': '#port = 5432				# (change requires restart)',
+            #     'new': 'port = 5440'
+            # },
             'database1': {
                 'path': f'{postgres_config_path}/postgresql.conf',
                 'old': '#wal_level = replica			# minimal, replica, or logical',
@@ -107,7 +108,7 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
             'database1': {
                 'path': f'{postgres_config_path}/postgresql.conf',
                 'old': '#archive_command = ''		# command to use to archive a logfile segment',
-                'new': "archive_command = 'cp %p /var/lib/postgresql/15/contrprimer/wal_archive/%f'"
+                'new': f"archive_command = 'cp %p /var/lib/postgresql/{VERSION_PG}/contrprimer/wal_archive/%f'"
             },
             'database1': {
                 'path': f'{postgres_config_path}/postgresql.conf',
@@ -157,11 +158,11 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
                 'new': 'host    replication     postgres        0.0.0.0/0               trust'
             },
         }
-        provider.sed(sed_master_config, VMS_DATES, VMS_GROUPS)
+        # provider.sed(sed_master_config, VMS_DATES, VMS_GROUPS)
         start_cluster = {
             'database1': {
                 'start db': {
-                    'command': f'sudo su - postgres -c "/usr/lib/postgresql/15/bin/pg_ctl -D {postgres_config_path} -l {log} start',
+                    'command': f'sudo su - postgres -c "/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl -D {postgres_config_path} -l {log} start',
                     'signal set': 'Start cluster',
                     'signal get': ''
                 },
@@ -174,7 +175,7 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
                 },
             },
         }
-        provider.execute(vm_dates=VMS_DATES, commands=start_cluster, vms_groups=VMS_GROUPS, username='u', password='1')
+        # provider.execute(vm_dates=VMS_DATES, commands=start_cluster, vms_groups=VMS_GROUPS, username='u', password='1')
 
         sed_replica_config = {
             'g_replica': {
@@ -188,21 +189,21 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
                 'new': 'hot_standby = on'
             },
         }
-        provider.sed(sed_replica_config, VMS_DATES, VMS_GROUPS)
+        # provider.sed(sed_replica_config, VMS_DATES, VMS_GROUPS)
 
         start_bd = {
             'g_database':{
                 'start db':{
-                    'command':'sudo systemctl daemon-reexec && \
+                    'command':f'sudo systemctl daemon-reexec && \
                             sudo systemctl daemon-reload && \
-                            sudo systemctl enable postgresql@15-contrprimer && \
-                            sudo systemctl start postgresql@15-contrprimer',
+                            sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
+                            sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
                     'signal set': '',
                     'signal get': ''
                 }
             }
         }
-        provider.execute(vm_dates=VMS_DATES, commands=start_bd, vms_groups=VMS_GROUPS, username='u', password='1')
+        # provider.execute(vm_dates=VMS_DATES, commands=start_bd, vms_groups=VMS_GROUPS, username='u', password='1')
 
 
 # unit_file = "[Unit]\n \

@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 
-from parse_repo import parse_packages_old, get_packagetext_from_repo
 from parse_change_log import extract_packages_from_table
 from temp_check_categories import check_cat
 
@@ -28,12 +27,12 @@ def convert_repo(repo_line):
 
     return url_changelog, url_packages
 
-def get_chagngelog(url):
+def get_changelog(url):
     res_change_log_html = requests.get(url=url)
     return res_change_log_html.text
 
 url_chlog, url_pckgs = convert_repo(repo_line=repo_line)
-html_change_log = get_chagngelog(url=url_chlog)
+html_change_log = get_changelog(url=url_chlog)
 
 soup = BeautifulSoup(html_change_log, 'html.parser')
 

@@ -1,6 +1,7 @@
 import requests
 from parse_repo import parse_packages
 from package_group import GROUPS
+from temp3 import PackageGroupManager
 
 res = requests.get("https://releases.devos.astralinux.ru/frozen/1.7/1.7.7/1.7.7.6/base-repository/dists/1.7_x86-64/main/binary-amd64/Packages")
 text = res.text
@@ -34,7 +35,12 @@ for group_name, packages in GROUPS.items():
     
     NEW_GROUPS[group_name] = packages
 
-# print(NEW_GROUPS)
-for group_name, packages in NEW_GROUPS.items():
-    if group_name == "FreeIPA":
-        print(packages)
+
+# manager = PackageGroupManager(GROUPS, all_info_packages_from_repo)
+# NEW_GROUPS2 = manager.process_groups()
+print(NEW_GROUPS)
+
+# print(NEW_GROUPS == NEW_GROUPS2)
+# for group_name, packages in NEW_GROUPS.items():
+#     if group_name == "FreeIPA":
+#         print(packages)

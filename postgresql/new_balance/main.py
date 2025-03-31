@@ -22,10 +22,10 @@ def main():
     # configure.apt_install() # Проверено работает
 
     # domain = DomainVM ()
-    # domain.settings() # ПЕРЕПРОВЕРИТЬ
+    # domain.settings() # Проверено работает
 
     database = DatabaseVM()
-    database.settings()
+    database.settings() 
 
 if __name__ == "__main__":
     main()

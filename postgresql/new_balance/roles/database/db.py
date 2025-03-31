@@ -2,7 +2,7 @@ from allta import VBoxManager
 from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS
 
 
-class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
+class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
 
     def __init__(self):
         self.provider = VBoxManager()
@@ -14,23 +14,26 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
         postgres_data_path = f'/var/lib/postgresql/{VERSION_PG}/contrprimer'
         log = '/tmp/contrprimer'
         unit_file = f"""sudo tee /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service > /dev/null <<EOF
-        [Unit]
-        Description=PostgreSQL Cluster contrprimer {VERSION_PG}
-        After=network.target
+[Unit]
+Description=PostgreSQL Cluster contrprimer {VERSION_PG}
+After=network.target
 
-        [Service]
-        Type=forking
-        User=postgres
-        Group=postgres
-        Environment=PGDATA={postgres_config_path}
-        ExecStart=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D ${{PGDATA}} -s -l ${{PGDATA}}/logfile
-        ExecStop=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl stop -D ${{PGDATA}} -s -m fast
-        ExecReload=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl reload -D ${{PGDATA}} -s
+[Service]
+Type=forking
+User=postgres
+Group=postgres
+ExecStart=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D {postgres_config_path} -s -l {postgres_config_path}/logfile
+ExecStop=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl stop -D {postgres_config_path} -s -m fast
+ExecReload=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl reload -D {postgres_config_path} -s
 
-        [Install]
-        WantedBy=multi-user.target
-        EOF"""
+[Install]
+WantedBy=multi-user.target
+EOF"""
 
+        if VERSION_PG == '11':
+            pg_hba_proto = 'md5'
+        elif VERSION_PG == '15':
+            pg_hba_proto = 'scram-sha-256'
 
         prepare = {
             'g_database': {
@@ -53,170 +56,145 @@ class DatabaseVM(): # TODO НАДО ПРОВЕРИТЬ!
                     'signal get': ''
                 },
                 'stop main db': {
-                    'command': f'sudo su - postgres -c "pg_dropcluster {VERSION_PG} main --stop"',
+                    'command': f'sudo systemctl stop postgresql@{VERSION_PG}-main.service',
                     'signal set': '',
-                    'signal get': ['g_database' ,'Postgres privilege']
-                }
-            },
-            'database1': {
+                    'signal get': ['Postgres privilege']
+                },
                 'create folder and change owner to postgres': {
                     'command': f'sudo mkdir {postgres_config_path} {postgres_data_path} && \
                         sudo chown postgres:postgres {postgres_config_path} {postgres_data_path}',
-                    'signal set': 'Database 1: Created db path',
-                    'signal get': ['database1' ,'Postgres privilege']
+                    'signal set': 'Created db path',
+                    'signal get': ['Postgres privilege']
                 },
-                'create wal folder': {
-                    'command': f'sudo mkdir -p {postgres_data_path}/wal_archive && \
-                        sudo chown postgres:postgres {postgres_data_path}/contrprimer/wal_archive',
-                    'signal set': '',
-                    'signal get': ''
-                },
+
                 'create log file': {
-                    'command': f'sudo chown postgres:postgres {postgres_config_path} && \
-                        sudo touch {postgres_config_path}/logfile && \
+                    'command': f'sudo touch {postgres_config_path}/logfile && \
                         sudo chown postgres:postgres {postgres_config_path}/logfile',
                     'signal set': '',
-                    'signal get': ['database1', 'Database created']
+                    'signal get': ['Database created']
                 },
+
+                # 'create wal folder': {
+                #     'command': f'sudo mkdir -p {postgres_data_path}/wal_archive && \
+                #         sudo chown postgres:postgres {postgres_data_path}/wal_archive',
+                #     'signal set': 'Create wal folder',
+                #     'signal get': ['Database created']
+                # },
+
                 'init db': {
                     'command': f'sudo su - postgres -c "pg_createcluster {VERSION_PG} contrprimer --datadir={postgres_data_path} --port=5440"',
                     'signal set': 'Database created',
-                    'signal get': ['database1', 'Database 1: Created db path']
+                    'signal get': ['Created db path']
+                },
+            },
+            'g_replica':{
+                'del db data': {
+                    'command': f'sudo rm -rf {postgres_data_path} && sudo mkdir {postgres_data_path} && sudo chown postgres:postgres {postgres_data_path} && sudo chmod 700 {postgres_data_path}',
+                    'signal set': '',
+                    'signal get': ['Database created']
                 },
             }
         }
-        provider.execute(vm_dates=VMS_DATES, commands=prepare, vms_groups=VMS_GROUPS, username='u', password='1')
+        provider.execute(vm_dates=VMS_DATES, commands=prepare,
+                         vms_groups=VMS_GROUPS, username='u', password='1')
 
-        sed_master_config = {  # TODO Написать конфигурацию
+        sed_master_config = {
+            'g_database': [
+                # postgresql.conf
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': '#wal_level = replica			# minimal, replica, or logical',
+                    'new': 'wal_level = replica'
+                },
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': '#archive_mode = off		# enables archiving; off, on, or always',
+                    'new': 'archive_mode = on'
+                },
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': "#archive_command = ''		# command to use to archive a logfile segment",
+                    'new': f"archive_command = 'cp %p /var/lib/postgresql/{VERSION_PG}/contrprimer/wal_archive/%f'"
+                },
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': '#max_wal_senders = 10		# max number of walsender processes',
+                    'new': 'max_wal_senders = 10'
+                },
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': '#wal_keep_size = 0		# in megabytes; 0 disables',
+                    'new': 'wal_keep_size = 128MB'
+                },
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': '#hot_standby = on			# "off" disallows queries during recovery',
+                    'new': 'hot_standby = on'
+                },
 
-            # postgresql.conf
-            # 'database1': {
-            #     'path': f'{postgres_config_path}/postgresql.conf',
-            #     'old': '#port = 5432				# (change requires restart)',
-            #     'new': 'port = 5440'
-            # },
-            'database1': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#wal_level = replica			# minimal, replica, or logical',
-                'new': 'wal_level = hot_standby'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#archive_mode = off		# enables archiving; off, on, or always',
-                'new': 'archive_mode = on'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#archive_command = ''		# command to use to archive a logfile segment',
-                'new': f"archive_command = 'cp %p /var/lib/postgresql/{VERSION_PG}/contrprimer/wal_archive/%f'"
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#max_wal_senders = 10		# max number of walsender processes',
-                'new': 'max_wal_senders = 10'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#wal_keep_size = 0		# in megabytes; 0 disables',
-                'new': 'wal_keep_size = 128MB'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#hot_standby = on			# "off" disallows queries during recovery',
-                'new': 'hot_standby = on'
-            },
-
-            # pg_hba.conf
-            'database1': {
-                'path': f'{postgres_config_path}/pg_hba.conf',
-                'old': 'local   all             postgres                                peer',
-                'new': 'local   all             postgres                                trust'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/pg_hba.conf',
-                'old': 'local   all             all                                     peer',
-                'new': 'local   all             all                                     trust'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/pg_hba.conf',
-                'old': 'host    all             all             0.0.0.0/0            scram-sha-256',
-                'new': 'host    all             all             0.0.0.0/0            trust'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/pg_hba.conf',
-                'old': 'host    all             all             ::1/128                 scram-sha-256',
-                'new': 'host    all             all             ::1/128                 trust'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/pg_hba.conf',
-                'old': 'local   replication     all                                     peer',
-                'new': 'local   replication     postgres                                trust'
-            },
-            'database1': {
-                'path': f'{postgres_config_path}/pg_hba.conf',
-                'old': 'host    replication     all             127.0.0.1/32            scram-sha-256',
-                'new': 'host    replication     postgres        0.0.0.0/0               trust'
-            },
+                # pg_hba.conf
+                {
+                    'path': f'{postgres_config_path}/pg_hba.conf',
+                    'old': 'local   all             postgres                                peer',
+                    'new': 'local   all             postgres                                trust'
+                },
+                {
+                    'path': f'{postgres_config_path}/pg_hba.conf',
+                    'old': 'local   all             all                                     peer',
+                    'new': 'local   all             all                                     trust'
+                },
+                {
+                    'path': f'{postgres_config_path}/pg_hba.conf',
+                    'old': f'host    all             all             0.0.0.0/0            {pg_hba_proto}',
+                    'new': 'host    all             all             0.0.0.0/0            trust'
+                },
+                {
+                    'path': f'{postgres_config_path}/pg_hba.conf',
+                    'old': f'host    all             all             ::1/128                 {pg_hba_proto}',
+                    'new': 'host    all             all             ::1/128                 trust'
+                },
+                {
+                    'path': f'{postgres_config_path}/pg_hba.conf',
+                    'old': f'local   replication     all                                     peer',
+                    'new': 'local   replication     postgres                                trust'
+                },
+                {
+                    'path': f'{postgres_config_path}/pg_hba.conf',
+                    'old': f'host    replication     all             127.0.0.1/32            {pg_hba_proto}',
+                    'new': 'host    replication     postgres        0.0.0.0/0               trust'
+                }
+            ]
         }
-        # provider.sed(sed_master_config, VMS_DATES, VMS_GROUPS)
+        provider.sed(sed_master_config, VMS_DATES, VMS_GROUPS)
+
         start_cluster = {
             'database1': {
                 'start db': {
-                    'command': f'sudo su - postgres -c "/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl -D {postgres_config_path} -l {log} start',
-                    'signal set': 'Start cluster',
+                    'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
+                            sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
+                    'signal set': 'Start maser',
                     'signal get': ''
                 },
             },
+
             'g_replica': {
                 'replication': {
-                    'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip']} -p 5440 -U postgres -D {postgres_config_path} -Fp -Xs -P -R"',
-                    'signal set': '',
-                    'signal get': 'Start cluster'
+                    'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip_bridge']} -p 5440 -U postgres -D {postgres_data_path} -Fp -Xs -P -R"',
+                    'signal set': 'Replication success',
+                    'signal get': ['database1', 'Start maser']
                 },
-            },
-        }
-        # provider.execute(vm_dates=VMS_DATES, commands=start_cluster, vms_groups=VMS_GROUPS, username='u', password='1')
-
-        sed_replica_config = {
-            'g_replica': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#port = 5432				# (change requires restart)',
-                'new': 'port = 5440'
-            },
-            'g_replica': {
-                'path': f'{postgres_config_path}/postgresql.conf',
-                'old': '#hot_standby = on			# "off" disallows queries during recovery',
-                'new': 'hot_standby = on'
-            },
-        }
-        # provider.sed(sed_replica_config, VMS_DATES, VMS_GROUPS)
-
-        start_bd = {
-            'g_database':{
-                'start db':{
-                    'command':f'sudo systemctl daemon-reexec && \
-                            sudo systemctl daemon-reload && \
-                            sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
+                'start replica':{
+                    'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
                             sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
                     'signal set': '',
-                    'signal get': ''
+                    'signal get': ['Replication success']                    
                 }
-            }
+            },
+
         }
-        # provider.execute(vm_dates=VMS_DATES, commands=start_bd, vms_groups=VMS_GROUPS, username='u', password='1')
+        provider.execute(vm_dates=VMS_DATES, commands=start_cluster,
+                         vms_groups=VMS_GROUPS, username='u', password='1')
 
-
-# unit_file = "[Unit]\n \
-#             Description=PostgreSQL Cluster contrprimer 15 \n \
-#             After=network.target\n\n \
-#             [Service] \n \
-#             Type=forking\n \
-#             User=postgres\n \
-#             Group=postgres\n \
-#             Environment=PGDATA=/etc/postgresql/15/contrprimer\n \
-#             ExecStart=/usr/lib/postgresql/15/bin/pg_ctl start -D ${PGDATA} -s -l ${PGDATA}/logfile\n \
-#             ExecStop=/usr/lib/postgresql/15/bin/pg_ctl stop -D ${PGDATA} -s -m fast\n \
-#             ExecReload=/usr/lib/postgresql/15/bin/pg_ctl reload -D ${PGDATA} -s\n\n \
-#             [Install]\n \
-#             WantedBy=multi-user.target\n \
-#             "
+        filling_bd = {
+            
+        }

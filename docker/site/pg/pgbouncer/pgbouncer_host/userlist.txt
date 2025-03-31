@@ -1,3 +1,0 @@
-"u" "md5b98e6d4405ba9c3d60673e5fc9bc39be"
-"pgbouncer" "md52f4a5a1eb9cc10e873b18bedb7a00c57"
-

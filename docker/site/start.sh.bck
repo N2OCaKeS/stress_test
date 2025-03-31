@@ -9,8 +9,6 @@ VENV="/home/u/python/Python-3.12.1/venv/bin/"
 
 
 # collect results base directory
-NGINX_V=$(nginx -v 2>&1 | cut -d '/' -f2 | tr -d '[:space:]')
-
 SYS_VERSION=$(cat /etc/astra/build_version | tr -d '[:space:]')
 SYS_KERNEL=$(uname -r | tr -d '[:space:]')
 RESULTS_DIR="./results/docker_web_${SYS_VERSION}_${SYS_KERNEL}"
@@ -45,30 +43,35 @@ check_locust_containers() {
 }
 
 
-nginx_server() {
+nginx_server(){
+    # Определяем директорию для результатов теста nginx_server
     RESULTS_DIR_SERVER="${RESULTS_DIR}/nginx_server"
     mkdir -p "$RESULTS_DIR_SERVER"
 
-    # Получаем версию nginx
-    sed -i "s|image: nginx.*|image: nginx:${NGINX_V}|" "${CPATH}docker-compose.nginx.yml"
-
-    echo "Остановка всех сервисов (Nginx, Docker)"
-    sudo systemctl stop nginx.service
+    # Подставляем пути в конфиге locust для сохранения результатов
+    sed -i "s|^csv = .*|csv = ${RESULTS_DIR_SERVER}/results|g" "$LOCUST_CONF"
+    sed -i "s|^html = .*|html = ${RESULTS_DIR_SERVER}/results.html|g" "$LOCUST_CONF"
+    
+    echo "Остановка всех сервисов (Apache, Nginx, Docker)..."
+    sudo systemctl stop apache2.service nginx.service
     sudo docker-compose -f ${NGINX_DC} down
     sudo docker volume prune -f
 
-    echo "Очистка Redis и запуск"
+    echo "Проверка наличия Nginx..."
+    if ! command -v nginx &> /dev/null; then
+        sudo apt-get install -y nginx
+    fi
+
     sudo redis-cli flushall
     sudo systemctl start redis
 
-    echo "Настройка Nginx"
+    echo "Настройка Nginx..."
     sudo rm -f /etc/nginx/conf.d/*
     [ -f "/etc/nginx/sites-enabled/default" ] && sudo rm /etc/nginx/sites-enabled/default
 
-    # Настройка локального прокси
-    sudo sed -i 's|proxy_set_header Host .*;|proxy_set_header Host localhost;|' ${CPATH}nginx-config/web-app.conf
+    sudo sed -i 's/proxy_set_header Host $host;/proxy_set_header Host localhost;/' ${CPATH}nginx-config/web-app.conf
     sudo sed -i 's|http://flask|http://127.0.0.1|g' ${CPATH}nginx-config/web-app.conf
-    sudo sed -i "s|alias .*web_app/static/;|alias ${CPATH}web_app/static/;|" "${CPATH}nginx-config/web-app.conf"
+    sudo sed -i "s|alias /app/web_app/static/;|alias ${CPATH}web_app/static/;|" "${CPATH}nginx-config/web-app.conf"
 
     if [ -f "${CPATH}nginx-config/web-app.conf" ]; then
         sudo cp ${CPATH}/nginx-config/web-app.conf /etc/nginx/conf.d/
@@ -76,71 +79,60 @@ nginx_server() {
         sudo chmod 644 /etc/nginx/conf.d/web-app.conf
     fi
 
-    echo "Проверка конфигурации Nginx"
+    echo "Проверка конфигурации Nginx..."
     sudo nginx -t && sudo systemctl restart nginx
 
-    echo "Остановка старых процессов Gunicorn и Locust"
+    echo "Остановка старых процессов Gunicorn и Locust..."
     sudo pkill -f "gunicorn" || true
     sudo pkill -f "locust" || true
     sleep 3
 
-    echo "Запуск Gunicorn в фоне"
+    echo "Запуск Gunicorn в фоне..."
     sudo nohup ${VENV}gunicorn -w 4 -b 127.0.0.1:8000 --chdir ${CPATH}web_app --log-level=debug wsgi:application > /tmp/gunicorn.log 2>&1 &
     sleep 3
 
-    echo "Обновляем конфиг Locust под localhost..."
-    sed -i "s|^csv = .*|csv = ${RESULTS_DIR_SERVER}/results|g" "$LOCUST_CONF"
-    sed -i "s|^html = .*|html = ${RESULTS_DIR_SERVER}/results.html|g" "$LOCUST_CONF"
-    sed -i "s|^host = .*|host = http://127.0.0.1|g" "$LOCUST_CONF"
+    echo "Запуск Locust в фоне..."
+    sudo nohup ${VENV}locust -f ${CPATH}Kuznechik/locustfile.py \
+        --config "$LOCUST_CONF" --processes 3 > /tmp/locust.log 2>&1 &
 
-    echo "Запуск Locust и ожидание завершения"
-    sudo ${VENV}locust -f ${CPATH}Kuznechik/locustfile.py \
-        --config "$LOCUST_CONF" --processes 3 --headless --run-time 2m > /tmp/locust.log 2>&1
-
-    echo "Ожидание генерации results.html"
-    for i in {1..30}; do
-        if [ -f "${RESULTS_DIR_SERVER}/results.html" ]; then
-            echo "Файл results.html создан."
-            break
-        fi
-        sleep 2
-    done
-
-    echo "Завершено: NGINX server"
+    echo "Настройка завершена, сервер запущен!"
+    sleep 2
+    # Откат конфигурации
+    sed -i "s|^csv = .*|csv = /app/Kuznechik/results|g" "$LOCUST_CONF"
+    sed -i "s|^html = .*|html = /app/Kuznechik/results.html|g" "$LOCUST_CONF"
 }
 
 
-
-
 nginx_docker(){
+    # Определяем директорию для результатов теста nginx_docker
     RESULTS_DIR_DOCKER="${RESULTS_DIR}/nginx_docker"
     mkdir -p "$RESULTS_DIR_DOCKER"
 
-    echo "Остановка старого окружения..."
     sudo systemctl stop nginx.service
-    sudo docker-compose -f ${NGINX_DC} down
+    sudo docker-compose -f ${NGINX_DC} down 
     sudo docker volume prune -f
+    echo "Остановка старых процессов Gunicorn и Locust..."
     sudo pkill -f "gunicorn" || true
     sudo pkill -f "locust" || true
     sleep 2
 
-    echo "Настройка конфигурации для docker..."
-    sudo sed -i 's|proxy_set_header Host .*;|proxy_set_header Host $host;|' ${CPATH}nginx-config/web-app.conf
-    sudo sed -i 's|http://127.0.0.1|http://flask|g' ${CPATH}nginx-config/web-app.conf
+    sudo sed -i 's/proxy_set_header Host localhost;/proxy_set_header Host $host;/' ${CPATH}nginx-config/web-app.conf
+    sudo sed -i 's/http:\/\/127.0.0.1/http:\/\/flask/g' ${CPATH}nginx-config/web-app.conf
     sudo sed -i "s|alias ${CPATH}web_app/static/;|alias /app/web_app/static/;|" "${CPATH}nginx-config/web-app.conf"
 
+    # Подстановка новых путей в .locust.conf для docker-теста
     sed -i "s|^csv = .*|csv = ${RESULTS_DIR_DOCKER}/results|g" "$LOCUST_CONF"
     sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER}/results.html|g" "$LOCUST_CONF"
-    sed -i "s|^host = .*|host = http://nginx|g" "$LOCUST_CONF"
-
-    echo "Запуск Docker-сервисов..."
+    sed -i 's|http://127.0.0.1|http:\/\/nginx|g' "$LOCUST_CONF"
+    sed -i 's|http://flask|http:\/\/nginx|g' "$LOCUST_CONF"
+    sudo sed -i 's/^REDIS_HOST = "127.0.0.1"/REDIS_HOST = "redis"/' ${CPATH}web_app/config.py
     sudo docker-compose -f ${NGINX_DC} up -d --build --scale worker=5
     check_locust_containers
-    echo "Docker Nginx запущен!"
-    sed -i "s|image: nginx.*|image: nginx|" "${CPATH}docker-compose.nginx.yml"
-    echo "Завершено: NGINX docker"
-}
 
+    # Откат конфигурации .locust.conf для docker-теста
+    sed -i "s|^csv = .*|csv = /app/Kuznechik/results/results|g" "$LOCUST_CONF"
+    sed -i "s|^html = .*|html = /app/Kuznechik/results/results.html|g" "$LOCUST_CONF"
+}
 
 
 close_and_delete(){
@@ -204,11 +196,10 @@ case $1 in
     final)
 	    bash prepare.sh
 	    nginx_server
-	    sleep 900
+	    sleep 100
 	    nginx_docker
-	    sleep 900
-	    echo "Тест выполнился"
-            python3 report3.py	
+	    sleep 100
+	    echo "Тест выполнился"	
 	    ;;
 esac
 

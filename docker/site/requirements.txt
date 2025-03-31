@@ -66,3 +66,8 @@ zope.interface
 redis
 gunicorn
 python-dateutil
+pandas
+numpy
+scikit-learn
+scipy
+matplotlib

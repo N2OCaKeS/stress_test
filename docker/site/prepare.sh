@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# set pg version in Dockerfile.postgres
-PG_VERSION=$(psql --version | awk '{print $3}' | cut -d'.' -f1)
-sed -i "s|^FROM postgres:.*|FROM postgres:${PG_VERSION}|" Dockerfile.postgres
 
 # set repo
 VERSION_OS=$(cat /etc/astra/build_version | tr -d '[:space:]')
@@ -40,7 +37,7 @@ make -j 6
 sudo make altinstall
 
 python3.12 -m venv venv
-source ./Python-3.12.1/venv/bin/activate
+source venv/bin/activate
 
 cd /home/u/git/stress_test/*/site/
 python3.12 -m pip install --upgrade pip

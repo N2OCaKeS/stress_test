@@ -151,7 +151,8 @@ class _Freeipa():
           3. Перезагрузка клиента с использованием _Reboot.
         """
         print(f"Клиент {host}: ожидание сигнала domain_ready...")
-        if not _Signals.get([domain, "domain_ready"]):
+        sig = [domain, 'domain_ready']
+        if not _Signals.get(sig):
             print(f"Клиент {host}: сигнал domain_ready не получен, прерывание настройки.")
             return
 

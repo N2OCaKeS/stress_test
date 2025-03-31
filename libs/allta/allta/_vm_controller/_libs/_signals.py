@@ -45,11 +45,11 @@ class _Signals():
             bool: True, если сигнал получен (файл найден и содержит нужную запись), иначе False.
         """
         signal_dir = './signal'
-        signal_file_path = os.path.join(signal_dir, get_signal[:2])
+        signal_file_path = os.path.join(signal_dir, get_signal[1])
         timeout = 10 * 60  # 10 минут
         interval = 5       # 5 секунд
         elapsed_time = 0
-        host = get_signal[:1]
+        host = get_signal[0]
 
 
         while elapsed_time < timeout:

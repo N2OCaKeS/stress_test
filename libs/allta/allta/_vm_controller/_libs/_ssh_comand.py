@@ -45,7 +45,12 @@ class _SSH_Command:
         ssh = None
         try:
             if signal_get:
-                # Если ожидание сигнала вернуло False, прерываем выполнение
+                # Если сигнал задан в виде ['signal'], подставляем host как первый элемент
+                if len(signal_get) == 1:
+                    signal_get = [host, signal_get[0]]
+                elif not signal_get[0]:
+                    signal_get[0] = host
+
                 if not signals.get(signal_get):
                     error_msg = f"ОШИБКА СИГНАЛ {signal_get} НЕ НАЙДЕН"
                     print(f"[{host}] {error_msg}")
@@ -56,7 +61,6 @@ class _SSH_Command:
                         'output': error_msg,
                         'status': 'error'
                     }
-
 
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())

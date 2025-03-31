@@ -1,11 +1,12 @@
 from ...._decorators.Decorators import BaseDecorators
 from ..._libs._ssh_comand import _SSH_Command
+from time import sleep
 import concurrent.futures
 
 class _Sed:
     @staticmethod
     @BaseDecorators.trycorator
-    def sed(sed_conf: dict, vms_dates: dict, groups: dict, username='u', password='1', task_name=None):
+    def sed(sed_conf: dict, vms_dates: dict, groups: dict, username='u', password='1', task_name=None): # TODO Реализовать многопоточность для групп хостов
         """
         Выполняет замену текста на удалённых хостах согласно переданным настройкам, используя многопоточность.
 
@@ -37,35 +38,33 @@ class _Sed:
         results = []
         tasks = []
 
-        # Используем ThreadPoolExecutor для параллельного выполнения задач
+        def build_sed_command(old: str, new: str, path: str, delimiter: str = "@") -> str:
+            old_escaped = old.replace('"', '\\"').replace("\\", "\\\\")
+            new_escaped = new.replace('"', '\\"').replace("\\", "\\\\")
+            if delimiter in old_escaped or delimiter in new_escaped:
+                old_escaped = old_escaped.replace(delimiter, f"\\{delimiter}")
+                new_escaped = new_escaped.replace(delimiter, f"\\{delimiter}")
+            return f'sudo sed -i "s{delimiter}{old_escaped}{delimiter}{new_escaped}{delimiter}g" {path}'
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            for key, conf in sed_conf.items():
-                # Формируем команду замены
-                command = f"sed -i 's/{conf['old']}/{conf['new']}/g' {conf['path']}"
-                # Если ключ начинается с "g_", то это группа хостов
-                if key.startswith('g_'):
-                    group_name = key[2:]
-                    if group_name in groups:
-                        for host in groups[group_name]:
-                            if host in vms_dates:
-                                future = executor.submit(
-                                    _SSH_Command.cmd,
-                                    host,
-                                    command,
-                                    vms_dates,
-                                    username=username,
-                                    password=password,
-                                    task_name=task_name
-                                )
-                                tasks.append(future)
-                            else:
-                                print(f"Хост {host} не найден в vms_dates.")
-                    else:
-                        print(f"Группа {group_name} не найдена в groups.")
+            for target, configs in sed_conf.items():
+                # Убедимся, что это список конфигураций
+                if not isinstance(configs, list):
+                    configs = [configs]
+
+                if target.startswith('g_'):
+                    group_name = target[2:]
+                    hosts = groups.get(group_name, [])
                 else:
-                    # Если ключ не начинается с "g_", то это конкретный хост
-                    host = key
-                    if host in vms_dates:
+                    hosts = [target]
+
+                for host in hosts:
+                    if host not in vms_dates:
+                        print(f"Хост {host} не найден в vms_dates.")
+                        continue
+
+                    for conf in configs:
+                        command = build_sed_command(conf['old'], conf['new'], conf['path'])
                         future = executor.submit(
                             _SSH_Command.cmd,
                             host,
@@ -75,11 +74,9 @@ class _Sed:
                             password=password,
                             task_name=task_name
                         )
+                        sleep(0.3)
                         tasks.append(future)
-                    else:
-                        print(f"Хост {host} не найден в vms_dates.")
 
-            # Ожидаем завершения всех задач и собираем результаты
             for future in concurrent.futures.as_completed(tasks):
                 try:
                     result = future.result()

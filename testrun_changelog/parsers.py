@@ -1,3 +1,4 @@
+import requests
 from bs4 import BeautifulSoup
 
 class Package:
@@ -13,6 +14,7 @@ class Package:
             'name': self.name,
             'depends': self.depends
         }
+
 
 class PackageParser:
     @staticmethod
@@ -41,11 +43,14 @@ class PackageParser:
     def parse_packages_to_dicts(text):
         return [pkg.to_dict() for pkg in PackageParser.parse_packages(text)]
 
+
 class TablePackageExtractor:
-    def __init__(self, soup):
-        self.soup = soup
+    def __init__(self, changelog_url):
+        self.changelog_url = changelog_url
+        self.changelog_html = requests.get(changelog_url).text
+        self.soup = BeautifulSoup(self.changelog_html, 'html.parser')
     
-    def extract_from_table(self, section_name, package_column=2):
+    def extract_from_table(self, section_name, package_column=0):
         section = self.soup.find('a', {'name': section_name})
         if not section:
             return set()
@@ -64,7 +69,8 @@ class TablePackageExtractor:
                 packages.add(package_name)
 
         return packages
-    
+
+
 class RepositoryParser:
     def __init__(self, repo_line):
         self.repo_line = repo_line
@@ -75,7 +81,6 @@ class RepositoryParser:
         self.repo_components = self.components[3:]  # ['main', 'contrib', 'non-free']
         
         self._parse_url()
-    
     def _parse_url(self):
         temp = self.url.split("/")
         self.name_repo = temp[-1].split("-")[0]

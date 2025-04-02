@@ -157,7 +157,8 @@ if test ! "$(groups | grep vboxusers)"; then
 fi
 
 
-
+sed -i 's/.*cgroup_controllers.*/cgroup_controllers = [ "cpu", "devices", "memory", "blkio", "cpuacct" ]/g' /etc/libvirt/qemu.conf
+sudo systemctl restart libvirtd
 
 
 

@@ -1,7 +1,7 @@
 import json
 import requests
 
-def fetch_repositry(version):
+def fetch_repository(version):
     try:
         res = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path")
     except requests.exceptions.RequestException as e:
@@ -9,4 +9,4 @@ def fetch_repositry(version):
     info_version_repo = json.loads(res.text)
     print(info_version_repo[version])
 
-fetch_repositry("1.8.2.6")
+fetch_repository("1.8.2.6")

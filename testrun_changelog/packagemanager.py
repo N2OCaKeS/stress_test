@@ -15,7 +15,6 @@ class PackageGroupManager:
             if pkg_info.name == package:
                 all_deps = []
                 for dep in pkg_info.depends:
-                    # Разделяем альтернативы (через "|")
                     alternatives = [alt.strip() for alt in dep.split('|')]
                     
                     # Фильтруем только существующие пакеты

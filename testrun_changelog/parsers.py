@@ -47,6 +47,7 @@ class PackageParser:
 class TablePackageExtractor:
     def __init__(self, changelog_url):
         self.changelog_url = changelog_url
+        # TODO Обернуть в исключения
         self.changelog_html = requests.get(changelog_url).text
         self.soup = BeautifulSoup(self.changelog_html, 'html.parser')
     

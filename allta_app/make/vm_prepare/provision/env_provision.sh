@@ -43,7 +43,6 @@ sudo apt-get install htop -y
 
 nat_net_name="Проводное соединение 1"
 vbox_bridge_mask=24
-vbox_gateway=10.0.0.1
 vbox_bridge_gateway=10.177.103.254
 
 

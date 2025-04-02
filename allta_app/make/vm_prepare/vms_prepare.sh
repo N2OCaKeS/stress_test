@@ -149,25 +149,14 @@ if test ! -e /usr/share/virtualbox/VBoxGuestAdditions.iso; then
   exit 1
 fi
 
-# check $USER groups, vboxusers required
-if test ! "$(groups | grep vboxusers)"; then
-  >&2 echo -e "\e[91mERROR (!) '$USER' is not a member of the 'vboxusers' group\e[0m"
-  echo -e "\e[91mPlease, reboot your system and restart this script again\e[0m"
-  exit 0
-fi
-
-
-sed -i 's/.*cgroup_controllers.*/cgroup_controllers = [ "cpu", "devices", "memory", "blkio", "cpuacct" ]/g' /etc/libvirt/qemu.conf
-sudo systemctl restart libvirtd
-
 
 
 #Start VM create
-VMS=virtual-station1 virtual-station2 virtual-station3 virtual-station4
+VMS="virtual-station1 virtual-station2 virtual-station3 virtual-station4"
 BOX_NAME=orel-vanilla-gui/1.7.5
 BOX_URL=ftp://10.177.103.10/boxes/box/1.7.5.o.box
-KERNEL=5.10.233-1-generic
-RC=1.7.7.6
+KERNEL=5.10.190-1-generic
+RC=1.7.5
 
 
 vagrant box add $BOX_NAME $BOX_URL --force

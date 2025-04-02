@@ -149,7 +149,7 @@ if test ! -e /usr/share/virtualbox/VBoxGuestAdditions.iso; then
   exit 1
 fi
 
-
+sleep 2
 
 #Start VM create
 VMS="virtual-station1 virtual-station2 virtual-station3 virtual-station4"
@@ -158,7 +158,7 @@ BOX_URL=ftp://10.177.103.10/boxes/box/1.7.5.o.box
 KERNEL=5.10.190-1-generic
 RC=1.7.5
 
-
+sleep 1
 vagrant box add $BOX_NAME $BOX_URL --force
 UPDATE=$BOX_NAME BOX_URL=$BOX_URL KERNEL=$KERNEL RC=$RC vagrant up --provider=virtualbox
 

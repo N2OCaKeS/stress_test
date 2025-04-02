@@ -46,24 +46,24 @@ vbox_bridge_mask=24
 vbox_bridge_gateway=10.177.103.254
 
 
-declare -A virtual-station1_br=( [ip]=10.177.103.101 [domain]=virtual-station1.allta.nt [host]=virtual-station1 [dns]="10.177.180.248, 10.177.128.198" )
-declare -A virtual-station2_br=( [ip]=10.177.103.102 [domain]=virtual-station2.allta.nt [host]=virtual-station2 [dns]="10.177.180.248, 10.177.128.198" )
-declare -A virtual-station3_br=( [ip]=10.177.103.103 [domain]=virtual-station3.allta.nt [host]=virtual-station3 [dns]="10.177.180.248, 10.177.128.198" )
-declare -A virtual-station4_br=( [ip]=10.177.103.104 [domain]=virtual-station4.allta.nt [host]=virtual-station4 [dns]="10.177.180.248, 10.177.128.198" )
+declare -A virtual_station1_br=( [ip]=10.177.103.101 [domain]=virtual-station1.allta.nt [host]=virtual-station1 [dns]="10.177.180.248, 10.177.128.198" )
+declare -A virtual_station2_br=( [ip]=10.177.103.102 [domain]=virtual-station2.allta.nt [host]=virtual-station2 [dns]="10.177.180.248, 10.177.128.198" )
+declare -A virtual_station3_br=( [ip]=10.177.103.103 [domain]=virtual-station3.allta.nt [host]=virtual-station3 [dns]="10.177.180.248, 10.177.128.198" )
+declare -A virtual_station4_br=( [ip]=10.177.103.104 [domain]=virtual-station4.allta.nt [host]=virtual-station4 [dns]="10.177.180.248, 10.177.128.198" )
 
 
 if [ "$1" = "virtual-station1" ]; then
-    ip_br=${virtual-station1_br[ip]}
-    dns_br="${virtual-station1_br[dns]}"
+    ip_br=${virtual_station1_br[ip]}
+    dns_br="${virtual_station1_br[dns]}"
 elif [ "$1" = "virtual-station2" ]; then
-    ip_br=${virtual-station2_br[ip]}
-    dns_br="${virtual-station2_br[dns]}"
+    ip_br=${virtual_station2_br[ip]}
+    dns_br="${virtual_station2_br[dns]}"
 elif [ "$1" = "virtual-station3" ]; then
-    ip_br=${virtual-station3_br[ip]}
-    dns_br="${virtual-station3_br[dns]}"
+    ip_br=${virtual_station3_br[ip]}
+    dns_br="${virtual_station3_br[dns]}"
 elif [ "$1" = "virtual-station4" ]; then
-    ip_br=${virtual-station4_br[ip]}
-    dns_br="${virtual-station4_br[dns]}"
+    ip_br=${virtual_station4_br[ip]}
+    dns_br="${virtual_station4_br[dns]}"
 fi
 
 

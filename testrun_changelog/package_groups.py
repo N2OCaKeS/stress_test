@@ -1,6 +1,6 @@
 GROUPS = {
     'Parsec': ['drbd'],
-    'UnixBench': ['linux-5.15'],
+    'UnixBench': ['linux-5.15', 'linux-6.1', 'linux-6.12'],
     'Docker/Podman/LXC': [],
     'Apache': ["apache2"],
     'FreeIPA': ["astra-freeipa-server", "astra-freeipa-client", "freeipa-client", "freeipa-server"],

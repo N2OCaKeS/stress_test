@@ -10,4 +10,10 @@ def fetch_repository(version):
     # print(info_version_repo)
     return info_version_repo[version]
 
-fetch_repository("1.8.2.6")
+def filter_repository(repos):
+    new_lst_repos = []
+    for repo in repos:
+        if "extended" in repo:
+            continue
+        new_lst_repos.append(repo)
+    return new_lst_repos

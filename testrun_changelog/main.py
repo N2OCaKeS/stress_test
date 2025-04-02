@@ -12,13 +12,20 @@ parser.add_argument('-fld', '--dependencies',
                     required=False,
                     help='first level dependencies',
                     dest='FLD')
+parser.add_argument('-vers', '--version',
+                    action='store',
+                    required=True,
+                    help='Astra Linux build version',
+                    dest='ALVERS')
 args = parser.parse_args()
 # 1 
-repo_line = "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.7/1.7.7.6/base-repository 1.7_x86-64 main contrib non-free"
-# repo_line18 = "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.2/1.8.2.6/installation 1.8_x86-64 main contrib non-free"
+# repo_line = "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.7/1.7.7.6/base-repository 1.7_x86-64 main contrib non-free"
+repo_line18 = "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.2/1.8.2.6/installation 1.8_x86-64 main contrib non-free"
+repo_line18_dev = "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.2/1.8.2.6/devel-repository 1.8_x86-64 main contrib non-free"
+
 
 # 2 Получили changelog
-rp = RepositoryParser(repo_line=repo_line)
+rp = RepositoryParser(repo_line=repo_line18)
 url_changelog, urls_packages = rp.get_all_urls()
 
 # 3

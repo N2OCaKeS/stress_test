@@ -2,17 +2,13 @@ version: '3.8'
 
 services:
   devpi:
-    build: .
+    build:
+      context: .
     ports:
       - "3141:3141"
     volumes:
       - devpi-data:/data
-    environment:
-      - DEVPI_USER=${DEVPI_USER}
-      - DEVPI_PASSWORD=${DEVPI_PASSWORD}
-      - DEVPI_ADMIN_PASSWORD=$(DEVPI_ADMIN_PASSWORD)
     restart: always
-
-
+    
 volumes:
   devpi-data:

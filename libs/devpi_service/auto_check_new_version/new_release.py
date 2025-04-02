@@ -48,8 +48,9 @@ def perform_actions(repo_path, commit_hash, commit_message):
     """
     print(f"Выполняем действия для коммита {commit_hash} с сообщением: '{commit_message}'")
     # Пример: cmd('python3 your_script.py', cwd=repo_path)
-    password = os.getenv('DEVPI_ADMIN_PASSWORD')
-    command = f'devpi use http://localhost:3141/root/astra && devpi login root --password {password} && devpi upload && rm -rf {repo_path}/libs/allta/allta.egg-info && rm -rf {repo_path}/libs/allta/dist'
+    password = os.getenv(''
+    '')
+    command = f'devpi use http://localhost:3141/root/release && devpi login root --password {password} && devpi upload && rm -rf {repo_path}/libs/allta/allta.egg-info && rm -rf {repo_path}/libs/allta/dist'
     cmd(command, cwd = f'{repo_path}/libs/allta')
 
 

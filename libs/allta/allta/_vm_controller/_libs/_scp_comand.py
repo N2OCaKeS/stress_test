@@ -1,4 +1,4 @@
-from ._system_commands import _System_Commands
+from ..._system_command.SystemCommands import SystemCommands
 import threading
 from .._decotator._ansible_log import ansible_logger
 
@@ -37,7 +37,7 @@ class _SCP_Command:
     @staticmethod
     @ansible_logger
     def _execute_scp(mode: str, host: str, path_host: str, path_vm: str,
-                     vms_date: dict, task_name: str, username: str = 'u', password: str = '1', **kwargs) -> dict:
+                     vms_date: dict, task_name: str = 'SCP', username: str = 'u', password: str = '1', **kwargs) -> dict:
         """
         Выполняет SCP-команду для копирования файлов.
 
@@ -75,11 +75,11 @@ class _SCP_Command:
                 raise ValueError(f"Не указан ip для хоста: {host}")
 
             if mode == 'push':
-                command = f"sshpass -p {password} scp -P {port} -o StrictHostKeyChecking=no {path_host} {username}@{ip}:{path_vm}"
+                command = f"sudo sshpass -p {password} scp -P {port} -o StrictHostKeyChecking=no {path_host} {username}@{ip}:{path_vm}"
             else:  # mode == 'pull'
-                command = f"sshpass -p {password} scp -P {port} -o StrictHostKeyChecking=no {username}@{ip}:{path_vm} {path_host}"
+                command = f"sudo sshpass -p {password} scp -P {port} -o StrictHostKeyChecking=no {username}@{ip}:{path_vm} {path_host}"
 
-            output = _System_Commands.check_output_command(command)
+            output = SystemCommands.check_output_command(command)
             return {
                 "output": output,
                 "status": "OK",

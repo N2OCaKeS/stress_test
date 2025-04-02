@@ -40,3 +40,39 @@ DEVPI_ADMIN_PASSWORD=password
 
 ```bash
 sudo su - root -c "bash install_service.sh"
+```
+## Использование
+
+### Пример создания нового пользователя
+
+Для создания нового пользователя в DevPI выполните следующие команды:
+
+1. Создание пользователя:
+   ```bash
+   devpi user -c myuser password=mysecretpassword
+   ```
+2. Создание репозитория пакетов:
+   ```bash
+   devpi index -c myuser/dev bases=root/pypi volatile=False
+   ```
+
+### Пример загрузки нового пакета
+
+Чтобы загрузить новый пакет на сервер, выполните следующие шаги:
+
+1. Установите клиент DevPI, если он ещё не установлен:
+   ```bash
+   pip install devpi-client
+   ```
+2. Настройте подключение к серверу, в качестве URL укажите полный путь до вашего репозитория:
+   ```bash
+   devpi use http://localhost:3141/myuser/dev
+   ```
+3. Авторизуйтесь под своим пользователем:
+   ```bash
+   devpi login myuser --password=mysecretpassword
+   ```
+4. Соберите пакет (предполагается, что в каталоге проекта присутствует файл `setup.py`):
+   ```bash
+   devpi upload
+   ```

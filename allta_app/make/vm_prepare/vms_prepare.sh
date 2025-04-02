@@ -162,8 +162,8 @@ sleep 1
 echo vagrant box add $BOX_NAME $BOX_URL --force
 echo UPDATE=$BOX_NAME BOX_URL=$BOX_URL KERNEL=$KERNEL RC=$RC vagrant up --provider=virtualbox
 
-vagrant box add orel-vanilla-gui/1.7.5 ftp://10.177.103.10/boxes/box/1.7.5.o.box --force
-UPDATE=orel-vanilla-gui/1.7.5 BOX_URL=ftp://10.177.103.10/boxes/box/1.7.5.o.box KERNEL=5.10.190-1-generic RC=1.7.5 vagrant up --provider=virtualbox
+sudo vagrant box add orel-vanilla-gui/1.7.5 ftp://10.177.103.10/boxes/box/1.7.5.o.box --force
+sudo UPDATE=orel-vanilla-gui/1.7.5 BOX_URL=ftp://10.177.103.10/boxes/box/1.7.5.o.box KERNEL=5.10.190-1-generic RC=1.7.5 vagrant up --provider=virtualbox
 sleep 1
 
 BRIDGE_IFACE=`vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1`

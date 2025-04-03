@@ -20,9 +20,10 @@ stands_ip = {
     'stand3':'10.177.103.204',
     'stand4':'10.177.103.203',
     'stand5':'10.177.103.205',
-    #'stand10':'10.177.102.249', #KD
-    #'stand11':'10.177.102.200', #фронт бреста
-    #'stand12':'10.177.102.233'  #сервер для нагрузки
+    'stand6':'10.177.103.101',
+    'stand7':'10.177.103.102',
+    'stand8':'10.177.103.103',
+    'stand9':'10.177.103.104'
 }
 
 
@@ -50,7 +51,7 @@ modes = {
 #Симлинки на страницы с местами хранения результатов
 #################################################################################################################################################
 def parent_page_list():
-    tests_list = {'PostgreSQL':      ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
+    tests_list = {'PostgreSQL':    ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
                                     'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
                 'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
                 'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
@@ -253,7 +254,7 @@ def kernels():
 #################################################################################################################################################
 #Перечень стендов, отображаемых на разных страницах
 #################################################################################################################################################
-main_stands = ['stand1', 'stand2', 'stand3', 'stand4', 'stand5']
+main_stands = ['stand1', 'stand2', 'stand3', 'stand4', 'stand5', 'stand6', 'stand7', 'stand8', 'stand9']
 mobile_stands = ['stand1', 'stand2', 'stand3', 'stand4', 'stand5']
 brest_stands = ['stand10', 'stand11', 'stand12']
 

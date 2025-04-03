@@ -213,7 +213,7 @@ def check_running_system(stand):
   
 @app.route('/reboot/<stand>', methods=['POST'])
 def reboot(stand):
-    if stand == "stand1" or stand == "stand2":
+    if stand == "stand1" or stand == "stand2" or stand == "stand6" or stand == "stand7" or stand == "stand8" or stand == "stand9":
         ssh_command('sudo reboot', 
                     stand_ip=stands_ip[stand])
     elif stand == "stand3" or stand == "stand4" or stand == "stand5":

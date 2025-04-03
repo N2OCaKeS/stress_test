@@ -88,3 +88,13 @@ sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT
 
 
+
+
+# auto eth0
+# iface eth0 inet static
+#         address 10.177.103.101
+#         netmask 255.255.255.0
+#         gateway 10.177.103.254
+#         dns-nameserver 10.177.128.198
+
+# dns-nameservers 10.177.128.198

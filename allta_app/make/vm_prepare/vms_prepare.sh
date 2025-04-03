@@ -183,3 +183,13 @@ vboxmanage list hostonlyifs
 vboxmanage list bridgedifs
 vboxmanage list vms
 
+
+
+
+#for vm in $VMS; do
+#  sudo vboxmanage controlvm $vm poweroff
+#  sudo VBoxManage snapshot $vm restore snapshot_with_git_1
+#  sudo vboxmanage startvm $vm --type headless
+#done
+
+

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Путь к файлу с переменными
-ENV_FILE=".env"
+ENV_FILE="/home/u/devpi-service/.env"
 
 # Значения по умолчанию
 DEFAULT_ROOT_PASS="root"
@@ -9,7 +9,7 @@ DEFAULT_TEST_USER="user"
 DEFAULT_TEST_PASS="user"
 
 SERVICE_NAME="devpi.service"
-PROJECT_PATH="var/lib/devpi" # TODO изменить
+PROJECT_PATH="/home/u/devpi-service" # TODO изменить
 
 if [ -f "$ENV_FILE" ]; then
     echo "Загрузка переменных из $ENV_FILE..."

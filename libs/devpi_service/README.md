@@ -28,8 +28,8 @@
 Пример `.env` файла
 ```.env
 DEVPI_USER=user
-DEVPI_PASSWORD=password
-DEVPI_ADMIN_PASSWORD=password
+DEVPI_PASSWORD=team13
+DEVPI_ADMIN_PASSWORD=team13
 ```
 
 ## Порты

@@ -1173,6 +1173,1438 @@
         }
     </style>
     
+    <!-- VM block -->
+
+    <div class="col accordion">
+      <div class="accordion" id="globalaccordion">
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand6" aria-expanded="false" aria-controls="collapseStandSix" style="width: 100%;">
+            <table class="accordion-table">
+              <tr>
+                <td class="col1">
+                  VM TestStation
+                </td>
+                <td class="col2">
+                  stand6-101
+                </td>
+                <td class="col3">
+                  {{ col3_body_stand6 }}
+                </td>
+                <td class="col4">
+                  {{ chmod_author_stand6 }}
+                </td>
+                <td class="col5">
+                  <td><img id="status-image-stand6-global" src="" alt='Status image' width='100' height='30'></td>
+                </td>
+                <td class="col6">
+                  <img src="{{ status_gif_global_stand6 }}" alt="stat_pic" width="32" height="32">
+                </td>
+              </tr>
+            </table>
+          </button>
+        </h2>
+        <div id="collapsestand6" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+          <div class="accordion-body-global" style="text-align: left;">
+      <div class="col-4 stands">
+        <div class="card text-bg-dark mb-3" >
+          <div class="card-header">Hardware overview (stand6-101)
+            <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal6">
+              <i class="fas fa-info"></i>
+          </button>
+          </div>
+          <div class="card-body">
+      
+            <div class="modal fade" id="standModal6" tabindex="-1" aria-labelledby="standModalLabel" aria-hidden="true">
+              <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="standModalLabel">Параметры стенда</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body text-start">
+                    <b>CPU:</b> 16</br>
+                    <b>RAM:</b> 128Gb</br>
+                    <b>STORAGE:</b></br> 
+                    1. 70Gb - системный
+                  </div>
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          
+        
+      
+            
+  
+            <style>
+              .btn {
+                  margin-right: 5px;                 
+                  color: white; 
+              }
+              .btn:hover {
+                  background-color: #ff7b00; 
+              }             
+              .btn:active {
+                  background-color: #3e8e41;
+              }
+          </style>
+            <div class="btn-group" role="group">
+              <button class="commandButton6 btn btn-dark" data-command="/reboot/stand6">Reboot</button>
+              <button class="commandButton6 btn btn-dark" data-command="/poweroff/stand6">Power off</button>
+              <div class="dropdown d-inline-block">
+                <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+                <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                  {% for version in stand6_snap %}
+                    <li>
+                      <a class="dropdown-item" href="#" onclick="backup_snapshot_stand6('{{version}}'); return false;">{{version}}</a>
+                    </li>
+                  {% endfor %}
+                </ul>
+              </div>
+              <div class="dropdown d-inline-block">
+                <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+                <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton6" id="userList6">
+                  {% if chmod_author_stand6 == '' %}
+                    <li>
+                      <a class="dropdown-item" href="#" onclick="toggleStatus(6, 'dtimonin'); return false;">dtimonin</a>
+                      <a class="dropdown-item" href="#" onclick="toggleStatus(6, 'ivelikanov'); return false;">ivelikanov</a>
+                      <a class="dropdown-item" href="#" onclick="toggleStatus(6, 'mfilippenko'); return false;">mfilippenko</a>
+                      <a class="dropdown-item" href="#" onclick="toggleStatus(6, 'amedvedev'); return false;">amedvedev</a>
+                    </li>
+                  {% else %}
+                    <li>
+                      <a class="dropdown-item" href="#" onclick="toggleStatus(6, 'stop'); return false;">Остановить</a>
+                    </li>
+                  {% endif %}
+                </ul>
+              </div>
+              <div class="dropdown d-inline-block">
+                <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb6" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+                <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                  <li>
+                    <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.101/allta" target="_blank">ALLTA</a>
+                    <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.101/full" target="_blank">Full</a>
+                  </li>
+                </ul>
+              </div>
+            </div>
+              
+             
+  
+  
+            <script>
+              function powerCommand_stand6(command) {
+                  document.getElementById('loading-spinner').style.display = 'block';
+              
+                  fetch(command, {
+                      method: 'POST'
+                  })
+                  .then(response => response.text())
+                  .then(data => {
+                      document.getElementById('loading-spinner').style.display = 'none';
+                      console.log('Action done:', data);
+                  })
+                  .catch((error) => {
+                      document.getElementById('loading-spinner').style.display = 'none';
+                      console.error('Error:', error);
+                  });
+              }
+              
+              document.querySelectorAll('.commandButton6').forEach(function(button) {
+                  button.addEventListener('click', function(event) {
+                      event.preventDefault();
+                      powerCommand_stand6(event.target.dataset.command);
+                  });
+              });
+            </script>
+  
+            <script>
+              function backup_snapshot_stand6(version) {
+                  document.getElementById('loading-spinner').style.display = 'block';
+            
+                  fetch('/backup/stand6/' + version, {
+                      method: 'GET'
+                  })
+                  .then(response => response.text())
+                  .then(data => {
+                      document.getElementById('loading-spinner').style.display = 'none';
+                      console.log('Backup completed:', data);
+                  })
+                  .catch((error) => {
+                      document.getElementById('loading-spinner').style.display = 'none';
+                      console.error('Error:', error);
+                  });
+              }
+            </script>
+  
+            
+            <table class="table table-dark table-striped-columns">
+              <thead>
+                  <tr>               
+                      <th scope="col">Power status</th>               
+                  </tr>
+              </thead>
+              <tbody>
+                  <tr>                
+                      <td><img id="status-image-stand6" src="" alt='Status image' width='100' height='30'></td>
+                  </tr>             
+              </tbody>
+          </table>
+          
+          <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+          <script>
+            function updatePowerStatus6() {
+              $.ajax({
+                url: '/update_power_status/stand6',
+                type: 'get',
+                dataType: 'json',
+                success: function(response) {
+                  var statusImageStand6 = document.getElementById("status-image-stand6");
+                  var statusImageStand6Global = document.getElementById("status-image-stand6-global");
+                  
+                  if (response.is_running) {
+                    statusImageStand6.src = "http://10.177.103.10:8000/static/status_on.png";
+                    statusImageStand6Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                  } else {
+                    statusImageStand6.src = "http://10.177.103.10:8000/static/status_off.png";
+                    statusImageStand6Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                  }
+                }
+              });
+            }
+            
+            $(document).ready(function() {
+              updatePowerStatus6(); 
+              setInterval(updatePowerStatus6, 5000);
+            });
+          </script>
+            <!-- <br></br> -->
+       
+            <table class="table table-dark table-striped-columns">
+              <thead>
+                  <tr>
+                      <th scope="col">CPU/Mem/IO info</th>
+                  </tr>
+              </thead>
+              <tbody>
+                  <tr>
+                      <td>CPU load</td>
+                      <td></td>
+                      <td id="load_cpu_stand6">{{ load_cpu_stand6 }}</td>
+                  </tr>
+                  <tr>
+                    <td>CPU user mode</td>
+                    <td></td>
+                    <td id="load_cpu_user_stand6">{{ load_cpu_user_stand6 }}</td>
+                 </tr>
+                   <tr>
+                   <td>CPU system mode</td>
+                   <td></td>
+                    <td id="load_cpu_system_stand6">{{ load_cpu_system_stand6 }}</td>
+                  </tr>
+                  <tr>
+                    <td>CPU temp</td>
+                    <td></td>
+                     <td id="temp_cpu_stand6">{{ temp_cpu_stand6 }}</td>
+                   </tr>
+                  <tr>
+                      <td>RAM load</td>
+                      <td></td>
+                      <td id="load_ram_stand6">{{ load_ram_stand6 }}</td>
+                  </tr>
+                  <tr>
+                    <td>NVME load</td>
+                    <td></td>
+                    <td id="load_nvme_stand6">{{ load_nvme_stand6 }}</td>
+                </tr>
+                <tr>
+                  <td>SDA load</td>
+                  <td></td>
+                  <td id="load_sda_stand6">{{ load_sda_stand6 }}</td>
+              </tr>
+              </tbody>
+          </table>
+          <br></br>
+          <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+          <script>
+            function loadInfo6() {
+                $.ajax({
+                    url: "/api/load_info/stand6", 
+                    success: function(result) {
+                        $("#load_cpu_stand6").html(result.load_cpu_stand6);
+                        $("#load_cpu_user_stand6").html(result.load_cpu_user_stand6);
+                        $("#load_cpu_system_stand6").html(result.load_cpu_system_stand6);
+                        $("#temp_cpu_stand6").html(result.temp_cpu_stand6);
+                        $("#load_ram_stand6").html(result.load_ram_stand6);
+                        $("#load_nvme_stand6").html(result.load_nvme_stand6);
+                        $("#load_sda_stand6").html(result.load_sda_stand6);
+                    }
+                });
+            }
+            $(document).ready(function(){
+                loadInfo6(); 
+                setInterval(loadInfo6, 3000); 
+            });
+        </script> 
+            
+            <div class="accordion" id="accordionstand6">
+              <div class="accordion-item">
+                <h2 class="accordion-header">
+                  <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne6" aria-expanded="true" aria-controls="collapseOne">
+                    Статус
+                  </button>
+                </h2>
+                <div id="collapseOne6" class="accordion-collapse collapse show" data-bs-parent="#accordionstand6">
+                  <div class="accordion-body" style="text-align: left;">
+                    <strong>Статус: {{ status_stand6 }}</strong> <br>
+                    <img src={{ status_gif_stand6 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
+                    <br>
+                    <!-- <br>
+                    <br> -->
+                    <br>
+                    <style>
+                      .line-break {
+                          white-space: pre-line;
+                      }
+                    </style>
+                    <div class="line-break">
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="accordion-item">
+                <h2 class="accordion-header">
+                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo6" aria-expanded="false" aria-controls="collapseTwo">
+                    Прогресс
+                  </button>
+                </h2>
+                <div id="collapseTwo6" class="accordion-collapse collapse" data-bs-parent="#accordionstand6">
+                  <div class="accordion-body">
+                    <style>
+                      .line-break {
+                          white-space: pre-line;
+                          text-align: left;
+                      }
+                    </style>
+                    <div class="line-break">
+                      {{ progress_stand6 }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="accordion-item">
+                <h2 class="accordion-header">
+                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree6" aria-expanded="false" aria-controls="collapseThree">
+                    Лог
+                  </button>
+                </h2>
+                <div id="collapseThree6" class="accordion-collapse collapse" data-bs-parent="#accordionstand6">
+                  <div class="accordion-body">
+                    {{ stand6_log }}
+                  </div>
+                </div>
+              </div>
+  
+              <br></br>
+  
+  
+              <form method="POST" action="/run-command-stand6">             
+                <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
+                    <button id="start-btn6" class="btn btn-start" name="command6" type="submit" value="start">Запустить</button>
+                    <button id="stop-btn6" class="btn btn-stop" name="command6" type="submit" value="stop">Остановить</button>
+                    <!-- <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button> -->
+                </div>
+                <button id="ok-btn6" class="btn btn-ok" style="display: none;" name="command6" type="submit" value="ok">Ок</button>
+              </form>
+  
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+
+
+
+
+  <div class="col accordion">
+    <div class="accordion" id="globalaccordion">
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand7" aria-expanded="false" aria-controls="collapseStandSeven" style="width: 100%;">
+          <table class="accordion-table">
+            <tr>
+              <td class="col1">
+                VM TestStation
+              </td>
+              <td class="col2">
+                stand7-102
+              </td>
+              <td class="col3">
+                {{ col3_body_stand7 }}
+              </td>
+              <td class="col4">
+                {{ chmod_author_stand7 }}
+              </td>
+              <td class="col5">
+                <td><img id="status-image-stand7-global" src="" alt='Status image' width='100' height='30'></td>
+              </td>
+              <td class="col6">
+                <img src="{{ status_gif_global_stand7 }}" alt="stat_pic" width="32" height="32">
+              </td>
+            </tr>
+          </table>
+        </button>
+      </h2>
+      <div id="collapsestand7" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+        <div class="accordion-body-global" style="text-align: left;">
+    <div class="col-4 stands">
+      <div class="card text-bg-dark mb-3" >
+        <div class="card-header">Hardware overview (stand7-102)
+          <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal7">
+            <i class="fas fa-info"></i>
+        </button>
+        </div>
+        <div class="card-body">
+    
+          <div class="modal fade" id="standModal7" tabindex="-1" aria-labelledby="standModalLabel" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="standModalLabel">Параметры стенда</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-start">
+                  <b>CPU:</b> 16</br>
+                  <b>RAM:</b> 128Gb</br>
+                  <b>STORAGE:</b></br> 
+                  1. 70Gb - системный
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        
+      
+    
+          
+
+          <style>
+            .btn {
+                margin-right: 5px;                 
+                color: white; 
+            }
+            .btn:hover {
+                background-color: #ff7b00; 
+            }             
+            .btn:active {
+                background-color: #3e8e41;
+            }
+        </style>
+          <div class="btn-group" role="group">
+            <button class="commandButton7 btn btn-dark" data-command="/reboot/stand7">Reboot</button>
+            <button class="commandButton7 btn btn-dark" data-command="/poweroff/stand7">Power off</button>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                {% for version in stand7_snap %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="backup_snapshot_stand7('{{version}}'); return false;">{{version}}</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton7" id="userList7">
+                {% if chmod_author_stand7 == '' %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(7, 'dtimonin'); return false;">dtimonin</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(7, 'ivelikanov'); return false;">ivelikanov</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(7, 'mfilippenko'); return false;">mfilippenko</a>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(7, 'amedvedev'); return false;">amedvedev</a>
+                  </li>
+                {% else %}
+                  <li>
+                    <a class="dropdown-item" href="#" onclick="toggleStatus(7, 'stop'); return false;">Остановить</a>
+                  </li>
+                {% endif %}
+              </ul>
+            </div>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb7" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+              <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                <li>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.102/allta" target="_blank">ALLTA</a>
+                  <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.102/full" target="_blank">Full</a>
+                </li>
+              </ul>
+            </div>
+          </div>
+            
+           
+
+
+          <script>
+            function powerCommand_stand7(command) {
+                document.getElementById('loading-spinner').style.display = 'block';
+            
+                fetch(command, {
+                    method: 'POST'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Action done:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+            
+            document.querySelectorAll('.commandButton7').forEach(function(button) {
+                button.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    powerCommand_stand7(event.target.dataset.command);
+                });
+            });
+          </script>
+
+          <script>
+            function backup_snapshot_stand7(version) {
+                document.getElementById('loading-spinner').style.display = 'block';
+          
+                fetch('/backup/stand7/' + version, {
+                    method: 'GET'
+                })
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.log('Backup completed:', data);
+                })
+                .catch((error) => {
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    console.error('Error:', error);
+                });
+            }
+          </script>
+
+          
+          <table class="table table-dark table-striped-columns">
+            <thead>
+                <tr>               
+                    <th scope="col">Power status</th>               
+                </tr>
+            </thead>
+            <tbody>
+                <tr>                
+                    <td><img id="status-image-stand7" src="" alt='Status image' width='100' height='30'></td>
+                </tr>             
+            </tbody>
+        </table>
+        
+        <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+        <script>
+          function updatePowerStatus7() {
+            $.ajax({
+              url: '/update_power_status/stand7',
+              type: 'get',
+              dataType: 'json',
+              success: function(response) {
+                var statusImageStand7 = document.getElementById("status-image-stand7");
+                var statusImageStand7Global = document.getElementById("status-image-stand7-global");
+                
+                if (response.is_running) {
+                  statusImageStand7.src = "http://10.177.103.10:8000/static/status_on.png";
+                  statusImageStand7Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                } else {
+                  statusImageStand7.src = "http://10.177.103.10:8000/static/status_off.png";
+                  statusImageStand7Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                }
+              }
+            });
+          }
+          
+          $(document).ready(function() {
+            updatePowerStatus7(); 
+            setInterval(updatePowerStatus7, 5000);
+          });
+        </script>
+          <!-- <br></br> -->
+     
+          <table class="table table-dark table-striped-columns">
+            <thead>
+                <tr>
+                    <th scope="col">CPU/Mem/IO info</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPU load</td>
+                    <td></td>
+                    <td id="load_cpu_stand7">{{ load_cpu_stand7 }}</td>
+                </tr>
+                <tr>
+                  <td>CPU user mode</td>
+                  <td></td>
+                  <td id="load_cpu_user_stand7">{{ load_cpu_user_stand7 }}</td>
+               </tr>
+                 <tr>
+                 <td>CPU system mode</td>
+                 <td></td>
+                  <td id="load_cpu_system_stand7">{{ load_cpu_system_stand7 }}</td>
+                </tr>
+                <tr>
+                  <td>CPU temp</td>
+                  <td></td>
+                   <td id="temp_cpu_stand7">{{ temp_cpu_stand7 }}</td>
+                 </tr>
+                <tr>
+                    <td>RAM load</td>
+                    <td></td>
+                    <td id="load_ram_stand7">{{ load_ram_stand7 }}</td>
+                </tr>
+                <tr>
+                  <td>NVME load</td>
+                  <td></td>
+                  <td id="load_nvme_stand7">{{ load_nvme_stand7 }}</td>
+              </tr>
+              <tr>
+                <td>SDA load</td>
+                <td></td>
+                <td id="load_sda_stand7">{{ load_sda_stand7 }}</td>
+            </tr>
+            </tbody>
+        </table>
+        <br></br>
+        <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+        <script>
+          function loadInfo7() {
+              $.ajax({
+                  url: "/api/load_info/stand7", 
+                  success: function(result) {
+                      $("#load_cpu_stand7").html(result.load_cpu_stand7);
+                      $("#load_cpu_user_stand7").html(result.load_cpu_user_stand7);
+                      $("#load_cpu_system_stand7").html(result.load_cpu_system_stand7);
+                      $("#temp_cpu_stand7").html(result.temp_cpu_stand7);
+                      $("#load_ram_stand7").html(result.load_ram_stand7);
+                      $("#load_nvme_stand7").html(result.load_nvme_stand7);
+                      $("#load_sda_stand7").html(result.load_sda_stand7);
+                  }
+              });
+          }
+          $(document).ready(function(){
+              loadInfo7(); 
+              setInterval(loadInfo7, 3000); 
+          });
+      </script> 
+          
+          <div class="accordion" id="accordionstand7">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne7" aria-expanded="true" aria-controls="collapseOne">
+                  Статус
+                </button>
+              </h2>
+              <div id="collapseOne7" class="accordion-collapse collapse show" data-bs-parent="#accordionstand7">
+                <div class="accordion-body" style="text-align: left;">
+                  <strong>Статус: {{ status_stand7 }}</strong> <br>
+                  <img src={{ status_gif_stand7 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
+                  <br>
+                  <!-- <br>
+                  <br> -->
+                  <br>
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                    }
+                  </style>
+                  <div class="line-break">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo7" aria-expanded="false" aria-controls="collapseTwo">
+                  Прогресс
+                </button>
+              </h2>
+              <div id="collapseTwo7" class="accordion-collapse collapse" data-bs-parent="#accordionstand7">
+                <div class="accordion-body">
+                  <style>
+                    .line-break {
+                        white-space: pre-line;
+                        text-align: left;
+                    }
+                  </style>
+                  <div class="line-break">
+                    {{ progress_stand7 }}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree7" aria-expanded="false" aria-controls="collapseThree">
+                  Лог
+                </button>
+              </h2>
+              <div id="collapseThree7" class="accordion-collapse collapse" data-bs-parent="#accordionstand7">
+                <div class="accordion-body">
+                  {{ stand7_log }}
+                </div>
+              </div>
+            </div>
+
+            <br></br>
+
+
+            <form method="POST" action="/run-command-stand7">             
+              <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
+                  <button id="start-btn7" class="btn btn-start" name="command7" type="submit" value="start">Запустить</button>
+                  <button id="stop-btn7" class="btn btn-stop" name="command7" type="submit" value="stop">Остановить</button>
+                  <!-- <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button> -->
+              </div>
+              <button id="ok-btn7" class="btn btn-ok" style="display: none;" name="command7" type="submit" value="ok">Ок</button>
+            </form>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+
+
+
+<div class="col accordion">
+  <div class="accordion" id="globalaccordion">
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand8" aria-expanded="false" aria-controls="collapseStandEight" style="width: 100%;">
+        <table class="accordion-table">
+          <tr>
+            <td class="col1">
+              VM TestStation
+            </td>
+            <td class="col2">
+              stand8-103
+            </td>
+            <td class="col3">
+              {{ col3_body_stand8 }}
+            </td>
+            <td class="col4">
+              {{ chmod_author_stand8 }}
+            </td>
+            <td class="col5">
+              <td><img id="status-image-stand8-global" src="" alt='Status image' width='100' height='30'></td>
+            </td>
+            <td class="col6">
+              <img src="{{ status_gif_global_stand8 }}" alt="stat_pic" width="32" height="32">
+            </td>
+          </tr>
+        </table>
+      </button>
+    </h2>
+    <div id="collapsestand8" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+      <div class="accordion-body-global" style="text-align: left;">
+  <div class="col-4 stands">
+    <div class="card text-bg-dark mb-3" >
+      <div class="card-header">Hardware overview (stand8-103)
+        <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal8">
+          <i class="fas fa-info"></i>
+      </button>
+      </div>
+      <div class="card-body">
+  
+        <div class="modal fade" id="standModal8" tabindex="-1" aria-labelledby="standModalLabel" aria-hidden="true">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="standModalLabel">Параметры стенда</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body text-start">
+                <b>CPU:</b> 16</br>
+                <b>RAM:</b> 128Gb</br>
+                <b>STORAGE:</b></br> 
+                1. 70Gb - системный
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      
+    
+  
+        
+
+        <style>
+          .btn {
+              margin-right: 5px;                 
+              color: white; 
+          }
+          .btn:hover {
+              background-color: #ff7b00; 
+          }             
+          .btn:active {
+              background-color: #3e8e41;
+          }
+      </style>
+        <div class="btn-group" role="group">
+          <button class="commandButton8 btn btn-dark" data-command="/reboot/stand8">Reboot</button>
+          <button class="commandButton8 btn btn-dark" data-command="/poweroff/stand8">Power off</button>
+          <div class="dropdown d-inline-block">
+            <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+              {% for version in stand8_snap %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="backup_snapshot_stand8('{{version}}'); return false;">{{version}}</a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="dropdown d-inline-block">
+            <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton8" id="userList8">
+              {% if chmod_author_stand8 == '' %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(8, 'dtimonin'); return false;">dtimonin</a>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(8, 'ivelikanov'); return false;">ivelikanov</a>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(8, 'mfilippenko'); return false;">mfilippenko</a>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(8, 'amedvedev'); return false;">amedvedev</a>
+                </li>
+              {% else %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(8, 'stop'); return false;">Остановить</a>
+                </li>
+              {% endif %}
+            </ul>
+          </div>
+          <div class="dropdown d-inline-block">
+            <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb8" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+              <li>
+                <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.103/allta" target="_blank">ALLTA</a>
+                <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.103/full" target="_blank">Full</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+          
+         
+
+
+        <script>
+          function powerCommand_stand8(command) {
+              document.getElementById('loading-spinner').style.display = 'block';
+          
+              fetch(command, {
+                  method: 'POST'
+              })
+              .then(response => response.text())
+              .then(data => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.log('Action done:', data);
+              })
+              .catch((error) => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.error('Error:', error);
+              });
+          }
+          
+          document.querySelectorAll('.commandButton8').forEach(function(button) {
+              button.addEventListener('click', function(event) {
+                  event.preventDefault();
+                  powerCommand_stand8(event.target.dataset.command);
+              });
+          });
+        </script>
+
+        <script>
+          function backup_snapshot_stand8(version) {
+              document.getElementById('loading-spinner').style.display = 'block';
+        
+              fetch('/backup/stand8/' + version, {
+                  method: 'GET'
+              })
+              .then(response => response.text())
+              .then(data => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.log('Backup completed:', data);
+              })
+              .catch((error) => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.error('Error:', error);
+              });
+          }
+        </script>
+
+        
+        <table class="table table-dark table-striped-columns">
+          <thead>
+              <tr>               
+                  <th scope="col">Power status</th>               
+              </tr>
+          </thead>
+          <tbody>
+              <tr>                
+                  <td><img id="status-image-stand8" src="" alt='Status image' width='100' height='30'></td>
+              </tr>             
+          </tbody>
+      </table>
+      
+      <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+      <script>
+        function updatePowerStatus8() {
+          $.ajax({
+            url: '/update_power_status/stand8',
+            type: 'get',
+            dataType: 'json',
+            success: function(response) {
+              var statusImageStand8 = document.getElementById("status-image-stand8");
+              var statusImageStand8Global = document.getElementById("status-image-stand8-global");
+              
+              if (response.is_running) {
+                statusImageStand8.src = "http://10.177.103.10:8000/static/status_on.png";
+                statusImageStand8Global.src = "http://10.177.103.10:8000/static/status_on.png";
+              } else {
+                statusImageStand8.src = "http://10.177.103.10:8000/static/status_off.png";
+                statusImageStand8Global.src = "http://10.177.103.10:8000/static/status_off.png";
+              }
+            }
+          });
+        }
+        
+        $(document).ready(function() {
+          updatePowerStatus8(); 
+          setInterval(updatePowerStatus8, 5000);
+        });
+      </script>
+        <!-- <br></br> -->
+   
+        <table class="table table-dark table-striped-columns">
+          <thead>
+              <tr>
+                  <th scope="col">CPU/Mem/IO info</th>
+              </tr>
+          </thead>
+          <tbody>
+              <tr>
+                  <td>CPU load</td>
+                  <td></td>
+                  <td id="load_cpu_stand8">{{ load_cpu_stand8 }}</td>
+              </tr>
+              <tr>
+                <td>CPU user mode</td>
+                <td></td>
+                <td id="load_cpu_user_stand8">{{ load_cpu_user_stand8 }}</td>
+             </tr>
+               <tr>
+               <td>CPU system mode</td>
+               <td></td>
+                <td id="load_cpu_system_stand8">{{ load_cpu_system_stand8 }}</td>
+              </tr>
+              <tr>
+                <td>CPU temp</td>
+                <td></td>
+                 <td id="temp_cpu_stand8">{{ temp_cpu_stand8 }}</td>
+               </tr>
+              <tr>
+                  <td>RAM load</td>
+                  <td></td>
+                  <td id="load_ram_stand8">{{ load_ram_stand8 }}</td>
+              </tr>
+              <tr>
+                <td>NVME load</td>
+                <td></td>
+                <td id="load_nvme_stand8">{{ load_nvme_stand8 }}</td>
+            </tr>
+            <tr>
+              <td>SDA load</td>
+              <td></td>
+              <td id="load_sda_stand8">{{ load_sda_stand8 }}</td>
+          </tr>
+          </tbody>
+      </table>
+      <br></br>
+      <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+      <script>
+        function loadInfo8() {
+            $.ajax({
+                url: "/api/load_info/stand8", 
+                success: function(result) {
+                    $("#load_cpu_stand8").html(result.load_cpu_stand8);
+                    $("#load_cpu_user_stand8").html(result.load_cpu_user_stand8);
+                    $("#load_cpu_system_stand8").html(result.load_cpu_system_stand8);
+                    $("#temp_cpu_stand8").html(result.temp_cpu_stand8);
+                    $("#load_ram_stand8").html(result.load_ram_stand8);
+                    $("#load_nvme_stand8").html(result.load_nvme_stand8);
+                    $("#load_sda_stand8").html(result.load_sda_stand8);
+                }
+            });
+        }
+        $(document).ready(function(){
+            loadInfo8(); 
+            setInterval(loadInfo8, 3000); 
+        });
+    </script> 
+        
+        <div class="accordion" id="accordionstand8">
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne8" aria-expanded="true" aria-controls="collapseOne">
+                Статус
+              </button>
+            </h2>
+            <div id="collapseOne8" class="accordion-collapse collapse show" data-bs-parent="#accordionstand8">
+              <div class="accordion-body" style="text-align: left;">
+                <strong>Статус: {{ status_stand8 }}</strong> <br>
+                <img src={{ status_gif_stand8 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
+                <br>
+                <!-- <br>
+                <br> -->
+                <br>
+                <style>
+                  .line-break {
+                      white-space: pre-line;
+                  }
+                </style>
+                <div class="line-break">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo8" aria-expanded="false" aria-controls="collapseTwo">
+                Прогресс
+              </button>
+            </h2>
+            <div id="collapseTwo8" class="accordion-collapse collapse" data-bs-parent="#accordionstand8">
+              <div class="accordion-body">
+                <style>
+                  .line-break {
+                      white-space: pre-line;
+                      text-align: left;
+                  }
+                </style>
+                <div class="line-break">
+                  {{ progress_stand8 }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree8" aria-expanded="false" aria-controls="collapseThree">
+                Лог
+              </button>
+            </h2>
+            <div id="collapseThree8" class="accordion-collapse collapse" data-bs-parent="#accordionstand8">
+              <div class="accordion-body">
+                {{ stand8_log }}
+              </div>
+            </div>
+          </div>
+
+          <br></br>
+
+
+          <form method="POST" action="/run-command-stand8">             
+            <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
+                <button id="start-btn8" class="btn btn-start" name="command8" type="submit" value="start">Запустить</button>
+                <button id="stop-btn8" class="btn btn-stop" name="command8" type="submit" value="stop">Остановить</button>
+                <!-- <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button> -->
+            </div>
+            <button id="ok-btn8" class="btn btn-ok" style="display: none;" name="command8" type="submit" value="ok">Ок</button>
+          </form>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+
+
+
+<div class="col accordion">
+  <div class="accordion" id="globalaccordion">
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button global-accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsestand9" aria-expanded="false" aria-controls="collapseStandNine" style="width: 100%;">
+        <table class="accordion-table">
+          <tr>
+            <td class="col1">
+              VM TestStation
+            </td>
+            <td class="col2">
+              stand9-104
+            </td>
+            <td class="col3">
+              {{ col3_body_stand9 }}
+            </td>
+            <td class="col4">
+              {{ chmod_author_stand9 }}
+            </td>
+            <td class="col5">
+              <td><img id="status-image-stand9-global" src="" alt='Status image' width='100' height='30'></td>
+            </td>
+            <td class="col6">
+              <img src="{{ status_gif_global_stand9 }}" alt="stat_pic" width="32" height="32">
+            </td>
+          </tr>
+        </table>
+      </button>
+    </h2>
+    <div id="collapsestand9" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
+      <div class="accordion-body-global" style="text-align: left;">
+  <div class="col-4 stands">
+    <div class="card text-bg-dark mb-3" >
+      <div class="card-header">Hardware overview (stand9-104)
+        <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal9">
+          <i class="fas fa-info"></i>
+      </button>
+      </div>
+      <div class="card-body">
+  
+        <div class="modal fade" id="standModal9" tabindex="-1" aria-labelledby="standModalLabel" aria-hidden="true">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="standModalLabel">Параметры стенда</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body text-start">
+                <b>CPU:</b> 16</br>
+                <b>RAM:</b> 128Gb</br>
+                <b>STORAGE:</b></br> 
+                1. 70Gb - системный
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      
+    
+  
+        
+
+        <style>
+          .btn {
+              margin-right: 5px;                 
+              color: white; 
+          }
+          .btn:hover {
+              background-color: #ff7b00; 
+          }             
+          .btn:active {
+              background-color: #3e8e41;
+          }
+      </style>
+        <div class="btn-group" role="group">
+          <button class="commandButton9 btn btn-dark" data-command="/reboot/stand9">Reboot</button>
+          <button class="commandButton9 btn btn-dark" data-command="/poweroff/stand9">Power off</button>
+          <div class="dropdown d-inline-block">
+            <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+              {% for version in stand9_snap %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="backup_snapshot_stand9('{{version}}'); return false;">{{version}}</a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="dropdown d-inline-block">
+            <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Status</button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton9" id="userList9">
+              {% if chmod_author_stand9 == '' %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(9, 'dtimonin'); return false;">dtimonin</a>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(9, 'ivelikanov'); return false;">ivelikanov</a>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(9, 'mfilippenko'); return false;">mfilippenko</a>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(9, 'amedvedev'); return false;">amedvedev</a>
+                </li>
+              {% else %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="toggleStatus(9, 'stop'); return false;">Остановить</a>
+                </li>
+              {% endif %}
+            </ul>
+          </div>
+          <div class="dropdown d-inline-block">
+            <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButtondb9" data-bs-toggle="dropdown" aria-expanded="false">Dashboards</button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+              <li>
+                <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.104/allta" target="_blank">ALLTA</a>
+                <a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.104/full" target="_blank">Full</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+          
+         
+
+
+        <script>
+          function powerCommand_stand9(command) {
+              document.getElementById('loading-spinner').style.display = 'block';
+          
+              fetch(command, {
+                  method: 'POST'
+              })
+              .then(response => response.text())
+              .then(data => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.log('Action done:', data);
+              })
+              .catch((error) => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.error('Error:', error);
+              });
+          }
+          
+          document.querySelectorAll('.commandButton9').forEach(function(button) {
+              button.addEventListener('click', function(event) {
+                  event.preventDefault();
+                  powerCommand_stand9(event.target.dataset.command);
+              });
+          });
+        </script>
+
+        <script>
+          function backup_snapshot_stand9(version) {
+              document.getElementById('loading-spinner').style.display = 'block';
+        
+              fetch('/backup/stand9/' + version, {
+                  method: 'GET'
+              })
+              .then(response => response.text())
+              .then(data => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.log('Backup completed:', data);
+              })
+              .catch((error) => {
+                  document.getElementById('loading-spinner').style.display = 'none';
+                  console.error('Error:', error);
+              });
+          }
+        </script>
+
+        
+        <table class="table table-dark table-striped-columns">
+          <thead>
+              <tr>               
+                  <th scope="col">Power status</th>               
+              </tr>
+          </thead>
+          <tbody>
+              <tr>                
+                  <td><img id="status-image-stand9" src="" alt='Status image' width='100' height='30'></td>
+              </tr>             
+          </tbody>
+      </table>
+      
+      <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+      <script>
+        function updatePowerStatus9() {
+          $.ajax({
+            url: '/update_power_status/stand9',
+            type: 'get',
+            dataType: 'json',
+            success: function(response) {
+              var statusImageStand9 = document.getElementById("status-image-stand9");
+              var statusImageStand9Global = document.getElementById("status-image-stand9-global");
+              
+              if (response.is_running) {
+                statusImageStand9.src = "http://10.177.103.10:8000/static/status_on.png";
+                statusImageStand9Global.src = "http://10.177.103.10:8000/static/status_on.png";
+              } else {
+                statusImageStand9.src = "http://10.177.103.10:8000/static/status_off.png";
+                statusImageStand9Global.src = "http://10.177.103.10:8000/static/status_off.png";
+              }
+            }
+          });
+        }
+        
+        $(document).ready(function() {
+          updatePowerStatus9(); 
+          setInterval(updatePowerStatus9, 5000);
+        });
+      </script>
+        <!-- <br></br> -->
+   
+        <table class="table table-dark table-striped-columns">
+          <thead>
+              <tr>
+                  <th scope="col">CPU/Mem/IO info</th>
+              </tr>
+          </thead>
+          <tbody>
+              <tr>
+                  <td>CPU load</td>
+                  <td></td>
+                  <td id="load_cpu_stand9">{{ load_cpu_stand9 }}</td>
+              </tr>
+              <tr>
+                <td>CPU user mode</td>
+                <td></td>
+                <td id="load_cpu_user_stand9">{{ load_cpu_user_stand9 }}</td>
+             </tr>
+               <tr>
+               <td>CPU system mode</td>
+               <td></td>
+                <td id="load_cpu_system_stand9">{{ load_cpu_system_stand9 }}</td>
+              </tr>
+              <tr>
+                <td>CPU temp</td>
+                <td></td>
+                 <td id="temp_cpu_stand9">{{ temp_cpu_stand9 }}</td>
+               </tr>
+              <tr>
+                  <td>RAM load</td>
+                  <td></td>
+                  <td id="load_ram_stand9">{{ load_ram_stand9 }}</td>
+              </tr>
+              <tr>
+                <td>NVME load</td>
+                <td></td>
+                <td id="load_nvme_stand9">{{ load_nvme_stand9 }}</td>
+            </tr>
+            <tr>
+              <td>SDA load</td>
+              <td></td>
+              <td id="load_sda_stand9">{{ load_sda_stand9 }}</td>
+          </tr>
+          </tbody>
+      </table>
+      <br></br>
+      <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+      <script>
+        function loadInfo9() {
+            $.ajax({
+                url: "/api/load_info/stand9", 
+                success: function(result) {
+                    $("#load_cpu_stand9").html(result.load_cpu_stand9);
+                    $("#load_cpu_user_stand9").html(result.load_cpu_user_stand9);
+                    $("#load_cpu_system_stand9").html(result.load_cpu_system_stand9);
+                    $("#temp_cpu_stand9").html(result.temp_cpu_stand9);
+                    $("#load_ram_stand9").html(result.load_ram_stand9);
+                    $("#load_nvme_stand9").html(result.load_nvme_stand9);
+                    $("#load_sda_stand9").html(result.load_sda_stand9);
+                }
+            });
+        }
+        $(document).ready(function(){
+            loadInfo9(); 
+            setInterval(loadInfo9, 3000); 
+        });
+    </script> 
+        
+        <div class="accordion" id="accordionstand9">
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne9" aria-expanded="true" aria-controls="collapseOne">
+                Статус
+              </button>
+            </h2>
+            <div id="collapseOne9" class="accordion-collapse collapse show" data-bs-parent="#accordionstand9">
+              <div class="accordion-body" style="text-align: left;">
+                <strong>Статус: {{ status_stand9 }}</strong> <br>
+                <img src={{ status_gif_stand9 }} alt="stat_pic" width="64" height="64" style="float: right;"> <br>
+                <br>
+                <!-- <br>
+                <br> -->
+                <br>
+                <style>
+                  .line-break {
+                      white-space: pre-line;
+                  }
+                </style>
+                <div class="line-break">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo9" aria-expanded="false" aria-controls="collapseTwo">
+                Прогресс
+              </button>
+            </h2>
+            <div id="collapseTwo9" class="accordion-collapse collapse" data-bs-parent="#accordionstand9">
+              <div class="accordion-body">
+                <style>
+                  .line-break {
+                      white-space: pre-line;
+                      text-align: left;
+                  }
+                </style>
+                <div class="line-break">
+                  {{ progress_stand9 }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree9" aria-expanded="false" aria-controls="collapseThree">
+                Лог
+              </button>
+            </h2>
+            <div id="collapseThree9" class="accordion-collapse collapse" data-bs-parent="#accordionstand9">
+              <div class="accordion-body">
+                {{ stand9_log }}
+              </div>
+            </div>
+          </div>
+
+          <br></br>
+
+
+          <form method="POST" action="/run-command-stand9">             
+            <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
+                <button id="start-btn9" class="btn btn-start" name="command9" type="submit" value="start">Запустить</button>
+                <button id="stop-btn9" class="btn btn-stop" name="command9" type="submit" value="stop">Остановить</button>
+                <!-- <button id="ok-btn1" class="btn btn-ok" style="display: none;" name="command1" type="submit" value="ok">Ок</button> -->
+            </div>
+            <button id="ok-btn9" class="btn btn-ok" style="display: none;" name="command9" type="submit" value="ok">Ок</button>
+          </form>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+
+
+
+
+
+
+    <!-- WorkStation block -->
+
     <div class="col accordion">
     <div class="accordion" id="globalaccordion">
     <div class="accordion-item">
@@ -2748,6 +4180,7 @@
                 <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'ivelikanov'); return false;">ivelikanov</a>
                 <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'mfilippenko'); return false;">mfilippenko</a>
                 <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'amedvedev'); return false;">amedvedev</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus(5, 'vmshub'); return false;">vmshub</a>
               </li>
             {% else %}
               <li>
@@ -2820,10 +4253,14 @@
           2: "{{ chmod_author_stand2 }}",
           3: "{{ chmod_author_stand3 }}",
           4: "{{ chmod_author_stand4 }}",
-          5: "{{ chmod_author_stand5 }}"
+          5: "{{ chmod_author_stand5 }}",
+          6: "{{ chmod_author_stand6 }}",
+          7: "{{ chmod_author_stand7 }}",
+          8: "{{ chmod_author_stand8 }}",
+          9: "{{ chmod_author_stand9 }}"
         };
       
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= 9; i++) {
           window[`isStopped${i}`] = initialStates[i] !== "";
         }
       
@@ -2843,6 +4280,7 @@
                 <a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'ivelikanov'); return false;">ivelikanov</a>
                 <a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'mfilippenko'); return false;">mfilippenko</a>
                 <a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'amedvedev'); return false;">amedvedev</a>
+                <a class="dropdown-item" href="#" onclick="toggleStatus(${standNumber}, 'vmshub'); return false;">vmshub</a>
               </li>
             `;
           }
@@ -3119,10 +4557,10 @@
   });
 </script> -->
 <script>
-let prevStatusGifs = [null, null, null, null, null];
-var start_btns = ["start-btn1", "start-btn2", "start-btn3", "start-btn4", "start-btn5"].map(id => document.getElementById(id));
-var stop_btns = ["stop-btn1", "stop-btn2", "stop-btn3", "stop-btn4", "stop-btn5"].map(id => document.getElementById(id));
-var ok_btns = ["ok-btn1", "ok-btn2", "ok-btn3", "ok-btn4", "ok-btn5"].map(id => document.getElementById(id));
+let prevStatusGifs = [null, null, null, null, null, null, null, null, null];
+var start_btns = ["start-btn1", "start-btn2", "start-btn3", "start-btn4", "start-btn5", "start-btn6", "start-btn7", "start-btn8", "start-btn9"].map(id => document.getElementById(id));
+var stop_btns = ["stop-btn1", "stop-btn2", "stop-btn3", "stop-btn4", "stop-btn5", "stop-btn6", "stop-btn7", "stop-btn8", "stop-btn9"].map(id => document.getElementById(id));
+var ok_btns = ["ok-btn1", "ok-btn2", "ok-btn3", "ok-btn4", "ok-btn5", "ok-btn6", "ok-btn7", "ok-btn8", "ok-btn9"].map(id => document.getElementById(id));
 
 function setStatus(standNum, status) {
     let start_btn = start_btns[standNum-1];
@@ -3154,7 +4592,7 @@ function setStatus(standNum, status) {
 }
 
 
-const prevGlobalStatusGifs = [null, null, null, null, null]; 
+const prevGlobalStatusGifs = [null, null, null, null, null, null, null, null, null]; 
 
 function updateInfo() {
   $.ajax({
@@ -3162,7 +4600,7 @@ function updateInfo() {
       type: 'get',
       dataType: 'json',
       success: function(data) {
-          [1, 2, 3, 4, 5].forEach((standNum) => {
+          [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((standNum) => {
               $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
               if (prevStatusGifs[standNum-1] !== data['status_gif_stand' + standNum]) {
                   $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);

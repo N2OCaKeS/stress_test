@@ -14,7 +14,7 @@ from ._base_commands._freeipa._freeipa import _Freeipa as freeipa
 
 from ._vm._vagrant import _Vagrant
 from ._vm._virtual_machine import _VirtualMashines
-from ._vm._vbox_manage import _Vboxmanager as vbox_manager
+from ._vm._vbox_manage import _VboxManager as vbox_manager
 
 from typing import cast
 

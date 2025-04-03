@@ -3,7 +3,7 @@ from ..._system_command.SystemCommands import SystemCommands as system_commands
 
 from time import sleep
 
-class _Vboxmanager():
+class _VboxManager():
     """
     Класс для управления виртуальными машинами в VirtualBox.
 

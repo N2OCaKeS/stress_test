@@ -3,7 +3,7 @@ from ._signals import _Signals as signals
 import paramiko
 
 # Новый декоратор для логирования
-from .._decotator._ansible_log import ansible_logger
+from .._decotator._logger import logger
 
 class _SSH_Command:
     """
@@ -17,7 +17,7 @@ class _SSH_Command:
     """
 
     @BaseDecorators.trycorator
-    @ansible_logger
+    @logger
     @staticmethod
     def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',
             signal_set: str = None, signal_get: list = None, task_name: str = None) -> dict:

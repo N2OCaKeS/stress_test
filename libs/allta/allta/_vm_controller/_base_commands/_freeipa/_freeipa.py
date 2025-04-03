@@ -1,4 +1,4 @@
-from ..._decotator._ansible_log import ansible_logger
+from ..._decotator._logger import logger
 import threading
 import paramiko
 import time
@@ -106,7 +106,7 @@ class _Freeipa():
         _Signals.remove_all()
 
     @staticmethod
-    @ansible_logger
+    @logger
     def _execute_command(vm_info, command, task_name="Command Execution", username="root", password=None, vm_name=None):
         """
         Выполняет указанную команду на удалённой машине через SSH.

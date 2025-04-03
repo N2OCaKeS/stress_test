@@ -1,6 +1,6 @@
 from ..._system_command.SystemCommands import SystemCommands
 import threading
-from .._decotator._ansible_log import ansible_logger
+from .._decotator._logger import logger
 
 class _SCP_Command:
     """
@@ -35,7 +35,7 @@ class _SCP_Command:
     """
 
     @staticmethod
-    @ansible_logger
+    @logger
     def _execute_scp(mode: str, host: str, path_host: str, path_vm: str,
                      vms_date: dict, task_name: str = 'SCP', username: str = 'u', password: str = '1', **kwargs) -> dict:
         """

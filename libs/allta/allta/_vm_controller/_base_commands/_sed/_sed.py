@@ -74,8 +74,8 @@ class _Sed:
                             password=password,
                             task_name=task_name
                         )
-                        sleep(0.3)
                         tasks.append(future)
+                        sleep(0.1)
 
             for future in concurrent.futures.as_completed(tasks):
                 try:

@@ -407,9 +407,9 @@ def busy_status_control(stand, name, version=None):
         with open(f'conf/col3_body_{stand}.conf', 'w') as w:
             w.write('Прогон завершен исключением')
     elif name == 'vmshub':
-        with open(f'conf/work_status_stand5.conf', 'w') as w:
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
             w.write('Занят')
-        with open(f'conf/chmod_author_stand5.conf', 'w') as w:
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('VMs-Hub')
 
 

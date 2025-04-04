@@ -96,4 +96,11 @@ ADD COLUMN stand9_cpu VARCHAR(255),
 ADD COLUMN stand9_ram VARCHAR(255),
 ADD COLUMN stand9_cpu_system VARCHAR(255),
 ADD COLUMN stand9_cpu_user VARCHAR(255), 
-ADD COLUMN stand9_temp_cpu VARCHAR(255);
+ADD COLUMN stand9_temp_cpu VARCHAR(255),
+ADD COLUMN stand13_nvme VARCHAR(255), 
+ADD COLUMN stand13_sda VARCHAR(255),
+ADD COLUMN stand13_cpu VARCHAR(255), 
+ADD COLUMN stand13_ram VARCHAR(255),
+ADD COLUMN stand13_cpu_system VARCHAR(255),
+ADD COLUMN stand13_cpu_user VARCHAR(255), 
+ADD COLUMN stand13_temp_cpu VARCHAR(255);

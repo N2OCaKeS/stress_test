@@ -25,6 +25,7 @@ from libs.liballta import (index_page,
                           update_settings_block,
                           get_kernels_from_rc,
                           backup_snapshot,
+                          backup_vm_snapshot,
                           busy_status_control,
                           main_url,
                           mobile_url,
@@ -246,7 +247,10 @@ def backup(stand, version):
     """
     Загрузить нужный снимок
     """
-    backup_snapshot(stand, version)
+    if stand == "stand6" or stand == "stand7" or stand == "stand8" or stand == "stand9":
+        backup_vm_snapshot(stand, version)
+    else:
+        backup_snapshot(stand, version)
     return index_page('main')
 
 

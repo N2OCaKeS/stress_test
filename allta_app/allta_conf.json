@@ -356,6 +356,18 @@
             "1.8.1.UU.2.1": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.205\"                 -l ru_RU.UTF-8 startdisk restore HighServer-181UU2rc1 nvme0n1",
             "1.8.2.3": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.205\"                 -l ru_RU.UTF-8 startdisk restore HighServer-182rc3 nvme0n1",
             "1.8.2.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.205\"                 -l ru_RU.UTF-8 startdisk restore HighServer-182rc6 nvme0n1"
+        },
+        "stand6": {
+            "1.7.5.9": "snapshot_with_git_1"
+        },
+        "stand7": {
+            "1.7.5.9": "snapshot_with_git_1"
+        },
+        "stand8": {
+            "1.7.5.9": "snapshot_with_git_1"
+        },
+        "stand9": {
+            "1.7.5.9": "snapshot_with_git_1"
         }
     },
     "kernels": [

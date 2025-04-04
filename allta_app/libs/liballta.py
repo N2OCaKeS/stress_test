@@ -356,7 +356,11 @@ def info_collector(page, ajax=None):
                                 stand2_snap=cz_comm()['stand2'].keys(),
                                 stand3_snap=cz_comm()['stand3'].keys(),
                                 stand4_snap=cz_comm()['stand4'].keys(),
-                                stand5_snap=cz_comm()['stand5'].keys())
+                                stand5_snap=cz_comm()['stand5'].keys(),
+                                stand6_snap=cz_comm()['stand6'].keys(),
+                                stand7_snap=cz_comm()['stand7'].keys(),
+                                stand8_snap=cz_comm()['stand8'].keys(),
+                                stand9_snap=cz_comm()['stand9'].keys())
 
 
 
@@ -975,6 +979,20 @@ class ReleaseToRepo:
 def backup_snapshot(stand, snapshot):
     command = f'{cz_comm()[stand][snapshot]}'
     subprocess.run(command, shell=True)
+
+
+def backup_vm_snapshot(stand, snapshot):
+    vms = {
+        'stand6': 'virtual-station1',
+        'stand7': 'virtual-station2',
+        'stand8': 'virtual-station3',
+        'stand9': 'virtual-station4'
+    }
+    commands = [f'sudo vboxmanage controlvm {vms[stand]} poweroff',
+                f'sudo VBoxManage snapshot {vms[stand]} restore {snapshot}',
+                f'sudo vboxmanage startvm {vms[stand]} --type headless']
+
+    [ssh_command(command=cmd, stand_ip=stands_ip['stand5']) for cmd in commands]
 
 
 

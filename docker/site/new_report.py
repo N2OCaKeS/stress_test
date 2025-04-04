@@ -1,0 +1,249 @@
+#!/bin/bash
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import warnings
+from sklearn.preprocessing import MinMaxScaler
+from scipy import integrate
+from scipy.integrate import IntegrationWarning
+from matplotlib.gridspec import GridSpec
+
+base_path = os.path.abspath(os.path.dirname(__file__))
+results_path = os.path.join(base_path, "results")
+system_dirs = [d for d in os.listdir(results_path) if d.startswith("docker_web_")]
+integrals = []
+
+def create_performance_dashboard(history_csv_path: str, output_image_path: str):
+    """Создает дашборд с графиками производительности"""
+    try:
+        df = pd.read_csv(history_csv_path)
+        df_agg = df[df["Name"] == "Aggregated"].copy()
+        
+        if df_agg.empty:
+            print(f"Нет данных Aggregated в файле {history_csv_path}")
+            return
+
+        fig = plt.figure(figsize=(12, 8), facecolor='#f5f5f5')
+        gs = GridSpec(3, 2, figure=fig, height_ratios=[1, 1, 1])
+        
+        # Определяем столбцы в зависимости от версии Locust
+        time_column = 'Total Average Response Time' if 'Total Average Response Time' in df_agg.columns else 'Average Response Time'
+        rps_column = 'Requests/s' if 'Requests/s' in df_agg.columns else 'RPS'
+        
+        # 1. График RPS и Failures
+        ax1 = fig.add_subplot(gs[0, :])
+        ax1.plot(df_agg['Timestamp'], df_agg[rps_column], label=rps_column, color='tab:blue')
+        if 'Failures/s' in df_agg.columns:
+            ax1.plot(df_agg['Timestamp'], df_agg['Failures/s'], label='Failures/s', color='tab:red', linestyle='--')
+        ax1.set_title('Total Requests per Second')
+        ax1.set_ylabel('Requests/s')
+        ax1.grid(True, linestyle='--', alpha=0.7)
+        ax1.legend()
+        
+        # 2. Графики времени ответа
+        ax2 = fig.add_subplot(gs[1, 0])
+        if '50%' in df_agg.columns:
+            ax2.plot(df_agg['Timestamp'], df_agg['50%'], label='50th percentile', color='tab:green')
+            ax2.plot(df_agg['Timestamp'], df_agg['95%'], label='95th percentile', color='tab:orange')
+        else:
+            ax2.plot(df_agg['Timestamp'], df_agg[time_column], label='Avg Response Time', color='tab:green')
+        ax2.set_title('Response Times (ms)')
+        ax2.set_ylabel('Time (ms)')
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        ax2.legend()
+        
+        # 3. График пользователей
+        ax3 = fig.add_subplot(gs[1, 1])
+        ax3.plot(df_agg['Timestamp'], df_agg['User Count'], color='tab:purple')
+        ax3.set_title('Number of Users')
+        ax3.set_ylabel('Users')
+        ax3.grid(True, linestyle='--', alpha=0.7)
+        
+        # 4. Сводная информация
+        ax4 = fig.add_subplot(gs[2, :])
+        ax4.axis('off')
+        
+        summary_text = f"""
+Performance Summary:
+- Max RPS: {df_agg[rps_column].max():.0f}
+- Avg Response Time: {df_agg[time_column].mean():.1f}ms
+- Total Failures: {df_agg['Failures/s'].sum():.0f if 'Failures/s' in df_agg.columns else 'N/A'}
+- Peak Users: {df_agg['User Count'].max():.0f}
+"""
+        ax4.text(0.05, 0.5, summary_text, fontsize=12, family='monospace')
+        
+        plt.tight_layout()
+        plt.savefig(output_image_path, dpi=120, bbox_inches='tight')
+        plt.close()
+        print(f"Дашборд сохранен: {output_image_path}")
+    except Exception as e:
+        print(f"Ошибка при создании дашборда: {str(e)}")
+
+def normalize_dataframe(df: pd.DataFrame, columns: list, factor: float = 10) -> pd.DataFrame:
+    df_norm = df.copy()
+    for col in columns:
+        min_val = 0
+        max_val = df_norm[col].max() * factor
+        df_norm[col] = (df_norm[col] - min_val) / (max_val - min_val)
+    return df_norm
+
+def data_aproximation(x, y, polinom_factor):
+    with warnings.catch_warnings():
+        warnings.filterwarnings('error')
+        try:
+            return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
+        except Warning:
+            if polinom_factor > 1:
+                return data_aproximation(x, y, polinom_factor-1)
+            raise ValueError("Не удалось построить аппроксимацию")
+
+def parse_locust_step_history(history_csv_path: str) -> pd.DataFrame:
+    df = pd.read_csv(history_csv_path)
+    df_agg = df[(df["Name"] == "Aggregated") & (df["User Count"] > 0)].copy()
+
+    # Округляем User Count до ближайших 1200 для единообразия
+    df_agg["Rounded User Count"] = (df_agg["User Count"] / 1200).round().astype(int) * 1200
+    
+    result = df_agg.groupby("Rounded User Count").agg({
+        "User Count": "first",
+        "Requests/s": "mean",
+        "Failures/s": "mean",
+        "Total Average Response Time": "mean"
+    }).reset_index()
+
+    result.columns = ["Step Index", "User Count", "Avg Requests/s", "Avg Failures/s", "Avg Response Time"]
+    return result
+
+def plot_approximation(df: pd.DataFrame, column: str, output_path: str, degree: int = 5):
+    x = df["User Count"]
+    y = df[column]
+
+    f = data_aproximation(x, y, degree)
+
+    x_fit = np.linspace(x.min(), x.max(), 200)
+    y_fit = f(x_fit)
+
+    plt.figure(figsize=(8, 5))
+    plt.scatter(x, y, color='red', label="Нормализованные данные")
+    plt.plot(x_fit, y_fit, color='blue', label=f"Аппроксимация (степень {degree})")
+    plt.xlabel("User Count")
+    plt.ylabel(column)
+    plt.title(f"Аппроксимация: {column}")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+    return f
+
+def failures_wrapper():
+    error_percentages = {}
+    for sys_dir in system_dirs:
+        for variant in ["nginx_docker", "nginx_server"]:
+            variant_path = os.path.join(results_path, sys_dir, variant)
+            hist_path = os.path.join(variant_path, "results_stats.csv")
+
+            if os.path.exists(hist_path):
+                df = pd.read_csv(hist_path)
+                if "Name" in df.columns:
+                    aggregated_df = df[df["Name"].str.strip().str.lower() == "aggregated"]
+                else:
+                    aggregated_df = pd.DataFrame()
+
+                row = aggregated_df.iloc[0] if not aggregated_df.empty else df.iloc[0]
+                try:
+                    request_count = float(row["Request Count"])
+                    failure_count = float(row["Failure Count"])
+                    error_percentage = (failure_count / request_count) * 100
+                    error_percentages[f"{sys_dir}_{variant}"] = error_percentage
+                except (ValueError, KeyError) as e:
+                    print(f"Ошибка при чтении данных из {hist_path}: {e}")
+                    error_percentages[f"{sys_dir}_{variant}"] = None
+
+    return error_percentages
+
+if __name__ == "__main__":
+    errors = failures_wrapper()
+
+    for sys_dir in system_dirs:
+        for variant in ["nginx_docker", "nginx_server"]:
+            variant_path = os.path.join(results_path, sys_dir, variant)
+            hist_path = os.path.join(variant_path, "results_stats_history.csv")
+
+            if os.path.exists(hist_path):
+                print(f"\nОбработка: {sys_dir}_{variant}")
+                
+                # Создаем дашборд производительности
+                dashboard_path = os.path.join(variant_path, "performance_dashboard.png")
+                create_performance_dashboard(hist_path, dashboard_path)
+                
+                # Парсим и анализируем данные
+                df_result = parse_locust_step_history(hist_path)
+                output_csv = os.path.join(variant_path, "step_stats_summary.csv")
+                df_result.to_csv(output_csv, index=False)
+                print(f"Сохранена статистика по шагам: {output_csv}")
+
+                # Нормализация данных
+                columns_to_normalize = ["Avg Requests/s", "Avg Failures/s", "Avg Response Time"]
+                df_normalized = normalize_dataframe(df_result, columns_to_normalize)
+                output_csv_norm = os.path.join(variant_path, "step_stats_summary_normalized.csv")
+                df_normalized.to_csv(output_csv_norm, index=False)
+
+                # Аппроксимация и визуализация
+                f_rps = plot_approximation(df_normalized, "Avg Requests/s", 
+                                         os.path.join(variant_path, "normalized_rps_plot.png"))
+                f_failures = plot_approximation(df_normalized, "Avg Failures/s", 
+                                              os.path.join(variant_path, "normalized_failures_plot.png"))
+                f_response_time = plot_approximation(df_normalized, "Avg Response Time", 
+                                                   os.path.join(variant_path, "normalized_response_time_plot.png"))
+
+                # Расчет интегралов
+                min_users = df_normalized["User Count"].min()
+                max_users = df_normalized["User Count"].max()
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", IntegrationWarning)
+                    integral_rps, _ = integrate.quad(f_rps, min_users, max_users)
+                    integral_response_time, _ = integrate.quad(f_response_time, min_users, max_users)
+
+                integrals.append({
+                    'variant': f"{sys_dir}_{variant}",
+                    'integral_rps': integral_rps,
+                    'integral_response_time': integral_response_time
+                })
+
+                # Расчет рейтинга
+                rating = (integral_rps * 0.3) + (1 / integral_response_time * 0.3)
+                key = f"{sys_dir}_{variant}"
+                rating_path = os.path.join(variant_path, "rating.txt")
+
+                with open(rating_path, 'w') as file:
+                    if key in errors and errors[key] is not None:
+                        value = errors[key]
+                        if value == 0:
+                            file.write(f"{key}: Рейтинг = {rating:.2f} | Ошибки отсутствуют\n")
+                        elif value <= 5:
+                            file.write(f"{key}: Рейтинг = {rating / 100 * 91.25:.2f} | Ошибки низкие ({value:.2f}%)\n")
+                        elif 5 < value < 10:
+                            file.write(f"{key}: Рейтинг = {rating / 100 * 82.5:.2f} | Ошибки средние ({value:.2f}%)\n")
+                        else:
+                            file.write(f"{key}: Рейтинг = {rating / 100 * 66.6:.2f} | Ошибки высокие ({value:.2f}%)\n")
+                    else:
+                        file.write(f"{key}: Данные об ошибках не найдены\n")
+
+                    file.write(f"Файлы результатов:\n")
+                    file.write(f"- {output_csv}\n")
+                    file.write(f"- {output_csv_norm}\n")
+                    file.write(f"- {dashboard_path}\n")
+                    file.write(f"\nМетрики:\n")
+                    file.write(f"Integral RPS: {integral_rps:.2f}\n")
+                    file.write(f"Integral Response Time: {integral_response_time:.2f}\n")
+
+                print(f"Анализ завершен для {key}. Результаты в {variant_path}")
+            else:
+                print(f"{sys_dir}_{variant}: Файл истории не найден: {hist_path}")
+
+    print("\nВсе тесты обработаны. Итоговые интегралы:")
+    for item in integrals:
+        print(f"{item['variant']}: RPS={item['integral_rps']:.2f}, RT={item['integral_response_time']:.2f}")

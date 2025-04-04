@@ -1,22 +1,25 @@
 #!/bin/bash
 
 
-# set repo
-VERSION_OS=$(cat /etc/astra/build_version | tr -d '[:space:]')
+CPATH="/home/u/git/stress_test/docker/site/"
+SYS_VERSION=$(cat /etc/astra/build_version | tr -d '[:space:]')
+SYS_KERNEL=$(uname -r | tr -d '[:space:]')
 
+
+# set repo
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
-sudo jq -r --arg version "$VERSION_OS" '[.[] | select(.[] | contains($version)) | .[] | select(contains($version))] | unique[]' releases.json > /etc/apt/sources.list
+sudo jq -r --arg version "$SYS_VERSION" '[.[] | select(.[] | contains($version)) | .[] | select(contains($version))] | unique[]' releases.json > /etc/apt/sources.list
 
 # доб EXT если версия 1.7
-if [[ "$VERSION_OS" == 1.7* ]]; then
+if [[ "$SYS_VERSION" == 1.7* ]]; then
     echo "Добавляем строки с extended-repository..."
     grep -E '/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/base-repository' /etc/apt/sources.list | \
     sed 's|/[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+/base-repository|/EXT_latest/extended-repository|' >> /etc/apt/sources.list
 fi
 
 # test packages
-sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 docker.io docker-compose nginx postgresql postgresql-contrib redis-server pgbouncer build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace libcurl4-gnutls-dev rustc cargo python3-requests liblzma-dev
+sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 docker.io docker-compose nginx   build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace libcurl4-gnutls-dev  python3-requests liblzma-dev
 
 #if test "$(grep -E '1.8.*' /etc/astra_version)"; then
 #    sudo apt-get install -y linux-tools-6.1*-generic
@@ -25,6 +28,7 @@ sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y li
 #    sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
 #    sudo apt-get install -y linux-tools-5.15*-lowlatency
 #fi
+
 
 
 sudo mkdir /home/u/python

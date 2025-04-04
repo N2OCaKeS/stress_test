@@ -6,10 +6,6 @@ import warnings
 from sklearn.preprocessing import MinMaxScaler
 from scipy import integrate
 from scipy.integrate import IntegrationWarning
-from jinja2 import Template
-import base64
-from io import BytesIO
-
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 results_path = os.path.join(base_path, "results")
@@ -22,9 +18,8 @@ def normalize_dataframe(df: pd.DataFrame, columns: list, factor: float = 10) -> 
     for col in columns:
         min_val = 0
         max_val = df_norm[col].max() * factor
-        df_norm[col] = (df_norm[col] - min_val) / (max_val - min_val)
+        df_norm[col] = (df_norm[col] - min_val) / (max_val - min_val) # == MinMaxScaler()
     return df_norm
-
 
 def data_aproximation(x, y, polinom_factor):
     while polinom_factor > 0:
@@ -91,6 +86,8 @@ def failures_wrapper():
 
             if os.path.exists(hist_path):
                 df = pd.read_csv(hist_path)
+
+                # Исключаем строку "Aggregated"
                 df = df[df["Name"].str.strip().str.lower() != "aggregated"]
 
                 try:
@@ -100,95 +97,15 @@ def failures_wrapper():
                     print(f"Ошибка: не найдены нужные колонки в {hist_path}: {e}")
                     continue
 
-                error_percentage = 100.0 if total_requests == 0 else (total_failures / total_requests) * 100
+                if total_requests == 0:
+                    error_percentage = 100.0
+                else:
+                    error_percentage = (total_failures / total_requests) * 100
+
                 error_percentages[f"{sys_dir}_{variant}"] = error_percentage
                 print(f"{sys_dir}_{variant}: {total_failures} ошибок из {total_requests} → {error_percentage:.2f}%")
+
     return error_percentages
-
-
-def generate_html_report(variant_path, df_stats, errors, integrals, variant_full_name):
-    stats_table = df_stats.to_html(classes='table table-striped', index=False)
-    normalized_table = df_normalized.to_html(classes='table table-striped', index=False)
-
-    def plot_to_base64(column):
-        plt.figure(figsize=(8, 4))
-        plt.plot(df_normalized['User Count'], df_normalized[column], 'b-', label=column)
-        plt.xlabel('User Count')
-        plt.ylabel(column)
-        plt.title(f'График {column}')
-        plt.grid(True)
-        buf = BytesIO()
-        plt.savefig(buf, format='png')
-        plt.close()
-        return base64.b64encode(buf.getvalue()).decode('utf-8')
-
-    plots = {
-        'rps_plot': plot_to_base64('Avg Requests/s'),
-        'failures_plot': plot_to_base64('Avg Failures/s'),
-        'response_plot': plot_to_base64('Avg Response Time')
-    }
-
-    html_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Отчёт тестирования</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h1 { color: #333; }
-            .table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-            .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            .table th { background-color: #f2f2f2; }
-            .plot { margin: 20px 0; text-align: center; }
-            .plot img { max-width: 100%; height: auto; }
-            .metrics { background: #f9f9f9; padding: 15px; border-radius: 5px; }
-        </style>
-    </head>
-    <body>
-        <h1>Отчёт тестирования: {{ variant }}</h1>
-        <div class="metrics">
-            <h2>Ключевые метрики</h2>
-            <p>Рейтинг: <strong>{{ rating|round(2) }}</strong></p>
-            <p>Ошибки: {{ errors }}%</p>
-            <p>Integral RPS: {{ integrals.integral_rps|round(2) }}</p>
-            <p>Integral Response Time: {{ integrals.integral_response_time|round(2) }}</p>
-        </div>
-        <h2>Статистика по шагам</h2>
-        {{ stats_table }}
-        <h2>Графики</h2>
-        <div class="plot">
-            <h3>Requests/s</h3>
-            <img src="data:image/png;base64,{{ plots.rps_plot }}">
-        </div>
-        <div class="plot">
-            <h3>Failures/s</h3>
-            <img src="data:image/png;base64,{{ plots.failures_plot }}">
-        </div>
-        <div class="plot">
-            <h3>Response Time</h3>
-            <img src="data:image/png;base64,{{ plots.response_plot }}">
-        </div>
-    </body>
-    </html>
-    """
-
-    rating = (integrals["integral_rps"] * 0.5) + (1 / (integrals["integral_response_time"] * 0.5))
-    template = Template(html_template)
-    html_content = template.render(
-        variant=variant_full_name,
-        stats_table=stats_table,
-        normalized_table=normalized_table,
-        plots=plots,
-        rating=rating,
-        errors=errors.get(variant_full_name, "N/A"),
-        integrals=integrals
-    )
-
-    html_path = os.path.join(variant_path, "full_report.html")
-    with open(html_path, 'w') as f:
-        f.write(html_content)
-
-    return html_path
 
 
 if __name__ == "__main__":
@@ -212,6 +129,7 @@ if __name__ == "__main__":
                 df_normalized.to_csv(output_csv_norm, index=False)
 
                 f_rps = plot_approximation(df_normalized, "Avg Requests/s", os.path.join(variant_path, "normalized_rps_plot.png"))
+                f_failures = plot_approximation(df_normalized, "Avg Failures/s", os.path.join(variant_path, "normalized_failures_plot.png"))
                 f_response_time = plot_approximation(df_normalized, "Avg Response Time", os.path.join(variant_path, "normalized_response_time_plot.png"))
 
                 min_users = df_normalized["User Count"].min()
@@ -222,39 +140,33 @@ if __name__ == "__main__":
                     integral_rps, _ = integrate.quad(f_rps, min_users, max_users)
                     integral_response_time, _ = integrate.quad(f_response_time, min_users, max_users)
 
-                variant_full = f"{sys_dir}_{variant}"
                 integrals.append({
-                    'variant': variant_full,
+                    'variant': f"{sys_dir}_{variant}",
                     'integral_rps': integral_rps,
                     'integral_response_time': integral_response_time
                 })
 
-                rating = (integral_rps * 0.5) + (1 / (integral_response_time * 0.5))
-                rating_path = os.path.join(variant_path, "rating")
+                rating = (integral_rps * 0.5) + (1 / integral_response_time * 0.5)
+
+                key = f"{sys_dir}_{variant}"
+                rating_path = os.path.join(variant_path, "rating") 
+
                 with open(rating_path, 'w') as file:
-                    if variant_full in errors:
-                        value = errors[variant_full]
+                    if key in errors:
+                        value = errors[key]
                         if value == 0:
-                            file.write(f"{variant_full}: Рейтинг = {rating:.2f} \n| Ошибки отсутствуют\n")
+                            file.write(f"{key}: Рейтинг = {rating:.2f} \n| Ошибки отсутствуют\n")
                         elif value <= 5:
-                            file.write(f"{variant_full}: Рейтинг = {rating / 100 * 91.25:.2f} \n| Ошибки низкие ({value:.2f}%)\n")
+                            file.write(f"{key}: Рейтинг = {rating / 100 * 91.25:.2f} \n| Ошибки низкие ({value:.2f}%)\n")
                         elif 5 < value < 10:
-                            file.write(f"{variant_full}: Рейтинг = {rating / 100 * 82.5:.2f} \n| Ошибки средние ({value:.2f}%)\n")
+                            file.write(f"{key}: Рейтинг = {rating / 100 * 82.5:.2f} \n| Ошибки средние ({value:.2f}%)\n")
                         else:
-                            file.write(f"{variant_full}: Рейтинг = {rating / 100 * 66.6:.2f} \n| Ошибки высокие ({value:.2f}%)\n")
+                            file.write(f"{key}: Рейтинг = {rating / 100 * 66.6:.2f} \n| Ошибки высокие ({value:.2f}%)\n")
                     else:
-                        file.write(f"{variant_full}: Данные об ошибках не найдены\n")
+                        file.write(f"{key}: Данные об ошибках не найдены\n")
+
                     file.write(f"| Сохранено: {output_csv}\n")
                     file.write(f"| Интегралы: {integrals[-1]}\n\n")
-
-                html_path = generate_html_report(
-                    variant_path=variant_path,
-                    df_stats=df_result,
-                    errors=errors,
-                    integrals=integrals[-1],
-                    variant_full_name=variant_full
-                )
-                print(f"HTML-отчёт сохранён: {html_path}")
 
             else:
                 print(f"{sys_dir}_{variant}: Не найден файл истории: {hist_path}")

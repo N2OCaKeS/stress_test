@@ -18,7 +18,7 @@ services:
       - httpnet
 
   nginx:
-    image: nginx:1.22.1
+    image: nginx
     container_name: nginx
     volumes:
     - ./web_app/static:/app/web_app/static
@@ -45,7 +45,7 @@ services:
       - httpnet
     command: >
       -f /app/Kuznechik/locustfile.py
-      --master --master-bind-host 0.0.0.0 --expect-workers 3
+      --master --master-bind-host 0.0.0.0 --expect-workers 5
       --config /app/Kuznechik/.locust.conf
       --headless
 

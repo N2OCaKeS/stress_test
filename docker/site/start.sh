@@ -1,21 +1,25 @@
 #!/bin/bash
 
 localhost="localhost"
+WORKER=5
 NGINX_DC="docker-compose.nginx.yml"
 LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
 APP_CONTAINERS=("flask" "nginx")
 CPATH="/home/u/git/stress_test/docker/site/"
 VENV="/home/u/python/Python-3.12.1/venv/bin/"
-
-
-# collect results base directory
 NGINX_V=$(nginx -v 2>&1 | cut -d '/' -f2 | tr -d '[:space:]')
 
 SYS_VERSION=$(cat /etc/astra/build_version | tr -d '[:space:]')
 SYS_KERNEL=$(uname -r | tr -d '[:space:]')
+DOCKER_VERSION=$(dpkg -l | grep -E '^ii[[:space:]]+docker.io[[:space:]]' | awk '{print $3}' | sed 's/,//')
+COMPOSE_VERSION=$(dpkg -l | grep docker-compose | awk '{print $3}' | sed 's/,//')
+PACKAGE_VERSIONS="docker_${DOCKER_VERSION}, docker-compose_${COMPOSE_VERSION}"
+
 RESULTS_DIR="./results/docker_web_${SYS_VERSION}_${SYS_KERNEL}"
 mkdir -p "$RESULTS_DIR"
 LOCUST_CONF="${CPATH}Kuznechik/.locust.conf"
+# ИНФО
+sudo echo -e "${SYS_VERSION}\n${SYS_KERNEL}\n${PACKAGE_VERSIONS}" > "${CPATH}results/INFO.txt"
 
 check_locust_containers() {
     echo "Ожидание 10 секунд перед проверкой контейнеров..."
@@ -45,6 +49,48 @@ check_locust_containers() {
 }
 
 
+wait_for_lines_or_stable() {
+    local file="$1"
+    local min_lines="$2"
+    local timeout="${3:-120}"
+    local stable_after="${4:-10}"
+
+    echo "Ожидание записи файла: $file (до $timeout сек или $min_lines строк)"
+
+    local start_time=$(date +%s)
+    local last_mod_time=0
+    local stable_seconds=0
+
+    while true; do
+        [ -f "$file" ] || { sleep 1; continue; }
+
+        current_lines=$(wc -l < "$file")
+        current_mod_time=$(stat -c %Y "$file")
+
+        if (( current_lines >= min_lines )); then
+            if (( current_mod_time == last_mod_time )); then
+                ((stable_seconds++))
+            else
+                stable_seconds=0
+                last_mod_time=$current_mod_time
+            fi
+
+            if (( stable_seconds >= stable_after )); then
+                echo "Файл стабилен и содержит $current_lines строк."
+                break
+            fi
+        fi
+
+        now=$(date +%s)
+        if (( now - start_time >= timeout )); then
+            echo "⚠ Время ожидания истекло ($timeout сек)."
+            break
+        fi
+        sleep 1
+    done
+}
+
+
 nginx_server() {
     RESULTS_DIR_SERVER="${RESULTS_DIR}/nginx_server"
     mkdir -p "$RESULTS_DIR_SERVER"
@@ -54,12 +100,8 @@ nginx_server() {
 
     echo "Остановка всех сервисов (Nginx, Docker)"
     sudo systemctl stop nginx.service
-    sudo docker-compose -f ${NGINX_DC} down
+    sudo docker-compose -f ${CPATH}${NGINX_DC} down
     sudo docker volume prune -f
-
-    echo "Очистка Redis и запуск"
-    sudo redis-cli flushall
-    sudo systemctl start redis
 
     echo "Настройка Nginx"
     sudo rm -f /etc/nginx/conf.d/*
@@ -95,16 +137,7 @@ nginx_server() {
 
     echo "Запуск Locust и ожидание завершения"
     sudo ${VENV}locust -f ${CPATH}Kuznechik/locustfile.py \
-        --config "$LOCUST_CONF" --processes 3 --headless --run-time 2m > /tmp/locust.log 2>&1
-
-    echo "Ожидание генерации results.html"
-    for i in {1..30}; do
-        if [ -f "${RESULTS_DIR_SERVER}/results.html" ]; then
-            echo "Файл results.html создан."
-            break
-        fi
-        sleep 2
-    done
+        --config "$LOCUST_CONF" --processes ${WORKER} --headless --run-time 2m > /tmp/locust.log 2>&1
 
     echo "Завершено: NGINX server"
 }
@@ -116,9 +149,11 @@ nginx_docker(){
     RESULTS_DIR_DOCKER="${RESULTS_DIR}/nginx_docker"
     mkdir -p "$RESULTS_DIR_DOCKER"
 
+    sed -i "s|image: nginx.*|image: nginx:${NGINX_V}|" "${CPATH}${NGINX_DC}"
+
     echo "Остановка старого окружения..."
     sudo systemctl stop nginx.service
-    sudo docker-compose -f ${NGINX_DC} down
+    sudo docker-compose -f ${CPATH}${NGINX_DC} down
     sudo docker volume prune -f
     sudo pkill -f "gunicorn" || true
     sudo pkill -f "locust" || true
@@ -134,9 +169,16 @@ nginx_docker(){
     sed -i "s|^host = .*|host = http://nginx|g" "$LOCUST_CONF"
 
     echo "Запуск Docker-сервисов..."
-    sudo docker-compose -f ${NGINX_DC} up -d --build --scale worker=5
+    sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build --scale worker=${WORKER}
     check_locust_containers
     echo "Docker Nginx запущен!"
+
+    echo "Ожидание завершения работы Locust master..."
+    while docker ps | grep -q "master"; do
+        sleep 5
+    done
+    echo "Контейнер master завершил работу."
+
     sed -i "s|image: nginx.*|image: nginx|" "${CPATH}docker-compose.nginx.yml"
     echo "Завершено: NGINX docker"
 }
@@ -147,36 +189,6 @@ close_and_delete(){
     docker stop $(docker ps -q)
     docker container prune -f
     echo Контейнеры остановлены и удалены
-}
-
-
-pg_remove(){
-    sudo systemctl stop postgresql
-    sudo systemctl stop pgbouncer
-
-    sudo apt-get --purge remove postgresql postgresql-* -y
-
-    sudo rm -rf /etc/postgresql/
-    sudo rm -rf /var/lib/postgresql/
-    sudo rm -rf /var/log/postgresql/
-
-    sudo apt-get --purge remove pgbouncer -y
-
-    sudo rm -rf /etc/pgbouncer/
-    sudo rm -rf /var/log/pgbouncer/
-
-    sudo apt-get autoremove -y
-
-    sudo apt-get clean
-
-    dpkg -l | grep -E 'postgresql|pgbouncer'
-    
-    rm -rf ${CPATH}migrations
-
-    sudo systemctl stop apache2.service redis-server.service redis.service postgresql.service pgbouncer.service nginx.service
-    sudo pkill -f "gunicorn" || true
-    sudo pkill -f "locust" || true
-    sudo pkill -f "pgbouncer" || true
 }
 
 
@@ -202,13 +214,11 @@ case $1 in
 	    nginx_server
 	    ;;
     final)
-	    bash prepare.sh
+	    bash ${CPATH}prepare.sh
 	    nginx_server
-	    sleep 900
 	    nginx_docker
-	    sleep 900
 	    echo "Тест выполнился"
-            python3 report3.py	
+            source ${VENV}activate && python3 new_report.py	
 	    ;;
 esac
 

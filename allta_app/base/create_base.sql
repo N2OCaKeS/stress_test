@@ -103,4 +103,7 @@ ADD COLUMN stand13_cpu VARCHAR(255),
 ADD COLUMN stand13_ram VARCHAR(255),
 ADD COLUMN stand13_cpu_system VARCHAR(255),
 ADD COLUMN stand13_cpu_user VARCHAR(255), 
-ADD COLUMN stand13_temp_cpu VARCHAR(255);
+ADD COLUMN stand13_temp_cpu VARCHAR(255),
+ADD COLUMN stand10_temp_cpu VARCHAR(255),
+ADD COLUMN stand11_temp_cpu VARCHAR(255),
+ADD COLUMN stand12_temp_cpu VARCHAR(255);

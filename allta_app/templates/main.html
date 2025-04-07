@@ -6037,10 +6037,10 @@
   });
 </script> -->
 <script>
-let prevStatusGifs = [null, null, null, null, null, null, null, null, null];
-var start_btns = ["start-btn1", "start-btn2", "start-btn3", "start-btn4", "start-btn5", "start-btn6", "start-btn7", "start-btn8", "start-btn9"].map(id => document.getElementById(id));
-var stop_btns = ["stop-btn1", "stop-btn2", "stop-btn3", "stop-btn4", "stop-btn5", "stop-btn6", "stop-btn7", "stop-btn8", "stop-btn9"].map(id => document.getElementById(id));
-var ok_btns = ["ok-btn1", "ok-btn2", "ok-btn3", "ok-btn4", "ok-btn5", "ok-btn6", "ok-btn7", "ok-btn8", "ok-btn9"].map(id => document.getElementById(id));
+let prevStatusGifs = [null, null, null, null, null, null, null, null, null, null, null, null, null];
+var start_btns = ["start-btn1", "start-btn2", "start-btn3", "start-btn4", "start-btn5", "start-btn6", "start-btn7", "start-btn8", "start-btn9", "start-btn10", "start-btn11", "start-btn12", "start-btn13"].map(id => document.getElementById(id));
+var stop_btns = ["stop-btn1", "stop-btn2", "stop-btn3", "stop-btn4", "stop-btn5", "stop-btn6", "stop-btn7", "stop-btn8", "stop-btn9", "stop-btn10", "stop-btn11", "stop-btn12", "stop-btn13"].map(id => document.getElementById(id));
+var ok_btns = ["ok-btn1", "ok-btn2", "ok-btn3", "ok-btn4", "ok-btn5", "ok-btn6", "ok-btn7", "ok-btn8", "ok-btn9", "ok-btn10", "ok-btn11", "ok-btn12", "ok-btn13"].map(id => document.getElementById(id));
 
 function setStatus(standNum, status) {
     let start_btn = start_btns[standNum-1];
@@ -6072,7 +6072,7 @@ function setStatus(standNum, status) {
 }
 
 
-const prevGlobalStatusGifs = [null, null, null, null, null, null, null, null, null]; 
+const prevGlobalStatusGifs = [null, null, null, null, null, null, null, null, null, null, null, null, null]; 
 
 function updateInfo() {
   $.ajax({
@@ -6080,7 +6080,7 @@ function updateInfo() {
       type: 'get',
       dataType: 'json',
       success: function(data) {
-          [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((standNum) => {
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].forEach((standNum) => {
               $('#collapseOne' + standNum + ' .accordion-body strong').html("Статус: " + data['status_stand' + standNum]);
               if (prevStatusGifs[standNum-1] !== data['status_gif_stand' + standNum]) {
                   $('#collapseOne' + standNum + ' .accordion-body img').attr("src", data['status_gif_stand' + standNum]);

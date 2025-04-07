@@ -6,6 +6,7 @@ NGINX_DC="docker-compose.nginx.yml"
 LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
 APP_CONTAINERS=("flask" "nginx")
 CPATH="/home/u/git/stress_test/docker/site/"
+LPATH="/home/u/git/stress_test/docker/libs/"
 VENV="/home/u/python/Python-3.12.1/venv/bin/"
 NGINX_V=$(nginx -v 2>&1 | cut -d '/' -f2 | tr -d '[:space:]')
 
@@ -86,13 +87,13 @@ wait_for_lines_or_stable() {
             echo "⚠ Время ожидания истекло ($timeout сек)."
             break
         fi
-        sleep 1
     done
 }
 
 
 nginx_server() {
     RESULTS_DIR_SERVER="${RESULTS_DIR}/nginx_server"
+        sleep 1
     mkdir -p "$RESULTS_DIR_SERVER"
 
     # Получаем версию nginx
@@ -102,10 +103,10 @@ nginx_server() {
     sudo systemctl stop nginx.service
     sudo docker-compose -f ${CPATH}${NGINX_DC} down
     sudo docker volume prune -f
-
     echo "Настройка Nginx"
     sudo rm -f /etc/nginx/conf.d/*
     [ -f "/etc/nginx/sites-enabled/default" ] && sudo rm /etc/nginx/sites-enabled/default
+
 
     # Настройка локального прокси
     sudo sed -i 's|proxy_set_header Host .*;|proxy_set_header Host localhost;|' ${CPATH}nginx-config/web-app.conf
@@ -218,7 +219,7 @@ case $1 in
 	    nginx_server
 	    nginx_docker
 	    echo "Тест выполнился"
-            source ${VENV}activate && python3 new_report.py	
+            source ${VENV}activate && python3 ${LPATH}libtable.py	
 	    ;;
 esac
 

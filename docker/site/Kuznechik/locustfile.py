@@ -23,7 +23,7 @@ class MyUser(HttpUser):
 
 Step = namedtuple("Step", ["users", "dwell"])  # dwell = время удержания нагрузки (в секундах)
 number = 1500
-timestep = 20
+timestep = 25
 
 class StepLoadShape(LoadTestShape):
     """
@@ -33,6 +33,7 @@ class StepLoadShape(LoadTestShape):
     """
 
     targets_with_times = (
+        Step(0, 45),
         Step(number, timestep),
         Step(number*2, timestep),
         Step(number*3, timestep),

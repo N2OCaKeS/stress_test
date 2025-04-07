@@ -8,10 +8,9 @@ from sklearn.preprocessing import MinMaxScaler
 from scipy import integrate
 from scipy.integrate import IntegrationWarning
 from matplotlib.gridspec import GridSpec
+from docker_conf import REPORT_PATH
 
-base_path = os.path.abspath(os.path.dirname(__file__))
-results_path = os.path.join(base_path, "results")
-system_dirs = [d for d in os.listdir(results_path) if d.startswith("docker_web_")]
+system_dirs = [d for d in os.listdir(REPORT_PATH) if d.startswith("docker_web_")]
 integrals = []
 
 def create_performance_dashboard(history_csv_path: str, output_image_path: str):
@@ -80,13 +79,34 @@ Performance Summary:
     except Exception as e:
         print(f"Ошибка при создании дашборда: {str(e)}")
 
-def normalize_dataframe(df: pd.DataFrame, columns: list, factor: float = 10) -> pd.DataFrame:
+
+def normalize_dataframe(df, columns):
+    """
+    Нормализует указанные столбцы DataFrame, добавляя граничные значения 0 и 5000.
+    
+    Параметры:
+        df: Исходный DataFrame
+        columns: Список столбцов для нормализации
+    
+    Возвращает:
+        DataFrame с нормализованными столбцами (без добавленных граничных значений)
+    """
     df_norm = df.copy()
+    scaler = MinMaxScaler()
+    
     for col in columns:
-        min_val = 0
-        max_val = df_norm[col].max() * factor
-        df_norm[col] = (df_norm[col] - min_val) / (max_val - min_val)
+        temp_lst = df_norm[col].tolist()
+        temp_lst = [0] + temp_lst + [5000]
+        normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
+        
+        # Преобразуем обратно в список и убираем добавленные граничные значения
+        normalized_data_list = [float(item[0]) for item in normalized_data_2d_array[1:-1]]
+        
+        # Записываем результат обратно в DataFrame
+        df_norm[col] = normalized_data_list
+    
     return df_norm
+
 
 def data_aproximation(x, y, polinom_factor):
     with warnings.catch_warnings():
@@ -98,22 +118,30 @@ def data_aproximation(x, y, polinom_factor):
                 return data_aproximation(x, y, polinom_factor-1)
             raise ValueError("Не удалось построить аппроксимацию")
 
+
+import pandas as pd
+
 def parse_locust_step_history(history_csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(history_csv_path)
     df_agg = df[(df["Name"] == "Aggregated") & (df["User Count"] > 0)].copy()
 
-    # Округляем User Count до ближайших 1200 для единообразия
-    df_agg["Rounded User Count"] = (df_agg["User Count"] / 1200).round().astype(int) * 1200
-    
-    result = df_agg.groupby("Rounded User Count").agg({
+    df_selected = df_agg[[
+        "User Count", "Requests/s", "Failures/s", "Total Average Response Time"
+    ]].copy()
+
+    df_selected.rename(columns={"Total Average Response Time": "Average Response Time"}, inplace=True)
+    df_selected["Step Index"] = (df_selected["User Count"] != df_selected["User Count"].shift()).cumsum()
+
+    result = df_selected.groupby("Step Index").agg({
         "User Count": "first",
         "Requests/s": "mean",
         "Failures/s": "mean",
-        "Total Average Response Time": "mean"
+        "Average Response Time": "mean"
     }).reset_index()
 
     result.columns = ["Step Index", "User Count", "Avg Requests/s", "Avg Failures/s", "Avg Response Time"]
     return result
+
 
 def plot_approximation(df: pd.DataFrame, column: str, output_path: str, degree: int = 5):
     x = df["User Count"]
@@ -137,11 +165,12 @@ def plot_approximation(df: pd.DataFrame, column: str, output_path: str, degree: 
     plt.close()
     return f
 
+
 def failures_wrapper():
     error_percentages = {}
     for sys_dir in system_dirs:
         for variant in ["nginx_docker", "nginx_server"]:
-            variant_path = os.path.join(results_path, sys_dir, variant)
+            variant_path = os.path.join(REPORT_PATH, sys_dir, variant)
             hist_path = os.path.join(variant_path, "results_stats.csv")
 
             if os.path.exists(hist_path):
@@ -163,12 +192,13 @@ def failures_wrapper():
 
     return error_percentages
 
+
 if __name__ == "__main__":
     errors = failures_wrapper()
 
     for sys_dir in system_dirs:
         for variant in ["nginx_docker", "nginx_server"]:
-            variant_path = os.path.join(results_path, sys_dir, variant)
+            variant_path = os.path.join(REPORT_PATH, sys_dir, variant)
             hist_path = os.path.join(variant_path, "results_stats_history.csv")
 
             if os.path.exists(hist_path):
@@ -214,7 +244,7 @@ if __name__ == "__main__":
                 })
 
                 # Расчет рейтинга
-                rating = (integral_rps * 0.3) + (1 / integral_response_time * 0.3)
+                rating = (integral_rps * 0.5) + (1 / (integral_response_time * 0.5))
                 key = f"{sys_dir}_{variant}"
                 rating_path = os.path.join(variant_path, "rating.txt")
 

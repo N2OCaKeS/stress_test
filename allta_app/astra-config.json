@@ -82,7 +82,10 @@
                     "1.7.6.UU.1.o",
                     "1.7.6.UU.2.s",
                     "1.7.6.UU.2.v",
-                    "1.7.6.UU.2.o"
+                    "1.7.6.UU.2.o",
+                    "1.7.7.s",
+                    "1.7.7.v",
+                    "1.7.7.o"
                 ]
             },
             {
@@ -754,6 +757,24 @@
                 "1.7.6.UU.2.o": [
                     "orel-vanilla-gui/1.7.6.15",
                     "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.6.UU2.json"
+                ]
+            },
+            {
+                "1.7.7.s": [
+                    "smolensk-vanilla-gui/1.7.7.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.7.7.json"
+                ]
+            },
+            {
+                "1.7.7.v": [
+                    "voronezh-vanilla-gui/1.7.7.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.7.7.json"
+                ]
+            },
+            {
+                "1.7.7.o": [
+                    "orel-vanilla-gui/1.7.7.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.7.7.json"
                 ]
             },
             {

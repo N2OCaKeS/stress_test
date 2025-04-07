@@ -5,7 +5,7 @@ from repository_analyzer import RepositoryConfig, RepositoryAnalysisController
 app = FastAPI()
 
 @app.get("/get_components_for_testrun_by_changelog")
-def get_components_for_testrun_by_changelog(astra_linux_build_version: str, first_level_dependencies: bool = True):
+def get_components_for_testrun_by_changelog(astra_linux_build_version: str, first_level_dependencies: bool = True, return_dct_component_with_packages: bool = False):
     repos = fetch_repository(version=astra_linux_build_version)
     filtered_repo = filter_repository(repos=repos)
 
@@ -13,7 +13,7 @@ def get_components_for_testrun_by_changelog(astra_linux_build_version: str, firs
     for repo in filtered_repo:
         repo_config = RepositoryConfig(repo_url=repo, tables_to_process=['Added_binaries', 'Changelog', 'Upgraded_binaries'])
         controller.add_repository(repo_config)
-
-    results = controller.run_analysis(include_components=first_level_dependencies)
+    
+    results = controller.run_analysis(include_components=first_level_dependencies, ret_groups_with_pkgs=return_dct_component_with_packages)
     
     return results

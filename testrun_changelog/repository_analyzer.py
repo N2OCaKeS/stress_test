@@ -50,7 +50,7 @@ class RepositoryAnalysisController:
     def add_repository(self, config: RepositoryConfig) -> None:
         self.repositories.append(config)
     
-    def run_analysis(self, include_components: bool = False) -> Dict:
+    def run_analysis(self, include_components: bool = False, ret_groups_with_pkgs: bool = False) -> Dict:
         for config in self.repositories:
             processor = RepositoryProcessor(config)
             processor.process(include_components)
@@ -68,4 +68,6 @@ class RepositoryAnalysisController:
             new_groups = GROUPS
     
         checker = Checker(groups=new_groups)
+        if ret_groups_with_pkgs:
+            return checker.check_package_changes_by_test_categories_dct(self.all_packages_from_changelog)
         return checker.check_package_changes_by_test_categories(self.all_packages_from_changelog)

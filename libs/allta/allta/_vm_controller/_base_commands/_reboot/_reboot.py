@@ -45,7 +45,7 @@ class _Reboot:
             return False
 
         print(f"[{host}] Перезагрузка инициирована, ожидаем доступности...")
-        time.sleep(25)
+        time.sleep(60)
         start_time = time.time()
         while True:
             try:

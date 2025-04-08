@@ -9,7 +9,7 @@ DEFAULT_TEST_USER="user"
 DEFAULT_TEST_PASS="user"
 
 SERVICE_NAME="devpi.service"
-PROJECT_PATH="/home/u/devpi-service" # TODO изменить
+PROJECT_PATH="/home/u/devpi-service" 
 
 if [ -f "$ENV_FILE" ]; then
     echo "Загрузка переменных из $ENV_FILE..."

@@ -2,7 +2,7 @@ from allta import VBoxManager
 from roles.vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS
 
 
-class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
+class DomainVM():
 
     def __init__(self):
         self.provider = VBoxManager()
@@ -28,7 +28,7 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
 
         tasks = {
             'dcfreeipa': {
-                'kinit': {  # TODO реализовать в библиотеки обработку если имя задачи reboot то послать сигнал перезагрузки ВМ и ждать пока она не запуститься после чего продолжить выполнение
+                'kinit': {
                     'command': f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}',
                     'signal set': 'Kinit',
                     'signal get': '',
@@ -43,4 +43,11 @@ class DomainVM(): # TODO НАДО ПРОВЕРИТЬ!
                 'signal set': '',
                 'signal get': ['dcfreeipa' ,'Kinit']
             }
-        provider.execute(vm_dates=VMS_DATES, commands=tasks, vms_groups=VMS_GROUPS, username='u', password='1')
+            tasks['dcfreeipa'][f'register database{n+1}'] = {
+            'command': f'ipa service-add postgres/database{n+1}.{DOMAIN}@{DOMAIN.upper()}',
+            'signal set': '',
+            'signal get': ['dcfreeipa' ,'Kinit']
+            }
+
+        provider.execute(vm_dates=VMS_DATES, commands=tasks, vms_groups=VMS_GROUPS)
+

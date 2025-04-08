@@ -1,6 +1,6 @@
 index-url http://10.177.103.10:3141/user/astra # TODO изменить index-url после ревизии и публикации пакета
 atlassian-python-api 
-allta_vm_controller==0.0.1
+allta_vm_controller
 pretty-html-table 
 pandas 
 pysnooper

@@ -89,17 +89,17 @@ CREATE ROLE Организация IN ROLE Департамент_1, Депар�
 DROP ROLE IF EXISTS Администратор_БД;
 CREATE ROLE Администратор_БД;
 -- Пользователя user3 назначаем администратором БД
-GRANT Администратор_БД TO user3@BALANCE.RBT;
+GRANT Администратор_БД TO user3;
 -- Создаем роль пользоватля БД
 DROP ROLE IF EXISTS Пользователь;
 CREATE ROLE Пользователь;
 -- Пользователей user0, user1, user2 назначаем пользователями БД
-GRANT Пользователь TO user0@BALANCE.RBT, user1@BALANCE.RBT, user2@BALANCE.RBT;
+GRANT Пользователь TO user0, user1, user2;
 -- Пользователям user0, user1, user2 назначаем доступ к записям
 -- в соответствии с иерархической структурой
-GRANT Отдел_12 TO user0@BALANCE.RBT;
-GRANT Департамент_1 TO user1@BALANCE.RBT;
-GRANT Организация TO user2@BALANCE.RBT;
+GRANT Отдел_12 TO user0;
+GRANT Департамент_1 TO user1;
+GRANT Организация TO user2;
 
 
 -- РАЗГРАНИЧЕНИЕ ДОСТУПА К ПОЛЯМ ТАБЛИЦЫ

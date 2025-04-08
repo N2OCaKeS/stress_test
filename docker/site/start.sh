@@ -219,7 +219,6 @@ case $1 in
 	    nginx_server
 	    nginx_docker
 	    echo "Тест выполнился"
-            source ${VENV}activate && python3 ${LPATH}libtable.py	
 	    ;;
 esac
 

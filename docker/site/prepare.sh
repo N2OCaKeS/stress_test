@@ -18,6 +18,16 @@ if [[ "$SYS_VERSION" == 1.7* ]]; then
     sed 's|/[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+/base-repository|/EXT_latest/extended-repository|' >> /etc/apt/sources.list
 fi
 
+cat << EOF | sudo tee /etc/apt/preferences.d/devel
+Package: *
+Pin: release l=devel
+Pin-Priority: 500
+
+Package: *
+Pin: release l=extended
+Pin-Priority: 500
+EOF
+
 # test packages
 sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 docker.io docker-compose nginx   build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace libcurl4-gnutls-dev  python3-requests liblzma-dev
 

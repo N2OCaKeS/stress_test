@@ -5,7 +5,7 @@ GROUPS = {
     'Apache': ["apache2"],
     'FreeIPA': ["astra-freeipa-server", "astra-freeipa-client", "freeipa-client", "freeipa-server"],
     'PostgreSQL': ["postgresql"],
-    'Qemu/KVM/Libvirt': ["astra-kvm", 'astra-kvm-secure', 'qemu-kvm', 'qemu-utils', 'bridge-utils', 'libvirt-daemon', ' libvirt-daemon-system', ' virtiofsd'],
-    'Системные службы': ['systemd', 'syslog-ng', 'auditd'],
+    'Qemu/KVM/Libvirt': ["astra-kvm", 'astra-kvm-secure'],
+    'Системные службы': ['systemd', 'syslog-ng', 'syslog-ng-mod-astra', 'auditd'],
     'Файловые системы': ['xfsprogs', 'exfat-utils', 'e2fsprogs', 'dosfstools', 'ntfs-3g']
 }

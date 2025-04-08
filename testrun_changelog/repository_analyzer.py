@@ -4,8 +4,12 @@ from typing import List, Dict, Optional
 
 from checker import Checker
 from package_groups import GROUPS
+from utils import fetch_packages
+from errors import PackagesNotFound
+from logging_conf import testrun_logger
 from packagemanager import PackageGroupManager
 from parsers import RepositoryParser, TablePackageExtractor, PackageParser
+
 
 @dataclass
 class RepositoryConfig:
@@ -22,9 +26,8 @@ class RepositoryProcessor:
     def process(self, include_components: bool = False) -> None:
         rp = RepositoryParser(repo_line=self.config.repo_url)
         url_changelog, urls_packages = rp.get_all_urls()
-        
         self._process_changelog(url_changelog)
-        
+
         if include_components:
             self._process_components(urls_packages)
     
@@ -33,11 +36,13 @@ class RepositoryProcessor:
         for table_name in self.config.tables_to_process:
             packages_from_table = tpe.extract_from_table(table_name)
             self.packages_from_changelog.extend(packages_from_table)
+            testrun_logger.info(f"Парсинг changelog: Таблица {table_name}, Репозиторий {self.config.repo_url}")
 
     def _process_components(self, component_urls: List[str]) -> None:
+        testrun_logger.info("Парсинг пакетов по компонентам")
         for url_comp_packages in component_urls:
-            res = requests.get(url_comp_packages)
-            packages_comp = PackageParser.parse_packages(res.text)
+            res = fetch_packages(url_comp_packages)
+            packages_comp = PackageParser.parse_packages(res)
             self.packages_from_components.extend(packages_comp)
 
 
@@ -50,7 +55,7 @@ class RepositoryAnalysisController:
     def add_repository(self, config: RepositoryConfig) -> None:
         self.repositories.append(config)
     
-    def run_analysis(self, include_components: bool = False, ret_groups_with_pkgs: bool = False) -> Dict:
+    def run_analysis(self, include_components: bool = False, ret_groups_with_pkgs: bool = False) -> Dict | List:
         for config in self.repositories:
             processor = RepositoryProcessor(config)
             processor.process(include_components)
@@ -59,6 +64,7 @@ class RepositoryAnalysisController:
             self.all_packages_from_components.extend(processor.packages_from_components)
         
         if include_components:
+            testrun_logger.info(f"Указан параметр о включении зависимостей первого уровня")
             pgm = PackageGroupManager(
                 initial_groups=GROUPS,
                 all_packages_info=self.all_packages_from_components

@@ -1,6 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 
+from utils import fetch_changelog
+from logging_conf import testrun_logger
+
 class Package:
     def __init__(self, name=None, depends=None):
         self.name = name
@@ -48,7 +51,7 @@ class TablePackageExtractor:
     def __init__(self, changelog_url):
         self.changelog_url = changelog_url
         # TODO Обернуть в исключения
-        self.changelog_html = requests.get(changelog_url).text
+        self.changelog_html = fetch_changelog(changelog_url)
         self.soup = BeautifulSoup(self.changelog_html, 'html.parser')
     
     def extract_from_table(self, section_name, package_column=0):
@@ -98,4 +101,5 @@ class RepositoryParser:
         return urls
     
     def get_all_urls(self):
+        testrun_logger.info("Получение changelog url и packages urls")
         return self.get_changelog_url(), self.get_packages_urls()

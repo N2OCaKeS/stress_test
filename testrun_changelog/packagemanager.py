@@ -1,3 +1,6 @@
+from logging_conf import testrun_logger
+
+
 class PackageGroupManager:
     def __init__(self, initial_groups, all_packages_info):
         self.initial_groups = initial_groups
@@ -43,5 +46,5 @@ class PackageGroupManager:
     def process_groups(self):
         for group_name, packages in self.initial_groups.items():
             self.new_groups[group_name] = self._process_group(group_name, packages)
-        
+        testrun_logger.info("Добавлены зависимости первого уровня")
         return self.new_groups

@@ -72,3 +72,5 @@ DOMAIN_USER_PASSWORD = '1'
 
 POSTGRES_PORT = '5440'
 POSTGRES_DATA_PATH = f'/var/lib/postgresql/{VERSION_PG}/contrprimer'
+
+PROVISION_PATH = './provision/provision.sh'

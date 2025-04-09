@@ -4,7 +4,7 @@ from roles.load_balancer.load_balancer import LoadBalancer
 from roles.task.pre_configure import PreConfigure
 from roles.domain.domain import DomainVM
 from roles.database.db import DatabaseVM
-from roles.vm_info import VMS_DATES, VMS, VERSION_OS
+from roles.vm_info import VMS_DATES, VMS, VERSION_OS, PROVISION_PATH
 from time import sleep
 
 def main():
@@ -15,10 +15,10 @@ def main():
     provider.prepare(prepare_path)
     
     if VERSION_OS == '1.7':
-        provider.build(vagrant_path, f'1.7.5.s', '1.7.5', VMS, VMS_DATES)
+        provider.build(vagrant_path, f'1.7.5.s', '1.7.5', VMS, VMS_DATES, PROVISION_PATH)
 
     elif VERSION_OS == '1.8':
-        provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES)
+        provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES, PROVISION_PATH)
     
 
 
@@ -26,9 +26,8 @@ def main():
     sleep(30)
 
     configure = PreConfigure()
-    configure.provision()
     configure.set_hosts()
-    configure.apt_install() # Проверено работает
+    configure.apt_install()
     
     
 

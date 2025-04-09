@@ -20,7 +20,7 @@ def main():
     elif VERSION_OS == '1.8':
         provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES, PROVISION_PATH)
     
-
+    provider.check(VMS, VMS_DATES)
 
     print('Ожидаем 30 сек перед началом теста')
     sleep(30)

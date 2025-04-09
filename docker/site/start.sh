@@ -2,6 +2,7 @@
 
 localhost="localhost"
 WORKER=5
+export WORKER
 NGINX_DC="docker-compose.nginx.yml"
 LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
 APP_CONTAINERS=("flask" "nginx")

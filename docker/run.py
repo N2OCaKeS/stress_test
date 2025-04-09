@@ -31,8 +31,7 @@ def run_command(command):
 
 
 if args.TEST == "web":
-    run_command("cd ./site && bash prepare.sh")
     run_command("cd ./site && bash start.sh final")
-    run_command(f"source {VENV_PATH}/activate && python3 report.py")
+    run_command(f"source {VENV_PATH}/activate && python3 report.py -t web")
     run_command(f"source {VENV_PATH}/activate && python3 publish.py")
 else: "Тест не найден"

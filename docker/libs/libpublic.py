@@ -1,6 +1,7 @@
 import os
 from libs.libreport import ReportToConfluence
 from libs.docker_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME
+import glob
 #REPORT_FILENAME, \REQUESTS, CONCURRENCY
 
 
@@ -100,19 +101,20 @@ class Public:
                                                      c_np)
 
             
-        
-        #прикрепить файлы к странице confluence
-        #for root, dirs, files in os.walk(REPORT_PATH):
-        #    for filename in files:
-        #        confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file), self.c_space, c_np)
-            
+        # Прикрепить файлы
+        #attachments = glob.glob(f"{REPORT_PATH}/docker*/nginx_*/**", recursive=True)
+        #for file_path in attachments:
+        #    if os.path.isfile(file_path):
+        #        print(f"Прикрепление: {file_path}")
+        #        confluence_report.attache_files(file_path, self.c_space, c_np)
+
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:
             info_lst = info.read().split('\n')
 
         # with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'r') as r:
         #     rps = r.read()
-       
+        
         print("DEBUG: grade_stand =", self.grade_stand)
         print("DEBUG: доступные ключи в self.stands:", self.stands.keys())
         with open(f'{TEMPLATE_PATH}/header_table_template_web.html', 'r') as file:
@@ -125,9 +127,59 @@ class Public:
                                                     arm_mem=self.stands[self.grade_stand]['ram'],
                                                     arm_st=self.stands[self.grade_stand]['storage'])
             
-        #создание страницы отчета
-        html_page = '\n'.join([header_table])
+        # Получаем рейтинг
+        paths = glob.glob(f"{REPORT_PATH}/docker*/nginx_docker/rating.txt") + \
+                glob.glob(f"{REPORT_PATH}/docker*/nginx_server/rating.txt")
+        r_docker = ""
+        r_server = ""
+
+        for path in paths:
+            with open(path, 'r') as f:
+                lines = f.readlines()
+                if len(lines) >= 2:
+                    second_line = lines[1].strip()
+                    if "server" in lines[0]:
+                        r_server = second_line
+                        print(r_server)
+                    else:
+                        r_docker = second_line
+                        print(r_docker)
+
+        # Делаем rating html
+        with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
+            rating_temp = template.read()
+            rating = rating_temp.format(rd=r_docker, rs=r_server)
+
+        # Таблицы на 2 теста
+        docker_stats = os.path.join(TEMPLATE_PATH, 'docker', 'results_stats.html')
+        docker_steps = os.path.join(TEMPLATE_PATH, 'docker', 'step_stats_summary.html')
+        server_stats = os.path.join(TEMPLATE_PATH, 'server', 'results_stats.html')
+        server_steps = os.path.join(TEMPLATE_PATH, 'server', 'step_stats_summary.html')
+        with open(docker_stats, 'r') as f:
+            docker_stats_html = f.read()
+        with open(docker_steps, 'r') as f:
+            docker_steps_html = f.read()
+        with open(server_stats, 'r') as f:
+            server_stats_html = f.read()
+        with open(server_steps, 'r') as f:
+            server_steps_html = f.read()
         
+        # 
+        html_page = '\n'.join([
+        header_table,
+        rating,
+        "<h2>Docker - Общая статистика</h2>",
+        docker_stats_html,
+        "<h2>Docker - По шагам</h2>",
+        docker_steps_html,
+        "<hr></hr>",
+        "<h2>Server - Общая статистика</h2>",
+        server_stats_html,
+        "<h2>Server - По шагам</h2>",
+        server_steps_html])
+
+        #создание страницы отчета
+        #html_page = '\n'.join([header_table, rating, table])
 
         #выкладываем информацию на страницу
         if release_pp and release_np:
@@ -162,5 +214,6 @@ class Public:
 
         else:
             self.preset_publish(self.c_pp, self.c_np)
+
 
 

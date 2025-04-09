@@ -9,7 +9,7 @@ from scipy.integrate import IntegrationWarning
 from matplotlib.gridspec import GridSpec
 from libs.docker_conf import REPORT_PATH
 
-
+# using in report.py
 class Report:
     def __init__(self, report_path=REPORT_PATH):
         self.report_path = report_path
@@ -96,17 +96,27 @@ class Report:
             "User Count", "Requests/s", "Failures/s", "Total Average Response Time"
         ]].copy()
 
-        df_selected.rename(columns={"Total Average Response Time": "Average Response Time"}, inplace=True)
         df_selected["Step Index"] = (df_selected["User Count"] != df_selected["User Count"].shift()).cumsum()
 
         result = df_selected.groupby("Step Index").agg({
             "User Count": "first",
             "Requests/s": "mean",
             "Failures/s": "mean",
-            "Average Response Time": "mean"
+            "Total Average Response Time": "mean"
         }).reset_index()
 
-        result.columns = ["Step Index", "User Count", "Avg Requests/s", "Avg Failures/s", "Avg Response Time"]
+        # Переименовываем после агрегации
+        result.rename(columns={
+            "Requests/s": "Avg Requests/s",
+            "Failures/s": "Avg Failures/s",
+            "Total Average Response Time": "Avg Response Time"
+        }, inplace=True)
+
+        # Добавляем колонку с процентом ошибок
+        result["Failure Rate (%)"] = (
+            result["Avg Failures/s"] / result["Avg Requests/s"]
+        ).fillna(0) * 100
+
         return result
 
 
@@ -135,4 +145,24 @@ class Report:
                         error_percentages[f"{sys_dir}_{variant}"] = None
 
         return error_percentages
+
+    @staticmethod
+    def get_step_error_multiplier(df_result: pd.DataFrame) -> tuple[float, str]:
+        """
+        Возвращает множитель рейтинга и описание по шагам:
+        - если шаг >=10% → 0.66
+        - если >0 → 0.9
+        - иначе → 1.0
+        """
+        if "Failure Rate (%)" not in df_result.columns:
+            return 1.0, "Колонка 'Failure Rate (%)' не найдена"
+
+        failure_rates = df_result["Failure Rate (%)"]
+
+        if any(failure_rates >= 10):
+            return 0.66, "Ошибки высокие (≥10% на одном из шагов)"
+        elif any(failure_rates > 0):
+            return 0.9, "Ошибки средние (0–10% на одном из шагов)"
+        else:
+            return 1.0, "Ошибки отсутствуют"
     

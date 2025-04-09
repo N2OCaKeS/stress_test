@@ -152,11 +152,17 @@ fi
 sleep 2
 
 #Start VM create
-VMS="virtual-station1 virtual-station2 virtual-station3 virtual-station4"
+VMS=("virtual-station1" "virtual-station2" "virtual-station3" "virtual-station4")
 BOX_NAME=orel-vanilla-gui/1.7.5
 BOX_URL=ftp://10.177.103.10/boxes/box/1.7.5.o.box
 KERNEL=5.10.190-1-generic
 RC=1.7.5
+
+declare -A vm_mac_map
+vm_mac_map=( ["virtual-station1"]="080027ABCD01"
+             ["virtual-station2"]="080027ABCD02"
+             ["virtual-station3"]="080027ABCD03"
+             ["virtual-station4"]="080027ABCD04" )
 
 sleep 1
 echo vagrant box add $BOX_NAME $BOX_URL --force
@@ -168,14 +174,16 @@ sleep 1
 
 BRIDGE_IFACE=`vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1`
 
-for vm in $VMS; do
-    vboxmanage controlvm $vm poweroff
+for vm in "${VMS[@]}"; do
+    VBoxManage controlvm "$vm" poweroff
     sleep 1
-    vboxmanage modifyvm $vm --nic1 bridged
-    vboxmanage modifyvm $vm --bridgeadapter1 $BRIDGE_IFACE
-    vboxmanage startvm $vm --type headless
+    VBoxManage modifyvm "$vm" --nic1 bridged
+    VBoxManage modifyvm "$vm" --nested-hw-virt on
+    VBoxManage modifyvm "$vm" --bridgeadapter1 "$BRIDGE_IFACE"
+    VBoxManage modifyvm "$vm" --macaddress1 "${vm_mac_map[$vm]}"
+    VBoxManage startvm "$vm" --type headless
     sleep 1
-    vboxmanage snapshot "$vm" take "start_snapshot_1"
+    VBoxManage snapshot "$vm" take "start_snapshot_1"
 done
 
 vboxmanage natnetwork list
@@ -188,6 +196,7 @@ vboxmanage list vms
 
 #for vm in $VMS; do
 #  sudo vboxmanage controlvm $vm poweroff
+#  sudo VBoxManage modifyvm virtual-station1 --nested-hw-virt on
 #  sudo VBoxManage snapshot $vm restore snapshot_with_git_1
 #  sudo vboxmanage startvm $vm --type headless
 #done

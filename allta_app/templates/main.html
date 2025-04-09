@@ -1033,23 +1033,32 @@
           });
         </script>
 
-        <!-- <button id="toggleButton" onclick="toggleAccordion()">Toggle Accordion</button> -->
-        <div style="float: left; text-align: center;">
-          <button id="toggleButton" onclick="toggleAccordion()" style="padding: 0; border: none; background: none;">
-              <img src="http://10.177.103.10:8000/static/settings.gif" alt="Settings" style="width: 100%; height: 100%;">
-          </button>
-          <p style="margin: 0; line-height: 1.2;">Смена</p>
-          <p style="margin: 0; line-height: 1.2;">настроек</p>
-        </div>
-      <!-- <div style="float: left; text-align: center;">
-          <button id="anotherButton" style="padding: 0; border: none; background: none;">
-              <img src="http://path_to_your_image_source" alt="Another Button" style="width: 100%; height: 100%;">
-          </button>
-          <p>Another Button</p>
-      </div> -->
-      </div>
-      
+        
 
+        <style>
+          #toggleSwitch:checked {
+            background-color: #ff7b00; 
+            border-color: #333; 
+          }
+
+          #toggleSwitch {
+            background-color: #333; 
+            border-color: white; 
+          }
+        </style>
+
+        <div style="float: left; text-align: left;">
+          <!-- <button id="toggleButton" onclick="toggleAccordion()" style="padding: 0; border: none; background: none;">
+              <img src="http://10.177.103.10:8000/static/settings.gif" alt="Settings" style="width: 100%; height: 100%;">
+          </button> -->
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="toggleSwitch" onchange="toggleAccordion()">
+            <label class="form-check-label" for="toggleSwitch"></label>
+          </div>
+          <p style="margin: 0; line-height: 1.2;">Смена</p>
+          <p style="margin: 0; line-height: 1.2;">параметров</p>
+        </div>
+      </div>
       
 
     <script>
@@ -3098,7 +3107,7 @@
           </style>
             <div class="btn-group" role="group">
               <button class="commandButton6 btn btn-dark" data-command="/reboot/stand6">Reboot</button>
-              <button class="commandButton6 btn btn-dark" data-command="/poweroff/stand6">Power off</button>
+              <button id="powerButton6" class="commandButton6 btn btn-dark" data-command="/poweroff/stand6">Power off</button>
               <div class="dropdown d-inline-block">
                 <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
                 <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -3140,7 +3149,7 @@
              
   
   
-            <script>
+            <!-- <script>
               function powerCommand_stand6(command) {
                   document.getElementById('loading-spinner').style.display = 'block';
               
@@ -3164,7 +3173,7 @@
                       powerCommand_stand6(event.target.dataset.command);
                   });
               });
-            </script>
+            </script> -->
   
             <script>
               function backup_snapshot_stand6(version) {
@@ -3209,13 +3218,18 @@
                 success: function(response) {
                   var statusImageStand6 = document.getElementById("status-image-stand6");
                   var statusImageStand6Global = document.getElementById("status-image-stand6-global");
+                  var powerButton6 = document.getElementById("powerButton6");
                   
                   if (response.is_running) {
                     statusImageStand6.src = "http://10.177.103.10:8000/static/status_on.png";
                     statusImageStand6Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                    powerButton6.innerText = "Power off";
+                    powerButton6.setAttribute("data-command", "/poweroff/stand6");
                   } else {
                     statusImageStand6.src = "http://10.177.103.10:8000/static/status_off.png";
                     statusImageStand6Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                    powerButton6.innerText = "Power on";
+                    powerButton6.setAttribute("data-command", "/poweron/stand6");
                   }
                 }
               });
@@ -3455,7 +3469,7 @@
         </style>
           <div class="btn-group" role="group">
             <button class="commandButton7 btn btn-dark" data-command="/reboot/stand7">Reboot</button>
-            <button class="commandButton7 btn btn-dark" data-command="/poweroff/stand7">Power off</button>
+            <button id="powerButton7" class="commandButton7 btn btn-dark" data-command="/poweroff/stand7">Power off</button>
             <div class="dropdown d-inline-block">
               <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
               <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -3497,7 +3511,7 @@
            
 
 
-          <script>
+          <!-- <script>
             function powerCommand_stand7(command) {
                 document.getElementById('loading-spinner').style.display = 'block';
             
@@ -3521,7 +3535,7 @@
                     powerCommand_stand7(event.target.dataset.command);
                 });
             });
-          </script>
+          </script> -->
 
           <script>
             function backup_snapshot_stand7(version) {
@@ -3566,13 +3580,18 @@
               success: function(response) {
                 var statusImageStand7 = document.getElementById("status-image-stand7");
                 var statusImageStand7Global = document.getElementById("status-image-stand7-global");
+                var powerButton7 = document.getElementById("powerButton7");
                 
                 if (response.is_running) {
                   statusImageStand7.src = "http://10.177.103.10:8000/static/status_on.png";
                   statusImageStand7Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                  powerButton7.innerText = "Power off";
+                  powerButton7.setAttribute("data-command", "/poweroff/stand7");
                 } else {
                   statusImageStand7.src = "http://10.177.103.10:8000/static/status_off.png";
                   statusImageStand7Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                  powerButton7.innerText = "Power on";
+                  powerButton7.setAttribute("data-command", "/poweron/stand7");
                 }
               }
             });
@@ -3811,7 +3830,7 @@
       </style>
         <div class="btn-group" role="group">
           <button class="commandButton8 btn btn-dark" data-command="/reboot/stand8">Reboot</button>
-          <button class="commandButton8 btn btn-dark" data-command="/poweroff/stand8">Power off</button>
+          <button id="powerButton8" class="commandButton8 btn btn-dark" data-command="/poweroff/stand8">Power off</button>
           <div class="dropdown d-inline-block">
             <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
             <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -3853,7 +3872,7 @@
          
 
 
-        <script>
+        <!-- <script>
           function powerCommand_stand8(command) {
               document.getElementById('loading-spinner').style.display = 'block';
           
@@ -3877,7 +3896,7 @@
                   powerCommand_stand8(event.target.dataset.command);
               });
           });
-        </script>
+        </script> -->
 
         <script>
           function backup_snapshot_stand8(version) {
@@ -3922,13 +3941,18 @@
             success: function(response) {
               var statusImageStand8 = document.getElementById("status-image-stand8");
               var statusImageStand8Global = document.getElementById("status-image-stand8-global");
+              var powerButton8 = document.getElementById("powerButton8");
               
               if (response.is_running) {
                 statusImageStand8.src = "http://10.177.103.10:8000/static/status_on.png";
                 statusImageStand8Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                powerButton8.innerText = "Power off";
+                powerButton8.setAttribute("data-command", "/poweroff/stand8");
               } else {
                 statusImageStand8.src = "http://10.177.103.10:8000/static/status_off.png";
                 statusImageStand8Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                powerButton8.innerText = "Power on";
+                powerButton8.setAttribute("data-command", "/poweron/stand8");
               }
             }
           });
@@ -4167,7 +4191,7 @@
       </style>
         <div class="btn-group" role="group">
           <button class="commandButton9 btn btn-dark" data-command="/reboot/stand9">Reboot</button>
-          <button class="commandButton9 btn btn-dark" data-command="/poweroff/stand9">Power off</button>
+          <button id="powerButton9" class="commandButton9 btn btn-dark" data-command="/poweroff/stand9">Power off</button>
           <div class="dropdown d-inline-block">
             <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
             <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -4209,7 +4233,7 @@
          
 
 
-        <script>
+        <!-- <script>
           function powerCommand_stand9(command) {
               document.getElementById('loading-spinner').style.display = 'block';
           
@@ -4233,7 +4257,7 @@
                   powerCommand_stand9(event.target.dataset.command);
               });
           });
-        </script>
+        </script> -->
 
         <script>
           function backup_snapshot_stand9(version) {
@@ -4278,13 +4302,18 @@
             success: function(response) {
               var statusImageStand9 = document.getElementById("status-image-stand9");
               var statusImageStand9Global = document.getElementById("status-image-stand9-global");
+              var powerButton9 = document.getElementById("powerButton9");
               
               if (response.is_running) {
                 statusImageStand9.src = "http://10.177.103.10:8000/static/status_on.png";
                 statusImageStand9Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                powerButton9.innerText = "Power off";
+                powerButton9.setAttribute("data-command", "/poweroff/stand9");
               } else {
                 statusImageStand9.src = "http://10.177.103.10:8000/static/status_off.png";
                 statusImageStand9Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                powerButton9.innerText = "Power on";
+                powerButton9.setAttribute("data-command", "/poweron/stand9");
               }
             }
           });

@@ -42,7 +42,8 @@ from allta_image_conf import (VENV_PATH,
                                JIRA_URL,
                                releases_dict,
                                cz_comm,
-                               allta_version)
+                               allta_version,
+                               test_station_vms)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -982,18 +983,20 @@ def backup_snapshot(stand, snapshot):
 
 
 def backup_vm_snapshot(stand, snapshot):
-    vms = {
-        'stand6': 'virtual-station1',
-        'stand7': 'virtual-station2',
-        'stand8': 'virtual-station3',
-        'stand9': 'virtual-station4'
-    }
+    vms = test_station_vms
     commands = [f'sudo vboxmanage controlvm {vms[stand]} poweroff',
                 f'sudo VBoxManage snapshot {vms[stand]} restore {snapshot}',
                 f'sudo vboxmanage startvm {vms[stand]} --type headless']
 
     [ssh_command(command=cmd, stand_ip=stands_ip['stand5']) for cmd in commands]
 
+
+def power_on_stand(stand):
+    vms = test_station_vms
+    cmd = f'sudo vboxmanage startvm {vms[stand]} --type headless'
+
+    if stand in vms.keys():
+        ssh_command(command=cmd, stand_ip=stands_ip['stand5'])
 
 
 class BootOrder:

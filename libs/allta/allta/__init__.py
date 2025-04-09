@@ -1,4 +1,4 @@
-__version__ = "0.0.2" # TODO Здесь МЕНЯТЬ версию при релизе на ту что в коммите
+__version__ = "0.0.1" # TODO Здесь МЕНЯТЬ версию при релизе на ту что в коммите
 
 from ._decorators.Decorators import BaseDecorators 
 from ._system_command.SystemCommands import SystemCommands

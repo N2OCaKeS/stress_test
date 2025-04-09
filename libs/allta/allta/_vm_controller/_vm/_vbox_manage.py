@@ -71,9 +71,8 @@ class _VboxManager():
             None
         """
         for vm in vms:
-            system_commands.cmd(f'vboxmanage controlvm {vm} poweroff')
             system_commands.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
-            system_commands.cmd(f'vboxmanage startvm {vm} --type headless')
+            
             
         return 0
 
@@ -115,12 +114,3 @@ class _VboxManager():
             str: Список виртуальных машин.
         """
         return system_commands.check_output_command('vboxmanage list vms')
-
-
-
-
-
-
-
-
-

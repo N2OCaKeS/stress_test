@@ -106,7 +106,7 @@ class LoadBalancer():
 
         scp = {
                 'mode': 'push',
-                'path_host': 'postgresql/new_balance/roles/load_balancer/template/pgpool.sh', 
+                'path_host': './roles/load_balancer/template/pgpool.sh', 
                 'path_vm': '/tmp/contrprimer.sql'
         }
         provider.scp(scp, VMS_DATES, VMS_GROUPS)

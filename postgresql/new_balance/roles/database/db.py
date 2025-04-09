@@ -259,7 +259,7 @@ EOF"""
         scp_sql = { # TODO переписать путь
             'database1': {
                 'mode': 'push',
-                'path_host': 'postgresql/new_balance/roles/database/template/contrprimer.sql',
+                'path_host': './roles/database/template/contrprimer.sql',
                 'path_vm': '/tmp/contrprimer.sql'
             }
         }

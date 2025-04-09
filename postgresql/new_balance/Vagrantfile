@@ -42,7 +42,7 @@ Vagrant.configure("2") do |config|
               mkdir -p /home/iface && ip link show | grep -e '2: e' | tail -n 1 | awk '{print$2}' | sed s'/://'g > /home/iface/iface
             SHELL
           #machine.vm.provision "shell", path:"bl_sources.sh"
-          machine.vm.provision "shell", path:"./provision/provision.sh", args: [vm[:args], ENV['KERNEL'], ENV['RC']]
+          # machine.vm.provision "shell", path:"./provision/provision.sh", args: [vm[:args], ENV['KERNEL'], ENV['RC']]
         end
       end
     end

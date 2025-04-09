@@ -12,7 +12,7 @@ class Test:
         scp = {
             'database1': {
                 'mode': 'push',
-                'path_host': 'postgresql/new_balance/roles/task/template/clients.py',
+                'path_host': './roles/task/template/clients.py',
                 'path_vm': '/tmp/clients.py'
             }
         }

@@ -26,6 +26,7 @@ def main():
     sleep(30)
 
     configure = PreConfigure()
+    configure.provision()
     configure.set_hosts()
     configure.apt_install() # Проверено работает
     

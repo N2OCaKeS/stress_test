@@ -6,6 +6,34 @@ class PreConfigure():
     def __init__(self):
         self.provider = VBoxManager()
 
+
+    def provision(self):
+        scp = { # TODO переписать путь
+            'g_all': {
+                'mode': 'push',
+                'path_host': './provision/provision.sh',
+                'path_vm': '/tmp/provision.sh'
+            }
+        }
+        self.provider.scp(scp, VMS_DATES, VMS_GROUPS)
+        task = {
+            'g_all':{
+                'chmod': {
+                    'command': f'sudo chmod +x /tmp/provision.sh',
+                    'signal set': 'chmod',
+                    'signal get': ''
+                },   
+                'provision': {
+                    'command': f'sudo bash /tmp/provision.sh',
+                    'signal set': '',
+                    'signal get': ['chmod']
+                },             
+            }
+        }
+
+        self.provider.execute(VMS_DATES, task, VMS_GROUPS)
+
+
     def apt_install(self):
         apt_install = {
             'g_domain_client': ['astra-freeipa-client'],

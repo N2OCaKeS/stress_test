@@ -42,7 +42,7 @@ class ConfluencePage:
         else:
             return None
 
-class StatisticsToConfluence():
+class UpdatePageReportToConfluence():
     __url=f'https://{CONFLUENCE_URL}'
     
     def __init__(self, username, password=None, token=None):

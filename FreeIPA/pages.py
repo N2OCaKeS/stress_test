@@ -2,10 +2,14 @@ from confluence.confluence import ConfluencePage
 # from logging_conf import main_logger
 
 class Pages:
-    def __init__(self, username, token) -> None:
+    def __init__(self, username, token, password) -> None:
         self.username = username
-        self.token = token
-        self.CP = ConfluencePage(username=self.username, token=self.token)
+        self.token =  None #token
+        self.password = password
+        self.CP = ConfluencePage(username=self.username,
+                                 password=self.password 
+                                #  token=self.token
+                                 )
         # main_logger.info(f"Отработал конструктор {self.__class__.__name__}. Должно быть подключение к Confluence")
     
     """

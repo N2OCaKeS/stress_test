@@ -22,7 +22,7 @@ After=network.target
 Type=forking
 User=postgres
 Group=postgres
-ExecStart=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D {postgres_data_path} -s -l {postgres_config_path}/logfile
+ExecStart=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D {postgres_config_path} -s -l {postgres_config_path}/logfile
 ExecStop=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl stop -D {postgres_data_path} -s -m fast
 ExecReload=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl reload -D {postgres_data_path} -s
 

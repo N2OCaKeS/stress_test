@@ -12,18 +12,18 @@ def main():
     prepare_path = './prepare/prepare.sh'
 
     provider = VBoxManager()
-    provider.prepare(prepare_path)
+    # provider.prepare(prepare_path)
     
-    if VERSION_OS == '1.7':
-        provider.build(vagrant_path, f'1.7.5.s', '1.7.5', VMS, VMS_DATES)
+    # if VERSION_OS == '1.7':
+    #     provider.build(vagrant_path, f'1.7.5.s', '1.7.5', VMS, VMS_DATES)
 
-    elif VERSION_OS == '1.8':
-        provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES)
+    # elif VERSION_OS == '1.8':
+    #     provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES)
+
+    # print('Ожидаем 2 мин перед началом теста')
+    # sleep(120)        
     
     provider.check(VMS, VMS_DATES)
-
-    print('Ожидаем 30 сек перед началом теста')
-    sleep(30)
 
     configure = PreConfigure()
     configure.set_hosts()

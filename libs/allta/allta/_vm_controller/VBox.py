@@ -50,7 +50,7 @@ class VBox(_VirtualMashines):
         return system_commands.cmd_with_returncode(f"sudo bash {path_prepare}")
 
     @classmethod
-    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_date: list) -> int:
+    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_dates: list) -> int:
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
@@ -59,21 +59,22 @@ class VBox(_VirtualMashines):
             box (str): Имя образа (бокса).
             rc (str): Версия операционной системы.
             vms (list): Список имён виртуальных машин.
+
+                vms = ['hostname1', 'hostname2']
+            
             vms_date (list): Полная информация о виртуальных машинах.
-                vm_dates = {'hostname':{
-                    'host-port':'*',
-                    'ip':'10.0.0.11', #  ip внутренней сети
-                    'sshnum':'',
-                    'ip_bridge':'*.*.*.*', # ip моста
-                    'cpus':'*',
-                    'memory':'*', # RAM
-                    'disk':'*'}
-                    } 
+                
+                vm_dates = {
+                    'hostname':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }
+                    }
 
         Returns:
             int: Код завершения выполнения.
         """
-        vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms_date)
+        vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms_dates)
 
         vagrant.vagrant_up()
 
@@ -97,20 +98,34 @@ class VBox(_VirtualMashines):
         return 0
 
     @classmethod
-    def check(cls, vms: list, vm_dates: dict):
+    def check(cls, vms: list, vms_dates: dict):
         """
         Проверяет доступность виртуальных машин через ping.
 
         Args:
             vms (list): Список имён виртуальных машин.
-            vm_dates (dict): Полная информация о виртуальных машинах.
+                
+                vms = ['hostname1', 'hostname2']
+
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
 
         Returns:
             int: 0, если все машины доступны, иначе 1.
         """
         def _check_ping():
             bad_vms = [vm for vm in vms if system_commands.cmd_with_returncode(
-                f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
+                f"ping -c 1 {vms_dates[vm]['ip_bridge']}") != 0]
             return bad_vms
 
         if _check_ping():
@@ -121,7 +136,7 @@ class VBox(_VirtualMashines):
             return 0
 
     @classmethod
-    def execute(cls, vm_dates: dict, commands: dict, vms_groups: dict = None,
+    def execute(cls, commands: dict, vm_dates: dict, vms_groups: dict = None,
                 username: str = "u", password: str = "1") -> int:
         """
         Выполняет команды на виртуальных машинах. Если имя задачи равно "reboot", то производится
@@ -129,9 +144,49 @@ class VBox(_VirtualMashines):
         производится для всей группы, и сигнал устанавливается только когда все ВМ из группы готовы.
 
         Args:
-            vm_dates (dict): Информация о виртуальных машинах.
             commands (dict): Словарь с командами для выполнения.
+
+                commands = {
+                    'hostname1':{
+                            'task1':{
+                                'command':"",
+                                'signal set': 'test' # Если не надо ставить оставить пустым
+                                'signal get': '' # Если не надо получать оставить пустым
+                            }
+                        },
+                    'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+                            'task2':{
+                                'command':"",
+                                'signal set': '' # Если не надо ставить оставить пустым
+                                'signal get': ['test'] # Ищет для каждого хоста из группы хостов
+                            },
+                            'task2':{
+                                'command':"",
+                                'signal set': '' # Если не надо ставить оставить пустым
+                                'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
+                            },
+                            'reboot':{ # Перезагрузит ВМ
+                                'signal set': '' 
+                                'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
+                            },
+                    }            
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
             vms_groups (dict, optional): Группы виртуальных машин.
+                
+                vms_groups = {
+                    'group1':['hostname1', 'hostname2'],
+                    }
             username (str, optional): Имя пользователя для SSH.
             password (str, optional): Пароль для SSH.
 
@@ -224,33 +279,43 @@ class VBox(_VirtualMashines):
         return 0
     
     @classmethod
-    def scp(cls, scp_settings: dict, vm_dates: dict, groups: dict = None,
+    def scp(cls, scp_settings: dict, vms_dates: dict, vms_groups: dict = None,
             username: str = "u", password: str = "1") -> int:
         """
         Выполняет копирование файлов между локальной системой и виртуальными машинами.
 
         Args:
             scp_settings (dict): Настройки для копирования файлов.
+                
                 scp_settings = {
-                    'mode' = '' # pull/push получение или отправка файла
-                    'path_host' = '' # путь на хосте
-                    'path_vm' = '' # путь на ВМ
-                }
-            vm_dates (dict): Полная информация о виртуальных машинах.
-                vms_date (list): Полная информация о виртуальных машинах.
-                    vm_dates = {'hostname':{
-                        'host-port':'*',
-                        'ip':'10.0.0.11', #  ip внутренней сети
-                        'sshnum':'',
+                    'hostname1': {
+                        'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                        'path_host': '', 
+                        'path_vm': ''
+                    }
+                    'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+                        'mode': 'pull',
+                        'path_host': '', 
+                        'path_vm': ''
+                        }                        
+                    }
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        'cpus':'*',
-                        'memory':'*', # RAM
-                        'disk':'*'}
-                        }    
-            groups (dict, optional): Группы виртуальных машин.
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
+            vms_groups (dict, optional): Группы виртуальных машин.
+                
                 vms_groups = {
-                    'databases': ['db1', 'db2'],
-                }
+                    'group1':['hostname1', 'hostname2'],
+                    }
             username (str, optional): Имя пользователя для SSH. По умолчанию "u".
             password (str, optional): Пароль для SSH. По умолчанию "1".
 
@@ -260,8 +325,8 @@ class VBox(_VirtualMashines):
 
         scp_command.execute(
             scp=scp_settings,
-            vms_date=vm_dates,
-            groups=groups,
+            vms_date=vms_dates,
+            groups=vms_groups,
             username=username,
             password=password
         )
@@ -275,17 +340,18 @@ class VBox(_VirtualMashines):
 
         Args:
             domain (str): Домен для формирования FQDN.
-            vm_dates (dict): Полная информация о виртуальных машинах.
-                vms_date (list): Полная информация о виртуальных машинах.
-                    vm_dates = {'hostname':{
-                        'host-port':'*',
-                        'ip':'10.0.0.11', #  ip внутренней сети
-                        'sshnum':'',
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        'cpus':'*',
-                        'memory':'*', # RAM
-                        'disk':'*'}
-                        }  
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
             username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
             password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
         """
@@ -299,36 +365,59 @@ class VBox(_VirtualMashines):
         return 0
 
     @classmethod
-    def sed(cls, sed_conf: dict, vm_dates: dict, groups: dict = None,
+    def sed(cls, sed_conf: dict, vms_dates: dict, vms_groups: dict = None,
             username: str = "u", password: str = "1"):
         """
         Выполняет замену строки в файле
 
         Args:
             sed_conf (dict): Настройки для копирования файлов.
+                
                 sed_conf = {
-                           'suac': {
-                               'path': '/etc/postgresql/15/main/pg_hba.conf',
-                               'old':'# IPv4 local connections:',
-                               'new':'' 
-                           },
-                           'g_database': { ... }  # если ключ начинается с "g_", то команда выполнится для группы
-                         }
-            vm_dates (dict): Полная информация о виртуальных машинах.
-                vms_date (list): Полная информация о виртуальных машинах.
-                    vm_dates = {'hostname':{
-                        'host-port':'*',
-                        'ip':'10.0.0.11', #  ip внутренней сети
-                        'sshnum':'',
+                    'hostname1':[                
+                        {   
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },
+                        {   
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },                        
+                    ],
+                    'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>      
+                        {   
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },
+                        {   
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },                        
+
+                    ],                       
+                    }
+
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        'cpus':'*',
-                        'memory':'*', # RAM
-                        'disk':'*'}
-                        }    
-            groups (dict, optional): Группы виртуальных машин.
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
+            vms_groups (dict, optional): Группы виртуальных машин.
+                
                 vms_groups = {
-                    'databases': ['db1', 'db2'],
-                }
+                    'group1':['hostname1', 'hostname2'],
+                    }
             username (str, optional): Имя пользователя для SSH. По умолчанию "u".
             password (str, optional): Пароль для SSH. По умолчанию "1".
 
@@ -338,15 +427,15 @@ class VBox(_VirtualMashines):
 
         sed.sed(
             sed_conf=sed_conf,
-            vms_dates=vm_dates,
-            groups=groups,
+            vms_dates=vms_dates,
+            groups=vms_groups,
             username=username,
             password=password
         )
         return 0
 
     @classmethod    
-    def freeipa(cls, domain,vm_dates: dict, groups: dict = None,
+    def freeipa(cls, domain: dict, vms_dates: dict, vms_groups: dict = None,
             username: str = "u", password: str = "1"):
         """_summary_
 
@@ -361,30 +450,33 @@ class VBox(_VirtualMashines):
                         'host': 'domain'
                     },
                     'client': {
-                        'host': 'database'  # если значение начинается с "g_", то это группа хостов
+                        'host': 'database'  # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
                     }
                 }
-            vm_dates (dict): Полная информация о виртуальных машинах   
-                vm_dates = {'hostname':{
-                    'host-port':'*',
-                    'ip':'10.0.0.11', #  ip внутренней сети
-                    'sshnum':'',
-                    'ip_bridge':'*.*.*.*', # ip моста
-                    'cpus':'*',
-                    'memory':'*', # RAM
-                    'disk':'*'}
-                    }    
-            groups (dict, optional): Группы виртуальных машин.
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
+            vms_groups (dict, optional): Группы виртуальных машин.
+                
                 vms_groups = {
-                    'databases': ['db1', 'db2'],
-                }
+                    'group1':['hostname1', 'hostname2'],
+                    }
             username (str, optional): Имя пользователя для SSH. По умолчанию "u".
             password (str, optional): Пароль для SSH. По умолчанию "1".
 
         Returns:
             _type_: _description_
         """
-        freeipa.freeipa(domain = domain, vm_dates=vm_dates, vms_groups=groups, ssh_user=username, ssh_password=password)
+        freeipa.freeipa(domain = domain, vm_dates=vms_dates, vms_groups=vms_groups, ssh_user=username, ssh_password=password)
         return 0
 
     apt: _AptManagerProtocol = cast(_AptManagerProtocol, _apt._AptManager())

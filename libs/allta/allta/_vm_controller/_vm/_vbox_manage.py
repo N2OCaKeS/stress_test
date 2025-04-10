@@ -60,7 +60,7 @@ class _VboxManager():
     
     @BaseDecorators.trycorator
     @staticmethod 
-    def create_snapshots_all_vm(vms):
+    def create_snapshots_all_vm(vms, snapshot_name = None):
         """
         Создаёт снимки всех указанных виртуальных машин.
 
@@ -70,10 +70,13 @@ class _VboxManager():
         Returns:
             None
         """
-        for vm in vms:
-            system_commands.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
-            
-            
+
+        if snapshot_name:
+            for vm in vms:
+                system_commands.cmd(f'vboxmanage snapshot "{vm}" take "{snapshot_name}"')            
+        else:
+            for vm in vms:
+                system_commands.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
         return 0
 
     @BaseDecorators.trycorator

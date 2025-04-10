@@ -25,22 +25,25 @@ class _AptManager:
             apt_structure (dict): Словарь с пакетами для установки.
                 apt_structure = {
                     'database' = ['package'],
+                    'g_group1' = ['package'] # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
                 }
-            vm_dates (dict): Полная информация о виртуальных машинах.
-                vms_date (list): Полная информация о виртуальных машинах.
-                    vm_dates = {'hostname':{
-                        'host-port':'*',
-                        'ip':'10.0.0.11', #  ip внутренней сети
-                        'sshnum':'',
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        'cpus':'*',
-                        'memory':'*', # RAM
-                        'disk':'*'}
-                        }    
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
             vms_groups (dict, optional): Группы виртуальных машин.
+                
                 vms_groups = {
-                    'databases': ['db1', 'db2'],
-                }
+                    'group1':['hostname1', 'hostname2'],
+                    }
             username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
             password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
 
@@ -89,25 +92,28 @@ class _AptManager:
         Удаляет пакеты на указанных хостах или группах хостов.
 
         Args:
-            apt_structure (dict): Словарь с пакетами для установки.
+            apt_structure (dict): Словарь с пакетами для удаления.
                 apt_structure = {
                     'database' = ['package'],
+                    'g_group1' = ['package'] # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
                 }
-            vm_dates (dict): Полная информация о виртуальных машинах.
-                vms_date (list): Полная информация о виртуальных машинах.
-                    vm_dates = {'hostname':{
-                        'host-port':'*',
-                        'ip':'10.0.0.11', #  ip внутренней сети
-                        'sshnum':'',
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        'cpus':'*',
-                        'memory':'*', # RAM
-                        'disk':'*'}
-                        }    
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
             vms_groups (dict, optional): Группы виртуальных машин.
+                
                 vms_groups = {
-                    'databases': ['db1', 'db2'],
-                }
+                    'group1':['hostname1', 'hostname2'],
+                    }
             username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
             password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
 
@@ -154,25 +160,28 @@ class _AptManager:
         Переустанавливает пакеты на указанных хостах или группах хостов.
 
         Args:
-            apt_structure (dict): Словарь с пакетами для установки.
+            apt_structure (dict): Словарь с пакетами для переустановки.
                 apt_structure = {
                     'database' = ['package'],
+                    'g_group1' = ['package'] # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
                 }
-            vm_dates (dict): Полная информация о виртуальных машинах.
-                vms_date (list): Полная информация о виртуальных машинах.
-                    vm_dates = {'hostname':{
-                        'host-port':'*',
-                        'ip':'10.0.0.11', #  ip внутренней сети
-                        'sshnum':'',
+            vms_date (list): Полная информация о виртуальных машинах.
+                
+                vm_dates = {
+                    'hostname1':{
+                        'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        'cpus':'*',
-                        'memory':'*', # RAM
-                        'disk':'*'}
-                        }    
+                        },
+                    'hostname2':{
+                        'host-port':'*', # порт ssh
+                        'ip_bridge':'*.*.*.*', # ip моста
+                        }                        
+                    }
             vms_groups (dict, optional): Группы виртуальных машин.
+                
                 vms_groups = {
-                    'databases': ['db1', 'db2'],
-                }
+                    'group1':['hostname1', 'hostname2'],
+                    }
             username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
             password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
 

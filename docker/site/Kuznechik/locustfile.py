@@ -22,8 +22,8 @@ class MyUser(HttpUser):
 # ==== НАГРУЗКА: СТУПЕНЧАТЫЙ РОСТ С УДЕРЖАНИЕМ ====
 
 Step = namedtuple("Step", ["users", "dwell"])  # dwell = время удержания нагрузки (в секундах)
-number = 1200
-timestep = 150
+number = 500
+timestep = 60
 
 class StepLoadShape(LoadTestShape):
     """

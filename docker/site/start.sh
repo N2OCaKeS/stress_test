@@ -94,7 +94,6 @@ wait_for_lines_or_stable() {
 
 nginx_server() {
     RESULTS_DIR_SERVER="${RESULTS_DIR}/nginx_server"
-        sleep 1
     mkdir -p "$RESULTS_DIR_SERVER"
 
     # Получаем версию nginx
@@ -148,43 +147,70 @@ nginx_server() {
 
 
 nginx_docker(){
-    RESULTS_DIR_DOCKER="${RESULTS_DIR}/nginx_docker"
-    mkdir -p "$RESULTS_DIR_DOCKER"
+    MODE="$1"  # Режим работы: "docker" или "locust"
 
+    RESULTS_DIR_DOCKER="${RESULTS_DIR}/nginx_docker"
+    RESULTS_DIR_DOCKER_LOCUST_PROC="${RESULTS_DIR}/locust_proc"
+    mkdir -p "$RESULTS_DIR_DOCKER"
+    mkdir -p "$RESULTS_DIR_DOCKER_LOCUST_PROC"
+
+    # Обновляем версию nginx в docker-compose
     sed -i "s|image: nginx.*|image: nginx:${NGINX_V}|" "${CPATH}${NGINX_DC}"
 
     echo "Остановка старого окружения..."
     sudo systemctl stop nginx.service
-    sudo docker-compose -f ${CPATH}${NGINX_DC} down
+    sudo docker-compose -f "${CPATH}${NGINX_DC}" down
     sudo docker volume prune -f
     sudo pkill -f "gunicorn" || true
     sudo pkill -f "locust" || true
+    sudo pkill -f "nginx" || true
     sleep 2
 
     echo "Настройка конфигурации для docker..."
-    sudo sed -i 's|proxy_set_header Host .*;|proxy_set_header Host $host;|' ${CPATH}nginx-config/web-app.conf
-    sudo sed -i 's|http://127.0.0.1|http://flask|g' ${CPATH}nginx-config/web-app.conf
+    sudo sed -i 's|proxy_set_header Host .*;|proxy_set_header Host $host;|' "${CPATH}nginx-config/web-app.conf"
+    sudo sed -i 's|http://127.0.0.1|http://flask|g' "${CPATH}nginx-config/web-app.conf"
     sudo sed -i "s|alias ${CPATH}web_app/static/;|alias /app/web_app/static/;|" "${CPATH}nginx-config/web-app.conf"
 
-    sed -i "s|^csv = .*|csv = ${RESULTS_DIR_DOCKER}/results|g" "$LOCUST_CONF"
-    sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER}/results.html|g" "$LOCUST_CONF"
-    sed -i "s|^host = .*|host = http://nginx|g" "$LOCUST_CONF"
-
     echo "Запуск Docker-сервисов..."
-    sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build --scale worker=${WORKER}
-    check_locust_containers
-    echo "Docker Nginx запущен!"
+    # Ветвление по режиму:
+    if [[ "$MODE" == "docker" ]]; then
+	sed -i "s|^csv = .*|csv = ${RESULTS_DIR_DOCKER}/results|g" "$LOCUST_CONF"
+        sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER}/results.html|g" "$LOCUST_CONF"
+        sed -i "s|^host = .*|host = http://nginx|g" "$LOCUST_CONF"
+        # Стандартный docker-режим: поднимаем контейнеры через docker-compose и ждём завершения работы контейнера master
+        sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build --scale worker=${WORKER}
+        check_locust_containers
+        echo "Docker Nginx запущен!"
 
-    echo "Ожидание завершения работы Locust master..."
-    while docker ps | grep -q "master"; do
-        sleep 5
-    done
-    echo "Контейнер master завершил работу."
+        echo "Ожидание завершения работы Locust master..."
+        while docker ps | grep -q master; do
+            sleep 5
+        done
+        echo "Контейнер master завершил работу."
 
+    elif [[ "$MODE" == "locust" ]]; then
+	sed -i "s|^csv = .*|csv = ${RESULTS_DIR_DOCKER_LOCUST_PROC}/results|g" "$LOCUST_CONF"
+    	sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER_LOCUST_PROC}/results.html|g" "$LOCUST_CONF"
+    	sed -i "s|^host = .*|host = http://172.24.0.2|g" "$LOCUST_CONF"
+        # Альтернативный режим: поднимаем только контейнеры Flask и Nginx,
+        # затем запускаем Locust в headless-режиме через виртуальное окружение
+        sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build flask nginx
+        echo "Контейнеры Flask и Nginx запущены (локальный режим)"
+        
+        echo "Запуск Locust и ожидание завершения..."
+        sudo ${VENV}locust -f ${CPATH}Kuznechik/locustfile.py \
+            --config "$LOCUST_CONF" --processes ${WORKER} --headless --run-time 2m > /tmp/locust.log 2>&1
+        echo "Locust завершил выполнение."
+
+    else
+        echo "Неизвестный режим запуска: $MODE"
+        return 1
+    fi
+
+    # Сброс версии nginx в файле docker-compose после запуска, если требуется
     sed -i "s|image: nginx.*|image: nginx|" "${CPATH}docker-compose.nginx.yml"
     echo "Завершено: NGINX docker"
 }
-
 
 
 close_and_delete(){
@@ -216,9 +242,9 @@ case $1 in
 	    nginx_server
 	    ;;
     final)
-	    bash ${CPATH}prepare.sh
 	    nginx_server
-	    nginx_docker
+	    nginx_docker docker
+	    nginx_docker locust
 	    echo "Тест выполнился"
 	    ;;
 esac

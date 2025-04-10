@@ -114,7 +114,8 @@ class Public:
 
         # with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'r') as r:
         #     rps = r.read()
-        
+
+        # Делаем вступительную таблицу 
         print("DEBUG: grade_stand =", self.grade_stand)
         print("DEBUG: доступные ключи в self.stands:", self.stands.keys())
         with open(f'{TEMPLATE_PATH}/header_table_template_web.html', 'r') as file:
@@ -129,32 +130,41 @@ class Public:
             
         # Получаем рейтинг
         paths = glob.glob(f"{REPORT_PATH}/docker*/nginx_docker/rating.txt") + \
-                glob.glob(f"{REPORT_PATH}/docker*/nginx_server/rating.txt")
+                glob.glob(f"{REPORT_PATH}/docker*/nginx_server/rating.txt") + \
+                glob.glob(f"{REPORT_PATH}/docker*/locust_proc/rating.txt")
         r_docker = ""
         r_server = ""
+        r_locust_proc = ""
 
         for path in paths:
             with open(path, 'r') as f:
                 lines = f.readlines()
                 if len(lines) >= 2:
+                    header = lines[0].strip().rstrip(':')
                     second_line = lines[1].strip()
-                    if "server" in lines[0]:
+                    # Определяем тип файла по содержимому заголовка
+                    if "nginx_server" in header:
                         r_server = second_line
-                        print(r_server)
-                    else:
+                        print("server:", r_server)
+                    elif "nginx_docker" in header:
                         r_docker = second_line
-                        print(r_docker)
+                        print("docker:", r_docker)
+                    elif "locust_proc" in header:
+                        r_locust_proc = second_line
+                        print("locust_proc:", r_locust_proc)
 
         # Делаем rating html
         with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
             rating_temp = template.read()
-            rating = rating_temp.format(rd=r_docker, rs=r_server)
+            rating = rating_temp.format(rd=r_docker, rl=r_locust_proc, rs=r_server)
 
-        # Таблицы на 2 теста
+        # Таблицы на 3 теста
         docker_stats = os.path.join(TEMPLATE_PATH, 'docker', 'results_stats.html')
         docker_steps = os.path.join(TEMPLATE_PATH, 'docker', 'step_stats_summary.html')
         server_stats = os.path.join(TEMPLATE_PATH, 'server', 'results_stats.html')
         server_steps = os.path.join(TEMPLATE_PATH, 'server', 'step_stats_summary.html')
+        locust_stats = os.path.join(TEMPLATE_PATH, 'locust', 'results_stats.html')
+        locust_steps = os.path.join(TEMPLATE_PATH, 'locust', 'step_stats_summary.html')
         with open(docker_stats, 'r') as f:
             docker_stats_html = f.read()
         with open(docker_steps, 'r') as f:
@@ -163,6 +173,10 @@ class Public:
             server_stats_html = f.read()
         with open(server_steps, 'r') as f:
             server_steps_html = f.read()
+        with open(locust_stats, 'r') as f:
+            locust_stats_html = f.read()
+        with open(locust_steps, 'r') as f:
+            locust_steps_html = f.read()
         
         # 
         html_page = '\n'.join([
@@ -176,7 +190,11 @@ class Public:
         "<h2>Server - Общая статистика</h2>",
         server_stats_html,
         "<h2>Server - По шагам</h2>",
-        server_steps_html])
+        server_steps_html,
+        "<h2>Locust - Общая статистика</h2>",
+        locust_stats_html,
+        "<h2>Locust - По шагам</h2>",
+        locust_steps_html])
 
         #создание страницы отчета
         #html_page = '\n'.join([header_table, rating, table])

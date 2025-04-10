@@ -10,8 +10,10 @@ CONFLUENCE_URL = response_confluence_url.text
 
 SCRIPT_DIR = "/home/u/git/stress_test/docker"
 REPORT_PATH = f"{SCRIPT_DIR}/site/results"
+REPORT_VARIABLES = ["nginx_docker", "nginx_server", "locust_proc"]
 VENV_PATH = "/home/u/python/Python-3.12.1/venv/bin"
 TEMPLATE_PATH = f"{SCRIPT_DIR}/templates"
 INFO_FILENAME = f"{REPORT_PATH}/INFO.txt"
 DESCRIPTION = ""
 WORKER = 5
+

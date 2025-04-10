@@ -7,5 +7,7 @@ results/
 push_results.py
 releases.json
 publish.py
+
 templates/docker/
 templates/server/
+templates/locust/

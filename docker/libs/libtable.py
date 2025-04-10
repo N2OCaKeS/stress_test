@@ -7,13 +7,13 @@ from sklearn.preprocessing import MinMaxScaler
 from scipy import integrate
 from scipy.integrate import IntegrationWarning
 from matplotlib.gridspec import GridSpec
-from libs.docker_conf import REPORT_PATH
+from libs.docker_conf import REPORT_PATH, REPORT_VARIABLES
 
 # using in report.py
 class Report:
-    def __init__(self, report_path=REPORT_PATH):
+    def __init__(self, report_path=REPORT_PATH, report_variables=REPORT_VARIABLES):
         self.report_path = report_path
-
+        self.report_variables = report_variables
         self.system_dirs = [d for d in os.listdir(report_path) if d.startswith("docker_web_")]
         self.integrals = []
 
@@ -123,7 +123,7 @@ class Report:
     def failures_wrapper(self):
         error_percentages = {}
         for sys_dir in self.system_dirs:
-            for variant in ["nginx_docker", "nginx_server"]:
+            for variant in self.report_variables:
                 variant_path = os.path.join(self.report_path, sys_dir, variant)
                 hist_path = os.path.join(variant_path, "results_stats.csv")
 

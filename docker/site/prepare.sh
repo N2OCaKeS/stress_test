@@ -9,8 +9,7 @@ SYS_KERNEL=$(uname -r | tr -d '[:space:]')
 # set repo
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
-sudo jq -r --arg version "$SYS_VERSION" '[.[] | select(.[] | contains($version)) | .[] | select(contains($version))] | unique[]' releases.json > /etc/apt/sources.list
-
+sudo jq -r ".\"$2\"[]" releases.json > /etc/apt/sources.list
 # доб EXT если версия 1.7
 if [[ "$SYS_VERSION" == 1.7* ]]; then
     echo "Добавляем строки с extended-repository..."

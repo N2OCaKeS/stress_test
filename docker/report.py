@@ -12,7 +12,7 @@ errors = rp.failures_wrapper()
 print(rp.system_dirs)
 
 for sys_dir in rp.system_dirs:
-    for variant in ["nginx_docker", "nginx_server"]:
+    for variant in rp.report_variables:
         variant_path = os.path.join(rp.report_path, sys_dir, variant)
         hist_path = os.path.join(variant_path, "results_stats_history.csv")
         if os.path.exists(hist_path):
@@ -95,18 +95,26 @@ for item in rp.integrals:
 
 print("\nКонвертация CSV в HTML:")
 for sys_dir in rp.system_dirs:
-    for variant in ["nginx_docker", "nginx_server"]:
+    for variant in rp.report_variables:
         variant_path = os.path.join(rp.report_path, sys_dir, variant)
         if os.path.exists(variant_path):
-            for file in os.listdir(variant_path):
-                if file.endswith(".csv"):
-                    csv_path = os.path.join(variant_path, file)
-
-                    # определяем целевую поддиректорию
-                    subfolder = "docker" if "docker" in variant else "server"
-
-                    # путь куда сохранить html
-                    output_dir = os.path.join(TEMPLATE_PATH, subfolder)
-                    # передаем нужный путь для html
+            # Определяем целевую поддиректорию на основе значения variant
+            if variant == "nginx_docker":
+                subfolder = "docker"
+            elif variant == "nginx_server":
+                subfolder = "server"
+            elif variant == "locust_proc":
+                subfolder = "locust"
+            else:
+                subfolder = "default"
+            
+            # Путь, куда сохранить HTML
+            output_dir = os.path.join(TEMPLATE_PATH, subfolder)
+            
+            # Используем переменную "filename" вместо "file"
+            for filename in os.listdir(variant_path):
+                if filename.endswith(".csv"):
+                    csv_path = os.path.join(variant_path, filename)
                     fcs.html_converter(csv_path, output_dir)
+
 

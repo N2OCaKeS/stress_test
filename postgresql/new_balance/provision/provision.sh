@@ -40,8 +40,29 @@ sudo astra-update -A -T -r
 sudo apt-get install rsync -y
 sudo apt-get install htop -y
 sudo apt-get install -y gcc make perl
-sudo apt-get install linux-[5-6].*-generic -y
-sudo apt-get install linux-[5-6].*-lowlatency -y
+
+kernel="$2"
+
+# Проверяем, что строка заканчивается на -generic или -lowlatency
+if [[ "$kernel" =~ -(generic|lowlatency)$ ]]; then
+    suffix="${BASH_REMATCH[1]}"
+    
+    # Извлекаем первую часть, которая содержит версию с патчем, например "6.6.28"
+    version_full=$(echo "$kernel" | cut -d '-' -f1)
+    
+    # Извлекаем major и minor версии. Для "6.6.28" получаем "6.6"
+    version_major_minor=$(echo "$version_full" | awk -F. '{print $1"."$2}')
+    
+    # Формируем имя пакета. Для примера получим "linux-6.6-generic"
+    package_name="linux-${version_major_minor}-${suffix}"
+    
+    echo "Устанавливаем пакет: $package_name"
+    sudo apt-get install "$package_name" -y
+else
+    echo "Ошибка: параметр ядра '$kernel' не соответствует ожидаемому формату (должен оканчиваться на -generic или -lowlatency)."
+    exit 1
+fi
+
 sudo apt-get install -y python3-pip
 if (grep -q 1.8 /etc/astra_version); then
     python3 -m pip install --upgrade pip --break-system-packages
@@ -51,7 +72,6 @@ else
     python3 -m pip install psycopg2-binary
 fi
 dpkg -s ntpsec &>/dev/null || sudo apt-get install ntpsec -y
-
 
 #mount second storage
 sudo mkfs -t xfs -f /dev/sdb
@@ -63,32 +83,21 @@ cat << EOF >> /etc/fstab
 UUID=$sdb_uuid /var/lib/postgresql xfs defaults 0 2
 EOF
 
-
-main_user=u
-users63=(root u)
-pass=1
-
-# groups for 'u' user
-ugroups=(\
-    cdrom floppy audio dip video plugdev netdev lpadmin
-    scanner astra-console astra-admin
-)
-
-
 vbox_machines=(\
   database1 database2 database3
   lbdb1 lbdb2 lbdb3
   pgpool dcfreeipa
 )
 
-nat_net_name="Проводное соединение 1"
-bridge_net_name="Проводное соединение 2"
-vbox_subnet_mask=19
+
+if (grep -q 1.7 /etc/astra_version); then
+    nat_net_name="Wired connection 1"
+elif (grep -q 1.8 /etc/astra_version); then
+    nat_net_name="Проводное соединение 1"
+fi
 vbox_bridge_mask=24
-vbox_gateway=10.0.0.1
 vbox_bridge_gateway=10.177.103.254
-vbox_nat=QANetwork
-vbox_nat_ip=10.0.0.0
+
 
 declare -A database1_br=( [ip]=10.177.103.111 [domain]=database1.balance.rbt [host]=database1 [dns]="10.177.103.110, 10.177.128.198" )
 declare -A database2_br=( [ip]=10.177.103.112 [domain]=database2.balance.rbt [host]=database2 [dns]="10.177.103.110, 10.177.128.198" )
@@ -110,40 +119,7 @@ declare -A pgpool=( [ip]=10.0.0.31 [domain]=pgpool.balance.rbt [host]=pgpool [dn
 declare -A dcfreeipa=( [ip]=10.0.0.10 [domain]=dcfreeipa.balance.rbt [host]=dcfreeipa [dns]="10.0.0.10, 8.8.8.8" )
 declare -A test=( [ip]=10.0.0.10 [domain]=test.balance.rbt [host]=test [dns]="10.0.0.10, 8.8.8.8" )
 
-# declare -A database1_br=( [ip_br]=10.177.103.111 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0)
-# declare -A database2_br=( [ip_br]=10.177.103.112 [server-port]=3422 [forward-port]=2022 [mac]=08:00:27:64:AF:57 [net]=int0)
-# declare -A database3_br=( [ip_br]=10.177.103.113 [server-port]=3423 [forward-port]=2025 [mac]=08:00:27:35:FB:4D [net]=int0)
-# declare -A lbdb1_br=(     [ip_br]=10.177.103.141 [server-port]=3424 [forward-port]=2024 [mac]=08:00:27:93:D3:2B [net]=int0)
-# declare -A lbdb2_br=(     [ip_br]=10.177.103.142 [server-port]=3425 [forward-port]=2023 [mac]=08:00:27:73:E5:1C [net]=int0)
-# declare -A lbdb3_br=(     [ip_br]=10.177.103.143 [server-port]=3431 [forward-port]=2026 [mac]=08:00:27:15:29:EA [net]=int0)
-# declare -A pgpool_br=(    [ip_br]=10.177.103.131 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0)
-# declare -A dcfreeipa_br=( [ip_br]=10.177.103.110 [server-port]=3434 [forward-port]=2029 [mac]=08:00:27:D3:CB:DD [net]=int0)
 
-# declare -A database1=( [ip]=10.0.0.11 [server-port]=3421 [forward-port]=2021 [mac]=08:00:27:E1:87:C4 [net]=int0)
-# declare -A database2=( [ip]=10.0.0.12 [server-port]=3422 [forward-port]=2022 [mac]=08:00:27:64:AF:57 [net]=int0)
-# declare -A database3=( [ip]=10.0.0.13 [server-port]=3423 [forward-port]=2025 [mac]=08:00:27:35:FB:4D [net]=int0)
-# declare -A lbdb1=(     [ip]=10.0.0.41 [server-port]=3424 [forward-port]=2024 [mac]=08:00:27:93:D3:2B [net]=int0)
-# declare -A lbdb2=(     [ip]=10.0.0.42 [server-port]=3425 [forward-port]=2023 [mac]=08:00:27:73:E5:1C [net]=int0)
-# declare -A lbdb3=(     [ip]=10.0.0.43 [server-port]=3431 [forward-port]=2026 [mac]=08:00:27:15:29:EA [net]=int0)
-# declare -A pgpool=(    [ip]=10.0.0.31 [server-port]=3432 [forward-port]=2027 [mac]=08:00:27:BF:3D:49 [net]=int0)
-# declare -A dcfreeipa=( [ip]=10.0.0.10 [server-port]=3434 [forward-port]=2029 [mac]=08:00:27:D3:CB:DD [net]=int0)
-
-# sudo systemctl restart networking
-
-#127.0.0.1   localhost localhost.localdomain
-# cat << EOF > /etc/hosts
-# 10.177.5.111    qa111.devos.astralinux.ru
-# 10.177.43.1    releases.devos.astralinux.ru
-# 127.0.0.1   localhost
-# ${database1_br[ip]} ${database1_br[domain]} ${database1_br[host]}
-# ${database2_br[ip]} ${database2_br[domain]} ${database2_br[host]}
-# ${database3_br[ip]} ${database3_br[domain]} ${database3_br[host]}
-# ${lbdb1_br[ip]} ${lbdb1_br[domain]} ${lbdb1_br[host]}
-# ${lbdb2_br[ip]} ${lbdb2_br[domain]} ${lbdb2_br[host]}
-# ${lbdb3_br[ip]} ${lbdb3_br[domain]} ${lbdb3_br[host]}
-# ${dcfreeipa_br[ip]} ${dcfreeipa_br[domain]} ${dcfreeipa_br[host]}
-# EOF
-#${pgpool_br[ip]} ${pgpool_br[domain]} ${pgpool_br[host]}
 
 if [ "$1" = "dcfreeipa" ]; then
     echo 127.0.0.1   localhost.localdomain >> /etc/hosts
@@ -189,46 +165,15 @@ elif [ "$1" = "dcfreeipa" ]; then
     dns_br="${dcfreeipa_br[dns]}"
     ip=${dcfreeipa[ip]}
     dns="${dcfreeipa[dns]}"
-elif [ "$1" = "test" ]; then
-    ip_br=${test_br[ip]}
-    dns_br="${test_br[dns]}"
-    ip=${test[ip]}
-    dns="${test[dns]}"
 fi
 
-# if [ "$1" = "dcfreeipa" ]; then
-#     sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
-#     sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
-#     sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
-# else
-#     sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip/$vbox_subnet_mask
-#     sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_gateway
-#     #sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns"
-#     sudo nmcli connection add type ethernet con-name "${bridge_net_name}" ifname eth1
-#     sudo nmcli connection modify "${bridge_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
-#     sudo nmcli connection modify "${bridge_net_name}" gw4 $vbox_bridge_gateway
-#     sudo nmcli connection modify "${bridge_net_name}" ipv4.dns "$dns_br"
-# fi
 sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
 sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
 sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
 nmcli connection show
 
-if id "$main_user" >/dev/null 2>&1; then
-    echo "$main_user:$pass" | chpasswd 2>/dev/null
-    chfn -f "" "$main_user"
-    for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
-else
-    useradd -m $main_user -s /bin/bash && echo "$main_user:$pass" | chpasswd 2>/dev/null
-    for group in ${ugroups[*]}; do usermod -aG $group $main_user; done
-fi
-
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 echo "root:$pass" | chpasswd 2>/dev/null
-
-for user in ${users63[*]}; do
-    pdpl-user $user -i 63
-done
 
 echo "u  ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/u
 echo "u  ALL=(ALL:ALL) NOPASSWD:ALL" | sudo tee -a /etc/sudoers
@@ -238,13 +183,8 @@ cat /etc/sudoers.d/u
 cat /etc/sudoers
 
 ip a
-#for vm in database1_br database2_br database3_br lbdb1_br lbdb2_br lbdb3_br dcfreeipa_br; do
-#    declare -n view=$vm
-#    ping -c 1 "${view[ip]}"
-#done
 
 apt list postgresql* > /home/u/available_packages.txt
-
 
 kernel="$2"
 kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")

@@ -18,7 +18,7 @@ def get_pages(username, tokenconf, stat_title):
     return all_pages, rc_all_pages, confluence_obj
 
 all_pages, rc_all_pages, confluence_obj = get_pages(username="ivelikanov", 
-                                                    tokenconf="MjI1OTIzNzQwMjg3OjpKCOLGIEHqd8ek4SAEXWtZzLJu", 
+                                                    tokenconf=..., 
                                                     stat_title="FreeIPA")
 # print(all_pages)
 

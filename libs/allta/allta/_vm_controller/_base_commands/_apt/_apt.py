@@ -1,4 +1,4 @@
-from ..._libs._ssh_comand import _SSH_Command as ssh_command
+from ..._libs._ssh_command import _SSH_Command as ssh_command
 from ...._decorators.Decorators import BaseDecorators
 import threading
 

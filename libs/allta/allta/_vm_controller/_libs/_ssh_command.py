@@ -3,7 +3,7 @@ from ._signals import _Signals as signals
 import paramiko
 
 # Новый декоратор для логирования
-from .._decotator._logger import logger
+from .._decorator._logger import logger
 
 class _SSH_Command:
     """

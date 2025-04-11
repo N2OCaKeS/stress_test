@@ -1,5 +1,5 @@
 from ...._decorators.Decorators import BaseDecorators
-from ..._libs._ssh_comand import _SSH_Command
+from ..._libs._ssh_command import _SSH_Command
 from time import sleep
 import concurrent.futures
 

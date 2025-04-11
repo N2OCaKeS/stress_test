@@ -50,7 +50,7 @@ def perform_actions(repo_path, commit_hash, commit_message):
     # Пример: cmd('python3 your_script.py', cwd=repo_path)
     password = os.getenv(''
     '')
-    command = f'devpi use http://localhost:3141/root/release && devpi login root --password {password} && devpi upload && rm -rf {repo_path}/libs/allta/allta.egg-info && rm -rf {repo_path}/libs/allta/dist'
+    command = f'devpi use http://localhost:3141/root/release && devpi login root --password {password} && devpi upload --with-docs && rm -rf {repo_path}/libs/allta/allta.egg-info && rm -rf {repo_path}/libs/allta/dist && rm -rf {repo_path}/libs/allta/build'
     cmd(command, cwd = f'{repo_path}/libs/allta')
 
 

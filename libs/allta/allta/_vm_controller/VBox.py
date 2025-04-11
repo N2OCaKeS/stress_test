@@ -1,6 +1,6 @@
 from .._system_command.SystemCommands import SystemCommands as system_commands
-from ._libs._ssh_comand import _SSH_Command as ssh_command
-from ._libs._scp_comand import _SCP_Command as scp_command
+from ._libs._ssh_command import _SSH_Command as ssh_command
+from ._libs._scp_command import _SCP_Command as scp_command
 from ._libs._signals import _Signals as signals
 
 from ._base_commands._apt._apt_prorocol import _AptManagerProtocol

@@ -1,0 +1,176 @@
+Информация о модуле Allta
+========================
+
+Версии
+------------------------
+
+.. csv-table:: 
+   :header: "Версия", "Автор", "Описание"
+   :widths: 15, 15, 30
+
+   "0.0.1", "mfilippenko", "Тестирование скрипта отправки модуля"
+   "1.0.0", "mfilippenko", "Релиз"
+
+
+
+
+
+Использование
+========================
+
+Установка
+------------------------
+
+Следуйте приведённым ниже шагам для установки и использования Allta:
+
+1. Установите модуль:
+   
+   .. code-block:: bash
+
+      pip install -i http://10.177.103.10/root/release --trust 10.177.103.10 allta
+
+2. Импорт модуля:
+   
+   .. code-block:: python
+
+      import allta
+
+
+
+Разработка
+========================
+
+Подготовка окружения
+------------------------
+
+Следуйте приведённым ниже шагам для установки и настройки окружения Allta:
+
+1. Клонируйте репозиторий:
+   
+   .. code-block:: bash
+
+      git clone ssh://git@git.astralinux.ru:7999/qa/stress_test.git 
+
+2. Перейдите в директорию проекта:
+   
+   .. code-block:: bash
+
+      cd stress_test
+
+3. Переключитесь на ветку разлаботки модуля:
+   
+   .. code-block:: bash
+
+      git checkout dev_libs
+
+4. Перейдите в каталог проекта
+
+   .. code-block:: bash
+
+      cd libs/allta
+
+5. Установите необходимые зависимости в виртуальное окружение
+
+   .. code-block:: bash
+
+      pip install req.txt
+
+
+Архитектура проекта
+------------------------
+
+Проект Allta состоит из нескольких ключевых модулей:
+
+- **VBoxManager** – модуль для управления виртуальными машинами (включает работу с SSH, VirtualBox, Vagrant и базовыми командами).
+- **SystemCommands** – модуль для выполнения системных команд на локальном компьютере.
+- **BaseDecorators** – набор декораторов для обработки ошибок, логирования и прочих задач.
+
+Ниже приведена схема каталогов проекта:::
+
+   allta
+   ├── allta
+   │   ├── _decorators
+   │   │   ├── Decorators.py
+   │   ├── _system_command
+   │   │   └── SystemCommands.py
+   │   └── _vm_controller
+   │       ├── _base_commands
+   │       │   ├── _apt
+   │       │   │   ├── _apt_prorocol.py
+   │       │   │   ├── _apt.py
+   │       │   ├── _freeipa
+   │       │   │   ├── _freeipa.py
+   │       │   ├── _reboot
+   │       │   │   └── _reboot.py
+   │       │   ├── _sed
+   │       │   │   └── _sed.py
+   │       │   └── _set_hosts
+   │       │       └── _set_hosts.py
+   │       ├── _decorator
+   │       │   └── _logger.py
+   │       ├── _libs
+   │       │   ├── _scp_command.py
+   │       │   ├── _signals.py
+   │       │   └── _ssh_command.py
+   │       ├── VBox.py
+   │       └── _vm
+   │           ├── _vagrant.py
+   │           ├── _vbox_manage.py
+   │           └── _virtual_machine.py
+   ├── LICENCE
+   ├── README.md
+   ├── setup.cfg
+   └── setup.py
+
+Публикация модуля в отладочный индекс
+------------------------
+
+Следуйте приведённым ниже шагам для публикации модуля:
+
+1. Перейдите в каталог содержащий ``setup.py``:
+   
+   .. code-block:: bash
+
+      cd ./stress_test/libs/allta
+
+2. Пройтите авторизацию в devpi:
+   
+   .. code-block:: bash
+
+      devpi login user --password user
+
+3. Выполните команду выгрузки модуля:
+   
+   .. code-block:: bash
+
+      devpi upload --with-docs
+
+Публикация модуля в release индекс
+------------------------
+
+Следуйте приведённым ниже шагам для публикации модуля:
+
+1. Перейдите в директорию проекта
+   
+   .. code-block:: bash
+
+      cd stress_test
+
+2. Перейдите на ветку release версий
+   
+   .. code-block:: bash
+
+      git checkout libs
+
+2. Объедените ветки release и dev c именем коммита allta_lib v0.1.1 (Укажите соответсвующую версию модуля только цифры)
+   
+   .. code-block:: bash
+
+      git merge dev_libs -m  allta_lib v1.0.0
+
+3. Подождите 1 минуту пока сервер загрузит новую версию модуля
+   
+   .. code-block:: bash
+
+      git merge dev_libs -m  allta_lib v1.0.0
+

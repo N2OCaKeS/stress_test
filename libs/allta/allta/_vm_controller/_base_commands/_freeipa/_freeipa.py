@@ -1,4 +1,4 @@
-from ..._decotator._logger import logger
+from ..._decorator._logger import logger
 import threading
 import paramiko
 import time

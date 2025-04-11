@@ -1,6 +1,6 @@
 from ..._system_command.SystemCommands import SystemCommands
 import threading
-from .._decotator._logger import logger
+from .._decorator._logger import logger
 
 class _SCP_Command:
     """

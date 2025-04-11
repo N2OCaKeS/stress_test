@@ -2,7 +2,7 @@ import threading
 import time
 import paramiko
 from ...._decorators.Decorators import BaseDecorators
-from ..._libs._ssh_comand import _SSH_Command
+from ..._libs._ssh_command import _SSH_Command
 from ..._libs._signals import _Signals
 
 class _Reboot:

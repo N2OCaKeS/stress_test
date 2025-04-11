@@ -4,3 +4,4 @@ dist/
 allta.egg-info/
 Allta.egg-info/
 .env
+build/

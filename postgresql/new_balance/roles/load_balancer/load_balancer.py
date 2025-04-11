@@ -1,5 +1,5 @@
 from allta import VBoxManager
-from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT
+from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD
 from roles.load_balancer.keepalived import keepalived
 
 class LoadBalancer():
@@ -104,7 +104,7 @@ class LoadBalancer():
             ]
         }
 
-        provider.sed(sed, VMS_DATES, VMS_GROUPS,)
+        provider.sed(sed_conf=sed, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         scp = {
             'g_load_balancer':{
@@ -113,7 +113,7 @@ class LoadBalancer():
                 'path_vm': '/tmp/contrprimer.sql'
             }
         }
-        provider.scp(scp, VMS_DATES, VMS_GROUPS)
+        provider.scp(scp_settings=scp, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         new_block = f"""backend_hostname0 = '{VMS_DATES['database1']['ip_bridge']}'
 backend_port0 = {POSTGRES_PORT}
@@ -187,7 +187,7 @@ EOF
             }
         }
 
-        provider.execute(start_pgpool, VMS_DATES, VMS_GROUPS)
+        provider.execute(commands=start_pgpool, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
 
         

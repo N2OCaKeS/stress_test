@@ -1,5 +1,5 @@
 from allta import VBoxManager
-from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS, DOMAIN
+from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS, DOMAIN, USERNAME, PASSWORD
 
 
 class PreConfigure():
@@ -14,7 +14,7 @@ class PreConfigure():
             'dcfreeipa': ['astra-freeipa-server']
         }
         self.provider.apt.install(
-            apt_structure=apt_install, vm_dates=VMS_DATES, vms_groups=VMS_GROUPS)
+            apt_structure=apt_install, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
         
     def set_hosts(self):
         self.provider.set_hosts(domain='balance.rbt', vms_dates=VMS_DATES, username='u', password='1')
@@ -28,4 +28,4 @@ class PreConfigure():
                 }
             }
         }
-        self.provider.execute(vm_dates=VMS_DATES, commands=hosts, vms_groups=VMS_GROUPS)
+        self.provider.execute(commands=hosts, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)

@@ -24,7 +24,7 @@ class DomainVM():
             }
         }
 
-        provider.freeipa(domain=domain, vm_dates=VMS_DATES, groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        provider.freeipa(domain=domain, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         tasks = {
             'dcfreeipa': {
@@ -49,5 +49,5 @@ class DomainVM():
             'signal get': ['dcfreeipa' ,'Kinit']
             }
 
-        provider.execute(vm_dates=VMS_DATES, commands=tasks, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 

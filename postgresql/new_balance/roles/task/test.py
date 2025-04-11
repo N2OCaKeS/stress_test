@@ -1,6 +1,6 @@
 from allta import VBoxManager
 
-from roles.vm_info import VERSION_PG, VMS_DATES
+from roles.vm_info import VERSION_PG, VMS_DATES, USERNAME, PASSWORD
 
 class Test:
     def __init__(self):
@@ -17,7 +17,7 @@ class Test:
             }
         }
 
-        provider.scp(scp, VMS_DATES)
+        provider.scp(scp_settings=scp, vms_dates=VMS_DATES, username=USERNAME, password=PASSWORD)
 
         test = {
             'database3': {
@@ -45,6 +45,6 @@ class Test:
                 }
             }
         }
+        provider.execute(commands=test, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
-        provider.execute(VMS_DATES, test)
 

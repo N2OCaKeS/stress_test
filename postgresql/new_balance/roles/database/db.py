@@ -105,7 +105,7 @@ EOF"""
                 },
             }
         }
-        provider.execute(vm_dates=VMS_DATES, commands=prepare,
+        provider.execute(commands=prepare, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD,)
 
         sed_master_config = {
@@ -193,7 +193,8 @@ EOF"""
                 },
             ]
         }
-        provider.sed(sed_master_config, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD)
+        provider.sed(sed_conf=sed_master_config, vms_dates=VMS_DATES,
+                     vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         pg_ident = {
             'g_database': {
@@ -225,7 +226,8 @@ EOF"""
 
             }
         }
-        provider.execute(pg_ident, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD)
+        provider.execute(commands=pg_ident, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         start_cluster = {
             'database1': {
@@ -253,7 +255,7 @@ EOF"""
             },
         }
 
-        provider.execute(vm_dates=VMS_DATES, commands=start_cluster,
+        provider.execute(commands=start_cluster, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         scp_sql = {
@@ -263,7 +265,7 @@ EOF"""
                 'path_vm': '/tmp/contrprimer.sql'
             }
         }
-        provider.scp(scp_sql, VMS_DATES, username=USERNAME, password=PASSWORD)
+        provider.scp(scp_settings=scp_sql, vms_dates=VMS_DATES, username=USERNAME, password=PASSWORD)
 
         filling_bd = {
             'database1': {
@@ -285,4 +287,5 @@ EOF"""
             },
         }
 
-        provider.execute(filling_bd, VMS_DATES, username=USERNAME, password=PASSWORD)
+        provider.execute(commands=filling_bd, vms_dates=VMS_DATES,
+                         username=USERNAME, password=PASSWORD)

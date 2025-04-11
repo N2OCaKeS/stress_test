@@ -2,6 +2,7 @@ from allta import VBoxManager
 
 from roles.vm_info import VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD
 
+
 class keepalived:
     def keepalived():
 
@@ -55,55 +56,56 @@ vrrp_instance VI_1 {
     }
 }
 EOF"""
-        
+
         configure_keepalived = {
-            'g_load_balancer':{
-                'create keepalived conf file':{
-                    'command':f'sudo touch /etc/keepalived/keepalived.conf',
-                    'signal set':'create file',
+            'g_load_balancer': {
+                'create keepalived conf file': {
+                    'command': f'sudo touch /etc/keepalived/keepalived.conf',
+                    'signal set': 'create file',
                     'signal get': ''
-                 }
+                }
             },
 
-            'lbdb1':{
-                'configure keepalived':{
-                    'command':lbdb1,
-                    'signal set':'',
+            'lbdb1': {
+                'configure keepalived': {
+                    'command': lbdb1,
+                    'signal set': '',
                     'signal get': ['create file']
                 }
             },
-            'lbdb2':{
-                'configure keepalived':{
-                    'command':lbdb2,
-                    'signal set':'',
+            'lbdb2': {
+                'configure keepalived': {
+                    'command': lbdb2,
+                    'signal set': '',
                     'signal get': ['create file']
                 }
             },
-            'lbdb3':{
-                'configure keepalived':{
-                    'command':lbdb3,
-                    'signal set':'',
+            'lbdb3': {
+                'configure keepalived': {
+                    'command': lbdb3,
+                    'signal set': '',
                     'signal get': ['create file']
                 }
             },
         }
 
-        VBoxManager.execute(configure_keepalived, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD)
+        VBoxManager.execute(commands=configure_keepalived, vms_dates=VMS_DATES,
+                            vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         start_keepalived = {
-                'g_load_balancer':{
-                        'sysctl conf':{
-                            'command':'echo "net.ipv4.ip_nonlocal_bind=1" | sudo tee -a /etc/sysctl.conf && sudo sysctl -p',
-                            'signal set': 'sysctl conf',
-                            'signal get': ''                    
-                        },
-                        'start keepalived':{
-                            'command':'sudo systemctl enable keepalived && sudo systemctl restart keepalived',
-                            'signal set': 'keepalived start',
-                            'signal get': ['sysctl conf'] 
-                        },                
-                }
+            'g_load_balancer': {
+                'sysctl conf': {
+                    'command': 'echo "net.ipv4.ip_nonlocal_bind=1" | sudo tee -a /etc/sysctl.conf && sudo sysctl -p',
+                    'signal set': 'sysctl conf',
+                    'signal get': ''
+                },
+                'start keepalived': {
+                    'command': 'sudo systemctl enable keepalived && sudo systemctl restart keepalived',
+                    'signal set': 'keepalived start',
+                    'signal get': ['sysctl conf']
+                },
+            }
         }
-        
-        VBoxManager.execute(start_keepalived, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD)        
 
+        VBoxManager.execute(commands=start_keepalived, vms_dates=VMS_DATES,
+                            vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)

@@ -136,7 +136,7 @@ class VBox(_VirtualMashines):
             return 0
 
     @classmethod
-    def execute(cls, commands: dict, vm_dates: dict, vms_groups: dict = None,
+    def execute(cls, commands: dict, vms_dates: dict, vms_groups: dict = None,
                 username: str = "u", password: str = "1") -> int:
         """
         Выполняет команды на виртуальных машинах. Если имя задачи равно "reboot", то производится
@@ -202,7 +202,7 @@ class VBox(_VirtualMashines):
                 # Для задачи "reboot" для одиночного хоста вызываем reboot_vm,
                 # передавая signal_get и ready_signal
                 reboot.reboot_vm(
-                    host, vm_dates, username, password,
+                    host, vms_dates, username, password,
                     signal_get=task.get('signal get'),
                     ready_signal=task.get('signal set')
                 )
@@ -212,7 +212,7 @@ class VBox(_VirtualMashines):
                     command=task['command'],
                     username=username,
                     password=password,
-                    vm_dates=vm_dates,
+                    vm_dates=vms_dates,
                     signal_set=task.get('signal set'),
                     signal_get=task.get('signal get'),
                     task_name=task_name
@@ -230,7 +230,7 @@ class VBox(_VirtualMashines):
                             # передавая signal_get и ready_signal
                             def group_worker():
                                 reboot.reboot_group(
-                                    vms_groups[group_name], vm_dates, username, password,
+                                    vms_groups[group_name], vms_dates, username, password,
                                     signal_get=task.get('signal get'),
                                     ready_signal=task.get('signal set')
                                 )
@@ -256,7 +256,7 @@ class VBox(_VirtualMashines):
                         # передавая signal_get и ready_signal
                         thread = threading.Thread(
                             target=lambda: reboot.reboot_vm(
-                                host, vm_dates, username, password,
+                                host, vms_dates, username, password,
                                 signal_get=task.get('signal get'),
                                 ready_signal=task.get('signal set')
                             )

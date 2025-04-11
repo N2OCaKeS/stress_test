@@ -17,7 +17,7 @@ class _AptManager:
     """
     @staticmethod
     @BaseDecorators.trycorator    
-    def install(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
+    def install(apt_structure: dict, vms_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
         Устанавливает пакеты на указанных хостах или группах хостов.
 
@@ -58,7 +58,7 @@ class _AptManager:
                 command=cmd,
                 username=username,
                 password=password,
-                vm_dates=vm_dates,
+                vm_dates=vms_dates,
                 task_name=f"apt install {packages}"
             )
         # Обрабатываем блок за блоком
@@ -87,7 +87,7 @@ class _AptManager:
 
 
     @staticmethod
-    def remove(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
+    def remove(apt_structure: dict, vms_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
         Удаляет пакеты на указанных хостах или группах хостов.
 
@@ -127,7 +127,7 @@ class _AptManager:
                 command=cmd,
                 username=username,
                 password=password,
-                vm_dates=vm_dates,
+                vm_dates=vms_dates,
                 task_name=f"apt remove on {host}"
             )
 
@@ -155,7 +155,7 @@ class _AptManager:
 
 
     @staticmethod
-    def reinstall(apt_structure: dict, vm_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
+    def reinstall(apt_structure: dict, vms_dates: dict, vms_groups: dict = None, username: str = "u", password: str = "1") -> int:
         """
         Переустанавливает пакеты на указанных хостах или группах хостов.
 
@@ -195,7 +195,7 @@ class _AptManager:
                 command=cmd,
                 username=username,
                 password=password,
-                vm_dates=vm_dates,
+                vm_dates=vms_dates,
                 task_name=f"apt reinstall on {host}"
             )
 

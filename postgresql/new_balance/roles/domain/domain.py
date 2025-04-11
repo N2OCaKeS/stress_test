@@ -1,5 +1,5 @@
 from allta import VBoxManager
-from roles.vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS
+from roles.vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD
 
 
 class DomainVM():
@@ -24,7 +24,7 @@ class DomainVM():
             }
         }
 
-        provider.freeipa(domain=domain, vm_dates=VMS_DATES, groups=VMS_GROUPS)
+        provider.freeipa(domain=domain, vm_dates=VMS_DATES, groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         tasks = {
             'dcfreeipa': {
@@ -49,5 +49,5 @@ class DomainVM():
             'signal get': ['dcfreeipa' ,'Kinit']
             }
 
-        provider.execute(vm_dates=VMS_DATES, commands=tasks, vms_groups=VMS_GROUPS)
+        provider.execute(vm_dates=VMS_DATES, commands=tasks, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 

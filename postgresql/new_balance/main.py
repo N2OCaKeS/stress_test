@@ -12,34 +12,34 @@ def main():
     prepare_path = './prepare/prepare.sh'
 
     provider = VBoxManager()
-    # provider.prepare(prepare_path)
+    provider.prepare(prepare_path)
     
-    # if VERSION_OS == '1.7':
-    #     provider.build(vagrant_path, f'1.7.5.s', '1.7.5', VMS, VMS_DATES)
+    if VERSION_OS == '1.7':
+        provider.build(vagrant_path, f'1.7.5.s', '1.7.5', VMS, VMS_DATES)
 
-    # elif VERSION_OS == '1.8':
-    #     provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES)
+    elif VERSION_OS == '1.8':
+        provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES)
 
-    # print('Ожидаем 2 мин перед началом теста')
-    # sleep(120)        
+    print('Ожидаем 2 мин перед началом теста')
+    sleep(120)        
     
     provider.check(VMS, VMS_DATES)
 
-    configure = PreConfigure()
+    configure = PreConfigure() # Проверено работает
     configure.set_hosts()
     configure.apt_install()
     
     
 
-    domain = DomainVM () # Перепроверить так как не всегда работает с 1 раза (очень долгое ожидание перезагрузки) мб надо переделать функцию перезагрузки
+    domain = DomainVM () # Проверено работает
     domain.settings() 
 
 
-    database = DatabaseVM() # Проверено работает 
+    database = DatabaseVM() # Проверено работает
     database.settings() 
 
 
-    load_balancer = LoadBalancer()
+    load_balancer = LoadBalancer() # На проверке
     load_balancer.load()
 
 

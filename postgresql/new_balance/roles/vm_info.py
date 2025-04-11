@@ -1,3 +1,6 @@
+USERNAME = 'u'
+PASSWORD = '1'
+
 VMS = ['database1', 'database2', 'database3', 'lbdb1',
        'lbdb2', 'lbdb3', 'dcfreeipa']  # Краткий список ВМ
 

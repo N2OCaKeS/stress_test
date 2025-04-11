@@ -1,12 +1,14 @@
 from allta import VBoxManager
 from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT
+from roles.load_balancer.keepalived import keepalived
 
 class LoadBalancer():
     def __init__(self):
         self.provider = VBoxManager()
 
     def load(self):
-
+        
+        keepalived.keepalived()
         provider = self.provider
 
         pgpool_config_path = '/etc/pgpool2'
@@ -19,7 +21,7 @@ class LoadBalancer():
                     'old': 'host    all         all         127.0.0.1/32          trust',
                     'new': 'host    all         all         0.0.0.0/0          trust'
                 },
-                {   # pgpool.conf
+                {   
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#listen_addresses = \'localhost\'',
                     'new': 'listen_addresses = \'*\''
@@ -56,12 +58,12 @@ class LoadBalancer():
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#failover_command = ''',
+                    'old': '#failover_command = \'\'',
                     'new': 'failover_command = \'/tmp/pgpool.sh failover\''  # TODO Проверить скрипт failover
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#failback_command = ''',
+                    'old': '#failback_command = \'\'',
                     'new': 'failback_command = \'/tmp/pgpool.sh failback\''  # TODO Проверить скрипт failback
                 },
                 {
@@ -89,11 +91,11 @@ class LoadBalancer():
                     'old': '#if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'',
                     'new': 'if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'' # TODO проверить команду
                 },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'',
-                    'new': 'arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'' # TODO проверить команду
-                },
+                # {
+                #     'path': f'{pgpool_config_path}/pgpool.conf', # TODO Нет такого пакета в main repo перепроверить нужен ли он
+                #     'old': '#arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'',
+                #     'new': 'arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'' 
+                # },
                 # {
                 #     'path': f'{pgpool_config_path}/pgpool.conf',
                 #     'old': '',
@@ -102,12 +104,14 @@ class LoadBalancer():
             ]
         }
 
-        provider.sed(sed, VMS_DATES, VMS_GROUPS)
+        provider.sed(sed, VMS_DATES, VMS_GROUPS,)
 
         scp = {
+            'g_load_balancer':{
                 'mode': 'push',
                 'path_host': './roles/load_balancer/template/pgpool.sh', 
                 'path_vm': '/tmp/contrprimer.sql'
+            }
         }
         provider.scp(scp, VMS_DATES, VMS_GROUPS)
 
@@ -117,24 +121,25 @@ backend_weight0 = 1
 backend_data_directory0 = '{POSTGRES_DATA_PATH}'
 backend_flag0 = 'ALLOW_TO_FAILOVER'
 backend_application_name0 = 'database1'
-
-backend_hostname1 = '{VMS_DATES['database1']['ip_bridge']}'
+backend_hostname1 = '{VMS_DATES['database2']['ip_bridge']}'
 backend_port1 = {POSTGRES_PORT}
 backend_weight1 = 1
 backend_data_directory1 = '{POSTGRES_DATA_PATH}'
 backend_flag1 = 'ALLOW_TO_FAILOVER'
 backend_application_name1 = 'database2'
-
-backend_hostname1 = '{VMS_DATES['database1']['ip_bridge']}'
-backend_port1 = {POSTGRES_PORT}
-backend_weight1 = 1
-backend_data_directory1 = '{POSTGRES_DATA_PATH}'
-backend_flag1 = 'ALLOW_TO_FAILOVER'
-backend_application_name1 = 'database3'
+backend_hostname2 = '{VMS_DATES['database3']['ip_bridge']}'
+backend_port2 = {POSTGRES_PORT}
+backend_weight2 = 1
+backend_data_directory2 = '{POSTGRES_DATA_PATH}'
+backend_flag2 = 'ALLOW_TO_FAILOVER'
+backend_application_name2 = 'database3'
+EOF
 """
+
 
         start_pgpool = {
             'g_load_balancer':{
+
                 'set postgres privilege': {
                     'command': f'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
                         sudo usermod -a -G shadow postgres && \
@@ -148,19 +153,31 @@ backend_application_name1 = 'database3'
                     'signal get': ''
                 },
                 'backend hosts':{
-                    'command':f'echo {new_block} | sudo tee -a {pgpool_config_path}/pgpool.conf',
+                    'command':f'sudo tee -a {pgpool_config_path}/pgpool.conf <<EOF\n{new_block}',
                     'signal set':'set backend host',
-                    'signal get':['']
+                    'signal get': ''
                 },
+
+                'fix pgpool2.service':{
+                    'command':"sudo sed -i '/^\\[Service\\]/a CapabilitiesParsec=PARSEC_CAP_PRIV_SOCK PARSEC_CAP_MAC_SOCK' /lib/systemd/system/pgpool2.service",
+                    'signal set':'Update pgpool service',
+                    'signal get': ''
+                },
+                'reload daemon':{
+                    'command':'sudo systemctl daemon-reload',
+                    'signal set':'daemon reload',
+                    'signal get':['Update pgpool service']
+                },                 
+
                 'enable pgpool':{
-                    'command':'sudo systemctl enable pgpool.service',
+                    'command':'sudo systemctl enable pgpool2.service',
                     'signal set':'',
-                    'signal get':['']
+                    'signal get':['daemon reload']
                 },
                 'start pgpool':{
-                    'command':'sudo systemctl start pgpool.service',
+                    'command':'sudo systemctl start pgpool2.service',
                     'signal set':'',
-                    'signal get':['set backend host']
+                    'signal get':['daemon reload']
                 },
                 # 'enable pgpool':{
                 #     'command':'',
@@ -170,7 +187,7 @@ backend_application_name1 = 'database3'
             }
         }
 
-        provider.execute(VMS_DATES, start_pgpool, VMS_GROUPS)
+        provider.execute(start_pgpool, VMS_DATES, VMS_GROUPS)
 
 
         

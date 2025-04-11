@@ -1,5 +1,5 @@
 from allta import VBoxManager
-from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS, POSTGRES_DATA_PATH, POSTGRES_PORT, DOMAIN, DOMAIN_ADMIN_PASSWORD
+from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS, POSTGRES_DATA_PATH, POSTGRES_PORT, DOMAIN, DOMAIN_ADMIN_PASSWORD, USERNAME, PASSWORD
 
 
 class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
@@ -106,7 +106,7 @@ EOF"""
             }
         }
         provider.execute(vm_dates=VMS_DATES, commands=prepare,
-                         vms_groups=VMS_GROUPS, username='u', password='1')
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD,)
 
         sed_master_config = {
             'g_database': [
@@ -193,7 +193,7 @@ EOF"""
                 },
             ]
         }
-        provider.sed(sed_master_config, VMS_DATES, VMS_GROUPS)
+        provider.sed(sed_master_config, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD)
 
         pg_ident = {
             'g_database': {
@@ -225,7 +225,7 @@ EOF"""
 
             }
         }
-        provider.execute(VMS_DATES, pg_ident, VMS_GROUPS)
+        provider.execute(pg_ident, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD)
 
         start_cluster = {
             'database1': {
@@ -251,19 +251,19 @@ EOF"""
                     'signal get': ['Replication success']
                 }
             },
-
         }
-        provider.execute(vm_dates=VMS_DATES, commands=start_cluster,
-                         vms_groups=VMS_GROUPS, username='u', password='1')
 
-        scp_sql = { # TODO переписать путь
+        provider.execute(vm_dates=VMS_DATES, commands=start_cluster,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+
+        scp_sql = {
             'database1': {
                 'mode': 'push',
                 'path_host': './roles/database/template/contrprimer.sql',
                 'path_vm': '/tmp/contrprimer.sql'
             }
         }
-        provider.scp(scp_sql, VMS_DATES)
+        provider.scp(scp_sql, VMS_DATES, username=USERNAME, password=PASSWORD)
 
         filling_bd = {
             'database1': {
@@ -285,4 +285,4 @@ EOF"""
             },
         }
 
-        provider.execute(VMS_DATES, filling_bd)
+        provider.execute(filling_bd, VMS_DATES, username=USERNAME, password=PASSWORD)

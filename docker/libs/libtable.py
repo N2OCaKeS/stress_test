@@ -7,43 +7,43 @@ from sklearn.preprocessing import MinMaxScaler
 from scipy import integrate
 from scipy.integrate import IntegrationWarning
 from matplotlib.gridspec import GridSpec
-from libs.docker_conf import REPORT_PATH, REPORT_VARIABLES
+from libs.docker_conf import REPORT_PATH, REPORT_VARIABLES, NORMALIZED_CONSTANTS
+
 
 # using in report.py
 class Report:
-    def __init__(self, report_path=REPORT_PATH, report_variables=REPORT_VARIABLES):
+    def __init__(self, report_path=REPORT_PATH, report_variables=REPORT_VARIABLES, constants=NORMALIZED_CONSTANTS):
         self.report_path = report_path
         self.report_variables = report_variables
         self.system_dirs = [d for d in os.listdir(report_path) if d.startswith("docker_web_")]
         self.integrals = []
+        self.constants = constants
 
 
-    @staticmethod
-    def normalize_dataframe(df, columns):
+    def normalize_dataframe(self, df, columns):
         """
-        Нормализует указанные столбцы DataFrame, добавляя граничные значения 0 и 6000.
-
+        Нормализует указанные столбцы DataFrame, добавляя граничные значения из словаря constants.
+    
         Параметры:
             df: Исходный DataFrame
             columns: Список столбцов для нормализации
-
+    
         Возвращает:
             DataFrame с нормализованными столбцами (без добавленных граничных значений)
         """
         df_norm = df.copy()
         scaler = MinMaxScaler()
-
+    
         for col in columns:
-            temp_lst = df_norm[col].tolist()
-            temp_lst = [0] + temp_lst + [5000]
-            normalized_data_2d_array = scaler.fit_transform(np.array(temp_lst)[:, np.newaxis])
-
-            # Преобразуем обратно в список и убираем добавленные граничные значения
-            normalized_data_list = [float(item[0]) for item in normalized_data_2d_array[1:-1]]
-
-            # Записываем результат обратно в DataFrame
+            min_val, max_val = self.constants.get(col, [0, 1])  # берем из словаря, по умолчанию [0,1]
+    
+            temp_lst = [min_val] + df_norm[col].tolist() + [max_val]
+    
+            normalized_data = scaler.fit_transform(np.array(temp_lst).reshape(-1, 1))
+            normalized_data_list = normalized_data[1:-1].flatten().tolist()
+    
             df_norm[col] = normalized_data_list
-
+    
         return df_norm
 
 
@@ -60,7 +60,7 @@ class Report:
                 warnings.filterwarnings('error')
                 try:
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
-                except np.RankWarning:
+                except Warning:
                     polinom_factor -= 1
 
 

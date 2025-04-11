@@ -3,13 +3,14 @@ from scipy.integrate import IntegrationWarning
 import os
 import warnings
 from libs.libtable import Report
-from libs.docker_conf import TEMPLATE_PATH
+from libs.docker_conf import TEMPLATE_PATH, RT_FACTOR
 from garbidge import funcsnargs as fcs
 
 
 rp = Report()
 errors = rp.failures_wrapper()
 print(rp.system_dirs)
+
 
 for sys_dir in rp.system_dirs:
     for variant in rp.report_variables:
@@ -46,6 +47,7 @@ for sys_dir in rp.system_dirs:
                 warnings.simplefilter("ignore", IntegrationWarning)
                 integral_rps, _ = integrate.quad(f_rps, min_users, max_users)
                 integral_response_time, _ = integrate.quad(f_response_time, min_users, max_users)
+                integral_response_time /= RT_FACTOR
             rp.integrals.append({
                 'variant': f"{sys_dir}_{variant}",
                 'integral_rps': integral_rps,

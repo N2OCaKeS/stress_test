@@ -180,21 +180,25 @@ class Public:
         
         # 
         html_page = '\n'.join([
-        header_table,
-        rating,
-        "<h2>Docker - Общая статистика</h2>",
-        docker_stats_html,
-        "<h2>Docker - По шагам</h2>",
-        docker_steps_html,
-        "<hr></hr>",
-        "<h2>Server - Общая статистика</h2>",
-        server_stats_html,
-        "<h2>Server - По шагам</h2>",
-        server_steps_html,
-        "<h2>Locust - Общая статистика</h2>",
-        locust_stats_html,
-        "<h2>Locust - По шагам</h2>",
-        locust_steps_html])
+            header_table,
+            rating,
+            '<h1 style="font-family: Century Gothic, sans-serif; font-size: 18px; font-weight: bold; padding-top: 15px;">1 | Приложение в Docker | Общая статистика | Статистика по шагам</h1>',
+            "<h2>Нагрузчик в контейнере</h2>",
+            docker_stats_html,
+            docker_steps_html,
+            "<hr></hr>",
+
+            '<h1 style="font-family: Century Gothic, sans-serif; font-size: 18px; font-weight: bold; padding-top: 15px;">2 | Приложение в Docker | Общая статистика | Статистика по шагам</h1>',
+            "<h2>Нагрузчик на хосте</h2>",
+            locust_stats_html,
+            locust_steps_html,
+            "<hr></hr>",
+
+            '<h1 style="font-family: Century Gothic, sans-serif; font-size: 18px; font-weight: bold; padding-top: 15px;">3 | Приложение без контейнеров | Общая статистика | Статистика по шагам</h1>',
+            "<h2>Нагрузчик на хосте</h2>",
+            server_stats_html,
+            server_steps_html,
+            "<hr></hr>"])
 
         #создание страницы отчета
         #html_page = '\n'.join([header_table, rating, table])

@@ -21,20 +21,20 @@ class Test:
 
         test = {
             'database3': {
-                'create venv and install dependencies': {
-                    'command':'cd /tmp && python3 -m venv venv && pip install psycopg2',
-                    'signal set':'venv',
-                    'signal get':['']       
+                'start test': {
+                    'command':'sudo chmod 777 /tmp/clients.py',
+                    'signal set':'',
+                    'signal get':['database3', 'venv']       
                 },
                 'start test': {
-                    'command':'cd /tmp && source venv/bin/activate && python /tmp/clients.py',
+                    'command':'python3 /tmp/clients.py',
                     'signal set':'',
                     'signal get':['database3', 'venv']       
                 },
             },
             'database1': {
                 'reinstall postgres': {
-                    'command':f'sleep 8 && sudo apt reinstall postgresql-{VERSION_PG} -y',
+                    'command':f'sleep 5 && sudo apt reinstall postgresql-{VERSION_PG} -y',
                     'signal set':'Reinstall',
                     'signal get':['database3', 'venv']                       
                 },

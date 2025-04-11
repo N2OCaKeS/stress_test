@@ -54,17 +54,32 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_timeout = 20',
-                    'new': 'health_check_timeout = 10'
+                    'new': 'health_check_timeout = 5'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#health_check_user = \'nobody\'',
+                    'new': 'health_check_user = \'postgres\''
+                },
+                    {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#health_check_max_retries = 0',
+                    'new': 'health_check_max_retries = 2'
+                }, 
+                    {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#health_check_retry_delay = 1',
+                    'new': 'health_check_retry_delay = 1'
+                },                                  
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
-                    'new': 'failover_command = \'/tmp/pgpool.sh failover\''  # TODO Проверить скрипт failover
+                    'new': 'failover_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''  # TODO Проверить скрипт failover
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failback_command = \'\'',
-                    'new': 'failback_command = \'/tmp/pgpool.sh failback\''  # TODO Проверить скрипт failback
+                    'new': 'failback_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''  # TODO Проверить скрипт failback
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -139,7 +154,11 @@ EOF
 
         start_pgpool = {
             'g_load_balancer':{
-
+                'set chmod failoverscripts':{
+                    'command':'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log/pgpool && sudo touch /var/log/pgpool/cluster_failover.log && sudo chown -R postgres:postgres /var/log/pgpool',
+                    'signal set':'',
+                    'signal get':['']
+                },                  
                 'set postgres privilege': {
                     'command': f'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
                         sudo usermod -a -G shadow postgres && \
@@ -178,12 +197,7 @@ EOF
                     'command':'sudo systemctl start pgpool2.service',
                     'signal set':'',
                     'signal get':['daemon reload']
-                },
-                # 'enable pgpool':{
-                #     'command':'',
-                #     'signal set':'',
-                #     'signal get':['']
-                # },                
+                },              
             }
         }
 

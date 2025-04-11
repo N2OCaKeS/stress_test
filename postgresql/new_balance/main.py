@@ -1,9 +1,11 @@
 from allta import VBoxManager 
 
+from roles.task.test import Test
 from roles.load_balancer.load_balancer import LoadBalancer
-from roles.task.pre_configure import PreConfigure
-from roles.domain.domain import DomainVM
 from roles.database.db import DatabaseVM
+from roles.domain.domain import DomainVM
+from roles.task.pre_configure import PreConfigure
+
 from roles.vm_info import VMS_DATES, VMS, VERSION_OS
 from time import sleep
 
@@ -41,6 +43,9 @@ def main():
 
     load_balancer = LoadBalancer() # На проверке
     load_balancer.load()
+
+    test = Test()
+    test.test()
 
 
 if __name__ == "__main__":

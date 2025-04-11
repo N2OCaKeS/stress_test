@@ -975,7 +975,14 @@ class ReleaseToRepo:
         with open(f'{self.cur_directory}/{self.gen_filename}', 'w') as w:
             json.dump(sorted_dict, w, indent=4)
     
+
+def create_vm_snapshot(stand, snapshot_name):
+    vms = test_station_vms
+    cmd = f'sudo vboxmanage snapshot {vms[stand]} take {snapshot_name}'
     
+    if stand in vms.keys():
+        ssh_command(command=cmd, stand_ip=stands_ip['stand5'])
+
 
 def backup_snapshot(stand, snapshot):
     command = f'{cz_comm()[stand][snapshot]}'
@@ -984,16 +991,16 @@ def backup_snapshot(stand, snapshot):
 
 def backup_vm_snapshot(stand, snapshot):
     vms = test_station_vms
-    commands = [f'sudo vboxmanage controlvm {vms[stand]} poweroff',
-                f'sudo VBoxManage snapshot {vms[stand]} restore {snapshot}',
-                f'sudo vboxmanage startvm {vms[stand]} --type headless']
+    commands = [f'sudo systemctl stop {vms[stand]}.service',
+                f'sudo vboxmanage snapshot {vms[stand]} restore {snapshot}',
+                f'sudo systemctl start {vms[stand]}.service']
 
     [ssh_command(command=cmd, stand_ip=stands_ip['stand5']) for cmd in commands]
 
 
 def power_on_stand(stand):
     vms = test_station_vms
-    cmd = f'sudo vboxmanage startvm {vms[stand]} --type headless'
+    cmd = f'sudo systemctl start {vms[stand]}.service'
 
     if stand in vms.keys():
         ssh_command(command=cmd, stand_ip=stands_ip['stand5'])

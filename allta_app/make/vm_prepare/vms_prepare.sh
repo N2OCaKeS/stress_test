@@ -175,15 +175,41 @@ sleep 1
 BRIDGE_IFACE=`vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1`
 
 for vm in "${VMS[@]}"; do
-    VBoxManage controlvm "$vm" poweroff
+    vboxmanage controlvm "$vm" poweroff
     sleep 1
-    VBoxManage modifyvm "$vm" --nic1 bridged
-    VBoxManage modifyvm "$vm" --nested-hw-virt on
-    VBoxManage modifyvm "$vm" --bridgeadapter1 "$BRIDGE_IFACE"
-    VBoxManage modifyvm "$vm" --macaddress1 "${vm_mac_map[$vm]}"
-    VBoxManage startvm "$vm" --type headless
+    vboxmanage modifyvm "$vm" --nic1 bridged
+    vboxmanage modifyvm "$vm" --nested-hw-virt on
+    vboxmanage modifyvm "$vm" --bridgeadapter1 "$BRIDGE_IFACE"
+    vboxmanage modifyvm "$vm" --macaddress1 "${vm_mac_map[$vm]}"
+    nohup vboxmanage startvm "$vm" --type headless &
     sleep 1
-    VBoxManage snapshot "$vm" take "start_snapshot_1"
+    vboxmanage snapshot "$vm" take "start_snapshot_1"
+done
+
+for vm in "${VMS[@]}"; do
+    vboxmanage controlvm "$vm" poweroff
+    sleep 1
+    if systemctl is-enabled --quiet "$vm.service"; then
+        systemctl stop "$vm.service"
+        systemctl disable "$vm.service"
+    fi
+    cat << EOF > /etc/systemd/system/$vm.service
+[Unit]
+Description=Virtual Machine $vm
+After=network.target vboxdrv.service
+
+[Service]
+ExecStart=/usr/bin/vboxmanage startvm $vm --type headless
+ExecStop=/usr/bin/vboxmanage controlvm $vm poweroff
+User=root
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
+EOF
+    systemctl daemon-reload
+    systemctl enable $vm.service
+    systemctl start $vm.service
 done
 
 vboxmanage natnetwork list
@@ -198,7 +224,7 @@ vboxmanage list vms
 #  sudo vboxmanage controlvm $vm poweroff
 #  sudo VBoxManage modifyvm virtual-station1 --nested-hw-virt on
 #  sudo VBoxManage snapshot $vm restore snapshot_with_git_1
-#  sudo vboxmanage startvm $vm --type headless
+#  sudo nohup vboxmanage startvm $vm --type headless &
 #done
 
 

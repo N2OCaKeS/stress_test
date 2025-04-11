@@ -188,10 +188,11 @@ if __name__ == "__main__":
                         title_graph="Тестовый график 3",
                         x_label="Количество пользователй",
                         y_label="Время аутентификации почти последним пользователем")
-    rating_sr_znach = report.get_rating(report.user_count, report.sr_znach, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
-    rating_proc_errors = report.get_rating(report.user_count, report.proc_errors, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
-    rating_last_values = report.get_rating(report.user_count, report.value_for_last_proc_delay, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
-    total_rating = report.get_total_rating([rating_sr_znach, rating_proc_errors, rating_last_values])
+    # rating_sr_znach = report.get_rating(report.user_count, report.sr_znach, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
+    # rating_proc_errors = report.get_rating(report.user_count, report.proc_errors, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
+    # rating_last_values = report.get_rating(report.user_count, report.value_for_last_proc_delay, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
+    # total_rating = report.get_total_rating([rating_sr_znach, rating_proc_errors, rating_last_values])
+    total_rating = report.get_total_rating()
     print(total_rating)
     put_system_info_in_file(time_start_script, INFO_FILENAME)
 

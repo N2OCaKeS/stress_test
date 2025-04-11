@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import warnings
-#from numpy.exceptions import RankWarning
+from numpy.exceptions import RankWarning
 from os import path
 from scipy import integrate
 from matplotlib import pyplot as plt
@@ -63,7 +63,7 @@ class Report:
                 warnings.filterwarnings('error')
                 try:
                     return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
-                except np.RankWarning:
+                except RankWarning:
                     polinom_factor -= 1
 
     
@@ -80,30 +80,51 @@ class Report:
 
 
     def get_rating(self, x, y, y_min_for_mathmodel, y_max_for_mathmodel):
-        '''
-            Получить рейтинг
-        '''
-        
         y_new = [y_min_for_mathmodel] + y + [y_max_for_mathmodel]
         scaler = preprocessing.MinMaxScaler()
         normalized_data_2d_array = scaler.fit_transform(np.array(y_new)[:, np.newaxis])
         normalized_data_list = [float(list(item)[0]) for item in list(normalized_data_2d_array[1:-1])]
+        # print(normalized_data_list)
 
         func = self.data_aproximation(x, normalized_data_list)
         I, err = integrate.quad(func, x[0], x[-1])
-        try:
-            return 1/I
-        except ZeroDivisionError:
-            return 0
+        return I
         
+    def get_rating_sr_znach(self):
+        return self.get_rating(x=self.raw_table['user_count'].tolist(), 
+                               y=self.raw_table['sr_znach'].tolist(),
+                               y_min_for_mathmodel=0,
+                               y_max_for_mathmodel=650)
 
-    def get_total_rating(self, list_rating):
-        c_weiht = 0.333
-        total_rating = 1
-        for item_rating in list_rating:
-            # print(item_rating)
-            total_rating += c_weiht * item_rating
-        return round(total_rating * 1000, 2) #временное решение
+    def get_rating_value_for_last_proc_delay(self):
+        return self.get_rating(x=self.raw_table['user_count'].tolist(),
+                               y=self.raw_table['value_for_last_proc_delay'].tolist(),
+                               y_min_for_mathmodel=0,
+                               y_max_for_mathmodel=650)
+
+    def get_rating_proc_errors(self, weight_c):
+        proc_errors = self.raw_table['proc_errors']
+        max_proc_err = proc_errors.max()
+        if max_proc_err == 0:
+            return 1
+        elif max_proc_err > 0 and max_proc_err < 10:
+            return 0.9
+        elif max_proc_err > 10:
+            return 1 - weight_c
+
+    def get_total_rating(self,
+                         multiplier=10**(4),
+                         accuracy=2):
+        weight_c_sr_znach = 0.5 # 0.5
+        weight_c_value_for_last_proc_delay = 0.2 # 0.2
+        weight_c_proc_errors = 0.3
+        total_rating = (
+            (
+                ((self.get_rating_sr_znach() * weight_c_sr_znach)**(-1)) + 
+                ((self.get_rating_value_for_last_proc_delay() * weight_c_value_for_last_proc_delay)**(-1))
+            ) * self.get_rating_proc_errors(weight_c_proc_errors)
+        )
+        return round(total_rating * multiplier, accuracy)
 
 
     def create_beauty_table(self, path=REPORT_PATH, table_name='ipa_auth_report_table.html'):

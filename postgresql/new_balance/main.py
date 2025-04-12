@@ -41,10 +41,10 @@ def main():
     database.settings() 
 
 
-    load_balancer = LoadBalancer() # На проверке
+    load_balancer = LoadBalancer() # На проверке в случае провала узнать как проверять какие бд в сети
     load_balancer.load()
 
-    test = Test()
+    test = Test() # TODO Настроить скрипт и создать необходимую бд
     test.test()
 
 

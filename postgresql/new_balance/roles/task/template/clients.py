@@ -11,7 +11,7 @@ N_ACCOUNTS = 100000
 # Database connection parameters
 db_params = {
     "dbname": 'contrprimer',
-    "user": "user0@BALANCE.RBT",
+    "user": "user0",
     "host": "pgpool.balace.rbt",
     "port": "5440"
 }

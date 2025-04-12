@@ -1,6 +1,6 @@
 from allta import VBoxManager
 
-from roles.vm_info import VERSION_PG, VMS_DATES, USERNAME, PASSWORD
+from roles.vm_info import VERSION_PG, VMS_DATES, USERNAME, PASSWORD, VMS_GROUPS
 
 class Test:
     def __init__(self):
@@ -10,7 +10,7 @@ class Test:
         provider = self.provider
 
         scp = {
-            'database1': {
+            'database3': {
                 'mode': 'push',
                 'path_host': './roles/task/template/clients.py',
                 'path_vm': '/tmp/clients.py'
@@ -21,22 +21,27 @@ class Test:
 
         test = {
             'database3': {
-                'start test': {
+                'pgbench manual':{
+                    'command':'pgbench -i -s 10 -h 10.177.103.131 -p 5440 -U postgres contrprimer',
+                    'signal set':'pgbench manual',
+                    'signal get':''                             
+                },
+                'set chmod': {
                     'command':'sudo chmod 777 /tmp/clients.py',
-                    'signal set':'',
-                    'signal get':['database3', 'venv']       
+                    'signal set':'chmod',
+                    'signal get':'pgbench manual'      
                 },
                 'start test': {
                     'command':'python3 /tmp/clients.py',
                     'signal set':'',
-                    'signal get':['database3', 'venv']       
+                    'signal get':['database3', 'chmod' ]
                 },
             },
             'database1': {
                 'reinstall postgres': {
                     'command':f'sleep 5 && sudo apt reinstall postgresql-{VERSION_PG} -y',
                     'signal set':'Reinstall',
-                    'signal get':['database3', 'venv']                       
+                    'signal get':['database3', 'chmod' ]                    
                 },
                 'start postgres dp': {
                     'command':f'sudo systemctl start postgresql@{VERSION_PG}-contrprimer',

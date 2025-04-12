@@ -157,7 +157,7 @@ EOF
                 'set chmod failoverscripts':{
                     'command':'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log/pgpool && sudo touch /var/log/pgpool/cluster_failover.log && sudo chown -R postgres:postgres /var/log/pgpool',
                     'signal set':'',
-                    'signal get':['']
+                    'signal get':''
                 },                  
                 'set postgres privilege': {
                     'command': f'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \

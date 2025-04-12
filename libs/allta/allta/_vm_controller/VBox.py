@@ -437,7 +437,7 @@ class VBox(_VirtualMashines):
     @classmethod    
     def freeipa(cls, domain: dict, vms_dates: dict, vms_groups: dict = None,
             username: str = "u", password: str = "1"):
-        """_summary_
+        """Развертывает домен freeipa и вводит в него клиенты
 
         Args:
             domain (dict): Настройка для freeipa 

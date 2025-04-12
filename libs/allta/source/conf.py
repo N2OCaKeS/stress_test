@@ -5,13 +5,14 @@ sys.path.insert(0, os.path.abspath('../allta'))  # Добавляем путь �
 # Основные настройки проекта
 project = 'Allta'
 author = 'team13'
-release = '1.0.0'
+release = '1.0.0' # TODO ТУТ НАДО МЕНЯТЬ ВЕРСИЮ
+language = 'ru'
 
 # Расширения Sphinx
 extensions = [
     'sphinx.ext.autodoc',     # Автоматическая генерация документации из docstring'ов
     'sphinx.ext.napoleon',    # Поддержка стиля Google и NumPy для docstring'ов
-    'sphinx.ext.viewcode'     # Добавление ссылок на исходный код в документации
+    'sphinx.ext.viewcode',    # Добавление ссылок на исходный код в документации
 ]
 
 # Путь к шаблонам
@@ -22,7 +23,8 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 # Настройка темы оформления
-# html_theme = 'sphinx_pdj_theme'
+html_theme = 'furo'
+
 html_theme_options = {}
 
 # Пути для статических файлов (CSS, изображения и т.д.)

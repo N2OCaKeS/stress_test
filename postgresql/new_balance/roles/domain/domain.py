@@ -17,14 +17,16 @@ class DomainVM():
                 'admin_password': DOMAIN_ADMIN_PASSWORD
             },
             'domain': {
-                'host': 'dcfreeipa', 
+                'host': 'dcfreeipa',
             },
             'client': {
-                'host': 'g_domain_client', # g_ если начинается с такого префикса то это для группы хостов
+                # g_ если начинается с такого префикса то это для группы хостов
+                'host': 'g_domain_client',
             }
         }
 
-        provider.freeipa(domain=domain, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        provider.freeipa(domain=domain, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         tasks = {
             'dcfreeipa': {
@@ -41,13 +43,13 @@ class DomainVM():
             tasks['dcfreeipa'][f'create user{n}'] = {
                 'command': f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} --macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"',
                 'signal set': '',
-                'signal get': ['dcfreeipa' ,'Kinit']
+                'signal get': ['dcfreeipa', 'Kinit']
             }
             tasks['dcfreeipa'][f'register database{n+1}'] = {
-            'command': f'ipa service-add postgres/database{n+1}.{DOMAIN}@{DOMAIN.upper()}',
-            'signal set': '',
-            'signal get': ['dcfreeipa' ,'Kinit']
+                'command': f'ipa service-add postgres/database{n+1}.{DOMAIN}@{DOMAIN.upper()}',
+                'signal set': '',
+                'signal get': ['dcfreeipa', 'Kinit']
             }
 
-        provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
-
+        provider.execute(commands=tasks, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)

@@ -2,12 +2,13 @@ from allta import VBoxManager
 from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD
 from roles.load_balancer.keepalived import keepalived
 
+
 class LoadBalancer():
     def __init__(self):
         self.provider = VBoxManager()
 
     def load(self):
-        
+
         keepalived.keepalived()
         provider = self.provider
 
@@ -21,7 +22,7 @@ class LoadBalancer():
                     'old': 'host    all         all         127.0.0.1/32          trust',
                     'new': 'host    all         all         0.0.0.0/0          trust'
                 },
-                {   
+                {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#listen_addresses = \'localhost\'',
                     'new': 'listen_addresses = \'*\''
@@ -35,7 +36,7 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#pcp_listen_addresses = \'localhost\'',
                     'new': 'pcp_listen_addresses = \'*\''
-                },                
+                },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#enable_pool_hba = off',
@@ -61,25 +62,27 @@ class LoadBalancer():
                     'old': '#health_check_user = \'nobody\'',
                     'new': 'health_check_user = \'postgres\''
                 },
-                    {
+                {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_max_retries = 0',
                     'new': 'health_check_max_retries = 2'
-                }, 
-                    {
+                },
+                {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_retry_delay = 1',
                     'new': 'health_check_retry_delay = 1'
-                },                                  
+                },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
-                    'new': 'failover_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''  # TODO Проверить скрипт failover
+                    # TODO Проверить скрипт failover
+                    'new': 'failover_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failback_command = \'\'',
-                    'new': 'failback_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''  # TODO Проверить скрипт failback
+                    # TODO Проверить скрипт failback
+                    'new': 'failback_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -99,52 +102,56 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#if_up_cmd = \'/usr/bin/sudo /sbin/ip addr add $_IP_$/24 dev eth0 label eth0:0\'',
-                    'new': 'if_up_cmd = \'/usr/bin/sudo /sbin/ip addr add $_IP_$/24 dev eth0 label eth0:0\'' # TODO проверить команду
+                    # TODO проверить команду
+                    'new': 'if_up_cmd = \'/usr/bin/sudo /sbin/ip addr add $_IP_$/24 dev eth0 label eth0:0\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'',
-                    'new': 'if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'' # TODO проверить команду
+                    # TODO проверить команду
+                    'new': 'if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#sr_check_user = \'nobody\'',
-                    'new': 'sr_check_user = \'postgres\'' 
+                    'new': 'sr_check_user = \'postgres\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#sr_check_password = \'\'',
-                    'new': 'sr_check_password = \'\'' 
+                    'new': 'sr_check_password = \'\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#sr_check_database = \'postgres\'',
-                    'new': 'sr_check_database = \'postgres\'' 
-                },    
-                            
+                    'new': 'sr_check_database = \'postgres\''
+                },
+
                 # {
                 #     'path': f'{pgpool_config_path}/pgpool.conf', # TODO Нет такого пакета в main repo перепроверить нужен ли он
                 #     'old': '#arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'',
-                #     'new': 'arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'' 
+                #     'new': 'arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\''
                 # },
                 # {
                 #     'path': f'{pgpool_config_path}/pgpool.conf',
                 #     'old': '',
                 #     'new': ''
-                # },                                               
+                # },
             ]
         }
 
-        provider.sed(sed_conf=sed, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        provider.sed(sed_conf=sed, vms_dates=VMS_DATES,
+                     vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         scp = {
-            'g_load_balancer':{
+            'g_load_balancer': {
                 'mode': 'push',
-                'path_host': './roles/load_balancer/template/pgpool.sh', 
+                'path_host': './roles/load_balancer/template/pgpool.sh',
                 'path_vm': '/tmp/contrprimer.sql'
             }
         }
-        provider.scp(scp_settings=scp, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
+                     vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         new_block = f"""backend_hostname0 = '{VMS_DATES['database1']['ip_bridge']}'
 backend_port0 = {POSTGRES_PORT}
@@ -167,14 +174,13 @@ backend_application_name2 = 'database3'
 EOF
 """
 
-
         start_pgpool = {
-            'g_load_balancer':{
-                'set chmod failoverscripts':{
-                    'command':'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log/pgpool && sudo touch /var/log/pgpool/cluster_failover.log && sudo chown -R postgres:postgres /var/log/pgpool',
-                    'signal set':'',
-                    'signal get':''
-                },                  
+            'g_load_balancer': {
+                'set chmod failoverscripts': {
+                    'command': 'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log/pgpool && sudo touch /var/log/pgpool/cluster_failover.log && sudo chown -R postgres:postgres /var/log/pgpool',
+                    'signal set': '',
+                    'signal get': ''
+                },
                 'set postgres privilege': {
                     'command': f'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
                         sudo usermod -a -G shadow postgres && \
@@ -187,37 +193,35 @@ EOF
                     'signal set': '',
                     'signal get': ''
                 },
-                'backend hosts':{
-                    'command':f'sudo tee -a {pgpool_config_path}/pgpool.conf <<EOF\n{new_block}',
-                    'signal set':'set backend host',
+                'backend hosts': {
+                    'command': f'sudo tee -a {pgpool_config_path}/pgpool.conf <<EOF\n{new_block}',
+                    'signal set': 'set backend host',
                     'signal get': ''
                 },
 
-                'fix pgpool2.service':{
-                    'command':"sudo sed -i '/^\\[Service\\]/a CapabilitiesParsec=PARSEC_CAP_PRIV_SOCK PARSEC_CAP_MAC_SOCK' /lib/systemd/system/pgpool2.service",
-                    'signal set':'Update pgpool service',
+                'fix pgpool2.service': {
+                    'command': "sudo sed -i '/^\\[Service\\]/a CapabilitiesParsec=PARSEC_CAP_PRIV_SOCK PARSEC_CAP_MAC_SOCK' /lib/systemd/system/pgpool2.service",
+                    'signal set': 'Update pgpool service',
                     'signal get': ''
                 },
-                'reload daemon':{
-                    'command':'sudo systemctl daemon-reload',
-                    'signal set':'daemon reload',
-                    'signal get':['Update pgpool service']
-                },                 
-
-                'enable pgpool':{
-                    'command':'sudo systemctl enable pgpool2.service',
-                    'signal set':'',
-                    'signal get':['daemon reload']
+                'reload daemon': {
+                    'command': 'sudo systemctl daemon-reload',
+                    'signal set': 'daemon reload',
+                    'signal get': ['Update pgpool service']
                 },
-                'start pgpool':{
-                    'command':'sudo systemctl start pgpool2.service',
-                    'signal set':'',
-                    'signal get':['daemon reload']
-                },              
+
+                'enable pgpool': {
+                    'command': 'sudo systemctl enable pgpool2.service',
+                    'signal set': '',
+                    'signal get': ['daemon reload']
+                },
+                'start pgpool': {
+                    'command': 'sudo systemctl start pgpool2.service',
+                    'signal set': '',
+                    'signal get': ['daemon reload']
+                },
             }
         }
 
-        provider.execute(commands=start_pgpool, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
-
-
-        
+        provider.execute(commands=start_pgpool, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)

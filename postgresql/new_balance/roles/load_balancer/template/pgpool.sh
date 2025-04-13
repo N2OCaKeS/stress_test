@@ -1,4 +1,18 @@
 #!/bin/bash
+# Скрипт для выполнения процедуры failover с использованием ALTER SYSTEM для обновления primary_conninfo
+
+# Параметры, передаваемые в скрипт:
+# $1   FAILED_NODE_ID         - ID узла, потерявшего связь
+# $2   FAILED_NODE_HOST       - Hostname узла, потерявшего связь
+# $3   FAILED_NODE_PORT       - Порт узла, потерявшего связь
+# $4   FAILED_NODE_DIR        - Каталог данных узла, потерявшего связь
+# $5   NEW_MASTER_NODE_ID     - ID нового мастера (ожидаемая нода)
+# $6   NEW_MASTER_NODE_HOST   - Hostname нового мастера
+# $7   NEW_MASTER_NODE_PORT   - Порт нового мастера
+# $8   NEW_MASTER_NODE_DIR    - Каталог данных нового мастера
+# $9   NEW_MASTER_NODE_FLAG   - Флаг нового мастера (не используется)
+# ${10} OLD_MASTER_NODE_ID     - ID старого мастера
+# ${11} OLD_MASTER_NODE_HOST   - Hostname старого мастера
 
 FAILED_NODE_ID=$1
 FAILED_NODE_HOST=$2
@@ -9,57 +23,65 @@ NEW_MASTER_NODE_HOST=$6
 NEW_MASTER_NODE_PORT=$7
 NEW_MASTER_NODE_DIR=$8
 NEW_MASTER_NODE_FLAG=$9
+OLD_MASTER_NODE_ID=${10}
+OLD_MASTER_NODE_HOST=${11}
 
-DATA_DIR="/var/lib/postgresql/11/contrprimer"
+# Локальные переменные – заполните их под своё окружение
+SSH_USER="u"
+SSH_PASS="1"
+# Массив standby-узлов (укажите хостнеймы или IP-адреса)
+DATABASES=("10.177.103.112" "10.177.103.113")
+# Порт PostgreSQL для подключения
+PG_PORT=5440
+# Пользователь для подключения и выполнения psql
 REPL_USER="postgres"
-PG_SERVICE="postgresql@11-contrprimer"
+
 LOG_FILE="/var/log/pgpool/cluster_failover.log"
 DATE=$(date "+%F %T")
 
-mkdir -p "$(dirname $LOG_FILE)"
+mkdir -p "$(dirname "$LOG_FILE")"
 
 log() {
     echo "$DATE $1" >> "$LOG_FILE"
 }
 
-# Проверяем, мастер ли сломался (failover) или это возврат старого мастера (failback)
-if [ "$FAILED_NODE_ID" = "$NEW_MASTER_NODE_ID" ]; then
-    log "FAILBACK: Rejoining node $FAILED_NODE_HOST as replica from $NEW_MASTER_NODE_HOST"
+echo "!!! FAILOVER START !!!"
+echo "WARNING: Lost connection with $FAILED_NODE_HOST [id:$FAILED_NODE_ID]"
+echo "Old master: $OLD_MASTER_NODE_HOST [id:$OLD_MASTER_NODE_ID]"
+echo "New master: $NEW_MASTER_NODE_HOST [id:$NEW_MASTER_NODE_ID]"
 
-    ssh u@"$FAILED_NODE_HOST" "sudo systemctl stop $PG_SERVICE"
+log "Starting failover procedure. Lost connection with $FAILED_NODE_HOST."
 
-    # Резервная копия текущих данных (если остались)
-    ssh u@"$FAILED_NODE_HOST" "sudo mv $DATA_DIR ${DATA_DIR}_backup_$(date +%F_%T)"
-
-    # Копируем с текущего мастера
-    ssh u@"$FAILED_NODE_HOST" "sudo -u postgres pg_basebackup -h $NEW_MASTER_NODE_HOST -p $NEW_MASTER_NODE_PORT -D $DATA_DIR -U $REPL_USER -P --wal-method=stream" >> $LOG_FILE 2>&1
-
-    # Создаём standby.signal (PG >= 12)
-    ssh u@"$FAILED_NODE_HOST" "sudo touch $DATA_DIR/standby.signal"
-
-    # Настраиваем primary_conninfo
-    ssh u@"$FAILED_NODE_HOST" "echo \"primary_conninfo = 'host=$NEW_MASTER_NODE_HOST port=$NEW_MASTER_NODE_PORT user=$REPL_USER'\" | sudo tee -a $DATA_DIR/postgresql.auto.conf"
-
-    ssh u@"$FAILED_NODE_HOST" "sudo systemctl start $PG_SERVICE"
-
-    if [ $? -eq 0 ]; then
-        log "FAILBACK SUCCESS: $FAILED_NODE_HOST успешно восстановлен как реплика."
-        exit 0
-    else
-        log "FAILBACK ERROR: восстановление не удалось на $FAILED_NODE_HOST"
-        exit 1
-    fi
-
-else
-    log "FAILOVER: Промоция $NEW_MASTER_NODE_HOST в мастер, т.к. $FAILED_NODE_HOST недоступен."
-
-    ssh u@"$NEW_MASTER_NODE_HOST" "sudo su postgres -c 'pg_ctl promote -D $DATA_DIR'" >> $LOG_FILE 2>&1
-
-    if [ $? -eq 0 ]; then
-        log "FAILOVER SUCCESS: $NEW_MASTER_NODE_HOST успешно промотирован."
-        exit 0
-    else
-        log "FAILOVER ERROR: ошибка при промоции $NEW_MASTER_NODE_HOST"
-        exit 1
-    fi
+# Если ID старого мастера совпадает с ID нового, значит отказ произошёл не у мастера (отказ standby‑ноды) – промоция не требуется.
+if [ "$OLD_MASTER_NODE_ID" -eq "$NEW_MASTER_NODE_ID" ]; then
+    log "No failover required – old and new master are identical."
+    echo "Old and new master are identical, no promotion needed."
+    exit 0
 fi
+
+log "FAILOVER: Promoting $NEW_MASTER_NODE_HOST as master because $FAILED_NODE_HOST is unavailable."
+
+# Подготовка SSH-команды (sshpass используется для автоматического ввода пароля)
+SSHPASS="sshpass -p '$SSH_PASS'"
+SSH="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m \
+   -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null \
+   -o StrictHostKeyChecking=no $SSH_USER@$NEW_MASTER_NODE_HOST"
+
+echo "Promoting standby node to master..."
+$SSH sudo touch "$NEW_MASTER_NODE_DIR/failover"
+
+# Обновление настроек подключения (primary_conninfo) на всех standby‑узлах через ALTER SYSTEM
+for node in "${DATABASES[@]}"; do
+    echo "Configuring node $node"
+    SSH_NODE="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m \
+       -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null \
+       -o StrictHostKeyChecking=no $SSH_USER@$node"
+    # Задаём параметр primary_conninfo с новым мастером
+    $SSH_NODE sudo -u postgres psql -p $PG_PORT -c "ALTER SYSTEM SET primary_conninfo = 'host=$NEW_MASTER_NODE_HOST port=$NEW_MASTER_NODE_PORT user=$REPL_USER';"
+    # Применяем изменения – перезагружаем конфигурацию
+    $SSH_NODE sudo -u postgres psql -p $PG_PORT -c 'SELECT pg_reload_conf();'
+done
+
+echo "!!! FAILOVER FINISH !!!"
+log "Failover procedure completed. New master: $NEW_MASTER_NODE_HOST."
+exit 0

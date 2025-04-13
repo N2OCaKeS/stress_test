@@ -265,7 +265,8 @@ EOF"""
                 'path_vm': '/tmp/contrprimer.sql'
             }
         }
-        provider.scp(scp_settings=scp_sql, vms_dates=VMS_DATES, username=USERNAME, password=PASSWORD)
+        provider.scp(scp_settings=scp_sql, vms_dates=VMS_DATES,
+                     username=USERNAME, password=PASSWORD)
 
         filling_bd = {
             'database1': {

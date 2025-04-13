@@ -106,6 +106,22 @@ class LoadBalancer():
                     'old': '#if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'',
                     'new': 'if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'' # TODO проверить команду
                 },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#sr_check_user = \'nobody\'',
+                    'new': 'sr_check_user = \'postgres\'' 
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#sr_check_password = \'\'',
+                    'new': 'sr_check_password = \'\'' 
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#sr_check_database = \'postgres\'',
+                    'new': 'sr_check_database = \'postgres\'' 
+                },    
+                            
                 # {
                 #     'path': f'{pgpool_config_path}/pgpool.conf', # TODO Нет такого пакета в main repo перепроверить нужен ли он
                 #     'old': '#arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'',

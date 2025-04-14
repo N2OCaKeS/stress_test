@@ -993,14 +993,14 @@ def backup_vm_snapshot(stand, snapshot):
     vms = test_station_vms
     commands = [f'sudo systemctl stop {vms[stand]}.service',
                 f'sudo vboxmanage snapshot {vms[stand]} restore {snapshot}',
-                f'sudo systemctl start {vms[stand]}.service']
+                f'sudo systemctl restart {vms[stand]}.service']
 
     [ssh_command(command=cmd, stand_ip=stands_ip['stand5']) for cmd in commands]
 
 
 def power_on_stand(stand):
     vms = test_station_vms
-    cmd = f'sudo systemctl start {vms[stand]}.service'
+    cmd = f'sudo systemctl restart {vms[stand]}.service'
 
     if stand in vms.keys():
         ssh_command(command=cmd, stand_ip=stands_ip['stand5'])

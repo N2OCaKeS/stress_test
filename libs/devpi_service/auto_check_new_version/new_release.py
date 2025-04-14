@@ -5,18 +5,14 @@ import re
 import os
 import sys
 from ftplib import FTP
+import configparser
+
+DEVPI_INDEX_URL = 'http://localhost:3141/root/release'
 
 def cmd(command, cwd=None):
-    """
-    Выполняет shell-команду.
-    """
     subprocess.run(command, shell=True, check=True, cwd=cwd)
 
 def download_conf(conf_file):
-    """
-    Скачивает конфигурационный файл через FTP.
-    Возвращает строку с командой для клонирования репозитория.
-    """
     ftp = FTP('10.177.5.111')
     ftp.login()
     ftp.cwd('stress_reports/stress_test_config')
@@ -24,95 +20,140 @@ def download_conf(conf_file):
         ftp.retrbinary('RETR gitclone.conf', wf.write)
     ftp.quit()
     with open(conf_file, 'r') as r:
-        conf = r.read().strip()
-    return conf
+        return r.read().strip()
 
 def clone_repo(clone_command, repo_path):
-    """
-    Если репозиторий уже существует, удаляет его.
-    Выполняет клонирование репозитория.
-    """
     if os.path.exists(repo_path):
-        try:
-            print(f"Удаляем старый репозиторий: {repo_path}")
-            cmd('rm -rf ' + repo_path)
-        except subprocess.CalledProcessError as e:
-            print("Ошибка при удалении старого репозитория:", e)
+        print(f"Удаляем старый репозиторий: {repo_path}")
+        cmd(f'rm -rf {repo_path}')
     print("Клонируем репозиторий...")
     cmd(clone_command)
 
-def perform_actions(repo_path, commit_hash, commit_message):
-    """
-    Здесь выполняются необходимые действия для нового коммита.
-    Например, можно запускать сборку, тесты и т.п.
-    """
-    print(f"Выполняем действия для коммита {commit_hash} с сообщением: '{commit_message}'")
-    # Пример: cmd('python3 your_script.py', cwd=repo_path)
-    password = os.getenv(''
-    '')
-    command = f'devpi use http://localhost:3141/root/release && devpi login root --password {password} && devpi upload --with-docs && rm -rf {repo_path}/libs/allta/allta.egg-info && rm -rf {repo_path}/libs/allta/dist && rm -rf {repo_path}/libs/allta/build'
-    cmd(command, cwd = f'{repo_path}/libs/allta')
+def version_exists_on_devpi(version):
+    try:
+        output = subprocess.check_output(
+            f'devpi use {DEVPI_INDEX_URL} && devpi list allta=={version}',
+            shell=True,
+            text=True
+        )
+        return f'allta {version}' in output
+    except subprocess.CalledProcessError:
+        return False
 
+def update_version_in_files(repo_path, version):
+    setup_py_path = os.path.join(repo_path, 'libs', 'allta', 'setup.py')
+    setup_cfg_path = os.path.join(repo_path, 'libs', 'allta', 'setup.cfg')
+
+    # Обновляем setup.py
+    with open(setup_py_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    with open(setup_py_path, 'w', encoding='utf-8') as f:
+        for line in lines:
+            if 'version=' in line:
+                line = re.sub(r"version\s*=\s*['\"]\d+\.\d+\.\d+['\"]", f"version='{version}'", line)
+            f.write(line)
+
+    # Обновляем setup.cfg
+    if os.path.exists(setup_cfg_path):
+        config = configparser.ConfigParser()
+        config.read(setup_cfg_path)
+        if config.has_section('metadata'):
+            config.set('metadata', 'version', version)
+            with open(setup_cfg_path, 'w', encoding='utf-8') as f:
+                config.write(f)
+        else:
+            print("⚠️ В setup.cfg нет секции [metadata] — пропускаем замену.")
+
+def upload_version(repo_path):
+    password = os.getenv('DEVPI_ADMIN_PASSWORD')
+    if not password:
+        print("Переменная окружения DEVPI_ADMIN_PASSWORD не установлена!")
+        return
+    command = (
+        f'devpi use {DEVPI_INDEX_URL} && '
+        f'devpi login root --password {password} && '
+        f'devpi upload --with-docs && '
+        f'rm -rf {repo_path}/libs/allta/allta.egg-info && '
+        f'rm -rf {repo_path}/libs/allta/dist && '
+        f'rm -rf {repo_path}/libs/allta/build'
+    )
+    cmd(command, cwd=f'{repo_path}/libs/allta')
+
+def initial_sync(repo_path, branch='libs'):
+    pattern = re.compile(r'^allta_lib v(\d+\.\d+\.\d+)$')
+    cmd(f'git fetch origin {branch}', cwd=repo_path)
+    result = subprocess.run(
+        ['git', 'log', f'origin/{branch}', '--pretty=format:%H||%s'],
+        check=True, capture_output=True, text=True, cwd=repo_path
+    )
+
+    versions_handled = set()
+    for line in result.stdout.strip().split('\n'):
+        if '||' not in line:
+            continue
+        commit_hash, commit_message = line.strip().split('||', 1)
+        match = pattern.match(commit_message.strip())
+        if match:
+            version = match.group(1)
+            if version in versions_handled:
+                continue
+            if not version_exists_on_devpi(version):
+                print(f"Новая версия {version} не найдена на devpi. Загружаем...")
+                cmd(f'git checkout {commit_hash}', cwd=repo_path)
+                update_version_in_files(repo_path, version)
+                upload_version(repo_path)
+            else:
+                print(f"Версия {version} уже есть на devpi. Пропускаем.")
+            versions_handled.add(version)
 
 def monitor_branch(repo_path, branch='libs', check_interval=60):
-    """
-    В бесконечном цикле раз в check_interval (60 сек) проверяет указанную ветку.
-    Если обнаружен новый коммит с сообщением вида:
-        allta_lib vX.Y.Z   (где X, Y, Z — цифры)
-    то происходит переключение на этот коммит и выполняются действия.
-    """
-    pattern = re.compile(r'^allta_lib v\d+\.\d+\.\d+$')
-    last_commit = None
+    pattern = re.compile(r'^allta_lib v(\d+\.\d+\.\d+)$')
+    last_seen_hash = None
     print(f"Мониторим ветку '{branch}' с интервалом {check_interval} секунд...")
     while True:
         try:
-            # Обновляем данные по ветке
             cmd(f'git fetch origin {branch}', cwd=repo_path)
-            # Получаем последний коммит ветки (разделитель "||" используется для удобного парсинга)
             result = subprocess.run(
                 ['git', 'log', f'origin/{branch}', '-1', '--pretty=format:%H||%s'],
                 check=True, capture_output=True, text=True, cwd=repo_path
             )
             output = result.stdout.strip()
             if '||' not in output:
-                print("Неожиданный формат вывода git log:", output)
+                print("Формат вывода git log нераспознан:", output)
                 time.sleep(check_interval)
                 continue
 
             commit_hash, commit_message = output.split('||', 1)
             commit_message = commit_message.strip()
-
-            # Если сообщение соответствует требуемому шаблону и коммит новый – выполняем действия
-            if pattern.match(commit_message):
-                if commit_hash != last_commit:
-                    print(f"Обнаружен новый коммит: {commit_hash} с сообщением: '{commit_message}'")
+            match = pattern.match(commit_message)
+            if match and commit_hash != last_seen_hash:
+                version = match.group(1)
+                if not version_exists_on_devpi(version):
+                    print(f"Обнаружена новая версия {version}. Загружаем...")
                     cmd(f'git checkout {commit_hash}', cwd=repo_path)
-                    perform_actions(repo_path, commit_hash, commit_message)
-                    last_commit = commit_hash
+                    update_version_in_files(repo_path, version)
+                    upload_version(repo_path)
                 else:
-                    print("Новый коммит не обнаружен (последний уже обработан).")
+                    print(f"Версия {version} уже существует на devpi.")
+                last_seen_hash = commit_hash
             else:
-                print("Последний коммит не соответствует требуемому формату:", commit_message)
-        except subprocess.CalledProcessError as e:
-            print("Ошибка при выполнении git-команды:", e)
-        except Exception as ex:
-            print("Произошла непредвиденная ошибка:", ex)
+                print("Нет новых подходящих коммитов.")
+        except Exception as e:
+            print("Ошибка при мониторинге ветки:", e)
         time.sleep(check_interval)
 
 def main():
     base_dir = os.getcwd()
-    # Если требуется запускать из определённого каталога, можно оставить проверку.
     if base_dir != '/git':
         print("Запустите скрипт из директории /git!")
         sys.exit(1)
-    
+
     conf_file = os.path.join(base_dir, 'gitclone.conf')
-    # Скачиваем конфигурацию (содержит команду для клонирования)
     clone_command = download_conf(conf_file)
     repo_path = os.path.join(base_dir, 'stress_test')
-    # Клонирование происходит только один раз
     clone_repo(clone_command, repo_path)
-    # Запуск мониторинга ветки (раз в 60 сек)
+
+    initial_sync(repo_path, branch='libs')
     monitor_branch(repo_path, branch='libs', check_interval=60)
 
 if __name__ == '__main__':

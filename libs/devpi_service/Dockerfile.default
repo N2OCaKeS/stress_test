@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /git
 
 # Установка devpi-server, devpi-web (для веб-интерфейса) и devpi-client
-RUN pip install --no-cache-dir devpi-server devpi-web devpi-client
+RUN pip install --no-cache-dir devpi-server devpi-web devpi-client sphinx itcase_sphinx_theme 
 RUN apt update && apt install git -y
 
 # Открываем порт 3141 (используется как для API, так и для веб-интерфейса)
@@ -23,10 +23,10 @@ RUN (devpi-server --host 0.0.0.0 --port 3141 --serverdir /data &) && \
     sleep 15 && \
     devpi use http://localhost:3141 && \
     devpi login root --password=pass_adm && \
-    devpi index -c release bases=root/pypi && \
+    devpi index -c release bases=root/pypi mirror_whitelist=\* && \
     devpi user -c test_n password=test_p && \
     devpi login test_n --password=test_p && \
-    devpi index -c dev bases=root/pypi
+    devpi index -c dev bases=root/pypi mirror_whitelist=\*
 RUN kill -TERM 1
 
 COPY ./auto_check_new_version/new_release.py /git/

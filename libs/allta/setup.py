@@ -1,12 +1,13 @@
 from setuptools import setup, find_packages
 
-def readme(): # TODO ПЕРЕПИСАТЬ README FILE
+def readme(): 
   with open('README.md', 'r') as f:
     return f.read()
 
+# При выпуски в релиз версия меняется автоматически на ту что была установлена в коммите
 setup(
   name='allta',
-  version='0.0.2', # TODO Здесь МЕНЯТЬ версию при релизе на ту что в коммите
+  version='0.0.2', 
   author='team13',
   author_email='mfilippenko@astralinux.ru',
   description='Библиотеки для stress тестов',

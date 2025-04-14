@@ -7,7 +7,7 @@
 ## Установка
 
 ```bash
-pip install -i http://10.177.103.10:3141 --trust 10.177.103.10 allta
+pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
 ```
 
 ## Использование

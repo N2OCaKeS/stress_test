@@ -18,15 +18,24 @@ if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
     set +a
 else
-    echo "Предупреждение: файл $ENV_FILE не найден! Используются значения по умолчанию."
+    echo "Предупреждение: файл $ENV_FILE не найден! Создание со значениями по умолчанию..."
+    
     DEVPI_ADMIN_PASSWORD="$DEFAULT_ROOT_PASS"
     DEVPI_USER="$DEFAULT_TEST_USER"
     DEVPI_PASSWORD="$DEFAULT_TEST_PASS"
+
+    cat << EOF > "$ENV_FILE"
+DEVPI_USER=$DEVPI_USER
+DEVPI_PASSWORD=$DEVPI_PASSWORD
+DEVPI_ADMIN_PASSWORD=$DEVPI_ADMIN_PASSWORD
+EOF
+
+    echo "$ENV_FILE создан со значениями по умолчанию."
 fi
 
-cp Dockerfile.default Dockerfile
+cp $PROJECT_PATH/Dockerfile.default $PROJECT_PATH/Dockerfile
 # Проверяем наличие Dockerfile
-if [ ! -f Dockerfile ]; then
+if [ ! -f $PROJECT_PATH/Dockerfile ]; then
     echo "Ошибка: Dockerfile не найден!"
     exit 1
 fi
@@ -34,10 +43,10 @@ fi
 echo "Обновление Dockerfile с использованием переменных..."
 
 # Заменяем зашитые значения на переменные
-sed -i "s/pass_adm/${DEVPI_ADMIN_PASSWORD}/g" Dockerfile
-sed -i "s/test_n/${DEVPI_USER}/g" Dockerfile
-sed -i "s/test_p/${DEVPI_PASSWORD}/g" Dockerfile
-echo "Dockerfile обновлен."
+sed -i "s/pass_adm/${DEVPI_ADMIN_PASSWORD}/g" $PROJECT_PATH/Dockerfile
+sed -i "s/test_n/${DEVPI_USER}/g" $PROJECT_PATH/Dockerfile
+sed -i "s/test_p/${DEVPI_PASSWORD}/g" $PROJECT_PATH/Dockerfile
+echo "$PROJECT_PATH/Dockerfile обновлен."
 
 # Функция для установки и запуска сервиса
 install() {
@@ -62,10 +71,14 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-        sudo systemctl enable "$SERVICE_NAME"
-        sudo systemctl daemon-reload
-        sudo systemctl start "$SERVICE_NAME"
-        sudo systemctl status "$SERVICE_NAME"
+
+
+    sudo systemctl daemon-reexec
+    sudo systemctl daemon-reload
+    sudo systemctl enable devpi.service
+    sudo systemctl restart devpi.service
+    sudo systemctl status devpi.service
+
     else
         echo "Сервис уже запущен."
     fi

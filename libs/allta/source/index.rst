@@ -1,7 +1,7 @@
 Allta Documentation
 ===================
-.. _ссылке: http://10.177.103.10/root/release/allta
-.. _индексе: http://10.177.103.10/user/dev/allta
+.. _ссылке: http://10.177.103.10:3141/root/release/allta
+.. _индексе: http://10.177.103.10:3141/user/dev/allta
 
 .. toctree::
    :maxdepth: 2

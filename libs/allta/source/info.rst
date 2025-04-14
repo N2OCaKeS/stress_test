@@ -11,6 +11,7 @@ Allta
 
    "0.0.1", "mfilippenko", "Тестирование скрипта отправки модуля"
    "1.0.0", "mfilippenko", "Релиз"
+.. Тут необходимо указывать новую версию автора и описание 
 
 
 
@@ -29,7 +30,7 @@ Allta
    
    .. code-block:: bash
 
-      pip install -i http://10.177.103.10/root/release --trust 10.177.103.10 allta
+      pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
 
 2. Импорт модуля:
    

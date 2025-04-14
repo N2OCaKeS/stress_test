@@ -38,12 +38,14 @@ EOF
 sudo apt update
 sudo astra-update -A -T -r
 sudo apt-get install htop -y
+sudo apt-get install ssh git resolvconf sysstat -y
 
 
 
 nat_net_name="Wired connection 1"
 vbox_bridge_mask=24
 vbox_bridge_gateway=10.177.103.254
+iface=`ip a | grep '2: ' | awk '{print$2}' | tr -d ':' | head -n 1`
 
 
 declare -A virtual_station1_br=( [ip]=10.177.103.101 [domain]=virtual-station1.allta.nt [host]=virtual-station1 [dns]="10.177.180.248, 10.177.128.198" )
@@ -67,9 +69,27 @@ elif [ "$1" = "virtual-station4" ]; then
 fi
 
 
-sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
-sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
-sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
+
+cat << EOF > /etc/network/interfaces
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+auto $iface
+iface $iface inet static
+        address $ip_br
+        netmask 255.255.255.0
+        gateway 10.177.103.254
+        dns-nameservers $dns_br
+EOF
+
+
+
+#sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask
+#sudo nmcli connection modify "${nat_net_name}" gw4 $vbox_bridge_gateway
+#sudo nmcli connection modify "${nat_net_name}" ipv4.dns "$dns_br"
 nmcli connection show
 
 
@@ -86,7 +106,7 @@ fi
 sudo sed -i "s/GRUB_DEFAULT=.*/GRUB_DEFAULT=$kernel_conf/" /etc/default/grub
 sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT
-
+mkdir -p /home/u/git
 
 
 

@@ -27,6 +27,7 @@ from libs.liballta import (index_page,
                           backup_snapshot,
                           backup_vm_snapshot,
                           busy_status_control,
+                          power_on_stand,
                           main_url,
                           mobile_url,
                           brest_url,
@@ -226,6 +227,11 @@ def reboot(stand):
 def poweroff(stand):
     ssh_command('sudo poweroff', 
                 stand_ip=stands_ip[stand])
+
+
+@app.route('/poweron/<stand>', methods=['POST'])
+def poweron(stand):
+    power_on_stand(stand)
 
 
 @app.route('/ilo/<stand>', methods=['POST'])

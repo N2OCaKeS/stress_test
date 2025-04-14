@@ -5,7 +5,6 @@ import glob
 #REPORT_FILENAME, \REQUESTS, CONCURRENCY
 
 
-
 class Public:
     '''
     Публикация результатов в confluence
@@ -181,21 +180,24 @@ class Public:
         # 
         html_page = '\n'.join([
             header_table,
+            "<hr></hr>",
             rating,
-            '<h1 style="font-family: Century Gothic, sans-serif; font-size: 18px; font-weight: bold; padding-top: 15px;">1 | Приложение в Docker | Общая статистика | Статистика по шагам</h1>',
-            "<h2>Нагрузчик в контейнере</h2>",
+            "<hr></hr>",
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">Детальные результаты по тестовым случаям</h2>',
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">1. Приложение в Docker | Нагрузчик в Docker 🐳</h2>',
+            "<h3>Общая статистика</h3>",
             docker_stats_html,
             docker_steps_html,
             "<hr></hr>",
 
-            '<h1 style="font-family: Century Gothic, sans-serif; font-size: 18px; font-weight: bold; padding-top: 15px;">2 | Приложение в Docker | Общая статистика | Статистика по шагам</h1>',
-            "<h2>Нагрузчик на хосте</h2>",
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">2. Приложение в Docker | Нагрузчик на хосте 🐳</h2>',
+            "<h3>Общая статистика</h3>",
             locust_stats_html,
             locust_steps_html,
             "<hr></hr>",
 
-            '<h1 style="font-family: Century Gothic, sans-serif; font-size: 18px; font-weight: bold; padding-top: 15px;">3 | Приложение без контейнеров | Общая статистика | Статистика по шагам</h1>',
-            "<h2>Нагрузчик на хосте</h2>",
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">3. Приложение на хосте | Нагрузчик на хосте 💻</h2>',
+            "<h3>Общая статистика</h3>",
             server_stats_html,
             server_steps_html,
             "<hr></hr>"])

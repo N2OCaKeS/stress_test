@@ -165,4 +165,27 @@ class Report:
             return 0.9, "Ошибки средние (0–10% на одном из шагов)"
         else:
             return 1.0, "Ошибки отсутствуют"
+
+
+    def html_converter(self, csv_file, output_dir):
+        import pandas as pd
+        import os
+
+        df = pd.read_csv(csv_file)
+
+        # Безопасно удаляем строку Aggregated, если колонка 'Name' есть
+        if "Name" in df.columns:
+            df = df[df["Name"] != "Aggregated"]
+
+        html_table = df.to_html(index=False)
+
+        base_name = os.path.basename(csv_file).replace(".csv", ".html")
+        html_path = os.path.join(output_dir, base_name)
+
+        os.makedirs(output_dir, exist_ok=True)
+        with open(html_path, 'w') as file:
+            file.write(html_table)
+
+        print(f"HTML создан: {html_path}")
+
     

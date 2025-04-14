@@ -4,7 +4,6 @@ import os
 import warnings
 from libs.libtable import Report
 from libs.docker_conf import TEMPLATE_PATH, RT_FACTOR
-from garbidge import funcsnargs as fcs
 
 
 rp = Report()
@@ -62,20 +61,16 @@ for sys_dir in rp.system_dirs:
             rating_path = os.path.join(variant_path, "rating.txt")
             with open(rating_path, 'w') as file:
                 file.write(f"{key}:\n")
-                file.write(f"Рейтинг = {rating:.2f} (исходный: {rating_base:.2f}, множитель: {step_multiplier})\n")
+                file.write(f"Рейтинг: {rating:.2f}\n")
                 file.write(f"{error_level}\n")
 
                 if key in errors and errors[key] is not None:
                     value = errors[key]
                     if value == 0:
                         file.write(f"Общий процент ошибок: 0% — ошибок нет\n")
-                    elif value <= 1:
-                        file.write(f"Общий процент ошибок: {value:.2f}% — незначительные\n")
-                    elif 1 < value < 5:
-                        file.write(f"Общий процент ошибок: {value:.2f}% — низкие\n")
-                    elif 5 < value < 10:
+                    elif value < 10:
                         file.write(f"Общий процент ошибок: {value:.2f}% — средние\n")
-                    else:
+                    elif value >= 10:
                         file.write(f"Общий процент ошибок: {value:.2f}% — высокие\n")
                 else:
                     file.write("Данные об ошибках не найдены\n")
@@ -113,10 +108,9 @@ for sys_dir in rp.system_dirs:
             # Путь, куда сохранить HTML
             output_dir = os.path.join(TEMPLATE_PATH, subfolder)
             
-            # Используем переменную "filename" вместо "file"
             for filename in os.listdir(variant_path):
                 if filename.endswith(".csv"):
                     csv_path = os.path.join(variant_path, filename)
-                    fcs.html_converter(csv_path, output_dir)
+                    rp.html_converter(csv_path, output_dir)
 
 

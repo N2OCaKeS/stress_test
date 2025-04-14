@@ -35,3 +35,7 @@ if args.TEST == "web":
     run_command(f"source {VENV_PATH}/activate && python3 report.py")
     run_command(f"source {VENV_PATH}/activate && python3 publish.py")
 else: "Тест не найден"
+
+
+
+

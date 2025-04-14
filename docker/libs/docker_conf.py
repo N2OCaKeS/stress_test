@@ -14,10 +14,10 @@ REPORT_VARIABLES = ["nginx_docker", "nginx_server", "locust_proc"]
 VENV_PATH = "/home/u/python/Python-3.12.1/venv/bin"
 TEMPLATE_PATH = f"{SCRIPT_DIR}/templates"
 INFO_FILENAME = f"{REPORT_PATH}/INFO.txt"
-RT_FACTOR = 1000
-NORMALIZED_CONSTANTS = {"Avg Requests/s": [0, 5000],
-                        "Avg Failures/s": [0, 3000],
-                        "Avg Response Time": [0, 500]}
+RT_FACTOR = 5000
+NORMALIZED_CONSTANTS = {"Avg Requests/s": [0, 6000],
+                        "Avg Failures/s": [0, 5000],
+                        "Avg Response Time": [0, 150]}
 DESCRIPTION = ""
 
 

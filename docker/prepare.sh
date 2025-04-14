@@ -40,6 +40,7 @@ sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y li
 
 
 
+cd /home/u/git/stress_test/*/site/
 sudo mkdir /home/u/python
 cd /home/u/python
 sudo wget -P /home/u/python ftp://10.177.103.10/python/*
@@ -52,9 +53,8 @@ sudo make altinstall
 python3.12 -m venv venv
 source venv/bin/activate
 
-cd /home/u/git/stress_test/*/site/
 python3.12 -m pip install --upgrade pip
-python3.12 -m pip install -r requirements.txt
+python3.12 -m pip install -r ${CPATH}requirements.txt
 if [[ $? != 0 ]]; then
     python3.12 -m pip install -r requirements.txt
 fi

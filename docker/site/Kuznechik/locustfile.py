@@ -1,7 +1,10 @@
 from locust import HttpUser, task, between, TaskSet, LoadTestShape
 import random
 import time
+import sys
+import os
 from collections import namedtuple
+
 
 
 # ==== ЗАДАЧИ ПОЛЬЗОВАТЕЛЯ ====
@@ -20,10 +23,21 @@ class MyUser(HttpUser):
 
 
 # ==== НАГРУЗКА: СТУПЕНЧАТЫЙ РОСТ С УДЕРЖАНИЕМ ====
+# Подтягиваем значения для теста
+env_path = os.path.join(os.path.dirname(__file__), '../.env')
+if os.path.exists(env_path):
+    with open(env_path) as f:
+        for line in f:
+            # Пропускаем пустые строки и комментарии
+            if line.strip() == "" or line.strip().startswith("#"):
+                continue
+            key, value = line.strip().split("=", 1)
+            os.environ[key] = value  # загружаем в переменные окружения
+
+users_count = int(os.getenv("USERS_PER_SEC"))
+timestep = int(os.getenv("TIMESTEP"))
 
 Step = namedtuple("Step", ["users", "dwell"])  # dwell = время удержания нагрузки (в секундах)
-number = 1800
-timestep = 150
 
 class StepLoadShape(LoadTestShape):
     """
@@ -34,12 +48,12 @@ class StepLoadShape(LoadTestShape):
 
     targets_with_times = (
         Step(0, 60),
-        Step(number, timestep),
-        Step(number*2, timestep),
-        Step(number*3, timestep),
-        Step(number*4, timestep),
-        Step(number*5, timestep),
-        Step(number*6, timestep),
+        Step(users_count, timestep),
+        Step(users_count*2, timestep),
+        Step(users_count*3, timestep),
+        Step(users_count*4, timestep),
+        Step(users_count*5, timestep),
+        Step(users_count*6, timestep),
     )
 
     def __init__(self, *args, **kwargs):
@@ -65,5 +79,6 @@ class StepLoadShape(LoadTestShape):
                 self.step += 1
                 self.time_active = False
 
-        return (target.users, number)  # spawn rate
+        return (target.users, users_count)  # spawn rate
+
 

@@ -13,6 +13,26 @@
             <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Package</b></td>
             <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{package}</td>
         </tr>
+	<tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Ranging</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
+                <a href="https://life.astralinux.ru/pages/viewpage.action?pageId=150939635"> подробнее </a>
+                <ul>
+                    <li><b>Avg Requests/s</b> (average requests per second): 0.33</li>
+                    <li><b>Avg Response Time</b> (average response time per response): 0.33</li>
+                    <li><b>Avg Failures</b> (average failures per second): 0.33</li>
+                </ul>
+            </td>
+        </tr>
+	<tr>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Params</b></td>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
+             <ul>
+                 <li>Пользователи: {users}</li>
+		 <li>Время выполнения шага: {timestep}</li>
+            </ul>
+          </td>
+        </tr>
         <tr>
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>ARM</b></td>
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
@@ -27,16 +47,28 @@
       </tbody>
     </table>
 </p>
+<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
+    <h2>Описание</h2>
+</p>
+<p style ="    font-family: Century Gothic, sans-serif; font-size: 14px; ">
+  Целью тестирования является оценка влияния среды контейниризации на работу веб-приложения под нагрузкой, генерируемой locust. Результатом тестирования является таблица значений со следующими параметрами:<br/>
+</p>
+<ul>
+  <li><b>User Count</b>: Количество пользователей одновременно выполняющих запросы к приложению;</li>
+  <li><b>Avg Requests/s</b>: Среднее количество запросов к приложению, включая ошибочные(если такие имеются);</li>
+  <li><b>Avg Failures/s</b>: Среднее количество ошибочных ответов приложения;</li>
+  <li><b>Avg Response Time</b>: Среднее время ответа(в миллисекундах) от приложения;</li>
+</ul>
 <p style="
     font-family: Century Gothic, sans-serif; 
-    font-size: 16px; 
-    font-weight: bold;
-    padding-top: 15px;
+    font-size: 14px;
 ">
-    Описание:
+    <h2>Сценарии:</h2>
 </p>
 
-<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
-Cравнительный анализ производительности веб-сервера при различных сценариях развертывания (полностью в контейнерах, гибридный вариант и нативное исполнение) для оценки влияния среды выполнения на пропускную способность, задержки и стабильность работы под нагрузкой.
+<p style="margin-left: 20px; font-family: Century Gothic, sans-serif; font-size: 14px;">
+    - Приложение в Docker | Нагрузчик в Docker<br/>
+    - Приложение в Docker | Нагрузчик на хосте<br/>
+    - Приложение на хосте | Нагрузчик на хосте
 </p>
-
+  

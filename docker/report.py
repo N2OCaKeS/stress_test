@@ -3,7 +3,7 @@ from scipy.integrate import IntegrationWarning
 import os
 import warnings
 from libs.libtable import Report
-from libs.docker_conf import TEMPLATE_PATH, RT_FACTOR
+from docker_conf import TEMPLATE_PATH, RT_FACTOR
 
 
 rp = Report()
@@ -61,7 +61,7 @@ for sys_dir in rp.system_dirs:
             rating_path = os.path.join(variant_path, "rating.txt")
             with open(rating_path, 'w') as file:
                 file.write(f"{key}:\n")
-                file.write(f"Рейтинг: {rating:.2f}\n")
+                file.write(f"Total rating: {rating:.2f}\n")
                 file.write(f"{error_level}\n")
 
                 if key in errors and errors[key] is not None:

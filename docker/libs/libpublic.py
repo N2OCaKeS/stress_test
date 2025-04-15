@@ -1,6 +1,8 @@
 import os
+import sys
 from libs.libreport import ReportToConfluence
-from libs.docker_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME
+sys.path.append(os.path.join(os.getcwd(), '..'))
+from docker_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME
 import glob
 #REPORT_FILENAME, \REQUESTS, CONCURRENCY
 
@@ -106,6 +108,18 @@ class Public:
         #    if os.path.isfile(file_path):
         #        print(f"Прикрепление: {file_path}")
         #        confluence_report.attache_files(file_path, self.c_space, c_np)
+        env_path = os.path.join(os.path.dirname(__file__), '../site/.env')
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                # Пропускаем пустые строки и комментарии
+                    if line.strip() == "" or line.strip().startswith("#"):
+                        continue
+                    key, value = line.strip().split("=", 1)
+                    os.environ[key] = value  # загружаем в переменные окружения
+
+        users_count = str(os.getenv("USERS_PER_SEC"))
+        timestep = str(os.getenv("TIMESTEP"))
 
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:
@@ -125,7 +139,8 @@ class Public:
                                                     arm_num=self.stands[self.grade_stand]['grade'],
                                                     arm_proc=self.stands[self.grade_stand]['cpu'],
                                                     arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'])
+                                                    arm_st=self.stands[self.grade_stand]['storage'],
+                                                    users=users_count, timestep=timestep)
             
         # Получаем рейтинг
         paths = glob.glob(f"{REPORT_PATH}/docker*/nginx_docker/rating.txt") + \
@@ -180,27 +195,23 @@ class Public:
         # 
         html_page = '\n'.join([
             header_table,
-            "<hr></hr>",
             rating,
-            "<hr></hr>",
-            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">Детальные результаты по тестовым случаям</h2>',
-            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">1. Приложение в Docker | Нагрузчик в Docker 🐳</h2>',
+            "<hr></hr>"
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">Детальные результаты по сценариям</h2>',
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">1. Приложение в Docker | Нагрузчик в Docker 🐳</h2>', 
             "<h3>Общая статистика</h3>",
             docker_stats_html,
             docker_steps_html,
-            "<hr></hr>",
 
-            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">2. Приложение в Docker | Нагрузчик на хосте 🐳</h2>',
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">2. Приложение в Docker | Нагрузчик на хосте 🐳</h2>',
             "<h3>Общая статистика</h3>",
             locust_stats_html,
             locust_steps_html,
-            "<hr></hr>",
 
-            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; padding-top: 15px;">3. Приложение на хосте | Нагрузчик на хосте 💻</h2>',
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">3. Приложение на хосте | Нагрузчик на хосте 💻</h2>',
             "<h3>Общая статистика</h3>",
             server_stats_html,
-            server_steps_html,
-            "<hr></hr>"])
+            server_steps_html])
 
         #создание страницы отчета
         #html_page = '\n'.join([header_table, rating, table])

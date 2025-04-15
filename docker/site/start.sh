@@ -1,15 +1,15 @@
 #!/bin/bash
 
-localhost="localhost"
 WORKER=5
-NGINX_DC="docker-compose.nginx.yml"
 LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
+NGINX_DC="docker-compose.nginx.yml"
 APP_CONTAINERS=("flask" "nginx")
+
 CPATH="/home/u/git/stress_test/docker/site/"
 LPATH="/home/u/git/stress_test/docker/libs/"
 VENV="/home/u/python/Python-3.12.1/venv/bin/"
-NGINX_V=$(nginx -v 2>&1 | cut -d '/' -f2 | tr -d '[:space:]')
 
+NGINX_V=$(nginx -v 2>&1 | cut -d '/' -f2 | tr -d '[:space:]')
 SYS_VERSION=$(cat /etc/astra/build_version | tr -d '[:space:]')
 SYS_KERNEL=$(uname -r | tr -d '[:space:]')
 DOCKER_VERSION=$(dpkg -l | grep -E '^ii[[:space:]]+docker.io[[:space:]]' | awk '{print $3}' | sed 's/,//')
@@ -21,6 +21,7 @@ mkdir -p "$RESULTS_DIR"
 LOCUST_CONF="${CPATH}Kuznechik/.locust.conf"
 # ИНФО
 sudo echo -e "${SYS_VERSION}\n${SYS_KERNEL}\n${PACKAGE_VERSIONS}" > "${CPATH}results/INFO.txt"
+
 
 check_locust_containers() {
     echo "Ожидание 10 секунд перед проверкой контейнеров..."
@@ -44,47 +45,6 @@ check_locust_containers() {
 
         if $all_running; then
             echo "Все контейнеры работают."
-            break
-        fi
-    done
-}
-
-
-wait_for_lines_or_stable() {
-    local file="$1"
-    local min_lines="$2"
-    local timeout="${3:-120}"
-    local stable_after="${4:-10}"
-
-    echo "Ожидание записи файла: $file (до $timeout сек или $min_lines строк)"
-
-    local start_time=$(date +%s)
-    local last_mod_time=0
-    local stable_seconds=0
-
-    while true; do
-        [ -f "$file" ] || { sleep 1; continue; }
-
-        current_lines=$(wc -l < "$file")
-        current_mod_time=$(stat -c %Y "$file")
-
-        if (( current_lines >= min_lines )); then
-            if (( current_mod_time == last_mod_time )); then
-                ((stable_seconds++))
-            else
-                stable_seconds=0
-                last_mod_time=$current_mod_time
-            fi
-
-            if (( stable_seconds >= stable_after )); then
-                echo "Файл стабилен и содержит $current_lines строк."
-                break
-            fi
-        fi
-
-        now=$(date +%s)
-        if (( now - start_time >= timeout )); then
-            echo "⚠ Время ожидания истекло ($timeout сек)."
             break
         fi
     done
@@ -141,8 +101,6 @@ nginx_server() {
 
     echo "Завершено: NGINX server"
 }
-
-
 
 
 nginx_docker(){
@@ -231,11 +189,12 @@ case $1 in
     close)
         close_and_delete
         ;;
-#nd - nginx в контейнерах
     nd)
-        nginx_docker
+        nginx_docker docker
         ;;
-#ns - nginx в сервисах
+    nl)
+        nginx_docker locust
+        ;;
     ns)
         bash prepare.sh
 	    nginx_server

@@ -3,11 +3,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import warnings
+import sys
 from sklearn.preprocessing import MinMaxScaler
 from scipy import integrate
 from scipy.integrate import IntegrationWarning
 from matplotlib.gridspec import GridSpec
-from libs.docker_conf import REPORT_PATH, REPORT_VARIABLES, NORMALIZED_CONSTANTS
+
+sys.path.append(os.path.join(os.getcwd(), '..'))
+from docker_conf import REPORT_PATH, REPORT_VARIABLES, NORMALIZED_CONSTANTS
 
 
 # using in report.py
@@ -168,9 +171,7 @@ class Report:
 
 
     def html_converter(self, csv_file, output_dir):
-        import pandas as pd
-        import os
-
+        
         df = pd.read_csv(csv_file)
 
         # Безопасно удаляем строку Aggregated, если колонка 'Name' есть

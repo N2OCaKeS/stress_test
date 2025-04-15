@@ -1,7 +1,7 @@
 import subprocess
 import sys
 import argparse
-from libs.docker_conf import VENV_PATH
+from docker_conf import VENV_PATH
 
 
 parser = argparse.ArgumentParser()

@@ -28,12 +28,9 @@ kiwisolver
 locust
 Mako
 MarkupSafe
-matplotlib
 msgpack
-numpy
 oauthlib
 packaging
-pandas
 paramiko
 pillow
 psutil

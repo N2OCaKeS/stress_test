@@ -1,11 +1,11 @@
-from allta import VBoxManager
+from allta import VBox
 from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS, POSTGRES_DATA_PATH, POSTGRES_PORT, DOMAIN, DOMAIN_ADMIN_PASSWORD, USERNAME, PASSWORD
 
 
 class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
 
     def __init__(self):
-        self.provider = VBoxManager()
+        self.provider = VBox()
 
     def settings(self):
         """Настройка БД + репликация"""

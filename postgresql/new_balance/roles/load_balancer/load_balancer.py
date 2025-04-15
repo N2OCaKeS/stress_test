@@ -1,11 +1,11 @@
-from allta import VBoxManager
+from allta import VBox
 from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD
 from roles.load_balancer.keepalived import keepalived
 
 
 class LoadBalancer():
     def __init__(self):
-        self.provider = VBoxManager()
+        self.provider = VBox()
 
     def load(self):
 
@@ -89,6 +89,20 @@ class LoadBalancer():
                     'old': '#auto_failback = off',
                     'new': 'auto_failback = on'
                 },
+
+#replicate_select = off
+
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#replicate_select = off',
+                    'new': 'replicate_select = off'
+                },
+
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#disable_load_balance_on_write = \'transaction\'',
+                    'new': 'disable_load_balance_on_write = \'transaction\''
+                },                
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#delegate_IP = \'\'',

@@ -1,4 +1,4 @@
-from allta import VBoxManager
+from allta import VBox
 
 from roles.task.test import Test
 from roles.load_balancer.load_balancer import LoadBalancer
@@ -14,7 +14,7 @@ def main():
     vagrant_path = './'
     prepare_path = './prepare/prepare.sh'
 
-    provider = VBoxManager()
+    provider = VBox()
     provider.prepare(prepare_path)
 
     if VERSION_OS == '1.7':

@@ -1,4 +1,4 @@
-from allta import VBoxManager
+from allta import VBox
 
 from roles.vm_info import VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD, ETH_INTERFACE
 
@@ -89,7 +89,7 @@ EOF"""
             },
         }
 
-        VBoxManager.execute(commands=configure_keepalived, vms_dates=VMS_DATES,
+        VBox.execute(commands=configure_keepalived, vms_dates=VMS_DATES,
                             vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         start_keepalived = {
@@ -107,5 +107,5 @@ EOF"""
             }
         }
 
-        VBoxManager.execute(commands=start_keepalived, vms_dates=VMS_DATES,
+        VBox.execute(commands=start_keepalived, vms_dates=VMS_DATES,
                             vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)

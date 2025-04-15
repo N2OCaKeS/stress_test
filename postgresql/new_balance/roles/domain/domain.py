@@ -1,11 +1,11 @@
-from allta import VBoxManager
+from allta import VBox
 from roles.vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD
 
 
 class DomainVM():
 
     def __init__(self):
-        self.provider = VBoxManager()
+        self.provider = VBox()
 
     def settings(self):
         '''Полная настройка домена на всех ВМ'''

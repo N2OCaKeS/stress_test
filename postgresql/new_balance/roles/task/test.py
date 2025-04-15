@@ -1,11 +1,11 @@
-from allta import VBoxManager
+from allta import VBox
 
 from roles.vm_info import VERSION_PG, VMS_DATES, USERNAME, PASSWORD, VMS_GROUPS
 
 
 class Test:
     def __init__(self):
-        self.provider = VBoxManager()
+        self.provider = VBox()
 
     def test(self):
         provider = self.provider
@@ -75,7 +75,7 @@ class Test:
                 "reinstall postgres": {
                     "command": f"""sleep 20 && \
 sudo systemctl stop postgresql@{VERSION_PG}-contrprimer && \
-sudoi rm -rf /var/lib/postgresql/{VERSION_PG}/contrprimer/* && \
+sudo rm -rf /var/lib/postgresql/{VERSION_PG}/contrprimer/* && \
 sudo apt reinstall postgresql-{VERSION_PG} -y""",
                     "signal set": "Reinstall",
                     "signal get": ["database3", "chmod"]

@@ -1,10 +1,10 @@
-from allta import VBoxManager
+from allta import VBox
 from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS, DOMAIN, USERNAME, PASSWORD
 
 
 class PreConfigure():
     def __init__(self):
-        self.provider = VBoxManager()
+        self.provider = VBox()
 
     def apt_install(self):
         apt_install = {

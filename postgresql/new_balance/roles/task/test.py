@@ -56,7 +56,7 @@ class Test:
         test = {
             "database3": {
                 "pgbench manual": {
-                    "command": "pgbench -i -s 10 -h 10.177.103.131 -p 5440 -U postgres contrprimer",
+                    "command": "pgbench -i -s 100 -h 10.177.103.131 -p 5440 -U postgres contrprimer",
                     "signal set": "pgbench manual",
                     "signal get": ""
                 },
@@ -71,21 +71,21 @@ class Test:
                     "signal get": ["database3", "chmod"]
                 }
             },
-#             "database1": {
-#                 "reinstall postgres": {
-#                     "command": f"""sleep 5 && \
-# sudo systemctl stop postgresql@{VERSION_PG}-contrprimer && \
-# sudoi rm -rf /var/lib/postgresql/{VERSION_PG}/contrprimer/* && \
-# sudo apt reinstall postgresql-{VERSION_PG} -y""",
-#                     "signal set": "Reinstall",
-#                     "signal get": ["database3", "chmod"]
-#                 },
-#                 "start postgres dp": {
-#                     "command": f"sudo systemctl start postgresql@{VERSION_PG}-contrprimer",
-#                     "signal set": "",
-#                     "signal get": ["database1", "Reinstall"]
-#                 }
-#             }
+            "database1": {
+                "reinstall postgres": {
+                    "command": f"""sleep 20 && \
+sudo systemctl stop postgresql@{VERSION_PG}-contrprimer && \
+sudoi rm -rf /var/lib/postgresql/{VERSION_PG}/contrprimer/* && \
+sudo apt reinstall postgresql-{VERSION_PG} -y""",
+                    "signal set": "Reinstall",
+                    "signal get": ["database3", "chmod"]
+                },
+                "start postgres dp": {
+                    "command": f"sudo systemctl start postgresql@{VERSION_PG}-contrprimer",
+                    "signal set": "",
+                    "signal get": ["database1", "Reinstall"]
+                }
+            }
         }
         provider.execute(commands=test, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)

@@ -1,60 +1,60 @@
 from allta import VBoxManager
 
-from roles.vm_info import VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD
+from roles.vm_info import VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD, ETH_INTERFACE
 
 
 class keepalived:
     def keepalived():
 
-        lbdb1 = """sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
-vrrp_instance VI_1 {
+        lbdb1 = f"""sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
+vrrp_instance VI_1 {{
     state MASTER
-    interface eth0
+    interface {ETH_INTERFACE}
     virtual_router_id 51
     priority 150
     advert_int 1
-    authentication {
+    authentication {{
         auth_type PASS
         auth_pass securepass
-    }
-    virtual_ipaddress {
+    }}
+    virtual_ipaddress {{
         10.177.103.131
-    }
-}
+    }}
+}}
 EOF"""
 
-        lbdb2 = """sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
-vrrp_instance VI_1 {
+        lbdb2 = f"""sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
+vrrp_instance VI_1 {{
     state BACKUP
-    interface eth0
+    interface {ETH_INTERFACE}
     virtual_router_id 51
     priority 100
     advert_int 1
-    authentication {
+    authentication {{
         auth_type PASS
         auth_pass securepass
-    }
-    virtual_ipaddress {
+    }}
+    virtual_ipaddress {{
         10.177.103.131
-    }
-}
+    }}
+}}
 EOF"""
 
-        lbdb3 = """sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
-vrrp_instance VI_1 {
+        lbdb3 = f"""sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
+vrrp_instance VI_1 {{
     state BACKUP
-    interface eth0
+    interface {ETH_INTERFACE}
     virtual_router_id 51
     priority 90
     advert_int 1
-    authentication {
+    authentication {{
         auth_type PASS
         auth_pass securepass
-    }
-    virtual_ipaddress {
+    }}
+    virtual_ipaddress {{
         10.177.103.131
-    }
-}
+    }}
+}}
 EOF"""
 
         configure_keepalived = {

@@ -63,9 +63,15 @@ with open('/etc/astra/build_version', 'r') as f:
 VERSION_OS = '.'.join(version.split('.')[:2])
 if VERSION_OS == '1.7':
     VERSION_PG = '11'
+    ETH_INTERFACE = 'eth0'
 elif VERSION_OS == '1.8':
     VERSION_PG = '15'
-VERSION_PG = '11'
+    ETH_INTERFACE = 'enp0s3'    
+
+# ОТЛАДКА
+VERSION_PG = '15'    
+ETH_INTERFACE = 'enp0s3'   
+
 
 
 DOMAIN = 'balance.rbt'

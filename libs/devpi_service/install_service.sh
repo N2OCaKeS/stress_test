@@ -2,7 +2,7 @@
 
 
 PROJECT_PATH="/home/u/folder_git_for_libs/stress_test/libs/devpi_service" 
-ENV_FILE="/home/u/folder_git_for_libs/stress_test/libs/devpi_service/.env"
+ENV_FILE="/home/u/folder_git_for_libs/.env"
 
 # Значения по умолчанию
 DEFAULT_ROOT_PASS="root"
@@ -64,8 +64,9 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=$PROJECT_PATH
-ExecStart=/usr/bin/docker compose up -d --build
-ExecStop=/usr/bin/docker compose down
+ExecStartPre=/usr/bin/docker-compose build
+ExecStart=/usr/bin/docker-compose up
+ExecStop=/usr/bin/docker-compose down
 RemainAfterExit=yes
 
 [Install]

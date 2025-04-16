@@ -1,16 +1,16 @@
 version: '3.8'
 
 services:
-  devpi2:
+  devpi:
     build:
       context: .
     ports:
       - "3141:3141"
     volumes:
-      - devpi-data2:/data
+      - devpi-data:/data
     env_file:
       - .env      
     restart: always
     
 volumes:
-  devpi-data2:
+  devpi-data:

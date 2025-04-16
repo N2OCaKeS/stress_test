@@ -44,7 +44,6 @@ def update_version_in_files(repo_path, version):
     setup_py_path = os.path.join(repo_path, 'libs', 'allta', 'setup.py')
     setup_cfg_path = os.path.join(repo_path, 'libs', 'allta', 'setup.cfg')
 
-    # Обновляем setup.py
     with open(setup_py_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
     with open(setup_py_path, 'w', encoding='utf-8') as f:
@@ -53,7 +52,6 @@ def update_version_in_files(repo_path, version):
                 line = re.sub(r"version\s*=\s*['\"]\d+\.\d+\.\d+['\"]", f"version='{version}'", line)
             f.write(line)
 
-    # Обновляем setup.cfg
     if os.path.exists(setup_cfg_path):
         config = configparser.ConfigParser()
         config.read(setup_cfg_path)
@@ -67,7 +65,7 @@ def update_version_in_files(repo_path, version):
 def upload_version(repo_path):
     password = os.getenv('DEVPI_ADMIN_PASSWORD')
     if not password:
-        print("Переменная окружения DEVPI_ADMIN_PASSWORD не установлена!")
+        print("❌ Переменная окружения DEVPI_ADMIN_PASSWORD не установлена!")
         return
     command = (
         f'devpi use {DEVPI_INDEX_URL} && '
@@ -79,9 +77,19 @@ def upload_version(repo_path):
     )
     cmd(command, cwd=f'{repo_path}/libs/allta')
 
+def clean_and_checkout_branch(repo_path, branch):
+    # Переход на HEAD, сброс, очистка и только потом checkout ветки
+    cmd('git checkout HEAD', cwd=repo_path)
+    cmd('git reset --hard', cwd=repo_path)
+    cmd('git clean -fdx', cwd=repo_path)
+    cmd(f'git checkout -B {branch} origin/{branch}', cwd=repo_path)
+
 def initial_sync(repo_path, branch='libs'):
     pattern = re.compile(r'^allta_lib v(\d+\.\d+\.\d+)$')
+
     cmd(f'git fetch origin {branch}', cwd=repo_path)
+    clean_and_checkout_branch(repo_path, branch)
+
     result = subprocess.run(
         ['git', 'log', f'origin/{branch}', '--pretty=format:%H||%s'],
         check=True, capture_output=True, text=True, cwd=repo_path
@@ -98,28 +106,39 @@ def initial_sync(repo_path, branch='libs'):
             if version in versions_handled:
                 continue
             if not version_exists_on_devpi(version):
-                print(f"Новая версия {version} не найдена на devpi. Загружаем...")
-                cmd(f'git checkout {commit_hash}', cwd=repo_path)
+                print(f"🔄 Новая версия {version} не найдена на devpi. Загружаем...")
+
+                try:
+                    cmd('git checkout HEAD', cwd=repo_path)
+                    cmd('git reset --hard', cwd=repo_path)
+                    cmd('git clean -fdx', cwd=repo_path)
+                    cmd(f'git checkout {commit_hash}', cwd=repo_path)
+                except subprocess.CalledProcessError as e:
+                    print(f"❌ Не удалось переключиться на коммит {commit_hash}: {e}")
+                    continue
+
                 update_version_in_files(repo_path, version)
                 upload_version(repo_path)
             else:
-                print(f"Версия {version} уже есть на devpi. Пропускаем.")
+                print(f"✔️ Версия {version} уже есть на devpi. Пропускаем.")
             versions_handled.add(version)
 
 def monitor_branch(repo_path, branch='libs', check_interval=60):
     pattern = re.compile(r'^allta_lib v(\d+\.\d+\.\d+)$')
     last_seen_hash = None
-    print(f"Мониторим ветку '{branch}' с интервалом {check_interval} секунд...")
+    print(f"👀 Мониторим ветку '{branch}' с интервалом {check_interval} секунд...")
     while True:
         try:
             cmd(f'git fetch origin {branch}', cwd=repo_path)
+            clean_and_checkout_branch(repo_path, branch)
+
             result = subprocess.run(
                 ['git', 'log', f'origin/{branch}', '-1', '--pretty=format:%H||%s'],
                 check=True, capture_output=True, text=True, cwd=repo_path
             )
             output = result.stdout.strip()
             if '||' not in output:
-                print("Формат вывода git log нераспознан:", output)
+                print("⚠️ Формат вывода git log нераспознан:", output)
                 time.sleep(check_interval)
                 continue
 
@@ -129,23 +148,33 @@ def monitor_branch(repo_path, branch='libs', check_interval=60):
             if match and commit_hash != last_seen_hash:
                 version = match.group(1)
                 if not version_exists_on_devpi(version):
-                    print(f"Обнаружена новая версия {version}. Загружаем...")
-                    cmd(f'git checkout {commit_hash}', cwd=repo_path)
+                    print(f"🆕 Обнаружена новая версия {version}. Загружаем...")
+
+                    try:
+                        cmd('git checkout HEAD', cwd=repo_path)
+                        cmd('git reset --hard', cwd=repo_path)
+                        cmd('git clean -fdx', cwd=repo_path)
+                        cmd(f'git checkout {commit_hash}', cwd=repo_path)
+                    except subprocess.CalledProcessError as e:
+                        print(f"❌ Не удалось переключиться на коммит {commit_hash}: {e}")
+                        time.sleep(check_interval)
+                        continue
+
                     update_version_in_files(repo_path, version)
                     upload_version(repo_path)
                 else:
-                    print(f"Версия {version} уже существует на devpi.")
+                    print(f"✔️ Версия {version} уже существует на devpi.")
                 last_seen_hash = commit_hash
             else:
-                print("Нет новых подходящих коммитов.")
+                print("✅ Нет новых подходящих коммитов.")
         except Exception as e:
-            print("Ошибка при мониторинге ветки:", e)
+            print("❌ Ошибка при мониторинге ветки:", e)
         time.sleep(check_interval)
 
 def main():
     base_dir = os.getcwd()
     if base_dir != '/git':
-        print("Запустите скрипт из директории /git!")
+        print("⚠️ Запустите скрипт из директории /git!")
         sys.exit(1)
 
     conf_file = os.path.join(base_dir, 'gitclone.conf')
@@ -160,4 +189,4 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print("Остановка по запросу пользователя.")
+        print("🛑 Остановка по запросу пользователя.")

@@ -9,6 +9,7 @@ Allta Documentation
 
    info
    modules/Decorators
+   modules/GetEnv
    modules/SystemCommands
    modules/VBox
    modules/VBoxManager

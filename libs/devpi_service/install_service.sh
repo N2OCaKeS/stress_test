@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Путь к файлу с переменными
-ENV_FILE="/home/u/devpi-service/stress_test/libs/devpi_service/.env"
+
+PROJECT_PATH="/home/u/folder_git_for_libs/stress_test/libs/devpi_service/" 
+ENV_FILE="/home/u/folder_git_for_libs/stress_test/libs/devpi_service/.env"
 
 # Значения по умолчанию
 DEFAULT_ROOT_PASS="root"
@@ -9,7 +10,7 @@ DEFAULT_TEST_USER="user"
 DEFAULT_TEST_PASS="user"
 
 SERVICE_NAME="devpi.service"
-PROJECT_PATH="/home/u/devpi-service/stress_test/libs/devpi_service/" 
+
 
 if [ -f "$ENV_FILE" ]; then
     echo "Загрузка переменных из $ENV_FILE..."

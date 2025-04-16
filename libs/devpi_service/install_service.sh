@@ -40,7 +40,7 @@ if [ ! -f $PROJECT_PATH/Dockerfile ]; then
     echo "Ошибка: Dockerfile не найден!"
     exit 1
 fi
-
+cp /home/u/folder_git_for_libs/.env /home/u/folder_git_for_libs/stress_test/libs/devpi_service/
 echo "Обновление Dockerfile с использованием переменных..."
 
 # Заменяем зашитые значения на переменные
@@ -65,7 +65,7 @@ After=docker.service
 Type=oneshot
 WorkingDirectory=$PROJECT_PATH
 ExecStartPre=/usr/bin/docker-compose build
-ExecStart=/usr/bin/docker-compose up
+ExecStart=/usr/bin/docker-compose up -d
 ExecStop=/usr/bin/docker-compose down
 RemainAfterExit=yes
 

@@ -8,9 +8,10 @@ Allta Documentation
    :caption: Содержание
 
    info
-   modules/decorators
-   modules/system_command
-   modules/vbox_manager
+   modules/Decorators
+   modules/SystemCommands
+   modules/VBox
+   modules/VBoxManager
    modules/page_template
 
 

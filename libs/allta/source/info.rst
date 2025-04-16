@@ -93,38 +93,63 @@ Allta
 
    allta
    ├── allta
-   │   ├── _decorators
-   │   │   ├── Decorators.py
-   │   ├── _system_command
-   │   │   └── SystemCommands.py
-   │   └── _vm_controller
-   │       ├── _base_commands
-   │       │   ├── _apt
-   │       │   │   ├── _apt_prorocol.py
-   │       │   │   ├── _apt.py
-   │       │   ├── _freeipa
-   │       │   │   ├── _freeipa.py
-   │       │   ├── _reboot
-   │       │   │   └── _reboot.py
-   │       │   ├── _sed
-   │       │   │   └── _sed.py
-   │       │   └── _set_hosts
-   │       │       └── _set_hosts.py
-   │       ├── _decorator
-   │       │   └── _logger.py
-   │       ├── _libs
-   │       │   ├── _scp_command.py
-   │       │   ├── _signals.py
-   │       │   └── _ssh_command.py
-   │       ├── VBox.py
-   │       └── _vm
-   │           ├── _vagrant.py
-   │           ├── _vbox_manage.py
-   │           └── _virtual_machine.py
+   │   ├── _decorators
+   │   │   ├── Decorators.py
+   │   │   └── __init__.py
+   │   ├── __init__.py
+   │   ├── _system_command
+   │   │   ├── __init__.py
+   │   │   └── SystemCommands.py
+   │   └── _vm_controller
+   │       ├── _base_commands
+   │       │   ├── _apt
+   │       │   │   ├── _apt_prorocol.py
+   │       │   │   ├── _apt.py
+   │       │   │   └── __init__.py
+   │       │   ├── _freeipa
+   │       │   │   ├── _freeipa.py
+   │       │   │   └── __init__.py
+   │       │   ├── __init__.py
+   │       │   ├── _reboot
+   │       │   │   ├── __init__.py
+   │       │   │   └── _reboot.py
+   │       │   ├── _sed
+   │       │   │   ├── __init__.py
+   │       │   │   └── _sed.py
+   │       │   └── _set_hosts
+   │       │       ├── __init__.py
+   │       │       └── _set_hosts.py
+   │       ├── _decorator
+   │       │   ├── __init__.py
+   │       │   └── _logger.py
+   │       ├── __init__.py
+   │       ├── _libs
+   │       │   ├── __init__.py
+   │       │   ├── _scp_command.py
+   │       │   ├── _signals.py
+   │       │   └── _ssh_command.py
+   │       ├── VBox.py
+   │       └── _vm
+   │           ├── __init__.py
+   │           ├── _vagrant.py
+   │           ├── VBoxManager.py
+   │           └── _virtual_machine.py
    ├── LICENCE
    ├── README.md
+   ├── req.txt
    ├── setup.cfg
-   └── setup.py
+   ├── setup.py
+   └── source
+      ├── conf.py
+      ├── index.rst
+      ├── info.rst
+      ├── modules
+      │   ├── decorators.rst
+      │   ├── page_template.rst
+      │   ├── system_command.rst
+      │   └── vbox_manager.rst
+      └── _static
+         └── Для статических объектов
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Публикация модуля в отладочный индекс
@@ -138,10 +163,11 @@ Allta
 
       cd ./stress_test/libs/allta
 
-2. Пройтите авторизацию в devpi:
+2. Выберите индекс и пройтите авторизацию в devpi:
    
    .. code-block:: bash
 
+      devpi use http://10.177.103.10:3141/user/dev
       devpi login user --password user
 
 3. Выполните команду выгрузки модуля:

@@ -3,7 +3,7 @@ from ..._system_command.SystemCommands import SystemCommands as system_commands
 
 from time import sleep
 
-class _VboxManager():
+class VBoxManager():
     """
     Класс для управления виртуальными машинами в VirtualBox.
 
@@ -18,7 +18,7 @@ class _VboxManager():
 
     @BaseDecorators.trycorator
     @staticmethod 
-    def poweron_vms(vms):
+    def power_on(vms):
         """
         Включает одну или несколько виртуальных машин.
 
@@ -39,7 +39,7 @@ class _VboxManager():
 
     @BaseDecorators.trycorator
     @staticmethod 
-    def poweroff_vms(vms):
+    def power_off(vms):
         """
         Выключает одну или несколько виртуальных машин.
 
@@ -60,15 +60,12 @@ class _VboxManager():
     
     @BaseDecorators.trycorator
     @staticmethod 
-    def create_snapshots_all_vm(vms, snapshot_name = None):
+    def create_snapshot(vms, snapshot_name = None):
         """
         Создаёт снимки всех указанных виртуальных машин.
 
         Args:
             vms (list): Список имён виртуальных машин.
-
-        Returns:
-            None
         """
 
         if snapshot_name:
@@ -109,7 +106,7 @@ class _VboxManager():
 
     @BaseDecorators.trycorator
     @staticmethod   
-    def _check_vm_list():
+    def check_vm_list():
         """
         Возвращает список доступных виртуальных машин.
 

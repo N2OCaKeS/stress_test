@@ -14,7 +14,7 @@ from ._base_commands._freeipa._freeipa import _Freeipa as freeipa
 
 from ._vm._vagrant import _Vagrant
 from ._vm._virtual_machine import _VirtualMashines
-from ._vm._vbox_manage import _VboxManager as vbox_manager
+from ._vm.VBoxManager import VBoxManager as vbox_manager
 
 from typing import cast
 
@@ -79,7 +79,7 @@ class VBox(_VirtualMashines):
         vagrant.vagrant_up()
 
         vbox_manager.set_bridge_network(vms)
-        vbox_manager.create_snapshots_all_vm(vms)
+        vbox_manager.create_snapshot(vms)
         system_commands.cmd('vboxmanage natnetwork list')
         system_commands.cmd('vboxmanage list hostonlyifs')
         system_commands.cmd('vboxmanage list bridgedifs')

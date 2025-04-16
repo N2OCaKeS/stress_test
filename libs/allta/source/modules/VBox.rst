@@ -1,8 +1,8 @@
-VBoxManager
+VBox
 =====================
 
 
-Модуль ``VBoxManager`` содержит функции и классы, отвечающие за выполнение системных команд на локальной машине.
+Модуль ``VBox`` содержит функции и классы, отвечающие за выполнение системных команд на локальной машине.
 
 .. note:: 
     Автор: ``mfilippenko``
@@ -31,9 +31,9 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
-    VBoxManager.prepare('./precondition.sh')
+    VBox.prepare('./precondition.sh')
 
 
 ------------------------------------------------------------------------------------------------
@@ -58,7 +58,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     path_to_vagrantfile = './Vagrantfile'
     box = '1.7.5.s'
@@ -75,7 +75,7 @@ VBoxManager
         },        
     }
 
-    VBoxManager.build(path_to_vagrantfile=path_to_vagrantfile, box=box, rc=rc, 
+    VBox.build(path_to_vagrantfile=path_to_vagrantfile, box=box, rc=rc, 
                         vms=vms, vms_dates=vms_dates)
 
 ------------------------------------------------------------------------------------------------
@@ -103,7 +103,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     vms = ['hostname1', 'hostname2']
     vms_dates = {
@@ -117,7 +117,7 @@ VBoxManager
         },        
     }
 
-    VBoxManager.check(vms=vms, vms_dates=vms_dates)
+    VBox.check(vms=vms, vms_dates=vms_dates)
 
 
 ------------------------------------------------------------------------------------------------
@@ -144,7 +144,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     commands = {
             'hostname1':{
@@ -188,7 +188,7 @@ VBoxManager
     username = 'u'
     password='1'
 
-    VBoxManager.execute(commands=commands, vms_dates=vms_dates, vms_groups=vms_groups, 
+    VBox.execute(commands=commands, vms_dates=vms_dates, vms_groups=vms_groups, 
                             username=username, password,password)
 
 ------------------------------------------------------------------------------------------------
@@ -213,7 +213,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     scp_settings = {
         'hostname1': {
@@ -243,7 +243,7 @@ VBoxManager
     username = 'u'
     password='1'
 
-    VBoxManager.scp(scp_settings=scp_settings, vms_dates=vms_dates, vms_groups=vms_groups, 
+    VBox.scp(scp_settings=scp_settings, vms_dates=vms_dates, vms_groups=vms_groups, 
                         username=username, password=password)
 
 
@@ -268,7 +268,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     domain = 'stress.rbt'
     vms_dates = {
@@ -282,7 +282,7 @@ VBoxManager
         },        
     }   
 
-    VBoxManager.set_hosts(domain=domain, vms_dates=vms_dates)     
+    VBox.set_hosts(domain=domain, vms_dates=vms_dates)     
 
 
 ------------------------------------------------------------------------------------------------
@@ -307,7 +307,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     sed_conf = {
         'hostname1':[                
@@ -341,7 +341,7 @@ VBoxManager
     username = 'u'
     password='1'
 
-    VBoxManager.sed(sed_conf=sed_conf, vms_dates=vms_dates, vms_groups=vms_groups, 
+    VBox.sed(sed_conf=sed_conf, vms_dates=vms_dates, vms_groups=vms_groups, 
                         username=username, password=password)
 
 ------------------------------------------------------------------------------------------------
@@ -368,7 +368,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     domain = {
         'settings': {
@@ -399,7 +399,7 @@ VBoxManager
     username = 'u'
     password='1'
 
-    VBoxManager.freeipa(domain=domain, vms_dates=vms_dates, vms_groups=vms_groups, 
+    VBox.freeipa(domain=domain, vms_dates=vms_dates, vms_groups=vms_groups, 
                             username=username, password=password)
 
 ------------------------------------------------------------------------------------------------
@@ -424,7 +424,7 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import VBox
 
     apt_structure = {
         'database' = ['package'],
@@ -446,11 +446,11 @@ VBoxManager
     username = 'u'
     password='1'    
 
-    VBoxManager.apt.install(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
+    VBox.apt.install(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
                                 username=username, password=password) # Установка пакетов
                                 
-    VBoxManager.apt.reinstall(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
+    VBox.apt.reinstall(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
                                 username=username, password=password) # Переустановка пакетов     
 
-    VBoxManager.apt.remove(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
+    VBox.apt.remove(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
                                 username=username, password=password) # Удаление пакетов                                                             

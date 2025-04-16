@@ -39,7 +39,15 @@ subprocess.run('sudo systemctl restart nginx.service', shell=True)
 subprocess.run('sudo systemctl restart bot_allta.service', shell=True)
 subprocess.run('sudo systemctl restart acs.service', shell=True)
 subprocess.run('sudo systemctl restart statistics.service', shell=True)
+
 subprocess.run('cd /home/u/folder_git_for_infocollector && python3 git_clone.py', shell=True)
 subprocess.run('cd /home/u/folder_git_for_infocollector/stress_test && git checkout allta_infocollector', shell=True)
 subprocess.run('python3 /home/u/folder_git_for_infocollector/stress_test/allta_infocollector/config_handler.py', shell=True)
 subprocess.run('sleep 10 && sudo systemctl restart allta_infocollector.service', shell=True)
+
+subprocess.run('cd /home/u/folder_git_for_libs && python3 git_clone.py', shell=True)
+subprocess.run('cd /home/u/folder_git_for_libs/stress_test && git checkout libs', shell=True)
+subprocess.run('systemctl stop devpi', shell=True)
+subprocess.run('bash /home/u/folder_git_for_libs/stress_test/libs/devpi_service/install_service.sh', shell=True)
+subprocess.run('systemctl restart devpi', shell=True)
+

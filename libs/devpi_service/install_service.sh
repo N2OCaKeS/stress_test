@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-PROJECT_PATH="/home/u/folder_git_for_libs/stress_test/libs/devpi_service/" 
+PROJECT_PATH="/home/u/folder_git_for_libs/stress_test/libs/devpi_service" 
 ENV_FILE="/home/u/folder_git_for_libs/stress_test/libs/devpi_service/.env"
 
 # Значения по умолчанию
@@ -51,7 +51,7 @@ echo "$PROJECT_PATH/Dockerfile обновлен."
 
 # Функция для установки и запуска сервиса
 install() {
-    dpkg -s docker || sudo apt-get install docker.io -y
+    dpkg -s docker.io || sudo apt-get install docker.io -y
     dpkg -s docker-compose || sudo apt-get install docker-compose -y
 
     if ! systemctl is-active --quiet "$SERVICE_NAME"; then

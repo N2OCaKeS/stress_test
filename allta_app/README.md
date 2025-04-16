@@ -10,6 +10,9 @@
 -  Отслеживать определенные метрики нагрузки тестовых серверов.
 -  Отслеживать ход выполнения тестовых прогонов.
 
+### Расширения   
+ - [Микросервисы](https://life.astralinux.ru/pages/viewpage.action?pageId=441124562)
+
 #### По результатам проведенных испытаний предоставляет статистику.
 -  [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)
 

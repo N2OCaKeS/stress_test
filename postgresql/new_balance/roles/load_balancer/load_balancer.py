@@ -82,7 +82,7 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failback_command = \'\'',
                     # TODO Проверить скрипт failback
-                    'new': 'failback_command = \'failback_command = \'/tmp/pgpool.sh BACK %m %H %R %d %h %M %N\''
+                    'new': 'failback_command = \'/tmp/pgpool.sh BACK %m %H %R %d %h %M %N\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -116,13 +116,11 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#if_up_cmd = \'/usr/bin/sudo /sbin/ip addr add $_IP_$/24 dev eth0 label eth0:0\'',
-                    # TODO проверить команду
                     'new': 'if_up_cmd = \'/usr/bin/sudo /sbin/ip addr add $_IP_$/24 dev eth0 label eth0:0\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'',
-                    # TODO проверить команду
                     'new': 'if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\''
                 },
                 {

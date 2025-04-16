@@ -52,7 +52,10 @@ def run_pgbench():
 
                 conn.commit()
                 results['success'] += 1
-        except (psycopg2.InterfaceError, psycopg2.OperationalError):
+                print(results)
+        except Exception as e:
+            with open("error.log", "a", encoding="utf-8") as file:
+                file.write(f"Возникла ошибка: {e}\n")
             results['fail'] += 1
 
 

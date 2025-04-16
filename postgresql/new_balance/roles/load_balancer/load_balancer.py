@@ -76,14 +76,14 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
                     # TODO Проверить скрипт failover
-                    'new': 'failover_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''
+                    'new': 'failover_command = \'/tmp/pgpool.sh %m %H %R %d %h %M %N\''
                 },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#failback_command = \'\'',
-                    # TODO Проверить скрипт failback
-                    'new': 'failback_command = \'/tmp/pgpool.sh %d %h %p %D %m %H %P %r %R\''
-                },
+                # {
+                #     'path': f'{pgpool_config_path}/pgpool.conf',
+                #     'old': '#failback_command = \'\'',
+                #     # TODO Проверить скрипт failback
+                #     'new': 'failback_command = \'/tmp/pgpool.sh %m %H %R %d %h %M %N\''
+                # },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#auto_failback = off',
@@ -140,12 +140,16 @@ class LoadBalancer():
                     'old': '#sr_check_database = \'postgres\'',
                     'new': 'sr_check_database = \'postgres\''
                 },
-
-                # {
-                #     'path': f'{pgpool_config_path}/pgpool.conf', # TODO Нет такого пакета в main repo перепроверить нужен ли он
-                #     'old': '#arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\'',
-                #     'new': 'arping_cmd = \'/usr/bin/sudo /usr/sbin/arping -U $_IP_$ -w 1 -I eth0\''
-                # },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#pool_passwd = \'pool_passwd\'',
+                    'new': 'pool_passwd = \'pool_passwd\''
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#pcp_port = 9898',
+                    'new': 'pcp_port = 9898'
+                },                
                 # {
                 #     'path': f'{pgpool_config_path}/pgpool.conf',
                 #     'old': '',
@@ -161,7 +165,7 @@ class LoadBalancer():
             'g_load_balancer': {
                 'mode': 'push',
                 'path_host': './roles/load_balancer/template/pgpool.sh',
-                'path_vm': '/tmp/contrprimer.sql'
+                'path_vm': '/tmp/pgpool.sh'
             }
         }
         provider.scp(scp_settings=scp, vms_dates=VMS_DATES,

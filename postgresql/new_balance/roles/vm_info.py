@@ -69,8 +69,8 @@ elif VERSION_OS == '1.8':
     ETH_INTERFACE = 'enp0s3'    
 
 # ОТЛАДКА
-VERSION_PG = '15'    
-ETH_INTERFACE = 'enp0s3'   
+# VERSION_PG = '15'    
+# ETH_INTERFACE = 'enp0s3'   
 
 
 

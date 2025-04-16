@@ -1,4 +1,4 @@
-from allta import VBox
+from allta import VBox, VBoxManager
 
 from roles.task.test import Test
 from roles.load_balancer.load_balancer import LoadBalancer
@@ -23,24 +23,28 @@ def main():
     elif VERSION_OS == '1.8':
         provider.build(vagrant_path, f'1.8.1.s', '1.8.1.6', VMS, VMS_DATES)
 
-    print('Ожидаем 2 мин перед началом теста')
-    sleep(120)
+    print('Ожидаем 30 секунд перед началом теста')
+    sleep(30)
 
     provider.check(VMS, VMS_DATES)
 
     configure = PreConfigure()  # Проверено работает
     configure.set_hosts()
     configure.apt_install()
+    VBoxManager.create_snapshot(vms=VMS, snapshot_name='apt_and_hosts')
 
     domain = DomainVM()  # Проверено работает
     domain.settings()
+    VBoxManager.create_snapshot(vms=VMS, snapshot_name='domain')
 
     database = DatabaseVM()  # Проверено работает
     database.settings()
+    VBoxManager.create_snapshot(vms=VMS, snapshot_name='DB')
 
     # На проверке в случае провала узнать как проверять какие бд в сети
     load_balancer = LoadBalancer()
     load_balancer.load()
+    VBoxManager.create_snapshot(vms=VMS, snapshot_name='lbdb')    
 
     test = Test()  # TODO Настроить скрипт и создать необходимую бд
     test.test()

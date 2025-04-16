@@ -1,87 +1,77 @@
 #!/bin/bash
-# Скрипт для выполнения процедуры failover с использованием ALTER SYSTEM для обновления primary_conninfo
+# FAILOVER скрипт для PGpool
+#
+# Использование:
+#   ./failover.sh <NEW_MASTER_ID> <NEW_MASTER_HOST> <NEW_MASTER_DATA> <FAILED_NODE_ID> <FAILED_HOST> <OLD_MASTER_ID> <OLD_MASTER_HOST>
+#
+# Эти параметры передаются PGpool:
+#   NEW_MASTER_ID    - ID новой ноды, которая должна стать мастером
+#   NEW_MASTER_HOST  - FQDN новой ноды (например, database1.balance.rbt)
+#   NEW_MASTER_DATA  - Путь к каталогу данных PostgreSQL на новой ноде
+#   FAILED_NODE_ID   - ID ноды, потерявшей связь
+#   FAILED_HOST      - FQDN ноды, потерявшей связь
+#   OLD_MASTER_ID    - ID старого мастера
+#   OLD_MASTER_HOST  - FQDN старого мастера
 
-# Параметры, передаваемые в скрипт:
-# $1   FAILED_NODE_ID         - ID узла, потерявшего связь
-# $2   FAILED_NODE_HOST       - Hostname узла, потерявшего связь
-# $3   FAILED_NODE_PORT       - Порт узла, потерявшего связь
-# $4   FAILED_NODE_DIR        - Каталог данных узла, потерявшего связь
-# $5   NEW_MASTER_NODE_ID     - ID нового мастера (ожидаемая нода)
-# $6   NEW_MASTER_NODE_HOST   - Hostname нового мастера
-# $7   NEW_MASTER_NODE_PORT   - Порт нового мастера
-# $8   NEW_MASTER_NODE_DIR    - Каталог данных нового мастера
-# $9   NEW_MASTER_NODE_FLAG   - Флаг нового мастера (не используется)
-# ${10} OLD_MASTER_NODE_ID     - ID старого мастера
-# ${11} OLD_MASTER_NODE_HOST   - Hostname старого мастера
-
-FAILED_NODE_ID=$1
-FAILED_NODE_HOST=$2
-FAILED_NODE_PORT=$3
-FAILED_NODE_DIR=$4
-NEW_MASTER_NODE_ID=$5
-NEW_MASTER_NODE_HOST=$6
-NEW_MASTER_NODE_PORT=$7
-NEW_MASTER_NODE_DIR=$8
-NEW_MASTER_NODE_FLAG=$9
-OLD_MASTER_NODE_ID=${10}
-OLD_MASTER_NODE_HOST=${11}
-
-# Локальные переменные – заполните их под своё окружение
-SSH_USER="u"
-SSH_PASS="1"
-# Массив standby-узлов (укажите хостнеймы или IP-адреса)
-DATABASES=("10.177.103.112" "10.177.103.113")
-# Порт PostgreSQL для подключения
-PG_PORT=5440
-# Пользователь для подключения и выполнения psql
-REPL_USER="postgres"
-
-LOG_FILE="/var/log/pgpool/cluster_failover.log"
-DATE=$(date "+%F %T")
-
-mkdir -p "$(dirname "$LOG_FILE")"
-
-log() {
-    echo "$DATE $1" >> "$LOG_FILE"
-}
-
-echo "!!! FAILOVER START !!!"
-echo "WARNING: Lost connection with $FAILED_NODE_HOST [id:$FAILED_NODE_ID]"
-echo "Old master: $OLD_MASTER_NODE_HOST [id:$OLD_MASTER_NODE_ID]"
-echo "New master: $NEW_MASTER_NODE_HOST [id:$NEW_MASTER_NODE_ID]"
-
-log "Starting failover procedure. Lost connection with $FAILED_NODE_HOST."
-
-# Если ID старого мастера совпадает с ID нового, значит отказ произошёл не у мастера (отказ standby‑ноды) – промоция не требуется.
-if [ "$OLD_MASTER_NODE_ID" -eq "$NEW_MASTER_NODE_ID" ]; then
-    log "No failover required – old and new master are identical."
-    echo "Old and new master are identical, no promotion needed."
-    exit 0
+# Проверка количества аргументов
+if [ "$#" -ne 7 ]; then
+    echo "Usage: $0 <NEW_MASTER_ID> <NEW_MASTER_HOST> <NEW_MASTER_DATA> <FAILED_NODE_ID> <FAILED_HOST> <OLD_MASTER_ID> <OLD_MASTER_HOST>"
+    exit 1
 fi
 
-log "FAILOVER: Promoting $NEW_MASTER_NODE_HOST as master because $FAILED_NODE_HOST is unavailable."
+# Параметры, полученные от PGpool
+NEW_MASTER_ID=$1
+NEW_MASTER_HOST=$2
+NEW_MASTER_DATA=$3
+FAILED_NODE_ID=$4
+FAILED_HOST=$5
+OLD_MASTER_ID=$6
+OLD_MASTER_HOST=$7
 
-# Подготовка SSH-команды (sshpass используется для автоматического ввода пароля)
-SSHPASS="sshpass -p '$SSH_PASS'"
+# Жёстко заданные настройки
+USERNAME="u"
+PASSWORD="1"
+POSTGRES_PORT=5440
+DOMAIN="balance.rbt"
+
+# Список нод базы данных (из группы "database")
+DATABASE_NODES=("database1" "database2" "database3")
+
+# Подготовка SSH-команды с использованием sshpass
+SSHPASS="sshpass -p $PASSWORD"
 SSH="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m \
-   -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null \
-   -o StrictHostKeyChecking=no $SSH_USER@$NEW_MASTER_NODE_HOST"
+     -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null \
+     -o StrictHostKeyChecking=no $USERNAME@$NEW_MASTER_HOST"
 
-echo "Promoting standby node to master..."
-$SSH sudo touch "$NEW_MASTER_NODE_DIR/failover"
+echo "!!! FAILOVER START !!!"
+echo "Параметры, полученные от PGpool:"
+echo "  Новый мастер: $NEW_MASTER_HOST (ID: $NEW_MASTER_ID, Data: $NEW_MASTER_DATA)"
+echo "  Провалившаяся нода: $FAILED_HOST (ID: $FAILED_NODE_ID)"
+echo "  Старый мастер: $OLD_MASTER_HOST (ID: $OLD_MASTER_ID)"
 
-# Обновление настроек подключения (primary_conninfo) на всех standby‑узлах через ALTER SYSTEM
-for node in "${DATABASES[@]}"; do
-    echo "Configuring node $node"
-    SSH_NODE="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m \
-       -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null \
-       -o StrictHostKeyChecking=no $SSH_USER@$node"
-    # Задаём параметр primary_conninfo с новым мастером
-    $SSH_NODE sudo -u postgres psql -p $PG_PORT -c "ALTER SYSTEM SET primary_conninfo = 'host=$NEW_MASTER_NODE_HOST port=$NEW_MASTER_NODE_PORT user=$REPL_USER';"
-    # Применяем изменения – перезагружаем конфигурацию
-    $SSH_NODE sudo -u postgres psql -p $PG_PORT -c 'SELECT pg_reload_conf();'
-done
+# Если новый мастер отличается от старого и его ID больше или равен 0, проводим failover
+if [ "$OLD_MASTER_ID" -ne "$NEW_MASTER_ID" ] && [ "$NEW_MASTER_ID" -ge 0 ]; then
+    echo "Начинается продвижение новой ноды в мастер..."
+    $SSH sudo touch "$NEW_MASTER_DATA/failover"
+
+    # Извлекаем суффикс домена (для DOMAIN="balance.rbt" получается "rbt")
+    domain_suffix=$(echo "$DOMAIN" | cut -d'.' -f2)
+
+    # Перебор нод для обновления конфигурации
+    for node in "${DATABASE_NODES[@]}"; do
+        node_fqdn="${node}.${DOMAIN}"
+        echo "Настройка ноды: $node_fqdn"
+        SSH_NODE="$SSHPASS ssh -T -o ControlMaster=auto -o ControlPersist=2m \
+-o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null \
+-o StrictHostKeyChecking=no $USERNAME@$node_fqdn"
+        # Обновляем параметр host в конфигурационном файле, заменяя его на новый мастер
+        $SSH_NODE sudo sed -i "s/host=.*${domain_suffix}/host=$NEW_MASTER_HOST/" "$NEW_MASTER_DATA/postgresql.auto.conf"
+        # Если нода не является ни старым, ни новым мастером, перезагружаем конфигурацию PostgreSQL
+        if [ "$node_fqdn" != "$OLD_MASTER_HOST" ] && [ "$node_fqdn" != "$NEW_MASTER_HOST" ]; then
+            $SSH_NODE "sudo -u postgres psql -p $POSTGRES_PORT -c 'SELECT pg_reload_conf();'"
+        fi
+    done
+fi
 
 echo "!!! FAILOVER FINISH !!!"
-log "Failover procedure completed. New master: $NEW_MASTER_NODE_HOST."
 exit 0

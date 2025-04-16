@@ -1,5 +1,5 @@
 from allta import VBox
-from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD
+from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD, VERSION_OS
 from roles.load_balancer.keepalived import keepalived
 
 
@@ -76,21 +76,21 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
                     # TODO Проверить скрипт failover
-                    'new': 'failover_command = \'/tmp/pgpool.sh %m %H %R %d %h %M %N\''
+                    'new': 'failover_command = \'/tmp/pgpool.sh OVER %m %H %R %d %h %M %N\''
                 },
-                # {
-                #     'path': f'{pgpool_config_path}/pgpool.conf',
-                #     'old': '#failback_command = \'\'',
-                #     # TODO Проверить скрипт failback
-                #     'new': 'failback_command = \'/tmp/pgpool.sh %m %H %R %d %h %M %N\''
-                # },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#failback_command = \'\'',
+                    # TODO Проверить скрипт failback
+                    'new': 'failback_command = \'failback_command = \'/tmp/pgpool.sh BACK %m %H %R %d %h %M %N\''
+                },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#auto_failback = off',
                     'new': 'auto_failback = on'
                 },
 
-#replicate_select = off
+                # replicate_select = off
 
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -102,7 +102,7 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#disable_load_balance_on_write = \'transaction\'',
                     'new': 'disable_load_balance_on_write = \'transaction\''
-                },                
+                },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#delegate_IP = \'\'',
@@ -149,7 +149,7 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#pcp_port = 9898',
                     'new': 'pcp_port = 9898'
-                },                
+                },
                 # {
                 #     'path': f'{pgpool_config_path}/pgpool.conf',
                 #     'old': '',
@@ -164,7 +164,7 @@ class LoadBalancer():
         scp = {
             'g_load_balancer': {
                 'mode': 'push',
-                'path_host': './roles/load_balancer/template/pgpool.sh',
+                'path_host': f'./roles/load_balancer/template/pgpool_{VERSION_OS}.sh',
                 'path_vm': '/tmp/pgpool.sh'
             }
         }

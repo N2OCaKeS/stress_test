@@ -7,8 +7,7 @@ import psycopg2
 
 N_ACCOUNTS = 100000
 
-# # # Change parameters accordingly
-# Database connection parameters
+# Параметры подключения к базе данных
 db_params = {
     "dbname": 'contrprimer',
     "user": "postgres",
@@ -16,47 +15,50 @@ db_params = {
     "port": "5440"
 }
 
-# Number of clients/threads to simulate
+# Количество клиентов/потоков для симуляции
 num_clients = 20
 
-# Number of transactions per client
-num_transactions = 10000  # ~3-6 minutes
+# Количество транзакций на каждый поток
+num_transactions = 10000  # ~3-6 минут
 
 scale_factor = 100
-# # #
 
-
-# SQL queries to execute
+# SQL-запросы для исполнения
 queries = [
     "SELECT abalance FROM pgbench_accounts WHERE aid = %s;",
     "UPDATE pgbench_accounts SET abalance = abalance + %s WHERE aid = %s;",
     "DELETE FROM pgbench_accounts WHERE aid = %s;"
 ]
 
-# Dictionary to store the results
-results = {'success': 0, 'fail': 0}
+# Глобальный список для хранения результатов каждого потока
+thread_results = []
 
 
 def run_pgbench():
-    global results
+    # Локальные счётчики для каждого потока
+    local_success = 0
+    local_fail = 0
+    
     for _ in range(num_transactions):
         try:
             with psycopg2.connect(**db_params) as conn:
                 cur = conn.cursor()
-
                 query = choice(queries)
+                
                 if query.startswith('UPDATE'):
                     cur.execute(query, (randint(-5000, 5000), randint(1, N_ACCOUNTS * scale_factor)))
                 else:
                     cur.execute(query, [randint(1, N_ACCOUNTS * scale_factor)])
-
+                
                 conn.commit()
-                results['success'] += 1
-                print(results)
+                local_success += 1
         except Exception as e:
             with open("error.log", "a", encoding="utf-8") as file:
                 file.write(f"Возникла ошибка: {e}\n")
-            results['fail'] += 1
+            local_fail += 1
+            
+    # Добавляем результаты текущего потока в глобальный список
+    thread_results.append({'success': local_success, 'fail': local_fail})
 
 
 def astra_version():
@@ -69,15 +71,15 @@ def astra_version():
 
     if exists("/etc/astra_license"):
         with open("/etc/astra_license", "r") as file:
-                    astra_license = file.read()
-                    if "orel" in astra_license:
-                        version[1] = "orel"
-                    elif "smolensk" in astra_license:
-                        version[1] = "smolensk"
-                    elif "voronezh" in astra_license:
-                        version[1] = "voronezh"
-                    else:
-                        print("Version of distribution not found")
+            astra_license = file.read()
+            if "orel" in astra_license:
+                version[1] = "orel"
+            elif "smolensk" in astra_license:
+                version[1] = "smolensk"
+            elif "voronezh" in astra_license:
+                version[1] = "voronezh"
+            else:
+                print("Version of distribution not found")
 
     return version
 
@@ -87,11 +89,9 @@ def info_list():
 
     def cmd(command, regex=False):
         output = subprocess.run(command, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
-        
         if regex:
             match = re.search(r'Version: (\S+)', output)
             return match.group(1) if match else "N/A"
-
         return output    
 
     av = astra_version()
@@ -108,12 +108,10 @@ def info_list():
                 'pgpool2']
     
     with open('psb_info.txt', 'a+') as info:
-            info.writelines(info_lst)
+        info.writelines(info_lst)
 
     if isfile('available_packages.txt'):
         cmd('sudo chown $USER:$USER available_packages.txt')
-        #chown('available_packages.txt', 1001, 1002)
-        #chmod('available_packages.txt', 0o777)
     with open('available_packages.txt', 'a') as file:
          pkgs = cmd('apt list postgresql*')
          file.write('\n2nd iteration:\n')
@@ -122,21 +120,26 @@ def info_list():
 
 def main():
     threads = []
+    
+    # Запуск потоков
     for i in range(num_clients):
         t = threading.Thread(target=run_pgbench)
         threads.append(t)
         t.start()
 
-    # Wait for all threads to finish
+    # Ожидание завершения всех потоков
     for t in threads:
         t.join()
 
-    # Process and print results
+    # Суммируем результаты всех потоков
+    total_success = sum(result['success'] for result in thread_results)
+    total_fail = sum(result['fail'] for result in thread_results)
     all_queries = num_transactions * num_clients
-    success_quer = f"Number of successful queries: {results['success']}"
-    failed_quer = f"Number of failed queries: {results['fail']}"
-    failed_quer_perc = f"Percent of failed queries: {(results['fail'] / all_queries) * 100:.2f}% " \
-                       f"({results['fail']} / {all_queries})"
+
+    success_quer = f"Number of successful queries: {total_success}"
+    failed_quer = f"Number of failed queries: {total_fail}"
+    failed_quer_perc = f"Percent of failed queries: {(total_fail / all_queries) * 100:.2f}% " \
+                        f"({total_fail} / {all_queries})"
     
     with open('results_balance.txt', 'w') as results_file:
         results_file.write(success_quer + '\n')

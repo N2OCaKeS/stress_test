@@ -9,14 +9,15 @@ version: '3.7'
 services:
   node_exporter:
     image: prom/node-exporter:latest
-    ports:
-      - "9100:9100"
-    networks:
-      - monitoring
+    network_mode: host
+#    ports:
+#      - "9100:9100"
+#    networks:
+#      - monitoring
 
-networks:
-  monitoring:
-    driver: bridge
+#networks:
+#  monitoring:
+#    driver: bridge
 EOF
 
 sudo tee /etc/systemd/system/node_exporter.service > /dev/null << EOF

@@ -10,7 +10,9 @@ import pathlib
 from os import path
 if path.isfile('/home/u/ilo.py'):
     shutil.copyfile('/home/u/ilo.py', str(pathlib.Path(__file__).parent / 'ilo.py'))
-    from libs.ilo import stand3, stand4
+    #from libs.ilo import stand3, stand4
+    stand3 = {}
+    stand4 = {}
 else:
     print('Not exist settnigs ilo file')
     exit(2)

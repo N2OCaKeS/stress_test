@@ -992,7 +992,7 @@ def backup_snapshot(stand, snapshot):
 def backup_vm_snapshot(stand, snapshot):
     vms = test_station_vms
     commands = [f'sudo systemctl stop {vms[stand]}.service',
-                f'sudo vboxmanage snapshot {vms[stand]} restore {snapshot}',
+                f'sudo vboxmanage snapshot {vms[stand]} restore {cz_comm()[stand][snapshot]}',
                 f'sudo systemctl restart {vms[stand]}.service']
 
     [ssh_command(command=cmd, stand_ip=stands_ip['stand5']) for cmd in commands]

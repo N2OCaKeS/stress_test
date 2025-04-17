@@ -17,6 +17,10 @@ Cравнительный анализ производительности ве
 
 **Генерация тестов** - site/start.sh
 
+Детализированная схема работы start.sh
+
+![alt text](readme_resources/Test1_start_details.png)
+
 **Prepare** - prepare.sh
 
 **Запуск** - run.py с параметром -t web

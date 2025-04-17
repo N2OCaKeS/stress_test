@@ -22,7 +22,7 @@ LOCUST_CONF="${CPATH}Kuznechik/.locust.conf"
 # ИНФО
 sudo echo -e "${SYS_VERSION}\n${SYS_KERNEL}\n${PACKAGE_VERSIONS}" > "${CPATH}results/INFO.txt"
 
-
+# Для теста nginx_docker docker
 check_locust_containers() {
     echo "Ожидание 10 секунд перед проверкой контейнеров..."
     sleep 10
@@ -50,7 +50,7 @@ check_locust_containers() {
     done
 }
 
-
+# Все без контейнеров
 nginx_server() {
     RESULTS_DIR_SERVER="${RESULTS_DIR}/nginx_server"
     mkdir -p "$RESULTS_DIR_SERVER"
@@ -130,6 +130,7 @@ nginx_docker(){
 
     echo "Запуск Docker-сервисов..."
     # Ветвление по режиму:
+    # Все в контейнерах
     if [[ "$MODE" == "docker" ]]; then
 	sed -i "s|^csv = .*|csv = ${RESULTS_DIR_DOCKER}/results|g" "$LOCUST_CONF"
         sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER}/results.html|g" "$LOCUST_CONF"
@@ -145,6 +146,7 @@ nginx_docker(){
         done
         echo "Контейнер master завершил работу."
 
+    # В контейнерах только locust
     elif [[ "$MODE" == "locust" ]]; then
 	sed -i "s|^csv = .*|csv = ${RESULTS_DIR_DOCKER_LOCUST_PROC}/results|g" "$LOCUST_CONF"
     	sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER_LOCUST_PROC}/results.html|g" "$LOCUST_CONF"

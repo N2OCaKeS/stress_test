@@ -16,7 +16,7 @@ INFO_FILENAME = f"{REPORT_PATH}/INFO.txt"
 RT_FACTOR = 6000
 NORMALIZED_CONSTANTS = {"Avg Requests/s": [0, 6000],
                         "Avg Failures/s": [0, 5000],
-                        "Avg Response Time": [0, 100]}
+                        "Avg Response Time": [0, 500]}
 DESCRIPTION = ""
 
 

@@ -12,7 +12,6 @@ class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
         provider = self.provider
         postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
         postgres_data_path = POSTGRES_DATA_PATH
-        log = '/tmp/contrprimer'
         unit_file = f"""sudo tee /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service > /dev/null <<EOF
 [Unit]
 Description=PostgreSQL Cluster contrprimer {VERSION_PG}

@@ -1,6 +1,6 @@
 from allta import VBox
 
-from roles.vm_info import VERSION_PG, VMS_DATES, USERNAME, PASSWORD, VMS_GROUPS
+from roles.vm_info import VERSION_PG, VMS_DATES, USERNAME, PASSWORD, VMS_GROUPS, POSTGRES_DATA_PATH, POSTGRES_PORT
 
 
 class Test:
@@ -66,23 +66,29 @@ class Test:
                     "signal get": ["database3", "pgbench manual"]
                 },
                 "start test": {
-                    "command": "python3 /tmp/clients.py",
+                    "command": "python3 /tmp/clients.py &",
                     "signal set": "",
                     "signal get": ["database3", "chmod"]
-                }
+                },
+                "recovery db": {
+                    "command": 'sudo su -c \'printf "127.0.0.1:9898:pgpool:1\n" > ~/.pcppass && sudo chmod 600 ~/.pcppass && sudo PCPPASSFILE=~/.pcppass pcp_attach_node -h 127.0.0.1 -p 9898 -U pgpool -n 0\'',
+                    "signal set": "",
+                    "signal get": ["database1", "return"]
+                },                
+
             },
             "database1": {
                 "reinstall postgres": {
-                    "command": f"""sleep 20 && \
+                    "command": f"""sleep 40 && \
 sudo systemctl stop postgresql@{VERSION_PG}-contrprimer && \
 sudo rm -rf /var/lib/postgresql/{VERSION_PG}/contrprimer/* && \
 sudo apt reinstall postgresql-{VERSION_PG} -y""",
                     "signal set": "Reinstall",
                     "signal get": ["database3", "chmod"]
                 },
-                "start postgres dp": {
-                    "command": f"sudo systemctl start postgresql@{VERSION_PG}-contrprimer",
-                    "signal set": "",
+                "return db to cluster as replica": {
+                    "command": f'sudo rm -rf {POSTGRES_DATA_PATH} && sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database2']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {POSTGRES_DATA_PATH} -Fp -Xs -P -R" && ',
+                    "signal set": "return",
                     "signal get": ["database1", "Reinstall"]
                 }
             }

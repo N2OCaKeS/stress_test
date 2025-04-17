@@ -16,12 +16,12 @@ class LoadBalancer():
 
         sed = {
             'g_load_balancer': [
-                {
-                    # pool_hba.conf
-                    'path': f'{pgpool_config_path}/pool_hba.conf',
-                    'old': 'host    all         all         127.0.0.1/32          trust',
-                    'new': 'host    all         all         0.0.0.0/0          trust'
-                },
+                # {
+                #     # pool_hba.conf
+                #     'path': f'{pgpool_config_path}/pool_hba.conf',
+                #     'old': 'host    all         all         127.0.0.1/32          trust',
+                #     'new': 'host    all         all         0.0.0.0/0          trust'
+                # },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#listen_addresses = \'localhost\'',
@@ -76,13 +76,13 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
                     # TODO Проверить скрипт failover
-                    'new': 'failover_command = \'/tmp/pgpool.sh OVER %m %H %R %d %h %M %N\''
+                    'new': 'failover_command = \'sudo /tmp/pgpool.sh OVER %m %H %R %d %h %M %N\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failback_command = \'\'',
                     # TODO Проверить скрипт failback
-                    'new': 'failback_command = \'/tmp/pgpool.sh BACK %m %H %R %d %h %M %N\''
+                    'new': 'failback_command = \'sudo /tmp/pgpool.sh BACK %m %H %R %d %h %M %N\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -122,6 +122,11 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'',
                     'new': 'if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\''
+                },  
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#sr_check_period = 10',
+                    'new': 'sr_check_period = 2'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -193,7 +198,16 @@ EOF
         start_pgpool = {
             'g_load_balancer': {
                 'set chmod failoverscripts': {
-                    'command': 'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log/pgpool && sudo touch /var/log/pgpool/cluster_failover.log && sudo chown -R postgres:postgres /var/log/pgpool',
+                    'command': 'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log && sudo touch /var/log/pgpool_failover.log && sudo chown -R postgres:postgres /var/log/pgpool_failover.log',
+                    'signal set': '',
+                    'signal get': ''
+                },
+                'configure pcp':{     # пароль 1                
+                    'command': "echo 'pgpool:c4ca4238a0b923820dcc509a6f75849b' | sudo tee -a /etc/pgpool2/pcp.conf",
+                    'signal set': '',
+                    'signal get': ''},
+                'config pool_hba': {
+                    'command': "echo -e 'host all all 127.0.0.1/32 trust\nhost all all 0.0.0.0/0 trust' | sudo tee -a /etc/pgpool2/pool_hba.conf",
                     'signal set': '',
                     'signal get': ''
                 },

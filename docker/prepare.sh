@@ -52,7 +52,7 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-
+pip install -i http://10.177.103.10:3141/user/dev --trust 10.177.103.10 allta
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r ${CPATH}requirements.txt
 if [[ $? != 0 ]]; then

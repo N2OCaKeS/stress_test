@@ -5,9 +5,6 @@ import os
 import warnings
 import sys
 from sklearn.preprocessing import MinMaxScaler
-from scipy import integrate
-from scipy.integrate import IntegrationWarning
-from matplotlib.gridspec import GridSpec
 
 sys.path.append(os.path.join(os.getcwd(), '..'))
 from docker_conf import REPORT_PATH, REPORT_VARIABLES, NORMALIZED_CONSTANTS
@@ -15,6 +12,11 @@ from docker_conf import REPORT_PATH, REPORT_VARIABLES, NORMALIZED_CONSTANTS
 
 # using in report.py
 class Report:
+    '''
+    Содержит ф-ции вычисления total rating по формулам и методам, 
+    а также общий процент ошибок и конвертация csv в html.
+    '''
+
     def __init__(self, report_path=REPORT_PATH, report_variables=REPORT_VARIABLES, constants=NORMALIZED_CONSTANTS):
         self.report_path = report_path
         self.report_variables = report_variables
@@ -23,81 +25,28 @@ class Report:
         self.constants = constants
 
 
-    def normalize_dataframe(self, df, columns):
-        """
-        Нормализует указанные столбцы DataFrame, добавляя граничные значения из словаря constants.
-    
-        Параметры:
-            df: Исходный DataFrame
-            columns: Список столбцов для нормализации
-    
-        Возвращает:
-            DataFrame с нормализованными столбцами (без добавленных граничных значений)
-        """
-        df_norm = df.copy()
-        scaler = MinMaxScaler()
-    
-        for col in columns:
-            min_val, max_val = self.constants.get(col, [0, 1])  # берем из словаря, по умолчанию [0,1]
-    
-            temp_lst = [min_val] + df_norm[col].tolist() + [max_val]
-    
-            normalized_data = scaler.fit_transform(np.array(temp_lst).reshape(-1, 1))
-            normalized_data_list = normalized_data[1:-1].flatten().tolist()
-    
-            df_norm[col] = normalized_data_list
-    
-        return df_norm
-
-
     @staticmethod
-    def data_approximation(x, y, polinom_factor=10):
+    def parse_locust_step_history(history_csv_path: str, users_per_step: int) -> pd.DataFrame:
         '''
-        :param x: [x1, x1, x3, ...] последовательность значений x
-        :param y: [y1, y1, y3, ...] последовательность значений y
-        :param polinom_factor: коэффициент полиномизации
-        :return: f(x)
+        Парсит файл создаваемый locust, results_stats_history.csv
+
+        Args:
+            history_csv_path (str): путь к файлу
+            users_per_step (str): пользователи на шаг
+
+        Returns:
+            result: новый csv отпаршенный по шагам и добавленной колонкой Failures Rate(%
         '''
-        while True:
-            with warnings.catch_warnings():
-                warnings.filterwarnings('error')
-                try:
-                    return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
-                except Warning:
-                    polinom_factor -= 1
 
-
-    @staticmethod
-    def plot_approximation(df: pd.DataFrame, column: str, output_path: str, degree: int = 5):
-        x = df["User Count"]
-        y = df[column]
-
-        f = Report.data_approximation(x, y, degree)
-
-        x_fit = np.linspace(x.min(), x.max(), 200)
-        y_fit = f(x_fit)
-
-        plt.figure(figsize=(8, 5))
-        plt.scatter(x, y, color='red', label="Нормализованные данные")
-        plt.plot(x_fit, y_fit, color='blue', label=f"Аппроксимация (степень {degree})")
-        plt.xlabel("User Count")
-        plt.ylabel(column)
-        plt.title(f"Аппроксимация: {column}")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig(output_path)
-        plt.close()
-        return f
-
-    @staticmethod
-    def parse_locust_step_history(history_csv_path: str) -> pd.DataFrame:
         df = pd.read_csv(history_csv_path)
         df_agg = df[(df["Name"] == "Aggregated") & (df["User Count"] > 0)].copy()
 
         df_selected = df_agg[[
             "User Count", "Requests/s", "Failures/s", "Total Average Response Time"
         ]].copy()
+
+        expected_steps = [i * users_per_step for i in range(1, 7)]
+        df_selected = df_selected[df_selected["User Count"].isin(expected_steps)]
 
         df_selected["Step Index"] = (df_selected["User Count"] != df_selected["User Count"].shift()).cumsum()
 
@@ -121,9 +70,103 @@ class Report:
         ).fillna(0) * 100
 
         return result
+    
+
+    def normalize_dataframe(self, df, columns):
+        """
+        Нормализует указанные столбцы DataFrame, добавляя граничные значения из словаря constants.
+    
+        Параметры:
+            df: Исходный DataFrame
+            columns: Список столбцов для нормализации
+    
+        Возвращает:
+            DataFrame с нормализованными столбцами (без добавленных граничных значений)
+        """
+
+        df_norm = df.copy()
+        scaler = MinMaxScaler()
+    
+        for col in columns:
+            min_val, max_val = self.constants.get(col, [0, 1])  # берем из словаря, по умолчанию [0,1]
+    
+            temp_lst = [min_val] + df_norm[col].tolist() + [max_val]
+    
+            normalized_data = scaler.fit_transform(np.array(temp_lst).reshape(-1, 1))
+            normalized_data_list = normalized_data[1:-1].flatten().tolist()
+    
+            df_norm[col] = normalized_data_list
+    
+        return df_norm
+
+
+    @staticmethod
+    def data_approximation(x, y, polinom_factor=10):
+        '''
+        Делаем аппроксимацию по нормазизованным данным критерия:
+
+        :param x: [x1, x1, x3, ...] последовательность значений x
+        :param y: [y1, y1, y3, ...] последовательность значений y
+        :param polinom_factor: коэффициент полиномизации
+        :return: f(x)
+        '''
+
+        while True:
+            with warnings.catch_warnings():
+                warnings.filterwarnings('error')
+                try:
+                    return np.poly1d(np.polyfit(np.array(x), np.array(y), polinom_factor))
+                except Warning:
+                    polinom_factor -= 1
+
+
+    @staticmethod
+    def plot_approximation(df: pd.DataFrame, column: str, output_path: str, degree: int = 10):
+        '''
+        Возвращает значение ф-ции. 
+        Отрисовывает графики аппроксимации.
+        
+        Args:
+            df (pd.dataframe): входной датафрейм
+            column (str): колонка критерия
+            output_path (str): путь для сохранения графика
+            degree (str): фактор полинома, по умолчанию 10
+
+        Returns:
+            f: ф-ция аппроксимации
+        '''
+
+        x = df["User Count"]
+        y = df[column]
+
+        f = Report.data_approximation(x, y, degree)
+
+        x_fit = np.linspace(x.min(), x.max(), 200)
+        y_fit = f(x_fit)
+
+        plt.figure(figsize=(8, 5))
+        plt.scatter(x, y, color='red', label="Нормализованные данные")
+        plt.plot(x_fit, y_fit, color='blue', label=f"Аппроксимация (степень {degree})")
+        plt.xlabel("User Count")
+        plt.ylabel(column)
+        plt.title(f"Аппроксимация: {column}")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(output_path)
+        plt.close()
+        return f
+
 
 
     def failures_wrapper(self):
+        '''
+        Читает csv с общими и результатами и считает сколько % ошибок в тесте.
+
+        Returns:
+            error_percentages: процент ошибок
+        '''
+
         error_percentages = {}
         for sys_dir in self.system_dirs:
             for variant in self.report_variables:
@@ -156,7 +199,14 @@ class Report:
         - если шаг >=10% → 0.66
         - если >0 → 0.9
         - иначе → 1.0
+
+        Args:
+            df_result: итоговый дф по шагам
+
+        Return:
+            int: умножение (1, 0.9, 0.66)
         """
+        
         if "Failure Rate (%)" not in df_result.columns:
             return 1.0, "Колонка 'Failure Rate (%)' не найдена"
 
@@ -171,6 +221,13 @@ class Report:
 
 
     def html_converter(self, csv_file, output_dir):
+        '''
+        Конвертирует csv в html.
+
+        Args:
+            csv_file: csv файл
+            output_dir: путь сохранения
+        '''
         
         df = pd.read_csv(csv_file)
 

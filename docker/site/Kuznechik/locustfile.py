@@ -4,7 +4,7 @@ import time
 import sys
 import os
 from collections import namedtuple
-
+from allta import GetEnv
 
 
 # ==== ЗАДАЧИ ПОЛЬЗОВАТЕЛЯ ====
@@ -23,27 +23,21 @@ class MyUser(HttpUser):
 
 
 # ==== НАГРУЗКА: СТУПЕНЧАТЫЙ РОСТ С УДЕРЖАНИЕМ ====
-# Подтягиваем значения для теста
-env_path = os.path.join(os.path.dirname(__file__), '../.env')
-if os.path.exists(env_path):
-    with open(env_path) as f:
-        for line in f:
-            # Пропускаем пустые строки и комментарии
-            if line.strip() == "" or line.strip().startswith("#"):
-                continue
-            key, value = line.strip().split("=", 1)
-            os.environ[key] = value  # загружаем в переменные окружения
 
-users_count = int(os.getenv("USERS_PER_SEC"))
-timestep = int(os.getenv("TIMESTEP"))
+# Подключаем .env
+try:
+    GetEnv.activate_absolute("/home/u/git/stress_test/docker/site/.env")
+except:
+    GetEnv.activate_absolute("/app/.env")
 
-Step = namedtuple("Step", ["users", "dwell"])  # dwell = время удержания нагрузки (в секундах)
+users_count = int(GetEnv.get("USERS_PER_SEC"))
+timestep = int(GetEnv.get("TIMESTEP"))
+
+Step = namedtuple("Step", ["users", "dwell"])  # dwell = время удержания нагрузки
 
 class StepLoadShape(LoadTestShape):
     """
-    6 шагов нагрузки:
-    - каждый шаг ждёт, пока достигнуто нужное число пользователей
-    - после чего держит нагрузку в течение dwell секунд
+    Ступенчатая нагрузка: 6 шагов с удержанием, строгое завершение.
     """
 
     targets_with_times = (
@@ -63,22 +57,22 @@ class StepLoadShape(LoadTestShape):
 
     def tick(self):
         if self.step >= len(self.targets_with_times):
-            return None  # Завершаем тест
+            return None  # Строгое завершение теста
 
         target = self.targets_with_times[self.step]
         current_users = self.get_current_user_count()
 
-        # Ждём достижения нужного числа пользователей
+        # Ждём достижения нужного количества пользователей
         if current_users >= target.users:
             if not self.time_active:
                 self.reset_time()
                 self.time_active = True
 
-            # Проверяем, прошло ли нужное время удержания
+            # Если выдержано время, переходим к следующему шагу
             if self.get_run_time() > target.dwell:
+                print(f"[StepLoad] Завершён шаг {self.step + 1}: {target.users} пользователей, удержание {target.dwell} сек")
                 self.step += 1
                 self.time_active = False
 
-        return (target.users, users_count)  # spawn rate
-
-
+        # Возвращаем текущее целевое значение пользователей и скорость запуска
+        return (target.users, users_count)

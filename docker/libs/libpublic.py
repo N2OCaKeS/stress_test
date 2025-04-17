@@ -4,6 +4,7 @@ from libs.libreport import ReportToConfluence
 sys.path.append(os.path.join(os.getcwd(), '..'))
 from docker_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME
 import glob
+from allta import GetEnv
 #REPORT_FILENAME, \REQUESTS, CONCURRENCY
 
 
@@ -108,18 +109,9 @@ class Public:
         #    if os.path.isfile(file_path):
         #        print(f"Прикрепление: {file_path}")
         #        confluence_report.attache_files(file_path, self.c_space, c_np)
-        env_path = os.path.join(os.path.dirname(__file__), '../site/.env')
-        if os.path.exists(env_path):
-            with open(env_path) as f:
-                for line in f:
-                # Пропускаем пустые строки и комментарии
-                    if line.strip() == "" or line.strip().startswith("#"):
-                        continue
-                    key, value = line.strip().split("=", 1)
-                    os.environ[key] = value  # загружаем в переменные окружения
-
-        users_count = str(os.getenv("USERS_PER_SEC"))
-        timestep = str(os.getenv("TIMESTEP"))
+        GetEnv.activate_relative("../docker/site/.env")
+        users_count = GetEnv.get("USERS_PER_SEC")
+        timestep = GetEnv.get("TIMESTEP")
 
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:

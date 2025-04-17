@@ -33,7 +33,9 @@ services:
         ipv4_address: 172.24.0.2
 
   master:
-    image: locustio/locust
+    build:
+      context: .
+      dockerfile: Dockerfile.locust
     user: root
     container_name: master
     working_dir: /app
@@ -52,7 +54,9 @@ services:
       --headless
 
   worker:
-    image: locustio/locust
+    build:
+      context: .
+      dockerfile: Dockerfile.locust
     user: root
     depends_on:
       - master

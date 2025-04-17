@@ -1,0 +1,6 @@
+FROM locustio/locust:2.35.0
+
+USER root
+
+# Устанавливаем allta из локального DevPI-сервера
+RUN pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10 allta

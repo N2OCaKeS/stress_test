@@ -4,7 +4,7 @@ import os
 import warnings
 from libs.libtable import Report
 from docker_conf import TEMPLATE_PATH, RT_FACTOR
-
+from allta import GetEnv
 
 rp = Report()
 errors = rp.failures_wrapper()
@@ -18,20 +18,20 @@ for sys_dir in rp.system_dirs:
         if os.path.exists(hist_path):
             print(f"\nОбработка: {sys_dir}_{variant}")
 
-            # Создаем дашборд производительности
-            dashboard_path = os.path.join(variant_path, "performance_dashboard.png")
-            # create_performance_dashboard(hist_path, dashboard_path)
+            GetEnv.activate_relative("site/.env")
 
             # Парсим и анализируем данные
-            df_result = rp.parse_locust_step_history(hist_path)
+            df_result = rp.parse_locust_step_history(hist_path, int(GetEnv.get("USERS_PER_SEC")))
             output_csv = os.path.join(variant_path, "step_stats_summary.csv")
             df_result.to_csv(output_csv, index=False)
             print(f"Сохранена статистика по шагам: {output_csv}")
+
             # Нормализация данных
             columns_to_normalize = ["Avg Requests/s", "Avg Failures/s", "Avg Response Time"]
             df_normalized = rp.normalize_dataframe(df_result, columns_to_normalize)
             output_csv_norm = os.path.join(variant_path, "step_stats_summary_normalized.csv")
             df_normalized.to_csv(output_csv_norm, index=False)
+            
             # Аппроксимация и визуализация
             f_rps = rp.plot_approximation(df_normalized, "Avg Requests/s", 
                                      os.path.join(variant_path, "normalized_rps_plot.png"))
@@ -39,6 +39,7 @@ for sys_dir in rp.system_dirs:
                                           os.path.join(variant_path, "normalized_failures_plot.png"))
             f_response_time = rp.plot_approximation(df_normalized, "Avg Response Time", 
                                                os.path.join(variant_path, "normalized_response_time_plot.png"))
+            
             # Расчет интегралов
             min_users = df_normalized["User Count"].min()
             max_users = df_normalized["User Count"].max()
@@ -52,6 +53,7 @@ for sys_dir in rp.system_dirs:
                 'integral_rps': integral_rps,
                 'integral_response_time': integral_response_time
             })
+            
             # Расчет рейтинга
             rating_base = (integral_rps * 0.33) + (1 / (integral_response_time * 0.33))
             step_multiplier, error_level = rp.get_step_error_multiplier(df_result)
@@ -78,7 +80,6 @@ for sys_dir in rp.system_dirs:
                 file.write(f"\nФайлы результатов:\n")
                 file.write(f"- {output_csv}\n")
                 file.write(f"- {output_csv_norm}\n")
-                file.write(f"- {dashboard_path}\n")
                 file.write(f"\nМетрики:\n")
                 file.write(f"Integral RPS: {integral_rps:.2f}\n")
                 file.write(f"Integral Response Time: {integral_response_time:.2f}\n")
@@ -89,6 +90,7 @@ print("\nВсе тесты обработаны. Итоговые интегра
 
 for item in rp.integrals:
     print(f"{item['variant']}: RPS={item['integral_rps']:.2f}, RT={item['integral_response_time']:.2f}")
+
 
 print("\nКонвертация CSV в HTML:")
 for sys_dir in rp.system_dirs:

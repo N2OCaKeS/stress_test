@@ -50,7 +50,7 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_period = 0',
-                    'new': 'health_check_period = 3'
+                    'new': 'health_check_period = 2'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -65,7 +65,7 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_max_retries = 0',
-                    'new': 'health_check_max_retries = 2'
+                    'new': 'health_check_max_retries = 5'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -75,7 +75,6 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
-                    # TODO Проверить скрипт failover
                     'new': 'failover_command = \'sudo /tmp/pgpool.sh OVER %m %H %R %d %h %M %N\''
                 },
                 {

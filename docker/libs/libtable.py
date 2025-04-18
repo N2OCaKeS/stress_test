@@ -28,49 +28,63 @@ class Report:
     @staticmethod
     def parse_locust_step_history(history_csv_path: str, users_per_step: int) -> pd.DataFrame:
         '''
-        Парсит файл создаваемый locust, results_stats_history.csv
-
+        Парсит файл истории Locust (raw или filtered), 
+        автоматически фильтрует raw, оставляя только шаги, 
+        и возвращает агрегированные данные по шагам.
+        
         Args:
-            history_csv_path (str): путь к файлу
-            users_per_step (str): пользователи на шаг
-
+            history_csv_path (str): путь к CSV от Locust (может быть raw или *_filtered.csv)
+            users_per_step (int): количество пользователей в одном шаге
+        
         Returns:
-            result: новый csv отпаршенный по шагам и добавленной колонкой Failures Rate(%
+            pd.DataFrame: по шагам со средними RPS, ошибками и временем отклика
         '''
+        # === 1. Если это не filtered, то фильтруем «сырые» данные ===
+        if not history_csv_path.endswith('_filtered.csv'):
+            df_raw = pd.read_csv(history_csv_path)
+            # оставляем только те строки, где User Count делится на users_per_step
+            df_filtered = df_raw[df_raw['User Count'] % users_per_step == 0].copy()
+            
+            # опционально: создаём столбец Step Index, если его нет
+            df_filtered['Step Index'] = (df_filtered['User Count'] // users_per_step).astype(int)
+            
+            # сохраняем «filtered» файл рядом с исходником
+            base, ext = os.path.splitext(history_csv_path)
+            filtered_path = f"{base}_filtered{ext}"
+            df_filtered.to_csv(filtered_path, index=False)
+            
+            # переходим к обработке уже отфильтрованного
+            history_csv_path = filtered_path
+            df = df_filtered
+        else:
+            df = pd.read_csv(history_csv_path)
 
-        df = pd.read_csv(history_csv_path)
-        df_agg = df[(df["Name"] == "Aggregated") & (df["User Count"] > 0)].copy()
+        # === 2. Проверка обязательных колонок ===
+        required_columns = ['User Count', 'Requests/s', 'Failures/s', 'Total Average Response Time']
+        if not all(col in df.columns for col in required_columns):
+            raise ValueError(f"Файл {history_csv_path} не содержит необходимые колонки: {required_columns}")
 
-        df_selected = df_agg[[
-            "User Count", "Requests/s", "Failures/s", "Total Average Response Time"
-        ]].copy()
+        # === 3. Пересоздаём Step Index (на случай, если он был некорректен) ===
+        df['Step Index'] = (df['User Count'] // users_per_step).astype(int)
 
-        expected_steps = [i * users_per_step for i in range(1, 7)]
-        df_selected = df_selected[df_selected["User Count"].isin(expected_steps)]
+        # === 4. Группируем и агрегируем по шагам ===
+        result = df.groupby('Step Index', as_index=False).agg({
+            'User Count': 'first',
+            'Requests/s': 'mean',
+            'Failures/s': 'mean',
+            'Total Average Response Time': 'mean'
+        })
 
-        df_selected["Step Index"] = (df_selected["User Count"] != df_selected["User Count"].shift()).cumsum()
-
-        result = df_selected.groupby("Step Index").agg({
-            "User Count": "first",
-            "Requests/s": "mean",
-            "Failures/s": "mean",
-            "Total Average Response Time": "mean"
-        }).reset_index()
-
-        # Переименовываем после агрегации
+        # === 5. Переименовываем и считаем процент ошибок ===
         result.rename(columns={
-            "Requests/s": "Avg Requests/s",
-            "Failures/s": "Avg Failures/s",
-            "Total Average Response Time": "Avg Response Time"
+            'Requests/s': 'Avg Requests/s',
+            'Failures/s': 'Avg Failures/s',
+            'Total Average Response Time': 'Avg Response Time'
         }, inplace=True)
-
-        # Добавляем колонку с процентом ошибок
-        result["Failure Rate (%)"] = (
-            result["Avg Failures/s"] / result["Avg Requests/s"]
-        ).fillna(0) * 100
+        result['Failure Rate (%)'] = (result['Avg Failures/s'] / result['Avg Requests/s']).fillna(0) * 100
 
         return result
-    
+
 
     def normalize_dataframe(self, df, columns):
         """
@@ -206,7 +220,7 @@ class Report:
         Return:
             int: умножение (1, 0.9, 0.66)
         """
-        
+
         if "Failure Rate (%)" not in df_result.columns:
             return 1.0, "Колонка 'Failure Rate (%)' не найдена"
 

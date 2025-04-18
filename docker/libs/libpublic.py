@@ -167,22 +167,22 @@ class Public:
         # Таблицы на 3 теста
         docker_stats = os.path.join(TEMPLATE_PATH, 'docker', 'results_stats.html')
         docker_steps = os.path.join(TEMPLATE_PATH, 'docker', 'step_stats_summary.html')
-        server_stats = os.path.join(TEMPLATE_PATH, 'server', 'results_stats.html')
-        server_steps = os.path.join(TEMPLATE_PATH, 'server', 'step_stats_summary.html')
         locust_stats = os.path.join(TEMPLATE_PATH, 'locust', 'results_stats.html')
         locust_steps = os.path.join(TEMPLATE_PATH, 'locust', 'step_stats_summary.html')
+        server_stats = os.path.join(TEMPLATE_PATH, 'server', 'results_stats.html')
+        server_steps = os.path.join(TEMPLATE_PATH, 'server', 'step_stats_summary.html')
         with open(docker_stats, 'r') as f:
             docker_stats_html = f.read()
         with open(docker_steps, 'r') as f:
             docker_steps_html = f.read()
-        with open(server_stats, 'r') as f:
-            server_stats_html = f.read()
-        with open(server_steps, 'r') as f:
-            server_steps_html = f.read()
         with open(locust_stats, 'r') as f:
             locust_stats_html = f.read()
         with open(locust_steps, 'r') as f:
             locust_steps_html = f.read()
+        with open(server_stats, 'r') as f:
+            server_stats_html = f.read()
+        with open(server_steps, 'r') as f:
+            server_steps_html = f.read()
         
         # 
         html_page = '\n'.join([

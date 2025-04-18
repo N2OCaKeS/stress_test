@@ -36,7 +36,7 @@ for sys_dir in rp.system_dirs:
             f_rps = rp.plot_approximation(df_normalized, "Avg Requests/s", 
                                      os.path.join(variant_path, "normalized_rps_plot.png"))
             f_failures = rp.plot_approximation(df_normalized, "Avg Failures/s", 
-                                          os.path.join(variant_path, "normalized_failures_plot.png"))
+                                               os.path.join(variant_path, "normalized_failures_plot.png"))
             f_response_time = rp.plot_approximation(df_normalized, "Avg Response Time", 
                                                os.path.join(variant_path, "normalized_response_time_plot.png"))
             

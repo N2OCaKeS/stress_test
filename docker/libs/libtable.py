@@ -28,46 +28,46 @@ class Report:
     @staticmethod
     def parse_locust_step_history(history_csv_path: str, users_per_step: int) -> pd.DataFrame:
         '''
-        Парсит файл истории Locust (raw или filtered), 
-        автоматически фильтрует raw, оставляя только шаги, 
+        Парсит файл истории Locust (raw или filtered),
+        автоматически фильтрует raw, оставляя только шаги 1–6,
         и возвращает агрегированные данные по шагам.
-        
+
         Args:
             history_csv_path (str): путь к CSV от Locust (может быть raw или *_filtered.csv)
             users_per_step (int): количество пользователей в одном шаге
-        
+
         Returns:
             pd.DataFrame: по шагам со средними RPS, ошибками и временем отклика
         '''
-        # === 1. Если это не filtered, то фильтруем «сырые» данные ===
+        # 1) Если это не filtered, то отфильтровываем «сырые» данные
         if not history_csv_path.endswith('_filtered.csv'):
             df_raw = pd.read_csv(history_csv_path)
-            # оставляем только те строки, где User Count делится на users_per_step
-            df_filtered = df_raw[df_raw['User Count'] % users_per_step == 0].copy()
-            
-            # опционально: создаём столбец Step Index, если его нет
+            # оставляем только полные шаги, без 0-го
+            df_filtered = df_raw[
+                (df_raw['User Count'] > 0) &
+                (df_raw['User Count'] % users_per_step == 0)
+            ].copy()
             df_filtered['Step Index'] = (df_filtered['User Count'] // users_per_step).astype(int)
-            
+
             # сохраняем «filtered» файл рядом с исходником
             base, ext = os.path.splitext(history_csv_path)
             filtered_path = f"{base}_filtered{ext}"
             df_filtered.to_csv(filtered_path, index=False)
-            
-            # переходим к обработке уже отфильтрованного
-            history_csv_path = filtered_path
+
             df = df_filtered
         else:
             df = pd.read_csv(history_csv_path)
 
-        # === 2. Проверка обязательных колонок ===
+        # 2) Проверка обязательных колонок
         required_columns = ['User Count', 'Requests/s', 'Failures/s', 'Total Average Response Time']
         if not all(col in df.columns for col in required_columns):
             raise ValueError(f"Файл {history_csv_path} не содержит необходимые колонки: {required_columns}")
 
-        # === 3. Пересоздаём Step Index (на случай, если он был некорректен) ===
+        # 3) Пересоздаём Step Index и оставляем только 1–6
         df['Step Index'] = (df['User Count'] // users_per_step).astype(int)
+        df = df[(df['Step Index'] >= 1) & (df['Step Index'] <= 6)]
 
-        # === 4. Группируем и агрегируем по шагам ===
+        # 4) Группируем и агрегируем по шагам
         result = df.groupby('Step Index', as_index=False).agg({
             'User Count': 'first',
             'Requests/s': 'mean',
@@ -75,7 +75,7 @@ class Report:
             'Total Average Response Time': 'mean'
         })
 
-        # === 5. Переименовываем и считаем процент ошибок ===
+        # 5) Переименовываем и считаем процент ошибок
         result.rename(columns={
             'Requests/s': 'Avg Requests/s',
             'Failures/s': 'Avg Failures/s',

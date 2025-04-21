@@ -23,3 +23,4 @@ ansible
 paramiko
 setuptools
 python-ilorest-library
+aiogram==3.6.0

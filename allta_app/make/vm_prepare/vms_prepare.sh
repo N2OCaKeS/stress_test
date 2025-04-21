@@ -181,7 +181,7 @@ for vm in "${VMS[@]}"; do
     vboxmanage modifyvm "$vm" --nested-hw-virt on
     vboxmanage modifyvm "$vm" --bridgeadapter1 "$BRIDGE_IFACE"
     vboxmanage modifyvm "$vm" --macaddress1 "${vm_mac_map[$vm]}"
-    nohup vboxmanage startvm "$vm" --type headless &
+    vboxmanage startvm "$vm" --type headless
     sleep 1
     vboxmanage snapshot "$vm" take "start_snapshot_1"
 done

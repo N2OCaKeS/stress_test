@@ -1,6 +1,6 @@
 server {
     listen 80;
-    server_name allta.devos.astralinux.ru;
+    server_name allta.devos.astralinux.ru 10.177.103.80;
 
     location / {
         proxy_pass http://10.177.103.10:8000;  # направляет на Gunicorn

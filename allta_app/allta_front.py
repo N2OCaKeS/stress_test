@@ -221,17 +221,20 @@ def reboot(stand):
     elif stand == "stand3" or stand == "stand4" or stand == "stand5":
         ipmi = BootOrder(stand=stand)
         ipmi.reset()
+    return {"status": "success"}, 200
    
 
 @app.route('/poweroff/<stand>', methods=['POST'])
 def poweroff(stand):
     ssh_command('sudo poweroff', 
                 stand_ip=stands_ip[stand])
+    return {"status": "success"}, 200
 
 
 @app.route('/poweron/<stand>', methods=['POST'])
 def poweron(stand):
     power_on_stand(stand)
+    return {"status": "success"}, 200
 
 
 @app.route('/ilo/<stand>', methods=['POST'])

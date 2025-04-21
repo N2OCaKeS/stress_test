@@ -35,7 +35,6 @@ def main():
 
     domain = DomainVM()  # Проверено работает
     domain.settings()
-    VBoxManager.create_snapshot(vms=VMS, snapshot_name='domain')
 
     database = DatabaseVM()  # Проверено работает
     database.settings()
@@ -44,7 +43,6 @@ def main():
     # На проверке в случае провала узнать как проверять какие бд в сети
     load_balancer = LoadBalancer()
     load_balancer.load()
-    VBoxManager.create_snapshot(vms=VMS, snapshot_name='lbdb')    
 
     test = Test()  # TODO Настроить скрипт и создать необходимую бд
     test.test()

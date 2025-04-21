@@ -1,3 +1,5 @@
+import hashlib
+
 USERNAME = 'u'
 PASSWORD = '1'
 
@@ -81,5 +83,10 @@ DOMAIN_USER_PASSWORD = '1'
 
 POSTGRES_PORT = '5440'
 POSTGRES_DATA_PATH = f'/var/lib/postgresql/{VERSION_PG}/contrprimer'
+
+PGPOOL_HOSTNAME = f'pgpool.{DOMAIN}'
+PGPOOL_PCP_USER = 'pgpool'
+PGPOOL_PASSWORD = '1'
+PGPOOL_PASSWORD_MD5 = hashlib.md5((PGPOOL_PASSWORD+PGPOOL_PCP_USER).encode()).hexdigest()
 
 PROVISION_PATH = './provision/provision.sh'

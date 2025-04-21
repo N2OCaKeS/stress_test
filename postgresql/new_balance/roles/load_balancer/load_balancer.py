@@ -1,5 +1,5 @@
 from allta import VBox
-from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD, VERSION_OS
+from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD, VERSION_OS, PGPOOL_PASSWORD_MD5, PGPOOL_PCP_USER, PGPOOL_PASSWORD, PGPOOL_HOSTNAME
 from roles.load_balancer.keepalived import keepalived
 
 
@@ -32,7 +32,7 @@ class LoadBalancer():
                     'old': '#pcp_listen_addresses = \'localhost\'',
                     'new': 'pcp_listen_addresses = \'*\''
                 },
-                
+
                 # Настройки проверки состояния
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -59,7 +59,7 @@ class LoadBalancer():
                     'old': '#health_check_retry_delay = 1',
                     'new': 'health_check_retry_delay = 1'
                 },
-                
+
                 # Настройки репликации
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -71,7 +71,7 @@ class LoadBalancer():
                     'old': '#sr_check_user = \'nobody\'',
                     'new': 'sr_check_user = \'postgres\''
                 },
-                
+
                 # Настройки failover/failback
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -88,14 +88,19 @@ class LoadBalancer():
                     'old': '#failover_on_backend_error = on',
                     'new': 'failover_on_backend_error = on'
                 },
-                
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#auto_failback = off',
+                    'new': 'auto_failback = on'
+                },
+
                 # Настройки аутентификации
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#enable_pool_hba = off',
                     'new': 'enable_pool_hba = on'
                 },
-                
+
                 # Настройки балансировки
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -106,7 +111,8 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#disable_load_balance_on_write = \'transaction\'',
                     'new': 'disable_load_balance_on_write = \'transaction\''
-                }
+                },
+
             ]
         }
 
@@ -151,11 +157,13 @@ EOF
                     'signal set': '',
                     'signal get': ''
                 },
-                'configure pcp':{     # пароль 1                
-                    'command': "echo 'pgpool:c4ca4238a0b923820dcc509a6f75849b' | sudo tee -a /etc/pgpool2/pcp.conf",
+                'configure pcp': {     
+                    'command': f"echo '{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD_MD5}' | sudo tee -a /etc/pgpool2/pcp.conf && \
+                                        sudo su -c 'printf \"{PGPOOL_HOSTNAME}:9898:{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD}\n\" > /tmp/.pcppass && \
+                                        sudo chmod 600 /tmp/.pcppass",
                     'signal set': '',
                     'signal get': ''},
-                    
+
                 'config pool_hba': {
                     'command': "echo -e 'host all all 127.0.0.1/32 trust\nhost all all 0.0.0.0/0 trust' | sudo tee -a /etc/pgpool2/pool_hba.conf",
                     'signal set': '',

@@ -16,12 +16,7 @@ class LoadBalancer():
 
         sed = {
             'g_load_balancer': [
-                # {
-                #     # pool_hba.conf
-                #     'path': f'{pgpool_config_path}/pool_hba.conf',
-                #     'old': 'host    all         all         127.0.0.1/32          trust',
-                #     'new': 'host    all         all         0.0.0.0/0          trust'
-                # },
+                # Базовые параметры подключения
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#listen_addresses = \'localhost\'',
@@ -37,16 +32,8 @@ class LoadBalancer():
                     'old': '#pcp_listen_addresses = \'localhost\'',
                     'new': 'pcp_listen_addresses = \'*\''
                 },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#enable_pool_hba = off',
-                    'new': 'enable_pool_hba = on'
-                },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#load_balance_mode = on',
-                    'new': 'load_balance_mode = on'
-                },
+                
+                # Настройки проверки состояния
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_period = 0',
@@ -65,63 +52,15 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_max_retries = 0',
-                    'new': 'health_check_max_retries = 5'
+                    'new': 'health_check_max_retries = 3'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_retry_delay = 1',
                     'new': 'health_check_retry_delay = 1'
                 },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#failover_command = \'\'',
-                    'new': 'failover_command = \'sudo /tmp/pgpool.sh OVER %m %H %R %d %h %M %N\''
-                },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#failback_command = \'\'',
-                    # TODO Проверить скрипт failback
-                    'new': 'failback_command = \'sudo /tmp/pgpool.sh BACK %m %H %R %d %h %M %N\''
-                },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#auto_failback = off',
-                    'new': 'auto_failback = on'
-                },
-
-                # replicate_select = off
-
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#replicate_select = off',
-                    'new': 'replicate_select = off'
-                },
-
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#disable_load_balance_on_write = \'transaction\'',
-                    'new': 'disable_load_balance_on_write = \'transaction\''
-                },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#delegate_IP = \'\'',
-                    'new': 'delegate_IP = \'10.177.103.131\''
-                },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#if_cmd_path = \'/sbin\'',
-                    'new': 'if_cmd_path = \'/sbin\''
-                },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#if_up_cmd = \'/usr/bin/sudo /sbin/ip addr add $_IP_$/24 dev eth0 label eth0:0\'',
-                    'new': 'if_up_cmd = \'/usr/bin/sudo /sbin/ip addr add $_IP_$/24 dev eth0 label eth0:0\''
-                },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\'',
-                    'new': 'if_down_cmd = \'/usr/bin/sudo /sbin/ip addr del $_IP_$/24 dev eth0\''
-                },  
+                
+                # Настройки репликации
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#sr_check_period = 10',
@@ -132,31 +71,42 @@ class LoadBalancer():
                     'old': '#sr_check_user = \'nobody\'',
                     'new': 'sr_check_user = \'postgres\''
                 },
+                
+                # Настройки failover/failback
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#sr_check_password = \'\'',
-                    'new': 'sr_check_password = \'\''
+                    'old': '#failover_command = \'\'',
+                    'new': 'failover_command = \'/tmp/pgpool.sh OVER %d %H %P %m %M %N\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#sr_check_database = \'postgres\'',
-                    'new': 'sr_check_database = \'postgres\''
+                    'old': '#follow_primary_command = \'\'',
+                    'new': 'follow_primary_command = \'/tmp/pgpool.sh BACK %d %H %P %m %M %N\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#pool_passwd = \'pool_passwd\'',
-                    'new': 'pool_passwd = \'pool_passwd\''
+                    'old': '#failover_on_backend_error = on',
+                    'new': 'failover_on_backend_error = on'
+                },
+                
+                # Настройки аутентификации
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#enable_pool_hba = off',
+                    'new': 'enable_pool_hba = on'
+                },
+                
+                # Настройки балансировки
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#load_balance_mode = on',
+                    'new': 'load_balance_mode = on'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#pcp_port = 9898',
-                    'new': 'pcp_port = 9898'
-                },
-                # {
-                #     'path': f'{pgpool_config_path}/pgpool.conf',
-                #     'old': '',
-                #     'new': ''
-                # },
+                    'old': '#disable_load_balance_on_write = \'transaction\'',
+                    'new': 'disable_load_balance_on_write = \'transaction\''
+                }
             ]
         }
 
@@ -166,7 +116,7 @@ class LoadBalancer():
         scp = {
             'g_load_balancer': {
                 'mode': 'push',
-                'path_host': f'./roles/load_balancer/template/pgpool_{VERSION_OS}.sh',
+                'path_host': f'./roles/load_balancer/template/pgpool.sh',
                 'path_vm': '/tmp/pgpool.sh'
             }
         }
@@ -196,7 +146,7 @@ EOF
 
         start_pgpool = {
             'g_load_balancer': {
-                'set chmod failoverscripts': {
+                'set chmod failover scripts': {
                     'command': 'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log && sudo touch /var/log/pgpool_failover.log && sudo chown -R postgres:postgres /var/log/pgpool_failover.log',
                     'signal set': '',
                     'signal get': ''
@@ -205,6 +155,7 @@ EOF
                     'command': "echo 'pgpool:c4ca4238a0b923820dcc509a6f75849b' | sudo tee -a /etc/pgpool2/pcp.conf",
                     'signal set': '',
                     'signal get': ''},
+                    
                 'config pool_hba': {
                     'command': "echo -e 'host all all 127.0.0.1/32 trust\nhost all all 0.0.0.0/0 trust' | sudo tee -a /etc/pgpool2/pool_hba.conf",
                     'signal set': '',
@@ -223,7 +174,7 @@ EOF
                     'signal get': ''
                 },
                 'backend hosts': {
-                    'command': f'sudo tee -a {pgpool_config_path}/pgpool.conf <<EOF\n{new_block}',
+                    'command': f'echo {new_block} | sudo tee -a {pgpool_config_path}/pgpool.conf',
                     'signal set': 'set backend host',
                     'signal get': ''
                 },

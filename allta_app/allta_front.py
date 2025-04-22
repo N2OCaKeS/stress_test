@@ -218,10 +218,12 @@ def reboot(stand):
     if stand == "stand1" or stand == "stand2" or stand == "stand6" or stand == "stand7" or stand == "stand8" or stand == "stand9":
         ssh_command('sudo reboot', 
                     stand_ip=stands_ip[stand])
+        return {"status": "success", "message": "ssh reboot entered"}, 200
     elif stand == "stand3" or stand == "stand4" or stand == "stand5":
         ipmi = BootOrder(stand=stand)
         ipmi.reset()
-    return {"status": "success"}, 200
+        return {"status": "success", "message": "ipmi reboot entered"}, 200
+    else: return {"status": "success", "message": f"stand {stand} not detected"}, 404
    
 
 @app.route('/poweroff/<stand>', methods=['POST'])

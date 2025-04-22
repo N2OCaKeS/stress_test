@@ -5,18 +5,16 @@ import pandas as pd
 from datetime import datetime
 from collections import defaultdict
 from numpy import where
-import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
-from libs.virtlib import response
+from libs.dockerlib import response
 from libs.libpublic import Public
-from libs.libstatistics import VirtStatistics
 from time import sleep, ctime
-from docker.libs.virt_conf import JIRA_URL, CONFLUENCE_URL
+from docker.docker_conf import JIRA_URL, CONFLUENCE_URL
 
 
-class UploaderZC(Public, VirtStatistics):
+class UploaderZC(Public):
 
     def __init__(self,
                  folder_tree_id=None,
@@ -75,11 +73,6 @@ class UploaderZC(Public, VirtStatistics):
                                test_cycle_name=self.TCYC,
                                test_case_name=self.TCAS,
                                basic_auth=self.BA)
-
-        if self.statistics == True:
-            statistics = VirtStatistics(username=self.UN, 
-                                        token=self.CT)
-            statistics.update_statistics()
 
         if status == 'pass':
             status_code = 91

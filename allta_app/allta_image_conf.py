@@ -63,6 +63,7 @@ def parent_page_list():
                 'FreeIPA':         ['FreeIPA auth'],
                 'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
                 'Apache':          ['apache-rp'],
+                'Docker':          ['docker-wa'],
                 'Qemu/KVM/Libvirt':['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong']}
 
     parent_page_list = {
@@ -140,7 +141,8 @@ branches = {
     'Steal time smolensk':'virt',
     'FIO benchmark':'virt',
     'Virt UnixBench':'virt',
-    'vPingPong':'virt'
+    'vPingPong':'virt',
+    'docker web-application':'docker'
 }
 
 
@@ -196,7 +198,8 @@ tests = {
     'Steal time smolensk':'steal time-sm',
     'FIO benchmark':'FIO',
     'Virt UnixBench':'vUnixBench',
-    'vPingPong':'vPingPong'
+    'vPingPong':'vPingPong',
+    'docker web-application':'docker-wa'
 }
 
 
@@ -228,7 +231,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
-              'digsig-cdt']
+              'digsig-cdt', 'docker-wa']
 
 
 
@@ -293,7 +296,7 @@ def releases_list():
 def stp_version():
     return sorted(list(set(rc_list() + releases_list())))
 
-testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
+testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS', 'docker-wa']
 testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
                                 'parsec impact-fs aud-off', 'apache-rp']
 testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2', 'syslog-ng-cwl',
@@ -301,7 +304,7 @@ testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla
 testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom', 'digsig-cdt']
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
-                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS']
+                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS', 'docker-wa']
 MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'FreeIPA auth', 'syslog-ng-cwl',
                       'psql parsec', 'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom', 'digsig-cdt'] #'psql balance',
 
@@ -351,7 +354,8 @@ tests_case_zefir_key = {
     'OCFS2':'BT-T7848',
     'steal time-sm':'BT-T15186',
     'psql oom':'BT-T16134',
-    'digsig-cdt': 'BT-T16391'
+    'digsig-cdt':'BT-T16391',
+    'docker-wa':'BT-T16564'
 }
 
 
@@ -377,7 +381,7 @@ testname_columns = {
                     'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
                     'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm',
                     'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl',
-                    'DIGSIG. Check digsig time': 'DIGSIG-cdt'
+                    'DIGSIG. Check digsig time':'DIGSIG-cdt', 'docker web-application':'Docker-WA'
                     }
 
 

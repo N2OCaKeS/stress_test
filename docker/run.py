@@ -5,9 +5,8 @@ from docker_conf import VENV_PATH
 from libs.zefir import UploaderZC
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-t", "--test",
-                    type=str,
-                    choices=["web"],
+parser.add_argument("-wa",
+                    action='store_true',
                     help="Choose test name.",
                     dest="TEST")
 parser.add_argument('-u', '--username',
@@ -120,7 +119,7 @@ if __name__ == "__main__":
         TODO Здесь запускаем тесты
     """
 
-    if args.TEST == "web":
+    if args.TEST:
         run_command("cd ./site && bash start.sh final")
         run_command(f"source {VENV_PATH}/activate && python3 report.py")
         run_command(f"source {VENV_PATH}/activate && python3 publish.py")

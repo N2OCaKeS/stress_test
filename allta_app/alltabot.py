@@ -243,7 +243,7 @@ def acs_create_snapshot(version: str, stand):
                                                  "version_id": id_new_version}) 
         
     if version.startswith('1.8'):
-        restore_version = '1.8.0'
+        restore_version = '1.8.1.6'
     elif version.startswith('1.7'):
         restore_version = '1.7.5'
     

@@ -30,15 +30,7 @@ EOF
 # test packages
 sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 docker.io docker-compose nginx   build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace libcurl4-gnutls-dev  python3-requests liblzma-dev
 
-if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-    sudo apt-get install -y linux-tools-6.1*-generic
-    sudo apt-get install -y linux-tools-common-6.*
-else
-    sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
-    sudo apt-get install -y linux-tools-5.15*-lowlatency
-fi
-
-
+sudo apt-get install -y linux-tools-`uname -r`
 
 cd /home/u/git/stress_test/*/site/
 sudo mkdir /home/u/python

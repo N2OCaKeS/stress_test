@@ -11,4 +11,7 @@ REPO_DRBL = "deb http://free.nchc.org.tw/drbl-core drbl stable"
 
 KERNEL_VERSION = "5.10.0-34"
 
+PATH_MACADDRS = "/home/u/clonezilla/macaddrs.txt"
+PATH_IMAGES = "/home/partimag"
 
+FIRST_ADDRESS_IN_LAST_OCTET = '17'

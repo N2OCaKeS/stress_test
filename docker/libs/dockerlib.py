@@ -1,5 +1,5 @@
 import requests
-from ..docker_conf import JIRA_URL, CONFLUENCE_URL
+from docker_conf import JIRA_URL, CONFLUENCE_URL
 
 def response():
     try:

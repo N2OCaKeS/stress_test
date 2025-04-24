@@ -4,6 +4,7 @@ from os import path
 import argparse
 from docker_conf import VENV_PATH
 from libs.zefir import UploaderZC
+from libs.libtable import Report
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-wa",
@@ -121,9 +122,11 @@ if __name__ == "__main__":
     """
 
     if args.TEST:
+        # Start
         run_command("cd ./site && bash start.sh final")
-        run_command(f"source {VENV_PATH}/activate && python3 report.py")
-        run_command(f"source {VENV_PATH}/activate && python3 publish.py")
+        # Total Rating / HTML
+        report = Report()
+        report.wa_report()
     else: "Тест не найден"
 
     uzs.public = True

@@ -23,7 +23,8 @@ class Public:
                  test_cycle_version=None,
                  storage=False,
                  kernel_check=False,
-                 balance=False):
+                 balance=False,
+                 testname=""):
     
         self.username = username
         self.token = token
@@ -36,6 +37,7 @@ class Public:
         self.storage = storage
         self.kernel_check = kernel_check
         self.balance = balance
+        self.testname = testname
 
         self.stands = {
             '1':{'grade':'low(141)',

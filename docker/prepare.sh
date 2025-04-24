@@ -34,17 +34,12 @@ for pkg in docker.io docker-compose; do
     sudo apt-get remove needrestart -y
 done
 
-<<<<<<< HEAD
-sudo apt-get install -y linux-tools-`uname -r`
-=======
 # test packages
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 nginx build-essential zlib1g-dev wget 
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev 
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libbz2-dev libffi-dev strace libcurl4-gnutls-dev  python3-requests liblzma-dev
 sudo apt-get install -y linux-tools-`uname -r`
 
-
->>>>>>> c76b391635585d5a7f32bc2425f899761cfef1eb
 
 cd /home/u/git/stress_test/*/site/
 sudo mkdir /home/u/python

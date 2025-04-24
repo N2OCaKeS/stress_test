@@ -7,7 +7,7 @@ results/
 push_results.py
 releases.json
 publish.py
-
+JIRA_ERROR.log
 templates/docker/
 templates/server/
 templates/locust/

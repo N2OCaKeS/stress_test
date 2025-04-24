@@ -47,11 +47,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libbz2-dev libffi-dev str
 sudo apt-get install -y linux-tools-`uname -r`
 
 
-<<<<<<< HEAD
-=======
->>>>>>> c76b391635585d5a7f32bc2425f899761cfef1eb
->>>>>>> dev_docker
-
 cd /home/u/git/stress_test/*/site/
 sudo mkdir /home/u/python
 cd /home/u/python

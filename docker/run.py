@@ -15,4 +15,4 @@ args = parser.parse_args()
 with open(f'/home/u/{args.NAME}', 'r') as r:
     dates = r.read()
 
-subprocess.run(f'sudo {VENV_PATH} sng_run.py {dates}', shell=True)
+subprocess.run(f'sudo {VENV_PATH} wa_run.py {dates}', shell=True)

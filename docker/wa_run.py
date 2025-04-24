@@ -127,7 +127,7 @@ if __name__ == "__main__":
     else: "Тест не найден"
 
     uzs.public = True
-    uzs.statistics = True
+    uzs.statistics = False
     uzs.upload_test_cycle_status(zefir_status='pass')
                
 if path.isfile('libs/zefir.log'):

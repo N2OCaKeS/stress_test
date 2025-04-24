@@ -34,12 +34,6 @@ for pkg in docker.io docker-compose; do
     sudo apt-get remove needrestart -y
 done
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-sudo apt-get install -y linux-tools-`uname -r`
-=======
->>>>>>> dev_docker
 # test packages
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 nginx build-essential zlib1g-dev wget 
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev 

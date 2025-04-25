@@ -23,6 +23,7 @@ from libs.liballta import (index_page,
                           ssh_command,
                           background_task_main,
                           update_settings_block,
+                          update_changelog_block,
                           get_kernels_from_rc,
                           backup_snapshot,
                           backup_vm_snapshot,
@@ -243,6 +244,11 @@ def poweron(stand):
 def ilo_console_caller(stand):
     icc = iLOConsoleCaller(stand_number=stand)
     icc.ilo_console_loader()
+
+
+@app.route('/update_changelog_block_<version>', methods=['GET', 'POST'])
+def update_block_changelog(version):
+    return update_changelog_block(version)
 
 
 @app.route('/update_block_<part>', methods=['GET', 'POST'])

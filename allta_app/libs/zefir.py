@@ -12,17 +12,14 @@ from sys import exit
 from atlassian import Confluence
 from os import remove, path
 import re
-from allta_image_conf import(test_run_stands,
-                              test_run_modes,
-                              tests_case_zefir_key,
-                              testcase_orel_low_stand3,
-                              testcase_orel_middle_stand4,
-                              testcase_smolensk_low_stand3,
-                              testcase_smolensk_middle_stand4,
-                              testname_columns,
-                              JIRA_URL,
-                              CONFLUENCE_URL,
-                              startswith_kernel_list)
+from allta_image_conf import(changelog_testcycle_handler,
+                             test_run_stands,
+                             test_run_modes,
+                             tests_case_zefir_key,
+                             testname_columns,
+                             JIRA_URL,
+                             CONFLUENCE_URL,
+                             startswith_kernel_list)
 
 
 
@@ -446,7 +443,8 @@ class ZefirTestRun:
                  release=None,
                  rc=False,
                  kernel_repo=None,
-                 kernel_vers=None):
+                 kernel_vers=None,
+                 final=None):
         
 
 
@@ -465,14 +463,11 @@ class ZefirTestRun:
         #self.kernel_vers = kernel_vers
         #self.kernel_repo = kernel_repo
         self.use_kernels = use_kernels
-        #self.testcase_orel = testcase_orel
-        #self.testcase_orel_stand2 = testcase_orel_stand2
-        #self.testcase_smolensk = testcase_smolensk
-        #self.testcase_smolensk_stand2 = testcase_smolensk_stand2
-        self.testcase_orel_low_stand3 = testcase_orel_low_stand3
-        self.testcase_smolensk_low_stand3 = testcase_smolensk_low_stand3
-        self.testcase_orel_middle_stand4 = testcase_orel_middle_stand4
-        self.testcase_smolensk_middle_stand4 = testcase_smolensk_middle_stand4
+        orel_low_stand3, smolensk_low_stand3, orel_middle_stand4, smolensk_middle_stand4 = changelog_testcycle_handler(rc='.1', final=final)
+        self.testcase_orel_low_stand3 = orel_low_stand3
+        self.testcase_smolensk_low_stand3 = smolensk_low_stand3
+        self.testcase_orel_middle_stand4 = orel_middle_stand4
+        self.testcase_smolensk_middle_stand4 = smolensk_middle_stand4
         self.stands = stands
         self.modes = test_run_modes
         self.tests_case_zefir_key = tests_case_zefir_key

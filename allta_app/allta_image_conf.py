@@ -1,4 +1,6 @@
 import json
+import requests
+
 
 def get_allta_conf():
     with open('./allta_conf.json', 'r') as r:
@@ -54,18 +56,18 @@ modes = {
 #################################################################################################################################################
 #Симлинки на страницы с местами хранения результатов
 #################################################################################################################################################
-def parent_page_list():
-    tests_list = {'PostgreSQL':    ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
-                                    'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
-                'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
-                'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
-                'UnixBench':       ['unix', 'unix parsec'],
-                'FreeIPA':         ['FreeIPA auth'],
-                'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
-                'Apache':          ['apache-rp'],
-                'Docker':          ['docker-wa'],
-                'Qemu/KVM/Libvirt':['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong']}
+tests_list = {'PostgreSQL':    ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
+                                'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
+            'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
+            'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
+            'UnixBench':       ['unix', 'unix parsec'],
+            'FreeIPA':         ['FreeIPA auth'],
+            'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
+            'Apache':          ['apache-rp'],
+            'Docker':          ['docker-wa'],
+            'Qemu/KVM/Libvirt':['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong']}
 
+def parent_page_list():
     parent_page_list = {
         key:{value:f'STRESS_report {key} ⬝ {topic}' for topic in tests_list for value in tests_list[topic]}  
                         for key in get_allta_conf()['release_version']
@@ -296,12 +298,37 @@ def releases_list():
 def stp_version():
     return sorted(list(set(rc_list() + releases_list())))
 
-testcase_orel_low_stand3 = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS', 'docker-wa']
-testcase_smolensk_low_stand3 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
-                                'parsec impact-fs aud-off', 'apache-rp']
-testcase_orel_middle_stand4 = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2', 'syslog-ng-cwl',
-                               'psql balance', 'FreeIPA auth', 'steal time', 'FIO', 'vUnixBench', 'vPingPong'] #'tantor vanilla', 'tantor kernels'
-testcase_smolensk_middle_stand4 = ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom', 'digsig-cdt']
+def changelog_testcycle_handler(rc: str, final=False) -> tuple:
+    def get_topic() -> list:
+        request = f'http://10.177.103.10:8989/get_components_for_testrun_by_changelog?astra_linux_build_version={rc}&first_level_dependencies=true&return_dct_component_with_packages=false'
+        response = requests.get(request).json()
+        print(response)
+        print(response['result'])
+        if response['status'] != 'success':
+            return []
+        else: return response['result']
+
+
+    def handler(topic: list) -> tuple:
+        """
+        Перечень тестов, разделенных по уровням защищенности и стендам
+        """
+        topics = {
+            'orel_low_stand3':        ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS', 'docker-wa'],
+            'smolensk_low_stand3':    ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
+                                    'parsec impact-fs aud-off', 'apache-rp'],
+            'orel_middle_stand4':     ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2', 'syslog-ng-cwl',
+                                    'psql balance', 'FreeIPA auth', 'steal time', 'FIO', 'vUnixBench', 'vPingPong'], #'tantor vanilla', 'tantor kernels'
+            'smolensk_middle_stand4': ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom', 'digsig-cdt']}
+
+
+        if rc.endswith('.1') or final:
+            return tuple(topics.values())
+        else:
+            return tuple([test for top in topic for test in tests_list[top] if test in topics[i]] for i in topics.keys())
+
+    return handler(topic=get_topic())
+
 
 LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
                    'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS', 'docker-wa']

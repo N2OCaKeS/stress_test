@@ -202,7 +202,7 @@ def run_tests(version, stand):
     run_command_on_stand(list(stand)[-1], http=False)
 
 
-def create_test_run(version: str):
+def create_test_run(version: str, final=None):
     check_len_version = version.split('.')
     if len(check_len_version) == 4 and check_len_version[3] != 'UU':
         release = '.'.join(check_len_version[:3]) 
@@ -215,7 +215,8 @@ def create_test_run(version: str):
     test_run = ZefirTestRun(use_kernels=kernels,
                             stands=stands,
                             release=release,
-                            rc=version)
+                            rc=version,
+                            final=final)
     test_run.creater()
 
 
@@ -661,7 +662,7 @@ async def addrc(message: types.Message, command: CommandObject):
                             '/addrc <RC> <password>')
         await message.reply(**content.as_kwargs())
         return
-    if password == 'bendik$':
+    if password == __password:
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию RC: {rc}')
         mod_allta_conf(rc)
         #stand3, stand4 = acs_create_snapshot(rc)
@@ -689,7 +690,7 @@ async def addrc(message: types.Message, command: CommandObject):
                             '/adduurc <RC> <password> <UU build version>')
         await message.reply(**content.as_kwargs())
         return
-    if password == 'bendik$':
+    if password == __password:
         await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию RC: {rc}')
         mod_allta_conf(rc, uu_value)
         #stand3, stand4 = acs_create_snapshot(rc)
@@ -717,7 +718,7 @@ async def addrc(message: types.Message, command: CommandObject):
                             '/acs <RC> <stand#> <password>')
         await message.reply(**content.as_kwargs())
         return
-    if password == 'bendik$':
+    if password == __password:
         await message.reply(f'✅ Доступ разрешен\nСоздаю снимок: {rc}')
         if stand == 'stand3':
             server = 'LowServer'
@@ -749,7 +750,7 @@ async def addrc(message: types.Message, command: CommandObject):
                             '/update_stp <RC> <password>')
         await message.reply(**content.as_kwargs())
         return
-    if password == 'bendik$':
+    if password == __password:
         await message.reply(f'✅ Доступ разрешен\nОбновляю СТП: {rc}')
         update_stp(rc)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nОбновление СТП: "{rc}"'
@@ -763,19 +764,22 @@ async def addrc(message: types.Message, command: CommandObject):
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
     password = None
+    final = None
     if command.args is None:
         await message.reply('❌ Укажите версию RC и пароль')
         return
     try:
-        rc, password = command.args.split(' ', maxsplit=1)
+        rc, password, final = command.args.split(' ', maxsplit=2)
     except ValueError:
         content = Text('❌ Укажите версию RC и пароль. Пример:\n'
-                            '/add_testrun <RC> <password>')
+                            '/add_testrun <RC> <password> <final>')
         await message.reply(**content.as_kwargs())
         return
-    if password == 'bendik$':
+    if password == __password:
         await message.reply(f'✅ Доступ разрешен\nСоздаю тестовый прогон: {rc}')
-        create_test_run(rc)
+        if final == 'final':
+            create_test_run(rc, final=True)
+        else: create_test_run(rc)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nСоздан тестовый прогон: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
     else: 
@@ -798,7 +802,7 @@ async def addrc(message: types.Message, command: CommandObject):
                             '/runtests <RC> <stand#> <password>')
         await message.reply(**content.as_kwargs())
         return
-    if password == 'bendik$':
+    if password == __password:
         await message.reply(f'✅ Доступ разрешен\nЗапускаю тесты: {rc}')   
         run_tests(rc, stand)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nЗапуск тестов: "{rc}" - "{stand}"'
@@ -822,7 +826,7 @@ async def addrc(message: types.Message, command: CommandObject):
                             '/runtests <RC> <password>')
         await message.reply(**content.as_kwargs())
         return
-    if password == 'bendik$':
+    if password == __password:
         await message.reply(f'✅ Доступ разрешен\nЗапускаю тесты: {rc}')   
         run_tests(rc, 'stand3')
         sleep(1)

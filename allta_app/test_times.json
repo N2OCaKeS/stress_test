@@ -60,7 +60,8 @@
             "EXT4 parsec": "1:07:49",
             "XFS parsec": "1:08:37",
             "unix parsec": "1:27:59",
-            "Total time": "0:00:00"
+            "Total time": "0:00:00",
+            "docker-wa": "1:02:05"
         },
         "stand4": {
             "FIO": "2:23:15",

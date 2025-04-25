@@ -837,6 +837,17 @@ def background_task_main():
 #        sleep(3)
 
 
+def update_changelog_block(rc):
+    request = f'http://10.177.103.10:8989/get_components_for_testrun_by_changelog?astra_linux_build_version={rc}&first_level_dependencies=true&return_dct_component_with_packages=false'
+    response = requests.get(request).json()
+    print(response)
+    print(response['result'])
+    status = response['status']
+    result = response['result']
+    return jsonify(status=status,
+                   result=result)
+
+
 def update_settings_block():
 
     test_list, releas_list, kernel_list = create_args('main')

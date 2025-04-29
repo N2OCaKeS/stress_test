@@ -1,8 +1,20 @@
 import os
 import re
 import sys
+import argparse
 import requests
-from conf import REPO_DEBIAN_BUSTER_10, REPO_DRBL, REPO_DEBIAN_BULLSEYE_11, KERNEL_VERSION
+import subprocess
+from conf import REPO_DEBIAN_BUSTER_10, REPO_DRBL, REPO_DEBIAN_BULLSEYE_11, KERNEL_VERSION, REPO_DEBIAN_BOOKWORM_12
+
+DESCRIPTION = ""
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('--uuid',
+                    action='store',
+                    required=True,
+                    help='UUID storage',
+                    dest='UUID')
+args = parser.parse_args()
+
 
 def check_ext_exist_repo():
     exist = False
@@ -81,7 +93,15 @@ def change_kernel_default(uuid="cc5b7c98-6dec-4b0c-96f3-2b80f71bddf7"):
             else:
                 file.write(line)
     os.system("update-grub")
-    
+
+def check_qty_interfaces():
+    command = "ip link show | grep -c '^[0-9]'"
+    result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, text=True)
+    count = int(result.stdout.strip())
+    if count > 2:
+        print(f"{RED}Количество интерфейсов больше: 2\nДолжен быть только lo и стандартный типо eth0{RESET}")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     RED = "\033[91m"
@@ -96,6 +116,8 @@ if __name__ == "__main__":
     if not check_astra_version():
         print(f"{RED}Указана версия не 1.7, а скрипт для 1.7!{RESET}")
         sys.exit(1)
+
+    check_qty_interfaces()
     
     write_repo_in_sources_list(REPO_DEBIAN_BUSTER_10)
     write_repo_in_sources_list(REPO_DRBL)
@@ -106,6 +128,7 @@ if __name__ == "__main__":
     # os.system("sudo apt-mark hold firmware-linux-free")
     os.system(f"sudo apt update && sudo apt install --no-install-recommends linux-image-{KERNEL_VERSION}-amd64")
     # install_packages(pkgs=f"linux-image-{KERNEL_VERSION}-amd64")
-    change_kernel_default(uuid="a753e0cc-d2e0-47d0-ae5b-82ad18604e69")
+    change_kernel_default(uuid=args.UUID)
     comment_repo(repo=REPO_DEBIAN_BULLSEYE_11)
     write_repo_in_sources_list(REPO_DEBIAN_BUSTER_10)
+    

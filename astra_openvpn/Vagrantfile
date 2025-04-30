@@ -15,9 +15,11 @@ Vagrant.configure("2") do |config|
   ]
 
   vpn_nodes.each do |vm|
+    config.vm.network :forwarded_port, guest: 22, host: 2222, disabled: true
     config.vm.define vm[:name] do |node|
-      node.vm.hostname = vm[:hostname]
 
+      node.vm.hostname = vm[:hostname]
+      node.ssh.host = vm[:ip]
       # Сеть VPN-кластера (ручной IP)
       node.vm.network "private_network",
                       ip: vm[:ip],

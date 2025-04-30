@@ -26,6 +26,23 @@ del_v() {
 
     sudo vagrant destroy -f
     sudo vagrant box remove -f
+
+
+    # Переопределить сетку
+    virsh net-undefine vpn-net
+    virsh net-undefine pooler-net
+
+    # Удалить интерфейсы
+    sudo ip link delete virbr6
+    sudo ip link delete virbr7
+    # Или
+    virsh --connect qemu:///session net-undefine pooler-net
+    virsh --connect qemu:///session net-undefine vpn-net
+    sudo virsh net-destroy vpn-net
+    sudo virsh net-destroy pooler-net
+    sudo systemctl restart libvirtd
+    sudo virsh net-info vpn-net
+    sudo virsh net-info pooler-net
 }
 
 check_box() {
@@ -36,11 +53,27 @@ check_box() {
 
 }
 
+start_nets() {
+    export LIBVIRT_DEFAULT_URI="qemu:///system"
+
+    sudo virsh net-define lv-nets/vpn-net.xml
+    sudo virsh net-define lv-nets/pooler-net.xml
+
+    sudo virsh net-start vpn-net
+    sudo virsh net-autostart vpn-net
+
+    sudo virsh net-start pooler-net
+    sudo virsh net-autostart pooler-net
+}
+
 case $1 in 
     delete)
     del_v
     ;;
     cb)
     check_box
+    ;;
+    ss)
+    start_nets
     ;;
 esac

@@ -4,7 +4,7 @@ import sys
 import argparse
 import requests
 import subprocess
-from conf import REPO_DEBIAN_BUSTER_10, REPO_DRBL, REPO_DEBIAN_BULLSEYE_11, KERNEL_VERSION, REPO_DEBIAN_BOOKWORM_12
+from conf import REPO_DRBL, REPO_DEBIAN_BUSTER_10, REPO_DEBIAN_BULLSEYE_11, REPO_DEBIAN_BOOKWORM_12, KERNEL_VERSION_FOR_17, KERNEL_VERSION_FOR_18
 
 DESCRIPTION = ""
 parser = argparse.ArgumentParser(description=DESCRIPTION)
@@ -25,13 +25,12 @@ def check_ext_exist_repo():
                 exist = True
     return exist
 
-def check_astra_version():
+def check_astra_version(ret_vers=None):
     with open("/etc/astra/build_version", "r") as bv_file:
         build_version = bv_file.readline()
-        if build_version.startswith("1.7"):
-            return True
-        else:
-            return False
+        if build_version.startswith(("1.7", "1.8")):
+            return build_version if ret_vers else True
+        return False
 
 def write_repo_in_sources_list(repo):
     with open("/etc/apt/sources.list", "a") as sourceslist_file:
@@ -54,7 +53,7 @@ def wget_key_drbl():
         print(f"Произошла ошибка: {e}")
         print("Убедитесь, что скрипт запущен с правами root (sudo).")
 
-def install_packages(pkgs):
+def install_packages(pkgs='ipcalc drbl etherwake disktype udpcast txt2html chntpw nis discover clonezilla'):
     os.system("apt update")
     os.system(f"apt install -y {pkgs}")
 
@@ -80,7 +79,7 @@ def comment_repo(repo):
     with open(file_path, "w") as file:
         file.writelines(updated_lines)
     
-def change_kernel_default(uuid="cc5b7c98-6dec-4b0c-96f3-2b80f71bddf7"):
+def change_kernel_default(kernel, uuid):
     file_path = "/etc/default/grub"
     with open(file_path, "r") as f:
         lines = f.readlines()
@@ -89,7 +88,7 @@ def change_kernel_default(uuid="cc5b7c98-6dec-4b0c-96f3-2b80f71bddf7"):
             if "GRUB_DEFAULT" in line:
                 line.strip()
                 file.write("#" + line)
-                file.write(f"GRUB_DEFAULT=gnulinux-{KERNEL_VERSION}-amd64-advanced-{uuid}\n")
+                file.write(f"GRUB_DEFAULT=gnulinux-{kernel}-amd64-advanced-{uuid}\n")
             else:
                 file.write(line)
     os.system("update-grub")
@@ -114,21 +113,28 @@ if __name__ == "__main__":
         print(f"{GREEN}Extended репозиторий на месте{RESET}")
     
     if not check_astra_version():
-        print(f"{RED}Указана версия не 1.7, а скрипт для 1.7!{RESET}")
+        print(f"{RED}Указана версия не 1.7 и не 1.8, а скрипт для 1.7 или для 1.8!{RESET}")
         sys.exit(1)
 
     check_qty_interfaces()
     
-    write_repo_in_sources_list(REPO_DEBIAN_BUSTER_10)
     write_repo_in_sources_list(REPO_DRBL)
     wget_key_drbl()
-    install_packages(pkgs="ipcalc drbl etherwake disktype udpcast txt2html chntpw nis discover clonezilla")
-    comment_repo(repo=REPO_DEBIAN_BUSTER_10)
-    write_repo_in_sources_list(REPO_DEBIAN_BULLSEYE_11)
-    # os.system("sudo apt-mark hold firmware-linux-free")
-    os.system(f"sudo apt update && sudo apt install --no-install-recommends linux-image-{KERNEL_VERSION}-amd64")
-    # install_packages(pkgs=f"linux-image-{KERNEL_VERSION}-amd64")
-    change_kernel_default(uuid=args.UUID)
-    comment_repo(repo=REPO_DEBIAN_BULLSEYE_11)
-    write_repo_in_sources_list(REPO_DEBIAN_BUSTER_10)
+    
+    if "1.7" in check_astra_version(ret_vers=True):
+        write_repo_in_sources_list(REPO_DEBIAN_BUSTER_10)
+        install_packages()
+        comment_repo(repo=REPO_DEBIAN_BUSTER_10)
+        write_repo_in_sources_list(REPO_DEBIAN_BULLSEYE_11)
+        os.system("sudo apt-mark hold firmware-linux-free")
+        os.system(f"sudo apt update && sudo apt install --no-install-recommends linux-image-{KERNEL_VERSION_FOR_17}-amd64")
+        change_kernel_default(kernel=KERNEL_VERSION_FOR_17, uuid=args.UUID)
+        comment_repo(repo=REPO_DEBIAN_BULLSEYE_11)
+        write_repo_in_sources_list(REPO_DEBIAN_BUSTER_10)
+    
+    if "1.8" in check_astra_version(ret_vers=True):
+        write_repo_in_sources_list(REPO_DEBIAN_BOOKWORM_12)
+        install_packages()
+        os.system(f"sudo apt update && sudo apt install --no-install-recommends linux-image-{KERNEL_VERSION_FOR_18}-amd64")
+        change_kernel_default(kernel=KERNEL_VERSION_FOR_18, uuid=args.UUID)
     

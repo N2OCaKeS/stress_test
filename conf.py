@@ -1,6 +1,6 @@
-IP_CS = "192.168.0.108"
-USER_CS = "u"
-PASSWORD = "1"
+# IP_CS = "192.168.0.108"
+# USER_CS = "u"
+# PASSWORD = "1"
 
 REPO_DEBIAN_BUSTER_10 = "deb [trusted=yes] http://ftp.us.debian.org/debian/ buster main"
 REPO_DEBIAN_BULLSEYE_11 = """deb [trusted=yes] http://deb.debian.org/debian bullseye main
@@ -12,7 +12,8 @@ deb-src [trusted=yes] https://deb.debian.org/debian bookworm main non-free-firmw
 """
 REPO_DRBL = "deb http://free.nchc.org.tw/drbl-core drbl stable"
 
-KERNEL_VERSION = "5.10.0-34"
+KERNEL_VERSION_FOR_17 = "5.10.0-34"
+KERNEL_VERSION_FOR_18 = "6.1.0-32" 
 
 PATH_MACADDRS = "/home/u/clonezilla/macaddrs.txt"
 PATH_IMAGES = "/home/partimag"

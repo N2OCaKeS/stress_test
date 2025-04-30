@@ -1,0 +1,1 @@
+sudo apt-get install astra-openvpn-server vim 

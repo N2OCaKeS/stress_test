@@ -1,0 +1,7 @@
+1.8.1.o.box
+tmp_box/
+.vagrant/
+__pycache__
+box-config.json
+dates_stand3.conf
+releases.json

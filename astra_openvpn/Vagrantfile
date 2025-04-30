@@ -1,0 +1,61 @@
+Vagrant.configure("2") do |config|
+  ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
+
+  config.vm.box     = ENV['UPDATE']
+  config.vm.synced_folder "./", "/vagrant", disabled: true
+  config.vm.boot_timeout = 180
+
+  VM_MEMORY = 2048
+  VM_CPUS   = 3
+
+  # Список VPN-нод
+  vpn_nodes = [
+    { name: "vpn1",     hostname: "vpn1.stress.rbt",     ip: "192.168.50.121" },
+    { name: "pooler",   hostname: "pooler.stress.rbt",   ip: "172.16.0.2" }
+  ]
+
+  vpn_nodes.each do |vm|
+    config.vm.define vm[:name] do |node|
+      node.vm.hostname = vm[:hostname]
+
+      # Сеть VPN-кластера (ручной IP)
+      node.vm.network "private_network",
+                      ip: vm[:ip],
+                      libvirt__network_name: "vpn-net"
+
+      # Если это pooler, добавим вторую сеть — DHCP
+      if vm[:name] == "pooler"
+        node.vm.network "private_network",
+                        libvirt__network_name: "pooler-net",
+                        type: "dhcp"
+      end
+
+      # Ресурсы и отключение ожидания IP
+      node.vm.provider :libvirt do |v|
+        v.memory   = VM_MEMORY
+        v.cpus     = VM_CPUS
+        v.disk_bus = "sata"
+        #v.wait_for_lease = false
+      end
+
+      # ===== Провижон отключён временно =====
+      # node.vm.provision "shell",
+      #                    path: "./provision/provision.sh",
+      #                    args: [ vm[:name],
+      #                            ENV['KERNEL'].to_s,
+      #                            ENV['RC'].to_s ]
+
+      # Только pooler: генерация алиасов — тоже отключим
+      # if vm[:name] == "pooler"
+      #   node.vm.provision "shell", inline: <<-SHELL
+      #     IF=$(ip link show | grep -e '^[0-9]: e' | tail -n1 \
+      #          | awk '{print $2}' | sed 's/://g')
+      #     for i in $(seq 1 20000); do
+      #       OCT3=$((i / 256)); OCT4=$((i % 256)); [ $OCT4 -eq 0 ] && OCT4=1
+      #       ip addr add 172.16.$OCT3.$OCT4/17 dev $IF
+      #     done
+      #   SHELL
+      # end
+    end
+  end
+end

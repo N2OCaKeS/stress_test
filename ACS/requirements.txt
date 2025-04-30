@@ -10,3 +10,4 @@ celery
 flower
 python-ilorest-library
 requests
+redfish

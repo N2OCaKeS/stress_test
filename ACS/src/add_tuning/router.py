@@ -17,7 +17,8 @@ from .conf import (COMPONENTS_INSTALL,
                    COMMAND_WGET_GITCLONE_FILE, 
                    COMMAND_WGET_QAINIT_FILE,
                    NETWORK_SETTINGS_TEMPLATE,
-                   COMMON_AUTH_OFF)
+                   COMMON_AUTH_OFF,
+                   GIT_CLONE)
 
 
 router = APIRouter(
@@ -62,7 +63,13 @@ def install_packages(stand = Depends(get_info_stand)):
 
 @router.get("/clone-git-repo/{stand_name}")
 def clone_git_repo(stand = Depends(get_info_stand)):
-    data = remote_cmd(command=CLONE_GIT_REPO, host=stand[3], user=stand[4], passwd=stand[5])
+    remote_cmd(command=CLONE_GIT_REPO, host=stand[3], user=stand[4], passwd=stand[5])
+    remote_put_file(host=stand[3],
+                    remote_path='/home/u/git_clone.py', 
+                    local_path="git_clone.py",
+                    user=stand[4],
+                    passwd=stand[5])
+    remote_cmd(command=GIT_CLONE, host=stand[3], user=stand[4], passwd=stand[5])
     remote_cmd(command=COMMAND_WGET_GITCLONE_FILE, host=stand[3], user=stand[4], passwd=stand[5])
     # print(data)
     return {"ok"}

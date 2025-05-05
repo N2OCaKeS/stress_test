@@ -5,11 +5,11 @@ from abc import abstractmethod
 
 from confluence.confluence_conf import ID_ROOT_PAGES
 from pages import Pages
-from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser
+from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser, DockerParser
 from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew, BugsTable, Annotations
-from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph
+from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph, MainGroupInteractiveGraph
 from sorting import Scale
-from savers import SaveTableToFile, SaveGraph, SaveText
+from savers import SaveTableToFile, SaveGraph, SaveText, SaveInteractiveGraph
 from uploaders import BaseUploader
 from typetest import TypeTest
 from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent, NoAnnotationsForComponent
@@ -155,7 +155,7 @@ class BaseStatistics(Statistics):
           except NoAnnotationsForComponent:
                main_logger.info(f"Не найдено аннотации для компонента {self.stat_title}")
           # Здесь выкладывание в confluence
-          self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
+          # self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 
 
      def create(self):
@@ -338,25 +338,33 @@ class ParsecStatistics(BaseStatistics):
                return False, None
           
 
-# class DigsigStatistics(BaseStatistics):
-#      def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = VirtParser):
-#           super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
-#           self.score_columns = {
-#                "digsig-cdt": ["Подписано", "Неподписано"]
-#           }
-#           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
+class DockerStatstics(BaseStatistics):
+     def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = DockerParser):
+          super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
+          self.score_columns = {
+               "docker-wa": ["Приложение в Docker | Нагрузчик в Docker", "Приложение в Docker | Нагрузчик на хосте", "Приложение на хосте | Нагрузчик на хосте"],
+          }
+          main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
      
-#      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
-#           main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")
-#           saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
-#           columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
-#           try:
-#                score_cols = self.score_columns[type_test]
-#           except KeyError:
-#                score_cols = ["Рейтинг"]
-#           table = MainTable(data=data_for_tables.get(type_test), 
-#                             saver=saver,
-#                             columns=columns,
-#                             columns_scores=score_cols)
-#           df = table.build()
-#           print(df)
+     def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+          main_logger.info(f"Начало уникального функционала для {self.__class__.__name__}")
+          saver = SaveTableToFile(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+          columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
+          try:
+               score_cols = self.score_columns[type_test]
+          except KeyError:
+               score_cols = ["Рейтинг"]
+          table = MainTable(data=data_for_tables.get(type_test), 
+                            saver=saver,
+                            columns=columns,
+                            columns_scores=score_cols)
+          df = table.build()
+          print(df, flush=True)
+          temp = df.to_dict()
+          print(temp, flush=True)
+          if isinstance(df, pd.DataFrame) and not df.empty:
+               if type_test == "docker-wa":
+                    main_grap_docker_saver = SaveInteractiveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+                    print(df.columns, flush=True)
+                    # main_group_inter_graph = MainGroupInteractiveGraph()
+                    # main_group_inter_graph.draw()

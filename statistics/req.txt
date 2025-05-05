@@ -8,3 +8,5 @@ setuptools
 fastapi[standard]
 gunicorn
 requests
+holoviews
+bokeh

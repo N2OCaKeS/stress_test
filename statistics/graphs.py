@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import holoviews as hv
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
@@ -316,3 +317,11 @@ class ComparisonKernelLineGraph(Graphs):
         self.saver.save(plot=plt, name=f"{graph_name}_{self.__class__.__name__}")
         main_logger.info(f"Сохранен {self.__class__.__name__} для {self.type_test}")
         plt.close()
+
+
+class MainGroupInteractiveGraph(Graphs):
+    def __init__(self):
+        pass
+
+    def draw(self):
+        plot = hv.Bars()

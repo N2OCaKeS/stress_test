@@ -306,3 +306,20 @@ class PostgreSQLParser(BaseParser):
         else:
             score = super().find_score(html_page=html_page)
         return score
+
+
+class DockerParser(BaseParser):
+    def find_score(self, html_page, type_test=None):
+        total_ratings_header = html_page.find('h2', string="Total ratings:")
+        ratings = []
+        next_element = total_ratings_header.find_next()
+        
+        while next_element:
+            if next_element.name == 'p' and "Total rating:" in next_element.text:
+                rating_value = next_element.text.split(":")[1].strip()
+                ratings.append(float(rating_value))
+            next_element = next_element.find_next()
+
+        score = tuple(ratings)
+        print(score, flush=True)
+        return score

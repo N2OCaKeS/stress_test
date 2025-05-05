@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Set
 from atlassian.errors import ApiPermissionError
 
-from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, ParsecStatistics, PostgreSQLStatistics
+from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, ParsecStatistics, PostgreSQLStatistics, DockerStatstics
 from parsers import BaseParser, ApacheParser, ParsecParser
 
 from utils import UtilForReadLogs, UtilGetTraceback
@@ -154,34 +154,6 @@ def parsec_statistics_api(body: Statistics):
     return response
 
 
-# @app.post("/digsig-statistics")
-# def digsig_statistics_api(body: Statistics):
-#     digsig_stat = DigsigStatistics(stat_title=body.title_statistics,
-#                                    username=body.username,
-#                                    tokenconf=body.token,
-#                                    set_of_test_types=body.set_of_test_types,
-#                                    comparison_list=body.comparison_list,
-#                                    comparison_kernel_list=body.comparison_kernel_list)
-#     response = {
-#         "status": "",
-#         "message": ""
-#     }
-#     try:
-#         digsig_stat.create()
-#         response['status'] = "success"
-#         response["message"] = "Все прошло успешно"
-#     except ApiPermissionError:
-#         main_logger.error("confluence тупит пробуем еще раз")
-#         sleep(60)
-#         digsig_stat.create()
-#         response["status"] = "warning"
-#         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
-#     except Exception as error:
-#         message_error = UtilGetTraceback.get_traceback(e=error)
-#         response["status"] = "error"
-#         response["message"] = message_error
-#     return response
-
 @app.post("/postgresql-statistics")
 def postgresql_statistics_api(body: Statistics):
     postgresql_stat = PostgreSQLStatistics(stat_title=body.title_statistics,
@@ -202,6 +174,34 @@ def postgresql_statistics_api(body: Statistics):
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
         postgresql_stat.create()
+        response["status"] = "warning"
+        response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
+    except Exception as error:
+        message_error = UtilGetTraceback.get_traceback(e=error)
+        response["status"] = "error"
+        response["message"] = message_error
+    return response
+
+@app.post('/docker-statistics')
+def docker_statistics(body: Statistics):
+    docker_stat = DockerStatstics(stat_title=body.title_statistics,
+                                   username=body.username,
+                                   tokenconf=body.token,
+                                   set_of_test_types=body.set_of_test_types,
+                                   comparison_list=body.comparison_list,
+                                   comparison_kernel_list=body.comparison_kernel_list,)
+    response = {
+        "status": "",
+        "message": ""
+    }
+    try:
+        docker_stat.create()
+        response['status'] = "success"
+        response["message"] = "Все прошло успешно"
+    except ApiPermissionError:
+        main_logger.error("confluence тупит пробуем еще раз")
+        sleep(60)
+        docker_stat.create()
         response["status"] = "warning"
         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:

@@ -1,63 +1,61 @@
 Vagrant.configure("2") do |config|
   ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
+ 
 
-  config.vm.box     = ENV['UPDATE']
+  config.vm.boot_timeout = 300
   config.vm.synced_folder "./", "/vagrant", disabled: true
-  config.vm.boot_timeout = 180
+  config.vm.box = ENV['UPDATE']
 
-  VM_MEMORY = 2048
-  VM_CPUS   = 3
+  VM_MEMORY = 8192
+  VM_CPUS   = 5
 
-  # Список VPN-нод
   vpn_nodes = [
-    { name: "vpn1",     hostname: "vpn1.stress.rbt",     ip: "192.168.50.121" },
-    { name: "pooler",   hostname: "pooler.stress.rbt",   ip: "172.16.0.2" }
+    { name: "vpn1",   hostname: "vpn1.stress.rbt", ip: "192.168.50.121" },
+    { name: "pooler", hostname: "pooler.stress.rbt", ip: "dhcp" }
   ]
 
   vpn_nodes.each do |vm|
-    config.vm.network :forwarded_port, guest: 22, host: 2222, disabled: true
     config.vm.define vm[:name] do |node|
-
       node.vm.hostname = vm[:hostname]
-      node.ssh.host = vm[:ip]
-      # Сеть VPN-кластера (ручной IP)
-      node.vm.network "private_network",
-                      ip: vm[:ip],
-                      libvirt__network_name: "vpn-net"
 
-      # Если это pooler, добавим вторую сеть — DHCP
+      # Основной интерфейс без ожидания DHCP
+      if vm[:name] == "vpn1"
+        node.vm.network "private_network",
+          ip: vm[:ip],
+          libvirt__dhcp_enabled: false,
+          libvirt__wait_for_lease: false,
+          libvirt__network_name: "vpn-net"
+      end
+
       if vm[:name] == "pooler"
         node.vm.network "private_network",
-                        libvirt__network_name: "pooler-net",
-                        type: "dhcp"
+          type: "dhcp",
+          libvirt__dhcp_enabled: true,
+          libvirt__wait_for_lease: true,
+          libvirt__network_name: "pooler-net"
       end
 
-      # Ресурсы и отключение ожидания IP
+      # Убираем дефолтную сеть vagrant-libvirt
       node.vm.provider :libvirt do |v|
-        v.memory   = VM_MEMORY
-        v.cpus     = VM_CPUS
+        v.driver = "kvm"
+        v.uri = "qemu:///system"
+        v.memory = VM_MEMORY
+        v.cpus = VM_CPUS
         v.disk_bus = "sata"
-        #v.wait_for_lease = false
+        v.management_network_name = "none"
+        v.management_network_device = "eth999"
+
+        v.qemu_use_agent = true
+        v.channel :type => 'unix',
+                  :target_name => 'org.qemu.guest_agent.0',
+                  :target_type => 'virtio'
       end
 
-      # ===== Провижон отключён временно =====
-      # node.vm.provision "shell",
-      #                    path: "./provision/provision.sh",
-      #                    args: [ vm[:name],
-      #                            ENV['KERNEL'].to_s,
-      #                            ENV['RC'].to_s ]
-
-      # Только pooler: генерация алиасов — тоже отключим
-      # if vm[:name] == "pooler"
-      #   node.vm.provision "shell", inline: <<-SHELL
-      #     IF=$(ip link show | grep -e '^[0-9]: e' | tail -n1 \
-      #          | awk '{print $2}' | sed 's/://g')
-      #     for i in $(seq 1 20000); do
-      #       OCT3=$((i / 256)); OCT4=$((i % 256)); [ $OCT4 -eq 0 ] && OCT4=1
-      #       ip addr add 172.16.$OCT3.$OCT4/17 dev $IF
-      #     done
-      #   SHELL
-      # end
+      # Прописка провижена
+      node.vm.provision "shell",
+        privileged: true,
+        path: "provision/vagrant_user.sh"
     end
   end
 end
+

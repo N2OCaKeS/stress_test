@@ -3,7 +3,7 @@ import os
 from ovpn_conf import BOXES, DATES
 from libs.libovpn import run_command
 import subprocess
-#from allta import SystemCommands
+from allta import SystemCommands
 
 class AOvpn20kTest:
     def __init__(self, boxes=BOXES, dates=DATES):
@@ -41,11 +41,11 @@ class AOvpn20kTest:
 
 
 
-#sys_com = SystemCommands()   
+sys_com = SystemCommands()   
 test = AOvpn20kTest()
 #sys_com.cmd("wget " + test.choose_box())
 box = test.choose_box().split('/')[-1].replace(".box", "")
 os.environ['UPDATE'] = box
 
-subprocess.run("vagrant mutate 1.*.box libvirt", shell=True)
-subprocess.run("vagrant up", shell=True)
+#sys_com.cmd("vagrant mutate 1.*.box libvirt")
+sys_com.cmd("VAGRANT_LOG=debug vagrant up --provider libvirt 2>&1 | tee vagrant.log")

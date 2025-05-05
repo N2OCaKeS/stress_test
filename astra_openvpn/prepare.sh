@@ -39,6 +39,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y liblzma-dev
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
 echo 2
 # test packages
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y qemu-guest-agent 
 #sudo apt install astra-openvpn-server -y
 
 #python

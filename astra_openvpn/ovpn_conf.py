@@ -2,13 +2,13 @@ from libs.libovpn import run_command
 
 USER = ["u", "askeladd"]
 
-OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
+OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
 VENV_PATH = "/home/u/python/Python-3.12.1/venv/lib/python3.12/site-packages"
 
 
 BOX_VERSIONS = [["1.7.5.o", "1.7.5.v", "1.7.5.s"], ["1.8.1.o", "1.8.1.v", "1.8.1.s"]]
 BOXES = f"{OVPN_PATH}/box-config.json"
-DATES = f"/home/{USER[1]}/dates_stand3.conf"
+DATES = f"/home/{USER[0]}/dates_stand3.conf"
 
 SYS_VERSION = run_command("cat /etc/astra/build_version | tr -d '[:space:]'")
 SYS_KERNEL = run_command("uname -r | tr -d '[:space:]'")

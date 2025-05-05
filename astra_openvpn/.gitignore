@@ -5,3 +5,5 @@ __pycache__
 box-config.json
 dates_stand3.conf
 releases.json
+vagrant.log
+get-box.config

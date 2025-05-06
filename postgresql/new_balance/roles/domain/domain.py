@@ -35,6 +35,11 @@ class DomainVM():
                     'signal set': 'Kinit',
                     'signal get': '',
                 },
+                'dns settings':{
+                    'command': f'ipa dnsconfig-mod --forwarder=10.177.128.198 --forwarder=10.177.180.248 --forwarder=10.177.180.246',
+                    'signal set': 'Kinit',
+                    'signal get': '',                    
+                },
             }
         }
 

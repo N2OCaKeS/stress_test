@@ -74,8 +74,6 @@ elif VERSION_OS == '1.8':
 # VERSION_PG = '15'    
 # ETH_INTERFACE = 'enp0s3'   
 
-
-
 DOMAIN = 'balance.rbt'
 DOMAIN_ADMIN_USER = 'admin'
 DOMAIN_ADMIN_PASSWORD = '12345678'
@@ -85,8 +83,9 @@ POSTGRES_PORT = '5440'
 POSTGRES_DATA_PATH = f'/var/lib/postgresql/{VERSION_PG}/contrprimer'
 
 PGPOOL_HOSTNAME = f'pgpool.{DOMAIN}'
+PGPOOL_CONFIG_PATH = '/etc/pgpool2/pgpool.conf'
 PGPOOL_PCP_USER = 'pgpool'
 PGPOOL_PASSWORD = '1'
-PGPOOL_PASSWORD_MD5 = hashlib.md5((PGPOOL_PASSWORD+PGPOOL_PCP_USER).encode()).hexdigest()
+PGPOOL_PASSWORD_MD5 = hashlib.md5((PGPOOL_PASSWORD).encode()).hexdigest()
 
 PROVISION_PATH = './provision/provision.sh'

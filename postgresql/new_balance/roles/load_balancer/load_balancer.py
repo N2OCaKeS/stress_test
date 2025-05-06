@@ -1,6 +1,9 @@
 from allta import VBox
-from roles.vm_info import VMS_GROUPS, VMS_DATES, POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME, PASSWORD, VERSION_OS, PGPOOL_PASSWORD_MD5, PGPOOL_PCP_USER, PGPOOL_PASSWORD, PGPOOL_HOSTNAME
 from roles.load_balancer.keepalived import keepalived
+from roles.vm_info import (PASSWORD, PGPOOL_HOSTNAME, PGPOOL_PASSWORD,
+                           PGPOOL_PASSWORD_MD5, PGPOOL_PCP_USER,
+                           POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME,
+                           VERSION_OS, VMS_DATES, VMS_GROUPS)
 
 
 class LoadBalancer():
@@ -37,7 +40,7 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_period = 0',
-                    'new': 'health_check_period = 2'
+                    'new': 'health_check_period = 5'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -52,12 +55,12 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_max_retries = 0',
-                    'new': 'health_check_max_retries = 3'
+                    'new': 'health_check_max_retries = 5'
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#health_check_retry_delay = 1',
-                    'new': 'health_check_retry_delay = 1'
+                    'new': 'health_check_retry_delay = 3'
                 },
 
                 # Настройки репликации
@@ -72,16 +75,16 @@ class LoadBalancer():
                     'new': 'sr_check_user = \'postgres\''
                 },
 
-                # Настройки failover/failback
+                # Настройки failover/failback/recovery
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
-                    'new': 'failover_command = \'/tmp/pgpool.sh OVER %d %H %P %m %M %N\''
+                    'new': f'failover_command = \'/tmp/failover.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH} %H %P\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#follow_primary_command = \'\'',
-                    'new': 'follow_primary_command = \'/tmp/pgpool.sh BACK %d %H %P %m %M %N\''
+                    'new': f'follow_primary_command = \'/tmp/follow.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH}\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -92,7 +95,7 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#auto_failback = off',
                     'new': 'auto_failback = on'
-                },
+                },                                          
 
                 # Настройки аутентификации
                 {
@@ -122,13 +125,22 @@ class LoadBalancer():
         scp = {
             'g_load_balancer': {
                 'mode': 'push',
-                'path_host': f'./roles/load_balancer/template/pgpool.sh',
-                'path_vm': '/tmp/pgpool.sh'
-            }
+                'path_host': f'./roles/load_balancer/template/failover.sh',
+                'path_vm': '/tmp/failover.sh'
+            },                       
         }
+
         provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
                      vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
-
+        scp = {
+            'g_load_balancer': {
+                'mode': 'push',
+                'path_host': f'./roles/load_balancer/template/follow.sh',
+                'path_vm': '/tmp/follow.sh'
+            },                       
+        }
+        provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
+                     vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)        
         new_block = f"""backend_hostname0 = '{VMS_DATES['database1']['ip_bridge']}'
 backend_port0 = {POSTGRES_PORT}
 backend_weight0 = 1
@@ -153,17 +165,15 @@ EOF
         start_pgpool = {
             'g_load_balancer': {
                 'set chmod failover scripts': {
-                    'command': 'sudo chmod +x /tmp/pgpool.sh && sudo mkdir -p /var/log && sudo touch /var/log/pgpool_failover.log && sudo chown -R postgres:postgres /var/log/pgpool_failover.log',
+                    'command': 'sudo chmod +x /tmp/*.sh  && sudo mkdir -p /var/log && sudo touch /var/log/pgpool_failover.log && sudo chown -R postgres:postgres /var/log/pgpool_failover.log',
                     'signal set': '',
                     'signal get': ''
                 },
-                'configure pcp': {     
-                    'command': f"echo '{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD_MD5}' | sudo tee -a /etc/pgpool2/pcp.conf && \
-                                        sudo su -c 'printf \"{PGPOOL_HOSTNAME}:9898:{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD}\n\" > /tmp/.pcppass && \
-                                        sudo chmod 600 /tmp/.pcppass",
+                'configure pcp': {
+                    'command': f"echo '{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD_MD5}' | sudo tee -a /etc/pgpool2/pcp.conf && sudo bash -c \"printf '{PGPOOL_HOSTNAME}:9898:{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD}\\n' > /tmp/.pcppass\" && sudo chmod 600 /tmp/.pcppass",
                     'signal set': '',
-                    'signal get': ''},
-
+                    'signal get': ''
+                },
                 'config pool_hba': {
                     'command': "echo -e 'host all all 127.0.0.1/32 trust\nhost all all 0.0.0.0/0 trust' | sudo tee -a /etc/pgpool2/pool_hba.conf",
                     'signal set': '',
@@ -182,7 +192,7 @@ EOF
                     'signal get': ''
                 },
                 'backend hosts': {
-                    'command': f'echo {new_block} | sudo tee -a {pgpool_config_path}/pgpool.conf',
+                    'command': f'sudo tee -a {pgpool_config_path}/pgpool.conf <<EOF\n{new_block}',
                     'signal set': 'set backend host',
                     'signal get': ''
                 },

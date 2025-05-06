@@ -1,5 +1,7 @@
 from allta import VBox
-from roles.vm_info import VERSION_PG, VMS_DATES, VMS_GROUPS, POSTGRES_DATA_PATH, POSTGRES_PORT, DOMAIN, DOMAIN_ADMIN_PASSWORD, USERNAME, PASSWORD
+from roles.vm_info import (DOMAIN, DOMAIN_ADMIN_PASSWORD, PASSWORD,
+                           POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME,
+                           VERSION_PG, VMS_DATES, VMS_GROUPS)
 
 
 class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
@@ -12,6 +14,7 @@ class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
         provider = self.provider
         postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
         postgres_data_path = POSTGRES_DATA_PATH
+        postgres_archive_path = f'/var/lib/postgresql/{VERSION_PG}/archivedir'
         unit_file = f"""sudo tee /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service > /dev/null <<EOF
 [Unit]
 Description=PostgreSQL Cluster contrprimer {VERSION_PG}
@@ -42,6 +45,11 @@ EOF"""
                     'signal set': '',
                     'signal get': ''
                 },
+                'change postgres password': {
+                    'command': f'yes postgres | sudo passwd postgres',
+                    'signal set': '',
+                    'signal get': ''
+                },                
                 'set postgres privilege': {
                     'command': f'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
                         sudo usermod -a -G shadow postgres && \
@@ -50,7 +58,10 @@ EOF"""
                         sudo setfacl -m u:postgres:rx /etc/parsec/macdb && \
                         sudo setfacl -d -m u:postgres:r /etc/parsec/capdb && \
                         sudo setfacl -R -m u:postgres:r /etc/parsec/capdb && \
-                        sudo setfacl -m u:postgres:rx /etc/parsec/capdb',
+                        sudo setfacl -m u:postgres:rx /etc/parsec/capdb && \
+                        echo "postgres ALL=(ALL) NOPASSWD:ALL" | \
+                        sudo tee /etc/sudoers.d/postgres && \
+                        sudo chmod 0440 /etc/sudoers.d/postgres',
                     'signal set': 'Postgres privilege',
                     'signal get': ''
                 },
@@ -60,8 +71,8 @@ EOF"""
                     'signal get': ['Postgres privilege']
                 },
                 'create folder and change owner to postgres': {
-                    'command': f'sudo mkdir {postgres_config_path} {postgres_data_path} && \
-                        sudo chown postgres:postgres {postgres_config_path} {postgres_data_path}',
+                    'command': f'sudo mkdir {postgres_config_path} {postgres_data_path} {postgres_archive_path} && \
+                        sudo chown postgres:postgres {postgres_config_path} {postgres_data_path} {postgres_archive_path}',
                     'signal set': 'Created db path',
                     'signal get': ['Postgres privilege']
                 },
@@ -81,7 +92,7 @@ EOF"""
                 # },
 
                 'init db': {
-                    'command': f'sudo su - postgres -c "pg_createcluster {VERSION_PG} contrprimer --datadir={postgres_data_path} --port={POSTGRES_PORT}"',
+                    'command': f'sudo su - postgres -c "pg_createcluster {VERSION_PG} contrprimer --datadir={postgres_data_path} --port={POSTGRES_PORT} -- --data-checksums"',
                     'signal set': 'Database created',
                     'signal get': ['Created db path']
                 },
@@ -139,8 +150,8 @@ EOF"""
                 },
                 {
                     'path': f'{postgres_config_path}/postgresql.conf',
-                    'old': '#wal_keep_size = 0		# in megabytes; 0 disables',
-                    'new': 'wal_keep_size = 128MB'
+                    'old': '#wal_keep_size = 0',
+                    'new': 'wal_keep_size = 512'
                 },
                 {
                     'path': f'{postgres_config_path}/postgresql.conf',
@@ -157,6 +168,11 @@ EOF"""
                     'old': '#krb_caseins_users = off',
                     'new': 'krb_caseins_users = true'
                 },
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': '#wal_log_hints = off',
+                    'new': 'wal_log_hints = on'
+                },                
 
 
                 # pg_hba.conf
@@ -199,62 +215,33 @@ EOF"""
             'g_database': {
                 'ident user0': {
                     'command': f'echo \'freeipa_map        user0@{DOMAIN}               user0\' | sudo tee -a {postgres_config_path}/pg_ident.conf',
-                    'signal set': '',
+                    'signal set': '0',
                     'signal get': ''
                 },
                 'ident user1': {
                     'command': f'echo \'freeipa_map        user1@{DOMAIN}               user1\' | sudo tee -a {postgres_config_path}/pg_ident.conf',
-                    'signal set': '',
-                    'signal get': ''
+                    'signal set': '1',
+                    'signal get': ['0']
                 },
                 'ident user2': {
                     'command': f'echo \'freeipa_map        user2@{DOMAIN}               user2\' | sudo tee -a {postgres_config_path}/pg_ident.conf',
-                    'signal set': '',
-                    'signal get': ''
+                    'signal set': '2',
+                    'signal get': ['1']
                 },
                 'ident user3': {
                     'command': f'echo \'freeipa_map        user3@{DOMAIN}               user3\' | sudo tee -a {postgres_config_path}/pg_ident.conf',
-                    'signal set': '',
-                    'signal get': ''
+                    'signal set': '3',
+                    'signal get': ['2']
                 },
                 'restart sssd': {
                     'command': f'sudo systemctl restart sssd',
                     'signal set': '',
-                    'signal get': ''
+                    'signal get': ['3']
                 },
 
             }
         }
         provider.execute(commands=pg_ident, vms_dates=VMS_DATES,
-                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
-
-        start_cluster = {
-            'database1': {
-                'start db': {
-                    'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
-                            sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
-                    'signal set': 'Start maser',
-                    'signal get': ''
-                },
-
-            },
-
-            'g_replica': {
-                'replication': {
-                    'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R"',
-                    'signal set': 'Replication success',
-                    'signal get': ['database1', 'Start maser']
-                },
-                'start replica': {
-                    'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
-                            sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
-                    'signal set': '',
-                    'signal get': ['Replication success']
-                }
-            },
-        }
-
-        provider.execute(commands=start_cluster, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         scp_sql = {
@@ -267,25 +254,60 @@ EOF"""
         provider.scp(scp_settings=scp_sql, vms_dates=VMS_DATES,
                      username=USERNAME, password=PASSWORD)
 
-        filling_bd = {
+        start_cluster = {
             'database1': {
-                'create db': {
-                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -c \'CREATE DATABASE contrprimer;\'"',
-                    'signal set': 'CreateDB',
+                'start db': {
+                    'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
+                            sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
+                    'signal set': 'Start maser',
                     'signal get': ''
                 },
+                'create db': {
+                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -c \'CREATE DATABASE contrprimer;\'" && sudo su - postgres -c "psql -p {POSTGRES_PORT} -d contrprimer -c \'CREATE EXTENSION pgpool_recovery;\'"',
+                    'signal set': 'CreateDB',
+                    'signal get': ['Start maser']
+                },                
                 'create user': {
                     'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -c \'CREATE ROLE user0 LOGIN; CREATE ROLE user1 LOGIN; CREATE ROLE user2 LOGIN; CREATE ROLE user3 LOGIN;\'"',
                     'signal set': 'CreateDB user',
                     'signal get': ['CreateDB']
                 },
-                'filling db': {
-                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -f /tmp/contrprimer.sql"',
-                    'signal set': '',
+                'create schema': {
+                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d contrprimer -c \'CREATE SCHEMA s1 AUTHORIZATION user0;\'"',
+                    'signal set': 'schema',
                     'signal get': ['CreateDB user']
+                },                
+                'filling db': {
+                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d contrprimer -f /tmp/contrprimer.sql"',
+                    'signal set': 'filling',
+                    'signal get': ['schema']
+                },                
+                
+                "pgbench manual": {
+                    "command": f"sleep 10 && pgbench -i -s 100 -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres contrprimer",
+                    "signal set": "pgbench manual",
+                    "signal get": ["schema"]
+                },                
+            },
+
+            'g_replica': {
+                'replication': {
+                    'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R"',
+                    'signal set': 'Replication success',
+                    'signal get': ['database1', 'pgbench manual']
+                },
+                'start replica': {
+                    'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
+                            sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
+                    'signal set': '',
+                    'signal get': ['Replication success']
                 }
             },
         }
 
-        provider.execute(commands=filling_bd, vms_dates=VMS_DATES,
-                         username=USERNAME, password=PASSWORD)
+        provider.execute(commands=start_cluster, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        
+     
+
+

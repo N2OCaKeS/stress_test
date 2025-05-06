@@ -36,7 +36,6 @@ Pin-Priority: 500
 EOF
 
 sudo apt update
-sudo astra-update -A -T -r
 sudo apt-get install rsync -y
 sudo apt-get install htop -y
 sudo apt-get install -y gcc make perl
@@ -72,16 +71,6 @@ else
     python3 -m pip install psycopg2-binary
 fi
 dpkg -s ntpsec &>/dev/null || sudo apt-get install ntpsec -y
-
-#mount second storage
-sudo mkfs -t xfs -f /dev/sdb
-while [[ -z "$sdb_uuid" ]]; do sleep 1; sdb_uuid=$(sudo blkid -s UUID -o value /dev/sdb); done
-sudo mkdir -p /var/lib/postgresql
-sudo mount /dev/sdb /var/lib/postgresql
-#echo "UUID=$sdb_uuid /var/lib/postgresql xfs defaults 0 2" | sudo tee -a /etc/fstab
-cat << EOF >> /etc/fstab
-UUID=$sdb_uuid /var/lib/postgresql xfs defaults 0 2
-EOF
 
 vbox_machines=(\
   database1 database2 database3
@@ -194,3 +183,5 @@ fi
 sudo sed -i "s/GRUB_DEFAULT=.*/GRUB_DEFAULT=$kernel_conf/" /etc/default/grub
 sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT
+
+sudo astra-update -A -T -r

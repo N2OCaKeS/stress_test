@@ -18,7 +18,7 @@ def check_output_command(command: str) -> str:
 
 
 def create_hard_link(x):
-    dest = f"/home/digsig_x.{x}"
+    dest = f"/usr/bin/digsig_x.{x}"
     try:
         os.link(PROG, dest)
         #print(f"Created link {x}")
@@ -26,7 +26,7 @@ def create_hard_link(x):
         print(f"Failed to create link digsig_x{x}: {e}")
 
 def execute_program(x):
-    prog = f"/home/digsig_x.{x}"
+    prog = f"/usr/bin/digsig_x.{x}"
     try:
         os.system(f"{prog} > /dev/null 2>&1")
         #print(f"Executed {x}")
@@ -34,7 +34,7 @@ def execute_program(x):
         print(f"Failed to execute digsig_x{x}: {e}")
 
 def remove_hard_link(x):
-    dest = f"/home/digsig_x.{x}"
+    dest = f"/usr/bin/digsig_x.{x}"
     try:
         os.remove(dest)
         #print(f"Removed link {x}")

@@ -66,7 +66,7 @@ def clone_git_repo(stand = Depends(get_info_stand)):
     remote_cmd(command=CLONE_GIT_REPO, host=stand[3], user=stand[4], passwd=stand[5])
     remote_put_file(host=stand[3],
                     remote_path='/home/u/git_clone.py', 
-                    local_path="git_clone.py",
+                    local_path="/fastapi_app/src/add_tuning/git_clone.py",
                     user=stand[4],
                     passwd=stand[5])
     remote_cmd(command=GIT_CLONE, host=stand[3], user=stand[4], passwd=stand[5])

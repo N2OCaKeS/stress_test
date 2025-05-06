@@ -2,7 +2,6 @@ Vagrant.configure("2") do |config|
   ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
  
 
-  config.vm.boot_timeout = 300
   config.vm.synced_folder "./", "/vagrant", disabled: true
   config.vm.box = ENV['UPDATE']
 
@@ -18,23 +17,6 @@ Vagrant.configure("2") do |config|
     config.vm.define vm[:name] do |node|
       node.vm.hostname = vm[:hostname]
 
-      # Основной интерфейс без ожидания DHCP
-      if vm[:name] == "vpn1"
-        node.vm.network "private_network",
-          ip: vm[:ip],
-          libvirt__dhcp_enabled: false,
-          libvirt__wait_for_lease: false,
-          libvirt__network_name: "vpn-net"
-      end
-
-      if vm[:name] == "pooler"
-        node.vm.network "private_network",
-          type: "dhcp",
-          libvirt__dhcp_enabled: true,
-          libvirt__wait_for_lease: true,
-          libvirt__network_name: "pooler-net"
-      end
-
       # Убираем дефолтную сеть vagrant-libvirt
       node.vm.provider :libvirt do |v|
         v.driver = "kvm"
@@ -44,11 +26,6 @@ Vagrant.configure("2") do |config|
         v.disk_bus = "sata"
         v.management_network_name = "none"
         v.management_network_device = "eth999"
-
-        v.qemu_use_agent = true
-        v.channel :type => 'unix',
-                  :target_name => 'org.qemu.guest_agent.0',
-                  :target_type => 'virtio'
       end
 
       # Прописка провижена

@@ -43,9 +43,10 @@ class AOvpn20kTest:
 
 sys_com = SystemCommands()   
 test = AOvpn20kTest()
-#sys_com.cmd("wget " + test.choose_box())
+sys_com.cmd("wget " + test.choose_box())
 box = test.choose_box().split('/')[-1].replace(".box", "")
 os.environ['UPDATE'] = box
 
-#sys_com.cmd("vagrant mutate 1.*.box libvirt")
-sys_com.cmd("VAGRANT_LOG=debug vagrant up --provider libvirt 2>&1 | tee vagrant.log")
+sys_com.cmd("vagrant mutate 1.*.box libvirt")
+#sys_com.cmd("VAGRANT_LOG=debug vagrant up --provider libvirt 2>&1 | tee vagrant.log")
+sys_com.cmd("vagrant up --provider=libvirt")

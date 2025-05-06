@@ -39,7 +39,10 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y liblzma-dev
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
 echo 2
 # test packages
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y qemu-guest-agent 
+
+
+
+
 #sudo apt install astra-openvpn-server -y
 
 #python
@@ -62,7 +65,7 @@ python3.12 -m pip install --upgrade pip
 
 #lvirt
 apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
-
+apt-get install qemu ebtables libguestfs-tools ruby-fog-libvirt
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 sudo dpkg -i vagrant_2.2.19_x86_64.deb

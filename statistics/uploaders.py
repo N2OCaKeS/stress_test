@@ -38,6 +38,14 @@ class BaseUploader:
             <a href="#id-Статистика.{page_rc_title}{stat_type_without_probel}-{type_stat_header_without_probel}">{type_stat_header}</a>
         </li>
     """
+    HTML_INTER_GRAPH = """
+        <ac:structured-macro ac:name="script">
+        <ac:parameter ac:name="language">text/html</ac:parameter>
+            <ac:plain-text-body>
+                <![CDATA[{content}]]>
+            </ac:plain-text-body>
+        </ac:structured-macro>
+    """
     def __init__(self, username, token, statistics_type, stat_rc_vers="", pp_title=""):
         """
             TODO ДОБАВИТЬ create_confluence_page
@@ -77,6 +85,7 @@ class BaseUploader:
         end_of_page = {}
         for file in sorted(os.listdir(self.folder)):
             part_header = file.split("_")
+            print(part_header, flush=True)
             # set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time", "auth", "time-sm"}
             # if part_header[1] in set_titles:
                 # type_stat = part_header[0] + "_" + part_header[1]
@@ -94,7 +103,7 @@ class BaseUploader:
                 base_html_file[type_stat].setdefault(temp_var, [])
                 image = TemplateImage.template.format(page_id=self.confluence_stat.get_confluence_page_id(page_space=CONFLUENCE_SPACE, page_title=f"Статистика.{self.page_rc_title} {self.statistics_type.replace("-", "/")}"), img_png=file, CONFLUENCE_URL=CONFLUENCE_URL)
                 base_html_file[type_stat][temp_var].append(image)
-            elif file.endswith(".html"):
+            elif file.endswith(".html") and not file.endswith("inter.html"):
                 if "BugsTable" in file:
                     end_of_page["bugs"] = self._read_html_file(file_name=file)
                     continue
@@ -102,6 +111,8 @@ class BaseUploader:
                     end_of_page["annotations"] = self._read_html_file(file_name=file)
                     continue
                 base_html_file[type_stat][temp_var] =  self._read_html_file(file_name=file)
+            elif file.endswith("inter.html"):
+                base_html_file[type_stat][temp_var] = self.HTML_INTER_GRAPH.format(content=self._read_html_file(file_name=file))
             if not "BugsTable" in type_stat:
                 base_html_file[type_stat]["Header"] = f"<h1 id='{TypeTest.get_full_name_test_without_df(type_stat)}'><b>{TypeTest.get_full_name_test_without_df(type_stat)}</b></h1>"
             
@@ -135,6 +146,12 @@ class BaseUploader:
                 for graph in main_graphs:
                     html_list.append(graph)
                     main_logger.debug("Добавлен MainGraph в html")
+            
+            main_inter_graphs = html_src_images_and_tables.get("MainGroupInteractiveGraph")
+            if main_inter_graphs is not None:
+                for graph in main_inter_graphs:
+                    html_list.append(graph)
+                    main_logger.debug("Добавлен MainGroupInteractiveGraph в html")
             
             html_list.append(f'<h2><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(html_src_images_and_tables.get("MainTable"))
@@ -182,6 +199,7 @@ class BaseUploader:
         html_list = [str(item) for item in html_list if item is not None]
         self.html_page = "".join(html_list)
         main_logger.info("Сгенерирована страница html для публикации")
+        print(self.html_page, flush=True)
 
     def upload_page(self):
         try:

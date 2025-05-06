@@ -155,7 +155,7 @@ class BaseStatistics(Statistics):
           except NoAnnotationsForComponent:
                main_logger.info(f"Не найдено аннотации для компонента {self.stat_title}")
           # Здесь выкладывание в confluence
-          # self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
+          self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 
 
      def create(self):
@@ -359,12 +359,20 @@ class DockerStatstics(BaseStatistics):
                             columns=columns,
                             columns_scores=score_cols)
           df = table.build()
-          print(df, flush=True)
-          temp = df.to_dict()
-          print(temp, flush=True)
+          # print(df, flush=True)
+          # temp = df.to_dict()
+          # print(temp, flush=True)
           if isinstance(df, pd.DataFrame) and not df.empty:
                if type_test == "docker-wa":
-                    main_grap_docker_saver = SaveInteractiveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+                    main_graph_docker_saver = SaveInteractiveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
                     print(df.columns, flush=True)
-                    # main_group_inter_graph = MainGroupInteractiveGraph()
-                    # main_group_inter_graph.draw()
+                    main_group_inter_graph = MainGroupInteractiveGraph(dataframe=df,
+                                                                       type_test=type_test,
+                                                                       score_columns=score_cols,
+                                                                       saver=main_graph_docker_saver)
+                    main_group_inter_graph.draw()
+                    main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return True, df
+          else:
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return False, None

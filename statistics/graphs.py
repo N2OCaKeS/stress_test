@@ -7,8 +7,8 @@ import matplotlib.patches as mpatches
 from functools import reduce
 from abc import abstractmethod
 
+from sorting import Scale
 from typetest import TypeTest
-
 from logging_conf import main_logger
 
 """
@@ -320,8 +320,49 @@ class ComparisonKernelLineGraph(Graphs):
 
 
 class MainGroupInteractiveGraph(Graphs):
-    def __init__(self):
-        pass
+    def __init__(self, dataframe, type_test, score_columns, saver):
+        self.dataframe = dataframe
+        self.saver = saver
+        self.type_test = type_test
+        self.score_columns = score_columns
 
-    def draw(self):
-        plot = hv.Bars()
+    def draw(self, *args, **kwargs):
+        hv.extension('bokeh')
+        self.dataframe["Релиз_Ядро"] = Scale.get_base_scale_text(self.dataframe)
+        df_melted = self.dataframe.melt(
+            id_vars=["Релиз_Ядро"], 
+            value_vars=self.score_columns,
+            var_name="Рейтинг",
+            value_name="Значение"
+        )
+
+        
+        bars = hv.Bars(
+            df_melted, 
+            kdims=['Релиз_Ядро', 'Рейтинг'],
+            vdims='Значение'
+        )
+
+        bars.opts(
+            hv.opts.Bars(
+                width=600,
+                height=400,
+                xrotation=45,
+                show_legend=True,
+                stacked=False,
+                title="Сравнение рейтингов по релизам",
+                xlabel="Релиз_Ядро",
+                ylabel="Значение",
+                color=hv.Cycle("Set1"),
+                toolbar="above"
+            )
+        )
+
+        if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
+            graph_name = f"{self.type_test}_{kwargs.get("graph_ind")}"
+            main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
+        else:
+            graph_name = f"{self.type_test}"
+            main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
+
+        self.saver.save(bars, name=f"{graph_name}_{self.__class__.__name__}")

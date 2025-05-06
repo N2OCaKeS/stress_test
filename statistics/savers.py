@@ -36,7 +36,7 @@ class SaveInteractiveGraph(SaveGraph):
         super().__init__(main_folder, stat_rc_vers)
     
     def save(self, plot, name):
-        hv.save(plot, f"{UtilForBuildPath.build_path(self.main_folder, stat_rc_vers=self.stat_rc_vers)}/{name}.inter.html")
+        hv.save(plot, f"{UtilForBuildPath.build_path(self.main_folder, stat_rc_vers=self.stat_rc_vers)}/{name}.inter.html", toolbar=True)
         
 
 class SaveText:

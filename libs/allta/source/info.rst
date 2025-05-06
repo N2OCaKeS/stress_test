@@ -12,6 +12,7 @@ Allta
    "0.0.1", "mfilippenko", "Тестирование скрипта отправки модуля"
    "1.0.0", "mfilippenko", "Релиз"
    "1.0.1", "amedvedev", "GetEnv - активация env по относительному/абсолютному пути. Работа с переменными."
+   "1.0.2", "mfilippenko", "Fix freeipa, теперь в домен вводится максимум 2 клиента одновременно"
 .. Тут необходимо указывать новую версию автора и описание 
 
 
@@ -92,10 +93,12 @@ Allta
 
 Ниже приведена схема каталогов проекта:::
 
-   allta
    ├── allta
    │   ├── _decorators
    │   │   ├── Decorators.py
+   │   │   └── __init__.py
+   │   ├── _get_env
+   │   │   ├── GetEnv.py
    │   │   └── __init__.py
    │   ├── __init__.py
    │   ├── _system_command
@@ -145,12 +148,15 @@ Allta
       ├── index.rst
       ├── info.rst
       ├── modules
-      │   ├── decorators.rst
+      │   ├── Decorators.rst
+      │   ├── GetEnv.rst
       │   ├── page_template.rst
-      │   ├── system_command.rst
-      │   └── vbox_manager.rst
+      │   ├── SystemCommands.rst
+      │   ├── VBoxManager.rst
+      │   └── VBox.rst
       └── _static
          └── Для статических объектов
+
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Публикация модуля в отладочный индекс

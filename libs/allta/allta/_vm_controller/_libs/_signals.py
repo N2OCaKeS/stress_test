@@ -46,8 +46,8 @@ class _Signals():
         """
         signal_dir = './signal'
         signal_file_path = os.path.join(signal_dir, get_signal[1])
-        timeout = 10 * 60  # 10 минут
-        interval = 5       # 5 секунд
+        timeout = 15 * 60  # 10 минут
+        interval = 1       # 5 секунд
         elapsed_time = 0
         host = get_signal[0]
 

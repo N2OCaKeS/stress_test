@@ -22,7 +22,7 @@ from libs.zefir import ZefirResultTable, ZefirStatusAPI, response_status
 import psycopg2
 from psycopg2 import sql
 import threading
-from libs.liballta import BootOrder, comm_and_log
+from libs.liballta import BootOrder, comm_and_log, backup_vm_snapshot
 
 
 
@@ -822,11 +822,12 @@ def db_kernel_changer(cpu_count, database, position=None):
 def freeipa_authentication_test():
     git_path = '/home/u/freeipa_test/gitipa'
     all_path = '/home/u/freeipa_test/gitipa/stress_test/freeipa'
-    clients_ip = '10.177.103.201'
+    clients_ip = '10.177.103.103'
     kernel = '5.15.0-83-generic'
 
-    if comm_and_log(cz_comm()['stand1']['1.7.5']) == 0:
-        write_status(success)
+    #if comm_and_log(cz_comm()['stand8']['1.7.5.9']) == 0:
+    backup_vm_snapshot('stand8', '1.7.5.9')
+    write_status(success)
     run_provision.bootorder = False
     run_provision.clonezilla = False
     run_provision.stand_ip = clients_ip

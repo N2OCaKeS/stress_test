@@ -753,7 +753,7 @@
 
               document.getElementById('loading-spinner').style.display = 'block';
 
-              fetch('/update_block_' + version)
+              fetch('/update_kernel_block_' + version)
                   .then(response => response.json())
                   .then(data => {
 
@@ -809,7 +809,7 @@
 
         <script>
           function updateBlock() {
-              fetch('/update_block_components')
+              fetch('/update_kernel_block_components')
                   .then(response => response.json())
                   .then(data => {
 

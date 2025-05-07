@@ -249,7 +249,7 @@ class SummaryGraph(SummaryGraphW):
 
 
 class SummaryLineGraph(SummaryGraph):
-    def draw(self):
+    def draw(self, *args, **kwargs):
         legend = []
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
         max_score = 1
@@ -267,6 +267,21 @@ class SummaryLineGraph(SummaryGraph):
         ax.set_xticklabels(self.scale_txt, rotation=20, horizontalalignment='right')
         ax.legend(legend)
         fig.tight_layout()
+
+        # if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
+        #     graph_name = f"{self.type_test}_{kwargs.get("graph_ind")}"
+        #     main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
+        # else:
+        #     graph_name = f"{self.type_test}"
+        #     main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
+
+        if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
+            graph_name = f"{self.graph_name}_{kwargs.get("graph_ind")}"
+            main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
+        else:
+            graph_name = f"{self.graph_name}"
+            main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
+
         self.saver.save(plot=plt, name=f"{self.graph_name}_{self.__class__.__name__}")
         main_logger.info(f"Сохранен {self.__class__.__name__} для {' '.join(self.comparison_names)}")
         plt.close()
@@ -319,50 +334,50 @@ class ComparisonKernelLineGraph(Graphs):
         plt.close()
 
 
-class MainGroupInteractiveGraph(Graphs):
-    def __init__(self, dataframe, type_test, score_columns, saver):
-        self.dataframe = dataframe
-        self.saver = saver
-        self.type_test = type_test
-        self.score_columns = score_columns
+# class MainGroupInteractiveGraph(Graphs):
+#     def __init__(self, dataframe, type_test, score_columns, saver):
+#         self.dataframe = dataframe
+#         self.saver = saver
+#         self.type_test = type_test
+#         self.score_columns = score_columns
 
-    def draw(self, *args, **kwargs):
-        hv.extension('bokeh')
-        self.dataframe["Релиз_Ядро"] = Scale.get_base_scale_text(self.dataframe)
-        df_melted = self.dataframe.melt(
-            id_vars=["Релиз_Ядро"], 
-            value_vars=self.score_columns,
-            var_name="Рейтинг",
-            value_name="Значение"
-        )
+#     def draw(self, *args, **kwargs):
+#         hv.extension('bokeh')
+#         self.dataframe["Релиз_Ядро"] = Scale.get_base_scale_text(self.dataframe)
+#         df_melted = self.dataframe.melt(
+#             id_vars=["Релиз_Ядро"], 
+#             value_vars=self.score_columns,
+#             var_name="Рейтинг",
+#             value_name="Значение"
+#         )
 
         
-        bars = hv.Bars(
-            df_melted, 
-            kdims=['Релиз_Ядро', 'Рейтинг'],
-            vdims='Значение'
-        )
+#         bars = hv.Bars(
+#             df_melted, 
+#             kdims=['Релиз_Ядро', 'Рейтинг'],
+#             vdims='Значение'
+#         )
 
-        bars.opts(
-            hv.opts.Bars(
-                width=600,
-                height=400,
-                xrotation=45,
-                show_legend=True,
-                stacked=False,
-                title="Сравнение рейтингов по релизам",
-                xlabel="Релиз_Ядро",
-                ylabel="Значение",
-                color=hv.Cycle("Set1"),
-                toolbar="above"
-            )
-        )
+#         bars.opts(
+#             hv.opts.Bars(
+#                 width=600,
+#                 height=400,
+#                 xrotation=45,
+#                 show_legend=True,
+#                 stacked=False,
+#                 title="Сравнение рейтингов по релизам",
+#                 xlabel="Релиз_Ядро",
+#                 ylabel="Значение",
+#                 color=hv.Cycle("Set1"),
+#                 toolbar="above"
+#             )
+#         )
 
-        if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
-            graph_name = f"{self.type_test}_{kwargs.get("graph_ind")}"
-            main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
-        else:
-            graph_name = f"{self.type_test}"
-            main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
+#         if kwargs.get("graph_ind") or kwargs.get("graph_ind") == 0:
+#             graph_name = f"{self.type_test}_{kwargs.get("graph_ind")}"
+#             main_logger.debug(f"Имя графика (должно быть вместе с индексом): {graph_name}")
+#         else:
+#             graph_name = f"{self.type_test}"
+#             main_logger.debug(f"Имя графика (должно быть без индекса): {graph_name}")
 
-        self.saver.save(bars, name=f"{graph_name}_{self.__class__.__name__}")
+#         self.saver.save(bars, name=f"{graph_name}_{self.__class__.__name__}")

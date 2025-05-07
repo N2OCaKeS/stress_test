@@ -196,7 +196,12 @@ class TableSeparatelyByKernel(Table):
         separate_by_kernel_df = dict()
         # print(self.score)
         for kernel in keys_kernel:
-            separate_by_kernel_df[kernel] = SortUniqueMajorKernel.filter_by_kernel_version(df=self.dataframe, kernel=kernel)[['Релиз', 'Ядро', 'Стенд', self.score]]
+            if type(self.score) == type(list()):
+                separate_by_kernel_df[kernel] = SortUniqueMajorKernel.filter_by_kernel_version(df=self.dataframe, kernel=kernel)[['Релиз', 'Ядро', 'Стенд'] + self.score]
+            else:
+                separate_by_kernel_df[kernel] = SortUniqueMajorKernel.filter_by_kernel_version(df=self.dataframe, kernel=kernel)[['Релиз', 'Ядро', 'Стенд', self.score]]
+                
+
         main_logger.info(f"Построена {self.__class__.__name__}")
         main_logger.debug(f"{separate_by_kernel_df}")
         return separate_by_kernel_df

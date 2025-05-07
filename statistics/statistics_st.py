@@ -7,9 +7,9 @@ from confluence.confluence_conf import ID_ROOT_PAGES
 from pages import Pages
 from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser, DockerParser
 from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew, BugsTable, Annotations
-from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph, MainGroupInteractiveGraph
+from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph
 from sorting import Scale
-from savers import SaveTableToFile, SaveGraph, SaveText, SaveInteractiveGraph
+from savers import SaveTableToFile, SaveGraph, SaveText
 from uploaders import BaseUploader
 from typetest import TypeTest
 from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent, NoAnnotationsForComponent
@@ -359,18 +359,33 @@ class DockerStatstics(BaseStatistics):
                             columns=columns,
                             columns_scores=score_cols)
           df = table.build()
-          # print(df, flush=True)
-          # temp = df.to_dict()
-          # print(temp, flush=True)
           if isinstance(df, pd.DataFrame) and not df.empty:
                if type_test == "docker-wa":
-                    main_graph_docker_saver = SaveInteractiveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
-                    print(df.columns, flush=True)
-                    main_group_inter_graph = MainGroupInteractiveGraph(dataframe=df,
-                                                                       type_test=type_test,
-                                                                       score_columns=score_cols,
-                                                                       saver=main_graph_docker_saver)
-                    main_group_inter_graph.draw()
+                    # main_graph_docker_saver = SaveInteractiveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+                    # main_group_inter_graph = MainGroupInteractiveGraph(dataframe=df,
+                    #                                                    type_test=type_test,
+                    #                                                    score_columns=score_cols,
+                    #                                                    saver=main_graph_docker_saver)
+                    # main_group_inter_graph.draw()
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score_cols)
+                    separate_kernel_data = separate_kernel.build()
+                    saver_sum_line_graph = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
+                    for ind, (kernel, df_sep_by_kernel) in enumerate(separate_kernel_data.items(), start=1):
+                         ratings_for_graphs = []
+                         for score_col in score_cols:
+                              rat_tmp = df_sep_by_kernel[score_col].tolist()
+                              ratings_for_graphs.append(rat_tmp)
+
+                         line_graph_one_kernel = SummaryLineGraph(
+                              saver=saver_sum_line_graph,
+                              stand_grade=df_sep_by_kernel["Стенд"].mode()[0],
+                              comparison_scale_of_score=ratings_for_graphs,
+                              scale_txt=df_sep_by_kernel['Релиз'],
+                              comparison_names=score_cols,
+                              graph_name=f"{kernel}",
+                              colors=['#f90829', '#007b7a', '#f9b312'],
+                         )
+                         line_graph_one_kernel.draw(graph_ind=ind)
                     main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
           else:

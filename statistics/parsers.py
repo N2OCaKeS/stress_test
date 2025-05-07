@@ -116,7 +116,6 @@ class DigsigParser(ScoreParser):
         except IndexError:
             signed = None
             notsigned = None
-        print(signed, notsigned)
         return (signed, notsigned)
 
 
@@ -321,5 +320,4 @@ class DockerParser(BaseParser):
             next_element = next_element.find_next()
 
         score = tuple(ratings)
-        print(score, flush=True)
         return score

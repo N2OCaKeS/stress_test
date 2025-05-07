@@ -39,7 +39,7 @@ class BaseUploader:
         </li>
     """
     HTML_INTER_GRAPH = """
-        <ac:structured-macro ac:name="script">
+        <ac:structured-macro ac:name="html-include">
         <ac:parameter ac:name="language">text/html</ac:parameter>
             <ac:plain-text-body>
                 <![CDATA[{content}]]>
@@ -85,7 +85,7 @@ class BaseUploader:
         end_of_page = {}
         for file in sorted(os.listdir(self.folder)):
             part_header = file.split("_")
-            print(part_header, flush=True)
+            # print(part_header, flush=True)
             # set_titles = {"parsec", "vanilla", "balance", "impact-fs", "impact-fs-aud-off", "time", "auth", "time-sm"}
             # if part_header[1] in set_titles:
                 # type_stat = part_header[0] + "_" + part_header[1]
@@ -111,8 +111,8 @@ class BaseUploader:
                     end_of_page["annotations"] = self._read_html_file(file_name=file)
                     continue
                 base_html_file[type_stat][temp_var] =  self._read_html_file(file_name=file)
-            elif file.endswith("inter.html"):
-                base_html_file[type_stat][temp_var] = self.HTML_INTER_GRAPH.format(content=self._read_html_file(file_name=file))
+            # elif file.endswith("inter.html"):
+            #     base_html_file[type_stat][temp_var] = self.HTML_INTER_GRAPH.format(content=self._read_html_file(file_name=file))
             if not "BugsTable" in type_stat:
                 base_html_file[type_stat]["Header"] = f"<h1 id='{TypeTest.get_full_name_test_without_df(type_stat)}'><b>{TypeTest.get_full_name_test_without_df(type_stat)}</b></h1>"
             
@@ -147,11 +147,11 @@ class BaseUploader:
                     html_list.append(graph)
                     main_logger.debug("Добавлен MainGraph в html")
             
-            main_inter_graphs = html_src_images_and_tables.get("MainGroupInteractiveGraph")
-            if main_inter_graphs is not None:
-                for graph in main_inter_graphs:
-                    html_list.append(graph)
-                    main_logger.debug("Добавлен MainGroupInteractiveGraph в html")
+            # main_inter_graphs = html_src_images_and_tables.get("MainGroupInteractiveGraph")
+            # if main_inter_graphs is not None:
+            #     for graph in main_inter_graphs:
+            #         html_list.append(graph)
+            #         main_logger.debug("Добавлен MainGroupInteractiveGraph в html")
             
             html_list.append(f'<h2><a href="https://{CONFLUENCE_URL}/pages/viewpage.action?pageId=192234259">Описание стендов нагрузочного тестирования</a></h2>')
             html_list.append(html_src_images_and_tables.get("MainTable"))
@@ -167,6 +167,12 @@ class BaseUploader:
                 for graph in summary_graph:
                     html_list.append(graph)
                     main_logger.debug("Добавлен SummaryGraph в html")
+            
+            summary_line_graph = html_src_images_and_tables.get("SummaryLineGraph")
+            if summary_line_graph is not None:
+                for graph in summary_line_graph:
+                    html_list.append(graph)
+                    main_logger.debug("Добавлен SummaryLineGraph в html")
         
         # nav_lst.append(self.NAV_ITEM.format(page_rc_title=self.page_rc_title,
         #                                     stat_type_without_probel=self.statistics_type.replace(" ", "").replace("-", "/"),
@@ -199,7 +205,6 @@ class BaseUploader:
         html_list = [str(item) for item in html_list if item is not None]
         self.html_page = "".join(html_list)
         main_logger.info("Сгенерирована страница html для публикации")
-        print(self.html_page, flush=True)
 
     def upload_page(self):
         try:

@@ -83,21 +83,23 @@ class Report:
                 # print("Залетаем сюда")
                 normalized_data_list = [1.0 for _ in list(normalized_data_2d_array[1:-1])]
                 # print(normalized_data_list)
-            # func_proc_erros = self.data_aproximation(ox_lst, normalized_data_list)
+            func_proc_erros = self.data_aproximation(ox_lst, normalized_data_list)
             i_proc_errors, err = integrate.quad(func_proc_erros, 
                                                ox_lst[0], 
                                                ox_lst[-1])
-            i_proc_errors, err = integrate.simpson(y=normalized_data_list, x=ox_lst)
+            i_proc_errors_s = integrate.simpson(y=normalized_data_list, x=ox_lst)
             
             # print("RATING PROC ERR",i_proc_errors * multiplier)
-            return i_proc_errors * multiplier
+            return i_proc_errors, i_proc_errors_s 
         else:
             func_proc_erros =self.data_aproximation(ox_lst, oy_lst)
             i_proc_errors, err = integrate.quad(func_proc_erros, 
                                                ox_lst[0], 
                                                ox_lst[-1])
+            i_proc_errors_s = integrate.simpson(y=oy_lst, x=ox_lst)
             try:
-                return round(i_proc_errors * multiplier, accuracy)
+                # return round(i_proc_errors * multiplier, accuracy)
+                return i_proc_errors, i_proc_errors_s
             except ZeroDivisionError:
                 return 0
 

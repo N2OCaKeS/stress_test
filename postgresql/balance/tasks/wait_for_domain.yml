@@ -12,6 +12,6 @@
   wait_for:
     path: signals/{{ signal }}.txt
     search_regex: "is ready"
-    timeout: 600 #5000
+    timeout: 900 #5000
     delay: 1
   when: domain_exist.rc != 0

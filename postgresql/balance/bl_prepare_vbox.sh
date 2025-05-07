@@ -7,7 +7,6 @@ sudo mkdir -p /home/iface
 
 #ansible
 #sudo apt-get install ansible -y
-sudo apt-get install sshpass -y
 
 #python
 #sudo apt-get install -y python3-paramiko python3-pip python3-psycopg2
@@ -19,15 +18,19 @@ wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libs
 sudo apt-get install plymouth-themes -y
 sudo apt install gcc make perl rsync -y
 sudo apt install libopus0 -y
-sudo apt install libqt5opengl5 -y 
+sudo apt install libqt5opengl5 -y
 sudo apt install libqt5printsupport5 -y
 sudo apt install libsdl1.2debian -y
-sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb 
-sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
-sudo apt install psmisc -y
-sudo apt install pkexec -y
 sudo apt install policykit-1 -y
-
+sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb
+sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+  sudo apt install psmisc -y
+  sudo apt install pkexec -y
+elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
+  sudo apt install psmisc -y
+  sudo apt --fix-broken install -y
+fi
 
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
   sudo dpkg -i virtualbox-7.0_7.0.20*.deb
@@ -45,8 +48,6 @@ elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
   sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-6.1*.vbox-extpack
 fi
 
-
-
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
@@ -54,7 +55,6 @@ if test "$(grep -E '1.8.*' /etc/astra_version)"; then
 elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
   sudo dpkg -i vagrant_2.2.19_x86_64.deb
 fi
-
 
 #source "provision/env_provision.sh"
 
@@ -74,13 +74,13 @@ fi
 #     exit 1
 #   fi
 
-  # sudo apt install gcc make perl -y
-  # sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
-  # sudo dpkg -i virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
-  # if [ $? != 0 ]; then
-  #   >&2 echo -e "\e[91mERROR (!) VirtualBox package installation\e[0m"
-  #   exit 1
-  # fi
+# sudo apt install gcc make perl -y
+# sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
+# sudo dpkg -i virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
+# if [ $? != 0 ]; then
+#   >&2 echo -e "\e[91mERROR (!) VirtualBox package installation\e[0m"
+#   exit 1
+# fi
 
 #   sudo yes | VBoxManage extpack install Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
 #   if [ $? != 0 ]; then
@@ -100,7 +100,7 @@ fi
 if test ! "$(dpkg -l | awk '{print $2}' | grep ^vagrant$)"; then
   # vagrant package download
   wget -r -nH --cut-dirs=2 --no-parent \
-  ftp://qa111.devos.astralinux.ru/packages/vagrant 2>/dev/null
+    ftp://qa111.devos.astralinux.ru/packages/vagrant 2>/dev/null
 
   if [ $? != 0 ]; then
     >&2 echo -e "\e[91mERROR (!) Package import\e[0m"
@@ -169,7 +169,7 @@ fi
 
 for group in vboxusers; do
   if test ! "$(groups | grep ${group})"; then
-    sudo usermod -aG ${group} $USER 
+    sudo usermod -aG ${group} $USER
   fi
 done
 
@@ -192,7 +192,6 @@ else
   >&2 echo -e "\e[91mERROR (!) /etc/sysctl.conf not exist\e[0m"
   exit 1
 fi
-
 
 # check 'Extension Pack'
 if test ! "$(vboxmanage list extpacks | grep "Oracle VM VirtualBox Extension Pack")"; then

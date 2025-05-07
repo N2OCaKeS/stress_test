@@ -74,6 +74,16 @@
       shell: |
         pdpl-user -i 63 postgres
 
+    - name: User settings
+      shell: |
+        sudo usermod -a -G shadow postgres
+        sudo setfacl -d -m u:postgres:r /etc/parsec/macdb
+        sudo setfacl -R -m u:postgres:r /etc/parsec/macdb
+        sudo setfacl -m u:postgres:rx /etc/parsec/macdb
+        sudo setfacl -d -m u:postgres:r /etc/parsec/capdb
+        sudo setfacl -R -m u:postgres:r /etc/parsec/capdb
+        sudo setfacl -m u:postgres:rx /etc/parsec/capdb
+
     - name: Install postgresql-{{ server.pg.version }}-pgpool2
       apt:
         name:

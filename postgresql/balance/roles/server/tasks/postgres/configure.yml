@@ -92,7 +92,7 @@
   become: yes
   become_user: postgres
   vars:
-    users: "{{ [domain.user_template] | product(range(domain.num_of_users)) | map('join') }}"
+    users: "{{ [domain.user_template] | product(range(domain.num_of_users)) | map('join') | map('regex_replace', '(.*)', '\\1@BALANCE.RBT') }}"
   postgresql_user:
     port: '{{ server.pg.port }}'
     name: '{{ item }}'

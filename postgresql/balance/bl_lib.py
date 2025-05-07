@@ -5,14 +5,14 @@ from time import sleep
 from string import Template
 
 
-
 class system:
     """
     Класс для обращения к системе
     """
     @staticmethod
     def check_output_command(command: str) -> str:
-        result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, universal_newlines=True)
         output, errors = result.communicate()
         output = os.linesep.join([s for s in output.splitlines() if s])
         errors = os.linesep.join([s for s in errors.splitlines() if s])
@@ -27,10 +27,9 @@ class system:
         return subprocess.run(command, shell=True)
 
 
-
 class bl:
     """
-    Класс с внутренними методами, которые относятся   
+    Класс с внутренними методами, которые относятся
     к тесту с балансировщиком.
     """
     @staticmethod
@@ -48,21 +47,21 @@ class bl:
                     if str(key).endswith('s'):
                         true_key = key
                         box_name = i[true_key][0]
-                        box_url = i[true_key][1]             
-                
+                        box_url = i[true_key][1]
+
         if true_key == False:
             for i in dates['vagrant_box']:
                 if str(box).startswith('1.7'):
-                    if '1.7.1.s' in str(i):
-                        box_name = i['1.7.1.s'][0]
-                        box_url = i['1.7.1.s'][1]
+                    if '1.7.5.s' in str(i):
+                        box_name = i['1.7.5.s'][0]
+                        box_url = i['1.7.5.s'][1]
                 elif str(box).startswith('1.8'):
-                    if '1.8.0.s' in str(i):
-                        box_name = i['1.8.0.s'][0]
-                        box_url = i['1.8.0.s'][1]
-        
+                    if '1.8.1.s' in str(i):
+                        box_name = i['1.8.1.s'][0]
+                        box_url = i['1.8.1.s'][1]
+
         return box_name, box_url
-    
+
     @staticmethod
     def check(method, uzs, *args, **kwargs):
         """
@@ -71,17 +70,17 @@ class bl:
         result = method(*args, **kwargs)
         if result != 0:
             uzs.upload_test_cycle_status(zefir_status='fail')
-            print(f"Method \"{method.__name__}\" return bad result. Execution stopped, result: {result}")
+            print(
+                f"Method \"{method.__name__}\" return bad result. Execution stopped, result: {result}")
             exit(1)
-
 
 
 class VirtualMashines(ABC):
     """
     Абстрактный конвейер\n
-    prepare: Подготовка окружения   
-    build: Развертывание и настройка ВМ   
-    check: Проверка доступности   
+    prepare: Подготовка окружения
+    build: Развертывание и настройка ВМ
+    check: Проверка доступности
     execute: Запуск плэйбуков
     """
     @abstractmethod
@@ -101,47 +100,67 @@ class VirtualMashines(ABC):
         pass
 
 
-
 class VBox(VirtualMashines):
     """
-    Класс подготоваливает окружение под провайдер Virtualbox,   
-    разворачивает и производит настройку необходимых ВМ,   
+    Класс подготоваливает окружение под провайдер Virtualbox,
+    разворачивает и производит настройку необходимых ВМ,
     проверяет их доступность, запускает плэйбуки.
     """
     @classmethod
     def prepare(cls) -> int:
         return system.cmd_with_returncode("sudo bash balance/bl_prepare_vbox.sh")
-    
+
     @classmethod
     def build(cls, box_name: str, box_url: str, kernel: str, rc: str, vms: list) -> int:
         def _set_bridge_network(vm, adapter_name):
             try:
                 num_interface = '1'
-                system.cmd(f'vboxmanage controlvm {vm} poweroff'); sleep(1)
-                system.cmd(f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
-                system.cmd(f'vboxmanage modifyvm {vm} --bridgeadapter{num_interface} {adapter_name}')
+                system.cmd(f'vboxmanage controlvm {vm} poweroff')
+                sleep(1)
+                system.cmd(
+                    f'vboxmanage modifyvm {vm} --nic{num_interface} bridged')
+                system.cmd(
+                    f'vboxmanage modifyvm {vm} --bridgeadapter{num_interface} {adapter_name}')
                 system.cmd(f'vboxmanage startvm {vm} --type headless')
             except Exception as e:
                 print(f'Type:{str(type(e).__name__)},\nError: {str(e)}')
 
         def _check_vm_list():
             return system.check_output_command('vboxmanage list vms')
-                
+
+        if rc.startswith('1.7'):
+            pg_version = 11
+        elif rc.startswith('1.8'):
+            pg_version = 15
+
+        system.cmd('apt install -fy')
+        if system.cmd_with_returncode('cd balance && mv Vagrantfile_vbox Vagrantfile') != 0:
+            return 1
+        if system.cmd_with_returncode(f'cd balance && vagrant box add {box_name} {box_url} --force') != 0:
+            return 1
+        if system.cmd_with_returncode(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=virtualbox') != 0:
+            return 1
+
+        bridge_iface = system.check_output_command(
+            "vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
+        print(f'Bridge interface found as: {bridge_iface}')
+        [_set_bridge_network(vm, bridge_iface)
+         for vm in vms if vm in _check_vm_list()]
+        [system.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"')
+         for vm in vms if vm in _check_vm_list()]
+        system.cmd('vboxmanage natnetwork list')
+        system.cmd('vboxmanage list hostonlyifs')
+        system.cmd('vboxmanage list bridgedifs')
+        system.cmd('vboxmanage list vms')
 
         if os.path.isfile('/home/iface/iface'):
             with open('/home/iface/iface', 'r') as r:
                 if_name = r.read().strip()
-                if rc.startswith('1.7'):
-                    pg_version = 11
-                elif rc.startswith('1.8'):
-                    pg_version = 15
         else:
             if rc.startswith('1.7'):
-                pg_version = 11
-                if_name = 'eth0'
+                if_name = 'eth0'  # TODO Узнать правильные названия интерфейсов и указать их
             elif rc.startswith('1.8'):
-                pg_version = 15
-                if_name = 'ens5'
+                if_name = 'ens5'        
 
         with open('balance/vars.yml', 'r') as vars_file:
             vars_template = Template(vars_file.read())
@@ -156,46 +175,32 @@ class VBox(VirtualMashines):
             hosts_template = Template(file.read())
             hosts = hosts_template.substitute(if_name=if_name)
             print(hosts)
-
+        
         with open('balance/inventories/middle_hosts.yml', 'w') as file:
-            file.write(hosts)
+            file.write(hosts)        
 
-
-        system.cmd('apt install -fy')
-        if system.cmd_with_returncode('cd balance && mv Vagrantfile_vbox Vagrantfile') != 0:
-            return 1
-        if system.cmd_with_returncode(f'cd balance && vagrant box add {box_name} {box_url} --force') != 0:
-            return 1
-        if system.cmd_with_returncode(f'cd balance && UPDATE={box_name} BOX_URL={box_url} KERNEL={kernel} RC={rc} vagrant up --provider=virtualbox') != 0:
-            return 1
-        bridge_iface = system.check_output_command("vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1")
-        print(f'Bridge interface found as: {bridge_iface}')
-        [_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
-        [system.cmd(f'vboxmanage snapshot "{vm}" take "snapshot_1"') for vm in vms if vm in _check_vm_list()]
-        system.cmd('vboxmanage natnetwork list')
-        system.cmd('vboxmanage list hostonlyifs')
-        system.cmd('vboxmanage list bridgedifs')
-        system.cmd('vboxmanage list vms')
         return 0
-    
+
     @classmethod
     def check(cls, vms: list, vm_dates: dict):
         def _check_ping():
-            bad_vms = [vm for vm in vms if system.cmd_with_returncode(f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
+            bad_vms = [vm for vm in vms if system.cmd_with_returncode(
+                f"ping -c 1 {vm_dates[vm]['ip_bridge']}") != 0]
             return bad_vms
-        
-        if _check_ping():   
+
+        if _check_ping():
             print("Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)")
             return 1
-        else: 
+        else:
             print("All vms is available")
             return 0
-        
+
     @classmethod
     def execute(cls, vms: list, ansible_commands: list, vm_dates: dict) -> int:
         attempts_count = 0
         no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-        vm_creds = {name:f'sshpass -v -p 1 ssh {no_fprint} u@{vm_dates[name]["ip_bridge"]}' for name in vms}
+        vm_creds = {
+            name: f'sshpass -v -p 1 ssh {no_fprint} u@{vm_dates[name]["ip_bridge"]}' for name in vms}
         print('\n***--------- Connecting credentials ---------***\n')
         for key, value in vm_creds.items():
             print(key, value)
@@ -220,7 +225,6 @@ class VBox(VirtualMashines):
         return 0
 
 
-
 class LVirt(VirtualMashines):
     """
     Класс подготоваливает окружение под провайдер Libvirt,   
@@ -230,36 +234,39 @@ class LVirt(VirtualMashines):
     @classmethod
     def prepare(cls) -> int:
         return system.cmd_with_returncode("sudo bash balance/bl_prepare_lvirt.sh")
-    
+
     @classmethod
     def build(cls, box_name: str, box_url: str, kernel: str, rc: str, vms: list) -> int:
         def _set_bridge_network(vm, bridge_name):
             try:
-                system.cmd(f'virsh shutdown {vm}'); sleep(1)
-                system.cmd(f'virsh attach-interface {vm} --type bridge --source {bridge_name} --model virtio --config --live')
+                system.cmd(f'virsh shutdown {vm}')
+                sleep(1)
+                system.cmd(
+                    f'virsh attach-interface {vm} --type bridge --source {bridge_name} --model virtio --config --live')
                 system.cmd(f'virsh start {vm}')
             except Exception as e:
                 print(f'Type: {type(e).__name__},\nError: {str(e)}')
 
         def _check_vm_list():
             return system.check_output_command('virsh list --all')
-        
+
         def _vms_ip(vm) -> str:
             return system.check_output_command(f"virsh domifaddr {vm} | tail -n 2 | awk '{{print$4}}' | head -n 1")
 
         system.cmd('apt install -fy')
 
         # add_box
-        if system.cmd_with_returncode('cd balance && mv Vagrantfile_lvirt Vagrantfile') != 0:
+        if system.cmd_with_returncode('cd balance && cp Vagrantfile_lvirt Vagrantfile') != 0:
             return 1
         if system.cmd_with_returncode(f'cd balance && vagrant box add --provider virtualbox {box_name} {box_url} --force') != 0:
             return 1
         if system.cmd_with_returncode(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio') != 0:
             return 1
-        
+
         # add define pool
         try:
-            system.cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
+            system.cmd(
+                'virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
             system.cmd('virsh pool-autostart default')
             system.cmd('virsh pool-start default')
         except Exception as e:
@@ -271,7 +278,8 @@ class LVirt(VirtualMashines):
         print('\nWait reboot VMs 180s...\n')
         sleep(180)
 
-        find_vms = sorted(system.check_output_command('virsh list --name').strip().split('\n'))
+        find_vms = sorted(system.check_output_command(
+            'virsh list --name').strip().split('\n'))
         print(find_vms)
 
         vms_ip = {
@@ -285,7 +293,7 @@ class LVirt(VirtualMashines):
             loop = 0
             base_ip = '.'.join(vms_ip['test'].split('.')[:3])
             current_ip = int(chunk_ip)
-            
+
             # Start looking for a free IP address
             while True:
                 if current_ip < 254:
@@ -295,10 +303,10 @@ class LVirt(VirtualMashines):
                     loop += 1
                     if loop >= 2:
                         pgpool_ip = '"Not found free IP"'
-                        break  
-                
+                        break
+
                 pgpool_ip = base_ip + '.' + str(current_ip)
-                
+
                 if pgpool_ip not in vms_ip.values():
                     print(f'Found free IP: {pgpool_ip}')
                     break
@@ -308,7 +316,6 @@ class LVirt(VirtualMashines):
             return pgpool_ip
 
         print(f'pgpool IP define is {__pgpool_ip()}')
-
 
         if rc.startswith('1.7'):
             pg_version = 11
@@ -322,10 +329,9 @@ class LVirt(VirtualMashines):
             new_vars = vars_template.substitute(pg_version=pg_version,
                                                 lvirt='true')
             print(new_vars)
-            
+
         with open('balance/vars.yml', 'w') as vars_file:
             vars_file.write(new_vars)
-
 
         with open('balance/inventories/template_lvirt', 'r') as file:
             hosts_template = Template(file.read())
@@ -348,11 +354,13 @@ class LVirt(VirtualMashines):
 
         if system.cmd_with_returncode('cd balance/inventories/group_vars && mv ALL_lvirt.yml ALL.yml') != 0:
             return 1
-        
-        bridge_iface = system.check_output_command("virsh iface-list --all | grep br0 | awk '{print $1}' | head -n 1")
+
+        bridge_iface = system.check_output_command(
+            "virsh iface-list --all | grep br0 | awk '{print $1}' | head -n 1")
         print(f'Bridge interface found as: {bridge_iface}')
-        #[_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
-        [system.cmd(f'virsh snapshot-create-as --domain {vm} --name snapshot_1') for vm in find_vms if vm in _check_vm_list()]
+        # [_set_bridge_network(vm, bridge_iface) for vm in vms if vm in _check_vm_list()]
+        [system.cmd(f'virsh snapshot-create-as --domain {vm} --name snapshot_1')
+         for vm in find_vms if vm in _check_vm_list()]
         system.cmd('virsh net-list --all')
         system.cmd('virsh iface-list')
         system.cmd('virsh list --all')
@@ -362,22 +370,23 @@ class LVirt(VirtualMashines):
     def check(cls, vms: list, vm_dates: dict):
         def _vms_ip(vm) -> str:
             return system.check_output_command(f"virsh domifaddr {vm} | tail -n 2 | awk '{{print$4}}' | head -n 1")
-        
+
         vms_ip = {
             vm_name: _vms_ip(vm_name).split('/')[0] for vm_name in vms
         }
+
         def _check_ping():
-            bad_vms = [vm for vm in vms if system.cmd_with_returncode(f"ping -c 1 {vms_ip[vm]}") != 0]
+            bad_vms = [vm for vm in vms if system.cmd_with_returncode(
+                f"ping -c 1 {vms_ip[vm]}") != 0]
             return bad_vms
-        
-        if _check_ping():   
+
+        if _check_ping():
             print("Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)")
             return 1
-        else: 
+        else:
             print("All vms is available")
             return 0
 
     @classmethod
     def execute(cls, vms: list, ansible_commands: list, vm_dates: dict) -> int:
         return VBox.execute(vms=vms, ansible_commands=ansible_commands, vm_dates=vm_dates)
-    

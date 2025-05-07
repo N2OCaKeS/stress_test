@@ -52,13 +52,13 @@ class bl:
         if true_key == False:
             for i in dates['vagrant_box']:
                 if str(box).startswith('1.7'):
-                    if '1.7.1.s' in str(i):
-                        box_name = i['1.7.1.s'][0]
-                        box_url = i['1.7.1.s'][1]
+                    if '1.7.5.s' in str(i):
+                        box_name = i['1.7.5.s'][0]
+                        box_url = i['1.7.5.s'][1]
                 elif str(box).startswith('1.8'):
-                    if '1.8.0.s' in str(i):
-                        box_name = i['1.8.0.s'][0]
-                        box_url = i['1.8.0.s'][1]
+                    if '1.8.1.s' in str(i):
+                        box_name = i['1.8.1.s'][0]
+                        box_url = i['1.8.1.s'][1]
 
         return box_name, box_url
 

@@ -251,8 +251,8 @@ def update_block_changelog(version):
     return update_changelog_block(version)
 
 
-@app.route('/update_block_<part>', methods=['GET', 'POST'])
-def update_block(part):
+@app.route('/update_kernel_block_<part>', methods=['GET', 'POST'])
+def update_kernel_block(part):
     if part == 'components':
         return update_settings_block()
     else:

@@ -56,16 +56,16 @@ modes = {
 #################################################################################################################################################
 #Симлинки на страницы с местами хранения результатов
 #################################################################################################################################################
-tests_list = {'PostgreSQL':    ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
-                                'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
-            'Файловые системы':['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
-            'Системные службы':['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
-            'UnixBench':       ['unix', 'unix parsec'],
-            'FreeIPA':         ['FreeIPA auth'],
-            'Parsec':          ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
-            'Apache':          ['apache-rp'],
-            'Docker':          ['docker-wa'],
-            'Qemu/KVM/Libvirt':['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong']}
+tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
+                                 'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
+            'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
+            'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
+            'UnixBench':        ['unix', 'unix parsec'],
+            'FreeIPA':          ['FreeIPA auth'],
+            'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
+            'Apache':           ['apache-rp'],
+            'Docker/Podman/LXC':['docker-wa'],
+            'Qemu/KVM/Libvirt': ['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong']}
 
 def parent_page_list():
     parent_page_list = {

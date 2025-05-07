@@ -463,7 +463,7 @@ class ZefirTestRun:
         #self.kernel_vers = kernel_vers
         #self.kernel_repo = kernel_repo
         self.use_kernels = use_kernels
-        orel_low_stand3, smolensk_low_stand3, orel_middle_stand4, smolensk_middle_stand4 = changelog_testcycle_handler(rc=rc, final=final)
+        orel_low_stand3, smolensk_low_stand3, orel_middle_stand4, smolensk_middle_stand4 = changelog_testcycle_handler(rc=self.rc, final=final)
         self.testcase_orel_low_stand3 = orel_low_stand3
         self.testcase_smolensk_low_stand3 = smolensk_low_stand3
         self.testcase_orel_middle_stand4 = orel_middle_stand4

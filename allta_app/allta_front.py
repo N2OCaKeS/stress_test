@@ -256,6 +256,7 @@ def update_kernel_block(part):
     if part == 'components':
         return update_settings_block()
     else:
+        return {"status": "success", "part":f"{part}"}, 200
         return get_kernels_from_rc(part)
     
 

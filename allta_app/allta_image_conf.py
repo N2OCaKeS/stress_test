@@ -322,7 +322,9 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_middle_stand4': ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom', 'digsig-cdt']}
 
 
-        if rc.endswith('.1') or final == True:
+        if rc.endswith('.1'):
+            return tuple(topics.values())
+        elif final:
             return tuple(topics.values())
         else:
             return tuple([test for top in topic for test in tests_list[top] if test in topics[i]] for i in topics.keys())

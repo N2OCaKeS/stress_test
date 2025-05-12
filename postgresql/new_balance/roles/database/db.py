@@ -24,7 +24,7 @@ After=network.target
 Type=forking
 User=postgres
 Group=postgres
-ExecStart=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D {postgres_config_path} -s -l {postgres_config_path}/logfile
+ExecStart=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D {postgres_data_path} -s -l {postgres_config_path}/logfile -o "-c config_file={postgres_config_path}/postgresql.conf"
 ExecStop=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl stop -D {postgres_data_path} -s -m fast
 ExecReload=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl reload -D {postgres_data_path} -s
 
@@ -292,7 +292,7 @@ EOF"""
 
             'g_replica': {
                 'replication': {
-                    'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R"',
+                    'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R --wal-method=stream"',
                     'signal set': 'Replication success',
                     'signal get': ['database1', 'pgbench manual']
                 },

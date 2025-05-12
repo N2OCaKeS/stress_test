@@ -1,7 +1,7 @@
 from allta import VBox
 from roles.vm_info import (PASSWORD, PGPOOL_CONFIG_PATH, PGPOOL_HOSTNAME,
-                           PGPOOL_PCP_USER, POSTGRES_PORT, USERNAME,
-                           VERSION_PG, VMS_DATES, VMS_GROUPS)
+                           PGPOOL_PCP_USER, USERNAME, POSTGRES_DATA_PATH,
+                           VERSION_PG, VMS_DATES, VMS_GROUPS, POSTGRES_PORT)
 
 
 class Test:
@@ -46,7 +46,8 @@ class Test:
 
         # provider.execute(commands=prepare, vms_dates=VMS_DATES,
         #                  vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)        
-
+        postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
+        postgres_data_path = POSTGRES_DATA_PATH
         test = {
             "database3": {
                 "start test": {
@@ -135,12 +136,12 @@ class Test:
 
 
                 "promote new master":{
-                    "command": f'sudo PCPPASSFILE=/tmp/.pcppass pcp_promote_node -w -v --switchover -U {PGPOOL_PCP_USER} -h {PGPOOL_HOSTNAME} 1',
+                    "command": f'sleep 10 && sudo PCPPASSFILE=/tmp/.pcppass pcp_promote_node -w -v --switchover -U {PGPOOL_PCP_USER} -h {PGPOOL_HOSTNAME} 1',
                     "signal set": 'promote1',
                     "signal get": ['attach2' ]                   
                 },
                 "wait finally promote":{
-                    "command": f'sleep 20',
+                    "command": f'sleep 40',
                     "signal set": 'promote',
                     "signal get": ['promote1' ]                   
                 },
@@ -194,10 +195,15 @@ class Test:
                     "signal set": 'old master reinstall',
                     "signal get": ['old master stop' ] 
                 },
+                'filling postgres':{
+                    "command": f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database2']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R --wal-method=stream"',
+                    "signal set": 'old master filling',
+                    "signal get": ['old master reinstall' ] 
+                },                
                 'start db':{
-                    "command": f'sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
+                    "command": f'cd /tmp && sudo su postgres -c \'/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D {postgres_data_path} -s -l {postgres_config_path}/logfile -o "-c config_file={postgres_config_path}/postgresql.conf"\'',
                     "signal set": 'old master start',
-                    "signal get": ['old master reinstall' ]
+                    "signal get": ['old master filling' ]
                 },                  
             }
 

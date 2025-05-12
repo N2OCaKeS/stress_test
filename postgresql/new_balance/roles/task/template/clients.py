@@ -19,7 +19,7 @@ db_params = {
 num_clients = 20
 
 # Количество транзакций на каждый поток
-num_transactions = 10000  # ~3-6 минут
+num_transactions = 15000  # ~3-6 минут
 
 scale_factor = 100
 

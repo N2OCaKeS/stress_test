@@ -1,44 +1,54 @@
-from libs.libovpn import run_command
+from allta import SystemCommands
+import requests
+sys_com = SystemCommands
+
+jira_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-jira-url'
+confluence_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-confluence-url'
+response_jira_url = requests.get(jira_url_api)
+response_confluence_url = requests.get(confluence_url_api)
+JIRA_URL = response_jira_url.text
+CONFLUENCE_URL = response_confluence_url.text
 
 USER = ["u", "askeladd"]
 
 OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
 VENV_PATH = "/home/u/python/Python-3.12.1/venv/lib/python3.12/site-packages"
-
+INFO_FILENAME = 'ovpn_info.txt'
+VM_INFONAME = 'av.info'
+VM_KERNEL = 'kernel.info'
+REPORT_PATH = f"{OVPN_PATH}/results"
+VM_RESULTS_PATH = f"{REPORT_PATH}/vm_results"
 
 BOX_VERSIONS = [["1.7.5.o", "1.7.5.v", "1.7.5.s"], ["1.8.1.o", "1.8.1.v", "1.8.1.s"]]
 BOXES = f"{OVPN_PATH}/box-config.json"
 DATES = f"/home/{USER[0]}/dates_stand3.conf"
 
-SYS_VERSION = run_command("cat /etc/astra/build_version | tr -d '[:space:]'")
-SYS_KERNEL = run_command("uname -r | tr -d '[:space:]'")
+SYS_VERSION = sys_com.check_output_command("cat /etc/astra/build_version | tr -d '[:space:]'")
+SYS_KERNEL = sys_com.check_output_command("uname -r | tr -d '[:space:]'")
 SYS_VERSION_MOD = [SYS_VERSION+".o", SYS_VERSION+".v", SYS_VERSION+".s"]
 
 
 
-VMS = ["vpn1", "vpn2", "balancer"]
+VMS = ["vpn1", "pooler"]
 
 VMS_DATES = {  # Полный список ВМ
     'vpn1': {'host-port': '22',
                   'ip_bridge': '10.177.103.120'},
-    'vpn2': {'host-port': '22',
-                  'ip_bridge': '10.177.103.121'},
-    'balancer': {'host-port': '22',
+    'pooler': {'host-port': '22',
                   'ip_bridge': '10.177.103.122'}
 }
 
 VMS_GROUPS = {
-    "vpn's": ["vpn1", "vpn2"],
-    'balancer': ["balancer"]
+    "vpn's": ["vpn1"],
+    "pooler": ["pooler"]
 }
-print(f'{SYS_VERSION}, {SYS_KERNEL}, {SYS_VERSION_MOD}')
-with open('/etc/astra/build_version', 'r') as f:
-    version = f.read().strip()
-VERSION_OS = '.'.join(version.split('.')[:2])
-if VERSION_OS == '1.7':
-    VERSION_PG = '11'
-    ETH_INTERFACE = 'eth0'
-elif VERSION_OS == '1.8':
-    VERSION_PG = '15'
-    ETH_INTERFACE = 'enp0s3'
-print(VERSION_OS)
+
+
+
+
+
+
+
+
+
+

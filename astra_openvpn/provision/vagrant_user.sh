@@ -7,7 +7,7 @@ if ! id vagrant &>/dev/null; then
 fi
 
 # 2. Назначение пароля
-echo 'vagrant:vagrant' | chpasswd
+echo 'vagrant:vagrant' | chpasswd || true
 
 # 3. Разрешаем вход по паролю по SSH
 sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config

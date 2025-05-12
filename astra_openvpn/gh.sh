@@ -68,32 +68,15 @@ start_nets() {
 }
 
 complex() {
-
-
+    vagrant destroy -f
+    # Удаляем домены
     sudo virsh destroy astra_openvpn_vpn1
     sudo virsh destroy astra_openvpn_pooler
     sudo virsh undefine astra_openvpn_vpn1
     sudo virsh undefine astra_openvpn_pooler
-    # Удаляем все виртуальные сети
-    sudo virsh net-list --all | awk '{print $1}' | grep -v Name | xargs -I {} sudo virsh net-destroy {}
-    sudo virsh net-list --all | awk '{print $1}' | grep -v Name | xargs -I {} sudo virsh net-undefine {}
 
     # Удаляем все зависшие интерфейсы
     sudo ip link show | grep vnet | awk -F: '{print $2}' | xargs -I {} sudo ip link delete {}
-
-    # Полное удаление пула
-    sudo virsh pool-destroy default
-    sudo virsh pool-undefine default
-    sudo rm -rf /var/lib/libvirt/images/*
-
-    # Создание нового пула
-    sudo mkdir -p /var/lib/libvirt/images
-    sudo virsh pool-define-as default dir - - - - "/var/lib/libvirt/images"
-    sudo virsh pool-build default
-    sudo virsh pool-start default
-    sudo virsh pool-autostart default
-    sudo chown -R root:libvirt /var/lib/libvirt/images
-    sudo chmod -R 775 /var/lib/libvirt/images
 
 
     sudo systemctl restart libvirtd
@@ -103,19 +86,26 @@ complex() {
     rm -rf ~/.vagrant.d/tmp/*
     rm -rf .vagrant/
 
-    sudo rm -rf ~/.vagrant.d/boxes/astra_*
     sudo rm -rf /var/lib/libvirt/images/astra_*
     sudo rm -f /var/lib/libvirt/images/astra_openvpn_pooler*.qcow2
-    rm -rf ~/.vagrant.d/tmp/*
+    sudo rm -rf ~/.vagrant.d/tmp/*
+    sudo rm -rf /root/.vagrant.d/boxes/1.7*
+
+    sudo rm /var/lib/libvirt/images/testvm1.*
+    sudo vagrant destroy -f testvm1 testvm2
+    sudo vagrant global-status --prune
+    sudo virsh pool-refresh default
+    sudo virsh vol-delete testvm1.img --pool default || true
+    sudo virsh vol-delete testvm2.img --pool default || true
 
     # пересоздание пулла default
-    sudo mkdir -p /var/lib/libvirt/images
-    sudo virsh pool-define-as default dir - - - - "/var/lib/libvirt/images"
-    sudo virsh pool-build default
-    sudo virsh pool-start default
-    sudo virsh pool-autostart default
-    sudo chown -R root:libvirt /var/lib/libvirt/images
-    sudo chmod -R 775 /var/lib/libvirt/images
+    # sudo mkdir -p /var/lib/libvirt/images
+    # sudo virsh pool-define-as default dir - - - - "/var/lib/libvirt/images"
+    # sudo virsh pool-build default
+    # sudo virsh pool-start default
+    # sudo virsh pool-autostart default
+    # sudo chown -R root:libvirt /var/lib/libvirt/images
+    # sudo chmod -R 775 /var/lib/libvirt/images
 
     virsh list --all
     virsh net-list --all

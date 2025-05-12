@@ -1,38 +1,41 @@
 Vagrant.configure("2") do |config|
-  ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
- 
-
-  config.vm.synced_folder "./", "/vagrant", disabled: true
   config.vm.box = ENV['UPDATE']
+  config.vm.box_url = ENV['BOX_URL']
+  config.vm.synced_folder "./", "/vagrant", disabled: true
+  config.vm.boot_timeout = 100
+  num_vms = ENV['COUNT'].to_i
+  vms = []
 
-  VM_MEMORY = 8192
-  VM_CPUS   = 5
-
-  vpn_nodes = [
-    { name: "vpn1",   hostname: "vpn1.stress.rbt", ip: "192.168.50.121" },
-    { name: "pooler", hostname: "pooler.stress.rbt", ip: "dhcp" }
-  ]
-
-  vpn_nodes.each do |vm|
-    config.vm.define vm[:name] do |node|
-      node.vm.hostname = vm[:hostname]
-
-      # Убираем дефолтную сеть vagrant-libvirt
-      node.vm.provider :libvirt do |v|
-        v.driver = "kvm"
-        v.uri = "qemu:///system"
-        v.memory = VM_MEMORY
-        v.cpus = VM_CPUS
-        v.disk_bus = "sata"
-        v.management_network_name = "none"
-        v.management_network_device = "eth999"
+  for i in 1..num_vms do
+    new_vm = { 
+      :name => "testvm#{i}", 
+      :hostname => "testvm#{i}.stress.rbt", 
+      :args => "testvm#{i}", 
+      :cpus => ENV['CPU'], 
+      :memory => ENV['RAM']
+    }
+    vms.push(new_vm)
+  end
+    
+  vms.each do |machine|
+    config.vm.define machine[:name] do |node|
+      node.vm.hostname = machine[:hostname]
+      
+      if machine[:name] == "testvm1"
+        node.vm.network "private_network",
+                        ip: "192.168.100.50",
+                        libvirt__network_name: "test"
       end
 
-      # Прописка провижена
-      node.vm.provision "shell",
-        privileged: true,
-        path: "provision/vagrant_user.sh"
+      node.vm.provider :libvirt do |v|
+        v.memory = machine[:memory]
+        v.cpus = machine[:cpus]
+        v.default_prefix = ""
+        v.disk_bus = "sata"
+      end
+      
+      node.vm.provision "shell", path:"provision/env_provision.sh", args: [ENV['RC'], ENV['KERNEL']]
+      node.vm.provision "shell", inline: "echo 'Rebooting VM...'; sudo reboot", run: "always"
     end
   end
 end
-

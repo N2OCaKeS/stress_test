@@ -1,7 +1,7 @@
 import json
 import os
-from ovpn_conf import BOXES, DATES
-from libs.libovpn import run_command
+from ovpn_conf import BOXES, DATES, SYS_KERNEL
+from astra_openvpn.libs.ovpnlib import run_command
 import subprocess
 from allta import SystemCommands
 
@@ -43,9 +43,11 @@ class AOvpn20kTest:
 
 sys_com = SystemCommands()   
 test = AOvpn20kTest()
-sys_com.cmd("wget " + test.choose_box())
+#sys_com.cmd("wget " + test.choose_box())
 box = test.choose_box().split('/')[-1].replace(".box", "")
 os.environ['UPDATE'] = box
+os.environ['RC'] = "1.7.5"
+os.environ['KERNEL'] = SYS_KERNEL
 
 sys_com.cmd("vagrant mutate 1.*.box libvirt")
 #sys_com.cmd("VAGRANT_LOG=debug vagrant up --provider libvirt 2>&1 | tee vagrant.log")

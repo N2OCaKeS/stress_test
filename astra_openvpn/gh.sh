@@ -69,6 +69,17 @@ start_nets() {
 
 complex() {
     vagrant destroy -f
+    rm -rf .vagrant
+    rm -rf /var/lib/libvirt/images/testvm2.img
+    rm -rf /root/.vagrant.d/boxes/orel-vanilla-gui-VAGRANTSLASH-1.7.5
+    virsh net-destroy test
+    virsh net-destroy vagrant-libvirt
+    virsh net-undefine test
+    virsh net-undefine vagrant-libvirt
+    virsh net-define lv-nets/test.xml
+    virsh net-start test
+    virsh net-autostart test
+
     # Удаляем домены
     sudo virsh destroy astra_openvpn_vpn1
     sudo virsh destroy astra_openvpn_pooler
@@ -76,9 +87,6 @@ complex() {
     sudo virsh undefine astra_openvpn_pooler
 
     # Удаляем все зависшие интерфейсы
-    sudo ip link show | grep vnet | awk -F: '{print $2}' | xargs -I {} sudo ip link delete {}
-
-
     sudo systemctl restart libvirtd
     sudo rm -f /var/lib/libvirt/dnsmasq/*
 

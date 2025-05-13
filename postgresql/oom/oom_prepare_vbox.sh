@@ -29,21 +29,21 @@ sudo apt install pkexec -y
 sudo apt install policykit-1 -y
 
 
-# if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-#   sudo dpkg -i virtualbox-7.0_7.0.20*.deb
-#   if [[ $? != 0 ]]; then
-#     sudo apt install -fy
-#     sudo dpkg -i virtualbox-7.0_7.0.20*.deb
-#   fi
-#   sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-7.0.20*.vbox-extpack
-#elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
-sudo dpkg -i virtualbox-6.1*.deb
-if [[ $? != 0 ]]; then
-  sudo apt install -fy
+if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+  sudo dpkg -i virtualbox-7.0_7.0.20*.deb
+  if [[ $? != 0 ]]; then
+    sudo apt install -fy
+    sudo dpkg -i virtualbox-7.0_7.0.20*.deb
+  fi
+  sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-7.0.20*.vbox-extpack
+elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
   sudo dpkg -i virtualbox-6.1*.deb
-fi
+  if [[ $? != 0 ]]; then
+    sudo apt install -fy
+    sudo dpkg -i virtualbox-6.1*.deb
+  fi
   sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-6.1*.vbox-extpack
-#fi
+fi
 
 
 
@@ -56,46 +56,6 @@ elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
 fi
 
 
-#source "provision/env_provision.sh"
-
-# uid check
-#if test $(id -u) == 0; then
-#  >&2 echo -e "\e[91mERROR (!) Required: id != 0\e[0m"
-#  exit 1
-#fi
-
-# install virtualbox-6.1 & ext.pack
-# if test ! "$(dpkg -l | awk '{print $2}' | grep ^virtualbox-6.1$)"; then
-#   wget -r -nH --cut-dirs=3 --no-parent \
-#   ftp://qa111.devos.astralinux.ru/packages/virtualbox 2>/dev/null
-
-#   if [ $? != 0 ]; then
-#     >&2 echo -e "\e[91mERROR (!) Package vbox import\e[0m"
-#     exit 1
-#   fi
-
-  # sudo apt install gcc make perl -y
-  # sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
-  # sudo dpkg -i virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
-  # if [ $? != 0 ]; then
-  #   >&2 echo -e "\e[91mERROR (!) VirtualBox package installation\e[0m"
-  #   exit 1
-  # fi
-
-#   sudo yes | VBoxManage extpack install Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
-#   if [ $? != 0 ]; then
-#     >&2 echo -e "\e[91mERROR (!) VirtualBox Extension Pack installation\e[0m"
-#     exit 1
-#   fi
-#   if test ! "$(vboxmanage list extpacks | awk '{print $2}' | grep 6.1.36$)"; then
-#     >&2 echo -e "\e[91mERROR (!) wrong install VirtualBox Extension Pack\e[0m"
-#     exit 1
-#   fi
-
-#   sudo rm libvpx5_1.7.0-3+deb10u1_amd64.deb
-#   sudo rm virtualbox-6.1_6.1.36-152435~Debian~buster_amd64.deb
-#   sudo rm Oracle_VM_VirtualBox_Extension_Pack-6.1.36a-152435.vbox-extpack
-# fi
 
 if test ! "$(dpkg -l | awk '{print $2}' | grep ^vagrant$)"; then
   # vagrant package download
@@ -112,12 +72,6 @@ if test ! "$(dpkg -l | awk '{print $2}' | grep ^vagrant$)"; then
     sudo rm -rf /opt/vagrant/embedded/gems/*
   fi
 
-  # vagrant installation
-  sudo dpkg -i vagrant_2.2.19_x86_64.deb
-  if [ $? != 0 ]; then
-    >&2 echo -e "\e[91mERROR (!) Vagrant package installation\e[0m"
-    exit 1
-  fi
 
   # remove garbage
   sudo rm vagrant_2.2.19_x86_64.deb
@@ -212,28 +166,4 @@ if test ! "$(groups | grep vboxusers)"; then
   echo -e "\e[91mPlease, reboot your system and restart this script again\e[0m"
   exit 0
 fi
-
-# # create NAT network for vbox
-# if test ! "$(vboxmanage natnetwork list | grep $vbox_nat)"; then
-#   vboxmanage natnetwork add --netname "$vbox_nat" \
-#   --network "$vbox_nat_ip/$vbox_subnet_mask" --enable --dhcp on
-
-#   if [ $? != 0 ]; then
-#     >&2 echo -e "\e[91mERROR (!) Can't create NAT - '$vbox_nat' network\e[0m"
-#     exit 1
-#   fi
-# fi
-
-# # create forwarding rules for NAT network
-# for dom in ${vbox_machines[*]}; do
-#   declare -n vm_hash=$dom
-#   vboxmanage natnetwork modify --netname $vbox_nat --port-forward-4 \
-#   "$dom:tcp:[127.0.0.1]:${vm_hash[forward-port]}:[${vm_hash[ip]}]:22" 2>/dev/null
-# done
-
-
-
-
-#vagrant box add http://qa111.devos.astralinux.ru/vault/vagrant/smol-1.8.0.json --force
-#UPDATE='smolensk-vanilla-gui/1.8.0.2' vagrant up
 

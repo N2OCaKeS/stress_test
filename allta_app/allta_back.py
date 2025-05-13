@@ -518,7 +518,7 @@ try:
     conf.send_comment()
     busy_status_control(__stand, 'testrun done')
 except Exception as e:
-    print(e)
+    print(f'ErrorType: {type(e).__name__}, Message: {str(e)}')
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Готово')
     bot_results('Прогон завершен исключением')

@@ -75,6 +75,17 @@ class Digsig(system):
 
     def run_test(self):
         self.cmd('cd digsig && sudo bash vbox_prepare.sh')
+
+        #Отключаем модули kvm, чтобы небыло конфликта ресурсов с vbox
+        try:
+            modules = system.check_output_command("lsmod | grep kvm | awk '{print$1}'").split('\n')
+            print(f'KVM modules found: {modules}')
+            [system.cmd(f'sudo modprobe -r {module}') for module in modules if modules]
+            print(system.cmd('lsmod | grep kvm'))
+            system.cmd('lsmod | grep kvm')
+        except Exception as e:
+            print(f'Error is: {type(e).__name__}\nMessage is: {str(e)}')
+            
         self.cmd(f'cd digsig && vagrant box add {self.box_name} {self.box_url} --force')
         self.cmd(f'cd digsig && UPDATE={self.box_name} BOX_URL={self.box_url} KL={self.kernel} RC={self.rc} vagrant up --provider=virtualbox')
 

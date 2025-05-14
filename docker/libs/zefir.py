@@ -10,11 +10,12 @@ from atlassian import Confluence
 from os import remove, path
 from libs.dockerlib import response
 from libs.libpublic import Public
+from libs.libstatistics import DockerStatistics
 from time import sleep, ctime
 from docker_conf import JIRA_URL, CONFLUENCE_URL
 
 
-class UploaderZC(Public):
+class UploaderZC(Public, DockerStatistics):
 
     def __init__(self,
                  folder_tree_id=None,
@@ -73,7 +74,11 @@ class UploaderZC(Public):
                                test_cycle_name=self.TCYC,
                                test_case_name=self.TCAS,
                                basic_auth=self.BA)
-
+        if self.statistics == True:
+            statistics = DockerStatistics(username=self.UN, 
+                                          token=self.CT)
+            statistics.update_statistics()
+            
         if status == 'pass':
             status_code = 91
         elif status == 'fail':

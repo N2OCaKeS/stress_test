@@ -46,6 +46,16 @@ class VBox():
 
         
         system.cmd('apt install -fy')
+
+        #Отключаем модули kvm, чтобы небыло конфликта ресурсов с vbox
+        try:
+            modules = system.check_output_command("lsmod | grep kvm | awk '{print$1}'").split('\n')
+            print(f'KVM modules found: {modules}')
+            [system.cmd(f'sudo modprobe -r {module}') for module in modules if modules]
+            print(system.cmd('lsmod | grep kvm'))
+            system.cmd('lsmod | grep kvm')
+        except Exception as e:
+            print(f'Error is: {type(e).__name__}\nMessage is: {str(e)}')
         
         if system.cmd_with_returncode(f'cd oom && vagrant box add {box_name} {box_url} --force') != 0:
             return 1

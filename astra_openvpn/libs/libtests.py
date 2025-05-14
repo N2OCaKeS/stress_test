@@ -102,25 +102,32 @@ class CreateVM:
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
         
-        vagrant_env = f"UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={}".format(box_name,
-                                                                                            box_url,
-                                                                                            self.rc_name,
-                                                                                            self.kernel,
-                                                                                            self.vm_count,
-                                                                                            self.vcpu,
-                                                                                            self.ram)
+        vagrant_env = "UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={}".format(box_name,
+                                                                                           box_url,
+                                                                                           self.rc_name,
+                                                                                           self.kernel,
+                                                                                           self.vm_count,
+                                                                                           self.vcpu,
+                                                                                           self.ram)
         # create_vm
         print(f"{vagrant_env} vagrant up --provide=libvirt")
-        sys_com.cmd(f'{vagrant_env} vagrant up --provider=libvirt'
+        sys_com.cmd(f'{vagrant_env} vagrant up --provider=libvirt')
 
         print('\nWait reboot VMs 100s...\n')
         sleep(100)
         
         # interfaces + ext provision
-        sys_com.cmd("virsh attach-interface testvm1 --source test --type network --model virtio --config --persistent")
-        sys_com.cmd("virsh reboot testvm1")
-        sys_com.cmd(f"{vagrant_env} vagrant upload provision/provision_vpn.sh /home/vagrant/ testvm1")
-        sys_com.cmd(f'{vagrant_env} vagrant ssh testvm1 -c "sudo bash /home/vagrant/provision_vpn.sh"')
+        # vpn machine
+        #sys_com.cmd("virsh attach-interface testvm1 --source vpn-net --type network --model virtio --config --persistent")
+        #sys_com.cmd("virsh reboot testvm1")
+        #sys_com.cmd(f"{vagrant_env} vagrant upload provision/vpn_provision.sh /home/vagrant/ testvm1")
+        #sys_com.cmd(f'{vagrant_env} vagrant ssh testvm1 -c "sudo bash /home/vagrant/vpn_provision.sh"')
+        # pooler machine
+        #sys_com.cmd("virsh attach-interface testvm2 --source pooler-net --type network --model virtio --config --persistent")
+        #sys_com.cmd("virsh reboot testvm2")
+        #sys_com.cmd(f"{vagrant_env} vagrant upload provision/pooler_provision.sh /home/vagrant/ testvm2")
+        #sys_com.cmd(f'{vagrant_env} vagrant ssh testvm2 -c "sudo bash /home/vagrant/pooler_provision.sh"')
+
 
 
 class Ovpn20k(CreateVM):

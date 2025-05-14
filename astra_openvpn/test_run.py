@@ -8,7 +8,7 @@ from ovpn_conf import REPORT_PATH
 #                         vcpu = 8,
 #                         ram=16384)
 
-ovpn_test = Ovpn20k(rc_vbox="1.7.5.o",
+ovpn_test = Ovpn20k(rc_vbox="1.7.5",
                          vm_count=2,
                          testdir=REPORT_PATH,
                          kernel="6.1.90-1-generic",

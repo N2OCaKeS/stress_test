@@ -57,15 +57,16 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
+cd ${CPATH}
 pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
 python3.12 -m pip install --upgrade pip
-#python3.12 -m pip install -r ${CPATH}requirements.txt
+python3.12 -m pip install -r ${CPATH}/req.txt
 #if [[ $? != 0 ]]; then
 #    python3.12 -m pip install -r requirements.txt
 
 #lvirt
-apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
-apt-get install qemu ebtables libguestfs-tools ruby-fog-libvirt
+sudo DEBIAN_FRONTEND=noninteractive apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
+sudo DEBIAN_FRONTEND=noninteractive apt-get install qemu ebtables libguestfs-tools ruby-fog-libvirt
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 sudo dpkg -i vagrant_2.2.19_x86_64.deb
@@ -96,4 +97,23 @@ else
 fi
 
 wget http://allta.devos.astralinux.ru/rest/api/get-box-config -O box-config.json 
-    
+
+
+# create lv-nets
+#virsh net-define ${CPATH}/lv-nets/vpn-net.xml
+#virsh net-start vpn-net
+#virsh net-autostart vpn-net
+
+#virsh net-define ${CPATH}/lv-nets/pooler-net.xml
+#virsh net-start pooler-net
+#virsh net-autostart pooler-net
+
+# маршрутизация
+#echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+
+#sudo iptables -A FORWARD -i virbr100 -o virbr0 -j ACCEPT
+#sudo iptables -A FORWARD -i virbr0 -o virbr100 -j ACCEPT
+#sudo iptables -t nat -A POSTROUTING -s 192.168.100.0/24 -o virbr0 -j MASQUERADE
+
+#sudo iptables -A FORWARD -i virbr100 -o virbr200 -j ACCEPT
+#sudo iptables -A FORWARD -i virbr200 -o virbr100 -j ACCEPT

@@ -59,3 +59,7 @@ python3.12 -m pip install -r ${CPATH}requirements.txt
 if [[ $? != 0 ]]; then
     python3.12 -m pip install -r requirements.txt
 fi
+
+sudo mkdir -p /etc/docker
+echo '{"debug": true, "astra-sec-level": 6}' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker

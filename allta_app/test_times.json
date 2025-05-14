@@ -49,7 +49,7 @@
             "FAT": "1:52:32",
             "NTFS": "10:19:00",
             "XFS": "1:02:22",
-            "unix": "1:25:51",
+            "unix": "1:19:27",
             "syslog-ng": "4:33:43",
             "apache-rp": "0:59:39",
             "parsec impact-fs": "0:56:29",
@@ -59,13 +59,13 @@
             "auditd-u": "6:45:17",
             "EXT4 parsec": "1:07:49",
             "XFS parsec": "1:08:37",
-            "unix parsec": "1:27:59",
+            "unix parsec": "1:12:19",
             "Total time": "0:00:00",
-            "docker-wa": "1:02:05"
+            "docker-wa": "18:12:57"
         },
         "stand4": {
             "FIO": "2:23:15",
-            "FreeIPA auth": "2:06:34",
+            "FreeIPA auth": "1:49:34",
             "OCFS2": "3:39:30",
             "postgresql": "3:28:28",
             "postgresql-aud-off": "3:11:29",
@@ -77,10 +77,10 @@
             "steal time-sm": "3:52:05",
             "vPingPong": "2:11:04",
             "vUnixBench": "3:35:21",
-            "psql oom": "1:29:58",
+            "psql oom": "1:17:50",
             "Total time": "0:00:00",
             "syslog-ng-cwl": "1 day, 8:06:15",
-            "digsig-cdt": "3:05:16"
+            "digsig-cdt": "1:15:08"
         }
     }
 }

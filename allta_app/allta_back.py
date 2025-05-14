@@ -295,6 +295,9 @@ try:
                         print('Выполняется...')
                         with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
                             w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
+                        if tests[dates_list[i][1]] == 'FreeIPA auth':
+                            with open(f'conf/col3_body_stand8.conf', 'w') as w:
+                                w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
                             
                         #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                         if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
@@ -422,6 +425,9 @@ try:
                     save_all_output('Выполняется...\n')
                     print('Выполняется...')
                     with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
+                            w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
+                    if tests[dates_list[i][1]] == 'FreeIPA auth':
+                        with open(f'conf/col3_body_stand8.conf', 'w') as w:
                             w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
                     
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':

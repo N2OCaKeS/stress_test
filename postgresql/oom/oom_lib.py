@@ -78,5 +78,7 @@ class VBox():
                 else:
                     print('Тест пройден, ошибки не обнаружены')
                     return 0
-                
+        else: 
+            print('Файл </home/tests/results> не найден')
+            return 1
                 

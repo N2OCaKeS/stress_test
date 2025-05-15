@@ -73,8 +73,8 @@ end
 def date_harvester(machine)
   machine.vm.provision "shell", inline:<<-SHELL
     cat /parsec/log/astra/events | grep oom > /home/tests/results
-    test "$(grep 1.7 /etc/astra_version)" && cat /var/lib/postgresql/11/main/pg_log/postgresql* | grep крах >> /home/results
-    test "$(grep 1.8 /etc/astra_version)" && cat /var/lib/postgresql/15/main/pg_log/postgresql* | grep крах >> /home/results
+    test "$(grep 1.7 /etc/astra_version)" && cat /var/lib/postgresql/11/main/pg_log/postgresql* | grep крах >> /home/tests/results
+    test "$(grep 1.8 /etc/astra_version)" && cat /var/lib/postgresql/15/main/pg_log/postgresql* | grep крах >> /home/tests/results
     exit 0
   SHELL
 end
@@ -84,7 +84,7 @@ Vagrant.configure("2") do |config|
   config.vm.box = ENV['UPDATE']
   config.vm.box_url = ENV['BOX_URL']
   #config.vm.guest = :debian
-  #config.vm.synced_folder "/home", "/home"
+  config.vm.synced_folder "/home/tests", "/home/tests"
   
   ENV['RC'].nil? || ENV['RC'].start_with?('1.7') ? vms = [
     { :name => "database1", :hostname => "database1.oom.rbt", :args => "database1", :cpus => "2", :memory => "4096", :ip => "10.177.103.211" }
@@ -109,7 +109,7 @@ Vagrant.configure("2") do |config|
         upgrade(machine)
         set_kernel(machine, ENV['KL'])
 
-        machine.vm.synced_folder "/home/tests", "/home/tests"
+        #machine.vm.synced_folder "/home/tests", "/home/tests"
 
         perf_func(machine)
 

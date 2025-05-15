@@ -122,7 +122,7 @@ uzs.upload_test_cycle_status('progress')
 
 
 provider.prepare()
-provider.build(box_name=box_name, box_url=box_url, kernel=args.TCYC, rc=args.SET_BOX)
+provider.build(box_name=box_name, box_url=box_url, kernel=kernel, rc=args.SET_BOX)
 if provider.check() == 0:
     uzs.upload_test_cycle_status(zefir_status='pass')
 else: uzs.upload_test_cycle_status(zefir_status='fail')

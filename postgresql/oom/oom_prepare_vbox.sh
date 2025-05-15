@@ -4,6 +4,9 @@
 #sudo apt update -y
 
 mkdir -p /home/tests
+chmod 777 -R /home/tests
+touch /home/tests/results
+chmod 777 -R /home/tests/results
 
 #ansible
 #sudo apt-get install ansible -y

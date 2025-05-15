@@ -1,10 +1,10 @@
 #!/bin/bash
 
 WORKER=5
-LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
 NGINX_DC="docker-compose.nginx.yml"
+LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
 APP_CONTAINERS=("flask" "nginx")
-
+ALL_CONTAINERS=("${LOAD_DOCKER_CONTAINERS[@]}" "${APP_CONTAINERS[@]}")
 CPATH="/home/u/git/stress_test/docker/site/"
 LPATH="/home/u/git/stress_test/docker/libs/"
 VENV="/home/u/python/Python-3.12.1/venv/bin/"
@@ -27,10 +27,13 @@ check_locust_containers() {
     echo "Ожидание 10 секунд перед проверкой контейнеров..."
     sleep 10
 
+    TIMEOUT=60
+    START_TIME=$(date +%s)
+
     while true; do
         all_running=true
 
-        for name in "${LOAD_DOCKER_CONTAINERS[@]}"; do
+        for name in "${ALL_CONTAINERS[@]}"; do
             status=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null)
 
             if [ "$status" != "running" ]; then
@@ -46,6 +49,13 @@ check_locust_containers() {
         if $all_running; then
             echo "Все контейнеры работают."
             break
+        fi
+
+        CURRENT_TIME=$(date +%s)
+        ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
+        if [ $ELAPSED_TIME -ge $TIMEOUT ]; then
+            echo "Время ожидания истекло. Прерывание цикла."
+            exit 1
         fi
     done
 }
@@ -146,7 +156,7 @@ nginx_docker(){
         done
         echo "Контейнер master завершил работу."
 
-    # В контейнерах только locust
+    # В контейнерах только приложение
     elif [[ "$MODE" == "locust" ]]; then
 	sed -i "s|^csv = .*|csv = ${RESULTS_DIR_DOCKER_LOCUST_PROC}/results|g" "$LOCUST_CONF"
     	sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER_LOCUST_PROC}/results.html|g" "$LOCUST_CONF"
@@ -206,6 +216,7 @@ case $1 in
 	    nginx_docker docker
 	    nginx_docker locust
 	    echo "Тест выполнился"
+	    close_and_delete
 	    ;;
 esac
 

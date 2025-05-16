@@ -43,7 +43,18 @@ sudo apt update
 #sudo apt-get install linux-[5-6].*-lowlatency -y
 sudo apt-get install -y libffi-dev gcc make libpdp-dev
 #sudo apt-get install -y python3-numpy
+if [ "$HOSTNAME" = "testvm1.stress.rbt" ]; then
+    echo "---$(HOSTNAME)---i"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
+    sudo astra-openvpn-server start
+    sudo astra-openvpn-server status
+    sudo astra-openvpn-server client tester
+    sudo chown -R vagrant:vagrant /etc/openvpn/clients_keys/tester/
+else
+    echo "---($HOSTNAME)---"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
 
+fi
 
 kernel="$2"
 kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")

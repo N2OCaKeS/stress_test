@@ -1,4 +1,4 @@
-from allta import SystemCommands
+from allta import SystemCommands, VBox
 from libs.ovpnlib import (check_output_command, 
                           cmd, 
                           send_remote_command,
@@ -17,7 +17,6 @@ from time import sleep
 
 
 sys_com = SystemCommands()
-
 
 class CreateVM:
     def __init__(self,
@@ -116,6 +115,9 @@ class CreateVM:
         print('\nWait reboot VMs 100s...\n')
         sleep(100)
         
+        #sys_com.cmd(f"{vagrant_env} vagrant upload provision/vpn_provision.sh /home/vagrant/ testvm1")
+        #sys_com.cmd(f'{vagrant_env} vagrant ssh testvm1 -c "sudo bash /home/vagrant/vpn_provision.sh"')
+
         # interfaces + ext provision
         # vpn machine
         #sys_com.cmd("virsh attach-interface testvm1 --source vpn-net --type network --model virtio --config --persistent")
@@ -150,14 +152,31 @@ class Ovpn20k(CreateVM):
 
 
     def start_test(self):
-        self.vm_dates = {
+        self.vms_dates = {
              vm:{
-                'ip': sys_com.check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+                "host-port": 22,
+                'ip_bridge': sys_com.check_output_command(self.check_vm_ip.format(vm)).split('/')[0], 
                 'login':f'{self.user}',
                 'password':f'{self.password}'
                 } for vm in self.vms}
-        print(f'VM dates is:\n{self.vm_dates}')
+        self.domain = "stress.rbt"
 
+        commands = {
+                "testvm2":{
+                    "copy_keys": {
+                        "command": f"nohup sshpass -p {self.vms_dates["testvm1"]["password"]} scp -o StrictHostKeyChecking=no -r {self.vms_dates['testvm1']['login']}@{self.vms_dates["testvm1"]["ip_bridge"]}:/etc/openvpn/clients_keys/tester/ /home/vagrant/ > scp.log 2>&1",
+                        "signal set": "1",
+                        "signal get": ""},
+                    "setup_con": {
+                        "command": f"sudo bash -c 'cd /home/vagrant/tester/ && openvpn --config client.ovpn --daemon'",
+                        "signal set": "",
+                        "signal get": ["1"]}
+                }}
+
+        VBox.set_hosts(domain=self.domain, vms_dates=self.vms_dates)
+        VBox.execute(commands=commands, vms_dates=self.vms_dates, username=self.user, password=self.password)
+        print(f'VM dates is:\n{self.vms_dates}')
+        
 
     def vms_destroy(self):
         try:

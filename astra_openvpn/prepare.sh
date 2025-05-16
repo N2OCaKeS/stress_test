@@ -41,10 +41,6 @@ echo 2
 # test packages
 
 
-
-
-#sudo apt install astra-openvpn-server -y
-
 #python
 sudo mkdir /home/u/python
 cd /home/u/python

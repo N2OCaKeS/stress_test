@@ -21,37 +21,12 @@ class Test:
 
         provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
                      username=USERNAME, password=PASSWORD)
-
-
-        # prepare = {
-        #     'database3':{
-        #         "set permission": {
-        #             "command": f"sudo -u postgres psql -h {PGPOOL_HOSTNAME} -p {POSTGRES_PORT} -c \"ALTER SCHEMA public OWNER TO user0\"",
-        #             "signal set": "permission",
-        #             "signal get": ""
-        #         },
-
-        #         "pgbench manual": {
-        #             "command": f"yes 1 | kinit user0 && pgbench -i -s 100 -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U user0 contrprimer",
-        #             "signal set": "pgbench manual",
-        #             "signal get": ["permission"]
-        #         },
-        #         "set chmod": {
-        #             "command": "sudo chmod 777 /tmp/clients.py",
-        #             "signal set": "",
-        #             "signal get": ["pgbench manual"]
-        #         },
-        #     }
-        # }
-
-        # provider.execute(commands=prepare, vms_dates=VMS_DATES,
-        #                  vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)        
-        postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
+        
         postgres_data_path = POSTGRES_DATA_PATH
         test = {
             "database3": {
                 "start test": {
-                    "command": "sudo chmod 777 /tmp/clients.py && python3 /tmp/clients.py",
+                    "command": "sudo chmod 777 /tmp/clients.py && time python3 /tmp/clients.py",
                     "signal set": "",
                     "signal get": ''
                 },
@@ -140,8 +115,13 @@ class Test:
                     "signal set": 'promote1',
                     "signal get": ['attach2' ]                   
                 },
+                # "follow standby to new master":{
+                #     "command": f'sleep 30 && sudo /tmp/follow.sh 0 {VMS_DATES['database1']['ip_bridge']} {POSTGRES_PORT} {postgres_data_path} 1 {VMS_DATES['database2']['ip_bridge']} 0 0 {POSTGRES_PORT} {postgres_data_path} && sudo /tmp/follow.sh 2 {VMS_DATES['database3']['ip_bridge']} {POSTGRES_PORT} {postgres_data_path} 1 {VMS_DATES['database2']['ip_bridge']} 0 0 {POSTGRES_PORT} {postgres_data_path}',
+                #     "signal set": 'promote2',
+                #     "signal get": ['promote1' ]                   
+                # },
                 "wait finally promote":{
-                    "command": f'sleep 40',
+                    "command": f'sleep 20',
                     "signal set": 'promote',
                     "signal get": ['promote1' ]                   
                 },
@@ -195,19 +175,17 @@ class Test:
                     "signal set": 'old master reinstall',
                     "signal get": ['old master stop' ] 
                 },
-                'filling postgres':{
-                    "command": f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database2']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R --wal-method=stream"',
-                    "signal set": 'old master filling',
-                    "signal get": ['old master reinstall' ] 
-                },                
+                # 'filling postgres':{
+                #     "command": f'sleep 10 && sudo rm -rf {postgres_data_path} && sudo mkdir {postgres_data_path} && sudo chown postgres:postgres {postgres_data_path} && sudo chmod 750 {postgres_data_path} && sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database2']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R --wal-method=stream"',
+                #     "signal set": 'old master filling',
+                #     "signal get": ['old master reinstall' ] 
+                # },                
                 'start db':{
-                    "command": f'cd /tmp && sudo su postgres -c \'/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl start -D {postgres_data_path} -s -l {postgres_config_path}/logfile -o "-c config_file={postgres_config_path}/postgresql.conf"\'',
+                    "command": f'sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
                     "signal set": 'old master start',
-                    "signal get": ['old master filling' ]
+                    "signal get": ['old master reinstall' ]
                 },                  
             }
-
-
         }
         provider.execute(commands=test, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
@@ -250,3 +228,6 @@ class Test:
 # sudo PCPPASSFILE=/tmp/.pcppass pcp_node_info -h pgpool.balance.rbt -p 9898 -U pgpool -w
 # sudo PCPPASSFILE=/tmp/.pcppass pcp_promote_node  -w -v --switchover -U pgpool -h pgpool.balance.rbt 2 
 # sudo PCPPASSFILE=/tmp/.pcppass pcp_attach_node -h pgpool.balance.rbt -p 9898 -U pgpool -w 2
+
+# sudo /tmp/follow.sh 0 10.177.103.111 5440 /var/lib/postgresql/11/contrprimer 1 10.177.103.112 0 0 5440 /var/lib/postgresql/11/contrprimer
+# sudo /tmp/follow.sh 2 10.177.103.113 5440 /var/lib/postgresql/11/contrprimer 1 10.177.103.112 0 0 5440 /var/lib/postgresql/11/contrprimer

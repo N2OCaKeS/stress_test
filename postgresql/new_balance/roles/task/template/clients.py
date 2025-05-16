@@ -11,7 +11,7 @@ N_ACCOUNTS = 100000
 db_params = {
     "dbname": 'contrprimer',
     "user": "postgres",
-    "host": "10.177.103.131",
+    "host": "pgpool.balance.rbt",
     "port": "5440"
 }
 
@@ -19,7 +19,7 @@ db_params = {
 num_clients = 20
 
 # Количество транзакций на каждый поток
-num_transactions = 15000  # ~3-6 минут
+num_transactions = 10000  # ~3-6 минут 1000 ~30 sec
 
 scale_factor = 100
 

@@ -1,4 +1,5 @@
 from allta import SystemCommands
-from psb_conf import VENV_PATH
+from new_balance import main
 
-SystemCommands.check_output_command(f'source {VENV_PATH} && cd ./new_balance && python main.py')
+
+main.balance(rc='1.7.6')

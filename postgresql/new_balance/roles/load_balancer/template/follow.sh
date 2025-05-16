@@ -93,7 +93,7 @@ sudo su - postgres -c "\
     -h '${NEW_HOST}' -p '${NEW_PORT}' \
     -U '${REPLUSER}' \
     -D '${NODE_PGDATA}' \
-    -R -X stream -P --wal-method=stream"
+    -R -X stream -P"
 EOF
 # fi
 

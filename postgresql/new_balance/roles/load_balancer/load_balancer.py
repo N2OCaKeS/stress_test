@@ -81,11 +81,11 @@ class LoadBalancer():
                     'old': '#failover_command = \'\'',
                     'new': f'failover_command = \'/tmp/failover.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH} %H %P\''
                 },
-                {
-                    'path': f'{pgpool_config_path}/pgpool.conf',
-                    'old': '#follow_primary_command = \'\'',
-                    'new': f'follow_primary_command = \'/tmp/follow.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH}\''
-                },
+                # {
+                #     'path': f'{pgpool_config_path}/pgpool.conf',
+                #     'old': '#follow_primary_command = \'\'',
+                #     'new': f'follow_primary_command = \'/tmp/follow.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH}\''
+                # },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_on_backend_error = on',
@@ -125,22 +125,22 @@ class LoadBalancer():
         scp = {
             'g_load_balancer': {
                 'mode': 'push',
-                'path_host': f'./roles/load_balancer/template/failover.sh',
+                'path_host': f'./roles/load_balancer/template/fix_failover.sh',
                 'path_vm': '/tmp/failover.sh'
             },                       
         }
 
         provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
                      vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
-        scp = {
-            'g_load_balancer': {
-                'mode': 'push',
-                'path_host': f'./roles/load_balancer/template/follow.sh',
-                'path_vm': '/tmp/follow.sh'
-            },                       
-        }
-        provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
-                     vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)        
+        # scp = {
+        #     'g_load_balancer': {
+        #         'mode': 'push',
+        #         'path_host': f'./roles/load_balancer/template/follow.sh',
+        #         'path_vm': '/tmp/follow.sh'
+        #     },                       
+        # }
+        # provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
+        #              vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)        
         new_block = f"""backend_hostname0 = '{VMS_DATES['database1']['ip_bridge']}'
 backend_port0 = {POSTGRES_PORT}
 backend_weight0 = 1

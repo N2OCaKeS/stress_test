@@ -40,6 +40,20 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
 echo 2
 # test packages
 
+#!/bin/bash
+
+if [ "$HOSTNAME" = "testvm1" ]; then
+    echo "---$(HOSTNAME)---i"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
+    sudo astra-openvpn-server start
+    sudo astra-openvpn-server status
+    sudo astra-openvpn-server client tester
+    sudo chown -R vagrant:vagrant /etc/openvpn/clients_keys/tester/
+else
+    echo "---($HOSTNAME)---"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
+
+fi
 
 #python
 sudo mkdir /home/u/python

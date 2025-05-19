@@ -162,16 +162,41 @@ class Ovpn20k(CreateVM):
         self.domain = "stress.rbt"
 
         commands = {
-                "testvm2":{
-                    "copy_keys": {
-                        "command": f"nohup sshpass -p {self.vms_dates["testvm1"]["password"]} scp -o StrictHostKeyChecking=no -r {self.vms_dates['testvm1']['login']}@{self.vms_dates["testvm1"]["ip_bridge"]}:/etc/openvpn/clients_keys/tester/ /home/vagrant/ > scp.log 2>&1",
-                        "signal set": "1",
-                        "signal get": ""},
-                    "setup_con": {
-                        "command": f"sudo bash -c 'cd /home/vagrant/tester/ && openvpn --config client.ovpn --daemon'",
-                        "signal set": "",
-                        "signal get": ["1"]}
-                }}
+            "testvm2": {
+                "copy_keys": {
+                    "command": (
+                        f"nohup sshpass -p {self.vms_dates['testvm1']['password']} scp -o StrictHostKeyChecking=no -r "
+                        f"{self.vms_dates['testvm1']['login']}@{self.vms_dates['testvm1']['ip_bridge']}"
+                        ":/etc/openvpn/clients_keys/tester/ /home/vagrant/ > scp.log 2>&1"
+                    ),
+                    "signal set": "1",
+                    "signal get": ""
+                },
+                "create_daemon": {
+                    "command": (
+                        "echo '[Unit]\n"
+                        "Description=OpenVPN Client\n"
+                        "After=network.target\n\n"
+                        "[Service]\n"
+                        "WorkingDirectory=/home/vagrant/tester/\n"
+                        "ExecStart=/usr/sbin/openvpn --config client.ovpn\n"
+                        "Restart=always\n"
+                        "User=root\n\n"
+                        "[Install]\n"
+                        "WantedBy=multi-user.target' | sudo tee /etc/systemd/system/openvpn-client.service"
+                    ),
+                    "signal set": "2",
+                    "signal get": ["1"]
+                },
+                "enable_service": {
+                    "command": (
+                        "sudo systemctl daemon-reload && sudo systemctl enable --now openvpn-client"
+                    ),
+                    "signal set": "",
+                    "signal get": ["2"]
+                }
+            }
+        }
 
         VBox.set_hosts(domain=self.domain, vms_dates=self.vms_dates)
         VBox.execute(commands=commands, vms_dates=self.vms_dates, username=self.user, password=self.password)

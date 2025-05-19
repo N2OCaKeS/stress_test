@@ -5,6 +5,7 @@ import argparse
 from docker_conf import VENV_PATH
 from libs.zefir import UploaderZC
 from libs.libtable import Report
+from allta import SystemCommands
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-wa",
@@ -84,23 +85,6 @@ parser.add_argument('-tcv', '--test-cycle-version',
 args = parser.parse_args()
 
 
-def run_command(command):
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            check=True,
-            text=True,
-            stdout=sys.stdout,
-            stderr=sys.stderr
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        print("Команда завершилась с ошибкой:")
-        print(e)
-        return False
-    
-
 if __name__ == "__main__":
 
     uzs = UploaderZC(folder_tree_id=args.FTI,
@@ -120,10 +104,10 @@ if __name__ == "__main__":
     """
         TODO Здесь запускаем тесты
     """
-
+    sc = System_commands()
     if args.TEST:
         # Start
-        run_command("cd ./site && bash start.sh final")
+        sc.cmd("cd ./site && bash start.sh final")       
         # Total Rating / HTML
         report = Report()
         report.wa_report()

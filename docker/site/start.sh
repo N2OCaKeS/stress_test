@@ -24,16 +24,21 @@ sudo echo -e "${SYS_VERSION}\n${SYS_KERNEL}\n${PACKAGE_VERSIONS}" > "${CPATH}res
 
 # Для теста nginx_docker docker
 check_locust_containers() {
+    local mode="$1"
+    local containers_to_check=("${@:2}")
+
+
+
     echo "Ожидание 10 секунд перед проверкой контейнеров..."
     sleep 10
 
-    TIMEOUT=60
+    TIMEOUT=90
     START_TIME=$(date +%s)
 
     while true; do
         all_running=true
 
-        for name in "${ALL_CONTAINERS[@]}"; do
+	for name in "${containers_to_check[@]}"; do
             status=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null)
 
             if [ "$status" != "running" ]; then
@@ -55,7 +60,11 @@ check_locust_containers() {
         ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
         if [ $ELAPSED_TIME -ge $TIMEOUT ]; then
             echo "Время ожидания истекло. Прерывание цикла."
-            exit 1
+            if [[ "$mode" == "docker" ]]; then
+	            echo "1. FULL-DOCKER_ERROR, nginx_docker MODE=locust" && exit 3
+	        elif [[ "$mode" == "locust" ]]; then
+	            echo "2. HALF-DOCKER_ERROR, nginx_docker MODE=docker" && exit 2
+	        fi
         fi
     done
 }
@@ -147,7 +156,7 @@ nginx_docker(){
         sed -i "s|^host = .*|host = http://nginx|g" "$LOCUST_CONF"
         # Стандартный docker-режим: поднимаем контейнеры через docker-compose и ждём завершения работы контейнера master
         sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build --scale worker=${WORKER}
-        check_locust_containers
+        check_locust_containers "docker" "${ALL_CONTAINERS[@]}"
         echo "Docker Nginx запущен!"
 
         echo "Ожидание завершения работы Locust master..."
@@ -162,9 +171,11 @@ nginx_docker(){
     	sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER_LOCUST_PROC}/results.html|g" "$LOCUST_CONF"
     	sed -i "s|^host = .*|host = http://172.24.0.2|g" "$LOCUST_CONF"
         # Альтернативный режим: поднимаем только контейнеры Flask и Nginx,
-        # затем запускаем Locust в headless-режиме через виртуальное окружение
+        
+	# затем запускаем Locust в headless-режиме через виртуальное окружение
         sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build flask nginx
-        echo "Контейнеры Flask и Nginx запущены (локальный режим)"
+	check_locust_containers "locust" "${APP_CONTAINERS[@]}"
+	echo "Контейнеры Flask и Nginx запущены (локальный режим)"
         
         echo "Запуск Locust и ожидание завершения..."
         sudo ${VENV}locust -f ${CPATH}Kuznechik/locustfile.py \
@@ -208,7 +219,6 @@ case $1 in
         nginx_docker locust
         ;;
     ns)
-        bash prepare.sh
 	    nginx_server
 	    ;;
     final)

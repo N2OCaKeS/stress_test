@@ -26,7 +26,7 @@ class Test:
         test = {
             "database3": {
                 "start test": {
-                    "command": "sudo chmod 777 /tmp/clients.py && time python3 /tmp/clients.py",
+                    "command": "sudo chmod 777 /tmp/clients.py && python3 /tmp/clients.py",
                     "signal set": "",
                     "signal get": ''
                 },
@@ -231,3 +231,6 @@ class Test:
 
 # sudo /tmp/follow.sh 0 10.177.103.111 5440 /var/lib/postgresql/11/contrprimer 1 10.177.103.112 0 0 5440 /var/lib/postgresql/11/contrprimer
 # sudo /tmp/follow.sh 2 10.177.103.113 5440 /var/lib/postgresql/11/contrprimer 1 10.177.103.112 0 0 5440 /var/lib/postgresql/11/contrprimer
+
+
+# /tmp/failover.sh 0 10.177.103.111 5440 /var/lib/postgresql/15/contrprimer 2 10.177.103.113 0 0 5440 /var/lib/postgresql/15/contrprimer 10.177.103.113 0

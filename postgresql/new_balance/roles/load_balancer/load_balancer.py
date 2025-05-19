@@ -36,6 +36,7 @@ class LoadBalancer():
                     'new': 'pcp_listen_addresses = \'*\''
                 },
 
+
                 # Настройки проверки состояния
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -74,6 +75,11 @@ class LoadBalancer():
                     'old': '#sr_check_user = \'nobody\'',
                     'new': 'sr_check_user = \'postgres\''
                 },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#replicate_select = off',
+                    'new': 'replicate_select = on'
+                },
 
                 # Настройки failover/failback/recovery
                 {
@@ -81,11 +87,6 @@ class LoadBalancer():
                     'old': '#failover_command = \'\'',
                     'new': f'failover_command = \'/tmp/failover.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH} %H %P\''
                 },
-                # {
-                #     'path': f'{pgpool_config_path}/pgpool.conf',
-                #     'old': '#follow_primary_command = \'\'',
-                #     'new': f'follow_primary_command = \'/tmp/follow.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH}\''
-                # },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_on_backend_error = on',

@@ -84,13 +84,6 @@ EOF"""
                     'signal get': ['Database created']
                 },
 
-                # 'create wal folder': {
-                #     'command': f'sudo mkdir -p {postgres_data_path}/wal_archive && \
-                #         sudo chown postgres:postgres {postgres_data_path}/wal_archive',
-                #     'signal set': 'Create wal folder',
-                #     'signal get': ['Database created']
-                # },
-
                 'init db': {
                     'command': f'sudo su - postgres -c "pg_createcluster {VERSION_PG} contrprimer --datadir={postgres_data_path} --port={POSTGRES_PORT} -- --data-checksums"',
                     'signal set': 'Database created',
@@ -295,7 +288,7 @@ EOF"""
                     'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R --wal-method=stream"',
                     'signal set': 'Replication success',
                     'signal get': ['database1', 'pgbench manual']
-                },
+                },              
                 'start replica': {
                     'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
                             sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
@@ -307,7 +300,20 @@ EOF"""
 
         provider.execute(commands=start_cluster, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
-        
-     
+        wal_folder = {
+            'g_database':{
+
+                'create wal folder': {
+                    'command': f'sudo mkdir -p {postgres_data_path}/wal_archive && \
+                        sudo chown postgres:postgres {postgres_data_path}/wal_archive',
+                    'signal set': '',
+                    'signal get': ''
+                },
+
+            }
+        }
+
+        provider.execute(commands=wal_folder, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)     
 
 

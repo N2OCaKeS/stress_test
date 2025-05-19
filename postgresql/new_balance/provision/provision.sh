@@ -36,6 +36,7 @@ Pin-Priority: 500
 EOF
 
 sudo apt update
+sudo astra-update -A -T -r
 sudo apt-get install rsync -y
 sudo apt-get install htop -y
 sudo apt-get install -y gcc make perl
@@ -184,4 +185,3 @@ sudo sed -i "s/GRUB_DEFAULT=.*/GRUB_DEFAULT=$kernel_conf/" /etc/default/grub
 sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT
 
-sudo astra-update -A -T -r

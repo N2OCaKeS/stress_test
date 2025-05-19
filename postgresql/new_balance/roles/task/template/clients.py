@@ -20,7 +20,7 @@ db_params = {
 num_clients = 20
 
 # Number of transactions per client
-num_transactions = 1  # ~3-6 minutes
+num_transactions = 10000  # ~3-6 minutes
 
 scale_factor = 100
 # # #

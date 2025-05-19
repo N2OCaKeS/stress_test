@@ -89,6 +89,7 @@ def remote_ssh_command(command, stand_ip):
         with open('env/tokens.json', 'r') as r:
             env = load(r)
         if stand_ip == '10.177.103.10':
+            std_user = 'quest'
             passwd = env['pass']
         else: passwd = std_password
 

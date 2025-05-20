@@ -48,8 +48,10 @@ if [ "$HOSTNAME" = "testvm1.stress.rbt" ]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
     sudo astra-openvpn-server start
     sudo astra-openvpn-server status
-    sudo astra-openvpn-server client tester
-    sudo chown -R vagrant:vagrant /etc/openvpn/clients_keys/tester/
+    for i in {1..100}; do
+        sudo astra-openvpn-server client tester$i
+    done
+    sudo chown -R vagrant:vagrant /etc/openvpn/clients_keys/
 else
     echo "---($HOSTNAME)---"
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass

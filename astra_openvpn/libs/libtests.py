@@ -161,7 +161,7 @@ class Ovpn20k(CreateVM):
                 } for vm in self.vms}
         self.domain = "stress.rbt"
 
-        commands = {
+        server_conf = {
             "testvm2": {
                 "copy_keys": {
                     "command": (
@@ -169,37 +169,67 @@ class Ovpn20k(CreateVM):
                         f"{self.vms_dates['testvm1']['login']}@{self.vms_dates['testvm1']['ip_bridge']}"
                         ":/etc/openvpn/clients_keys/tester/ /home/vagrant/ > scp.log 2>&1"
                     ),
-                    "signal set": "1",
-                    "signal get": ""
-                },
-                "create_daemon": {
-                    "command": (
-                        "echo '[Unit]\n"
-                        "Description=OpenVPN Client\n"
-                        "After=network.target\n\n"
-                        "[Service]\n"
-                        "WorkingDirectory=/home/vagrant/tester/\n"
-                        "ExecStart=/usr/sbin/openvpn --config client.ovpn\n"
-                        "Restart=always\n"
-                        "User=root\n\n"
-                        "[Install]\n"
-                        "WantedBy=multi-user.target' | sudo tee /etc/systemd/system/openvpn-client.service"
-                    ),
-                    "signal set": "2",
-                    "signal get": ["1"]
-                },
-                "enable_service": {
-                    "command": (
-                        "sudo systemctl daemon-reload && sudo systemctl enable --now openvpn-client"
-                    ),
                     "signal set": "",
-                    "signal get": ["2"]
+                    "signal get": ""
                 }
             }
         }
+        
+        for i in range(1, 101):
+            con_generator ={ 
+                "testvm2": {
+                    f"create_daemon_{i}": {
+                        "command": (
+                            "echo '[Unit]\n"
+                            "Description=OpenVPN Client\n"
+                            "After=network.target\n\n"
+                            "[Service]\n"
+                            f"WorkingDirectory=/home/vagrant/clients_keys/tester{i}\n"
+                            "ExecStart=/usr/sbin/openvpn --config client.ovpn\n"
+                            "Restart=always\n"
+                            "User=root\n\n"
+                            "[Install]\n"
+                            f"WantedBy=multi-user.target' | sudo tee /etc/systemd/system/openvpn-client-tester{i}.service"
+                        ),
+                        "signal set": "2",
+                        "signal get": ["1"]
+                    },
+                    f"enable_service_{i}": {
+                        "command": (
+                            f"sudo systemctl daemon-reload && sudo systemctl enable --now openvpn-client-tester{i}"
+                        ),
+                        "signal set": "",
+                        "signal get": ["2"]
+                    }
+                }
+            }
 
-        VBox.set_hosts(domain=self.domain, vms_dates=self.vms_dates)
-        VBox.execute(commands=commands, vms_dates=self.vms_dates, username=self.user, password=self.password)
+        commands_scp = {
+            "testvm2": {
+                "mode": "push",
+                "path_host": "./vpn_perf.py",
+                "path_vm": "/home/vagrant/"
+            }
+        }
+
+        VBox.set_hosts(domain=self.domain,
+                       vms_dates=self.vms_dates)
+        
+        VBox.execute(commands=server_conf, 
+                     vms_dates=self.vms_dates, 
+                     username=self.user, 
+                     password=self.password)
+        
+        VBox.execute(commands=con_generator,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+
+        VBox.scp(scp_settings=commands_scp,
+                 vms_dates=self.vms_dates,
+                 username=self.user,
+                 password=self.password)
+        
         print(f'VM dates is:\n{self.vms_dates}')
         
 

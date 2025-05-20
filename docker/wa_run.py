@@ -104,18 +104,23 @@ if __name__ == "__main__":
     """
         TODO Здесь запускаем тесты
     """
-    sc = System_commands()
+    sc = SystemCommands()
     if args.TEST:
         # Start
-        sc.cmd("cd ./site && bash start.sh final")       
-        # Total Rating / HTML
-        report = Report()
-        report.wa_report()
+        if sc.cmd_with_returncode("cd ./site && bash start.sh final") == 0:
+            # Total Rating / HTML
+            report = Report()
+            report.wa_report()
+
+            uzs.public = True
+            uzs.statistics = True
+            uzs.upload_test_cycle_status(zefir_status='pass')
+        else:
+            print('Тест завершился с иключением')
+            uzs.upload_test_cycle_status(zefir_status='fail')
     else: "Тест не найден"
 
-    uzs.public = True
-    uzs.statistics = True
-    uzs.upload_test_cycle_status(zefir_status='pass')
+    
                
 if path.isfile('libs/zefir.log'):
     with open('libs/zefir.log', 'r') as r:

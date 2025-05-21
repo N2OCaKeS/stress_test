@@ -48,15 +48,37 @@ if [ "$HOSTNAME" = "testvm1.stress.rbt" ]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
     sudo astra-openvpn-server start
     sudo astra-openvpn-server status
-    for i in {1..100}; do
-        sudo astra-openvpn-server client tester$i
-    done
-    sudo chown -R vagrant:vagrant /etc/openvpn/clients_keys/
 else
     echo "---($HOSTNAME)---"
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
 
 fi
+
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev strace 
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libcurl4-gnutls-dev
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y rustc cargo
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-requests
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y liblzma-dev
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
+
+#python
+sudo mkdir /home/u/python
+cd /home/u/python
+sudo wget -P /home/u/python ftp://10.177.103.10/python/*
+tar -xf Python-3.12.1.tar.xz
+cd Python-3.12.1
+./configure --enable-optimizations
+make -j 6
+sudo make altinstall
+
+python3.12 -m venv venv
+source venv/bin/activate
+cd ${CPATH}
+pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
+python3.12 -m pip install --upgrade pip
+python3.12 -m pip install -r ${CPATH}/req.txt
 
 kernel="$2"
 kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")

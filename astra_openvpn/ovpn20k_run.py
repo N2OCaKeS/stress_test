@@ -4,11 +4,12 @@ from os import path
 import argparse
 from ovpn_conf import VENV_PATH
 from libs.zefir import UploaderZC
-from ovpn_tests import AOvpn20kTest
+from libs.libtests import AOvpn20kTest
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
-                    choices=["20k"]
+                    choices=["20k"],
                     action='store_true',
                     help="Choose test name.",
                     dest="TEST")

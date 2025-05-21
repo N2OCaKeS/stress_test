@@ -29,19 +29,6 @@ Pin: release l=extended
 Pin-Priority: 500
 EOF
 
-# create venv
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev strace 
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libcurl4-gnutls-dev
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y rustc cargo
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-requests
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y liblzma-dev
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
-echo 2
-# test packages
-
-#!/bin/bash
-
 if [ "$HOSTNAME" = "testvm1" ]; then
     echo "---$(HOSTNAME)---i"
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
@@ -54,6 +41,16 @@ else
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
 
 fi
+
+# venv packages
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev strace 
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libcurl4-gnutls-dev
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y rustc cargo
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-requests
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y liblzma-dev
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
 
 #python
 sudo mkdir /home/u/python

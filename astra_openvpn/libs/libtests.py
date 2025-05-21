@@ -12,7 +12,7 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
-from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH
+from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, RANGE, VENV_PATH
 from time import sleep
 
 
@@ -149,6 +149,7 @@ class Ovpn20k(CreateVM):
         self.vg_destroy = 'vagrant destroy {}'
         self.destroy = 'virsh destroy {}'
         self.undefine = 'virsh undefine {}'
+        self.ranger = RANGE
 
 
     def start_test(self):
@@ -160,24 +161,11 @@ class Ovpn20k(CreateVM):
                 'password':f'{self.password}'
                 } for vm in self.vms}
         self.domain = "stress.rbt"
-
-        server_conf = {
-            "testvm2": {
-                "copy_keys": {
-                    "command": (
-                        f"nohup sshpass -p {self.vms_dates['testvm1']['password']} scp -o StrictHostKeyChecking=no -r "
-                        f"{self.vms_dates['testvm1']['login']}@{self.vms_dates['testvm1']['ip_bridge']}"
-                        ":/etc/openvpn/clients_keys/tester/ /home/vagrant/ > scp.log 2>&1"
-                    ),
-                    "signal set": "",
-                    "signal get": ""
-                }
-            }
-        }
         
-        for i in range(1, 101):
-            con_generator ={ 
-                "testvm2": {
+        # Daemon Creater
+        con_generator = {"testvm2": {}}
+        for i in range(0, self.ranger):
+            con_generator["testvm2"].update({ 
                     f"create_daemon_{i}": {
                         "command": (
                             "echo '[Unit]\n"
@@ -191,18 +179,31 @@ class Ovpn20k(CreateVM):
                             "[Install]\n"
                             f"WantedBy=multi-user.target' | sudo tee /etc/systemd/system/openvpn-client-tester{i}.service"
                         ),
-                        "signal set": "2",
-                        "signal get": ["1"]
+                        "signal set": f"{i}",
+                        "signal get": [f"{i + 1 if i != 0 else ""}"]
                     },
                     f"enable_service_{i}": {
                         "command": (
-                            f"sudo systemctl daemon-reload && sudo systemctl enable --now openvpn-client-tester{i}"
-                        ),
-                        "signal set": "",
-                        "signal get": ["2"]
+                            f"sudo systemctl daemon-reload && sudo systemctl enable --now openvpn-client-tester{i}"),
+                        "signal set": f"",
+                        "signal get": [f"{i}"]
                     }
-                }
-            }
+                })
+   
+
+        # scp client_keys - last
+        scp_configs = {
+            "testvm2": {
+                "copy_keys": {
+                    "command": (
+                        f"nohup sshpass -p {self.vms_dates['testvm1']['password']} scp -o StrictHostKeyChecking=no -r "
+                        f"{self.vms_dates['testvm1']['login']}@{self.vms_dates['testvm1']['ip_bridge']}"
+                        ":/etc/openvpn/clients_keys/ /home/vagrant/ > scp.log 2>&1"
+                    ),
+                    "signal set": "",
+                    "signal get": ""
+                }}}
+        
 
         commands_scp = {
             "testvm2": {
@@ -215,22 +216,30 @@ class Ovpn20k(CreateVM):
         VBox.set_hosts(domain=self.domain,
                        vms_dates=self.vms_dates)
         
-        VBox.execute(commands=server_conf, 
-                     vms_dates=self.vms_dates, 
-                     username=self.user, 
-                     password=self.password)
+        # 2. Отправляем клиентам
+        #VBox.execute(commands=scp_configs, 
+        #             vms_dates=self.vms_dates, 
+        #             username=self.user, 
+        #             password=self.password)
         
-        VBox.execute(commands=con_generator,
-                     vms_dates=self.vms_dates,
-                     username=self.user,
-                     password=self.password)
+        # 3. Создаем демонов
+        #VBox.execute(commands=con_generator,
+        #             vms_dates=self.vms_dates,
+        #             username=self.user,
+        #             password=self.password)
 
-        VBox.scp(scp_settings=commands_scp,
-                 vms_dates=self.vms_dates,
-                 username=self.user,
-                 password=self.password)
+        # 4. Script внутри
+        #VBox.scp(scp_settings=commands_scp,
+        #         vms_dates=self.vms_dates,
+        #         username=self.user,
+        #         password=self.password)
         
         print(f'VM dates is:\n{self.vms_dates}')
+        
+        
+
+
+        
         
 
     def vms_destroy(self):

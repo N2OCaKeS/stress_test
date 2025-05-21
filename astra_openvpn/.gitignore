@@ -8,3 +8,4 @@ releases.json
 vagrant.log
 get-box.config
 test.log
+signal

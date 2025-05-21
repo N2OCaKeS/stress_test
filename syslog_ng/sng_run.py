@@ -175,11 +175,14 @@ if __name__ == '__main__':
         )
 
     syslog_test.prepare()
-    syslog_test.run_test()
+    status = syslog_test.run_test()
 
     uzs.public = True
     uzs.statistics = True
-    uzs.upload_test_cycle_status(zefir_status='pass')
+    if status == False:
+        uzs.upload_test_cycle_status(zefir_status='fail')
+    else:
+        uzs.upload_test_cycle_status(zefir_status='pass')
                
 if path.isfile('libs/zefir.log'):
     with open('libs/zefir.log', 'r') as r:

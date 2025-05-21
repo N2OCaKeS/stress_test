@@ -231,6 +231,7 @@ class SNGBenchMarkTest():
         print("Готово.")
 
         upload_results_to_ftp(self.tcv, f'{REPORT_PATH}/{REPORT_FILENAME}', f'syslog-ng_{self.tcyc}_{REPORT_FILENAME}')
+        return None
 
 
 class SNGCheckWriteLogsTest():
@@ -386,3 +387,7 @@ class SNGCheckWriteLogsTest():
         info_file = open(INFO_FILENAME, 'w')
         info_file.close()
         put_system_info_in_file(self.time_start_script, INFO_FILENAME)
+        if self.status == self.STATUS_ERROR:
+            return False
+        else:
+            return True

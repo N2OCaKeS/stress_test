@@ -231,7 +231,7 @@ class SNGBenchMarkTest():
         print("Готово.")
 
         upload_results_to_ftp(self.tcv, f'{REPORT_PATH}/{REPORT_FILENAME}', f'syslog-ng_{self.tcyc}_{REPORT_FILENAME}')
-        return None
+        return True
 
 
 class SNGCheckWriteLogsTest():

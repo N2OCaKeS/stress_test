@@ -12,7 +12,7 @@ from ._base_commands._set_hosts._set_hosts import _SetHosts as set_hosts
 from ._base_commands._freeipa._freeipa import _Freeipa as freeipa
 
 
-from ._vm._vagrant import _Vagrant
+from ._vm._virt_install import _VirtInstall
 from ._vm._virtual_machine import _VirtualMashines
 from ._vm.VBoxManager import VBoxManager as vbox_manager
 
@@ -47,10 +47,11 @@ class VBox(_VirtualMashines):
         Returns:
             int: Код завершения выполнения команды.
         """
-        return system_commands.cmd_with_returncode(f"sudo bash {path_prepare}")
+        
+        return system_commands.cmd_with_returncode(f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm -y")
 
     @classmethod
-    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_dates: dict) -> int:
+    def build(cls, box: str, rc: str, vms_dates: dict) -> int:
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
@@ -74,16 +75,8 @@ class VBox(_VirtualMashines):
         Returns:
             int: Код завершения выполнения.
         """
-        vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms_dates)
-
-        vagrant.vagrant_up()
-
-        vbox_manager.set_bridge_network(vms)
-        vbox_manager.create_snapshot(vms)
-        system_commands.cmd('vboxmanage natnetwork list')
-        system_commands.cmd('vboxmanage list hostonlyifs')
-        system_commands.cmd('vboxmanage list bridgedifs')
-        system_commands.cmd('vboxmanage list vms')
+        virt = _VirtInstall(box, rc, vms_dates)
+        virt.build()
 
         # TODO Узнать нужен ли этот блок
 

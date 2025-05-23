@@ -10,7 +10,9 @@ JIRA_URL = response_jira_url.text
 CONFLUENCE_URL = response_confluence_url.text
 
 USER = ["u", "askeladd"]
-RANGE = 25
+RANGE = 10000
+VRF_COUNT = 200
+PER_VRF = RANGE // VRF_COUNT
 
 OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
 VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
@@ -27,24 +29,6 @@ DATES = f"/home/{USER[0]}/dates_stand3.conf"
 SYS_VERSION = sys_com.check_output_command("cat /etc/astra/build_version | tr -d '[:space:]'")
 SYS_KERNEL = sys_com.check_output_command("uname -r | tr -d '[:space:]'")
 SYS_VERSION_MOD = [SYS_VERSION+".o", SYS_VERSION+".v", SYS_VERSION+".s"]
-
-
-
-VMS = ["vpn1", "pooler"]
-
-VMS_DATES = {  # Полный список ВМ
-    'vpn1': {'host-port': '22',
-                  'ip_bridge': '10.177.103.120'},
-    'pooler': {'host-port': '22',
-                  'ip_bridge': '10.177.103.122'}
-}
-
-VMS_GROUPS = {
-    "vpn's": ["vpn1"],
-    "pooler": ["pooler"]
-}
-
-
 
 
 

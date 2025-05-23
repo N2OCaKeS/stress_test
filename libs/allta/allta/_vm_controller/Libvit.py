@@ -12,7 +12,7 @@ from ._base_commands._set_hosts._set_hosts import _SetHosts as set_hosts
 from ._base_commands._freeipa._freeipa import _Freeipa as freeipa
 
 
-from ._vm._vagrant import _Vagrant
+from ._vm._virt_install import _VirtInstall
 from ._vm._virtual_machine import _VirtualMashines
 from ._vm.VBoxManager import VBoxManager as vbox_manager
 
@@ -21,9 +21,9 @@ from typing import cast
 import threading
 
 
-class VBox(_VirtualMashines):
+class Libvirt(_VirtualMashines):
     """
-    Класс VBox предоставляет интерфейс для управления виртуальными машинами (ВМ) с использованием Vagrant и VirtualBox.
+    Класс VBox предоставляет интерфейс для управления виртуальными машинами (ВМ) с использованием virt-install и Libvirt.
 
     Основные функции:
     - Подготовка окружения для работы с ВМ.
@@ -37,20 +37,18 @@ class VBox(_VirtualMashines):
     Этот класс наследуется от абстрактного класса `_VirtualMashines` и реализует его методы.
     """
     @classmethod
-    def prepare(cls, path_prepare) -> int:
+    def prepare(cls) -> int:
         """
         Выполняет подготовку окружения для работы с виртуальными машинами.
-
-        Args:
-            path_prepare (str): Путь до файла скрипта подготовки.
 
         Returns:
             int: Код завершения выполнения команды.
         """
-        return system_commands.cmd_with_returncode(f"sudo bash {path_prepare}")
+        
+        return system_commands.cmd_with_returncode(f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar -y")
 
     @classmethod
-    def build(cls, path_to_vagrantfile: str, box: str, rc: str, vms: list, vms_dates: dict) -> int:
+    def build(cls, box: str, rc: str, vms_dates: dict) -> dict:
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
@@ -72,18 +70,10 @@ class VBox(_VirtualMashines):
                     }
 
         Returns:
-            int: Код завершения выполнения.
+            dict: Обновленный список хостов.
         """
-        vagrant = _Vagrant(path_to_vagrantfile, box, rc, vms_dates)
-
-        vagrant.vagrant_up()
-
-        vbox_manager.set_bridge_network(vms)
-        vbox_manager.create_snapshot(vms)
-        system_commands.cmd('vboxmanage natnetwork list')
-        system_commands.cmd('vboxmanage list hostonlyifs')
-        system_commands.cmd('vboxmanage list bridgedifs')
-        system_commands.cmd('vboxmanage list vms')
+        virt = _VirtInstall(box, rc, vms_dates)
+        vms_dates = virt.build()
 
         # TODO Узнать нужен ли этот блок
 
@@ -95,7 +85,7 @@ class VBox(_VirtualMashines):
         #         if_name = 'eth2'  #  Узнать правильные названия интерфейсов и указать их
         #     elif rc.startswith('1.8'):
         #         if_name = 'ens5'
-        return 0
+        return vms_dates
 
     @classmethod
     def check(cls, vms: list, vms_dates: dict):

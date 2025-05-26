@@ -29,7 +29,7 @@ for VM in "${!vm_mac_map[@]}"; do
     if [[ "$STATE" != "shut off" ]]; then
         echo "  ...Останавливаем $VM"
         virsh -c qemu:///system -c qemu:///system destroy "$VM"
-        while [[ $(virsh -c qemu:///system -c qemu:///system domstate "$VM" 2>/dev/null) != "shut off" ]]; do
+        while [[ $(virsh -c qemu:///system -c qemu:///system domstate "$VM" 2>/dev/null) != "выключен" ]]; do
             echo "    ...Ожидание выключения $VM"
             sleep 2
         done

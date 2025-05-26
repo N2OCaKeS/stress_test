@@ -45,7 +45,7 @@ scp_prepare = {
             'path_host': './provision/env_provision.sh',
             'path_vm': '/home/u/env_provision.sh'            
         }
-    ]
+    ],        
 }
 
 Libvirt.scp(scp_settings=scp_prepare, vms_dates=new_vms, vms_groups=group, username='u', password='1')

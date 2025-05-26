@@ -12,8 +12,8 @@ ovpn_test = Ovpn20k(rc_vbox="1.7.5",
                          vm_count=2,
                          testdir=REPORT_PATH,
                          kernel="6.1.90-1-generic",
-                         vcpu=8,
-                         ram=16384)
-ovpn_test.vms_destroy()
-ovpn_test.prepare_vms()
+                         vcpu=3,
+                         ram=2048)
+# ovpn_test.vms_destroy()
+# ovpn_test.prepare_vms()
 ovpn_test.start_test()

@@ -12,11 +12,11 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
-from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, RANGE, VENV_PATH
+from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, PER_VRF, VRF_COUNT
 from time import sleep
 
 
-sys_com = SystemCommands()
+sys_cls = SystemCommands()
 
 class CreateVM:
     def __init__(self,
@@ -89,15 +89,15 @@ class CreateVM:
         # add_box
         box_name, box_url = __box_wrapper(self.rc_name, self.mode)
         print(f'vagrant box add --provider virtualbox {box_name} {box_url}')
-        sys_com.cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
+        sys_cls.cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
         print(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
-        sys_com.cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
+        sys_cls.cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
 
         # add define pool
         try:
-            sys_com.cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
-            sys_com.cmd('virsh pool-autostart default')
-            sys_com.cmd('virsh pool-start default')
+            sys_cls.cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
+            sys_cls.cmd('virsh pool-autostart default')
+            sys_cls.cmd('virsh pool-start default')
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
         
@@ -110,25 +110,25 @@ class CreateVM:
                                                                                            self.ram)
         # create_vm
         print(f"{vagrant_env} vagrant up --provide=libvirt")
-        sys_com.cmd(f'{vagrant_env} vagrant up --provider=libvirt')
+        sys_cls.cmd(f'{vagrant_env} vagrant up --provider=libvirt')
 
         print('\nWait reboot VMs 100s...\n')
         sleep(100)
         
-        #sys_com.cmd(f"{vagrant_env} vagrant upload provision/vpn_provision.sh /home/vagrant/ testvm1")
-        #sys_com.cmd(f'{vagrant_env} vagrant ssh testvm1 -c "sudo bash /home/vagrant/vpn_provision.sh"')
+        #sys_cls.cmd(f"{vagrant_env} vagrant upload provision/vpn_provision.sh /home/vagrant/ testvm1")
+        #sys_cls.cmd(f'{vagrant_env} vagrant ssh testvm1 -c "sudo bash /home/vagrant/vpn_provision.sh"')
 
         # interfaces + ext provision
         # vpn machine
-        #sys_com.cmd("virsh attach-interface testvm1 --source vpn-net --type network --model virtio --config --persistent")
-        #sys_com.cmd("virsh reboot testvm1")
-        #sys_com.cmd(f"{vagrant_env} vagrant upload provision/vpn_provision.sh /home/vagrant/ testvm1")
-        #sys_com.cmd(f'{vagrant_env} vagrant ssh testvm1 -c "sudo bash /home/vagrant/vpn_provision.sh"')
+        #sys_cls.cmd("virsh attach-interface testvm1 --source vpn-net --type network --model virtio --config --persistent")
+        #sys_cls.cmd("virsh reboot testvm1")
+        #sys_cls.cmd(f"{vagrant_env} vagrant upload provision/vpn_provision.sh /home/vagrant/ testvm1")
+        #sys_cls.cmd(f'{vagrant_env} vagrant ssh testvm1 -c "sudo bash /home/vagrant/vpn_provision.sh"')
         # pooler machine
-        #sys_com.cmd("virsh attach-interface testvm2 --source pooler-net --type network --model virtio --config --persistent")
-        #sys_com.cmd("virsh reboot testvm2")
-        #sys_com.cmd(f"{vagrant_env} vagrant upload provision/pooler_provision.sh /home/vagrant/ testvm2")
-        #sys_com.cmd(f'{vagrant_env} vagrant ssh testvm2 -c "sudo bash /home/vagrant/pooler_provision.sh"')
+        #sys_cls.cmd("virsh attach-interface testvm2 --source pooler-net --type network --model virtio --config --persistent")
+        #sys_cls.cmd("virsh reboot testvm2")
+        #sys_cls.cmd(f"{vagrant_env} vagrant upload provision/pooler_provision.sh /home/vagrant/ testvm2")
+        #sys_cls.cmd(f'{vagrant_env} vagrant ssh testvm2 -c "sudo bash /home/vagrant/pooler_provision.sh"')
 
 
 
@@ -156,7 +156,7 @@ class Ovpn20k(CreateVM):
         self.vms_dates = {
              vm:{
                 "host-port": 22,
-                'ip_bridge': sys_com.check_output_command(self.check_vm_ip.format(vm)).split('/')[0], 
+                'ip_bridge': sys_cls.check_output_command(self.check_vm_ip.format(vm)).split('/')[0], 
                 'login':f'{self.user}',
                 'password':f'{self.password}'
                 } for vm in self.vms}
@@ -213,8 +213,39 @@ class Ovpn20k(CreateVM):
             }
         }
 
-        VBox.set_hosts(domain=self.domain,
-                       vms_dates=self.vms_dates)
+
+        print(self.vms_dates["testvm1"]["ip_bridge"])
+        # # Создание VRF
+        # for j in range(1, VRF_COUNT + 1):
+        #     try:
+        #         if j % 10 == 0:
+        #             print(f"Запущено в VRF {j} клиентов.")
+        #         vrf_name = f"vrf{j}"
+        #         table_id = 1000 + j
+        #         sys_cls.cmd(f"ip link add {vrf_name} type vrf table {table_id}")
+        #         sys_cls.cmd(f"ip link set dev {vrf_name} up")
+        #         print(2)
+        #         for i in range(1, RANGE + 1):
+        #             tun_dev = f"tun{i}"
+        #             cfg_file = f"/home/vagrant/clients_keys/tester{i}/client.ovpn"
+        #             ip = self.vms_dates["testvm1"]["ip_bridge"]
+
+        #             sys_cls.cmd(f"sed -i 's/^remote 192\\.168\\.121\\.35 1194$/remote {ip} 1194/' /home/vagrant/clients_keys/tester{i}/client.ovpn")
+        #             sys_cls.cmd(f"openvpn --config {cfg_file} --dev {tun_dev} --daemon")
+        #             sys_cls.cmd(f"ip link set dev {tun_dev} master {vrf_name}")
+        #             sys_cls.cmd(f"ip link set dev {tun_dev} up")
+        #             sys_cls.cmd(f"ip route add 10.8.0.1 dev {tun_dev} vrf {vrf_name} ")
+        #             if PER_VRF - i == 0:
+        #                 break
+
+        #     except Exception as e:
+        #         print("Ошибка", e)
+
+        # print(f"Создано {VRF_COUNT} таблиц.\nНа каждую таблицу - {PER_VRF} туннелей.")
+
+
+        #VBox.set_hosts(domain=self.domain,
+        #               vms_dates=self.vms_dates)
         
         # 2. Отправляем клиентам
         #VBox.execute(commands=scp_configs, 
@@ -245,14 +276,15 @@ class Ovpn20k(CreateVM):
     def vms_destroy(self):
         try:
             [
-                sys_com.cmd(f'virsh dumpxml {vm_name}') for vm_name in self.vms
+                sys_cls.cmd(f'virsh dumpxml {vm_name}') for vm_name in self.vms
             ]
             [
-                sys_com.cmd(self.destroy.format(vm_name)) for vm_name in self.vms
+                sys_cls.cmd(self.destroy.format(vm_name)) for vm_name in self.vms
             ]
             [
-                sys_com.cmd(self.undefine.format(vm_name)) for vm_name in self.vms
+                sys_cls.cmd(self.undefine.format(vm_name)) for vm_name in self.vms
             ]
-            sys_com.cmd('rm -rf .vagrant')
+            sys_cls.cmd('rm -rf .vagrant')
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+

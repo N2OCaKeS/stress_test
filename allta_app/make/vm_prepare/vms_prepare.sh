@@ -46,7 +46,7 @@ cd /home/u/git/stress_test/allta_app/make/vm_prepare
 
 # СБОРКА ВМ
 python libvirt_vm.py
-./network.sh
+./network.sh $BRIDGE
 
 for vm in "${VMS[@]}"; do
     # Останавливаем ВМ через virsh -c qemu:///system

@@ -10,7 +10,7 @@ declare -A vm_mac_map=(
     ["virtual-station4"]="080027ABCD04"
 )
 
-BRIDGE="br0"
+BRIDGE=$1
 
 if [[ -z "$BRIDGE" ]]; then
     echo "Использование: $0 <bridge_name>"

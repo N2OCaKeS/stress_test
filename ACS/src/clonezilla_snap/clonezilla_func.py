@@ -164,7 +164,7 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     else:
         command = SAVE_DISK_COMMAND.format(ip_address=stand[3], snapshot_name=snap_name, stand_disk=stand[2])
     logging.info(command)
-    result = remote_cmd(command=command, host="10.177.103.10", user="u", passwd=password_cs, read=False)
+    result = remote_cmd(command=command, host="10.177.103.10", user="allta", passwd=password_cs, read=False)
     logging.info(result)
     logging.info(time() - start_time)
     sleep(15)
@@ -183,7 +183,7 @@ def get_snapshot(self, password_clonezilla_server: str, snap_name: str, *args, *
     logging.info(f"SNAP NAME = {snap_name}")
     logging.info(f"ARGS = {args}")
     logging.info(f"KWARGS = {kwargs}")
-    result = Connection("10.177.103.10", user="u", connect_kwargs={"password": f"{password_clonezilla_server}"}).run("ls /home/partimag", hide=True)
+    result = Connection("10.177.103.10", user="allta", connect_kwargs={"password": f"{password_clonezilla_server}"}).run("ls /home/partimag", hide=True)
     snaps = list(filter(lambda x: x != "nohup.out", result.stdout.strip().split("\n")))
     if not snap_name in snaps:
         logging.info("ЗАШЛИ В УСЛОВИЕ, ЗНАЧИТ НЕ НАЙДЕН СНИМОК")

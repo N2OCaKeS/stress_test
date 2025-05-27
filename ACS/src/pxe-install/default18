@@ -1,0 +1,10 @@
+ui menu.c32
+PROMPT 0
+
+MENU TITLE PXE Boot menu
+DEFAULT netinstall
+LABEL netinstall
+MENU LABEL Start Astra Linux SE net install
+kernel vmlinuz
+append initrd=se/initrd quiet modprobe.blacklist=evbug boot=live astra_install=1 fetch=http://<ip-address>/filesystem.squashfs astra-installer-preseed=http://<ip-address>/astra-installer-preseed.yaml
+TIMEOUT 1

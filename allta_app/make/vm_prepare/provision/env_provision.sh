@@ -37,12 +37,15 @@ EOF
 
 sudo apt update
 sudo astra-update -A -T -r
+kernel="$2"
+sudo apt-get install $kernel -y
 sudo apt-get install htop -y
 sudo apt-get install ssh git resolvconf sysstat -y
 
 
+test "$(grep 1.7 /etc/astra_version)" && nat_net_name="Wired connection 1"
+test "$(grep 1.8 /etc/astra_version)" && nat_net_name="Проводное соединение 1"
 
-nat_net_name="Wired connection 1"
 vbox_bridge_mask=24
 vbox_bridge_gateway=10.177.103.254
 iface=`ip a | grep '2: ' | awk '{print$2}' | tr -d ':' | head -n 1`
@@ -69,7 +72,6 @@ elif [ "$1" = "virtual-station4" ]; then
 fi
 
 
-
 cat << EOF > /etc/network/interfaces
 source /etc/network/interfaces.d/*
 
@@ -85,6 +87,7 @@ iface $iface inet static
         dns-nameservers $dns_br
 EOF
 
+sudo systemctl restart networking
 
 
 #sudo nmcli connection modify "${nat_net_name}" ipv4.method manual ip4 $ip_br/$vbox_bridge_mask

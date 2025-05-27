@@ -1,221 +1,109 @@
 #!/bin/bash
 
+BRIDGE="br0"
+PHY_IF="eth2"
+echo "[*] Создаём /etc/network/interfaces для bridge $BRIDGE ..."
 
-#virtualbox
-wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/vbox7
-wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/stress_reports/vbox
-wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1n-0+deb10u6_amd64.deb
-sudo apt-get install plymouth-themes -y
-sudo apt install gcc make perl rsync -y
-sudo apt install libopus0 -y
-sudo apt install libqt5opengl5 -y 
-sudo apt install libqt5printsupport5 -y
-sudo apt install libsdl1.2debian -y
-sudo dpkg -i libssl1.1_1.1.1n-0+deb10u6_amd64.deb 
-sudo dpkg -i libvpx5_1.7.0-3+deb10u1_amd64.deb
-sudo apt install psmisc -y
-sudo apt install pkexec -y
-sudo apt install policykit-1 -y
+sudo tee /etc/network/interfaces > /dev/null <<EOF
+auto lo
+iface lo inet loopback
+
+auto $BRIDGE
+iface $BRIDGE inet static
+    address 10.177.103.205
+    netmask 255.255.255.0
+    gateway 10.177.103.254
+    dns-nameservers 10.177.128.198 10.177.180.246 10.177.181.142
+    bridge_ports $PHY_IF
+    bridge_stp off
+    bridge_fd 0
+    bridge_maxwait 0
+
+iface $PHY_IF inet manual
+EOF
+
+echo "[*] Применяем новые сетевые настройки..."
+
+# Отключаем старую сеть, поднимаем мост
+sudo ifdown $PHY_IF || true
+sudo ifdown $BRIDGE || true
+sudo ifup $BRIDGE
+
+echo "[+] Сеть перезапущена. Проверь IP: ip a show $BRIDGE"
 
 
+# create venv in script_dir
+sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
+sudo apt-get install -y libffi-dev strace
+sudo apt-get install -y python3-requests sshpass
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-  sudo dpkg -i virtualbox-7.0_7.0.20*.deb
-  if [[ $? != 0 ]]; then
-    sudo apt install -fy
-    sudo dpkg -i virtualbox-7.0_7.0.20*.deb
-  fi
-  sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-7.0.20*.vbox-extpack
-elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
-  sudo dpkg -i virtualbox-6.1*.deb
-  if [[ $? != 0 ]]; then
-    sudo apt install -fy
-    sudo dpkg -i virtualbox-6.1*.deb
-  fi
-  sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-6.1*.vbox-extpack
-fi
-
-
-
-#vagrant
-wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-  sudo dpkg -i vagrant_2.4.1-1_x86_64.deb
-elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
-  sudo dpkg -i vagrant_2.2.19_x86_64.deb
-fi
-
-
-
-if test ! "$(dpkg -l | awk '{print $2}' | grep ^vagrant$)"; then
-  # vagrant package download
-  wget -r -nH --cut-dirs=2 --no-parent \
-  ftp://qa111.devos.astralinux.ru/packages/vagrant 2>/dev/null
-
-  if [ $? != 0 ]; then
-    >&2 echo -e "\e[91mERROR (!) Package import\e[0m"
-    exit 1
-  fi
-
-  # clean old environment
-  if test -d /opt/vagrant/embedded/gems; then
-    sudo rm -rf /opt/vagrant/embedded/gems/*
-  fi
-
-
-  # remove garbage
-  sudo rm vagrant_2.2.19_x86_64.deb
-  sudo rm astra-vagrant.tar.gz
-  sudo rm -rf log/
-fi
-
-# extra packages installation, hese packages script use
-sudo apt-get update
-for pack in nano diffutils ssh sshpass openssh-client curl wget whiptail ansible jq python3-requests; do
-  if test ! "$(dpkg -l | awk '{print $2}' | grep ^$pack$)"; then
-    sudo apt-get -y install $pack
-    [ $? != 0 ] && apt-get -f -y install
-  fi
-done
-
-if [ ! -d ~/.vagrant.d/ ]; then
-  cd /tmp/ && vagrant init
-fi
-
-# check 'vbguest' (Vbox Guests) plugin, install
-if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-  for plugin in vagrant-vbguest; do
-    if test ! "$(vagrant plugin list | grep $plugin)"; then
-      wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
-      mkdir -p ~/.vagrant.d/gems/3.1.4
-      tar -C "$HOME/.vagrant.d/gems/3.1.4" -xvf /tmp/gems.tar.gz
-      wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json
-      [ $? != 0 ] && exit 1
-    fi
-  done
-elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
-  for plugin in vagrant-vbguest; do
-    if test ! "$(vagrant plugin list | grep $plugin)"; then
-      wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
-      mkdir -p ~/.vagrant.d/gems/2.7.4
-      tar -C "$HOME/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
-      wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json
-      [ $? != 0 ] && exit 1
-    fi
-  done
-fi
-
-
-# important group for vbox environment
-if test ! "$(cat /etc/group | grep vboxusers)"; then
-  sudo groupadd vboxusers
-fi
-
-for group in vboxusers; do
-  if test ! "$(groups | grep ${group})"; then
-    sudo usermod -aG ${group} $USER 
-  fi
-done
-
-forward_path=/proc/sys/net/ipv4/conf/all
-
-if test -d $forward_path; then
-  if ! test "$(cat $forward_path/forwarding | grep 1)"; then
-    echo 1 | sudo tee $forward_path/forwarding
-  fi
+    sudo apt-get install -y linux-tools-6.1*-generic
+    sudo apt-get install -y linux-tools-6.6*-generic
 else
-  >&2 echo -e "\e[91mERROR (!) $forward_path/ path not exist\e[0m"
-  exit 1
+    sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
+    sudo apt-get install -y linux-tools-5.15*-lowlatency
+    sudo apt-get install -y libssl1.1 psmisc
 fi
 
-if test -e /etc/sysctl.conf; then
-  if test ! "$(cat /etc/sysctl.conf | grep ^net.ipv4.ip_forward=1)"; then
-    echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
-  fi
-else
-  >&2 echo -e "\e[91mERROR (!) /etc/sysctl.conf not exist\e[0m"
-  exit 1
-fi
+sudo mkdir /home/u/python
+cd /home/u/python
+sudo wget -P /home/u/python ftp://10.177.103.10/python/*
+tar -xf Python-3.12.1.tar.xz
+cd Python-3.12.1
+./configure --enable-optimizations
+make -j 6
+sudo make altinstall
+
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta
 
 
-# check 'Extension Pack'
-if test ! "$(vboxmanage list extpacks | grep "Oracle VM VirtualBox Extension Pack")"; then
-  >&2 echo -e "\e[91mERROR (!) 'Extension Pack' is absent\e[0m"
-  exit 1
-fi
+cd /home/u/git/stress_test/allta_app/make/vm_prepare
+sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar -y
+sudo usermod -aG kvm,libvirt,libvirt-qemu $USER
 
-# check 'Guest Additions'
-if test ! -e /usr/share/virtualbox/VBoxGuestAdditions.iso; then
-  >&2 echo -e "\e[91mERROR (!) /usr/share/virtualbox/VBoxGuestAdditions.iso not exist\e[0m"
-  exit 1
-fi
-
-sleep 2
-
-#Start VM create
-VMS=("virtual-station1" "virtual-station2" "virtual-station3" "virtual-station4")
-BOX_NAME=orel-vanilla-gui/1.7.5
-BOX_URL=ftp://10.177.103.10/boxes/box/1.7.5.o.box
-KERNEL=5.10.190-1-generic
-RC=1.7.5
-
-declare -A vm_mac_map
-vm_mac_map=( ["virtual-station1"]="080027ABCD01"
-             ["virtual-station2"]="080027ABCD02"
-             ["virtual-station3"]="080027ABCD03"
-             ["virtual-station4"]="080027ABCD04" )
-
-sleep 1
-echo vagrant box add $BOX_NAME $BOX_URL --force
-echo UPDATE=$BOX_NAME BOX_URL=$BOX_URL KERNEL=$KERNEL RC=$RC vagrant up --provider=virtualbox
-
-sudo vagrant box add orel-vanilla-gui/1.7.5 ftp://10.177.103.10/boxes/box/1.7.5.o.box --force
-sudo UPDATE=orel-vanilla-gui/1.7.5 BOX_URL=ftp://10.177.103.10/boxes/box/1.7.5.o.box KERNEL=5.10.190-1-generic RC=1.7.5 vagrant up --provider=virtualbox
-sleep 1
-
-BRIDGE_IFACE=`vboxmanage list bridgedifs | grep Name | awk '{print$2}' | head -n 1`
+# СБОРКА ВМ
+python libvirt_vm.py
+./network.sh $BRIDGE
 
 for vm in "${VMS[@]}"; do
-    vboxmanage controlvm "$vm" poweroff
+    # Останавливаем ВМ через virsh -c qemu:///system
+    virsh -c qemu:///system destroy "$vm"
     sleep 1
-    vboxmanage modifyvm "$vm" --nic1 bridged
-    vboxmanage modifyvm "$vm" --nested-hw-virt on
-    vboxmanage modifyvm "$vm" --bridgeadapter1 "$BRIDGE_IFACE"
-    vboxmanage modifyvm "$vm" --macaddress1 "${vm_mac_map[$vm]}"
-    vboxmanage startvm "$vm" --type headless
-    sleep 1
-    vboxmanage snapshot "$vm" take "start_snapshot_1"
-done
 
-for vm in "${VMS[@]}"; do
-    vboxmanage controlvm "$vm" poweroff
-    sleep 1
+    # Останавливаем и отключаем systemd unit, если он есть
     if systemctl is-enabled --quiet "$vm.service"; then
         systemctl stop "$vm.service"
         systemctl disable "$vm.service"
     fi
+
+    # Создаем systemd unit для libvirt/qemu
     cat << EOF > /etc/systemd/system/$vm.service
 [Unit]
-Description=Virtual Machine $vm
-After=network.target vboxdrv.service
+Description=Libvirt Virtual Machine $vm
+After=network.target libvirtd.service
 
 [Service]
-ExecStart=/usr/bin/vboxmanage startvm $vm --type headless
-ExecStop=/usr/bin/vboxmanage controlvm $vm poweroff
+Type=forking
+ExecStart=/usr/bin/virsh -c qemu:///system start $vm
+ExecStop=/usr/bin/virsh -c qemu:///system destroy $vm
 User=root
 RemainAfterExit=yes
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable $vm.service
     systemctl start $vm.service
 done
 
-vboxmanage natnetwork list
-vboxmanage list hostonlyifs
-vboxmanage list bridgedifs
-vboxmanage list vms
+
+virsh net-list --all
+ip link show type bridge
+virsh list --all
+
 
 
 

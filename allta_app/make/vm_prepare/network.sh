@@ -4,10 +4,10 @@
 # Пример: ./recreate_bridge_with_mac.sh br0
 
 declare -A vm_mac_map=(
-    ["virtual-station1"]="080027ABCD01"
-    ["virtual-station2"]="080027ABCD02"
-    ["virtual-station3"]="080027ABCD03"
-    ["virtual-station4"]="080027ABCD04"
+    ["virtual-station1"]="08:00:27:AB:CD:01"
+    ["virtual-station2"]="08:00:27:AB:CD:02"
+    ["virtual-station3"]="08:00:27:AB:CD:03"
+    ["virtual-station4"]="08:00:27:AB:CD:04"
 )
 
 BRIDGE=$1
@@ -47,6 +47,7 @@ for VM in "${!vm_mac_map[@]}"; do
         print "      <mac address=\""mac"\"/>"
         print "      <source bridge=\""bridge"\"/>"
         print "      <model type=\"virtio\"/>"
+        print "      <address type=\"pci\" domain=\"0x0000\" bus=\"0x01\" slot=\"0x00\" function=\"0x0\"/>"
         print "    </interface>"
         ins=1
         next

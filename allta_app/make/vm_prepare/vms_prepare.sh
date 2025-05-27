@@ -1,6 +1,7 @@
 #!/bin/bash
 
 BRIDGE="br0"
+PHY_IF="eth2"
 echo "[*] Создаём /etc/network/interfaces для bridge $BRIDGE ..."
 
 sudo tee /etc/network/interfaces > /dev/null <<EOF

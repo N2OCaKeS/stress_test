@@ -9,6 +9,3 @@ vagrant.log
 get-box.config
 test.log
 signal
-vagrant_2.*
-astra-vagrant.tar.gz
-authorized_keys

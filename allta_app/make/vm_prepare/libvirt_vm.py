@@ -30,12 +30,24 @@ vms = {  # Полный список ВМ
               'sshnum': '3',
               'ip_bridge': '10.177.103.104',
               'cpu': '16',
-              'ram': '131072'}
+              'ram': '131072'},
+    'work-station1': {'host-port': '22',
+              'ip': '10.0.0.41',
+              'sshnum': '3',
+              'ip_bridge': '10.177.103.201',
+              'cpu': '16',
+              'ram': '131072'},
+    'work-station2': {'host-port': '22',
+              'ip': '10.0.0.41',
+              'sshnum': '3',
+              'ip_bridge': '10.177.103.202',
+              'cpu': '16',
+              'ram': '131072'},              
 }
 
-vms_list = ['virtual-station1', 'virtual-station2', 'virtual-station3', 'virtual-station4']
+vms_list = ['virtual-station1', 'virtual-station2', 'virtual-station3', 'virtual-station4', 'work-station1', 'work-station2']
 
-group = {'all': ['virtual-station1', 'virtual-station2', 'virtual-station3', 'virtual-station4',]}
+group = {'all': vms_list}
 new_vms = Libvirt.build('1.7.5.o', '1.7.5', vms)
 
 scp_prepare = {
@@ -55,17 +67,20 @@ prepare = {}
 for vm_name in vms:
     prepare[vm_name] = {
         'set hostname': {
-            'command': f"sudo hostnamectl set-hostname {vm_name} && if grep -q '^127\\.0\\.1\\.1' /etc/hosts; then sudo sed -i 's/^127\\.0\\.1\\.1.*/127.0.1.1\\t{vm_name}/' /etc/hosts; else echo -e '127.0.1.1\\t{vm_name}' | sudo tee -a /etc/hosts; fi",
+            'command': f"sudo hostnamectl set-hostname {vm_name} && if grep -q '^127\\.0\\.1\\.1' /etc/hosts; then sudo sed -i 's/^127\\.0\\.1\\.1.*/127.0.1.1\\{vm_name}/' /etc/hosts; else echo -e '127.0.1.1\\t{vm_name}' | sudo tee -a /etc/hosts; fi",
             'signal set': 'hostname',
             'signal get': ''
         },
         'prepare': {
             'command': f"sudo chmod 777 /home/u/env_provision.sh && sudo su -c '/home/u/env_provision.sh {vm_name} {kernel} {rc}'",
-            'signal set': '',
+            'signal set': 'prepare',
             'signal get': ['hostname']
-        }
+        },
+        'reboot': {
+            'command': f"",
+            'signal set': '',
+            'signal get': ['prepare']
+        },        
     }
 Libvirt.execute(commands=prepare, vms_dates=new_vms, vms_groups=group, username='u', password='1')
-
-LibvirtManager.create_snapshot(vms_list, "Snapshot_1_7_5")
 

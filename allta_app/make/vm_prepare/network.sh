@@ -10,6 +10,40 @@ declare -A vm_mac_map=(
     ["virtual-station4"]="08:00:27:AB:CD:04"
 )
 
+BRIDGE="br0"
+PHY_IF="eth2"
+echo "[*] Создаём /etc/network/interfaces для bridge $BRIDGE ..."
+
+sudo cp /etc/network/interfaces /etc/network/interfaces.bak
+sudo tee /etc/network/interfaces > /dev/null <<EOF
+auto lo
+iface lo inet loopback
+
+auto $BRIDGE
+iface $BRIDGE inet static
+    address 10.177.103.205
+    netmask 255.255.255.0
+    gateway 10.177.103.254
+    dns-nameservers 10.177.128.198 10.177.180.246 10.177.181.142
+    bridge_ports $PHY_IF
+    bridge_stp off
+    bridge_fd 0
+    bridge_maxwait 0
+
+iface $PHY_IF inet manual
+EOF
+
+echo "[*] Применяем новые сетевые настройки..."
+
+# Отключаем старую сеть, поднимаем мост
+sudo ifdown $PHY_IF || true
+sudo ifdown $BRIDGE || true
+sudo ifup $BRIDGE
+
+
+echo "[+] Сеть перезапущена. Проверь IP: ip a show $BRIDGE"
+
+
 BRIDGE=$1
 
 if [[ -z "$BRIDGE" ]]; then
@@ -28,8 +62,8 @@ for VM in "${!vm_mac_map[@]}"; do
     STATE=$(virsh -c qemu:///system domstate "$VM" 2>/dev/null)
     if [[ "$STATE" != "shut off" ]]; then
         echo "  ...Останавливаем $VM"
-        virsh -c qemu:///system -c qemu:///system destroy "$VM"
-        while [[ $(virsh -c qemu:///system -c qemu:///system domstate "$VM" 2>/dev/null) != "выключен" ]]; do
+        virsh -c qemu:///system destroy "$VM"
+        while [[ $(virsh -c qemu:///system domstate "$VM" 2>/dev/null) != "выключен" ]]; do
             echo "    ...Ожидание выключения $VM"
             sleep 2
         done

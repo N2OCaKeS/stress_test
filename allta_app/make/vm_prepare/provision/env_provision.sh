@@ -55,6 +55,8 @@ declare -A virtual_station1_br=( [ip]=10.177.103.101 [domain]=virtual-station1.a
 declare -A virtual_station2_br=( [ip]=10.177.103.102 [domain]=virtual-station2.allta.nt [host]=virtual-station2 [dns]="10.177.180.248, 10.177.128.198" )
 declare -A virtual_station3_br=( [ip]=10.177.103.103 [domain]=virtual-station3.allta.nt [host]=virtual-station3 [dns]="10.177.180.248, 10.177.128.198" )
 declare -A virtual_station4_br=( [ip]=10.177.103.104 [domain]=virtual-station4.allta.nt [host]=virtual-station4 [dns]="10.177.180.248, 10.177.128.198" )
+declare -A work_station1_br=( [ip]=10.177.103.201 [domain]=work-station1.allta.nt [host]=work-station1 [dns]="10.177.180.248, 10.177.128.198" )
+declare -A work_station2_br=( [ip]=10.177.103.202 [domain]=work-station2.allta.nt [host]=work-station2 [dns]="10.177.180.248, 10.177.128.198" )
 
 
 if [ "$1" = "virtual-station1" ]; then
@@ -69,6 +71,12 @@ elif [ "$1" = "virtual-station3" ]; then
 elif [ "$1" = "virtual-station4" ]; then
     ip_br=${virtual_station4_br[ip]}
     dns_br="${virtual_station4_br[dns]}"
+elif [ "$1" = "work-station1" ]; then
+    ip_br=${work_station1_br[ip]}
+    dns_br="${work_station1_br[dns]}"
+elif [ "$1" = "work-station2" ]; then
+    ip_br=${work_station2_br[ip]}
+    dns_br="${work_station2_br[dns]}"        
 fi
 
 
@@ -111,6 +119,63 @@ sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT
 mkdir -p /home/u/git
 
+
+OUTFILE="/home/u/git/git_clone.py"
+touch "$OUTFILE"
+
+cat > "$OUTFILE" <<'EOF'
+#!/bin/python3
+import subprocess
+from os import getcwd
+from sys import exit
+from ftplib import FTP
+
+def cmd(command):
+    subprocess.run([command], shell=True, check=True)
+
+
+attention_line = '=' * 130
+conf_file = getcwd() + '/gitclone.conf'
+
+#Проверяем директорию запуска
+if getcwd() != '/home/u/git':
+    print('\n', '\033[1m\033[33mВнимание!!!\033[0m')
+    print(attention_line)
+    print(f'Текущая директория {getcwd()}')
+    print('Запустите скрипт из директории /home/u/git')
+    print(attention_line, '\n')
+    exit(1)
+
+#Удаляем старый гит
+try:
+    cmd('sudo rm -r /home/u/git/stress_test')
+except Exception as e:
+    print('\n', '\033[1m\033[33mВнимание!!!\033[0m')
+    print(attention_line)
+    print(e)
+    print(attention_line, '\n')
+
+#Скачиваем конфиг
+def download_conf():
+    ftp = FTP('10.177.5.111')
+    ftp.login()
+    ftp.cwd('stress_reports/stress_test_config')
+    with open(conf_file, 'wb') as wf:
+        ftp.retrbinary('RETR gitclone.conf', wf.write)
+    ftp.quit()
+    with open(conf_file, 'r') as r:
+        conf = r.read()
+    return conf
+
+#Клонируем гит
+cmd(download_conf())
+EOF
+
+chmod +x "$OUTFILE"
+echo "Файл $OUTFILE создан и сделан исполняемым."
+
+mkdir /home/u/git/stress_test
+cd /home/u/git
 
 
 # auto eth0

@@ -1,37 +1,5 @@
 #!/bin/bash
 
-BRIDGE="br0"
-PHY_IF="eth2"
-echo "[*] Создаём /etc/network/interfaces для bridge $BRIDGE ..."
-
-sudo tee /etc/network/interfaces > /dev/null <<EOF
-auto lo
-iface lo inet loopback
-
-auto $BRIDGE
-iface $BRIDGE inet static
-    address 10.177.103.205
-    netmask 255.255.255.0
-    gateway 10.177.103.254
-    dns-nameservers 10.177.128.198 10.177.180.246 10.177.181.142
-    bridge_ports $PHY_IF
-    bridge_stp off
-    bridge_fd 0
-    bridge_maxwait 0
-
-iface $PHY_IF inet manual
-EOF
-
-echo "[*] Применяем новые сетевые настройки..."
-
-# Отключаем старую сеть, поднимаем мост
-sudo ifdown $PHY_IF || true
-sudo ifdown $BRIDGE || true
-sudo ifup $BRIDGE
-
-echo "[+] Сеть перезапущена. Проверь IP: ip a show $BRIDGE"
-
-
 # create venv in script_dir
 sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo apt-get install -y libffi-dev strace
@@ -65,7 +33,9 @@ sudo usermod -aG kvm,libvirt,libvirt-qemu $USER
 
 # СБОРКА ВМ
 python libvirt_vm.py
-./network.sh $BRIDGE
+./network.sh br0
+
+VMS=("virtual-station1" "virtual-station2" "virtual-station3" "virtual-station4" "work-station1" "work-station2")
 
 for vm in "${VMS[@]}"; do
     # Останавливаем ВМ через virsh -c qemu:///system
@@ -94,10 +64,19 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
+
     systemctl daemon-reload
-    systemctl enable $vm.service
-    systemctl start $vm.service
+    systemctl enable "$vm.service"
+    systemctl start "$vm.service"
 done
+
+
+for vm in "${VMS[@]}"; do
+    SNAPSHOT_NAME="1.7.5.9"
+    # Создаем снимок перед остановкой (имя по дате)
+    echo "Создаём снимок $SNAPSHOT_NAME для $vm..."
+    virsh -c qemu:///system snapshot-create-as --domain "$vm" --name "$SNAPSHOT_NAME" --description "$SNAPSHOT_NAME" --atomic
+done    
 
 
 virsh net-list --all

@@ -1,5 +1,5 @@
 from allta import Libvirt, LibvirtManager, SystemCommands
-
+from time import sleep
 
 
 Libvirt.prepare()
@@ -76,11 +76,13 @@ for vm_name in vms:
             'signal set': 'prepare',
             'signal get': ['hostname']
         },
-        'reboot': {
-            'command': f"",
+        'confirm': {
+            'command': f"(sleep 2 && sudo shutdown -r now) &",
             'signal set': '',
             'signal get': ['prepare']
         },        
     }
+
 Libvirt.execute(commands=prepare, vms_dates=new_vms, vms_groups=group, username='u', password='1')
+sleep(20)
 

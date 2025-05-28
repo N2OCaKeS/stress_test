@@ -12,7 +12,7 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
-from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, PER_VRF, VRF_COUNT
+from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE
 from time import sleep
 
 
@@ -244,10 +244,8 @@ class Ovpn20k(CreateVM):
         # print(f"Создано {VRF_COUNT} таблиц.\nНа каждую таблицу - {PER_VRF} туннелей.")
 
 
-        VBox.set_hosts(domain=self.domain,
-                       vms_dates=self.vms_dates,
-                       username=self.user,
-                       password=self.password)
+        #VBox.set_hosts(domain=self.domain,
+        #               vms_dates=self.vms_dates)
         
         # 2. Отправляем клиентам
         #VBox.execute(commands=scp_configs, 

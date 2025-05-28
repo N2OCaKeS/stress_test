@@ -10,9 +10,8 @@ JIRA_URL = response_jira_url.text
 CONFLUENCE_URL = response_confluence_url.text
 
 USER = ["u", "askeladd"]
-RANGE = 10000
-VRF_COUNT = 3
-PER_VRF = RANGE // VRF_COUNT
+RANGE = 10
+DURATION_RATE = 120
 
 OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
 VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/activate"

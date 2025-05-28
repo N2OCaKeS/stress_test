@@ -29,8 +29,6 @@ class PerfVpn:
                     tun_dev = f"tun{self.tun_number}"
                     cfg_dir = f"/home/vagrant/openvpn/clients_keys/tester{self.tun_number}"
 
-                    sys_cls.cmd(f'sed -i -E \"s|^[[:space:]]*remote\\b.*|remote {self.server_ip} 1194|\" {cfg_dir}/client.ovpn')
-
                     sys_cls.cmd(f"cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --daemon")
 
                     sleep(0.5)
@@ -43,10 +41,12 @@ class PerfVpn:
                         continue
 
                     sys_cls.cmd(f"ip link set dev {tun_dev} master {vrf_name}")
-                    sys_cls.cmd(f"ip route replace 10.8.0.1 dev {tun_dev} vrf {vrf_name}")
-
+                    #sys_cls.cmd(f"ip vrf exec {vrf_name} ip route replace 10.8.0.1 dev {tun_dev}")
             except Exception as e:
                 print("Ошибка", e)
+
+        for vr in range(1, self.vrf_count + 1):
+            sys_cls.cmd(f"ip vrf exec vrf{vr} ip route add default via 10.8.0.1")
 
         print(f"Создано {self.vrf_count} таблиц.\nНа каждую таблицу - {self.per_vrf} туннелей.")
 
@@ -60,7 +60,7 @@ class PerfVpn:
 if __name__ == "__main__":
     perf_cls = PerfVpn()
 
-    #perf_cls.load_test()
-    perf_cls.rm_connections()
+    perf_cls.load_test()
+    #perf_cls.rm_connections()
 
 

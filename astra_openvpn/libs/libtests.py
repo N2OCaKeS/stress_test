@@ -244,8 +244,10 @@ class Ovpn20k(CreateVM):
         # print(f"Создано {VRF_COUNT} таблиц.\nНа каждую таблицу - {PER_VRF} туннелей.")
 
 
-        #VBox.set_hosts(domain=self.domain,
-        #               vms_dates=self.vms_dates)
+        VBox.set_hosts(domain=self.domain,
+                       vms_dates=self.vms_dates,
+                       username=self.user,
+                       password=self.password)
         
         # 2. Отправляем клиентам
         #VBox.execute(commands=scp_configs, 

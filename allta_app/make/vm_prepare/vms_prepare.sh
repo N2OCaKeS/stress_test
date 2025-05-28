@@ -47,7 +47,7 @@ for vm in "${VMS[@]}"; do
         systemctl stop "$vm.service"
         systemctl disable "$vm.service"
     fi
-
+    touch /etc/systemd/system/$vm.service
     # Создаем systemd unit для libvirt/qemu
     cat << EOF > /etc/systemd/system/$vm.service
 [Unit]

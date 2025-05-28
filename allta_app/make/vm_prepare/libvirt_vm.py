@@ -67,7 +67,7 @@ prepare = {}
 for vm_name in vms:
     prepare[vm_name] = {
         'set hostname': {
-            'command': f"sudo hostnamectl set-hostname {vm_name} && if grep -q '^127\\.0\\.1\\.1' /etc/hosts; then sudo sed -i 's/^127\\.0\\.1\\.1.*/127.0.1.1\\{vm_name}/' /etc/hosts; else echo -e '127.0.1.1\\t{vm_name}' | sudo tee -a /etc/hosts; fi",
+            'command': f"sudo hostnamectl set-hostname {vm_name} && if grep -q '^127\\.0\\.1\\.1' /etc/hosts; then sudo sed -i 's/^127\\.0\\.1\\.1.*/127.0.1.1\\{vm_name}/' /etc/hosts; else echo -e '127.0.1.1\\{vm_name}' | sudo tee -a /etc/hosts; fi",
             'signal set': 'hostname',
             'signal get': ''
         },

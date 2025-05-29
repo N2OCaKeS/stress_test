@@ -1,8 +1,8 @@
-VBox
+Libvirt
 =====================
 
 
-Модуль ``Vbox`` содержит класс, для сборки с помощью Vagrant и отправки команд на VM на основе Vbox.
+Модуль ``Libvirt`` содержит класс, для сборки с помощью virt-install и отправки команд на VM на основе libvirt.
 
 .. note:: 
     Автор: ``mfilippenko``
@@ -11,13 +11,7 @@ VBox
 ``prepare``
 ------------------------------------------------------------------------------------------------
 
-Выполняет precondition.
-
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-Принимаемые аргументы:
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-
-* ``path_prepare``: str - путь до файла с расширением .sh 
+Выполняет установку всех зависимостей.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Возвращает аргументы:
@@ -31,9 +25,9 @@ VBox
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
-    VBox.prepare('./precondition.sh')
+    Libvirt.prepare()
 
 _______________________________________________________________________________________________
 
@@ -47,11 +41,15 @@ ________________________________________________________________________________
 Принимаемые аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``path_to_vagrantfile``: str - описание аргумента
 * ``box``: str - Информация о том какой vagrant box необходимо использовать
 * ``rc``: str - Версия ос на котором развертывается ВМ
-* ``vms``: list - Список ВМ
 * ``vms_dates``: dict - Список ВМ, с побробной информацией
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Возвращает аргументы:
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+* ``dict`` - Обновленный vms_dates.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -59,25 +57,26 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
-    path_to_vagrantfile = './Vagrantfile'
     box = '1.7.5.s'
     rc = '1.7.5'
-    vms = ['hostname1', 'hostname2']
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
     }
 
-    VBox.build(path_to_vagrantfile=path_to_vagrantfile, box=box, rc=rc, 
-                        vms=vms, vms_dates=vms_dates)
+    vms_dates = Libvirt.build(box=box, rc=rc, vms_dates=vms_dates)
 
 _______________________________________________________________________________________________
 
@@ -106,21 +105,26 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
     vms = ['hostname1', 'hostname2']
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
     }
 
-    VBox.check(vms=vms, vms_dates=vms_dates)
+
+    Libvirt.check(vms=vms, vms_dates=vms_dates)
 
 _______________________________________________________________________________________________
 
@@ -148,7 +152,7 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
     commands = {
             'hostname1':{
@@ -170,7 +174,7 @@ ________________________________________________________________________________
                     'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
                 },
                 'reboot':{ # Перезагрузит ВМ
-                    'signal set': '',
+                    'signal set': '', 
                     'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
                 },
             }
@@ -179,20 +183,25 @@ ________________________________________________________________________________
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
     }
+
     vms_groups = {
         'group1':['hostname1', 'hostname2'],
         }
     username = 'u'
     password='1'
 
-    VBox.execute(commands=commands, vms_dates=vms_dates, vms_groups=vms_groups, 
+    Libvirt.execute(commands=commands, vms_dates=vms_dates, vms_groups=vms_groups, 
                             username=username, password,password)
 
 _______________________________________________________________________________________________
@@ -219,47 +228,42 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
     scp_settings = {
-        'hostname1': [
-            {
-                'mode': 'pull', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                'path_host': './test', 
-                'path_vm': '/tmp/test'
-            },
-            {
-                'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                'path_host': './test', 
-                'path_vm': '/tmp/test'
-            }            
-        ],
-
+        'hostname1': {
+            'mode': 'pull', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+            'path_host': './test', 
+            'path_vm': '/tmp/test'
+        }
         'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
-            [
-                'mode': 'push',
-                'path_host': './test', 
-                'path_vm': '/tmp/test1'
-            ]
+            'mode': 'push',
+            'path_host': './test', 
+            'path_vm': '/tmp/test1'
         }                        
     }
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
     }
+
     vms_groups = {
         'group1':['hostname1', 'hostname2'],
         }
     username = 'u'
     password='1'
 
-    VBox.scp(scp_settings=scp_settings, vms_dates=vms_dates, vms_groups=vms_groups, 
+    Libvirt.scp(scp_settings=scp_settings, vms_dates=vms_dates, vms_groups=vms_groups, 
                         username=username, password=password)
 
 _______________________________________________________________________________________________
@@ -285,21 +289,26 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
     domain = 'stress.rbt'
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
-    }   
+    }
 
-    VBox.set_hosts(domain=domain, vms_dates=vms_dates)     
+
+    Libvirt.set_hosts(domain=domain, vms_dates=vms_dates)     
 
 _______________________________________________________________________________________________
 
@@ -325,7 +334,7 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
     sed_conf = {
         'hostname1':[                
@@ -346,20 +355,25 @@ ________________________________________________________________________________
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
     }
+
     vms_groups = {
         'group1':['hostname1', 'hostname2'],
         }
     username = 'u'
     password='1'
 
-    VBox.sed(sed_conf=sed_conf, vms_dates=vms_dates, vms_groups=vms_groups, 
+    Libvirt.sed(sed_conf=sed_conf, vms_dates=vms_dates, vms_groups=vms_groups, 
                         username=username, password=password)
 
 _______________________________________________________________________________________________
@@ -388,7 +402,7 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
     domain = {
         'settings': {
@@ -406,20 +420,25 @@ ________________________________________________________________________________
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
     }
+
     vms_groups = {
         'group1':['hostname1', 'hostname2'],
         }
     username = 'u'
     password='1'
 
-    VBox.freeipa(domain=domain, vms_dates=vms_dates, vms_groups=vms_groups, 
+    Libvirt.freeipa(domain=domain, vms_dates=vms_dates, vms_groups=vms_groups, 
                             username=username, password=password)
 
 _______________________________________________________________________________________________
@@ -446,7 +465,7 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBox
+    from allta import Libvirt
 
     apt_structure = {
         'database' = ['package'],
@@ -455,26 +474,31 @@ ________________________________________________________________________________
     vms_dates = {
         'hostname1': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.5', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
         },
         'hostname2': {
             'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.6', # ip моста
+            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
+            'cpu': '2', # Кол-во cpu для ВМ
+            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
         },        
     }
+
     vms_groups = {
         'group1':['hostname1', 'hostname2'],
         }
     username = 'u'
     password='1'    
 
-    VBox.apt.install(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
+    Libvirt.apt.install(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
                                 username=username, password=password) # Установка пакетов
                                 
-    VBox.apt.reinstall(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
+    Libvirt.apt.reinstall(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
                                 username=username, password=password) # Переустановка пакетов     
 
-    VBox.apt.remove(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
+    Libvirt.apt.remove(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
                                 username=username, password=password) # Удаление пакетов                                                             
 
 _______________________________________________________________________________________________

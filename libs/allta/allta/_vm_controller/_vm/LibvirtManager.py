@@ -30,7 +30,7 @@ class LibvirtManager():
             vms = [vms]
         
         for vm in vms:
-            system_commands.cmd(f'virsh start {vm}')
+            system_commands.cmd(f'virsh --connect qemu:///system start {vm}')
         return 0
 
     @BaseDecorators.trycorator
@@ -49,10 +49,10 @@ class LibvirtManager():
             vms = [vms]
         
         for vm in vms:
-            system_commands.cmd(f'virsh shutdown {vm}')
+            system_commands.cmd(f'virsh --connect qemu:///system shutdown {vm}')
         return 0
     
-    
+
     
     @BaseDecorators.trycorator
     @staticmethod 
@@ -66,36 +66,39 @@ class LibvirtManager():
         """
         if snapshot_name:
             for vm in vms:
-                system_commands.cmd(f'virsh snapshot-create-as --domain {vm} --name "{snapshot_name}"')            
+                system_commands.cmd(f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "{snapshot_name}"')            
         else:
             for vm in vms:
-                system_commands.cmd(f'virsh snapshot-create-as --domain {vm} --name "snapshot_1"')
+                system_commands.cmd(f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "snapshot_1"')
         return 0
 
-    @BaseDecorators.trycorator
-    @staticmethod    
-    def get_ip_network(vms_date: dict):
-        """
-        Настраивает сетевой интерфейс виртуальных машин на мостовой режим с использованием network.d.
 
-        Args:
-            vms (list): Список имён виртуальных машин.
-            bridge_name (str): Имя мостового интерфейса (по умолчанию 'virbr0').
 
-        Returns:
-            int: Код завершения выполнения.
-        """
-        # Проверяем существование моста с помощью nmcli
-        return 0
+
+    # @BaseDecorators.trycorator
+    # @staticmethod    
+    # def get_ip_network(vms_date: dict):
+    #     """
+    #     Настраивает сетевой интерфейс виртуальных машин на мостовой режим с использованием network.d.
+
+    #     Args:
+    #         vms (list): Список имён виртуальных машин.
+    #         bridge_name (str): Имя мостового интерфейса (по умолчанию 'virbr0').
+
+    #     Returns:
+    #         int: Код завершения выполнения.
+    #     """
+    #     # Проверяем существование моста с помощью nmcli
+    #     return 0
 
     @BaseDecorators.trycorator
     @staticmethod   
     def check_vm_list():
         """
-        Возвращает список доступных виртуальных машин.
+        Возвращает список всех виртуальных машин.
 
         Returns:
             str: Список виртуальных машин.
         """
-        return system_commands.check_output_command('virsh list --all')
+        return system_commands.check_output_command('virsh --connect qemu:///system list --all')
     

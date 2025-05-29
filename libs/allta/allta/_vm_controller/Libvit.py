@@ -21,9 +21,9 @@ from typing import cast
 import threading
 
 
-class VBox(_VirtualMashines):
+class Libvirt(_VirtualMashines):
     """
-    Класс VBox предоставляет интерфейс для управления виртуальными машинами (ВМ) с использованием Vagrant и VirtualBox.
+    Класс VBox предоставляет интерфейс для управления виртуальными машинами (ВМ) с использованием virt-install и Libvirt.
 
     Основные функции:
     - Подготовка окружения для работы с ВМ.
@@ -37,21 +37,21 @@ class VBox(_VirtualMashines):
     Этот класс наследуется от абстрактного класса `_VirtualMashines` и реализует его методы.
     """
     @classmethod
-    def prepare(cls, path_prepare) -> int:
+    def prepare(cls) -> int:
         """
         Выполняет подготовку окружения для работы с виртуальными машинами.
-
-        Args:
-            path_prepare (str): Путь до файла скрипта подготовки.
 
         Returns:
             int: Код завершения выполнения команды.
         """
-        
-        return system_commands.cmd_with_returncode(f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm -y")
+        system_commands.cmd_with_returncode(f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar -y")
+        system_commands.cmd_with_returncode(f"sudo usermod -aG kvm,libvirt,libvirt-qemu $USER")
+        return 0
+
+    
 
     @classmethod
-    def build(cls, box: str, rc: str, vms_dates: dict) -> int:
+    def build(cls, box: str, rc: str, vms_dates: dict) -> dict:
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
@@ -73,10 +73,10 @@ class VBox(_VirtualMashines):
                     }
 
         Returns:
-            int: Код завершения выполнения.
+            dict: Обновленный список хостов.
         """
         virt = _VirtInstall(box, rc, vms_dates)
-        virt.build()
+        vms_dates = virt.build()
 
         # TODO Узнать нужен ли этот блок
 
@@ -88,7 +88,7 @@ class VBox(_VirtualMashines):
         #         if_name = 'eth2'  #  Узнать правильные названия интерфейсов и указать их
         #     elif rc.startswith('1.8'):
         #         if_name = 'ens5'
-        return 0
+        return vms_dates
 
     @classmethod
     def check(cls, vms: list, vms_dates: dict):

@@ -1,7 +1,7 @@
-VBoxManager
+LibvirtManager
 =====================
 
-Модуль ``VBoxManager`` содержит класс, для управления ВМ под управлением VBox.
+Модуль ``LibvirtManager`` содержит класс, для управления ВМ под управлением VBox.
 
 .. note:: 
     Автор: ``mfilippenko``
@@ -24,13 +24,13 @@ VBoxManager
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import LibvirtManager
 
     vms_list = ['hostname1', 'hostname2']
     vms_str = 'hostname3'
 
-    VBoxManager.power_on(vms_list)
-    VBoxManager.power_on(vms_str)
+    LibvirtManager.power_on(vms_list)
+    LibvirtManager.power_on(vms_str)
 
 _______________________________________________________________________________________________
 
@@ -52,13 +52,13 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import LibvirtManager
 
     vms_list = ['hostname1', 'hostname2']
     vms_str = 'hostname3'
 
-    VBoxManager.power_off(vms_list)
-    VBoxManager.power_off(vms_str)
+    LibvirtManager.power_off(vms_list)
+    LibvirtManager.power_off(vms_str)
 
 _______________________________________________________________________________________________
 
@@ -80,11 +80,11 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import LibvirtManager
 
     vms_list = ['hostname1', 'hostname2']
 
-    VBoxManager.create_snapshot(vms)
+    LibvirtManager.create_snapshot(vms)
 
 _______________________________________________________________________________________________
 
@@ -106,11 +106,11 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import LibvirtManager
 
     vms_list = ['hostname1', 'hostname2']
 
-    VBoxManager.set_bridge_network(vms)
+    LibvirtManager.set_bridge_network(vms)
 
 _______________________________________________________________________________________________
 
@@ -132,8 +132,8 @@ ________________________________________________________________________________
 
 .. code-block:: python
 
-    from allta import VBoxManager
+    from allta import LibvirtManager
     
-    VBoxManager.check_vm_list()
+    LibvirtManager.check_vm_list()
     
 _______________________________________________________________________________________________

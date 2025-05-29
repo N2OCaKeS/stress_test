@@ -18,6 +18,8 @@ Allta Documentation
    info
    modules/Decorators
    modules/GetEnv
+   modules/Libvirt
+   modules/LibvirtManager   
    modules/SystemCommands
    modules/VBox
    modules/VBoxManager

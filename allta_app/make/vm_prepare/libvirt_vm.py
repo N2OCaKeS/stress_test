@@ -45,10 +45,11 @@ vms = {  # Полный список ВМ
               'ram': '131072'},              
 }
 
-vms_list = ['virtual-station1', 'virtual-station2', 'virtual-station3', 'virtual-station4', 'work-station1', 'work-station2']
 
+
+vms_list = ['virtual-station1', 'virtual-station2', 'virtual-station3', 'virtual-station4', 'work-station1', 'work-station2']
 group = {'all': vms_list}
-new_vms = Libvirt.build('1.7.5.o', '1.7.5', vms)
+new_vms = Libvirt.build(box='vm_station1.7', rc=rc, vms_dates=vms)
 
 scp_prepare = {
     "g_all": [
@@ -67,8 +68,8 @@ prepare = {}
 for vm_name in vms:
     prepare[vm_name] = {
         'set hostname': {
-            'command': f"sudo hostnamectl set-hostname {vm_name} && if grep -q '^127\\.0\\.1\\.1' /etc/hosts; then sudo sed -i 's/^127\\.0\\.1\\.1.*/127.0.1.1\\{vm_name}/' /etc/hosts; else echo -e '127.0.1.1\\{vm_name}' | sudo tee -a /etc/hosts; fi",
-            'signal set': 'hostname',
+            'command': f"sudo hostnamectl set-hostname {vm_name} && if grep -q '^127\\.0\\.1\\.1' /etc/hosts; then sudo sed -i 's/^127\\.0\\.1\\.1.*/127.0.1.1\\t{vm_name}/' /etc/hosts; else echo -e '127.0.1.1\\t{vm_name}' | sudo tee -a /etc/hosts; fi",
+           'signal set': 'hostname',
             'signal get': ''
         },
         'prepare': {

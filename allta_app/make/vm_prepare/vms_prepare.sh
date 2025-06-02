@@ -36,7 +36,6 @@ python libvirt_vm.py
 ./network.sh br0
 
 VMS=("virtual-station1" "virtual-station2" "virtual-station3" "virtual-station4" "work-station1" "work-station2")
-
 for vm in "${VMS[@]}"; do
     # Останавливаем ВМ через virsh -c qemu:///system
     virsh -c qemu:///system destroy "$vm"

@@ -41,6 +41,7 @@ kernel="$2"
 sudo apt-get install $kernel -y
 sudo apt-get install htop -y
 sudo apt-get install ssh git resolvconf sysstat -y
+sudo timedatectl set-ntp true
 
 
 test "$(grep 1.7 /etc/astra_version)" && nat_net_name="Wired connection 1"
@@ -57,6 +58,7 @@ declare -A virtual_station3_br=( [ip]=10.177.103.103 [domain]=virtual-station3.a
 declare -A virtual_station4_br=( [ip]=10.177.103.104 [domain]=virtual-station4.allta.nt [host]=virtual-station4 [dns]="10.177.180.248, 10.177.128.198" )
 declare -A work_station1_br=( [ip]=10.177.103.201 [domain]=work-station1.allta.nt [host]=work-station1 [dns]="10.177.180.248, 10.177.128.198" )
 declare -A work_station2_br=( [ip]=10.177.103.202 [domain]=work-station2.allta.nt [host]=work-station2 [dns]="10.177.180.248, 10.177.128.198" )
+
 
 
 if [ "$1" = "virtual-station1" ]; then

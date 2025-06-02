@@ -9,7 +9,7 @@ declare -A vm_mac_map=(
     ["virtual-station3"]="08:00:27:AB:CD:03"
     ["virtual-station4"]="08:00:27:AB:CD:04"
     ["work-station1"]="08:00:27:AB:CD:05"
-    ["work-station2"]="08:00:27:AB:CD:06"
+    ["work-station2"]="08:00:27:AB:CD:06" 
 )
 
 BRIDGE="br0"

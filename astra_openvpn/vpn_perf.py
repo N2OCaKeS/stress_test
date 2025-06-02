@@ -9,7 +9,7 @@ sys_cls = SystemCommands()
 
 class PerfVpn:
     def __init__(self, ranger=RANGE, duration=DURATION_RATE):
-        self.rate = str(ranger / 50) + 'M'
+        self.rate = str(200 // ranger) + 'M'
         self.duration = duration
         self.tun_number = 0
         self.range = ranger
@@ -30,7 +30,7 @@ class PerfVpn:
             for item in range(1, self.range + 1):
                 self.tun_number += 1
                 tun_dev = f"tun{self.tun_number}"
-                cfg_dir = f"/home/vagrant/openvpn/clients_keys/tester{self.tun_number}"
+                cfg_dir = f"/home/u/openvpn/clients_keys/tester{self.tun_number}"
                 
                 sys_cls.cmd(f"cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --daemon")
 

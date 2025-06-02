@@ -150,7 +150,8 @@ class Ovpn20k(CreateVM):
         self.destroy = 'virsh destroy {}'
         self.undefine = 'virsh undefine {}'
         self.ranger = RANGE
-
+        self.vms_groups = {"group1": ["testvm1", "testvm2", "testvm3", "testvm4"]}
+        self.clients_groups = {"group2": ["testvm2", "testvm3", "testvm4"]}
 
     def start_test(self):
         self.vms_dates = {
@@ -214,38 +215,69 @@ class Ovpn20k(CreateVM):
         }
 
 
+
+        unpack_tar = {
+            "g_group1": {
+                "unpack": {
+                    "command": (
+                        f"cd /home/u/ && tar -xzvf ovpn.tar.gz"
+                    ),
+                    "signal set": "",
+                    "signal get": ""
+                },
+            }
+        }
+
+        start_server = {
+            "testvm1": {
+                "start_server": (
+                    "sudo astra-openvpn-server start && "
+                    "iperf -s -u -B 10.8.0.1 -i 1 -D"
+                ),
+                "signal set": "",
+                "signal get": ""
+            }
+        }
+
+
+        run_perf = {
+            'g_group2': {
+                "run_perf": {
+                    "command": (
+                        "ulimit -u 100000 && ulimit -n 100000 && ulimit -s 100000 && "
+                        "source /home/u/python/Python3.12/venv/bin/activate && "
+                        "cd /home/u/astra_openvpn && python3 vpn_perf.py"
+                    ),
+                    "signal set": "",
+                    "signal get": ""
+                }
+            }
+        }
+
         print(self.vms_dates["testvm1"]["ip_bridge"])
-        # # Создание VRF
-        # for j in range(1, VRF_COUNT + 1):
-        #     try:
-        #         if j % 10 == 0:
-        #             print(f"Запущено в VRF {j} клиентов.")
-        #         vrf_name = f"vrf{j}"
-        #         table_id = 1000 + j
-        #         sys_cls.cmd(f"ip link add {vrf_name} type vrf table {table_id}")
-        #         sys_cls.cmd(f"ip link set dev {vrf_name} up")
-        #         print(2)
-        #         for i in range(1, RANGE + 1):
-        #             tun_dev = f"tun{i}"
-        #             cfg_file = f"/home/vagrant/clients_keys/tester{i}/client.ovpn"
-        #             ip = self.vms_dates["testvm1"]["ip_bridge"]
-
-        #             sys_cls.cmd(f"sed -i 's/^remote 192\\.168\\.121\\.35 1194$/remote {ip} 1194/' /home/vagrant/clients_keys/tester{i}/client.ovpn")
-        #             sys_cls.cmd(f"openvpn --config {cfg_file} --dev {tun_dev} --daemon")
-        #             sys_cls.cmd(f"ip link set dev {tun_dev} master {vrf_name}")
-        #             sys_cls.cmd(f"ip link set dev {tun_dev} up")
-        #             sys_cls.cmd(f"ip route add 10.8.0.1 dev {tun_dev} vrf {vrf_name} ")
-        #             if PER_VRF - i == 0:
-        #                 break
-
-        #     except Exception as e:
-        #         print("Ошибка", e)
-
-        # print(f"Создано {VRF_COUNT} таблиц.\nНа каждую таблицу - {PER_VRF} туннелей.")
 
 
-        #VBox.set_hosts(domain=self.domain,
-        #               vms_dates=self.vms_dates)
+
+        VBox.set_hosts(domain=self.domain,
+                       vms_dates=self.vms_dates)
+        
+        VBox.execute(commands=unpack_tar,
+                     vms_groups=self.vms_groups,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+        
+        VBox.execute(commands=start_server,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+        
+        VBox.execute(commands=run_perf,
+                     vms_groups=self.clients_groups,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+
         
         # 2. Отправляем клиентам
         #VBox.execute(commands=scp_configs, 

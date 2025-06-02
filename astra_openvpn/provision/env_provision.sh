@@ -42,10 +42,15 @@ sudo apt update
 #sudo apt-get install linux-[5-6].*-generic -y
 #sudo apt-get install linux-[5-6].*-lowlatency -y
 sudo apt-get install -y libffi-dev gcc make libpdp-dev
-#sudo apt-get install -y python3-numpy
+
+# test packages
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf
+wget -P /home/u/ ftp://10.177.103.10/openvpn/ovpn.tar.gz
+
 if [ "$HOSTNAME" = "testvm1.stress.rbt" ]; then
-    echo "---$(HOSTNAME)---i"
+    echo "---($HOSTNAME)---"
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
+    sudo cp -r /home/u/openvpn /etc/
     sudo astra-openvpn-server start
     sudo astra-openvpn-server status
 else
@@ -62,6 +67,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y rustc cargo
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-requests
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y liblzma-dev
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
+
 
 #python
 sudo mkdir /home/u/python

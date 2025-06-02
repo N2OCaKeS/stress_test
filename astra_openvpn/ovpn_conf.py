@@ -10,11 +10,11 @@ JIRA_URL = response_jira_url.text
 CONFLUENCE_URL = response_confluence_url.text
 
 USER = ["u", "askeladd"]
-RANGE = 10
-DURATION_RATE = 120
+RANGE = 2500
+DURATION_RATE = 1000
 
-OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/activate"
+OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
+VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
 INFO_FILENAME = 'ovpn_info.txt'
 VM_INFONAME = 'av.info'
 VM_KERNEL = 'kernel.info'

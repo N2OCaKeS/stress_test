@@ -42,7 +42,7 @@ class VBox(_VirtualMashines):
         Выполняет подготовку окружения для работы с виртуальными машинами.
 
         Args:
-            path_prepare (str): Путь до файла скрипта подготовки.
+            path_prepare (str): Путь до файла скрипта установки VBox.
 
         Returns:
             int: Код завершения выполнения команды.
@@ -84,17 +84,6 @@ class VBox(_VirtualMashines):
         system_commands.cmd('vboxmanage list hostonlyifs')
         system_commands.cmd('vboxmanage list bridgedifs')
         system_commands.cmd('vboxmanage list vms')
-
-        # TODO Узнать нужен ли этот блок
-
-        # if path.isfile('/home/iface/iface'):
-        #     with open('/home/iface/iface', 'r') as r:
-        #         if_name = r.read().strip()
-        # else:
-        #     if rc.startswith('1.7'):
-        #         if_name = 'eth2'  #  Узнать правильные названия интерфейсов и указать их
-        #     elif rc.startswith('1.8'):
-        #         if_name = 'ens5'
         return 0
 
     @classmethod

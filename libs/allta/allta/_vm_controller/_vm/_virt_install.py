@@ -1,9 +1,14 @@
-import os
-from time import sleep, time
-import requests
 import json
-from ..._system_command.SystemCommands import SystemCommands as system_commands
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from time import sleep, time
+
+import requests
+
+from ..._system_command.SystemCommands import SystemCommands as system_commands
+from .._libs._scp_command import _SCP_Command
+from .._libs._ssh_command import _SSH_Command
+
 
 class _VirtInstall:
     """
@@ -17,7 +22,7 @@ class _VirtInstall:
     Этот класс позволяет автоматизировать процесс создания и настройки ВМ с использованием Vagrant.
     """
 
-    def __init__(self, box: str, rc: str, vms_date: dict, prepare: str = None):
+    def __init__(self, box: str, rc: str, vms_date: dict):
         """
         Класс для работы с Vagrant
 
@@ -35,8 +40,8 @@ class _VirtInstall:
             Если ключ disk присутствует, то для ВМ будет создан дополнительный диск указанного размера.
         """
         self.box = box
-        self.rc = rc
         self.vms_date = vms_date
+        self.rc = rc
 
     def _box_wrapper(self) -> tuple:
         """
@@ -62,7 +67,7 @@ class _VirtInstall:
                 if '1.7' in self.box:
                     os_version = 'alse17'
                 elif '1.8' in self.box:
-                    os_version = 'alse18'
+                    os_version = 'alse17'
                 return box_name, box_url, os_version
 
         # 2. Если не найден — дефолты
@@ -75,7 +80,7 @@ class _VirtInstall:
             # Дефолт для 1.8
             for box in dates['libvirt_box']:
                 if '1.8.1.o' in box:
-                    return box['1.8.1.o'][0], box['1.8.1.o'][1], 'alse18'
+                    return box['1.8.1.o'][0], box['1.8.1.o'][1], 'alse17' # В версии 1.7 отсутсвует alse18 из за чего ВМ на 1.8 не собираеются сейчас на 1.7 все отрабатывает штатно при использовании alse17
 
 
     @staticmethod
@@ -86,8 +91,9 @@ class _VirtInstall:
             cpu = info['cpu']
             ram = info['ram']
             disk = f"{hostname}.qcow2"
-            system_commands.check_output_command(f"cp {vm_path}/{box}.qcow2 {vm_path}/{disk}")
-            system_commands.check_output_command(f"chmod 777 {vm_path}/{disk}")
+            print(system_commands.check_output_command(f"cp {vm_path}/{box}.qcow2 {vm_path}/{disk}"))
+            print(system_commands.check_output_command(f"chmod 777 {vm_path}/{disk}"))
+            sleep(10)
             print (system_commands.check_output_command(
                 f"virt-install --connect qemu:///system -n {hostname} "
                 f"--memory {ram} --vcpus {cpu} --import --disk path={vm_path}/{disk} "
@@ -124,7 +130,6 @@ class _VirtInstall:
         system_commands.cmd(f'virsh pool-define-as vms dir --target {vm_path} && virsh pool-build vms && virsh pool-start vms && virsh pool-autostart vms')
         system_commands.cmd(f'rm -rf {vm_path}/{box_name}.tar.gz; wget -P {vm_path} {box_url}')
         system_commands.cmd(f'tar xzf {vm_path}/{box_name}.tar.gz -C {vm_path}/')                
-        system_commands.cmd(f"mv {vm_path}/{box_name}.qcow2 {vm_path}/{self.box}.qcow2")
 
 
         # Сеть libvirt (создать если ещё нет)
@@ -149,26 +154,41 @@ class _VirtInstall:
         except Exception as e:
             print("WARNING: Сеть test возможно уже существует.")
 
-        print("\n==> Создание ВМ параллельно...")
+        print("\n==> Создание ВМ параллельно с задержкой 10 сек...")
+        start_ts = time()
         with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
-            futures = [
-                executor.submit(
-                    self._build_vm, hostname, info, self.box, os_version, system_commands, vm_path
-                )
-                for hostname, info in self.vms_date.items()
-            ]
+            futures = []
+            # проходим по всем ВМ с индексом
+            for idx, (hostname, info) in enumerate(self.vms_date.items()):
+                delay = idx * 10  # 0, 10, 20, ...
+                
+                # заворачиваем вызов _build_vm в задачу, которая заснётся перед стартом
+                def scheduled_build(h=hostname, 
+                                     i=info, 
+                                     d=delay):
+                    # ждём нужное время от момента запуска первой задачи
+                    to_wait = d - (time() - start_ts)
+                    if to_wait > 0:
+                        sleep(to_wait)
+                    return self._build_vm(
+                        h, i, self.box, os_version, system_commands, vm_path
+                    )
+
+                futures.append(executor.submit(scheduled_build))
+
+            # собираем результаты как обычно
             results = {}
-            for future in as_completed(futures):
-                hostname = future.result()
-                if hostname:
-                    print(f"[{hostname}] ВМ создана и запущена")
-                    results[hostname] = True
+            for fut in as_completed(futures):
+                host = fut.result()
+                if host:
+                    print(f"[{host}] ВМ создана и запущена")
+                    results[host] = True
                 else:
                     print("[FAIL] Не удалось создать ВМ")
-                    results[hostname] = False
+                    results[host] = False
 
         print("Ждём запуска всех ВМ (60 сек)...")
-        sleep(60)
+        sleep(90)
         print("\n==> Получение IP адресов параллельно...")
         with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
             ip_futures = [
@@ -178,5 +198,88 @@ class _VirtInstall:
             for future in as_completed(ip_futures):
                 hostname, ip = future.result()
                 self.vms_date[hostname]['ip_bridge'] = ip
+
+
+        if self.rc:
+            # 1. Скачиваем releases.json
+            resp = requests.get('http://allta.devos.astralinux.ru/rest/api/get-repo-path')
+            resp.raise_for_status()
+            releases = resp.json()
+
+            # 2. Берём нужный список deb-строк по self.rc
+            try:
+                sources_lines = releases[self.rc]
+            except KeyError:
+                raise ValueError(f"Нет записи для релиза '{self.rc}' в releases.json")
+
+            # Собираем их в одну строку с разделителем \n
+            sources_str = "\\n".join(sources_lines)
+
+            # 3. Узнаём текущее локальное ядро (если нужно передавать в скрипт)
+            kernel = system_commands.check_output_command("uname -r").strip()
+            
+            if "-generic" in kernel:
+                suffix = "generic"
+            elif "-lowlatency" in kernel:
+                suffix = "lowlatency"
+            else:
+                raise ValueError(f"Неизвестный тип ядра: {kernel}")
+
+            # Извлекаем major.minor версию (первые два числа)
+            version_parts = kernel.split("-")[0].split(".")
+            if len(version_parts) < 2:
+                raise ValueError(f"Некорректный формат версии: {kernel}")
+            major_minor = ".".join(version_parts[:2])  # "5.10"
+            apt_kernel = f"linux-{major_minor}-{suffix}"
+
+            # 4. Параллельно по всем ВМ через SSH выполняем серию команд
+            with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
+                futures = []
+                for host in self.vms_date:
+                    cmds = [
+                        # 1) hostname и полная перезапись /etc/hosts
+                        f"sudo hostnamectl set-hostname {host} && "
+                        f"echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}' | sudo tee /etc/hosts",
+
+                        # 2) репо под нужный релиз
+                        f"echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
+
+                        # 3) обновляем индексы и ставим ядро + заголовки
+                        "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive astra-update -A -T -r",
+                        "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl -y",
+                        f"sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel}",
+
+
+
+                        # 5) настраиваем GRUB
+                        f"kernel_conf=$(sudo grep menuentry_id /boot/grub/grub.cfg "
+                        f"| awk '{{print $17}}' | grep \" + {kernel} + \" | tr -d \"'\" )",
+                        "if ! grep -q '^GRUB_DEFAULT=' /etc/default/grub; then "
+                        "echo 'GRUB_DEFAULT=0' | sudo tee -a /etc/default/grub; fi",
+                        "sudo sed -i \"s|GRUB_DEFAULT=.*|GRUB_DEFAULT=${kernel_conf}|\" /etc/default/grub",
+                        "sudo update-grub",
+                        "grep '^GRUB_DEFAULT=' /etc/default/grub",
+                    ]
+                    full_cmd = " && ".join(cmds)
+
+                    futures.append(
+                        executor.submit(
+                            _SSH_Command.cmd,
+                            host,
+                            full_cmd,
+                            self.vms_date,
+                            "u",   # username, при необходимости вынести в переменную
+                            "1"    # пароль
+                        )
+                    )
+
+                # 5. Собираем результаты
+                for future in as_completed(futures):
+                    result = future.result()
+                    host = result.get("host", "unknown")
+                    if result.get("status") == "ok":
+                        print(f"[{host}] prepare.sh успешно выполнен")
+                    else:
+                        print(f"[{host}] prepare.sh ошибка: {result.get('output')}")
         return self.vms_date
 

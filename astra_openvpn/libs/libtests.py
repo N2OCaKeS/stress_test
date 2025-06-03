@@ -143,15 +143,15 @@ class Ovpn20k(CreateVM):
         super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
-        self.user = 'vagrant'
-        self.password = 'vagrant'
+        self.user = 'u'
+        self.password = '1'
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.vg_destroy = 'vagrant destroy {}'
         self.destroy = 'virsh destroy {}'
         self.undefine = 'virsh undefine {}'
         self.ranger = RANGE
-        self.vms_groups = {"group1": ["testvm1", "testvm2", "testvm3", "testvm4"]}
-        self.clients_groups = {"group2": ["testvm2", "testvm3", "testvm4"]}
+        self.vms_group = {"group1": ["testvm1", "testvm2", "testvm3", "testvm4"]}
+        self.clients_group = {"group2": ["testvm2", "testvm3", "testvm4"]}
 
     def start_test(self):
         self.vms_dates = {
@@ -205,22 +205,23 @@ class Ovpn20k(CreateVM):
                     "signal get": ""
                 }}}
         
-
-        commands_scp = {
-            "testvm2": {
-                "mode": "push",
-                "path_host": "./vpn_perf.py",
-                "path_vm": "/home/vagrant/"
-            }
+        scp = {
+            'g_group2':[
+                {
+                    'mode': 'push',
+                    'path_host': '/home/u/git/stress_test/astra_openvpn',
+                    'path_vm': '/home/u/'
+                }
+            ]
         }
-
-
 
         unpack_tar = {
             "g_group1": {
                 "unpack": {
                     "command": (
-                        f"cd /home/u/ && tar -xzvf ovpn.tar.gz"
+                        f"cd /home/u/ && tar -xzvf ovpn.tar.gz > /dev/null 2>&1 && "
+                        'sudo su -c "cp -r /home/u/openvpn /etc/"'
+
                     ),
                     "signal set": "",
                     "signal get": ""
@@ -230,13 +231,15 @@ class Ovpn20k(CreateVM):
 
         start_server = {
             "testvm1": {
-                "start_server": (
-                    "sudo astra-openvpn-server start && "
-                    "iperf -s -u -B 10.8.0.1 -i 1 -D"
+                "start_server":
+                {
+                    "command": (
+                    'sudo su root -c "astra-openvpn-server start" && '
+                    'sudo su root -c "iperf -s -u -B 10.8.0.1 -i 1 -D "'
                 ),
                 "signal set": "",
                 "signal get": ""
-            }
+            }}
         }
 
 
@@ -244,9 +247,10 @@ class Ovpn20k(CreateVM):
             'g_group2': {
                 "run_perf": {
                     "command": (
-                        "ulimit -u 100000 && ulimit -n 100000 && ulimit -s 100000 && "
-                        "source /home/u/python/Python3.12/venv/bin/activate && "
-                        "cd /home/u/astra_openvpn && python3 vpn_perf.py"
+                        'sudo su -c "ulimit -u 100000 && '
+                        'ulimit -n 100000 && '
+                        'ulimit -s 100000 && '
+                        '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/vpn_perf.py"'
                     ),
                     "signal set": "",
                     "signal get": ""
@@ -260,9 +264,15 @@ class Ovpn20k(CreateVM):
 
         VBox.set_hosts(domain=self.domain,
                        vms_dates=self.vms_dates)
-        
+       
+        VBox.scp(scp_settings=scp,
+                 vms_groups=self.clients_group,
+                 vms_dates=self.vms_dates,
+                 username=self.user,
+                 password=self.password)
+
         VBox.execute(commands=unpack_tar,
-                     vms_groups=self.vms_groups,
+                     vms_groups=self.vms_group,
                      vms_dates=self.vms_dates,
                      username=self.user,
                      password=self.password)
@@ -273,11 +283,10 @@ class Ovpn20k(CreateVM):
                      password=self.password)
         
         VBox.execute(commands=run_perf,
-                     vms_groups=self.clients_groups,
+                     vms_groups=self.clients_group,
                      vms_dates=self.vms_dates,
                      username=self.user,
                      password=self.password)
-
         
         # 2. Отправляем клиентам
         #VBox.execute(commands=scp_configs, 

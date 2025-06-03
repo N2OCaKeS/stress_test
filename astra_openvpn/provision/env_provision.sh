@@ -49,10 +49,7 @@ wget -P /home/u/ ftp://10.177.103.10/openvpn/ovpn.tar.gz
 
 if [ "$HOSTNAME" = "testvm1.stress.rbt" ]; then
     echo "---($HOSTNAME)---"
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
-    sudo cp -r /home/u/openvpn /etc/
-    sudo astra-openvpn-server start
-    sudo astra-openvpn-server status
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server sshpass
 else
     echo "---($HOSTNAME)---"
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
@@ -81,10 +78,10 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-cd ${CPATH}
+cd /home/u/
 pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
-python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r ${CPATH}/req.txt
+python3.12 -m pip install --upgrade pip
 
 kernel="$2"
 kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")

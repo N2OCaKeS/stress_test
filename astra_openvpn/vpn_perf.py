@@ -4,22 +4,38 @@ from allta import SystemCommands
 import os
 import threading
 from time import sleep
+import argparse
 #ovpn_cls = Ovpn20k()
 sys_cls = SystemCommands()
 
 class PerfVpn:
     def __init__(self, ranger=RANGE, duration=DURATION_RATE):
+        self.hostname = sys_cls.check_output_command("echo $HOSTNAME").split(".")[0]
+        self.range = ranger
+        one_third = self.range // 3
+
+        if "testvm2" in self.hostname:
+            self.start = 0
+            self.end = one_third
+        elif "testvm3" in self.hostname:
+            self.start = one_third
+            self.end = one_third * 2
+        elif "testvm4" in self.hostname:
+            self.start = one_third * 2
+            self.end = self.range
+        else:
+            raise ValueError(f"Неизвестный хост: {self.hostname}")
+
         self.rate = str(200 // ranger) + 'M'
         self.duration = duration
         self.tun_number = 0
-        self.range = ranger
         self.tun_ip = ""
         self.server_ip = sys_cls.check_output_command("cat /etc/hosts").split()[3]
-
+        self.log_path = "/var/log/iperf.log"
 
     def run_iperf(self, tun_ip, tun_dev):
         try:
-            sys_cls.cmd(f"iperf -c 10.8.0.1 -u -b {self.rate} -t {self.duration} -B {tun_ip} -i 1 &")
+            sys_cls.cmd(f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 2 > {self.log_path} 2>&1 & ")
             print(f"{tun_dev} | Iperf | done")
         except Exception as e:
             print(f"{tun_dev} |  Iperf | error")
@@ -27,10 +43,10 @@ class PerfVpn:
 
     def load_test(self):
         try:
-            for item in range(1, self.range + 1):
+            for item in range(self.start, self.end):
                 self.tun_number += 1
                 tun_dev = f"tun{self.tun_number}"
-                cfg_dir = f"/home/u/openvpn/clients_keys/tester{self.tun_number}"
+                cfg_dir = f"/home/u/openvpn/clients_keys/tester{item}"
                 
                 sys_cls.cmd(f"cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --daemon")
 
@@ -60,7 +76,9 @@ class PerfVpn:
             sys_cls.cmd(f"ip link delete tun{i}")
 
 if __name__ == "__main__":
+
     perf_cls = PerfVpn()
 
     perf_cls.load_test()
     #perf_cls.rm_connections()
+

@@ -10,7 +10,7 @@ JIRA_URL = response_jira_url.text
 CONFLUENCE_URL = response_confluence_url.text
 
 USER = ["u", "askeladd"]
-RANGE = 2500
+RANGE = 1000
 DURATION_RATE = 1000
 
 OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"

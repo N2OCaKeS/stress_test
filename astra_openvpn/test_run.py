@@ -9,11 +9,11 @@ from ovpn_conf import REPORT_PATH
 #                         ram=16384)
 
 ovpn_test = Ovpn20k(rc_vbox="1.7.5",
-                         vm_count=2,
+                         vm_count=4,
                          testdir=REPORT_PATH,
                          kernel="6.1.90-1-generic",
                          vcpu=3,
                          ram=2048)
-ovpn_test.vms_destroy()
-ovpn_test.prepare_vms()
+#ovpn_test.vms_destroy()
+#ovpn_test.prepare_vms()
 ovpn_test.start_test()

@@ -163,9 +163,11 @@ class _Freeipa():
         if not _Signals.get(sig):
             print(f"Клиент {host}: сигнал domain_ready не получен, прерывание настройки.")
             return
-
+        
         print(f"Настройка клиента домена на {host}")
         client_cmd = f"sudo astra-freeipa-client -d {domain_name} -p {admin_password} -y"
+        client_cmd = f'sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-client -d {domain_name} -p {admin_password} -y --par "--domain={domain_name} --server={controller_host}.{domain_name} --realm={domain_name.upper()}"'
+        
         _Freeipa._execute_command(
             vm_info,
             client_cmd,

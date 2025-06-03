@@ -14,7 +14,8 @@ from ._base_commands._freeipa._freeipa import _Freeipa as freeipa
 
 from ._vm._virt_install import _VirtInstall
 from ._vm._virtual_machine import _VirtualMashines
-from ._vm.VBoxManager import VBoxManager as vbox_manager
+from ._vm.LibvirtManager import LibvirtManager as libvirt_manager
+
 
 from typing import cast
 
@@ -44,22 +45,27 @@ class Libvirt(_VirtualMashines):
         Returns:
             int: Код завершения выполнения команды.
         """
-        
-        return system_commands.cmd_with_returncode(f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar -y")
+
+        system_commands.cmd_with_returncode(f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar sshpass -y")
+        system_commands.cmd_with_returncode(f"sudo usermod -aG kvm,libvirt,libvirt-qemu,libvirt-admin $USER")
+        return 0
+
+    
 
     @classmethod
-    def build(cls, box: str, rc: str, vms_dates: dict) -> dict:
+    def build(cls, box: str,  rc: str, vms, vms_dates: dict) -> dict:
+
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
         Args:
-            path_to_vagrantfile (str): путь до папки где лежит vagrantfile
+
             box (str): Имя образа (бокса).
-            rc (str): Версия операционной системы.
             vms (list): Список имён виртуальных машин.
 
                 vms = ['hostname1', 'hostname2']
-            
+            rc (str, optional): Версия операционной системы. Если не указан, не используется.
+            prepare_path (str, optional): Путь к файлу подготовки окружения. Если не указан, не используется.
             vms_date (dict): Полная информация о виртуальных машинах.
                 
                 vm_dates = {
@@ -72,19 +78,12 @@ class Libvirt(_VirtualMashines):
         Returns:
             dict: Обновленный список хостов.
         """
-        virt = _VirtInstall(box, rc, vms_dates)
+
+        virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc)
         vms_dates = virt.build()
 
-        # TODO Узнать нужен ли этот блок
-
-        # if path.isfile('/home/iface/iface'):
-        #     with open('/home/iface/iface', 'r') as r:
-        #         if_name = r.read().strip()
-        # else:
-        #     if rc.startswith('1.7'):
-        #         if_name = 'eth2'  #  Узнать правильные названия интерфейсов и указать их
-        #     elif rc.startswith('1.8'):
-        #         if_name = 'ens5'
+        libvirt_manager.create_snapshot(vms=vms, snapshot_name='build')
+        system_commands.cmd('virsh -c qemu:///system list --all')
         return vms_dates
 
     @classmethod

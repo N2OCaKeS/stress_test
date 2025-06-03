@@ -52,9 +52,9 @@ class _SCP_Command:
                 raise ValueError(f"Не указан ip для хоста: {host}")
 
             if mode == 'push':
-                command = f"sudo sshpass -p {password} scp -P {port} -o StrictHostKeyChecking=no {path_host} {username}@{ip}:{path_vm}"
+                command = f"sudo sshpass -p {password} scp -r -P {port} -o StrictHostKeyChecking=no {path_host} {username}@{ip}:{path_vm}"
             else:  # mode == 'pull'
-                command = f"sudo sshpass -p {password} scp -P {port} -o StrictHostKeyChecking=no {username}@{ip}:{path_vm} {path_host}"
+                command = f"sudo sshpass -p {password} scp -r -P {port} -o StrictHostKeyChecking=no {username}@{ip}:{path_vm} {path_host}"
 
             output = SystemCommands.check_output_command(command)
             return {

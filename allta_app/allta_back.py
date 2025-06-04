@@ -9,6 +9,7 @@ import json
 import argparse
 import datetime
 from time import sleep
+import traceback
 
 
 parser = argparse.ArgumentParser()
@@ -524,7 +525,9 @@ try:
     conf.send_comment()
     busy_status_control(__stand, 'testrun done')
 except Exception as e:
-    print(f'ErrorType: {type(e).__name__}, Message: {str(e)}')
+    error_message = f'Error Type: {type(e).__name__}\nMessage: {str(e)}\nTraceback:\n'
+    error_message += ''.join(traceback.format_tb(e.__traceback__))
+    print(error_message)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Готово')
     bot_results('Прогон завершен исключением')

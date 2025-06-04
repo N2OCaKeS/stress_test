@@ -592,7 +592,7 @@ else:
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
 
-upload_results_to_ftp(args.TCV, f'{REPORT_FILENAME}', f'postgresql_{args.TCYC}_{REP_FILENAME}')
+#upload_results_to_ftp(args.TCV, f'{REPORT_FILENAME}', f'postgresql_{args.TCYC}_{REP_FILENAME}')
 
 # public = Public(username=args.USER,
 #                 token=args.TOKEN,

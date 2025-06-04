@@ -91,7 +91,9 @@ def remote_ssh_command(command, stand_ip):
         if stand_ip == '10.177.103.10':
             std_user = 'quest'
             passwd = env['pass']
-        else: passwd = std_password
+        else: 
+            from src.aggregator.conf import std_user
+            passwd = std_password
 
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.WarningPolicy())

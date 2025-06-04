@@ -9,3 +9,6 @@ vagrant.log
 get-box.config
 test.log
 signal
+iperf
+openvpn
+processed_results.csv

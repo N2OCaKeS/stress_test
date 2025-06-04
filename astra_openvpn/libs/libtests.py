@@ -205,7 +205,7 @@ class Ovpn20k(CreateVM):
                     "signal get": ""
                 }}}
         
-        scp = {
+        scp_push = {
             'g_group2':[
                 {
                     'mode': 'push',
@@ -213,6 +213,35 @@ class Ovpn20k(CreateVM):
                     'path_vm': '/home/u/'
                 }
             ]
+        }
+        
+        add_permission = {
+            "testvm1": {
+                "add_permission":{
+                    "command":
+                        'sudo su -c "chmod -R 777 /var/log/openvpn && chown -R u:u /var/log/openvpn"',
+                    "signal set": "",
+                    "signal get": ""
+                }
+            }
+        }
+
+        scp_pull = {
+            "testvm1": {
+                "mode": "pull",
+                "path_host": "./results/raw_results",
+                "path_vm": "/var/log/openvpn/"
+            },
+            "g_group2":[
+                
+                {
+                    "mode": "pull",
+                    "path_host": f"./results/raw_results/iperf/{vm}.log",
+                    "path_vm": "/var/log/iperf.log"
+                }
+                for vm in self.clients_group["group2"]
+            ]
+
         }
 
         unpack_tar = {
@@ -262,32 +291,43 @@ class Ovpn20k(CreateVM):
 
 
 
-        VBox.set_hosts(domain=self.domain,
-                       vms_dates=self.vms_dates)
+        #VBox.set_hosts(domain=self.domain,
+        #               vms_dates=self.vms_dates)
        
-        VBox.scp(scp_settings=scp,
-                 vms_groups=self.clients_group,
+        #VBox.scp(scp_settings=scp_push,
+        #         vms_groups=self.clients_group,
+        #         vms_dates=self.vms_dates,
+        #         username=self.user,
+        #         password=self.password)
+
+        #VBox.execute(commands=unpack_tar,
+        #             vms_groups=self.vms_group,
+        #             vms_dates=self.vms_dates,
+        #             username=self.user,
+        #             password=self.password)
+        
+        #VBox.execute(commands=start_server,
+        #             vms_dates=self.vms_dates,
+        #             username=self.user,
+        #             password=self.password)
+        
+        #VBox.execute(commands=run_perf,
+        #             vms_groups=self.clients_group,
+        #             vms_dates=self.vms_dates,
+        #             username=self.user,
+        #             password=self.password)
+        
+        VBox.execute(commands=add_permission,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+
+        VBox.scp(scp_settings=scp_pull,
                  vms_dates=self.vms_dates,
+                 vms_groups=self.clients_group,
                  username=self.user,
                  password=self.password)
 
-        VBox.execute(commands=unpack_tar,
-                     vms_groups=self.vms_group,
-                     vms_dates=self.vms_dates,
-                     username=self.user,
-                     password=self.password)
-        
-        VBox.execute(commands=start_server,
-                     vms_dates=self.vms_dates,
-                     username=self.user,
-                     password=self.password)
-        
-        VBox.execute(commands=run_perf,
-                     vms_groups=self.clients_group,
-                     vms_dates=self.vms_dates,
-                     username=self.user,
-                     password=self.password)
-        
         # 2. Отправляем клиентам
         #VBox.execute(commands=scp_configs, 
         #             vms_dates=self.vms_dates, 

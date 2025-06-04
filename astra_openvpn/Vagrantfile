@@ -1,7 +1,7 @@
 Vagrant.configure("2") do |config|
   config.vm.box = ENV['UPDATE']
   config.vm.box_url = ENV['BOX_URL']
-  config.vm.synced_folder "./", "/vagrant", disabled: true
+  config.vm.synced_folder "./", "/vagrant", disabled: false
   config.vm.boot_timeout = 180
   num_vms = ENV['COUNT'].to_i
   vms = []
@@ -28,7 +28,7 @@ Vagrant.configure("2") do |config|
   end
   
   node.vm.provision "shell", path: "provision/env_provision.sh", args: [ENV['RC'], ENV['KERNEL']]
-    node.vm.provision "shell", inline: "echo 'Rebooting VM...'; sudo reboot", run: "always"
+  node.vm.provision "shell", inline: "echo 'Rebooting VM...'; sudo reboot", run: "always"
   end
   end
 end

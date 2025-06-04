@@ -9,16 +9,19 @@ response_confluence_url = requests.get(confluence_url_api)
 JIRA_URL = response_jira_url.text
 CONFLUENCE_URL = response_confluence_url.text
 
+# Test №1
 USER = ["u", "askeladd"]
-RANGE = 1000
-DURATION_RATE = 1000
+RANGE = 9000
+DURATION_RATE = 3000
 
-OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
+# Common dirs
+OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
+VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/activate"
+REPORT_PATH = f"{OVPN_PATH}/results"
+
 INFO_FILENAME = 'ovpn_info.txt'
 VM_INFONAME = 'av.info'
 VM_KERNEL = 'kernel.info'
-REPORT_PATH = f"{OVPN_PATH}/results"
 VM_RESULTS_PATH = f"{REPORT_PATH}/vm_results"
 
 BOX_VERSIONS = [["1.7.5.o", "1.7.5.v", "1.7.5.s"], ["1.8.1.o", "1.8.1.v", "1.8.1.s"]]

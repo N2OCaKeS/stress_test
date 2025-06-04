@@ -78,9 +78,9 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-cd /home/u/
+cd /home/u/astra_openvpn
 pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
-python3.12 -m pip install -r ${CPATH}/req.txt
+python3.12 -m pip install -r /home/u/astra_openvpn/req.txt
 python3.12 -m pip install --upgrade pip
 
 kernel="$2"

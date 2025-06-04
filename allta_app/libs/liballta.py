@@ -1175,7 +1175,10 @@ class TestTimeWatchdog:
             data = json.loads(r.read())
 
         def parse_time(time_str):
-            if 'day' in time_str:
+            if 'days' in time_str:
+                days, time_str = time_str.split(' days, ')
+                days = int(days)
+            elif 'day' in time_str:
                 days, time_str = time_str.split(' day, ')
                 days = int(days)
             else:
@@ -1194,7 +1197,9 @@ class TestTimeWatchdog:
             days = total.days
             hours, remainder = divmod(total.seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
-            if days > 0:
+            if days > 1:
+                return f"{days} days {hours}:{minutes:02}:{seconds:02}"
+            elif days > 0:
                 return f"{days} day {hours}:{minutes:02}:{seconds:02}"
             else:
                 return f"{hours}:{minutes:02}:{seconds:02}"

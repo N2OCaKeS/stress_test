@@ -31,6 +31,10 @@ app = FastAPI(
 app.include_router(add_tunning_router)
 app.include_router(clonezilla_router)
 
+"""
+    TODO нужна функция, которая вернет все стенды
+"""
+
 @app.get("/")
 def index():
     return {"Hello world"}
@@ -44,6 +48,20 @@ async def get_stand(stand_name: str, session: AsyncSession = Depends(get_async_s
         return result.first()
     except Exception as e:
         return {"status": "failed", "error": e}
+    
+
+@app.get("/stands/all_stands")
+async def get_all_stands(only_name: bool = False, session: AsyncSession = Depends(get_async_session)):
+    try:
+        if only_name:
+            query = select(stands.c.name)
+        else:
+            query = select(stands)
+        result = await session.execute(query)
+        return result
+    except Exception as e:
+        return {"status": "failed", "error": e}
+
 
 @app.post("/stands")
 async def create_stand(new_stand: Stand, session: AsyncSession = Depends(get_async_session)):
@@ -53,6 +71,7 @@ async def create_stand(new_stand: Stand, session: AsyncSession = Depends(get_asy
     await session.execute(stmt)
     await session.commit()
     return {"status": "success"}
+
 
 @app.delete("/stands")
 async def delete_stand(stand_name: str, session: AsyncSession = Depends(get_async_session)):

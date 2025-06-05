@@ -2,14 +2,13 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from src.utils.secondary_func import remote_put_file, remote_cmd
+from src.utils.secondary_func import remote_put_file, remote_cmd, separate_astra_version
 
 def get_folder_netinst(astra_build_version, download_dir="netinst"):
-    temp_version = astra_build_version.split(".")
-    major_version = temp_version[0] + "." + temp_version[1]
-    minor_version = major_version + "." + temp_version[2]
     
-    base_url = f"https://releases.devos.astralinux.ru/frozen/{major_version}/{minor_version}/{astra_build_version}/installation/netinst/"
+    astra_version = separate_astra_version(astra_build_version=astra_build_version)
+    
+    base_url = f"https://releases.devos.astralinux.ru/frozen/{astra_version['major_version']}/{astra_version['minor_version']}/{astra_version['build_version']}/installation/netinst/"
 
     os.makedirs(download_dir, exist_ok=True)
     def process_directory(url, current_dir):

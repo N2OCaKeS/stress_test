@@ -74,13 +74,13 @@ class CreateVM:
             if true_key == False:
                 for i in dates['vagrant_box']:
                     if str(box).startswith('1.7'):
-                          if f'1.7.1.{mode}' in str(i):
-                            box_name = i[f'1.7.1.{mode}'][0]
-                            box_url = i[f'1.7.1.{mode}'][1]
+                          if f'1.7.5.{mode}' in str(i):
+                            box_name = i[f'1.7.5.{mode}'][0]
+                            box_url = i[f'1.7.5.{mode}'][1]
                     elif str(box).startswith('1.8'):
-                        if f'1.8.0.{mode}' in str(i):
-                            box_name = i[f'1.8.0.{mode}'][0]
-                            box_url = i[f'1.8.0.{mode}'][1]
+                        if f'1.8.1.{mode}' in str(i):
+                            box_name = i[f'1.8.1.{mode}'][0]
+                            box_url = i[f'1.8.1.{mode}'][1]
             
             return box_name, box_url
 

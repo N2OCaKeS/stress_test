@@ -29,8 +29,7 @@ class _Reboot:
         Returns:
             bool: True, если ВМ стала доступной, иначе False.
         """
-        reboot_command = "(sleep 2 && sudo shutdown -r now) &" 
-        # Выполняем команду перезагрузки через SSH, передавая signal_get внутрь _SSH_Command.cmd
+        reboot_command = "(sleep 2 && sudo shutdown -r now) &"
         result = _SSH_Command.cmd(
             host=host,
             command=reboot_command,
@@ -45,9 +44,11 @@ class _Reboot:
             return False
 
         print(f"[{host}] Перезагрузка инициирована, ожидаем доступности...")
+        # даём ОС время «отвалиться»
         time.sleep(60)
-        start_time = time.time()
-        while True:
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
             try:
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -63,11 +64,13 @@ class _Reboot:
                 if ready_signal:
                     _Signals.set(ready_signal)
                 return True
-            except Exception as e:
-                if time.time() - start_time > timeout:
-                    print(f"[{host}] Время ожидания перезагрузки истекло.")
-                    return False
+            except Exception:
+                # ещё не поднялась — ждём перед следующей попыткой
                 time.sleep(interval)
+
+        # если вышли из цикла — timeout истёк
+        print(f"[{host}] Время ожидания перезагрузки истекло.")
+        return False
 
     @classmethod
     def reboot_group(cls, hosts: list, vm_dates: dict, username: str = "u", password: str = "1",

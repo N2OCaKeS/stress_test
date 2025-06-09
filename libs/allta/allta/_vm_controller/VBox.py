@@ -204,7 +204,8 @@ class VBox(_VirtualMashines):
                     vm_dates=vms_dates,
                     signal_set=task.get('signal set'),
                     signal_get=task.get('signal get'),
-                    task_name=task_name
+                    task_name=task_name,
+                    time_out=timeout
                 )
 
         # Итерация по командам

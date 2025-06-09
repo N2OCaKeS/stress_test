@@ -160,7 +160,7 @@ class _Freeipa():
         """
         print(f"Клиент {host}: ожидание сигнала domain_ready...")
         sig = [controller_host, 'domain_ready']
-        if not _Signals.get(sig):
+        if not _Signals.get(sig, timeout_min=20):
             print(f"Клиент {host}: сигнал domain_ready не получен, прерывание настройки.")
             return
         

@@ -186,11 +186,15 @@ class Libvirt(_VirtualMashines):
             if task_name.lower() == "reboot":
                 # Для задачи "reboot" для одиночного хоста вызываем reboot_vm,
                 # передавая signal_get и ready_signal
-                reboot.reboot_vm(
+                reboot_status = reboot.reboot_vm(
                     host, vms_dates, username, password,
                     signal_get=task.get('signal get'),
                     ready_signal=task.get('signal set')
                 )
+                if not reboot_status:
+                    print(f"Перезагрузка {host} не удалась.")
+                    return
+
             else:
                 ssh_command.cmd(
                     host=host,

@@ -72,7 +72,7 @@ sudo adduser $USER libvirt
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-  sudo dpkg -i vagrant_2.4.1-1_x86_64.deb
+  sudo dpkg -i vagrant_2.4.3-1_x86_64.deb
 elif test "$(grep -E '1.7.*' /etc/astra_version)"; then
   sudo dpkg -i vagrant_2.2.19_x86_64.deb
 fi
@@ -121,7 +121,7 @@ if test "$(grep -E '1.8.*' /etc/astra_version)"; then
       wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
       mkdir -p ~/.vagrant.d/gems/3.1.4
       tar -C "$HOME/.vagrant.d/gems/3.1.4" -xvf /tmp/gems.tar.gz
-      wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json
+      wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins18.json
       [ $? != 0 ] && exit 1
     fi
   done

@@ -44,11 +44,11 @@ class _Reboot:
             return False
 
         print(f"[{host}] Перезагрузка инициирована, ожидаем доступности...")
-        # даём ОС время «отвалиться»
         time.sleep(60)
 
         deadline = time.time() + timeout
         while time.time() < deadline:
+            ssh = None
             try:
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -59,16 +59,22 @@ class _Reboot:
                     password=password,
                     timeout=5
                 )
-                ssh.close()
-                print(f"[{host}] VM перезагружена и доступна.")
-                if ready_signal:
-                    _Signals.set(ready_signal)
-                return True
-            except Exception:
-                # ещё не поднялась — ждём перед следующей попыткой
-                time.sleep(interval)
+                stdin, stdout, stderr = ssh.exec_command("echo 'Connection test'", timeout=5)
+                exit_code = stdout.channel.recv_exit_status()
+                if exit_code == 0:
+                    print(f"[{host}] VM перезагружена и доступна (SSH проверен).")
+                    if ready_signal:
+                        _Signals.set(host, ready_signal)
+                    return True 
+                
+            except Exception as e:
+                print(f"[{host}] Ошибка SSH: {str(e)}")
+            finally:
+                if ssh: 
+                    ssh.close()
+    
+            time.sleep(interval) 
 
-        # если вышли из цикла — timeout истёк
         print(f"[{host}] Время ожидания перезагрузки истекло.")
         return False
 

@@ -16,6 +16,7 @@ from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x
                       LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML, UB_RESULTS, \
                       VM_RESULTS_PATH
 from time import sleep
+from allta import Libvirt
 
 
 
@@ -27,8 +28,11 @@ class CreateVM:
                  kernel=None,
                  vcpu=None,
                  ram=None,
-                 mode='o'):
+                 mode='s',
+                 provider=Libvirt()):
         
+        # TODO Вернуть по умолчанию режим орел, когда будут готовы qcow
+
         """
         :param rc_vbox: Параметр rc_vbox, значение по умолчанию None.
         :param testdir: Параметр testdir, значение по умолчанию None.
@@ -37,6 +41,7 @@ class CreateVM:
         :param vcpu: Количество виртуальных процессоров, значение по умолчанию None.
         :param ram: Объём оперативной памяти, значение по умолчанию None.
         :param mode: Режим, значение по умолчанию None.
+        :param provider: Используемый провайдер
         """
 
         self.mode = mode
@@ -46,80 +51,134 @@ class CreateVM:
         self.vm_count = vm_count
         self.vcpu = vcpu
         self.ram = ram
+        self.provider = provider
 
     def prepare_vms(self):
-        astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
-        response_ac = requests.get(astra_config_url)
-        if response_ac.status_code == 200:
-            with open('box-config.json', 'wb') as acb:
-                acb.write(response_ac.content)
-        else:
-            print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
+        VERSION_OS = '.'.join(self.rc_name.split('.')[:2])
 
-        with open('box-config.json', 'r') as r:
-            dates = loads(r.read())
+        VMS = [f'testvm{i}' for i in range(1, int(self.vm_count) + 1)]  # Краткий список ВМ
 
-        def __box_wrapper(box, mode):
-            true_key = False
-            box_name = ''
-            box_url = ''
-            for i in dates['vagrant_box']:
-                if box in str(i):
-                    for key in i.keys():
-                        if str(key).endswith(mode):
-                            true_key = key
-                            box_name = i[true_key][0]
-                            box_url = i[true_key][1]             
-                    
-            if true_key == False:
-                for i in dates['vagrant_box']:
-                    if str(box).startswith('1.7'):
-                          if f'1.7.5.{mode}' in str(i):
-                            box_name = i[f'1.7.5.{mode}'][0]
-                            box_url = i[f'1.7.5.{mode}'][1]
-                    elif str(box).startswith('1.8'):
-                        if f'1.8.1.{mode}' in str(i):
-                            box_name = i[f'1.8.1.{mode}'][0]
-                            box_url = i[f'1.8.1.{mode}'][1]
+        VMS_DATES = { # Полный список ВМ
+            testvm: {'host-port': '22',
+                     'cpu': str(self.vcpu),
+                     'ram': str(self.ram)}
+            for testvm in VMS
+        }
+
+        if isinstance(self.provider, Libvirt):
+            self.provider.prepare()
+            if VERSION_OS == '1.7':
+                VMS_DATES = self.provider.build(f'1.7.5.{self.mode}', self.rc_name, VMS, VMS_DATES)
+            elif VERSION_OS == '1.8':
+                VMS_DATES = self.provider.build(f'1.8.1.{self.mode}', self.rc_name, VMS, VMS_DATES)
+
+        self.provider.check(VMS, VMS_DATES)
+        print(f'VMS DATES:\n{VMS_DATES}')
+
+        if self.vm_count == 1:
+            self.provider.scp(
+                scp_settings={
+                    VMS[0]: {
+                            'mode': 'push', 
+                            'path_host': '/home/u/git/stress_test/virt/provision/env_provision.sh', 
+                            'path_vm': '/home/u/env_provision.sh'
+                    }
+                },
+                vms_dates=VMS_DATES
+            )
+            print('SCP block done')
             
-            return box_name, box_url
+            self.provider.execute(
+                commands={
+                    VMS[0]:{
+                        'provision':{
+                            'command':f"sudo bash /home/u/env_provision.sh {self.rc_name} {self.kernel}",
+                            'signal set': '', 
+                            'signal get': ''
+                        },
+                        'reboot':{ 
+                            'signal set': '', 
+                            'signal get': VMS[0]
+                        }
+                    }
+                },
+                vms_dates=VMS_DATES
+            )
+            print('EXECUTE block done')
 
-        if not os.path.isdir(self.testdir):
-            os.mkdir(self.testdir)
 
-        # add_box
-        box_name, box_url = __box_wrapper(self.rc_name, self.mode)
-        print(f'vagrant box add --provider virtualbox {box_name} {box_url}')
-        cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
-        print(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
-        cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
+        # astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
+        # response_ac = requests.get(astra_config_url)
+        # if response_ac.status_code == 200:
+        #     with open('box-config.json', 'wb') as acb:
+        #         acb.write(response_ac.content)
+        # else:
+        #     print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
 
-        # add define pool
-        try:
-            cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
-            cmd('virsh pool-autostart default')
-            cmd('virsh pool-start default')
-        except Exception as e:
-            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+        # with open('box-config.json', 'r') as r:
+        #     dates = loads(r.read())
 
-        # create_vm
-        print('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
-                                                                                                                 box_url,
-                                                                                                                 self.rc_name,
-                                                                                                                 self.kernel,
-                                                                                                                 self.vm_count,
-                                                                                                                 self.vcpu,
-                                                                                                                 self.ram))
-        cmd('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
-                                                                                                               box_url,
-                                                                                                               self.rc_name,
-                                                                                                               self.kernel,
-                                                                                                               self.vm_count,
-                                                                                                               self.vcpu,
-                                                                                                               self.ram))
+        # def __box_wrapper(box, mode):
+        #     true_key = False
+        #     box_name = ''
+        #     box_url = ''
+        #     for i in dates['vagrant_box']:
+        #         if box in str(i):
+        #             for key in i.keys():
+        #                 if str(key).endswith(mode):
+        #                     true_key = key
+        #                     box_name = i[true_key][0]
+        #                     box_url = i[true_key][1]             
+                    
+        #     if true_key == False:
+        #         for i in dates['vagrant_box']:
+        #             if str(box).startswith('1.7'):
+        #                   if f'1.7.5.{mode}' in str(i):
+        #                     box_name = i[f'1.7.5.{mode}'][0]
+        #                     box_url = i[f'1.7.5.{mode}'][1]
+        #             elif str(box).startswith('1.8'):
+        #                 if f'1.8.1.{mode}' in str(i):
+        #                     box_name = i[f'1.8.1.{mode}'][0]
+        #                     box_url = i[f'1.8.1.{mode}'][1]
+            
+        #     return box_name, box_url
 
-        print('\nWait reboot VMs 180s...\n')
-        sleep(180)
+        # if not os.path.isdir(self.testdir):
+        #     os.mkdir(self.testdir)
+
+        # # add_box
+        # box_name, box_url = __box_wrapper(self.rc_name, self.mode)
+        # print(f'vagrant box add --provider virtualbox {box_name} {box_url}')
+        # cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
+        # print(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
+        # cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
+
+        # # add define pool
+        # try:
+        #     cmd('virsh pool-define-as --name default --type dir --target /var/lib/libvirt/images')
+        #     cmd('virsh pool-autostart default')
+        #     cmd('virsh pool-start default')
+        # except Exception as e:
+        #     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
+        # # create_vm
+        # print('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
+        #                                                                                                          box_url,
+        #                                                                                                          self.rc_name,
+        #                                                                                                          self.kernel,
+        #                                                                                                          self.vm_count,
+        #                                                                                                          self.vcpu,
+        #                                                                                                          self.ram))
+        # cmd('UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={} vagrant up --provider=libvirt'.format(box_name,
+        #                                                                                                        box_url,
+        #                                                                                                        self.rc_name,
+        #                                                                                                        self.kernel,
+        #                                                                                                        self.vm_count,
+        #                                                                                                        self.vcpu,
+        #                                                                                                        self.ram))
+
+        # print('\nWait reboot VMs 180s...\n')
+        # sleep(180)
 
 
 

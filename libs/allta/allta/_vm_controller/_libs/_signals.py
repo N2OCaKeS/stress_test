@@ -32,7 +32,7 @@ class _Signals():
             file.write(f'{host} 1\n')
 
     @staticmethod  
-    def get(get_signal: list):
+    def get(get_signal: list, timeout_min: int = 15):
         """
         Ожидает получения сигнала, проверяя наличие файла с указанным именем и совпадение содержимого.
 
@@ -46,8 +46,8 @@ class _Signals():
         """
         signal_dir = './signal'
         signal_file_path = os.path.join(signal_dir, get_signal[1])
-        timeout = 15 * 60  # 10 минут
-        interval = 1       # 5 секунд
+        timeout = timeout_min * 60  # 10 минут
+        interval = 10      # 5 секунд
         elapsed_time = 0
         host = get_signal[0]
 
@@ -61,7 +61,7 @@ class _Signals():
                             return True
             time.sleep(interval)
             elapsed_time += interval
-        
+        print('ОШИБКА Сигнал не найден')
         return False
 
     @staticmethod

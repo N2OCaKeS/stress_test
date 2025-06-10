@@ -1,7 +1,7 @@
 from ..._libs._ssh_command import _SSH_Command as ssh_command
 from ...._decorators.Decorators import BaseDecorators
 import threading
-
+import time
 
 
 class _AptManager:  

@@ -126,7 +126,7 @@ class Libvirt(_VirtualMashines):
 
     @classmethod
     def execute(cls, commands: dict, vms_dates: dict, vms_groups: dict = None,
-                username: str = "u", password: str = "1") -> int:
+                username: str = "u", password: str = "1", timeout: int = 15) -> int:
         """
         Выполняет команды на виртуальных машинах. Если имя задачи равно "reboot", то производится
         перезагрузка с ожиданием готовности ВМ. При выполнении команды для группы ВМ перезагрузка
@@ -178,6 +178,7 @@ class Libvirt(_VirtualMashines):
                     }
             username (str, optional): Имя пользователя для SSH.
             password (str, optional): Пароль для SSH.
+            timeout (int. optional): timeout ожидания сигнала в минутах
 
         Returns:
             int: Код завершения выполнения.
@@ -190,11 +191,15 @@ class Libvirt(_VirtualMashines):
             if task_name.lower() == "reboot":
                 # Для задачи "reboot" для одиночного хоста вызываем reboot_vm,
                 # передавая signal_get и ready_signal
-                reboot.reboot_vm(
+                reboot_status = reboot.reboot_vm(
                     host, vms_dates, username, password,
                     signal_get=task.get('signal get'),
                     ready_signal=task.get('signal set')
                 )
+                if not reboot_status:
+                    print(f"Перезагрузка {host} не удалась.")
+                    return
+
             else:
                 ssh_command.cmd(
                     host=host,
@@ -204,7 +209,8 @@ class Libvirt(_VirtualMashines):
                     vm_dates=vms_dates,
                     signal_set=task.get('signal set'),
                     signal_get=task.get('signal get'),
-                    task_name=task_name
+                    task_name=task_name,
+                    time_out=timeout
                 )
 
         # Итерация по командам

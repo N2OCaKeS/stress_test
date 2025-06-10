@@ -20,7 +20,7 @@ class _SSH_Command:
     @logger
     @staticmethod
     def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',
-            signal_set: str = None, signal_get: list = None, task_name: str = None) -> dict:
+            signal_set: str = None, signal_get: list = None, task_name: str = None, time_out: int = 15) -> dict:
         """
         Выполняет SSH-команду на удалённом хосте с обработкой ошибок.
 
@@ -33,6 +33,7 @@ class _SSH_Command:
             signal_set (str, optional): Сигнал для установки после выполнения команды.
             signal_get (list, optional): Сигнал для ожидания перед выполнением команды.
             task_name (str, optional): Имя задачи для логирования.
+            time_out (int, optional): timeout для ожидания сигнала 15 мин по умолчанию
 
         Returns:
             dict: Результат выполнения команды с ключами:
@@ -51,7 +52,7 @@ class _SSH_Command:
                 elif not signal_get[0]:
                     signal_get[0] = host
 
-                if not signals.get(signal_get):
+                if not signals.get(signal_get, timeout_min=time_out):
                     error_msg = f"ОШИБКА СИГНАЛ {signal_get} НЕ НАЙДЕН"
                     print(f"[{host}] {error_msg}")
                     return {

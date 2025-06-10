@@ -139,6 +139,7 @@ ________________________________________________________________________________
 * ``vms_groups``: dict, optional, default = None - список групп ВМ
 * ``username``: str, optional, default = 'u' - имя пользователя от кого подключиться по ssh и выполнить задачи
 * ``password``: str, optional, default = '1' - пароль пользователя 
+* ``timeout``: int, optional, default = 15 - время ожидания сигнала в минутах
 
 
 

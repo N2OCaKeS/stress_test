@@ -126,7 +126,7 @@ class VBox(_VirtualMashines):
 
     @classmethod
     def execute(cls, commands: dict, vms_dates: dict, vms_groups: dict = None,
-                username: str = "u", password: str = "1") -> int:
+                username: str = "u", password: str = "1", timeout: int = 15) -> int:
         """
         Выполняет команды на виртуальных машинах. Если имя задачи равно "reboot", то производится
         перезагрузка с ожиданием готовности ВМ. При выполнении команды для группы ВМ перезагрузка
@@ -178,7 +178,7 @@ class VBox(_VirtualMashines):
                     }
             username (str, optional): Имя пользователя для SSH.
             password (str, optional): Пароль для SSH.
-
+            timeout (int, optional): Сколько ждать сигнал в минутах
         Returns:
             int: Код завершения выполнения.
         """
@@ -204,7 +204,8 @@ class VBox(_VirtualMashines):
                     vm_dates=vms_dates,
                     signal_set=task.get('signal set'),
                     signal_get=task.get('signal get'),
-                    task_name=task_name
+                    task_name=task_name,
+                    time_out=timeout
                 )
 
         # Итерация по командам

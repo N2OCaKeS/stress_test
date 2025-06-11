@@ -78,11 +78,13 @@ class CreateVM:
         if self.vm_count == 1:
             self.provider.scp(
                 scp_settings={
-                    VMS[0]: {
+                    VMS[0]: [
+                        {
                             'mode': 'push', 
                             'path_host': '/home/u/git/stress_test/virt/provision/env_provision.sh', 
                             'path_vm': '/home/u/env_provision.sh'
-                    }
+                        }
+                    ]
                 },
                 vms_dates=VMS_DATES
             )

@@ -278,17 +278,25 @@ class VBox(_VirtualMashines):
             scp_settings (dict): Настройки для копирования файлов.
                 
                 scp_settings = {
-                    'hostname1': {
-                        'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                        'path_host': '', 
-                        'path_vm': ''
-                    }
-                    'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
-                        'mode': 'pull',
-                        'path_host': '', 
-                        'path_vm': ''
-                        }                        
-                    }
+                    'hostname1': [
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        }
+                    ]
+                    'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        },
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        },                        
+                    ]
             vms_date (list): Полная информация о виртуальных машинах.
                 
                 vm_dates = {

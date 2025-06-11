@@ -233,16 +233,20 @@ ________________________________________________________________________________
     from allta import Libvirt
 
     scp_settings = {
-        'hostname1': {
+        'hostname1': [
+            {
             'mode': 'pull', # Режимы: push - отправить на ВМ; pull - получить из ВМ
             'path_host': './test', 
             'path_vm': '/tmp/test'
-        }
-        'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
-            'mode': 'push',
+            },
+        ],
+        'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+            {
+            'mode': 'pull', # Режимы: push - отправить на ВМ; pull - получить из ВМ
             'path_host': './test', 
-            'path_vm': '/tmp/test1'
-        }                        
+            'path_vm': '/tmp/test'
+            },
+        ],                       
     }
     vms_dates = {
         'hostname1': {

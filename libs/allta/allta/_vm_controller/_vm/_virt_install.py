@@ -25,7 +25,7 @@ class _VirtInstall:
     """
 
 
-    def __init__(self, box: str, rc: str, vms_date: dict):
+    def __init__(self, box: str, rc: str, vms_date: dict, kernel: str):
 
         """
         Класс для работы с Vagrant
@@ -40,13 +40,13 @@ class _VirtInstall:
                     "database2": { "ip": "10.177.103.112", "cpus": "4", "memory": "32768" },
                     ...
                 }
-            Из имени ВМ будут формироваться поля :name, :hostname и :args.
-            Если ключ disk присутствует, то для ВМ будет создан дополнительный диск указанного размера.
+            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то по умолчанию установит то же что и на хосте
         """
         self.box = box
-
-        self.vms_date = vms_date
         self.rc = rc
+        self.vms_date = vms_date
+        self.kernel = kernel
+
 
     def _box_wrapper(self) -> tuple:
         """
@@ -224,7 +224,11 @@ class _VirtInstall:
             sources_str = "\\n".join(sources_lines)
 
             # 3. Узнаём текущее локальное ядро (если нужно передавать в скрипт)
-            kernel = system_commands.check_output_command("uname -r").strip()
+
+            if self.kernel is not None:
+                kernel = self.kernel
+            else:
+                kernel = system_commands.check_output_command("uname -r").strip()
             
             if "-generic" in kernel:
                 suffix = "generic"

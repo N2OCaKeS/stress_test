@@ -21,6 +21,8 @@ from src.add_tuning.router import get_info_stand
 from src.add_tuning.temp import astra_version_update
 from src.utils.secondary_func import func_filter_version
 
+from src.pxe_install.router import router as pxe_router
+
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
@@ -30,6 +32,7 @@ app = FastAPI(
 
 app.include_router(add_tunning_router)
 app.include_router(clonezilla_router)
+app.include_router(pxe_router)
 
 """
     TODO нужна функция, которая вернет все стенды

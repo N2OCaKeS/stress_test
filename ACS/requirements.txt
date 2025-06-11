@@ -11,3 +11,4 @@ flower
 python-ilorest-library
 requests
 redfish
+beautifulsoup4

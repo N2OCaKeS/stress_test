@@ -2,7 +2,18 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from src.utils.secondary_func import remote_put_file, remote_cmd, separate_astra_version
+# from src.utils.secondary_func import remote_put_file, remote_cmd, separate_astra_version
+
+
+def separate_astra_version(astra_build_version):
+    temp_version = astra_build_version.split(".")
+    major_version = temp_version[0] + "." + temp_version[1]
+    minor_version = major_version + "." + temp_version[2]
+    return {
+        "build_version": astra_build_version,
+        "major_version": major_version,
+        "minor_version": minor_version
+    }
 
 def get_folder_netinst(astra_build_version, download_dir="netinst"):
     

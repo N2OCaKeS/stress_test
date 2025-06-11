@@ -40,23 +40,31 @@ def fill_preseed_file(filename, stand_name, astra_build_version):
     except Exception as e:
         pass
 
-def test1(stand_name):
+def test1(stand_name, uefi=True):
     """
         1. Удаляем все из директории Стенда
-        2. Создаем pxelinux.cfg и внутри default
-        3. Копируем правильно заполненный default
+        2. Создаем pxelinux.cfg и внутри default (BIOS)
+        2. sudo grub-mknetdir --net-directory=/srv/tftp --subdir=/{STAND_NAME}/boot/grub -d /usr/lib/grub/x86_64-efi
+        3. Копируем правильно заполненный default (BIOS)
+        3. Копируем правильно заполненный grub.cfg (UEFI)
         4. Удаляем в /var/www/html/STAND_NAME/preseed.cfg
         5. Копируем правильно заполненный preseed.cfg
     """
-    ### pxelinux.cfg/default
-    remote_cmd(f"sudo rm -rf /srv/tftp/{stand_name}", host=..., user=..., passwd=...)
-    remote_cmd(f"sudo mkdir /srv/tftp/{stand_name}/pxelinux.cfg", host=..., user=..., passwd=...)
-    fill_default_file(stand_name=stand_name)
-    remote_put_file(remote_path=f"/srv/tftp/{stand_name}/pxelinux.cfg/default", local_path="default", host=..., user=..., passwd=...)
+    
+    if uefi:
+        ### grub.cfg and everything necessary
+        remote_cmd(f"sudo grub-mknetdir --net-directory=/srv/tftp --subdir=/{stand_name}/boot/grub -d /usr/lib/grub/x86_64-efi", host=..., user=..., passwd=...)
+        fill_default_file("TODO")
+        remote_put_file(remote_path=f"/srv/tftp/{stand_name}/boot/grub/grub.cfg", local_path="grub.cfg", host=..., user=..., passwd=...)
+    else:
+        ### pxelinux.cfg/default
+        remote_cmd(f"sudo rm -rf /srv/tftp/{stand_name}", host=..., user=..., passwd=...)
+        remote_cmd(f"sudo mkdir /srv/tftp/{stand_name}/pxelinux.cfg", host=..., user=..., passwd=...)
+        fill_default_file(stand_name=stand_name)
+        remote_put_file(remote_path=f"/srv/tftp/{stand_name}/pxelinux.cfg/default", local_path="default", host=..., user=..., passwd=...)
     
     ### preseed.cfg
     remote_cmd(f"sudo rm -rf /var/www/html/{stand_name}", host=..., user=..., passwd=...)
     fill_preseed_file(stand_name=stand_name, astra_build_version=...)
     remote_put_file(remote_path=f"/var/www/html/{stand_name}/preseed.cfg", local_path="preseed.cfg", host=..., user=..., passwd=...)
     
-

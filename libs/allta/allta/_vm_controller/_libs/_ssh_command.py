@@ -92,12 +92,12 @@ class _SSH_Command:
             output = output_stdout + ("\n" + output_stderr if output_stderr else "")
 
             if exit_status != 0:
-                print(f"[{host}] Ошибка при выполнении '{command}': {output_stderr} (exit status: {exit_status})")
+                print(f"[{host}] Ошибка при выполнении '{command}': ОШИБКА:\n{output_stderr}\n\n\n ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n\n{output}\n\n\n (exit status: {exit_status})")
                 return {
                     'host': host,
                     'task_name': task_name or 'unknown',
                     'command': command,
-                    'output': output_stderr,
+                    'output': (output_stderr,f'\n\n\n', output),
                     'status': 'error'
                 }
 

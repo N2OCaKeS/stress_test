@@ -601,6 +601,11 @@ class UnixBench(CreateVM):
                            user=self.user, 
                            password=self.password) 
         
+        send_remote_command(command=f'sudo apt-get install zip unzip -y',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password)
+
         send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
                             ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                             user=self.user, 

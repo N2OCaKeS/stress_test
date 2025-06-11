@@ -194,7 +194,7 @@ ________________________________________________________________________________
     password='1'
 
     VBox.execute(commands=commands, vms_dates=vms_dates, vms_groups=vms_groups, 
-                            username=username, password,password)
+                            username=username, password,password, timeout=60)
 
 _______________________________________________________________________________________________
 

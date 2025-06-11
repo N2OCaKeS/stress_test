@@ -71,7 +71,7 @@ class _Freeipa():
             return
 
         # 1.3) Ждём 20 секунд для полной готовности, затем устанавливаем сигнал
-        time.sleep(20)
+        time.sleep(60)
         _Signals.set(controller_host, set_signal="domain_ready")
         print("Контроллер домена готов к работе (сигнал domain_ready установлен)")
 
@@ -160,13 +160,12 @@ class _Freeipa():
         """
         print(f"Клиент {host}: ожидание сигнала domain_ready...")
         sig = [controller_host, 'domain_ready']
-        if not _Signals.get(sig):
+        if not _Signals.get(sig, timeout_min=20):
             print(f"Клиент {host}: сигнал domain_ready не получен, прерывание настройки.")
             return
         
         print(f"Настройка клиента домена на {host}")
-        client_cmd = f"sudo astra-freeipa-client -d {domain_name} -p {admin_password} -y"
-        client_cmd = f'sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-client -d {domain_name} -p {admin_password} -y --par "--domain={domain_name} --server={controller_host}.{domain_name} --realm={domain_name.upper()}"'
+        client_cmd = f"sudo astra-freeipa-client -d {domain_name} -p {admin_password} -y || true"
         
         _Freeipa._execute_command(
             vm_info,

@@ -126,7 +126,7 @@ class VBox(_VirtualMashines):
 
     @classmethod
     def execute(cls, commands: dict, vms_dates: dict, vms_groups: dict = None,
-                username: str = "u", password: str = "1") -> int:
+                username: str = "u", password: str = "1", timeout: int = 15) -> int:
         """
         Выполняет команды на виртуальных машинах. Если имя задачи равно "reboot", то производится
         перезагрузка с ожиданием готовности ВМ. При выполнении команды для группы ВМ перезагрузка
@@ -178,7 +178,7 @@ class VBox(_VirtualMashines):
                     }
             username (str, optional): Имя пользователя для SSH.
             password (str, optional): Пароль для SSH.
-
+            timeout (int, optional): Сколько ждать сигнал в минутах
         Returns:
             int: Код завершения выполнения.
         """
@@ -204,7 +204,8 @@ class VBox(_VirtualMashines):
                     vm_dates=vms_dates,
                     signal_set=task.get('signal set'),
                     signal_get=task.get('signal get'),
-                    task_name=task_name
+                    task_name=task_name,
+                    time_out=timeout
                 )
 
         # Итерация по командам
@@ -277,17 +278,25 @@ class VBox(_VirtualMashines):
             scp_settings (dict): Настройки для копирования файлов.
                 
                 scp_settings = {
-                    'hostname1': {
-                        'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                        'path_host': '', 
-                        'path_vm': ''
-                    }
-                    'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
-                        'mode': 'pull',
-                        'path_host': '', 
-                        'path_vm': ''
-                        }                        
-                    }
+                    'hostname1': [
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        }
+                    ]
+                    'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        },
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        },                        
+                    ]
             vms_date (list): Полная информация о виртуальных машинах.
                 
                 vm_dates = {

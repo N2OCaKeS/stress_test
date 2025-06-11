@@ -20,7 +20,7 @@ class _SSH_Command:
     @logger
     @staticmethod
     def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',
-            signal_set: str = None, signal_get: list = None, task_name: str = None) -> dict:
+            signal_set: str = None, signal_get: list = None, task_name: str = None, time_out: int = 15) -> dict:
         """
         Выполняет SSH-команду на удалённом хосте с обработкой ошибок.
 
@@ -33,6 +33,7 @@ class _SSH_Command:
             signal_set (str, optional): Сигнал для установки после выполнения команды.
             signal_get (list, optional): Сигнал для ожидания перед выполнением команды.
             task_name (str, optional): Имя задачи для логирования.
+            time_out (int, optional): timeout для ожидания сигнала 15 мин по умолчанию
 
         Returns:
             dict: Результат выполнения команды с ключами:
@@ -51,7 +52,7 @@ class _SSH_Command:
                 elif not signal_get[0]:
                     signal_get[0] = host
 
-                if not signals.get(signal_get):
+                if not signals.get(signal_get, timeout_min=time_out):
                     error_msg = f"ОШИБКА СИГНАЛ {signal_get} НЕ НАЙДЕН"
                     print(f"[{host}] {error_msg}")
                     return {
@@ -91,12 +92,12 @@ class _SSH_Command:
             output = output_stdout + ("\n" + output_stderr if output_stderr else "")
 
             if exit_status != 0:
-                print(f"[{host}] Ошибка при выполнении '{command}': {output_stderr} (exit status: {exit_status})")
+                print(f"[{host}] Ошибка при выполнении '{command}': ОШИБКА:\n{output_stderr}\n\n\n ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n\n{output}\n\n\n (exit status: {exit_status})")
                 return {
                     'host': host,
                     'task_name': task_name or 'unknown',
                     'command': command,
-                    'output': output_stderr,
+                    'output': (output_stderr,f'\n\n\n', output),
                     'status': 'error'
                 }
 

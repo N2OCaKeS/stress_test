@@ -53,7 +53,7 @@ class Libvirt(_VirtualMashines):
     
 
     @classmethod
-    def build(cls, box: str,  rc: str, vms, vms_dates: dict) -> dict:
+    def build(cls, box: str,  rc: str, vms, vms_dates: dict, kernel: str = None) -> dict:
 
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
@@ -74,12 +74,12 @@ class Libvirt(_VirtualMashines):
                         'ip_bridge':'*.*.*.*', # ip моста
                         }
                     }
-
+            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то по умолчанию установит то же что и на хосте
         Returns:
             dict: Обновленный список хостов.
         """
 
-        virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc)
+        virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc, kernel=kernel)
         vms_dates = virt.build()
 
         libvirt_manager.create_snapshot(vms=vms, snapshot_name='build')
@@ -126,7 +126,7 @@ class Libvirt(_VirtualMashines):
 
     @classmethod
     def execute(cls, commands: dict, vms_dates: dict, vms_groups: dict = None,
-                username: str = "u", password: str = "1") -> int:
+                username: str = "u", password: str = "1", timeout: int = 15) -> int:
         """
         Выполняет команды на виртуальных машинах. Если имя задачи равно "reboot", то производится
         перезагрузка с ожиданием готовности ВМ. При выполнении команды для группы ВМ перезагрузка
@@ -158,7 +158,7 @@ class Libvirt(_VirtualMashines):
                                 'signal set': '' 
                                 'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
                             },
-                    }            
+                    }
             vms_date (list): Полная информация о виртуальных машинах.
                 
                 vm_dates = {
@@ -178,6 +178,7 @@ class Libvirt(_VirtualMashines):
                     }
             username (str, optional): Имя пользователя для SSH.
             password (str, optional): Пароль для SSH.
+            timeout (int. optional): timeout ожидания сигнала в минутах
 
         Returns:
             int: Код завершения выполнения.
@@ -190,11 +191,15 @@ class Libvirt(_VirtualMashines):
             if task_name.lower() == "reboot":
                 # Для задачи "reboot" для одиночного хоста вызываем reboot_vm,
                 # передавая signal_get и ready_signal
-                reboot.reboot_vm(
+                reboot_status = reboot.reboot_vm(
                     host, vms_dates, username, password,
                     signal_get=task.get('signal get'),
                     ready_signal=task.get('signal set')
                 )
+                if not reboot_status:
+                    print(f"Перезагрузка {host} не удалась.")
+                    return
+
             else:
                 ssh_command.cmd(
                     host=host,
@@ -204,7 +209,8 @@ class Libvirt(_VirtualMashines):
                     vm_dates=vms_dates,
                     signal_set=task.get('signal set'),
                     signal_get=task.get('signal get'),
-                    task_name=task_name
+                    task_name=task_name,
+                    time_out=timeout
                 )
 
         # Итерация по командам
@@ -277,17 +283,25 @@ class Libvirt(_VirtualMashines):
             scp_settings (dict): Настройки для копирования файлов.
                 
                 scp_settings = {
-                    'hostname1': {
-                        'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                        'path_host': '', 
-                        'path_vm': ''
-                    }
-                    'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
-                        'mode': 'pull',
-                        'path_host': '', 
-                        'path_vm': ''
-                        }                        
-                    }
+                    'hostname1': [
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        }
+                    ]
+                    'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        },
+                        {
+                            'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
+                            'path_host': '', 
+                            'path_vm': ''
+                        },                        
+                    ]
             vms_date (list): Полная информация о виртуальных машинах.
                 
                 vm_dates = {

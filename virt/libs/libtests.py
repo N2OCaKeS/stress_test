@@ -28,10 +28,8 @@ class CreateVM:
                  kernel=None,
                  vcpu=None,
                  ram=None,
-                 mode='s',
+                 mode='o',
                  provider=Libvirt()):
-        
-        # TODO Вернуть по умолчанию режим орел, когда будут готовы qcow
 
         """
         :param rc_vbox: Параметр rc_vbox, значение по умолчанию None.
@@ -75,38 +73,45 @@ class CreateVM:
         self.provider.check(VMS, VMS_DATES)
         print(f'VMS DATES:\n{VMS_DATES}')
 
-        if self.vm_count == 1:
-            self.provider.scp(
-                scp_settings={
-                    VMS[0]: [
-                        {
-                            'mode': 'push', 
-                            'path_host': '/home/u/git/stress_test/virt/provision/env_provision.sh', 
-                            'path_vm': '/home/u/env_provision.sh'
-                        }
-                    ]
-                },
-                vms_dates=VMS_DATES
-            )
-            print('SCP block done')
-            
-            self.provider.execute(
-                commands={
-                    VMS[0]:{
-                        'provision':{
-                            'command':f"sudo bash /home/u/env_provision.sh {self.rc_name} {self.kernel}",
-                            'signal set': '', 
-                            'signal get': ''
-                        },
-                        'reboot':{ 
-                            'signal set': '', 
-                            'signal get': VMS[0]
-                        }
+        self.provider.scp(
+            scp_settings={
+                'g_VMS': [
+                    {
+                        'mode': 'push', 
+                        'path_host': '/home/u/git/stress_test/virt/provision/env_provision.sh', 
+                        'path_vm': '/home/u/env_provision.sh'
                     }
-                },
-                vms_dates=VMS_DATES
-            )
-            print('EXECUTE block done')
+                ]
+            },
+            vms_dates=VMS_DATES,
+            vms_groups={
+                'VMS':VMS
+            }
+        )
+        print(f'<{str(self.provider.scp.__name__).upper()}> block done ' + ('*' * 50))
+
+        self.provider.execute(
+            commands={
+                'g_VMS':{
+                    'provision':{
+                        'command':f"sudo bash /home/u/env_provision.sh {self.rc_name} {self.kernel}",
+                        'signal set': 'provision', 
+                        'signal get': ''
+                    },
+                    'reboot':{ 
+                        'signal set': '', 
+                        'signal get': ['provision']
+                    }
+                }
+            },
+            vms_dates=VMS_DATES,
+            vms_groups={
+                'VMS':VMS
+            }
+        )
+        print(f'<{str(self.provider.execute.__name__).upper()}> block done ' + ('*' * 50))
+
+
 
 
         # astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
@@ -204,8 +209,8 @@ class StealTime(CreateVM):
         self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
         self.run_test = 'cd /home/{} && sudo ./cpu_load'
         self.power_off = 'virsh destroy {}'
-        self.user = 'vagrant'
-        self.password = 'vagrant'
+        self.user = 'u'
+        self.password = '1'
         self.stop_host_monitor = False
         self.load_host_monitor_results = {}
         self.stop_host_monitor = False
@@ -412,8 +417,8 @@ class FlexibleIOTester(CreateVM):
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.vm_num = vm_num
-        self.user = 'vagrant'
-        self.password = 'vagrant'
+        self.user = 'u'
+        self.password = '1'
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.vg_destroy = 'vagrant destroy {}'
         self.destroy = 'virsh destroy {}'
@@ -571,8 +576,8 @@ class UnixBench(CreateVM):
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.vm_num = vm_num
-        self.user = 'vagrant'
-        self.password = 'vagrant'
+        self.user = 'u'
+        self.password = '1'
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.vg_destroy = 'vagrant destroy {}'
         self.destroy = 'virsh destroy {}'
@@ -694,8 +699,8 @@ class PingPong(CreateVM):
         super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
-        self.user = 'vagrant'
-        self.password = 'vagrant'
+        self.user = 'u'
+        self.password = '1'
         self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.vg_destroy = 'vagrant destroy {}'
         self.destroy = 'virsh destroy {}'
@@ -734,7 +739,7 @@ class PingPong(CreateVM):
                             user=self.user, 
                             password=self.password)
     
-        get_remote_file(remote_file_path='/home/vagrant/results',
+        get_remote_file(remote_file_path='/home/u/results',
                         local_file_path=f'{self.testdir}/{VM_RESULTS_PATH}',
                         ip=self.vm_dates['testvm1']['ip'], 
                         user=self.user, 

@@ -22,6 +22,7 @@ from allta import Libvirt
 
 class CreateVM:
     def __init__(self,
+                 special_att=None,
                  rc_vbox=None,
                  testdir=None,
                  vm_count=None,
@@ -32,6 +33,7 @@ class CreateVM:
                  provider=Libvirt()):
 
         """
+        :param special_att: Специальный атрибут для передачи индивидуальных параметров
         :param rc_vbox: Параметр rc_vbox, значение по умолчанию None.
         :param testdir: Параметр testdir, значение по умолчанию None.
         :param vm_count: Количество виртуальных машин, значение по умолчанию None.
@@ -50,6 +52,7 @@ class CreateVM:
         self.vcpu = vcpu
         self.ram = ram
         self.provider = provider
+        self.special_att = special_att
 
     def prepare_vms(self):
         VERSION_OS = '.'.join(self.rc_name.split('.')[:2])
@@ -66,9 +69,15 @@ class CreateVM:
         if isinstance(self.provider, Libvirt):
             self.provider.prepare()
             if VERSION_OS == '1.7':
-                VMS_DATES = self.provider.build(f'1.7.5.{self.mode}', self.rc_name, VMS, VMS_DATES)
+                if self.special_att == 'fio':
+                    VMS_DATES = self.provider.build(f'vm_station1.7', self.rc_name, VMS, VMS_DATES)
+                else:
+                    VMS_DATES = self.provider.build(f'1.7.5.{self.mode}', self.rc_name, VMS, VMS_DATES)
             elif VERSION_OS == '1.8':
-                VMS_DATES = self.provider.build(f'1.8.1.{self.mode}', self.rc_name, VMS, VMS_DATES)
+                if self.special_att == 'fio':
+                    VMS_DATES = self.provider.build(f'vm_station1.8', self.rc_name, VMS, VMS_DATES)
+                else:
+                    VMS_DATES = self.provider.build(f'1.8.1.{self.mode}', self.rc_name, VMS, VMS_DATES)
 
         self.provider.check(VMS, VMS_DATES)
         print(f'VMS DATES:\n{VMS_DATES}')
@@ -413,7 +422,7 @@ class FlexibleIOTester(CreateVM):
                  ram=None,
                  iodepth=None,
                  vm_num=None):
-        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
+        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram, special_att='fio')
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.vm_num = vm_num

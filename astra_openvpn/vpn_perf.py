@@ -31,17 +31,20 @@ class PerfVpn:
         self.tun_number = 0
         self.tun_ip = ""
         self.server_ip = sys_cls.check_output_command("cat /etc/hosts").split()[3]
-        self.log_path = "/var/log/iperf.log"
+        self.log_path = "/var/log/iperf"
 
     def run_iperf(self, tun_ip, tun_dev):
         try:
-            sys_cls.cmd(f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 2 >> {self.log_path} 2>&1 & ")
+            sys_cls.cmd(f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 2 >> {self.log_path}/{tun_dev}.log 2>&1 & ")
             print(f"{tun_dev} | Iperf | done")
         except Exception as e:
             print(f"{tun_dev} |  Iperf | error")
 
 
     def load_test(self):
+
+        threads = []
+
         try:
             for item in range(self.start, self.end):
                 self.tun_number += 1
@@ -60,11 +63,15 @@ class PerfVpn:
                     continue
                 self.tun_ip = sys_cls.check_output_command(f"ip -4 addr show dev {tun_dev} | grep inet").split()[1].split("/")[0]
 
-                thread = threading.Thread(target=self.run_iperf, args=(self.tun_ip, tun_dev), daemon=True)
+                thread = threading.Thread(target=self.run_iperf, args=(self.tun_ip, tun_dev))
                 thread.start()
+                threads.append(thread)
 
         except Exception as e:
             print("Ошибка", e)
+
+        for t in threads:
+            t.join()
         
         print(f"Создано {self.range} туннелей.")
 

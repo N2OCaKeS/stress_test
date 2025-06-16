@@ -46,6 +46,7 @@ class CreateVM:
         self.vcpu = vcpu
         self.ram = ram
 
+
     def prepare_vms(self):
         astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
         response_ac = requests.get(astra_config_url)
@@ -57,6 +58,7 @@ class CreateVM:
 
         with open('box-config.json', 'r') as r:
             dates = loads(r.read())
+
 
         def __box_wrapper(box, mode):
             true_key = False
@@ -82,6 +84,7 @@ class CreateVM:
                             box_url = i[f'1.8.0.{mode}'][1]
             
             return box_name, box_url
+
 
         if not os.path.isdir(self.testdir):
             os.mkdir(self.testdir)
@@ -153,6 +156,7 @@ class Ovpn20k(CreateVM):
         self.vms_group = {"group1": ["testvm1", "testvm2", "testvm3", "testvm4"]}
         self.clients_group = {"group2": ["testvm2", "testvm3", "testvm4"]}
 
+
     def start_test(self):
         self.vms_dates = {
              vm:{
@@ -162,48 +166,6 @@ class Ovpn20k(CreateVM):
                 'password':f'{self.password}'
                 } for vm in self.vms}
         self.domain = "stress.rbt"
-        
-        # Daemon Creater
-        con_generator = {"testvm2": {}}
-        for i in range(0, self.ranger):
-            con_generator["testvm2"].update({ 
-                    f"create_daemon_{i}": {
-                        "command": (
-                            "echo '[Unit]\n"
-                            "Description=OpenVPN Client\n"
-                            "After=network.target\n\n"
-                            "[Service]\n"
-                            f"WorkingDirectory=/home/vagrant/clients_keys/tester{i}\n"
-                            "ExecStart=/usr/sbin/openvpn --config client.ovpn\n"
-                            "Restart=always\n"
-                            "User=root\n\n"
-                            "[Install]\n"
-                            f"WantedBy=multi-user.target' | sudo tee /etc/systemd/system/openvpn-client-tester{i}.service"
-                        ),
-                        "signal set": f"{i}",
-                        "signal get": [f"{i + 1 if i != 0 else ""}"]
-                    },
-                    f"enable_service_{i}": {
-                        "command": (
-                            f"sudo systemctl daemon-reload && sudo systemctl enable --now openvpn-client-tester{i}"),
-                        "signal set": f"",
-                        "signal get": [f"{i}"]
-                    }
-                })
-   
-
-        # scp client_keys - last
-        scp_configs = {
-            "testvm2": {
-                "copy_keys": {
-                    "command": (
-                        f"nohup sshpass -p {self.vms_dates['testvm1']['password']} scp -o StrictHostKeyChecking=no -r "
-                        f"{self.vms_dates['testvm1']['login']}@{self.vms_dates['testvm1']['ip_bridge']}"
-                        ":/etc/openvpn/clients_keys/ /home/vagrant/ > scp.log 2>&1"
-                    ),
-                    "signal set": "",
-                    "signal get": ""
-                }}}
         
         scp_push = {
             'g_group2':[
@@ -236,12 +198,11 @@ class Ovpn20k(CreateVM):
                 
                 {
                     "mode": "pull",
-                    "path_host": f"./results/raw_results/iperf/{vm}.log",
-                    "path_vm": "/var/log/iperf.log"
+                    "path_host": f"./results/raw_results/iperf_{vm}",
+                    "path_vm": "/var/log/iperf"
                 }
                 for vm in self.clients_group["group2"]
             ]
-
         }
 
         unpack_tar = {
@@ -268,7 +229,8 @@ class Ovpn20k(CreateVM):
                 ),
                 "signal set": "",
                 "signal get": ""
-            }}
+                }
+            }
         }
 
 
@@ -289,69 +251,39 @@ class Ovpn20k(CreateVM):
 
         print(self.vms_dates["testvm1"]["ip_bridge"])
 
-
-
         #VBox.set_hosts(domain=self.domain,
         #               vms_dates=self.vms_dates)
-       
-        #VBox.scp(scp_settings=scp_push,
-        #         vms_groups=self.clients_group,
-        #         vms_dates=self.vms_dates,
-        #         username=self.user,
-        #         password=self.password)
-
-        #VBox.execute(commands=unpack_tar,
-        #             vms_groups=self.vms_group,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password)
-        
-        #VBox.execute(commands=start_server,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password)
-        
-        #VBox.execute(commands=run_perf,
-        #             vms_groups=self.clients_group,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password)
-        
+        VBox.scp(scp_settings=scp_push,
+                 vms_groups=self.clients_group,
+                 vms_dates=self.vms_dates,
+                 username=self.user,
+                 password=self.password)
+        VBox.execute(commands=unpack_tar,
+                     vms_groups=self.vms_group,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+        VBox.execute(commands=start_server,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+        VBox.execute(commands=run_perf,
+                     vms_groups=self.clients_group,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password) 
         VBox.execute(commands=add_permission,
                      vms_dates=self.vms_dates,
                      username=self.user,
                      password=self.password)
-
         VBox.scp(scp_settings=scp_pull,
                  vms_dates=self.vms_dates,
                  vms_groups=self.clients_group,
                  username=self.user,
                  password=self.password)
 
-        # 2. Отправляем клиентам
-        #VBox.execute(commands=scp_configs, 
-        #             vms_dates=self.vms_dates, 
-        #             username=self.user, 
-        #             password=self.password)
-        
-        # 3. Создаем демонов
-        #VBox.execute(commands=con_generator,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password)
-
-        # 4. Script внутри
-        #VBox.scp(scp_settings=commands_scp,
-        #         vms_dates=self.vms_dates,
-        #         username=self.user,
-        #         password=self.password)
         
         print(f'VM dates is:\n{self.vms_dates}')
-        
-        
-
-
-        
         
 
     def vms_destroy(self):

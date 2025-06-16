@@ -4,7 +4,7 @@ from time import time
 from .clonezilla_func import backup_image 
 
 from src.add_tuning.router import get_info_stand
-from src.utils.secondary_func import func_filter_version
+from src.utils.secondary_func import func_filter_version, remote_cmd
 
 router = APIRouter(
     prefix="/clonezilla-snap",
@@ -41,3 +41,10 @@ def save_disk(version_name: str, password_clonezilla_server: str, stand = Depend
     snapshot_name = stand[1] + "-" + version_name_for_clonezilla
     backup_image.delay(list(stand), snapshot_name, password_clonezilla_server, restore=False)
     return {f"Отправлено {snapshot_name}"}
+
+@router.get("/drbl-all-service")
+def drbl_all_service_manage(state: bool):
+    if state:
+        remote_cmd("sudo /usr/sbin/drbl-all-service start", user=..., passwd=..., host=..., port=...)
+    else:
+        remote_cmd("sudo /usr/sbin/drbl-all-service stop", user=..., passwd=..., host=..., port=...)

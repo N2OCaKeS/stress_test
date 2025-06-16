@@ -7,7 +7,7 @@ from time import sleep
 from allta import Libvirt
 
 class VMS:
-    def __init__(self, rc_vbox=None, vm_count=None, testdir=None, kernel="6.1", hostip=None, mode='o'):
+    def __init__(self, rc_vbox=None, vm_count=None, testdir=None, kernel="6.1", hostip=None, mode='o', provider=Libvirt()):
         self.kernel = kernel
         self.rc_name = rc_vbox
         self.vm_count = vm_count
@@ -19,6 +19,7 @@ class VMS:
         self.check_vm_ip = "virsh --connect=qemu:///system domifaddr {} | awk '{{print $4}}' | tail -n 2"
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.mode = mode
+        self.provider = provider
 
     def prepare_and_start(self):
         VERSION_OS = '.'.join(self.rc_name.split('.')[:2])

@@ -2,8 +2,10 @@ import pandas as pd
 import re
 from ovpn_conf import REPORT_PATH
 from datetime import datetime
+from pathlib import Path
+from collections import Counter
 
-class Report:
+class DfStat:
     def __init__(self, report_path=REPORT_PATH):
         self.report_path = report_path
         self.raw_records = []  
@@ -93,3 +95,24 @@ class Report:
         df = pd.read_csv(f"{self.report_path}/processed_results.csv")
 
         print(len(df), "Клиентов подключилось")
+
+
+class OpenVPNLogParser:
+    def __init__(self, log_path=REPORT_PATH):
+        self.log_path = Path(log_path) / "raw_results/openvpn/openvpn.log"
+        self.counter = Counter()
+
+    def parse(self):
+        pattern = re.compile(r'(tester\d+)/[\d\.]+:\d+ .*ping-restart')  # общий случай
+        alt_pattern = re.compile(r'\[(tester\d+)\] Inactivity timeout')  # альтернатива
+
+        with self.log_path.open("r") as file:
+            for line in file:
+                match = pattern.search(line)
+                if not match:
+                    match = alt_pattern.search(line)
+                if match:
+                    client = match.group(1)
+                    self.counter[client] += 1
+
+        return len(self.counter)

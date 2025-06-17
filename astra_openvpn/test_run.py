@@ -1,8 +1,9 @@
 from libs.libtests import Ovpn20k
-from libs.libtable import Report
+from libs.libtable import DfStat, OpenVPNLogParser
 from ovpn_conf import REPORT_PATH
 
-rp = Report()
+df = DfStat()
+disconects = OpenVPNLogParser()
 
 #pingpong_test = PingPong(rc_vbox=args.VBOX,
 #                         vm_count=1,
@@ -19,6 +20,7 @@ ovpn_test = Ovpn20k(rc_vbox="1.7.5",
                          ram=25000)
 #ovpn_test.vms_destroy()
 #ovpn_test.prepare_vms()
-ovpn_test.start_test()
+#ovpn_test.start_test()
 
-#rp.test()
+df.test()
+print(disconects.parse())

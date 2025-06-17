@@ -208,7 +208,13 @@ class StealTime(CreateVM):
                  rc_vbox=None,
                  kernel=None,
                  mode='o'):
-        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram, mode)
+        super().__init__(rc_vbox=rc_vbox, 
+                         testdir=testdir, 
+                         vm_count=vm_count, 
+                         kernel=kernel, 
+                         vcpu=vcpu, 
+                         ram=ram, 
+                         mode=mode)
         
         self.load_type = load_type
         self.vm_count = vm_count
@@ -423,7 +429,13 @@ class FlexibleIOTester(CreateVM):
                  iodepth=None,
                  vm_num=None,
                  special_att='fio'):
-        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram, special_att)
+        super().__init__(rc_vbox=rc_vbox, 
+                         testdir=testdir, 
+                         vm_count=vm_count, 
+                         kernel=kernel, 
+                         vcpu=vcpu, 
+                         ram=ram, 
+                         special_att=special_att)
 
         self.vms = [f'testvm{number}' for number in range(1, int(vm_count) + 1)]
         self.vm_num = vm_num
@@ -582,7 +594,12 @@ class UnixBench(CreateVM):
                  vcpu=None, 
                  ram=None,
                  vm_num=None):
-        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
+        super().__init__(rc_vbox=rc_vbox, 
+                         testdir=testdir, 
+                         vm_count=vm_count, 
+                         kernel=kernel, 
+                         vcpu=vcpu, 
+                         ram=ram)
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.vm_num = vm_num
@@ -711,7 +728,12 @@ class PingPong(CreateVM):
                  kernel=None, 
                  vcpu=None, 
                  ram=None):
-        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
+        super().__init__(rc_vbox=rc_vbox, 
+                         testdir=testdir, 
+                         vm_count=vm_count, 
+                         kernel=kernel, 
+                         vcpu=vcpu, 
+                         ram=ram)
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.user = 'u'

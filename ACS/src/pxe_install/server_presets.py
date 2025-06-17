@@ -14,7 +14,10 @@ class ServerPresets:
         self.host = "host.docker.internal"
         self.user = "u"
         self.passwd = "1"
-        self.port = 10022
+        self.port = 20022
+    
+    def p_env(self):
+        remote_cmd("sudo apt install -y python3-pip && sudo pip3 install beautifulsoup4 && sudo pip3 install requests")
 
     def change_apache_settings(self):
         remote_cmd("sudo sed -i 's/# AstraMode on/AstraMode off/' /etc/apache2/apache2.conf && sudo systemctl restart apache2", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
@@ -35,6 +38,7 @@ class ServerPresets:
 
     def tune(self):
         remote_cmd("sudo apt install -y kea-dhcp4-server apache2 tftpd-hpa pxelinux grub-efi", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+        self.p_env()
         self.change_apache_settings()
         self.configuring_dhcp()
         self.create_directory_for_stands()

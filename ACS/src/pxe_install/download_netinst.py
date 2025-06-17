@@ -2,7 +2,6 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-# from src.utils.secondary_func import remote_put_file, remote_cmd, separate_astra_version
 
 
 def separate_astra_version(astra_build_version):
@@ -52,6 +51,5 @@ def get_folder_netinst(astra_build_version, download_dir="netinst"):
             print(f"Ошибка при обработке {url}: {str(e)}")
 
     process_directory(base_url, download_dir)
-
 
 get_folder_netinst(astra_build_version="1.7.7.9")

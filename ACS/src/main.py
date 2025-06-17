@@ -53,15 +53,17 @@ async def get_stand(stand_name: str, session: AsyncSession = Depends(get_async_s
         return {"status": "failed", "error": e}
     
 
-@app.get("/stands/all_stands")
+@app.get("/all_stands")
 async def get_all_stands(only_name: bool = False, session: AsyncSession = Depends(get_async_session)):
     try:
         if only_name:
             query = select(stands.c.name)
+            result = await session.execute(query)
+            return [row[0] for row in result.all()]
         else:
             query = select(stands)
-        result = await session.execute(query)
-        return result
+            result = await session.execute(query)
+            return [dict(row._asdict()) for row in result.all()]
     except Exception as e:
         return {"status": "failed", "error": e}
 

@@ -421,8 +421,9 @@ class FlexibleIOTester(CreateVM):
                  vcpu=None, 
                  ram=None,
                  iodepth=None,
-                 vm_num=None):
-        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram, special_att='fio')
+                 vm_num=None,
+                 special_att='fio'):
+        super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram, special_att)
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.vm_num = vm_num

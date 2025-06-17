@@ -425,7 +425,7 @@ class FlexibleIOTester(CreateVM):
                  special_att='fio'):
         super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram, special_att)
 
-        self.vms = [f'testvm{number}' for number in range(1, int(self.vm_count) + 1)]
+        self.vms = [f'testvm{number}' for number in range(1, int(vm_count) + 1)]
         self.vm_num = vm_num
         self.user = 'u'
         self.password = '1'

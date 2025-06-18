@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath('../allta'))  # Добавляем путь �
 # Основные настройки проекта
 project = 'Allta'
 author = 'team13'
-release = '1.0.4' # TODO ТУТ НАДО МЕНЯТЬ ВЕРСИЮ
+release = '1.0.6' # TODO ТУТ НАДО МЕНЯТЬ ВЕРСИЮ
 language = 'ru'
 
 # Расширения Sphinx

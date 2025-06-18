@@ -245,64 +245,87 @@ class _VirtInstall:
             apt_kernel = f"linux-{major_minor}-{suffix}"
             print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
 
-            def start_prepare(full_cmd):
+            def start_prepare(cmd_template):
+                class SafeDict(dict):
+                    def __missing__(self, key):
+                        # если ключа нет — возвращаем его же в фигурных скобках
+                        return '{' + key + '}'
+
                 with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
                     futures = []
                     for host in self.vms_date:
+                        # собираем словарь с теми ключами, которые реально подставляем
+                        mapping = SafeDict(
+                            host=host,
+                            sources_str=sources_str,
+                            apt_kernel=apt_kernel,
+                            kernel=kernel
+                        )
+                        # и делаем безопасный .format_map()
+                        full_cmd = cmd_template.format_map(mapping)
+
                         futures.append(
                             executor.submit(
                                 _SSH_Command.cmd,
                                 host,
                                 full_cmd,
                                 self.vms_date,
-                                "u",   # username, при необходимости вынести в переменную
-                                "1"    # пароль
+                                "u",
+                                "1"
                             )
                         )
+
                     for future in as_completed(futures):
                         result = future.result()
-                        host = result.get("host", "unknown")
+                        h = result.get("host", "unknown")
                         if result.get("status") == "ok":
-                            print(f"[{host}] prepare.sh успешно выполнен")
+                            print(f"[{h}] prepare.sh успешно выполнен")
                         else:
-                            print(f"[{host}] prepare ошибка: {result.get('output')}")
+                            print(f"[{h}] prepare ошибка: {result.get('output')}")
                     
             cmds = [
-                # 1) hostname и полная перезапись /etc/hosts
-                f"sudo hostnamectl set-hostname {host} && "
-                f"echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}' | sudo tee /etc/hosts",
+                # 1) hostname и /etc/hosts
+                "sudo hostnamectl set-hostname {host} && "
+                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}' | sudo tee /etc/hosts",
 
-                # 2) репо под нужный релиз
-                f"echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
+                # 2) репо
+                "echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
 
-                # 3) обновляем индексы и ставим ядро + заголовки
+                # 3) обновление и Astra Update
                 "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive astra-update -A -T -r",
+
+                # 4) зависимости
                 "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl -y",
-                f"sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel}",
 
+                # 5) установка ядра
+                "sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel}",
 
+                # 6) поиск нужного menuentry_id в grub (awk)
+                """kernel_conf=$(sudo grep menuentry_id /boot/grub/grub.cfg | awk '{print $17}' | grep "{kernel}" | tr -d "'")""",
 
-                # 5) настраиваем GRUB
-                f"kernel_conf=$(sudo grep menuentry_id /boot/grub/grub.cfg "
-                f"| awk '{{print $17}}' | grep \" + {kernel} + \" | tr -d \"'\" )",
+                # 7) добавляем GRUB_DEFAULT=0, если не задан
                 "if ! grep -q '^GRUB_DEFAULT=' /etc/default/grub; then "
                 "echo 'GRUB_DEFAULT=0' | sudo tee -a /etc/default/grub; fi",
+
+                # 8) перезаписываем GRUB_DEFAULT
                 "sudo sed -i \"s|GRUB_DEFAULT=.*|GRUB_DEFAULT=${kernel_conf}|\" /etc/default/grub",
+
+                # 9) обновляем и проверяем grub
                 "sudo update-grub",
                 "grep '^GRUB_DEFAULT=' /etc/default/grub",
             ]
 
-            print(f"Ставим hostname\n\n\n")
+            print(f"\n\n\nСтавим hostname\n\n\n")
             start_prepare(cmds[0])
-            print(f"Ставим репозиторий\n\n\n")
+            print(f"\n\n\nСтавим репозиторий\n\n\n")
             start_prepare(cmds[1])
-            print(f"Atra Update\n\n\n")
+            print(f"\n\n\nAtra Update\n\n\n")
             start_prepare(cmds[2])
-            print(f"Ставим зависимости\n\n\n")
+            print(f"\n\n\nСтавим зависимости\n\n\n")
             start_prepare(cmds[3])   
-            print(f"Ставим ядро\n\n\n")
+            print(f"\n\n\nСтавим ядро\n\n\n")
             start_prepare(cmds[4])
-            print(f"Обновляем grub\n\n\n")
+            print(f"\n\n\nОбновляем grub\n\n\n")
             start_prepare(cmds[5])
             start_prepare(cmds[6])
             start_prepare(cmds[7])

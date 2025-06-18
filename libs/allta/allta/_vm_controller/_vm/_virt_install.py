@@ -298,7 +298,7 @@ class _VirtInstall:
                 "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl -y",
 
                 # 5) установка ядра
-                "sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel}",
+                "sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel} -y",
 
                 # 6) поиск нужного menuentry_id в grub (awk)
                 """kernel_conf=$(sudo grep menuentry_id /boot/grub/grub.cfg | awk '{print $17}' | grep "{kernel}" | tr -d "'")""",

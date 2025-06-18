@@ -11,8 +11,10 @@ CONFLUENCE_URL = response_confluence_url.text
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 7500
-DURATION_RATE = 2500
+RANGE = 90
+DURATION_RATE = 30
+VM_COUNT = 4
+VMS = [f"testvm{i}" for i in range(1, VM_COUNT+1)]
 
 # Common dirs
 OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"

@@ -12,7 +12,7 @@ import re
 import pandas as pd
 from json import loads
 import numpy as np
-from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE
+from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH
 from time import sleep
 
 
@@ -142,7 +142,8 @@ class Ovpn20k(CreateVM):
                  vm_count=None, 
                  kernel=None, 
                  vcpu=None, 
-                 ram=None):
+                 ram=None,
+                 report_path=REPORT_PATH):
         super().__init__(rc_vbox, testdir, vm_count, kernel, vcpu, ram)
 
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
@@ -155,6 +156,7 @@ class Ovpn20k(CreateVM):
         self.ranger = RANGE
         self.vms_group = {"group1": ["testvm1", "testvm2", "testvm3", "testvm4"]}
         self.clients_group = {"group2": ["testvm2", "testvm3", "testvm4"]}
+        self.report_path = report_path
 
 
     def start_test(self):
@@ -177,34 +179,6 @@ class Ovpn20k(CreateVM):
             ]
         }
         
-        add_permission = {
-            "testvm1": {
-                "add_permission":{
-                    "command":
-                        'sudo su -c "chmod -R 777 /var/log/openvpn && chown -R u:u /var/log/openvpn"',
-                    "signal set": "",
-                    "signal get": ""
-                }
-            }
-        }
-
-        scp_pull = {
-            "testvm1": {
-                "mode": "pull",
-                "path_host": "./results/raw_results",
-                "path_vm": "/var/log/openvpn/"
-            },
-            "g_group2":[
-                
-                {
-                    "mode": "pull",
-                    "path_host": f"./results/raw_results/iperf_{vm}",
-                    "path_vm": "/var/log/iperf"
-                }
-                for vm in self.clients_group["group2"]
-            ]
-        }
-
         unpack_tar = {
             "g_group1": {
                 "unpack": {
@@ -233,6 +207,16 @@ class Ovpn20k(CreateVM):
             }
         }
 
+        add_permission = {
+            "testvm1": {
+                "add_permission":{
+                    "command":
+                        'sudo su -c "chmod -R 777 /var/log/openvpn && chown -R u:u /var/log/openvpn"',
+                    "signal set": "",
+                    "signal get": ""
+                }
+            }
+        }
 
         run_perf = {
             'g_group2': {
@@ -249,33 +233,50 @@ class Ovpn20k(CreateVM):
             }
         }
 
+        scp_pull = {
+            "testvm1": {
+                "mode": "pull",
+                "path_host": "./results/raw_results",
+                "path_vm": "/var/log/openvpn/"
+            },
+            "g_group2":[
+                
+                {
+                    "mode": "pull",
+                    "path_host": f"./results/raw_results/iperf_{vm}",
+                    "path_vm": "/var/log/iperf/*"
+                }
+                for vm in self.clients_group["group2"]
+            ]
+        }
+
         print(self.vms_dates["testvm1"]["ip_bridge"])
 
         #VBox.set_hosts(domain=self.domain,
         #               vms_dates=self.vms_dates)
-        #VBox.scp(scp_settings=scp_push,
-        #         vms_groups=self.clients_group,
-        #         vms_dates=self.vms_dates,
-        #         username=self.user,
-        #         password=self.password)
-        #VBox.execute(commands=unpack_tar,
-        #             vms_groups=self.vms_group,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password)
-        #VBox.execute(commands=start_server,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password)
-        #VBox.execute(commands=run_perf,
-        #             vms_groups=self.clients_group,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password) 
-        #VBox.execute(commands=add_permission,
-        #             vms_dates=self.vms_dates,
-        #             username=self.user,
-        #             password=self.password)
+        VBox.scp(scp_settings=scp_push,
+                 vms_groups=self.clients_group,
+                 vms_dates=self.vms_dates,
+                 username=self.user,
+                 password=self.password)
+        VBox.execute(commands=unpack_tar,
+                     vms_groups=self.vms_group,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+        VBox.execute(commands=start_server,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
+        VBox.execute(commands=run_perf,
+                     vms_groups=self.clients_group,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password) 
+        VBox.execute(commands=add_permission,
+                     vms_dates=self.vms_dates,
+                     username=self.user,
+                     password=self.password)
         VBox.scp(scp_settings=scp_pull,
                  vms_dates=self.vms_dates,
                  vms_groups=self.clients_group,
@@ -300,4 +301,3 @@ class Ovpn20k(CreateVM):
             sys_cls.cmd('rm -rf .vagrant')
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-

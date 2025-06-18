@@ -34,9 +34,10 @@ class PerfVpn:
         self.server_ip = sys_cls.check_output_command("cat /etc/hosts").split()[3]
         self.log_path = "/var/log/iperf"
 
+
     def run_iperf(self, tun_ip, tun_dev):
         try:
-            sys_cls.cmd(f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 2 > {self.log_path}/{tun_dev}.log 2>&1 & ")
+            sys_cls.cmd(f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 1 > {self.log_path}/{tun_dev}.log 2>&1 & ")
             print(f"{tun_dev} | Iperf | done")
         except Exception as e:
             print(f"{tun_dev} |  Iperf | error")

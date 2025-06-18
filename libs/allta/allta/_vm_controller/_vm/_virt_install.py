@@ -194,9 +194,9 @@ class _VirtInstall:
                     print("[FAIL] Не удалось создать ВМ")
                     results[host] = False
 
-        print("Ждём запуска всех ВМ (60 сек)...")
+        print("Ждём запуска всех ВМ (90 сек)...")
         sleep(90)
-        print("\n==> Получение IP адресов параллельно...")
+        print("\n==> Получение IP адресов...")
 
         with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
             ip_futures = [
@@ -207,13 +207,13 @@ class _VirtInstall:
                 hostname, ip = future.result()
                 self.vms_date[hostname]['ip_bridge'] = ip
 
-
+        print("\n==> Скачиваем releases.json...")
         if self.rc:
             # 1. Скачиваем releases.json
             resp = requests.get('http://allta.devos.astralinux.ru/rest/api/get-repo-path')
             resp.raise_for_status()
             releases = resp.json()
-
+            print("\n==> Парсим releases.json...")
             # 2. Берём нужный список deb-строк по self.rc
             try:
                 sources_lines = releases[self.rc]
@@ -224,7 +224,7 @@ class _VirtInstall:
             sources_str = "\\n".join(sources_lines)
 
             # 3. Узнаём текущее локальное ядро (если нужно передавать в скрипт)
-
+            print("\n==> Парсим ядро...")
             if self.kernel is not None:
                 kernel = self.kernel
             else:
@@ -243,55 +243,70 @@ class _VirtInstall:
                 raise ValueError(f"Некорректный формат версии: {kernel}")
             major_minor = ".".join(version_parts[:2])  # "5.10"
             apt_kernel = f"linux-{major_minor}-{suffix}"
+            print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
 
-            # 4. Параллельно по всем ВМ через SSH выполняем серию команд
-            with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
-                futures = []
-                for host in self.vms_date:
-                    cmds = [
-                        # 1) hostname и полная перезапись /etc/hosts
-                        f"sudo hostnamectl set-hostname {host} && "
-                        f"echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}' | sudo tee /etc/hosts",
-
-                        # 2) репо под нужный релиз
-                        f"echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
-
-                        # 3) обновляем индексы и ставим ядро + заголовки
-                        "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive astra-update -A -T -r",
-                        "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl -y",
-                        f"sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel}",
-
-
-
-                        # 5) настраиваем GRUB
-                        f"kernel_conf=$(sudo grep menuentry_id /boot/grub/grub.cfg "
-                        f"| awk '{{print $17}}' | grep \" + {kernel} + \" | tr -d \"'\" )",
-                        "if ! grep -q '^GRUB_DEFAULT=' /etc/default/grub; then "
-                        "echo 'GRUB_DEFAULT=0' | sudo tee -a /etc/default/grub; fi",
-                        "sudo sed -i \"s|GRUB_DEFAULT=.*|GRUB_DEFAULT=${kernel_conf}|\" /etc/default/grub",
-                        "sudo update-grub",
-                        "grep '^GRUB_DEFAULT=' /etc/default/grub",
-                    ]
-                    full_cmd = " && ".join(cmds)
-
-                    futures.append(
-                        executor.submit(
-                            _SSH_Command.cmd,
-                            host,
-                            full_cmd,
-                            self.vms_date,
-                            "u",   # username, при необходимости вынести в переменную
-                            "1"    # пароль
+            def start_prepare(full_cmd):
+                with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
+                    futures = []
+                    for host in self.vms_date:
+                        futures.append(
+                            executor.submit(
+                                _SSH_Command.cmd,
+                                host,
+                                full_cmd,
+                                self.vms_date,
+                                "u",   # username, при необходимости вынести в переменную
+                                "1"    # пароль
+                            )
                         )
-                    )
+                    for future in as_completed(futures):
+                        result = future.result()
+                        host = result.get("host", "unknown")
+                        if result.get("status") == "ok":
+                            print(f"[{host}] prepare.sh успешно выполнен")
+                        else:
+                            print(f"[{host}] prepare ошибка: {result.get('output')}")
+                    
+            cmds = [
+                # 1) hostname и полная перезапись /etc/hosts
+                f"sudo hostnamectl set-hostname {host} && "
+                f"echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}' | sudo tee /etc/hosts",
 
-                # 5. Собираем результаты
-                for future in as_completed(futures):
-                    result = future.result()
-                    host = result.get("host", "unknown")
-                    if result.get("status") == "ok":
-                        print(f"[{host}] prepare.sh успешно выполнен")
-                    else:
-                        print(f"[{host}] prepare.sh ошибка: {result.get('output')}")
+                # 2) репо под нужный релиз
+                f"echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
+
+                # 3) обновляем индексы и ставим ядро + заголовки
+                "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive astra-update -A -T -r",
+                "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl -y",
+                f"sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel}",
+
+
+
+                # 5) настраиваем GRUB
+                f"kernel_conf=$(sudo grep menuentry_id /boot/grub/grub.cfg "
+                f"| awk '{{print $17}}' | grep \" + {kernel} + \" | tr -d \"'\" )",
+                "if ! grep -q '^GRUB_DEFAULT=' /etc/default/grub; then "
+                "echo 'GRUB_DEFAULT=0' | sudo tee -a /etc/default/grub; fi",
+                "sudo sed -i \"s|GRUB_DEFAULT=.*|GRUB_DEFAULT=${kernel_conf}|\" /etc/default/grub",
+                "sudo update-grub",
+                "grep '^GRUB_DEFAULT=' /etc/default/grub",
+            ]
+
+            print(f"Ставим hostname\n\n\n")
+            start_prepare(cmds[0])
+            print(f"Ставим репозиторий\n\n\n")
+            start_prepare(cmds[1])
+            print(f"Atra Update\n\n\n")
+            start_prepare(cmds[2])
+            print(f"Ставим зависимости\n\n\n")
+            start_prepare(cmds[3])   
+            print(f"Ставим ядро\n\n\n")
+            start_prepare(cmds[4])
+            print(f"Обновляем grub\n\n\n")
+            start_prepare(cmds[5])
+            start_prepare(cmds[6])
+            start_prepare(cmds[7])
+            start_prepare(cmds[8])   
+                                                         
         return self.vms_date
 

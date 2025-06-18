@@ -1,8 +1,17 @@
 import os
+import argparse
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
+DESCRIPTION = ""
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('-abv', '--astra_build_version',
+                    action='store',
+                    required=True,
+                    help='astra linux build version',
+                    dest='ABV')
+args = parser.parse_args()
 
 def separate_astra_version(astra_build_version):
     temp_version = astra_build_version.split(".")
@@ -52,4 +61,4 @@ def get_folder_netinst(astra_build_version, download_dir="netinst"):
 
     process_directory(base_url, download_dir)
 
-get_folder_netinst(astra_build_version="1.7.7.9")
+get_folder_netinst(astra_build_version=args.ABV)

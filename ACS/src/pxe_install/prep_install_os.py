@@ -3,10 +3,10 @@ from src.utils.secondary_func import remote_cmd, remote_put_file, separate_astra
 
 class PreparingForInstallationOS:
     def __init__(self, astra_build_version, stand_name):
-        self.host = "host.docker.internal"
-        self.user = "u"
-        self.passwd = "1"
-        self.port = 20022
+        self.host = "10.177.103.202" #"host.docker.internal"
+        self.user = ""
+        self.passwd = ""
+        self.port = 22
         self.astra_build_version = astra_build_version
         self.stand_name = stand_name
 
@@ -23,7 +23,7 @@ class PreparingForInstallationOS:
                 if 'url=http://<ip-address>/preseed.cfg' in line:
                     line = line.replace(
                         'url=http://<ip-address>/preseed.cfg',
-                        f'url=http://10.0.10.20/{self.stand_name}/preseed.cfg'
+                        f'url=http://10.177.103.202/{self.stand_name}/preseed.cfg'
                     )
 
                 if "STAND_NAME" in line:
@@ -53,7 +53,7 @@ class PreparingForInstallationOS:
         except Exception as e:
             pass
 
-    def prepare(self, uefi=True):
+    def prepare_old(self, uefi=True):
         """
             1. Удаляем все из директории Стенда
             2. Создаем pxelinux.cfg и внутри default (BIOS)
@@ -97,3 +97,34 @@ class PreparingForInstallationOS:
         remote_cmd(f"sudo cp /srv/tftp/{self.stand_name}/netinst/linux /srv/tftp/{self.stand_name}/", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
         remote_cmd(f"sudo cp /srv/tftp/{self.stand_name}/netinst/initrd.gz /srv/tftp/{self.stand_name}/", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
         remote_cmd(f"sudo rm -rf /srv/tftp/{self.stand_name}/netinst", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+
+    
+    def prepare(self, uefi=True):
+        remote_cmd(f"rm -rf /home/u/{self.stand_name}/*", 
+                   host=self.host, user=self.user, 
+                   passwd=self.passwd, port=self.port)
+        self.fill_preseed_file(astra_build_version=self.astra_build_version)
+        remote_put_file(remote_path=f"/home/u/{self.stand_name}/preseed.cfg", 
+                        local_path="/fastapi_app/src/pxe_install/preseed.cfg", 
+                        host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+        remote_put_file(remote_path=f"/home/u/{self.stand_name}/download_netinst.py", 
+                        local_path="/fastapi_app/src/pxe_install/download_netinst.py",
+                        host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+        if uefi:
+            self.fill_default_or_grub_file(filename="grub_template.cfg")
+            remote_put_file(remote_path=f"/home/u/{self.stand_name}/grub.cfg", 
+                            local_path="/fastapi_app/src/pxe_install/grub.cfg", 
+                            host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+        else:
+            self.fill_default_or_grub_file(filename="default_template")
+            remote_put_file(remote_path=f"/home/u/{self.stand_name}/default", 
+                            local_path="/fastapi_app/src/pxe_install/default", 
+                            host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+        
+        remote_put_file(remote_path=f"/home/u/{self.stand_name}/prep_install_os.sh", 
+                        local_path="/fastapi_app/src/pxe_install/prep_install_os.sh",
+                        host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+        remote_cmd(f"sudo bash /home/u/{self.stand_name}/prep_install_os.sh {self.stand_name} {self.astra_build_version}",
+                   host=self.host, user=self.user, passwd=self.passwd, port=self.port)
+
+            

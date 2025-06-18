@@ -11,13 +11,14 @@ from src.utils.secondary_func import remote_cmd, remote_put_file
 
 class ServerPresets:
     def __init__(self):
-        self.host = "host.docker.internal"
-        self.user = "u"
-        self.passwd = "1"
-        self.port = 20022
+        self.host = "10.177.103.202"
+        self.user = ""
+        self.passwd = ""
+        self.port = 22
     
     def p_env(self):
-        remote_cmd("sudo apt install -y python3-pip && sudo pip3 install beautifulsoup4 && sudo pip3 install requests")
+        remote_cmd("sudo apt install -y python3-pip && sudo pip3 install beautifulsoup4 && sudo pip3 install requests",
+                   host=self.host, user=self.user, passwd=self.passwd, port=self.port)
 
     def change_apache_settings(self):
         remote_cmd("sudo sed -i 's/# AstraMode on/AstraMode off/' /etc/apache2/apache2.conf && sudo systemctl restart apache2", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
@@ -26,7 +27,7 @@ class ServerPresets:
         remote_cmd("sudo rm -f /etc/kea/kea-dhcp4.conf", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
         remote_cmd("sudo chown u:u /etc/kea", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
         ###### TODO TODO TODO !!!!! убрать - test на боевом из local_path
-        remote_put_file(remote_path="/etc/kea/kea-dhcp4.conf", local_path="/fastapi_app/src/pxe_install/kea-dhcp4-test.conf", host=self.host, user=self.user, passwd=self.passwd, port=self.port) 
+        remote_put_file(remote_path="/etc/kea/kea-dhcp4.conf", local_path="/fastapi_app/src/pxe_install/kea-dhcp4.conf", host=self.host, user=self.user, passwd=self.passwd, port=self.port) 
         remote_cmd("sudo systemctl restart kea-dhcp4-server", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
 
     def create_directory_for_stands(self):

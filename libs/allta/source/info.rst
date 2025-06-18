@@ -17,6 +17,7 @@ Allta
    "1.0.4", "mfilippenko", "Добавлена поддержка libvirt"
    "1.0.5", "mfilippenko", "Доработан функционал libvirt исправлены мелкие ошибки"      
    "1.0.6", "mfilippenko", "BugFix"     
+   "1.0.7", "mfilippenko", "BugFix install kernel libvirt.build"       
 
 
 .. Тут необходимо указывать новую версию автора и описание 

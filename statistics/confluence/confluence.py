@@ -1,4 +1,6 @@
 from atlassian import Confluence
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 from confluence.confluence_conf import CONFLUENCE_URL
 
@@ -10,6 +12,16 @@ class ConfluencePage:
         self.__password = password
         self.__access_token = token
 
+        
+        retry_strategy = Retry(
+            total=60,                     
+            backoff_factor=60,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "PUT"]
+        )
+
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+
         if self.__password is not None:
             self.__confluence = Confluence(url=self.__url,
                                            username=self.__username,
@@ -18,6 +30,8 @@ class ConfluencePage:
             self.__confluence = Confluence(url=self.__url,
                                            username=self.__username,
                                            token=self.__access_token)
+        
+        self.__confluence.session.mount("https://", adapter)
 
     def get_page_as_html(self,
                          page_space=None,
@@ -50,6 +64,14 @@ class StatisticsToConfluence():
         self.__password = password
         self.__access_token = token
 
+        retry_strategy = Retry(
+            total=60,
+            backoff_factor=60,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "PUT"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+
         if self.__password is not None:
             self.__confluence = Confluence(url=self.__url,
                                            username=self.__username,
@@ -58,6 +80,8 @@ class StatisticsToConfluence():
             self.__confluence = Confluence(url=self.__url,
                                            username=self.__username,
                                            token=self.__access_token)
+            
+        self.__confluence.session.mount("https://", adapter)
             
 
     def attache_files(self, file, page_space, page_title):

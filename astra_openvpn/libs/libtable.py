@@ -169,25 +169,26 @@ class Report:
         else:
             packet_loss = 0
 
-        # Суммируем все Transfer из интервалов
-        interval_transfers = re.findall(r"\d+\.\d+-\d+\.\d+ sec\s+([\d\.]+) ([KMG])Bytes", log_data)
+        interval_transfers = re.findall(r"\[\s*\d+\]\s+\d+\.\d+\s*-\s*\d+\.\d+\s+sec\s+([\d\.]+)\s+([KMG])Bytes", log_data)
         total_mbytes = 0
         for value, unit in interval_transfers:
             val = float(value)
             if unit == "K":
-                val /= 1024         # в MB
-            elif unit == "M":
-                val = val           # уже MB
+                val /= 1024
             elif unit == "G":
-                val *= 1024         # в MB
+                val *= 1024
             total_mbytes += val
-
         total_mbytes = round(total_mbytes, 4)
+
+        ip_match = re.search(r"Binding to local address (\d+\.\d+\.\d+\.\d+)", log_data)
+        ip_address = ip_match.group(1) if ip_match else "unknown"
+
 
         return {
             "Bandwidth (Mbps)": bandwidth,
+            "Transfered Mb": total_mbytes,
             "Packet Loss (%)": packet_loss,
-            "Bytes Sent": total_mbytes
+            "ip": ip_address,
         }
 
 

@@ -9,10 +9,30 @@ response_confluence_url = requests.get(confluence_url_api)
 JIRA_URL = response_jira_url.text
 CONFLUENCE_URL = response_confluence_url.text
 
+# VMS DATES
+VMS_DATES = {  # Полный список ВМ
+    'testvm1': {'host-port': '22',
+                "ip_bridge": "testvm1",
+                  'cpu': '8',
+                  'ram': '32768'},
+    'testvm2': {'host-port': '22',
+                "ip_bridge": "testvm2",
+                  'cpu': '8',
+                  'ram': '32768'},
+    'testvm3': {'host-port': '22',
+                "ip_bridge": "testvm3",
+                  'cpu': '8',
+                  'ram': '32768'},
+    'testvm4': {'host-port': '22',
+                "ip_bridge": "testvm4",
+              'cpu': '8',
+              'ram': '32768'},
+}
+
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 90
-DURATION_RATE = 30
+RANGE = 600
+DURATION_RATE = 200
 VM_COUNT = 4
 VMS = [f"testvm{i}" for i in range(1, VM_COUNT+1)]
 

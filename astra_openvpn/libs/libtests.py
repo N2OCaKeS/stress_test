@@ -243,8 +243,8 @@ class Ovpn20k(CreateVM):
                 
                 {
                     "mode": "pull",
-                    "path_host": f"./results/raw_results/iperf_{vm}",
-                    "path_vm": "/var/log/iperf/*"
+                    "path_host": f"./results/raw_results/iperf_{vm}/",
+                    "path_vm": "/var/log/iperf/"
                 }
                 for vm in self.clients_group["group2"]
             ]
@@ -253,7 +253,7 @@ class Ovpn20k(CreateVM):
         print(self.vms_dates["testvm1"]["ip_bridge"])
 
         #VBox.set_hosts(domain=self.domain,
-        #               vms_dates=self.vms_dates)
+        #              vms_dates=self.vms_dates)
         VBox.scp(scp_settings=scp_push,
                  vms_groups=self.clients_group,
                  vms_dates=self.vms_dates,
@@ -282,7 +282,6 @@ class Ovpn20k(CreateVM):
                  vms_groups=self.clients_group,
                  username=self.user,
                  password=self.password)
-
         
         print(f'VM dates is:\n{self.vms_dates}')
         

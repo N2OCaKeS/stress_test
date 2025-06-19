@@ -9,6 +9,7 @@ import requests
 from ..._system_command.SystemCommands import SystemCommands as system_commands
 from .._libs._scp_command import _SCP_Command
 from .._libs._ssh_command import _SSH_Command
+from .._base_commands._reboot._reboot import _Reboot 
 
 
 
@@ -148,8 +149,8 @@ class _VirtInstall:
         <range start="192.168.100.128" end="192.168.100.254"/>
         </dhcp>
     </ip>
-    </network>"""
-        network_path = "network.xml"
+</network>"""
+        network_path = f"{vm_path}/network.xml"
         with open(network_path, "w") as file:
             file.write(xml_content)
 
@@ -163,7 +164,8 @@ class _VirtInstall:
 
         print("\n==> Создание ВМ параллельно с задержкой 10 сек...")
         start_ts = time()
-        with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
+
+        with ThreadPoolExecutor() as executor:
             futures = []
             # проходим по всем ВМ с индексом
             for idx, (hostname, info) in enumerate(self.vms_date.items()):
@@ -245,7 +247,7 @@ class _VirtInstall:
             apt_kernel = f"linux-{major_minor}-{suffix}"
             print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
 
-            def start_prepare(cmd_template):
+            def start_prepare(cmd_template = None, reboot = None):
                 class SafeDict(dict):
                     def __missing__(self, key):
                         # если ключа нет — возвращаем его же в фигурных скобках
@@ -254,39 +256,62 @@ class _VirtInstall:
                 with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
                     futures = []
                     for host in self.vms_date:
-                        # собираем словарь с теми ключами, которые реально подставляем
-                        mapping = SafeDict(
-                            host=host,
-                            sources_str=sources_str,
-                            apt_kernel=apt_kernel,
-                            kernel=kernel
-                        )
-                        # и делаем безопасный .format_map()
-                        full_cmd = cmd_template.format_map(mapping)
-
-                        futures.append(
-                            executor.submit(
-                                _SSH_Command.cmd,
-                                host,
-                                full_cmd,
-                                self.vms_date,
-                                "u",
-                                "1"
+                        if reboot is None:
+                            # собираем словарь с теми ключами, которые реально подставляем
+                            mapping = SafeDict(
+                                host=host,
+                                sources_str=sources_str,
+                                apt_kernel=apt_kernel,
+                                kernel=kernel
                             )
-                        )
+                            # и делаем безопасный .format_map()
+                            full_cmd = cmd_template.format_map(mapping)
 
-                    for future in as_completed(futures):
-                        result = future.result()
+                            futures.append(
+                                executor.submit(
+                                    _SSH_Command.cmd,
+                                    host,
+                                    full_cmd,
+                                    self.vms_date,
+                                    "u",
+                                    "1",
+                                    task_name = 'prepare'
+                                )
+                            )
+                        if reboot == 1:
+                            futures.append(
+                                executor.submit(
+                                    _Reboot.reboot_vm,
+                                    host,
+                                    self.vms_date,
+                                    "u",
+                                    "1"
+                                )
+                            )
+
+                for future in as_completed(futures):
+                    result = future.result()
+                    if reboot is None:
+                        # Обработка результата команды SSH (словарь)
                         h = result.get("host", "unknown")
                         if result.get("status") == "ok":
-                            print(f"[{h}] prepare.sh успешно выполнен")
+                            print(f"[{h}] prepare успешно выполнен")
                         else:
                             print(f"[{h}] prepare ошибка: {result.get('output')}")
+                    elif reboot == 1:
+                        # Обработка результата перезагрузки (булево значение)
+                        h = host  # используем текущий host из внешнего контекста
+                        if result is True:
+                            print(f"[{h}] VM успешно перезагружена")
+                        else:
+                            print(f"[{h}] Ошибка при перезагрузке VM")
+
+                    
                     
             cmds = [
                 # 1) hostname и /etc/hosts
                 "sudo hostnamectl set-hostname {host} && "
-                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}' | sudo tee /etc/hosts",
+                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\t10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
 
                 # 2) репо
                 "echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
@@ -330,6 +355,7 @@ class _VirtInstall:
             start_prepare(cmds[6])
             start_prepare(cmds[7])
             start_prepare(cmds[8])   
-                                                         
+            print(f"\n\nПерезагружаем ВМ\n\n\n")
+            start_prepare(reboot=1)
         return self.vms_date
 

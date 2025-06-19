@@ -15,13 +15,12 @@ class _SetHosts:
     """
     @staticmethod
     @BaseDecorators.trycorator
-    def set_hosts(domain: str, vms_dates: dict, username: str = "u", password: str = "1",
+    def set_hosts(vms_dates: dict, username: str = "u", password: str = "1", domain: str = None,
                   task_name: str = "Set /etc/hosts") -> dict:
         """
         Настраивает файл /etc/hosts на всех указанных виртуальных машинах.
 
         Args:
-            domain (str): Домен для формирования FQDN.
             vm_dates (dict): Полная информация о виртуальных машинах.
                 vms_date (list): Полная информация о виртуальных машинах.
                     vm_dates = {'hostname':{
@@ -35,22 +34,29 @@ class _SetHosts:
                         }  
             username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
             password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
+            domain (str): Домен для формирования FQDN.
             task_name (str, optional): Имя задачи для логирования.
 
+            
         Returns:
             dict: Результаты выполнения команды для каждой виртуальной машины.
         """
         def process_vm(vm_name: str, vm_info: dict) -> tuple:
             # Генерация содержимого файла /etc/hosts для текущей ВМ
             lines = [
-                "127.0.0.1       localhost",
+                f"127.0.0.1\tlocalhost",
+                f"10.177.103.10\tallta.devos.astralinux.ru\tallta",
+                f"10.177.5.111\tqa111.devos.astralinux.ru\tqa111",
+                f"10.177.43.1\treleases.devos.astralinux.ru\treleases",
             ]
             
-            # Добавляем строки для всех ВМ из словаря (включая текущую)
             for key, info in vms_dates.items():
                 ip_bridge = info.get("ip_bridge", "")
-                if ip_bridge:
-                    lines.append(f"{ip_bridge}     {key}.{domain}      {key}")
+                if domain is None:
+                    if ip_bridge:
+                        lines.append(f"{ip_bridge}\t{key}")   
+                    else:
+                        lines.append(f"{ip_bridge}\t{key}.{domain}\t{key}")   
             
             hosts_content = "\n".join(lines)
             

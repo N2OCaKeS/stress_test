@@ -1006,16 +1006,16 @@ def backup_snapshot(stand, snapshot):
 
 def backup_vm_snapshot(stand, snapshot):
     vms = test_station_vms
-    commands = [f'sudo systemctl stop {vms[stand]}.service',
-                f'sudo vboxmanage snapshot {vms[stand]} restore {cz_comm()[stand][snapshot]}',
-                f'sudo systemctl restart {vms[stand]}.service']
+    commands = [f'sudo virsh --connect qemu:///system destroy {vms[stand]} выключить',
+                f'sudo virsh snapshot-revert --domain {vms[stand]} --snapshotname {cz_comm()[stand][snapshot]}',
+                f'sudo virsh --connect qemu:///system shutdown start {vms[stand]}']
 
     [ssh_command(command=cmd, stand_ip=stands_ip['stand5']) for cmd in commands]
 
 
 def power_on_stand(stand):
     vms = test_station_vms
-    cmd = f'sudo systemctl restart {vms[stand]}.service'
+    cmd = f'sudo virsh --connect qemu:///system shutdown start {vms[stand]}'
 
     if stand in vms.keys():
         ssh_command(command=cmd, stand_ip=stands_ip['stand5'])

@@ -264,6 +264,8 @@ def kernels():
 #Перечень ВМ, используемых в качестве стендов
 #################################################################################################################################################
 test_station_vms = {
+        'stand1': 'work-station1',
+        'stand2': 'work-station2',
         'stand6': 'virtual-station1',
         'stand7': 'virtual-station2',
         'stand8': 'virtual-station3',

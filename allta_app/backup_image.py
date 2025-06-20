@@ -217,8 +217,8 @@ ipmi = BootOrder(stand=args.STAND)
 clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
 balance_host_release = '1.8.1.6'
 if args.PSQL_BALANCE:
-    clonezilla_command_balance = cz_comm()['stand4'][balance_host_release]
-    #clonezilla_command_balance = cz_comm()['stand4'][args.RELEASE]
+    #clonezilla_command_balance = cz_comm()['stand4'][balance_host_release]
+    clonezilla_command_balance = cz_comm()['stand4'][args.RELEASE]
 branch = args.BRANCH
 parent_page = args.PARP
 systems = ['debian10', 'debian10-5.15', 'altlinux-5.10']
@@ -822,11 +822,11 @@ def db_kernel_changer(cpu_count, database, position=None):
 def freeipa_authentication_test():
     git_path = '/home/u/freeipa_test/gitipa'
     all_path = '/home/u/freeipa_test/gitipa/stress_test/freeipa'
-    clients_ip = '10.177.103.103'
+    clients_ip = '10.177.103.201'
     kernel = '5.15.0-83-generic'
 
     #if comm_and_log(cz_comm()['stand8']['1.7.5.9']) == 0:
-    backup_vm_snapshot('stand8', '1.7.5.9')
+    backup_vm_snapshot('stand1', '1.7.5.9')
     write_status(success)
     run_provision.bootorder = False
     run_provision.clonezilla = False

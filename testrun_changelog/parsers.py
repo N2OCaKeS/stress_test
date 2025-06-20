@@ -50,29 +50,48 @@ class PackageParser:
 class TablePackageExtractor:
     def __init__(self, changelog_url):
         self.changelog_url = changelog_url
-        # TODO Обернуть в исключения
-        self.changelog_html = fetch_changelog(changelog_url)
-        self.soup = BeautifulSoup(self.changelog_html, 'html.parser')
+        self.changelog_html = ""
+        self.soup = BeautifulSoup("", 'html.parser')  # Инициализируем пустым объектом
+        
+        try:
+            self.changelog_html = fetch_changelog(changelog_url)
+            self.soup = BeautifulSoup(self.changelog_html, 'html.parser')
+        except requests.exceptions.HTTPError as e:
+            testrun_logger.warning(f"Ошибка HTTP при загрузке журнала изменений из {changelog_url}: {e}")
+        except requests.exceptions.RequestException as e:
+            testrun_logger.warning(f"Ошибка запроса при получении журнала изменений из {changelog_url}: {e}")
+        except Exception as e:
+            testrun_logger.warning(f"Неожиданная ошибка обработки журнала изменений от {changelog_url}: {e}")
+    
+    def is_loaded(self):
+        return bool(self.changelog_html) and bool(self.soup.find())
     
     def extract_from_table(self, section_name, package_column=0):
-        section = self.soup.find('a', {'name': section_name})
-        if not section:
+        if not self.is_loaded():
             return set()
         
-        table = section.find_next('table')
-        if not table:
-            return set()
-        
-        packages = set()
-        for row in table.find_all('tr')[1:]:
-            cells = row.find_all('td')
-            if len(cells) > package_column:
-                package_name = cells[package_column].get_text(strip=True)
-                if '(' in package_name:
-                    package_name = package_name.split('(')[0].strip()
-                packages.add(package_name)
+        try:
+            section = self.soup.find('a', {'name': section_name})
+            if not section:
+                return set()
+            
+            table = section.find_next('table')
+            if not table:
+                return set()
+            
+            packages = set()
+            for row in table.find_all('tr')[1:]:
+                cells = row.find_all('td')
+                if len(cells) > package_column:
+                    package_name = cells[package_column].get_text(strip=True)
+                    if '(' in package_name:
+                        package_name = package_name.split('(')[0].strip()
+                    packages.add(package_name)
 
-        return packages
+            return packages
+        except Exception as e:
+            testrun_logger.warning(f"Ошибка извлечения пакетов из раздела {section_name}: {e}")
+            return set()
 
 
 class RepositoryParser:

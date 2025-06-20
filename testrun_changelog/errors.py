@@ -9,3 +9,7 @@ class RepositoryNotAvailableFromAllta(Exception):
 class PackagesNotFound(Exception):
     """Исключение при недоступности packages конкретного компонента по сгенирированной ссылке"""
     pass
+
+class ChangelogNotAvailable(Exception):
+    """Исключение при недоступности changelog"""
+    pass

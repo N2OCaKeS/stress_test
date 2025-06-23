@@ -285,7 +285,8 @@ class _VirtInstall:
                                     host,
                                     self.vms_date,
                                     "u",
-                                    "1"
+                                    "1",
+                                    sleep = 180
                                 )
                             )
 
@@ -354,7 +355,7 @@ class _VirtInstall:
             start_prepare(cmds[5])
             start_prepare(cmds[6])
             start_prepare(cmds[7])
-            start_prepare(cmds[8])   
+            start_prepare(cmds[8])
             print(f"\n\nПерезагружаем ВМ\n\n\n")
             start_prepare(reboot=1)
         return self.vms_date

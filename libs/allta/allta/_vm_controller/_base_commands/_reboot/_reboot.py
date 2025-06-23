@@ -9,7 +9,7 @@ class _Reboot:
     @staticmethod
     @BaseDecorators.trycorator    
     def reboot_vm(host: str, vm_dates: dict, username: str = "u", password: str = "1",
-                  timeout: int = 600, interval: int = 10, signal_get: str = None, ready_signal: str = None) -> bool:
+                  timeout: int = 600, interval: int = 10, signal_get: str = None, ready_signal: str = None, sleep: int = 60) -> bool:
         """
         Перезагружает виртуальную машину и ожидает, пока она не станет доступной по SSH.
         Перед выполнением перезагрузки, если передан signal_get, он передается в _SSH_Command.cmd,
@@ -25,6 +25,7 @@ class _Reboot:
             interval (int, optional): Интервал между попытками подключения (сек).
             signal_get (str, optional): Имя сигнала, который ожидается перед выполнением команды.
             ready_signal (str, optional): Имя сигнала, который устанавливается при готовности ВМ.
+            sleep (int, optional): Время перед началом проверки ожидания
             
         Returns:
             bool: True, если ВМ стала доступной, иначе False.
@@ -44,7 +45,7 @@ class _Reboot:
             return False
 
         print(f"[{host}] Перезагрузка инициирована, ожидаем доступности...")
-        time.sleep(60)
+        time.sleep(sleep)
 
         deadline = time.time() + timeout
         while time.time() < deadline:

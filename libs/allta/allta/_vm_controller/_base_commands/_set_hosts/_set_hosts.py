@@ -1,10 +1,11 @@
 from ...._decorators.Decorators import BaseDecorators
 from ..._libs._ssh_command import _SSH_Command
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from ...._system_command.SystemCommands import SystemCommands
 
 class _SetHosts:
     """
-    Класс для настройки файла /etc/hosts на виртуальных машинах.
+    Класс для настройки файла /etc/hosts на хосте и виртуальных машинах.
 
     Основные функции:
     - Генерация содержимого файла /etc/hosts для каждой ВМ.
@@ -43,22 +44,26 @@ class _SetHosts:
         """
         def process_vm(vm_name: str, vm_info: dict) -> tuple:
             # Генерация содержимого файла /etc/hosts для текущей ВМ
-            lines = [
+            base_lines = [
                 f"127.0.0.1\tlocalhost",
+                f"127.0.1.1\t$(hostname)",
                 f"10.177.103.10\tallta.devos.astralinux.ru\tallta",
                 f"10.177.5.111\tqa111.devos.astralinux.ru\tqa111",
                 f"10.177.43.1\treleases.devos.astralinux.ru\treleases",
             ]
             
+            lines = [
+            
+            ]
+
             for key, info in vms_dates.items():
                 ip_bridge = info.get("ip_bridge", "")
                 if domain is None:
-                    if ip_bridge:
-                        lines.append(f"{ip_bridge}\t{key}")   
-                    else:
-                        lines.append(f"{ip_bridge}\t{key}.{domain}\t{key}")   
-            
-            hosts_content = "\n".join(lines)
+                    lines.append(f"{ip_bridge}\t{key}")   
+                else:
+                    lines.append(f"{ip_bridge}\t{key}.{domain}\t{key}")   
+        
+            hosts_content = "\n".join(base_lines + lines)
             
             # Формирование команды для перезаписи /etc/hosts на удалённой машине
             remote_command = (
@@ -74,6 +79,9 @@ class _SetHosts:
                 password=password,
                 task_name=f"{task_name} on {vm_name}"
             )
+
+            # Установка /etc/hosts на хосте
+            SystemCommands.cmd(remote_command)
             return vm_name, result
 
         results = {}

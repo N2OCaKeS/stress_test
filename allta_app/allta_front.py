@@ -264,7 +264,8 @@ def backup(stand, version):
     """
     Загрузить нужный снимок
     """
-    if stand == "stand6" or stand == "stand7" or stand == "stand8" or stand == "stand9":
+    if stand == "stand6" or stand == "stand7" or stand == "stand8" \
+    or stand == "stand9" or stand == "stand1" or stand == "stand2":
         backup_vm_snapshot(stand, version)
     else:
         backup_snapshot(stand, version)

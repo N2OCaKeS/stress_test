@@ -9,7 +9,7 @@ sudo apt update
 sudo apt-get install -y libffi-dev gcc make libpdp-dev
 
 # test packages
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra
 wget -P /home/u/ ftp://10.177.103.10/openvpn/ovpn.tar.gz
 
 if [ "$HOSTNAME" = "testvm1" ]; then
@@ -20,6 +20,8 @@ else
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
 
 fi
+
+sudo mkdir /var/log/iperf
 
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev

@@ -5,7 +5,7 @@ import os
 import datetime
 import re
 import pandas as pd
-from json import loads
+import json
 import numpy as np
 from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH, VMS_DATES
 from time import sleep
@@ -36,9 +36,9 @@ class CreateVM:
     def common_build(self):
         Libvirt.prepare()
         self.vms_dates = Libvirt.build(box=self.vbox,
-                    rc="1.7.5",
-                    vms=self.vms,
-                    vms_dates=self.vms_dates)
+                                       rc="1.7.5",
+                                       vms=self.vms,
+                                       vms_dates=self.vms_dates)
         return self.vms_dates
     
     
@@ -49,7 +49,12 @@ class CreateVM:
                     username=self.username,
                     password=self.password)
         
-        Libvirt.set_hosts(vms_dates=self.vms_dates)
+        print(self.vms_dates)
+        with open("vms_dates.txt", "w", encoding="UTF-8") as f:
+            json.dump(self.vms_dates, f)
+
+        Libvirt.set_hosts(vms_dates=self.vms_dates,
+                          domain="stress.rbt")
         
         Libvirt.execute(commands=task_provision,
                         vms_groups=self.main_group,
@@ -68,33 +73,37 @@ class Test_1(CreateVM):
 
     # Launch 
     def start(self):
-        #Libvirt.execute(commands=task_unpack_tar,
-        #                vms_groups=self.main_group,
-        #                vms_dates=self.vms_dates,
-        #                username=self.username,
-        #                password=self.password)
+
+        with open("vms_dates.txt", "r", encoding="UTF-8") as f:
+            json_string = f.read()
+            self.vms_dates = json.loads(json_string)
+
+        # Libvirt.execute(commands=task_unpack_tar,
+        #                 vms_groups=self.main_group,
+        #                 vms_dates=self.vms_dates,
+        #                 username=self.username,
+        #                 password=self.password)
         
-        Libvirt.execute(commands=task_start_server,
-                        vms_dates=self.vms_dates,
-                        username=self.username,
-                        password=self.password)
+        # Libvirt.execute(commands=task_start_server,
+        #                 vms_dates=self.vms_dates,
+        #                 username=self.username,
+        #                 password=self.password)
         
-        Libvirt.execute(commands=task_run_iperf,
-                        vms_groups=self.clients_group,
-                        vms_dates=self.vms_dates,
-                        username=self.username,
-                        password=self.password)
+        # Libvirt.execute(commands=task_run_iperf,
+        #                 vms_groups=self.clients_group,
+        #                 vms_dates=self.vms_dates,
+        #                 username=self.username,
+        #                 password=self.password)
         
         Libvirt.execute(commands=task_add_permission,
                         vms_dates=self.vms_dates,
                         username=self.username,
                         password=self.password)
         
-        Libvirt.execute(commands=scp_pull,
-                        vms_dates=self.vms_dates,
-                        vms_groups=self.clients_group,
-                        username=self.username,
-                        password=self.password)
+        Libvirt.scp(scp_settings=scp_pull,
+                    vms_dates=self.vms_dates,
+                    username=self.username,
+                    password=self.password)
     
         
         # vagrant_env = "UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={}".format(self.rc_name,

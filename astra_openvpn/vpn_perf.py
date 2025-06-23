@@ -75,7 +75,7 @@ class PerfVpn:
         for t in threads:
             t.join()
         sleep(self.duration)
-        print(f"Создано {self.range} туннелей.")
+        print(f'Создано {sys_com.check_output_command("ls -la /sys/class/net | grep tun | wc -l")} туннелей.')
 
 
     def rm_connections(self):

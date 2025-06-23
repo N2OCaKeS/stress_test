@@ -17,8 +17,8 @@ ovpn_test = Test_1(vbox="1.7.5.o",
                    vm_count=4,
                    vms_dates=VMS_DATES,
                    testdir=REPORT_PATH)
-#ovpn_test.common_build()
-#ovpn_test.provision()
+ovpn_test.common_build()
+ovpn_test.provision()
 ovpn_test.start()
 #ovpn_test.vms_destroy()
 #ovpn_test.prepare_vms()

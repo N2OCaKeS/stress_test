@@ -12,33 +12,29 @@ CONFLUENCE_URL = response_confluence_url.text
 # VMS DATES
 VMS_DATES = {  # Полный список ВМ
     'testvm1': {'host-port': '22',
-                "ip_bridge": "testvm1",
                   'cpu': '8',
                   'ram': '32768'},
     'testvm2': {'host-port': '22',
-                "ip_bridge": "testvm2",
                   'cpu': '8',
                   'ram': '32768'},
     'testvm3': {'host-port': '22',
-                "ip_bridge": "testvm3",
                   'cpu': '8',
                   'ram': '32768'},
     'testvm4': {'host-port': '22',
-                "ip_bridge": "testvm4",
               'cpu': '8',
               'ram': '32768'},
 }
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 600
-DURATION_RATE = 200
+RANGE = 2100
+DURATION_RATE = 1050
 VM_COUNT = 4
 VMS = [f"testvm{i}" for i in range(1, VM_COUNT+1)]
 
 # Common dirs
-OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/activate"
+OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
+VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
 REPORT_PATH = f"{OVPN_PATH}/results"
 
 INFO_FILENAME = 'ovpn_info.txt'

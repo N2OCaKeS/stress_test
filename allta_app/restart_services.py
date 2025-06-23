@@ -51,3 +51,7 @@ subprocess.run('systemctl stop devpi', shell=True)
 subprocess.run('bash /home/u/folder_git_for_libs/stress_test/libs/devpi_service/install_service.sh', shell=True)
 subprocess.run('systemctl restart devpi', shell=True)
 
+
+conf_file_path = 'conf/needrefresh.conf'
+with open(conf_file_path, 'w') as f:
+    f.write('True')

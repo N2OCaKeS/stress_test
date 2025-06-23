@@ -1,6 +1,5 @@
-from allta import VBox
 
-from roles.vm_info import VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD, ETH_INTERFACE
+from new_balance.roles.vm_info import VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD, ETH_INTERFACE, PROVIDER, PGOOL_IP
 
 
 class keepalived:
@@ -18,7 +17,7 @@ vrrp_instance VI_1 {{
         auth_pass securepass
     }}
     virtual_ipaddress {{
-        10.177.103.131
+        {PGOOL_IP}
     }}
 }}
 EOF"""
@@ -35,7 +34,7 @@ vrrp_instance VI_1 {{
         auth_pass securepass
     }}
     virtual_ipaddress {{
-        10.177.103.131
+        {PGOOL_IP}
     }}
 }}
 EOF"""
@@ -52,7 +51,7 @@ vrrp_instance VI_1 {{
         auth_pass securepass
     }}
     virtual_ipaddress {{
-        10.177.103.131
+        {PGOOL_IP}
     }}
 }}
 EOF"""
@@ -89,7 +88,7 @@ EOF"""
             },
         }
 
-        VBox.execute(commands=configure_keepalived, vms_dates=VMS_DATES,
+        PROVIDER.execute(commands=configure_keepalived, vms_dates=VMS_DATES,
                             vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         start_keepalived = {
@@ -107,5 +106,5 @@ EOF"""
             }
         }
 
-        VBox.execute(commands=start_keepalived, vms_dates=VMS_DATES,
+        PROVIDER.execute(commands=start_keepalived, vms_dates=VMS_DATES,
                             vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)

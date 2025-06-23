@@ -1,9 +1,10 @@
 import threading
 from random import choice, randint
 from os.path import exists, isfile
-from os import chmod, chown
 import subprocess
 import psycopg2
+import traceback
+from datetime import datetime
 
 N_ACCOUNTS = 100000
 
@@ -12,7 +13,7 @@ N_ACCOUNTS = 100000
 db_params = {
     "dbname": "contrprimer",
     "user": "postgres",
-    "host": "10.177.103.131",
+    "host": "pgpool.balance.rbt",
     "port": "5440"
 }
 
@@ -52,8 +53,15 @@ def run_pgbench():
 
                 conn.commit()
                 results['success'] += 1
-        except (psycopg2.InterfaceError, psycopg2.OperationalError):
+        except Exception as e:
             results['fail'] += 1
+            with open('errors.log', 'a', encoding='utf-8') as f:
+                f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                       f"{str(e)}\n"
+                       f"{traceback.format_exc()}\n\n")
+            if isinstance(e, (psycopg2.InterfaceError, psycopg2.OperationalError)):
+                continue
+            raise
 
 
 def astra_version():
@@ -128,6 +136,8 @@ def main():
     for t in threads:
         t.join()
 
+
+    results['fail'] = 200000 - results['success']
     # Process and print results
     all_queries = num_transactions * num_clients
     success_quer = f"Number of successful queries: {results['success']}"

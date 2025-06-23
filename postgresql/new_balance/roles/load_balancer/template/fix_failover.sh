@@ -17,7 +17,7 @@ OLD_PRIMARY_NODE_HOST="${11}"
 OLD_PRIMARY_NODE_PORT="${12}"
 
 # Настройки
-DATABASE_NODES=("10.177.103.111" "10.177.103.112" "10.177.103.113")
+DATABASE_NODES=("${13}" "${14}" "${15}")
 SSH_USER="u"
 PASSWORD="1"
 PG_PORT=5440
@@ -99,7 +99,7 @@ update_nodes_after_failover() {
             echo "PG${VERSION_PG}: standby.signal + primary_conninfo для $node"
 
             # Останавливаем PostgreSQL
-            $SSHPASS ssh $SSH_OPTS $SSH_USER@$node sudo systemctl stop postgresql@${VERSION_PG}-contrprimer.service
+            # $SSHPASS ssh $SSH_OPTS $SSH_USER@$node sudo systemctl stop postgresql@${VERSION_PG}-contrprimer.service
 
             # Удаляем старый primary_conninfo из postgresql.auto.conf (если есть)
             $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "sudo -u postgres rm -f ${NODE_PGDATA}/postgresql.auto.conf"
@@ -115,22 +115,23 @@ EOF
 
             # Запускаем PostgreSQL
             $SSHPASS ssh $SSH_OPTS $SSH_USER@$node sudo systemctl start postgresql@${VERSION_PG}-contrprimer.service
-
+            $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "cd /tmp && sudo -u postgres psql -p $PG_PORT -c 'SELECT pg_reload_conf();'"
             echo "Нода $node (PG${VERSION_PG}) настроена и перезапущена как реплика -> новый мастер: ${NEW_MAIN_NODE_HOST}"
 
             # Перезагружаем конфигурацию (на всякий случай)
-            $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "cd /tmp && sudo -u postgres psql -p $PG_PORT -c 'SELECT pg_reload_conf();'"
+
         else
             # Код для PostgreSQL 11 (оставлен без изменений)
-            $SSHPASS ssh $SSH_OPTS $SSH_USER@$node sudo systemctl stop postgresql@11-contrprimer.service
+            # $SSHPASS ssh $SSH_OPTS $SSH_USER@$node sudo systemctl stop postgresql@11-contrprimer.service
             echo "PG${VERSION_PG}: recovery.conf для $node"
             $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "sudo rm -f ${NODE_PGDATA}/recovery.conf"
-            $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "sudo rm -f /var/lib/postgresql/11/contrprimer/postmaster.pid"
+            # $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "sudo rm -f /var/lib/postgresql/11/contrprimer/postmaster.pid"
             $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "sudo tee ${NODE_PGDATA}/recovery.conf >/dev/null" <<EOF
 standby_mode = 'on'
-primary_conninfo = "user=${REPLUSER} passfile='/var/lib/postgresql/.pgpass' host=${NEW_MAIN_NODE_HOST} port=${PG_PORT} sslmode=prefer sslcompression=0 krbsrvname=postgres target_session_attrs=any"
+primary_conninfo = 'user=${REPLUSER} passfile=''/var/lib/postgresql/.pgpass'' host=${NEW_MAIN_NODE_HOST} port=${PG_PORT} sslmode=prefer sslcompression=0 krbsrvname=postgres target_session_attrs=any'
 recovery_target_timeline = 'latest'
 EOF
+            $SSHPASS ssh $SSH_OPTS $SSH_USER@$node "cd /tmp && sudo -u postgres psql -p $PG_PORT -c 'SELECT pg_reload_conf();'"
             $SSHPASS ssh $SSH_OPTS $SSH_USER@$node sudo systemctl start postgresql@11-contrprimer.service
             echo "Нода $node (PG${VERSION_PG}) настроена и перезапущена как реплика -> новый мастер: ${NEW_MAIN_NODE_HOST}"
         fi

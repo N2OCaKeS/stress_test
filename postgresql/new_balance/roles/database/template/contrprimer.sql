@@ -91,7 +91,7 @@ MAC LABEL ON CLUSTER IS '{3,0}';
 -- Удаление БД контрольного примера
 DROP DATABASE IF EXISTS contrprimer;
 -- Создание пустой БД контрольного примера
-CREATE DATABASE contrprimer;
+CREATE DATABASE contrprimer OWNER user0;
 
 -- СОЗДАНИЕ ОБЪЕКТОВ БАЗЫ ДАННЫХ
 -- Подключение к БД контрольного примера
@@ -102,8 +102,8 @@ MAC CCR ON DATABASE contrprimer IS OFF;
 MAC LABEL ON DATABASE contrprimer IS '{3,0}';
 
 -- Создание схемы
-CREATE SCHEMA s1;
-
+CREATE SCHEMA s1 AUTHORIZATION user0;
+ALTER DATABASE contrprimer SET search_path TO s1, public;
 -- Задание правил мандатного доступа доступа к схеме
 MAC CCR ON SCHEMA s1 IS OFF;
 MAC LABEL ON SCHEMA s1 IS '{3,0}';

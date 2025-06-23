@@ -1,32 +1,161 @@
-from allta import VBox
-from roles.vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD
-
+from new_balance.roles.vm_info import DOMAIN, DOMAIN_ADMIN_PASSWORD, DOMAIN_ADMIN_USER, DOMAIN_USER_PASSWORD, VMS_DATES, VMS_GROUPS, USERNAME, PASSWORD, PROVIDER
+from allta import Libvirt, VBox
 
 class DomainVM():
 
     def __init__(self):
-        self.provider = VBox()
+        self.provider = PROVIDER
 
     def settings(self):
         '''Полная настройка домена на всех ВМ'''
         provider = self.provider
+        if isinstance(provider, VBox):
 
-        domain = {
-            'settings': {
-                'domain': DOMAIN,
-                'admin_password': DOMAIN_ADMIN_PASSWORD
-            },
-            'domain': {
-                'host': 'dcfreeipa',
-            },
-            'client': {
-                # g_ если начинается с такого префикса то это для группы хостов
-                'host': 'g_domain_client',
+            domain = {
+                'settings': {
+                    'domain': DOMAIN,
+                    'admin_password': DOMAIN_ADMIN_PASSWORD
+                },
+                'domain': {
+                    'host': 'dcfreeipa',
+                },
+                'client': {
+                    # g_ если начинается с такого префикса то это для группы хостов
+                    'host': 'g_domain_client',
+                }
             }
-        }
 
-        provider.freeipa(domain=domain, vms_dates=VMS_DATES,
+            provider.freeipa(domain=domain, vms_dates=VMS_DATES,
+                            vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        
+        elif isinstance(provider, Libvirt):
+            client = f'sleep 10 && sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-client -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y || true'
+            resolv = f'''
+sudo cat << 'EOF' > /etc/resolv.conf
+search {DOMAIN}
+nameserver {VMS_DATES['dcfreeipa']['ip_bridge']}
+EOF'''
+    
+            freeipa = {
+                'dcfreeipa': {
+                    'init domain': {
+                        'command': f'sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -o -y',
+                        'signal set': '',
+                        'signal get': '',
+                    },
+
+                },
+            }
+            provider.execute(commands=freeipa, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+            freeipa = {
+                'dcfreeipa':{
+                    'reboot': {
+                        'signal set': 'dcfreeipa',
+                        'signal get': '',
+                    }
+                },
+                'database1': {
+                    'set resov.conf': {
+                        'command': f'sudo sh -c \'{resolv}\'',
+                        'signal set': '',
+                        'signal get': ''
+                    },                    
+                    'client settings': {
+                        'command': f'sleep 60 && {client}',
+                        'signal set': 'client',
+                        'signal get': ['dcfreeipa', 'dcfreeipa'],      
+                    },
+                    'reboot': {
+                        'signal set': 'database1',
+                        'signal get': ['client'],
+                    }
+                },
+                'database2': {
+                    'set resov.conf': {
+                        'command': f'sudo sh -c \'{resolv}\'',
+                        'signal set': '',
+                        'signal get': ''
+                    },      
+                    'client settings': {
+                        'command': client,
+                        'signal set': 'client',
+                        'signal get': ['database1', 'database1'],      
+                    },
+                    'reboot': {
+                        'signal set': 'database2',
+                        'signal get': ['client'],
+                    }                    
+                },
+                'database3': {
+                    'set resov.conf': {
+                        'command': f'sudo sh -c \'{resolv}\'',
+                        'signal set': '',
+                        'signal get': ''
+                    },                         
+                    'client settings': {
+                        'command': client,
+                        'signal set': 'client',
+                        'signal get': ['database2', 'database2'],      
+                    },
+                    'reboot': {
+                        'signal set': 'database3',
+                        'signal get': ['client'],
+                    }                        
+                },
+                'lbdb1': {
+                    'set resov.conf': {
+                        'command': f'sudo sh -c \'{resolv}\'',
+                        'signal set': '',
+                        'signal get': ''
+                    },                         
+                    'client settings': {
+                        'command': client,
+                        'signal set': 'client',
+                        'signal get': ['database3', 'database3'],      
+                    },
+                    'reboot': {
+                        'signal set': 'lbdb1',
+                        'signal get': ['client'],
+                    }                         
+                },
+                'lbdb2': {
+                    'set resov.conf': {
+                        'command': f'sudo sh -c \'{resolv}\'',
+                        'signal set': '',
+                        'signal get': ''
+                    },                        
+                    'client settings': {
+                        'command': client,
+                        'signal set': 'client',
+                        'signal get': ['lbdb1', 'lbdb1'],      
+                    },
+                    'reboot': {
+                        'signal set': 'lbdb2',
+                        'signal get': ['client'],
+                    }                         
+                },
+                'lbdb3': {
+                    'set resov.conf': {
+                        'command': f'sudo sh -c \'{resolv}\'',
+                        'signal set': '',
+                        'signal get': ''
+                    },                       
+                    'client settings': {
+                        'command': client,
+                        'signal set': 'client',
+                        'signal get': ['lbdb2', 'lbdb2'],      
+                    },
+                    'reboot': {
+                        'signal set': 'lbdb3',
+                        'signal get': ['client'],
+                    }                         
+                },
+            }
+
+            provider.execute(commands=freeipa, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD, timeout=60)
+
 
         tasks = {
             'dcfreeipa': {
@@ -34,11 +163,6 @@ class DomainVM():
                     'command': f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}',
                     'signal set': 'Kinit',
                     'signal get': '',
-                },
-                'dns settings':{
-                    'command': f'ipa dnsconfig-mod --forwarder=10.177.128.198 --forwarder=10.177.180.248 --forwarder=10.177.180.246',
-                    'signal set': 'Kinit',
-                    'signal get': '',                    
                 },
             }
         }

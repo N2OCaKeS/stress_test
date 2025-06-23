@@ -1,13 +1,12 @@
-from allta import VBox
-from roles.vm_info import (DOMAIN, DOMAIN_ADMIN_PASSWORD, PASSWORD,
+from new_balance.roles.vm_info import (DOMAIN, DOMAIN_ADMIN_PASSWORD, PASSWORD,
                            POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME,
-                           VERSION_PG, VMS_DATES, VMS_GROUPS)
+                           VERSION_PG, VMS_DATES, VMS_GROUPS, PROVIDER)
 
 
 class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
 
     def __init__(self):
-        self.provider = VBox()
+        self.provider = PROVIDER
 
     def settings(self):
         """Настройка БД + репликация"""
@@ -123,22 +122,22 @@ EOF"""
                 # postgresql.conf
                 {
                     'path': f'{postgres_config_path}/postgresql.conf',
-                    'old': '#wal_level = replica			# minimal, replica, or logical',
+                    'old': '#wal_level = replica',
                     'new': 'wal_level = replica'
                 },
                 {
                     'path': f'{postgres_config_path}/postgresql.conf',
-                    'old': '#archive_mode = off		# enables archiving; off, on, or always',
+                    'old': '#archive_mode = off',
                     'new': 'archive_mode = on'
                 },
                 {
                     'path': f'{postgres_config_path}/postgresql.conf',
-                    'old': "#archive_command = ''		# command to use to archive a logfile segment",
+                    'old': "#archive_command = ''",
                     'new': f"archive_command = 'cp %p /var/lib/postgresql/{VERSION_PG}/contrprimer/wal_archive/%f'"
                 },
                 {
                     'path': f'{postgres_config_path}/postgresql.conf',
-                    'old': '#max_wal_senders = 10		# max number of walsender processes',
+                    'old': '#max_wal_senders = 10',
                     'new': 'max_wal_senders = 10'
                 },
                 {
@@ -148,7 +147,7 @@ EOF"""
                 },
                 {
                     'path': f'{postgres_config_path}/postgresql.conf',
-                    'old': '#hot_standby = on			# "off" disallows queries during recovery',
+                    'old': '#hot_standby = on',
                     'new': 'hot_standby = on'
                 },
                 {
@@ -165,7 +164,12 @@ EOF"""
                     'path': f'{postgres_config_path}/postgresql.conf',
                     'old': '#wal_log_hints = off',
                     'new': 'wal_log_hints = on'
-                },                
+                },     
+                {
+                    'path': f'{postgres_config_path}/postgresql.conf',
+                    'old': '#log_min_messages = warning',
+                    'new': 'log_min_messages = debug5'
+                },                              
 
 
                 # pg_hba.conf
@@ -203,7 +207,7 @@ EOF"""
         }
         provider.sed(sed_conf=sed_master_config, vms_dates=VMS_DATES,
                      vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
-
+        print("SED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         pg_ident = {
             'g_database': {
                 'ident user0': {
@@ -238,11 +242,13 @@ EOF"""
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         scp_sql = {
-            'database1': {
-                'mode': 'push',
-                'path_host': './roles/database/template/contrprimer.sql',
-                'path_vm': '/tmp/contrprimer.sql'
-            }
+            'database1': [
+                {
+                    'mode': 'push',
+                    'path_host': '/home/u/git/stress_test/postgresql/new_balance/roles/database/template/contrprimer.sql',
+                    'path_vm': '/tmp/contrprimer.sql'
+                }
+            ]
         }
         provider.scp(scp_settings=scp_sql, vms_dates=VMS_DATES,
                      username=USERNAME, password=PASSWORD)

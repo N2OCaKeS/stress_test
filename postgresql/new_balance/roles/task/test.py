@@ -1,30 +1,28 @@
-from allta import VBox
-from roles.vm_info import (PASSWORD, PGPOOL_CONFIG_PATH, PGPOOL_HOSTNAME,
+from new_balance.roles.vm_info import (PASSWORD, PGPOOL_CONFIG_PATH, PGPOOL_HOSTNAME,
                            PGPOOL_PCP_USER, USERNAME, POSTGRES_DATA_PATH,
-                           VERSION_PG, VMS_DATES, VMS_GROUPS, POSTGRES_PORT)
+                           VERSION_PG, VMS_DATES, VMS_GROUPS, POSTGRES_PORT, PROVIDER)
+from allta import SystemCommands
 
 
 class Test:
     def __init__(self):
-        self.provider = VBox()
+        self.provider = PROVIDER
 
     def test(self):
         provider = self.provider
-
         scp = {
             'database3': {
                 'mode': 'push',
-                'path_host': './roles/task/template/clients.py',
+                'path_host': '/home/u/git/stress_test/postgresql/new_balance/roles/task/template/clients.py',
                 'path_vm': '/tmp/clients.py'
             }
         }
 
         provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
                      username=USERNAME, password=PASSWORD)
-        
-        postgres_data_path = POSTGRES_DATA_PATH
+
         test = {
-            "database3": {
+            "host": {
                 "start test": {
                     "command": "sudo chmod 777 /tmp/clients.py && python3 /tmp/clients.py",
                     "signal set": "",
@@ -33,7 +31,7 @@ class Test:
             },
             "g_load_balancer":{
                 'disable autofailback':{
-                    "command": f'sleep 10 & sudo sed -i "s@auto_failback = on@auto_failback = off@g" {PGPOOL_CONFIG_PATH}',
+                    "command": f'sleep 5 & sudo sed -i "s@auto_failback = on@auto_failback = off@g" {PGPOOL_CONFIG_PATH}',
                     "signal set": 'disable auto failback',
                     "signal get": ''                 
                 },
@@ -136,16 +134,16 @@ class Test:
                     "signal set": 'detach db0',
                     "signal get": ['reload conf3' ]                   
                 },
-                "reload conf4":{
-                    "command": f'sudo PCPPASSFILE=/tmp/.pcppass pcp_reload_config -w -h {PGPOOL_HOSTNAME} -U {PGPOOL_PCP_USER} --scope=cluster',
-                    "signal set": 'reload conf4',
-                    "signal get": ['enable auto failback']
-                },                 
                 "atach_db0":{
                     "command": f'sudo LC_ALL=C LANG=C PCPPASSFILE=/tmp/.pcppass pcp_attach_node -w -U {PGPOOL_PCP_USER} -h {PGPOOL_HOSTNAME} 0',
+                    "signal set": 'attach old master',
+                    "signal get": ['enable auto failback']                   
+                },         
+                "reload conf4":{
+                    "command": f'sudo PCPPASSFILE=/tmp/.pcppass pcp_reload_config -w -h {PGPOOL_HOSTNAME} -U {PGPOOL_PCP_USER} --scope=cluster',
                     "signal set": '',
-                    "signal get": ['reload conf4' ]                   
-                },                
+                    "signal get": ['attach old master']
+                },
             },
             'g_replica':{
                 'stop db':{
@@ -190,37 +188,28 @@ class Test:
         provider.execute(commands=test, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
-    def get_result(self):
-        provider = self.provider
         scp = {
-            'database3': {
-                'mode': 'pull',
-                'path_host': 'results_balance.txt',
-                'path_vm': '/home/u/results_balance.txt'
-            }
+            'database3': [
+                {
+                    'mode': 'pull',
+                    'path_host': 'results_balance.txt',
+                    'path_vm': '/home/u/results_balance.txt'
+                },
+                {
+                    'mode': 'pull',
+                    'path_host': 'available_packages.txt',
+                    'path_vm': '/home/u/available_packages.txt'
+                },
+                {
+                    'mode': 'pull',
+                    'path_host': 'psb_info.txt',
+                    'path_vm': '/home/u/psb_info.txt'
+                }                    
+            ]  
         }
-        provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
-                username=USERNAME, password=PASSWORD)
-        
-        scp = {
-            'database3': {
-                'mode': 'pull',
-                'path_host': 'available_packages.txt',
-                'path_vm': '/home/u/available_packages.txt'
-            }
-        }
-        provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
-                username=USERNAME, password=PASSWORD)
-        scp = {
-            'database3': {
-                'mode': 'pull',
-                'path_host': 'psb_info.txt',
-                'path_vm': '/home/u/psb_info.txt'
-            }
-        }
-        provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
-                    username=USERNAME, password=PASSWORD)
 
+        provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
+                username=USERNAME, password=PASSWORD)
 
 
 

@@ -1,14 +1,13 @@
-from allta import VBox
-from roles.load_balancer.keepalived import keepalived
-from roles.vm_info import (PASSWORD, PGPOOL_HOSTNAME, PGPOOL_PASSWORD,
+from new_balance.roles.load_balancer.keepalived import keepalived
+from new_balance.roles.vm_info import (PASSWORD, PGPOOL_HOSTNAME, PGPOOL_PASSWORD,
                            PGPOOL_PASSWORD_MD5, PGPOOL_PCP_USER,
                            POSTGRES_DATA_PATH, POSTGRES_PORT, USERNAME,
-                           VERSION_OS, VMS_DATES, VMS_GROUPS)
+                           VERSION_OS, VMS_DATES, VMS_GROUPS, PROVIDER)
 
 
 class LoadBalancer():
     def __init__(self):
-        self.provider = VBox()
+        self.provider = PROVIDER
 
     def load(self):
 
@@ -25,6 +24,11 @@ class LoadBalancer():
                     'old': '#listen_addresses = \'localhost\'',
                     'new': 'listen_addresses = \'*\''
                 },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': '#port = 9999',
+                    'new': 'port = 5440'
+                },                
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#port = 5433',
@@ -85,7 +89,7 @@ class LoadBalancer():
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#failover_command = \'\'',
-                    'new': f'failover_command = \'/tmp/failover.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH} %H %P\''
+                    'new': f'failover_command = \'/tmp/failover.sh %d %h %p {POSTGRES_DATA_PATH} %m %H %M %P %r {POSTGRES_DATA_PATH} %H %P {VMS_DATES['database1']['ip_bridge']} {VMS_DATES['database2']['ip_bridge']} {VMS_DATES['database3']['ip_bridge']}\''
                 },
                 {
                     'path': f'{pgpool_config_path}/pgpool.conf',
@@ -96,7 +100,7 @@ class LoadBalancer():
                     'path': f'{pgpool_config_path}/pgpool.conf',
                     'old': '#auto_failback = off',
                     'new': 'auto_failback = on'
-                },                                          
+                },
 
                 # Настройки аутентификации
                 {
@@ -117,6 +121,47 @@ class LoadBalancer():
                     'new': 'disable_load_balance_on_write = \'transaction\''
                 },
 
+                # enable log
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#log_destination = 'stderr'",
+                    'new': "log_destination = 'stderr'"
+                },    
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#log_connections = off",
+                    'new': "log_connections = on"
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#log_disconnections = off",
+                    'new': "log_disconnections = on"
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#log_hostname = off",
+                    'new': "log_hostname = on"
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#log_statement = off",
+                    'new': "log_statement = on"
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#log_min_messages = warning",
+                    'new': "log_min_messages = debug5"
+                },
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#client_min_messages = notice",
+                    'new': "client_min_messages = debug5"
+                },        
+                {
+                    'path': f'{pgpool_config_path}/pgpool.conf',
+                    'old': "#log_rotation_size = 10MB",
+                    'new': "log_rotation_size = 1024MB"
+                },                                                                                                                     
             ]
         }
 
@@ -124,11 +169,13 @@ class LoadBalancer():
                      vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
         scp = {
-            'g_load_balancer': {
-                'mode': 'push',
-                'path_host': f'./roles/load_balancer/template/fix_failover.sh',
-                'path_vm': '/tmp/failover.sh'
-            },                       
+            'g_load_balancer': [
+                {
+                    'mode': 'push',
+                    'path_host': f'/home/u/git/stress_test/postgresql/new_balance/roles/load_balancer/template/fix_failover.sh',
+                    'path_vm': '/tmp/failover.sh'
+                 },
+            ]
         }
 
         provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
@@ -138,10 +185,10 @@ class LoadBalancer():
         #         'mode': 'push',
         #         'path_host': f'./roles/load_balancer/template/follow.sh',
         #         'path_vm': '/tmp/follow.sh'
-        #     },                       
+        #     },
         # }
         # provider.scp(scp_settings=scp, vms_dates=VMS_DATES,
-        #              vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)        
+        #              vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
         new_block = f"""backend_hostname0 = '{VMS_DATES['database1']['ip_bridge']}'
 backend_port0 = {POSTGRES_PORT}
 backend_weight0 = 1

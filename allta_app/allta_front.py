@@ -10,6 +10,7 @@ from flask import (Flask,
                    send_file)
 from flask_cors import CORS
 import socket
+from os import path
 from libs.zefir import ZefirResultTable
 import psycopg2
 #import asyncio
@@ -554,6 +555,25 @@ def get_annotations():
     response = jsonify(annotations)
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
     return response, 200
+
+@app.route('/check-for-updates')
+def check_for_updates():
+    conf_file_path = 'conf/needrefresh.conf'
+
+    if not path.exists(conf_file_path):
+        return jsonify({'error': 'Файл конфигурации не найден'}), 404
+
+    try:
+        with open(conf_file_path, 'r') as f:
+            status = f.read().strip()
+
+        if status.lower() == 'true':
+            with open(conf_file_path, 'w') as f:
+                f.write('False')
+            return jsonify({'update_required': 'true'})
+        return jsonify({'update_required': 'false'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # if __name__ == '__main__':

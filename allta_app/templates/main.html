@@ -6248,7 +6248,7 @@ $(document).ready(function() {
 
 <script>
   // Устанавливаем время простоя в секундах
-  var idleTime = 1800; // 1800 секунд
+  var idleTime = 1200; // 1200 секунд
   // Установка счетчика и обработчика событий
   var timer;
   function resetTimer() {
@@ -6263,6 +6263,31 @@ $(document).ready(function() {
   // Функция обновления страницы
   function refreshPage() {
     window.location.reload();
+  }
+</script>
+
+<script>
+// Периодическая проверка наличия обновлений (раз в минуту)
+  setInterval(checkForUpdates, 60000); // Проверяем каждые 60 секунд
+
+  async function checkForUpdates() {
+    try {
+      const response = await fetch('/check-for-updates');
+      if (!response.ok) throw new Error(`Ошибка ${response.status}`);
+    
+      const data = await response.json();
+      if (data.update_required === true) { // Если сервер сообщил, что обновление необходимо
+        console.log("Обнаружены изменения, перезагружаю страницу");
+        refreshPage(); // Выполняем обновление страницы
+      }
+    } catch (err) {
+      console.error(err.message || err.toString());
+    }
+  }
+
+  // Функционал перезагрузки страницы
+  function refreshPage() {
+    window.location.reload(true); // Принудительно обновляем страницу
   }
 </script>
 

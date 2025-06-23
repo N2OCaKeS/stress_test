@@ -1309,7 +1309,7 @@
           </style>
             <div class="btn-group" role="group">
               <button class="commandButton1 btn btn-dark" data-command="/reboot/stand1">Reboot</button>
-              <button class="commandButton1 btn btn-dark" data-command="/poweroff/stand1">Power off</button>
+              <button id="powerButton1" class="commandButton1 btn btn-dark" data-command="/poweroff/stand1">Power off</button>
               <div class="dropdown d-inline-block">
                 <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
                 <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -1420,13 +1420,18 @@
                 success: function(response) {
                   var statusImageStand1 = document.getElementById("status-image-stand1");
                   var statusImageStand1Global = document.getElementById("status-image-stand1-global");
-                  
+                  var powerButton1 = document.getElementById("powerButton1");
+
                   if (response.is_running) {
                     statusImageStand1.src = "http://10.177.103.10:8000/static/status_on.png";
                     statusImageStand1Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                    powerButton1.innerText = "Power off";
+                    powerButton1.setAttribute("data-command", "/poweroff/stand1");
                   } else {
                     statusImageStand1.src = "http://10.177.103.10:8000/static/status_off.png";
                     statusImageStand1Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                    powerButton1.innerText = "Power on";
+                    powerButton1.setAttribute("data-command", "/poweron/stand1");
                   }
                 }
               });
@@ -1650,7 +1655,7 @@
   
             <div class="btn-group" role="group">
               <button class="commandButton2 btn btn-dark" data-command="/reboot/stand2">Reboot</button>
-              <button class="commandButton2 btn btn-dark" data-command="/poweroff/stand2">Power off</button>
+              <button id="powerButton2" class="commandButton2 btn btn-dark" data-command="/poweroff/stand2">Power off</button>
               <div class="dropdown d-inline-block">
                 <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">Backup</button>
                 <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -1759,13 +1764,18 @@
                 success: function(response) {
                   var statusImageStand2 = document.getElementById("status-image-stand2");
                   var statusImageStand2Global = document.getElementById("status-image-stand2-global");
-                  
+                  var powerButton2 = document.getElementById("powerButton2");
+
                   if (response.is_running) {
                     statusImageStand2.src = "http://10.177.103.10:8000/static/status_on.png";
                     statusImageStand2Global.src = "http://10.177.103.10:8000/static/status_on.png";
+                    powerButton2.innerText = "Power off";
+                    powerButton2.setAttribute("data-command", "/poweroff/stand2");
                   } else {
                     statusImageStand2.src = "http://10.177.103.10:8000/static/status_off.png";
                     statusImageStand2Global.src = "http://10.177.103.10:8000/static/status_off.png";
+                    powerButton2.innerText = "Power on";
+                    powerButton2.setAttribute("data-command", "/poweron/stand2");
                   }
                 }
               });

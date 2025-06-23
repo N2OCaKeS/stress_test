@@ -1,3 +1,10 @@
+allta_app - v2.41.11
+* Upd virsh cmds
+* Upd VM ctrl cmds
+
+
+
+
 allta_app - v2.41.10
 * Add new VM control cmds
 * Add new freeipa test VM env

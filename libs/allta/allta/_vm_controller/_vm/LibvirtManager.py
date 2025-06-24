@@ -49,7 +49,7 @@ class LibvirtManager():
             vms = [vms]
         
         for vm in vms:
-            system_commands.cmd(f'virsh --connect qemu:///system shutdown {vm}')
+            system_commands.cmd(f'virsh --connect qemu:///system destroy {vm}')
         return 0
     
 
@@ -71,25 +71,6 @@ class LibvirtManager():
             for vm in vms:
                 system_commands.cmd(f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "snapshot_1"')
         return 0
-
-
-
-
-    # @BaseDecorators.trycorator
-    # @staticmethod    
-    # def get_ip_network(vms_date: dict):
-    #     """
-    #     Настраивает сетевой интерфейс виртуальных машин на мостовой режим с использованием network.d.
-
-    #     Args:
-    #         vms (list): Список имён виртуальных машин.
-    #         bridge_name (str): Имя мостового интерфейса (по умолчанию 'virbr0').
-
-    #     Returns:
-    #         int: Код завершения выполнения.
-    #     """
-    #     # Проверяем существование моста с помощью nmcli
-    #     return 0
 
     @BaseDecorators.trycorator
     @staticmethod   

@@ -285,7 +285,8 @@ class _VirtInstall:
                                     host,
                                     self.vms_date,
                                     "u",
-                                    "1"
+                                    "1",
+                                    sleep = 180
                                 )
                             )
 
@@ -298,19 +299,12 @@ class _VirtInstall:
                             print(f"[{h}] prepare успешно выполнен")
                         else:
                             print(f"[{h}] prepare ошибка: {result.get('output')}")
-                    elif reboot == 1:
-                        # Обработка результата перезагрузки (булево значение)
-                        h = host  # используем текущий host из внешнего контекста
-                        if result is True:
-                            print(f"[{h}] VM успешно перезагружена")
-                        else:
-                            print(f"[{h}] Ошибка при перезагрузке VM")
 
                     
                     
             cmds = [
                 # 1) hostname и /etc/hosts
-                "sudo hostnamectl set-hostname {host} && "
+                "sudo hostnamectl set-hostname {host} && sudo timedatectl set-ntp true && "
                 "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\t10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
 
                 # 2) репо
@@ -354,7 +348,7 @@ class _VirtInstall:
             start_prepare(cmds[5])
             start_prepare(cmds[6])
             start_prepare(cmds[7])
-            start_prepare(cmds[8])   
+            start_prepare(cmds[8])
             print(f"\n\nПерезагружаем ВМ\n\n\n")
             start_prepare(reboot=1)
         return self.vms_date

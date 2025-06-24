@@ -13,7 +13,7 @@ class Test:
         scp = {
             'database3': {
                 'mode': 'push',
-                'path_host': '/home/u/git/stress_test/postgresql/new_balance/roles/task/template/clients.py',
+                'path_host': './new_balance/roles/task/template/clients.py',
                 'path_vm': '/tmp/clients.py'
             }
         }
@@ -22,7 +22,7 @@ class Test:
                      username=USERNAME, password=PASSWORD)
 
         test = {
-            "host": {
+            "database3": {
                 "start test": {
                     "command": "sudo chmod 777 /tmp/clients.py && python3 /tmp/clients.py",
                     "signal set": "",
@@ -193,17 +193,17 @@ class Test:
                 {
                     'mode': 'pull',
                     'path_host': 'results_balance.txt',
-                    'path_vm': '/home/u/results_balance.txt'
+                    'path_vm': './results_balance.txt'
                 },
                 {
                     'mode': 'pull',
                     'path_host': 'available_packages.txt',
-                    'path_vm': '/home/u/available_packages.txt'
+                    'path_vm': './available_packages.txt'
                 },
                 {
                     'mode': 'pull',
                     'path_host': 'psb_info.txt',
-                    'path_vm': '/home/u/psb_info.txt'
+                    'path_vm': './psb_info.txt'
                 }                    
             ]  
         }

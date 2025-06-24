@@ -8,7 +8,7 @@ from new_balance.roles.task.pre_configure import PreConfigure
 from new_balance.roles.task.test import Test
 from new_balance.roles.vm_info import VERSION_OS, VMS, VMS_DATES, PROVIDER
 
-def balance(rc):
+def balance(rc, sec_mode = "s"):
     provider = PROVIDER
     if isinstance(provider, VBox):
         vagrant_path = '/home/u/git/stress_test/postgresql/new_balance/'
@@ -24,9 +24,9 @@ def balance(rc):
     elif isinstance(provider, Libvirt):
         provider.prepare()
         if VERSION_OS == '1.7':
-            provider.build(f'1.7.5.s', rc, VMS, VMS_DATES)
+            provider.build(f'1.7.5.{sec_mode}', rc, VMS, VMS_DATES)
         elif VERSION_OS == '1.8':
-            provider.build(f'1.8.1.s', rc, VMS, VMS_DATES)
+            provider.build(f'1.8.1.{sec_mode}', rc, VMS, VMS_DATES)
 
     provider.check(VMS, VMS_DATES)
 
@@ -48,4 +48,4 @@ def balance(rc):
 
     test = Test()
     test.test()
-    
+    SystemCommands.cmd('cat results_balance.txt')

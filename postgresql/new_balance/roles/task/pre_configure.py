@@ -24,33 +24,18 @@ class PreConfigure():
     def set_hosts(self):
         self.provider.set_hosts(
             domain='balance.rbt', vms_dates=VMS_DATES, username='u', password='1')
-        command = f'echo -e "{PGOOL_IP}\tpgpool.{DOMAIN}\tpgpool\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\treleases" | tee -a /etc/hosts'
-        host_hosts = f'''
-sudo cat << 'EOF' >> /etc/hosts
-{VMS_DATES['database1']['ip_bridge']}\tdatabase1.{DOMAIN}\tdatabase1
-{VMS_DATES['database2']['ip_bridge']}\tdatabase2.{DOMAIN}\tdatabase2
-{VMS_DATES['database3']['ip_bridge']}\tdatabase3.{DOMAIN}\tdatabase3
-{VMS_DATES['lbdb1']['ip_bridge']}\tlbdb1.{DOMAIN}\tlbdb1
-{VMS_DATES['lbdb2']['ip_bridge']}\tlbdb2.{DOMAIN}\tlbdb2
-{VMS_DATES['lbdb3']['ip_bridge']}\tlbdb3.{DOMAIN}\tlbdb3
-{VMS_DATES['dcfreeipa']['ip_bridge']}\tdcfreeipa.{DOMAIN}\tdcfreeipa
-EOF'''
-        SystemCommands.cmd(host_hosts)
-        SystemCommands.cmd(command)
+        command = f'echo -e "{PGOOL_IP}\tpgpool.{DOMAIN}\tpgpool" | tee -a /etc/hosts'
         hosts = {
             'g_all': {
                 'set hosts': {
                     'command': f'sudo sh -c \'{command}\'',
                     'signal set': '',
                     'signal get': ''
-                },
+                }
             }
         }
-
-
-        
         self.provider.execute(commands=hosts, vms_dates=VMS_DATES,
-                              vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+                              vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)        
         
     def prepare(self):
         if isinstance(self.provider, Libvirt):
@@ -65,7 +50,7 @@ EOF'''
                 'g_all': [
                     {
                         'mode': 'push',
-                        'path_host': '/home/u/git/stress_test/postgresql/new_balance/provision/provision-libvirt.sh',
+                        'path_host': './new_balance/provision/provision-libvirt.sh',
                         'path_vm': '/tmp/provision-libvirt.sh'
                     }
                 ]

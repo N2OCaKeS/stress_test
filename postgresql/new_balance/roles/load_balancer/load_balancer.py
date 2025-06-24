@@ -172,7 +172,7 @@ class LoadBalancer():
             'g_load_balancer': [
                 {
                     'mode': 'push',
-                    'path_host': f'/home/u/git/stress_test/postgresql/new_balance/roles/load_balancer/template/fix_failover.sh',
+                    'path_host': f'./new_balance/roles/load_balancer/template/fix_failover.sh',
                     'path_vm': '/tmp/failover.sh'
                  },
             ]

@@ -3,7 +3,7 @@ from new_balance.roles.vm_info import (DOMAIN, DOMAIN_ADMIN_PASSWORD, PASSWORD,
                            VERSION_PG, VMS_DATES, VMS_GROUPS, PROVIDER)
 
 
-class DatabaseVM():  # TODO НАДО ПРОВЕРИТЬ!
+class DatabaseVM():
 
     def __init__(self):
         self.provider = PROVIDER
@@ -245,7 +245,7 @@ EOF"""
             'database1': [
                 {
                     'mode': 'push',
-                    'path_host': '/home/u/git/stress_test/postgresql/new_balance/roles/database/template/contrprimer.sql',
+                    'path_host': './new_balance/roles/database/template/contrprimer.sql',
                     'path_vm': '/tmp/contrprimer.sql'
                 }
             ]
@@ -258,13 +258,13 @@ EOF"""
                 'start db': {
                     'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
                             sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
-                    'signal set': 'Start maser',
+                    'signal set': 'Start master',
                     'signal get': ''
                 },
                 'create db': {
                     'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -c \'CREATE DATABASE contrprimer;\'" && sudo su - postgres -c "psql -p {POSTGRES_PORT} -d contrprimer -c \'CREATE EXTENSION pgpool_recovery;\'"',
                     'signal set': 'CreateDB',
-                    'signal get': ['Start maser']
+                    'signal get': ['Start master']
                 },                
                 'create user': {
                     'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -c \'CREATE ROLE user0 LOGIN; CREATE ROLE user1 LOGIN; CREATE ROLE user2 LOGIN; CREATE ROLE user3 LOGIN;\'"',
@@ -283,22 +283,22 @@ EOF"""
                 },                
                 
                 "pgbench manual": {
-                    "command": f"sleep 10 && pgbench -i -s 100 -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres contrprimer",
+                    "command": f"sleep 20 && pgbench -i -s 100 -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres contrprimer",
                     "signal set": "pgbench manual",
-                    "signal get": ["schema"]
-                },                
+                    "signal get": ['database2', "repl start"]
+                },
             },
 
             'g_replica': {
                 'replication': {
                     'command': f'sudo su - postgres -c "pg_basebackup -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres -D {postgres_data_path} -Fp -Xs -P -R --wal-method=stream"',
                     'signal set': 'Replication success',
-                    'signal get': ['database1', 'pgbench manual']
+                    'signal get': ['database1', 'schema']
                 },              
                 'start replica': {
                     'command': f'sudo systemctl enable postgresql@{VERSION_PG}-contrprimer && \
                             sudo systemctl start postgresql@{VERSION_PG}-contrprimer',
-                    'signal set': '',
+                    'signal set': 'repl start',
                     'signal get': ['Replication success']
                 }
             },

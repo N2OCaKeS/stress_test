@@ -429,7 +429,7 @@ def ssh_command(command, stand_ip=stand_ip):
         client = paramiko.SSHClient()
         
         client.set_missing_host_key_policy(paramiko.WarningPolicy())
-        client.connect(stand_ip, port=port, username=user, password='1')
+        client.connect(stand_ip, port=port, username=user, password='1', timeout=7200)
         stdin, stdout, stderr = client.exec_command(command)
         response = stdout.read().decode().strip()
     finally:

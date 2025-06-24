@@ -12,16 +12,19 @@ class PerfVpn:
     def __init__(self, ranger=RANGE, duration=DURATION_RATE):
         self.hostname = sys_cls.check_output_command("echo $HOSTNAME").split(".")[0]
         self.range = ranger
-        one_third = self.range // 3
+        one_third = self.range // 4
 
         if "testvm2" in self.hostname:
             self.start = 0
             self.end = one_third
         elif "testvm3" in self.hostname:
-            self.start = one_third
+            self.start = one_third + 1
             self.end = one_third * 2
         elif "testvm4" in self.hostname:
-            self.start = one_third * 2
+            self.start = one_third * 2 + 1
+            self.end = one_third * 3
+        elif "testvm5" in self.hostname:
+            self.start = one_third * 3 + 1
             self.end = self.range
         else:
             raise ValueError(f"Неизвестный хост: {self.hostname}")
@@ -37,7 +40,7 @@ class PerfVpn:
 
     def run_iperf(self, tun_ip, tun_dev):
         try:
-            sys_cls.cmd(f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 1 > {self.log_path}/{tun_dev}.log 2>&1 & ")
+            sys_cls.cmd(f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 3 > {self.log_path}/{tun_dev}.log 2>&1 & ")
             print(f"{tun_dev} | Iperf | done")
         except Exception as e:
             print(f"{tun_dev} |  Iperf | error")
@@ -56,7 +59,7 @@ class PerfVpn:
                 sys_cls.cmd(f"cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --daemon")
 
                 sleep(0.5)
-                for _ in range(10):
+                for _ in range(20):
                     if os.path.exists(f"/sys/class/net/{tun_dev}"):
                         break
                     sleep(0.4)
@@ -75,7 +78,7 @@ class PerfVpn:
         for t in threads:
             t.join()
         sleep(self.duration)
-        print(f'Создано {sys_com.check_output_command("ls -la /sys/class/net | grep tun | wc -l")} туннелей.')
+        print(f'Создано {sys_cls.check_output_command("ls -la /sys/class/net | grep tun | wc -l")} туннелей.')
 
 
     def rm_connections(self):

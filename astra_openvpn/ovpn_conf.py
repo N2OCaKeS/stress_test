@@ -12,23 +12,26 @@ CONFLUENCE_URL = response_confluence_url.text
 # VMS DATES
 VMS_DATES = {  # Полный список ВМ
     'testvm1': {'host-port': '22',
-                  'cpu': '8',
-                  'ram': '32768'},
+                'cpu': '3',
+                'ram': '16384'},
     'testvm2': {'host-port': '22',
-                  'cpu': '8',
-                  'ram': '32768'},
+                'cpu': '3',
+                'ram': '16384'},
     'testvm3': {'host-port': '22',
-                  'cpu': '8',
-                  'ram': '32768'},
+                'cpu': '3',
+                'ram': '16384'},
     'testvm4': {'host-port': '22',
-              'cpu': '8',
-              'ram': '32768'},
+                'cpu': '3',
+                'ram': '16384'},
+    'testvm5': {'host-port': '22',
+                'cpu': '3',
+                'ram': '16384'}
 }
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 2100
-DURATION_RATE = 1050
+RANGE = 900
+DURATION_RATE = 300
 VM_COUNT = 4
 VMS = [f"testvm{i}" for i in range(1, VM_COUNT+1)]
 

@@ -9,7 +9,7 @@ import json
 import numpy as np
 from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH, VMS_DATES
 from time import sleep
-from tasks import scp_provision, task_provision, task_unpack_tar, task_start_server, task_run_iperf, task_add_permission, scp_pull
+from tasks import test_1, scp_pull
 
 
 sys_cls = SystemCommands()
@@ -43,12 +43,13 @@ class CreateVM:
     
     
     def provision(self):
-        Libvirt.scp(scp_settings=scp_provision,
+        Libvirt.scp(scp_settings=test_1["scp_provision"],
                     vms_groups=self.main_group,
                     vms_dates=self.vms_dates,
                     username=self.username,
                     password=self.password)
         
+        # vms_dates write
         print(self.vms_dates)
         with open("vms_dates.txt", "w", encoding="UTF-8") as f:
             json.dump(self.vms_dates, f)
@@ -56,7 +57,7 @@ class CreateVM:
         Libvirt.set_hosts(vms_dates=self.vms_dates,
                           domain="stress.rbt")
         
-        Libvirt.execute(commands=task_provision,
+        Libvirt.execute(commands=test_1["task_provision"],
                         vms_groups=self.main_group,
                         vms_dates=self.vms_dates,
                         username=self.username,
@@ -74,41 +75,35 @@ class Test_1(CreateVM):
     # Launch 
     def start(self):
 
+        # vms_dates read
         with open("vms_dates.txt", "r", encoding="UTF-8") as f:
             json_string = f.read()
             self.vms_dates = json.loads(json_string)
 
-        # Libvirt.execute(commands=task_unpack_tar,
-        #                 vms_groups=self.main_group,
-        #                 vms_dates=self.vms_dates,
-        #                 username=self.username,
-        #                 password=self.password)
+        Libvirt.execute(commands=test_1["task_unpack_tar"],
+                         vms_groups=self.main_group,
+                         vms_dates=self.vms_dates,
+                         username=self.username,
+                         password=self.password)
         
-        # Libvirt.execute(commands=task_start_server,
-        #                 vms_dates=self.vms_dates,
-        #                 username=self.username,
-        #                 password=self.password)
+        Libvirt.execute(commands=test_1["task_start_server"],
+                         vms_dates=self.vms_dates,
+                         username=self.username,
+                         password=self.password)
         
-        # Libvirt.execute(commands=task_run_iperf,
-        #                 vms_groups=self.clients_group,
-        #                 vms_dates=self.vms_dates,
-        #                 username=self.username,
-        #                 password=self.password)
+        Libvirt.execute(commands=test_1["task_run_iperf"],
+                         vms_groups=self.clients_group,
+                         vms_dates=self.vms_dates,
+                         username=self.username,
+                         password=self.password)
         
-        Libvirt.execute(commands=task_add_permission,
-                        vms_dates=self.vms_dates,
-                        username=self.username,
-                        password=self.password)
+        Libvirt.execute(commands=test_1["task_add_permission"],
+                         vms_dates=self.vms_dates,
+                         username=self.username,
+                         password=self.password)
         
-        Libvirt.scp(scp_settings=scp_pull,
+        Libvirt.scp(scp_settings=test_1["scp_pull"],
                     vms_dates=self.vms_dates,
+                    vms_groups=self.clients_group,
                     username=self.username,
                     password=self.password)
-    
-        
-        # vagrant_env = "UPDATE={} BOX_URL={} RC={} KERNEL={} COUNT={} CPU={} RAM={}".format(self.rc_name,
-        #                                                                                    self.kernel,
-        #                                                                                    self.vm_count,
-        #                                                                                    self.vcpu,
-        #                                                                                    self.ram)
-    

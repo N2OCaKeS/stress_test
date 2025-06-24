@@ -84,18 +84,26 @@ task_add_permission = {
 scp_pull = {
     "testvm1": {
         "mode": "pull",
-        "path_host": "./results/raw_results",
+        "path_host": "./results/raw",
         "path_vm": "/var/log/openvpn/"
     },
     "g_clients_group":[
         
         {
             "mode": "pull",
-            "path_host": f"./results/raw_results/iperf_{vm}/",
+            "path_host": f"./results/raw/iperf_{vm}/",
             "path_vm": "/var/log/iperf/"
         }
         for vm in [key for key in VMS_DATES][1:]
     ]
 }
+
+test_1 = {"scp_provision": scp_provision,
+          "task_provision": task_provision,
+          "task_unpack_tar": task_unpack_tar,
+          "task_start_server": task_start_server,
+          "task_run_iperf": task_run_iperf,
+          "task_add_permission": task_add_permission,
+          "scp_pull": scp_pull}
 
 # End Test_1.

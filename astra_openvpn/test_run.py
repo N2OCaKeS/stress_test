@@ -14,7 +14,7 @@ rp = Report()
 #                         ram=16384)
 
 ovpn_test = Test_1(vbox="1.7.5.o",
-                   vm_count=4,
+                   vm_count=5,
                    vms_dates=VMS_DATES,
                    testdir=REPORT_PATH)
 ovpn_test.common_build()

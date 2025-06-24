@@ -63,7 +63,7 @@ sudo make altinstall
 python3.12 -m venv venv
 source venv/bin/activate
 
-cd ..
+cd ../..
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r req.txt
 if [[ $? != 0 ]]; then

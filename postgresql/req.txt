@@ -1,3 +1,6 @@
+--index-url http://10.177.103.10:3141/root/release
+--trusted-host 10.177.103.10
+allta==1.0.9
 atlassian-python-api 
 pretty-html-table 
 pandas 
@@ -12,4 +15,3 @@ prettytable
 psycopg2-binary
 paramiko
 setuptools
-ansible==9.4.0

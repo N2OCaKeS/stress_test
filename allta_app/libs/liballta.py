@@ -405,9 +405,9 @@ def busy_status_control(stand, name, version=None):
             w.write('Запущен')
         with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('TestRunner')
-        with open(f'conf/work_status_stand8.conf', 'w') as w:
+        with open(f'conf/work_status_stand1.conf', 'w') as w:
             w.write('Запущен')
-        with open(f'conf/chmod_author_stand8.conf', 'w') as w:
+        with open(f'conf/chmod_author_stand1.conf', 'w') as w:
             w.write('TestRunner')
     elif name == 'testrun done':
         with open(f'conf/col3_body_{stand}.conf', 'w') as w:

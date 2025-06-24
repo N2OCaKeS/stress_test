@@ -380,7 +380,7 @@ info_lst = ['{digit_v}({mode})\n'.format(digit_v=astra_version()[0], mode=astra_
 with open(INFO_FILENAME, 'a+') as info:
     info.writelines(info_lst)
 
-upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'{args.FS}_{args.TCYC}_{REPORT_FILENAME}')
+#upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'{args.FS}_{args.TCYC}_{REPORT_FILENAME}')
 
 uzs.public = True
 uzs.statistics = True

@@ -2,7 +2,7 @@ import argparse
 from new_balance import bl_lib
 from allta import SystemCommands
 
-class RussianArgParser(argparse.ArgumentParser):
+class Description(argparse.ArgumentParser):
     def error(self, message):
         print(f"ОШИБКА: {message}\n")
         print("Примеры использования:")
@@ -11,7 +11,7 @@ class RussianArgParser(argparse.ArgumentParser):
         print("\nДля справки используйте: python manual_bl_run.py --help")
         self.exit(2)
 
-parser = RussianArgParser(description="Запуск баланса с заданными параметрами")
+parser = Description(description="Запуск баланса с заданными параметрами")
 
 parser.add_argument('-bv', '--build-version', type=str, required=True,
                     help='Версия билда (например: 1.7.7.6)')

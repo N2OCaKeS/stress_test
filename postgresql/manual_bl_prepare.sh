@@ -22,11 +22,8 @@ test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
 
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
-if [[ -n $1 ]]; then
-    sudo jq -r ".\"$1\"[]" releases.json > /etc/apt/sources.list
-else
-    sudo jq -r ".\"$1\"[]" releases.json > /etc/apt/sources.list
-fi
+sudo jq -r ".\"$1\"[]" releases.json > /etc/apt/sources.list
+
 cat << EOF | sudo tee /etc/apt/preferences.d/devel
 Package: *
 Pin: release l=devel
@@ -42,14 +39,7 @@ sudo apt update
 sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo apt-get install -y libffi-dev strace
 sudo apt-get install -y python3-requests
-if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-    sudo apt-get install -y linux-tools-6.1*-generic
-    sudo apt-get install -y linux-tools-6.6*-generic
-else
-    sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
-    sudo apt-get install -y linux-tools-5.15*-lowlatency
-    sudo apt-get install -y libssl1.1 psmisc
-fi
+sudo apt-get install -y linux-tools-`uname -r`
 
 sudo mkdir python
 sudo wget -P python ftp://10.177.103.10/python/*

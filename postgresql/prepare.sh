@@ -42,14 +42,7 @@ sudo apt update
 sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo apt-get install -y libffi-dev strace
 sudo apt-get install -y python3-requests
-if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-    sudo apt-get install -y linux-tools-6.1*-generic
-    sudo apt-get install -y linux-tools-6.6*-generic
-else
-    sudo apt-get install -y linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15*
-    sudo apt-get install -y linux-tools-5.15*-lowlatency
-    sudo apt-get install -y libssl1.1 psmisc
-fi
+sudo apt-get install -y linux-tools-`uname -r`
 
 sudo mkdir /home/u/python
 cd /home/u/python

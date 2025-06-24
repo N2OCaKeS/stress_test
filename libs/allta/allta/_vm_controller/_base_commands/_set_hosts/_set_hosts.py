@@ -44,7 +44,7 @@ class _SetHosts:
         """
         def process_vm(vm_name: str, vm_info: dict) -> tuple:
             # Генерация содержимого файла /etc/hosts для текущей ВМ
-            base_lines = [
+            lines = [
                 f"127.0.0.1\tlocalhost",
                 f"127.0.1.1\t$(hostname)",
                 f"10.177.103.10\tallta.devos.astralinux.ru\tallta",
@@ -52,9 +52,6 @@ class _SetHosts:
                 f"10.177.43.1\treleases.devos.astralinux.ru\treleases",
             ]
             
-            lines = [
-            
-            ]
 
             for key, info in vms_dates.items():
                 ip_bridge = info.get("ip_bridge", "")
@@ -63,7 +60,7 @@ class _SetHosts:
                 else:
                     lines.append(f"{ip_bridge}\t{key}.{domain}\t{key}")   
         
-            hosts_content = "\n".join(base_lines + lines)
+            hosts_content = "\n".join(lines)
             
             # Формирование команды для перезаписи /etc/hosts на удалённой машине
             remote_command = (
@@ -81,7 +78,7 @@ class _SetHosts:
             )
 
             # Установка /etc/hosts на хосте
-            SystemCommands.cmd(remote_command)
+            SystemCommands.cmd_with_returncode(remote_command)
             return vm_name, result
 
         results = {}

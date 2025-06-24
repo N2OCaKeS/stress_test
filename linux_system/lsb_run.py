@@ -258,7 +258,7 @@ def main():
     elif args.MODE == 'extended':
         print("In developing")
 
-    upload_results_to_ftp(args.TCV, f'{REPORT_DIR}/{REPORT_FILENAME}', f'syslog-ng_{args.TCYC}_{REPORT_FILENAME}')
+    #upload_results_to_ftp(args.TCV, f'{REPORT_DIR}/{REPORT_FILENAME}', f'syslog-ng_{args.TCYC}_{REPORT_FILENAME}')
 
     uzs.public = True
     uzs.statistics = True

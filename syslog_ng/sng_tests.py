@@ -230,7 +230,7 @@ class SNGBenchMarkTest():
         libtable.Report.create_tar(os.path.expanduser(REPORT_PATH))
         print("Готово.")
 
-        upload_results_to_ftp(self.tcv, f'{REPORT_PATH}/{REPORT_FILENAME}', f'syslog-ng_{self.tcyc}_{REPORT_FILENAME}')
+        #upload_results_to_ftp(self.tcv, f'{REPORT_PATH}/{REPORT_FILENAME}', f'syslog-ng_{self.tcyc}_{REPORT_FILENAME}')
         return True
 
 

@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import json
 import numpy as np
-from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH, VMS_DATES
+from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH, VMS_DATES, VMS
 from time import sleep
 from tasks import test_1, scp_pull
 
@@ -19,13 +19,14 @@ class CreateVM:
                  vbox=None,
                  testdir=None,
                  vm_count=None,
-                 vms_dates=VMS_DATES):
+                 vms_dates=VMS_DATES,
+                 vms=VMS):
         
 
         self.vbox = vbox
         self.testdir = testdir
         self.vm_count = vm_count
-        self.vms = [f"testvm{number}" for number in range(1, self.vm_count + 1)]
+        self.vms = vms
         self.vms_dates = vms_dates
         self.main_group = {"main_group": self.vms}
         self.clients_group = {"clients_group": self.vms[1:]}

@@ -1,4 +1,4 @@
-from ovpn_conf import RANGE, DURATION_RATE
+from ovpn_conf import RANGE, DURATION_RATE, VMS, VMS_COUNT
 from libs.libtests import Ovpn20k
 from allta import SystemCommands
 import os
@@ -10,27 +10,18 @@ from ovpn_conf import VM_COUNT
 sys_cls = SystemCommands()
 
 class PerfVpn:
-    def __init__(self, ranger=RANGE, duration=DURATION_RATE):
+    def __init__(self, ranger=RANGE, duration=DURATION_RATE, vms=VMS, vms_count=VMS_COUNT):
         self.hostname = sys_cls.check_output_command("echo $HOSTNAME").split(".")[0]
         self.range = ranger
-        one_third = self.range // 4
+        self.vms = vms
+        self.vms_count = vms_count
+        self.step = self.range // self.vm_count
 
-        if "testvm2" in self.hostname:
-            self.start = 0
-            self.end = one_third
-        elif "testvm3" in self.hostname:
-            self.start = one_third + 1
-            self.end = one_third * 2
-        elif "testvm4" in self.hostname:
-            self.start = one_third * 2 + 1
-            self.end = one_third * 3
-        elif "testvm5" in self.hostname:
-            self.start = one_third * 3 + 1
-            self.end = self.range
-        else:
-            raise ValueError(f"Неизвестный хост: {self.hostname}")
+        self.vms_ranges = {
+            vm: range(i * self.step, (i + 1) * self.step if i != self.vms_count - 1 else self.range)
+            for i, vm in enumerate(vms)
+        }
 
-        #self.rate = str(200*1024 // ranger) + 'K'
         self.rate = '1950K'
         self.duration = duration
         self.tun_number = 0
@@ -50,9 +41,9 @@ class PerfVpn:
     def load_test(self):
 
         threads = []
-
+        
         try:
-            for item in range(self.start, self.end):
+            for item in self.vms_ranges[self.hostname]:
                 self.tun_number += 1
                 tun_dev = f"tun{self.tun_number}"
                 cfg_dir = f"/home/u/openvpn/clients_keys/tester{item}"
@@ -94,5 +85,3 @@ if __name__ == "__main__":
 
     perf_cls.load_test()
     #perf_cls.rm_connections()
-
-

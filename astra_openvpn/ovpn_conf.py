@@ -32,8 +32,8 @@ VMS_DATES = {  # Полный список ВМ
 USER = ["u", "askeladd"]
 RANGE = 900
 DURATION_RATE = 300
-VM_COUNT = 4
-VMS = [f"testvm{i}" for i in range(1, VM_COUNT+1)]
+VMS_COUNT = 4
+VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 
 # Common dirs
 OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"

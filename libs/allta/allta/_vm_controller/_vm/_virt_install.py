@@ -104,7 +104,9 @@ class _VirtInstall:
                 f"virt-install --connect qemu:///system -n {hostname} "
                 f"--memory {ram} --vcpus {cpu} --import --disk path={vm_path}/{disk} "
                 f"--os-variant {os_version} --network network=test "
-                "--noautoconsole --noreboot --cpu host-model,+vmx --autostart"
+                "--noautoconsole --noreboot --cpu host-model,+vmx --autostart "
+                "--controller type=pcie-root-port,id=rp15,bus=pcie.0,slot=4,chassis=15 "
+                "--controller type=pcie-root-port,id=rp16,bus=pcie.0,slot=5,chassis=16 "
             ))
             # virt-install --connect qemu:///system -n test --memory 6144 --vcpus 6  --import --disk path=/tmp/1.7.5.o.qcow2 --os-variant alse17 --network network=test --noautoconsole --noreboot --cpu host-model,+vmx
             sleep(10)
@@ -314,7 +316,7 @@ class _VirtInstall:
                 "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive astra-update -A -T -r",
 
                 # 4) зависимости
-                "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl -y",
+                "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl qemu-guest-agent -y",
 
                 # 5) установка ядра
                 "sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel} -y",

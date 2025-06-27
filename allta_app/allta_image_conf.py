@@ -457,7 +457,8 @@ known_bugs = {
         "BT-40316": "https://jira.astralinux.ru/browse/BT-40316",
         "BT-35869": "https://jira.astralinux.ru/browse/BT-35869",
         "BT-48408": "https://jira.astralinux.ru/browse/BT-48408",
-        "BT-61532": "https://jira.astralinux.ru/browse/BT-61532"
+        "BT-61532": "https://jira.astralinux.ru/browse/BT-61532",
+        "BT-76604": "https://jira.astralinux.ru/browse/BT-76604"
     },
     "Файловые системы": {
         "BT-38366": "https://jira.astralinux.ru/browse/BT-38366",

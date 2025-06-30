@@ -105,10 +105,16 @@ class _VirtInstall:
                 f"--memory {ram} --vcpus {cpu} --import --disk path={vm_path}/{disk} "
                 f"--os-variant {os_version} --network network=test "
                 "--noautoconsole --noreboot --cpu host-model,+vmx --autostart "
-                "--controller type=pcie-root-port,id=rp15,bus=pcie.0,slot=4,chassis=15 "
-                "--controller type=pcie-root-port,id=rp16,bus=pcie.0,slot=5,chassis=16 "
+                "--controller type=pci,model=pcie-root,index=0 "
+                "--controller type=pci,model=pcie-root-port,index=1 "
+                "--controller type=pci,model=pcie-root-port,index=2 "
+                "--controller type=pci,model=pcie-root-port,index=3 "
+                "--controller type=pci,model=pcie-root-port,index=4 "
+                "--controller type=pci,model=pcie-root-port,index=5 "
+                "--controller type=pci,model=pcie-root-port,index=6 "
             ))
-            # virt-install --connect qemu:///system -n test --memory 6144 --vcpus 6  --import --disk path=/tmp/1.7.5.o.qcow2 --os-variant alse17 --network network=test --noautoconsole --noreboot --cpu host-model,+vmx
+            # virt-install --connect qemu:///system -n test --memory 6144 --vcpus 6 --import --disk path=/var/lib/libvirt/images/pool/test.qcow2 --os-variant alse17 --network network=test --noautoconsole --noreboot --cpu host-model,+vmx --controller type=pci,model=pcie-root,index=0 --controller type=pci,model=pcie-root-port,index=1     
+            
             sleep(10)
             print (system_commands.check_output_command(f"virsh --connect qemu:///system start {hostname}"))
             print(f"[{hostname}] DONE {round(time()-t_start, 1)} сек")

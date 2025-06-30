@@ -1,17 +1,17 @@
 import pandas as pd
 import re
 import os
-from ovpn_conf import REPORT_PATH, RANGE, VM_COUNT, VMS
+from ovpn_conf import REPORT_PATH, RANGE, VMS_COUNT, VMS
 from datetime import datetime
 from pathlib import Path
 from collections import Counter
 
 
 class Report:
-    def __init__(self, report_path=REPORT_PATH, ranger=RANGE, vm_count=VM_COUNT, vms=VMS):
+    def __init__(self, report_path=REPORT_PATH, ranger=RANGE, vm_count=VMS_COUNT, vms=VMS):
         self.report_path = report_path
-        self.ovpn_status_log = Path(self.report_path) / "raw_results/openvpn/openvpn-status.log"
-        self.ovpn_log = Path(self.report_path) / "raw_results/openvpn/openvpn.log"
+        self.ovpn_status_log = Path(self.report_path) / "raw/openvpn/openvpn-status.log"
+        self.ovpn_log = Path(self.report_path) / "raw/openvpn/openvpn.log"
         self.raw_records = []  
         self.session_records = []  
         self.range = ranger
@@ -98,11 +98,11 @@ class Report:
         sessions_df = pd.DataFrame(self.session_records)
         print(sessions_df.head())
 
-        sessions_df.to_csv(f"{self.report_path}/processed_results/clients_info.csv", index=False)
+        sessions_df.to_csv(f"{self.report_path}/processed/clients_info.csv", index=False)
 
     
     def con(self):
-        df = pd.read_csv(f"{self.report_path}/processed_results/clients_info.csv")
+        df = pd.read_csv(f"{self.report_path}/processed/clients_info.csv")
 
         return len(df)
     
@@ -198,12 +198,12 @@ class Report:
         """
         for item in range(1, self.range + 1):
             for vm in self.vms[1:]:
-                log_file = os.path.join(f"{self.report_path}/raw_results", f"iperf_{vm}", f"tun{item}.log")
+                log_file = os.path.join(f"{self.report_path}/raw", f"iperf_{vm}", f"tun{item}.log")
                 if os.path.exists(log_file):
                     result = self.parse_iperf_log(log_file)
                     result["Tun"] = f"tun{item}"
                     result["VM"] = vm
                     self.results.append(result)
         df = pd.DataFrame(self.results)
-        df.to_csv(f"{self.report_path}/processed_results/iperf_stat.csv")
+        df.to_csv(f"{self.report_path}/processed/iperf_stat.csv")
         return df

@@ -5,7 +5,6 @@ import os
 import threading
 from time import sleep
 import argparse
-from ovpn_conf import VM_COUNT
 #ovpn_cls = Ovpn20k()
 sys_cls = SystemCommands()
 
@@ -15,7 +14,7 @@ class PerfVpn:
         self.range = ranger
         self.vms = vms
         self.vms_count = vms_count
-        self.step = self.range // self.vm_count
+        self.step = self.range // self.vms_count
 
         self.vms_ranges = {
             vm: range(i * self.step, (i + 1) * self.step if i != self.vms_count - 1 else self.range)
@@ -51,6 +50,7 @@ class PerfVpn:
                 sys_cls.cmd(f"cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --daemon")
 
                 sleep(0.5)
+                
                 for _ in range(20):
                     if os.path.exists(f"/sys/class/net/{tun_dev}"):
                         break

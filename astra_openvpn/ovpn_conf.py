@@ -30,9 +30,9 @@ VMS_DATES = {  # Полный список ВМ
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 900
-DURATION_RATE = 300
-VMS_COUNT = 4
+RANGE = 4000
+DURATION_RATE = 3000
+VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 
 # Common dirs

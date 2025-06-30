@@ -11,9 +11,9 @@ ovpn_test = Test_1(vbox="1.7.5.o",
                    vms_dates=VMS_DATES,
                    testdir=REPORT_PATH)
 # libvirt-install
-ovpn_test.common_build()
-ovpn_test.provision()
-ovpn_test.start()
+#ovpn_test.common_build()
+#ovpn_test.provision()
+#ovpn_test.start()
 
 # vagrant-libvirt
 #ovpn_test.vms_destroy()
@@ -24,20 +24,20 @@ ovpn_test.start()
 
 
 
-#rp.build()
+rp.build()
 
-#con = rp.con()
-#discon = rp.discon()
-#print(f"{con} Клиентов подключилось.", f"{discon} Клиентов отключилось.", sep="\n")
+con = rp.con()
+discon = rp.discon()
+print(f"{con} Клиентов подключилось.", f"{discon} Клиентов отключилось.", sep="\n")
 
-#if discon > con:
-#    print("В процессе теста отвалилось:", discon - con, "туннелей")
-#    print("FAIL")
-#else: print("PASS")
+if discon > con:
+    print("В процессе теста отвалилось:", discon - con, "туннелей")
+    print("FAIL")
+else: print("PASS")
 
 
-#print(rp.bytes_counter())
-#print(rp.parse_all_logs())
+print(rp.bytes_counter())
+print(rp.parse_all_logs())
 
-#received, sent = rp.bytes_counter()
-#print("Суммарное кол-во байт:", f"Получено: {received}", f"Отправлено: {sent}", sep="\n\n")
+received, sent = rp.bytes_counter()
+print("Суммарное кол-во байт:", f"Получено: {received}", f"Отправлено: {sent}", sep="\n\n")

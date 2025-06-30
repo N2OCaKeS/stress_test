@@ -18,7 +18,7 @@ task_provision = {
     "g_main_group": {
         "task_provision": {
             "command": (
-                'sudo su -c "bash /home/u/astra_openvpn/provision/env_provision.sh"'
+                'sudo su -c "bash /home/u/astra_openvpn/provision/env_provision.sh 2>&1"'
             )
         }
     }
@@ -60,7 +60,7 @@ task_run_iperf = {
                 'sudo su -c "ulimit -u 100000 && '
                 'ulimit -n 100000 && '
                 'ulimit -s 100000 && '
-                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/vpn_perf.py"'
+                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/new_perf.py"'
             ),
             "signal set": "",
             "signal get": ""
@@ -107,3 +107,6 @@ test_1 = {"scp_provision": scp_provision,
           "scp_pull": scp_pull}
 
 # End Test_1.
+
+
+

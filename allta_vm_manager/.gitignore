@@ -1,0 +1,15 @@
+# Окружение
+.env.*
+
+# Кешированные файлы
+__pycache__/
+
+# Файлы для отладки
+start.sh
+test.py
+tmp
+
+# Сгенерированнные файлы
+docker_allta/allta_devpi/Dockerfile.allta_devpi
+
+.venv/

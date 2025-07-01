@@ -30,15 +30,22 @@ VMS_DATES = {  # Полный список ВМ
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 4000
+RANGE = 5000
 DURATION_RATE = 3000
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
+CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)
 
 # Common dirs
 OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
 VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
 REPORT_PATH = f"{OVPN_PATH}/results"
+
+COLORS = {
+    "GREEN": "\033[32m",
+    "RED": "\033[31m",
+    "RESET": "\033[0m"
+}
 
 INFO_FILENAME = 'ovpn_info.txt'
 VM_INFONAME = 'av.info'

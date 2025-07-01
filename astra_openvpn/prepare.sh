@@ -74,25 +74,10 @@ python3.12 -m pip install -r ${CPATH}/req.txt
 #lvirt
 sudo DEBIAN_FRONTEND=noninteractive apt-get install virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 sudo DEBIAN_FRONTEND=noninteractive apt-get install qemu ebtables libguestfs-tools ruby-fog-libvirt
-#vagrant
-wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-sudo dpkg -i vagrant_2.2.19_x86_64.deb
-sudo adduser $USER libvirt
 
 for group in kvm libvirt libvirt-qemu libvirt-admin; do
   if test ! "$(groups | grep ${group})"; then
     sudo usermod -aG ${group} $USER 
-  fi
-done
-
-# check 'vbguest' (Vbox Guests) plugin, install
-for plugin in vagrant-vbguest; do
-  if test ! "$(vagrant plugin list | grep $plugin)"; then
-    wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
-    mkdir -p ~/.vagrant.d/gems/2.7.4
-    tar -C "$HOME/.vagrant.d/gems/2.7.4" -xvf /tmp/gems.tar.gz
-    wget -O "$HOME/.vagrant.d/plugins.json" ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/plugins.json  
-    [ $? != 0 ] && exit 1
   fi
 done
 
@@ -104,23 +89,3 @@ else
 fi
 
 wget http://allta.devos.astralinux.ru/rest/api/get-box-config -O box-config.json 
-
-
-# create lv-nets
-#virsh net-define ${CPATH}/lv-nets/vpn-net.xml
-#virsh net-start vpn-net
-#virsh net-autostart vpn-net
-
-#virsh net-define ${CPATH}/lv-nets/pooler-net.xml
-#virsh net-start pooler-net
-#virsh net-autostart pooler-net
-
-# маршрутизация
-#echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
-
-#sudo iptables -A FORWARD -i virbr100 -o virbr0 -j ACCEPT
-#sudo iptables -A FORWARD -i virbr0 -o virbr100 -j ACCEPT
-#sudo iptables -t nat -A POSTROUTING -s 192.168.100.0/24 -o virbr0 -j MASQUERADE
-
-#sudo iptables -A FORWARD -i virbr100 -o virbr200 -j ACCEPT
-#sudo iptables -A FORWARD -i virbr200 -o virbr100 -j ACCEPT

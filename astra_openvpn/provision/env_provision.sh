@@ -23,7 +23,7 @@ fi
 
 echo "10000 65000" > /proc/sys/net/ipv4/ip_local_port_range
 
-sudo mkdir /var/log/iperf
+
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev strace 

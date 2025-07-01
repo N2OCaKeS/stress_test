@@ -1,6 +1,0 @@
-<network>
-  <name>vpn-net</name>
-  <bridge name='virbr100' stp='on' delay='0'/>
-  <forward mode='nat'/>
-  <ip address='192.168.50.1' netmask='255.255.255.0'/>
-</network>

@@ -1,9 +1,0 @@
-<network>
-  <name>pooler-net</name>
-  <bridge name="virbr200" stp="on" delay="0"/>
-  <ip address="172.16.0.1" netmask="255.255.128.0">
-    <dhcp>
-      <range start="172.16.0.2" end="172.16.78.160"/>
-    </dhcp>
-  </ip>
-</network>

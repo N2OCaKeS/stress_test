@@ -4,6 +4,7 @@ import paramiko
 from os.path import exists
 from ovpn_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL
 import requests
+import time
 
 
 def check_output_command(command, out=None):
@@ -37,44 +38,15 @@ def trycorator(function):
     return wrapper
 
 
-@trycorator
-def create_remote_file(local_file_path, remote_file_path, ip, user, password):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname=ip, username=user, password=password, port=22)
-    ftp = client.open_sftp()
-    files = ftp.put(local_file_path, remote_file_path)
-    ftp.close()
-    client.close()
-
-
-@trycorator
-def send_remote_command(command, ip, user, password):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(hostname=ip, username=user, password=password, port=22)
-    ssh.get_transport().set_keepalive(60)
-    chanel = ssh.get_transport().open_session()
-    chanel.get_pty()
-    chanel.exec_command(command)
-    output = chanel.makefile().read().decode('utf-8')
-    err_output = chanel.makefile_stderr().read().decode('utf-8')
-    if output != '':
-        print(f'STDOUT:\n{output}')
-    if err_output != '':
-        print(f'STDERR:\n{err_output}')
-    ssh.close()
-
-
-@trycorator
-def get_remote_file(remote_file_path, local_file_path, ip, user, password):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname=ip, username=user, password=password, port=22)
-    ftp = client.open_sftp()
-    files = ftp.get (remote_file_path, local_file_path)
-    ftp.close()
-    client.close()
+def timer(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        elapsed_time = (end_time - start_time) / 60
+        print(f"Затрачено времени: {round(elapsed_time, 4)} мин")
+        return result
+    return wrapper
 
 
 def astra_version():

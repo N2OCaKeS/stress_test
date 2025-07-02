@@ -29,7 +29,7 @@ def initialization_freeipa_server():
         Обновление списка пакетов
     """    
     cmd("sudo apt update -y")
-    cmd("sudo apt install python3-venv -y")
+    cmd("sudo apt install python3-venv build-essential python3-dev gcc -y")
     cmd("sudo apt install libkrb5-dev -y")
 
     """

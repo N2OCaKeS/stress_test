@@ -4,7 +4,7 @@ from os import path
 import argparse
 from ovpn_conf import VENV_PATH
 from libs.zefir import UploaderZC
-from libs.libtests import AOvpn20kTest
+from libs.libtests import Test_1
 
 
 parser = argparse.ArgumentParser()
@@ -123,8 +123,10 @@ if __name__ == "__main__":
         TODO Здесь запускаем тесты
     """
 
-    if args.TEST == "20k":
-        ovpn_test = AOvpn20kTest()
+    if args.TEST == "pf":
+        ovpn_test = Test_1() # <- build, provision, test
+        
+        
     else: "Тест не найден"
     
     ovpn_test.choose_box()

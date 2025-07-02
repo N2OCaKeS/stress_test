@@ -37,7 +37,7 @@ class CreateVM:
     def common_build(self):
         Libvirt.prepare()
         self.vms_dates = Libvirt.build(box=self.vbox,
-                                       rc="1.7.5",
+                                       rc="1.8.1",
                                        vms=self.vms,
                                        vms_dates=self.vms_dates)
         return self.vms_dates

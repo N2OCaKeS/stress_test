@@ -2,10 +2,8 @@ import os
 import sys
 from libs.libreport import ReportToConfluence
 sys.path.append(os.path.join(os.getcwd(), '..'))
-from docker_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME
+from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, RANGE, CONNECTIONS_PER_MINUTE, VMS_COUNT
 import glob
-from allta import GetEnv
-#REPORT_FILENAME, \REQUESTS, CONCURRENCY
 
 
 class Public:
@@ -24,7 +22,10 @@ class Public:
                  storage=False,
                  kernel_check=False,
                  balance=False,
-                 testname=""):
+                 testname="",
+                 clients=RANGE,
+                 vms_count=VMS_COUNT,
+                 spawn_rate=CONNECTIONS_PER_MINUTE):
     
         self.username = username
         self.token = token
@@ -38,7 +39,11 @@ class Public:
         self.kernel_check = kernel_check
         self.balance = balance
         self.testname = testname
-
+        #------------INFO---------------
+        self.clients = clients
+        self.vms_count = vms_count
+        self.spawn_rate = spawn_rate
+        #-------------------------------
         self.stands = {
             '1':{'grade':'low(141)',
                  'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
@@ -104,16 +109,6 @@ class Public:
                                                      c_pp,
                                                      c_np)
 
-            
-        # Прикрепить файлы
-        #attachments = glob.glob(f"{REPORT_PATH}/docker*/nginx_*/**", recursive=True)
-        #for file_path in attachments:
-        #    if os.path.isfile(file_path):
-        #        print(f"Прикрепление: {file_path}")
-        #        confluence_report.attache_files(file_path, self.c_space, c_np)
-        GetEnv.activate_relative("../docker/site/.env")
-        users_count = GetEnv.get("USERS_PER_SEC")
-        timestep = GetEnv.get("TIMESTEP")
 
         #генерация вступительной таблицы
         with open(INFO_FILENAME) as info:
@@ -134,12 +129,15 @@ class Public:
                                                     arm_proc=self.stands[self.grade_stand]['cpu'],
                                                     arm_mem=self.stands[self.grade_stand]['ram'],
                                                     arm_st=self.stands[self.grade_stand]['storage'],
-                                                    users=users_count, timestep=timestep)
-            
-        # Получаем рейтинг
-        paths = glob.glob(f"{REPORT_PATH}/docker*/nginx_docker/rating.txt") + \
-                glob.glob(f"{REPORT_PATH}/docker*/nginx_server/rating.txt") + \
-                glob.glob(f"{REPORT_PATH}/docker*/locust_proc/rating.txt")
+                                                    users=self.clients,
+                                                    clients_nodes=self.vms_count-1, 
+                                                    spawn_rate=self.spawn_rate*self.vms_count-1)
+
+
+        paths = [[f"{REPORT_PATH}/openvpn_testvm{i}" for i in self.vms_count-1],
+                 [f"{REPORT_PATH}/iperf_testvm{i}" for i in self.vms_count-1]]
+        
+
         r_docker = ""
         r_server = ""
         r_locust_proc = ""

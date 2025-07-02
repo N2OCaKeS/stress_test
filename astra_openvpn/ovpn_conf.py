@@ -1,6 +1,7 @@
 from allta import SystemCommands
 import requests
-sys_com = SystemCommands
+
+sys_cls = SystemCommands()
 
 jira_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-jira-url'
 confluence_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-confluence-url'
@@ -30,16 +31,17 @@ VMS_DATES = {  # Полный список ВМ
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 5000
-DURATION_RATE = 3000
+RANGE = 6000
+DURATION_RATE = 2500
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)
 
-# Common dirs
-OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
+# Common dirs/files
+OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
+VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/activate"
 REPORT_PATH = f"{OVPN_PATH}/results"
+TEMPLATE_PATH = f"{OVPN_PATH}/templates"
 
 COLORS = {
     "GREEN": "\033[32m",
@@ -47,7 +49,6 @@ COLORS = {
     "RESET": "\033[0m"
 }
 
-INFO_FILENAME = 'ovpn_info.txt'
 VM_INFONAME = 'av.info'
 VM_KERNEL = 'kernel.info'
 VM_RESULTS_PATH = f"{REPORT_PATH}/vm_results"
@@ -56,11 +57,15 @@ BOX_VERSIONS = [["1.7.5.o", "1.7.5.v", "1.7.5.s"], ["1.8.1.o", "1.8.1.v", "1.8.1
 BOXES = f"{OVPN_PATH}/box-config.json"
 DATES = f"/home/{USER[0]}/dates_stand3.conf"
 
-SYS_VERSION = sys_com.check_output_command("cat /etc/astra/build_version | tr -d '[:space:]'")
-SYS_KERNEL = sys_com.check_output_command("uname -r | tr -d '[:space:]'")
-SYS_VERSION_MOD = [SYS_VERSION+".o", SYS_VERSION+".v", SYS_VERSION+".s"]
+#----------INFO-----------
 
-
+INFO_FILENAME = f'{REPORT_PATH}/INFO.txt'
+SYS_VERSION = sys_cls.check_output_command("cat /etc/astra/build_version | tr -d '[:space:]'")
+SYS_KERNEL = sys_cls.check_output_command("uname -r | tr -d '[:space:]'")
+PACKAGE = (f"astra-openvpn-server_{sys_cls.check_output_command('dpkg -l | grep astra-openvpn-server | awk \'$2 == \"astra-openvpn-server\" {print $3}\'')}, "
+           f"openvpn_{sys_cls.check_output_command('dpkg -l | grep openvpn | awk \'$2 == \"openvpn\" {print $3}\'')}, "
+           f"iperf_{sys_cls.check_output_command('dpkg -l | grep iperf | awk \'$2 == \"iperf\" {print $3}\'')}")
+# print(SYS_VERSION, SYS_KERNEL, PACKAGE, sep="\n")
 
 
 

@@ -2,13 +2,15 @@ import os
 import math
 import asyncio
 from datetime import datetime
-from allta import SystemCommands
 from libs.ovpnlib import timer
-from ovpn_conf import RANGE, DURATION_RATE, VMS, VMS_COUNT, CONNECTIONS_PER_MINUTE, COLORS
-
-sys_cls = SystemCommands()
+from ovpn_conf import RANGE, DURATION_RATE, VMS, VMS_COUNT, CONNECTIONS_PER_MINUTE, COLORS, sys_cls
 
 class AIOPerfVPN:
+    """
+    Нагрузочный скрипт Openvpn-server с async.
+     - Глобальные переменные теста в ovpn_conf.py
+
+    """
     def __init__(self, 
                  ranger=RANGE, 
                  duration=DURATION_RATE, 
@@ -19,7 +21,7 @@ class AIOPerfVPN:
         self.range = ranger
         self.duration = duration
         self.vms = vms
-        self.vms_count = vms_count
+        self.vms_count = vms_count - 1
         self.cpm = connections_per_minute
         self.hostname = sys_cls.check_output_command("echo $HOSTNAME").split(".")[0]
         self.colors = colors
@@ -39,6 +41,7 @@ class AIOPerfVPN:
         self.aio_lock = asyncio.Lock()
         self.last_batch_time = None
 
+
     async def run_iperf(self, tun_ip, tun_dev):
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -48,6 +51,7 @@ class AIOPerfVPN:
             return proc
         except Exception as e:
             print(f"{tun_dev} | Iperf | error: {str(e)}")
+
 
     async def run_tun(self, item):
         tun_dev = f"tun{item}"
@@ -89,6 +93,7 @@ class AIOPerfVPN:
         except Exception as e:
             print(f"{tun_dev} | {self.colors['RED']}Fail{self.colors['RESET']} | Ошибка получения IP: {str(e)}")
             return None
+
 
     @timer
     async def load_test(self):
@@ -133,18 +138,23 @@ class AIOPerfVPN:
             batch_duration = (datetime.now() - batch_start_time).total_seconds()
             print(f"Партия {batch_num+1} завершена за {batch_duration:.2f} сек")
         
-        await asyncio.sleep(self.duration)
+        await asyncio.sleep(100)
         
         # Запись результатов
-        if os.path.exists(f"{self.log}/openvpn/{self.hostname}_result.csv"): # дозаписываем если есть
-            with open(f"{self.log}/openvpn/{self.hostname}_result.csv", "a", encoding="UTF-8") as test_result:
-                test_result.write(f"{sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')},{self.counter}")
-        else:
-            with open(f"{self.log}/openvpn/{self.hostname}_result.csv", "w", encoding="UTF-8") as test_result:
-                test_result.write("Всего туннелей,Успешных подключений\n") # создаем
+        # if os.path.exists(f"{self.log}/openvpn/{self.hostname}_result.csv"): # дозаписываем если есть
+        #     with open(f"{self.log}/openvpn/{self.hostname}_result.csv", "a", encoding="UTF-8") as test_result:
+        # else:
+        active = sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')
+        with open(f"{self.log}/openvpn/{self.hostname}_result.csv", "w", encoding="UTF-8") as test_result:
+            test_result.write("Задано туннелей,Всего туннелей,Успешных подключений,Результат теста\n") # создаем
+            test_result.write(f"{self.vms_ranges[self.hostname]},"
+                              f"{sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')},"
+                              f"{self.counter},",
+                              True if self.vms_ranges[self.hostname] == self.counter == active else False)
             
         print(f"\nИтоги:")
-        print(f"Всего туннелей: {sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')}")
+        print(f"Задано туннелей: {self.vms_ranges[self.hostname]}")
+        print(f"Всего туннелей: {active}")
         print(f"Успешных подключений: {self.counter}")
 
 

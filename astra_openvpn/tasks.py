@@ -91,8 +91,16 @@ scp_pull = {
         
         {
             "mode": "pull",
-            "path_host": f"./results/raw/iperf_{vm}/",
+            "path_host": f"./results/raw/iperf/iperf_{vm}/",
             "path_vm": "/var/log/iperf/"
+        }
+        for vm in [key for key in VMS_DATES][1:]
+    ],
+    "g_clients_group":[
+        {
+            "mode": "pull",
+            "path_host": f"./results/raw/openvpn/ovpn_clients_{vm}",
+            "path_vm": "/var/log/openvpn/clients/"
         }
         for vm in [key for key in VMS_DATES][1:]
     ]

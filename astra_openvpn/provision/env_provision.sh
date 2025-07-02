@@ -6,7 +6,7 @@ sudo apt update
 #sudo apt-get install -y netcat
 #sudo apt-get install linux-[5-6].*-generic -y
 #sudo apt-get install linux-[5-6].*-lowlatency -y
-sudo apt-get install -y libffi-dev gcc make libpdp-dev
+sudo apt-get install -y libffi-dev cpp gcc make libpdp-dev
 
 # test packages
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra

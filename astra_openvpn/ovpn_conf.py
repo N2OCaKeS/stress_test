@@ -38,8 +38,8 @@ VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)
 
 # Common dirs/files
-OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/activate"
+OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
+VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
 REPORT_PATH = f"{OVPN_PATH}/results"
 TEMPLATE_PATH = f"{OVPN_PATH}/templates"
 
@@ -57,15 +57,27 @@ BOX_VERSIONS = [["1.7.5.o", "1.7.5.v", "1.7.5.s"], ["1.8.1.o", "1.8.1.v", "1.8.1
 BOXES = f"{OVPN_PATH}/box-config.json"
 DATES = f"/home/{USER[0]}/dates_stand3.conf"
 
+
+
 #----------INFO-----------
 
 INFO_FILENAME = f'{REPORT_PATH}/INFO.txt'
-SYS_VERSION = sys_cls.check_output_command("cat /etc/astra/build_version | tr -d '[:space:]'")
-SYS_KERNEL = sys_cls.check_output_command("uname -r | tr -d '[:space:]'")
+RC = sys_cls.check_output_command("cat /etc/astra/build_version | tr -d '[:space:]'")
+KERNEL = sys_cls.check_output_command("uname -r | tr -d '[:space:]'")
 PACKAGE = (f"astra-openvpn-server_{sys_cls.check_output_command('dpkg -l | grep astra-openvpn-server | awk \'$2 == \"astra-openvpn-server\" {print $3}\'')}, "
            f"openvpn_{sys_cls.check_output_command('dpkg -l | grep openvpn | awk \'$2 == \"openvpn\" {print $3}\'')}, "
            f"iperf_{sys_cls.check_output_command('dpkg -l | grep iperf | awk \'$2 == \"iperf\" {print $3}\'')}")
+
+VERSION_OS = ".".join(RC.split(".")[:2])
+MODIFY = ["o", "s", "v"]
+BOX = "1.8.1.o" if VERSION_OS == "1.8" else "1.7.5.o"
+print(BOX)
+
 # print(SYS_VERSION, SYS_KERNEL, PACKAGE, sep="\n")
+print(RC)
+print(".".join(RC.split(".")[:2]))
+
+print(VERSION_OS)
 
 
 

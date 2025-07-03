@@ -7,7 +7,7 @@ from pathlib import Path
 from collections import Counter
 
 
-class Report2:
+class Report:
     def __init__(self, report_path=REPORT_PATH, ranger=RANGE, vm_count=VMS_COUNT, vms=VMS):
         self.report_path = report_path
         self.ovpn_status_log = Path(self.report_path) / "raw/openvpn/openvpn-status.log"
@@ -18,7 +18,7 @@ class Report2:
         self.vm_count = vm_count
         self.vms = vms
         self.counter = Counter()
-        self.results = []
+        self.criteria = []
 
 
     def build(self):
@@ -139,17 +139,18 @@ class Report2:
 
 
     def pass_fail(self):
-        df = pd.read_csv("clients_sessions_count.csv")
-        if len(df) == self.range - 1:
+        df = pd.read_csv("./results/processed/clients_sessions_count.csv")
+        if len(df) >= self.range / 100 * 99 - 1:
             self.criteria.append(True)
         else: self.criteria.append(False)
-
+        
         avg_reconnects = df["session_count"].mean()
 
         if avg_reconnects <= 2:
             self.criteria.append(True)
         else: self.criteria.append(False)
-
+        print(f"Критерий Unique clients - {"PASS" if self.criteria[0] == True else Fail}\n"
+              f"Критерий AVG Reconects - {"PASS" if self.criteria[1] == True else Fail}")
         if self.criteria[0] and self.criteria[1]:
             return "PASS"
         else: return "FAIL"

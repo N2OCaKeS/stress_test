@@ -9,7 +9,7 @@ import json
 import numpy as np
 from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH, VMS_DATES, VMS
 from time import sleep
-from tasks import test_1, scp_pull
+from tasks import test_1
 
 
 sys_cls = SystemCommands()
@@ -22,7 +22,7 @@ class CreateVM:
                  vms_dates=VMS_DATES,
                  vms=VMS):
         
-
+        self.provider = Libvirt()
         self.vbox = vbox
         self.testdir = testdir
         self.vm_count = vm_count
@@ -35,16 +35,16 @@ class CreateVM:
 
 
     def common_build(self):
-        Libvirt.prepare()
-        self.vms_dates = Libvirt.build(box=self.vbox,
-                                       rc="1.8.1",
+        self.provider.prepare()
+        self.vms_dates = self.provider.build(box=self.vbox,
+                                       rc="1.7.5",
                                        vms=self.vms,
                                        vms_dates=self.vms_dates)
         return self.vms_dates
     
     
     def provision(self):
-        Libvirt.scp(scp_settings=test_1["scp_provision"],
+        self.provider.scp(scp_settings=test_1["scp_provision"],
                     vms_groups=self.main_group,
                     vms_dates=self.vms_dates,
                     username=self.username,
@@ -55,10 +55,10 @@ class CreateVM:
         with open("vms_dates.txt", "w", encoding="UTF-8") as f:
             json.dump(self.vms_dates, f)
 
-        Libvirt.set_hosts(vms_dates=self.vms_dates,
+        self.provider.set_hosts(vms_dates=self.vms_dates,
                           domain="stress.rbt")
         
-        Libvirt.execute(commands=test_1["task_provision"],
+        self.provider.execute(commands=test_1["task_provision"],
                         vms_groups=self.main_group,
                         vms_dates=self.vms_dates,
                         username=self.username,
@@ -81,29 +81,34 @@ class Test_1(CreateVM):
             json_string = f.read()
             self.vms_dates = json.loads(json_string)
 
-        Libvirt.execute(commands=test_1["task_unpack_tar"],
+        self.provider.execute(commands=test_1["task_unpack_tar"],
                          vms_groups=self.main_group,
                          vms_dates=self.vms_dates,
                          username=self.username,
                          password=self.password)
         
-        Libvirt.execute(commands=test_1["task_start_server"],
+        self.provider.sed(sed_conf=test_1["task_sed_cipher"],
+                          vms_dates=self.vms_dates,
+                          username=self.username,
+                          password=self.password)
+        
+        self.provider.execute(commands=test_1["task_start_server"],
                          vms_dates=self.vms_dates,
                          username=self.username,
                          password=self.password)
         
-        Libvirt.execute(commands=test_1["task_run_iperf"],
+        self.provider.execute(commands=test_1["task_run_iperf"],
                          vms_groups=self.clients_group,
                          vms_dates=self.vms_dates,
                          username=self.username,
                          password=self.password)
         
-        Libvirt.execute(commands=test_1["task_add_permission"],
+        self.provider.execute(commands=test_1["task_add_permission"],
                          vms_dates=self.vms_dates,
                          username=self.username,
                          password=self.password)
         
-        Libvirt.scp(scp_settings=test_1["scp_pull"],
+        self.provider.scp(scp_settings=test_1["scp_pull"],
                     vms_dates=self.vms_dates,
                     vms_groups=self.clients_group,
                     username=self.username,

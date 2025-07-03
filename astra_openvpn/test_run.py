@@ -1,18 +1,18 @@
 from libs.libtests import CreateVM, Test_1
 from libs.libtable import Report
-from ovpn_conf import REPORT_PATH, VMS_DATES, VMS_COUNT, SYS_VERSION
+from ovpn_conf import REPORT_PATH, VMS_DATES, VMS_COUNT, BOX, RC
 
 
 
 rp = Report()
 
-ovpn_test = Test_1(vbox=f"1.8.1.o",
+ovpn_test = Test_1(vbox=BOX,
                    vm_count=VMS_COUNT,
                    vms_dates=VMS_DATES,
                    testdir=REPORT_PATH)
 # libvirt-install
-ovpn_test.common_build()
-ovpn_test.provision()
+#ovpn_test.common_build()
+#ovpn_test.provision()
 #ovpn_test.start()
 
 # vagrant-libvirt.old
@@ -21,9 +21,9 @@ ovpn_test.provision()
 #ovpn_test.start_test()
 
 
-print("RESULTS NEXT STAGE")
+#print("RESULTS NEXT STAGE")
 
-rp.build()
+#rp.build()
 print(rp.pass_fail())
 
 #rp.build()

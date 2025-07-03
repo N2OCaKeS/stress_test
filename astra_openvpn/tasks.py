@@ -1,6 +1,6 @@
 # Start Test_1:
 
-from ovpn_conf import VMS_DATES
+from ovpn_conf import VMS_DATES, VERSION_OS
 
 # Provision ->
 
@@ -37,6 +37,19 @@ task_unpack_tar = {
             "signal get": ""
         },
     }
+}
+
+cipher = ["grasshopper-cbc", "kuznyechik-cbc"]
+
+# Разные названия CIPHER в 1.7/1.8
+task_sed_cipher = {
+    "testvm1": [
+        {
+            "path": "/etc/openvpn/server.conf",
+            "old": "CIPHER",
+            "new": cipher[0] if VERSION_OS == "1.7" else cipher[1]
+        }
+    ]
 }
 
 task_start_server = {
@@ -109,6 +122,7 @@ scp_pull = {
 test_1 = {"scp_provision": scp_provision,
           "task_provision": task_provision,
           "task_unpack_tar": task_unpack_tar,
+          "task_sed_cipher": task_sed_cipher,
           "task_start_server": task_start_server,
           "task_run_iperf": task_run_iperf,
           "task_add_permission": task_add_permission,

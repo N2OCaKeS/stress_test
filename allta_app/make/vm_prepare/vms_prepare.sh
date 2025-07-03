@@ -35,7 +35,7 @@ sudo usermod -aG kvm,libvirt,libvirt-qemu $USER
 python libvirt_vm.py
 ./network.sh br0
 
-VMS=("virtual-station1" "virtual-station2" "virtual-station3" "virtual-station4" "work-station1" "work-station2")
+VMS=("virtual-station-17-1" "virtual-station-17-2" "virtual-station-17-3" "virtual-station-17-4" "work-station1" "work-station2" "virtual-station-18-1" "virtual-station-18-2" "virtual-station-18-3" "virtual-station-18-4" )
 for vm in "${VMS[@]}"; do
     # Останавливаем ВМ через virsh -c qemu:///system
     virsh -c qemu:///system destroy "$vm"
@@ -75,7 +75,7 @@ for vm in "${VMS[@]}"; do
     # Создаем снимок перед остановкой (имя по дате)
     echo "Создаём снимок $SNAPSHOT_NAME для $vm..."
     virsh -c qemu:///system snapshot-create-as --domain "$vm" --name "$SNAPSHOT_NAME" --description "$SNAPSHOT_NAME" --atomic
-done    
+done
 
 
 virsh net-list --all

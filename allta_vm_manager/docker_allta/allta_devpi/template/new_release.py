@@ -185,11 +185,6 @@ def main():
     initial_sync(repo_path, branch='libs')
     monitor_branch(repo_path, branch='libs', check_interval=60)
 
-# if __name__ == '__main__':
-#     try:
-#         main()
-#     except KeyboardInterrupt:
-#         print("🛑 Остановка по запросу пользователя.")
 while True:
     time.sleep(999999999)
     

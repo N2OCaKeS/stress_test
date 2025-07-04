@@ -5,10 +5,11 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from app.api.v1.models import service_ip_ranges, vm_snapshots, vms
 from app.db.base import Base
 
 import os
+
+from app.api.v1.models import virtual_machine, vm_snapshot, ip_range, vm_task
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

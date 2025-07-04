@@ -1,4 +1,5 @@
 from app.api.v1.routes import router
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
 
 app = FastAPI(title="Allta Config API",
@@ -7,5 +8,25 @@ app = FastAPI(title="Allta Config API",
     openapi_url="/v1/openapi.json", # с учётом версии API
     docs_url="/v1/docs",
     redoc_url="/v1/redoc",)
+from fastapi.middleware.cors import CORSMiddleware
+origins = [
+    "http://localhost:8000",
+    "http://localhost:8001",
+    "http://localhost:8002",
+    "http://localhost:8080",    
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8001",
+    "http://127.0.0.1:8002", 
+    "http://127.0.0.1:8080",               
+    "http://allta.devos.astralinux.ru",
+    "https://allta.devos.astralinux.ru",]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 app.include_router(router, prefix="/v1/config",tags=["config"])

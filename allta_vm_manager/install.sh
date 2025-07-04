@@ -4,43 +4,39 @@ set -e
 # Путь до папки с вашим docker-compose.yml
 COMPOSE_DIR="/home/u/allta_v3/stress_test/allta_v3/docker_allta"
 
-prepare() {
-	echo "Установка docker и docker-compose"
-	sudo apt-get update && sudo apt-get install docker.io docker-compose
+create_volume(){
+	BASE_PATH="/var/allta_services/volumes"
+	# Front Service
+	export DEVPI_PATH=$BASE_PATH/allta_devpi_data
 
-	echo "Копируем шаблоны"
-	cd "$COMPOSE_DIR/env"
-	cp -r ./example .
+	# Back Service
+	# Database
+	export AUTH_DB_PATH=$BASE_PATH/allta_auth_db_data
+	export SERVER_DB_PATH=$BASE_PATH/allta_server_db_data
+	export VM_DB_PATH=$BASE_PATH/allta_vm_db_data
 
-	echo "Переименовываем файлы"
-	shopt -s nullglob
-	for f in example.*; do
-		mv -- "$f" "${f#example.}"
-	done
+	# Api
+	export CONFIG_API_DATA_PATH=$BASE_PATH/allta_config_api_data
+	export SERVER_API_DATA_PATH=$BASE_PATH/allta_server_api_data
+	export VM_API_DATA_PATH=$BASE_PATH/allta_vm_api_data
+	
+	# Front Service
+	sudo mkdir -p $DEVPI_PATH
 
-	echo "Создаем каталог для хранения volume"
-	mkdir /tmp/allta_services && mkdir /tmp/allta_services/volume
-	cd /tmp/allta_services/volume && mkdir allta_devpi_data allta_db_data
+	# Back Service
+	# Database
+	sudo mkdir -p $AUTH_DB_PATH
+	sudo mkdir -p $SERVER_DB_PATH
+	sudo mkdir -p $VM_DB_PATH
+
+
+	# Api
+	sudo mkdir -p $CONFIG_API_DATA_PATH
+	sudo mkdir -p $SERVER_API_DATA_PATH
+	sudo mkdir -p $VM_API_DATA_PATH
 }
 
-case "$1" in
-prepare)
-	echo "Подготовка зависимостей"
-	prepare
-	echo "Зависимости установлены"
-	;;
-install)
-	echo "Установка ПК Allta"
-	install
-	echo "Сервисы установлены и запущены"
-	# здесь ваш код для «stop»
-	;;
-delete)
-	echo "Удаление ПК Allta"
-	# здесь код для «restart»
-	;;
-*)
-	echo "Использование: $0 {prepare|install|delete}"
-	exit 1
-	;;
-esac
+
+update_devpi(){
+	
+}

@@ -1,48 +1,54 @@
+# app/api/v1/crud/ip_range.py
+
+from typing import List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
-from app.api.v1.models.service_ip_ranges import ServiceIPRange
-from app.api.v1.schemas.service_ip_ranges import (
-    ServiceIPRangeCreate,
-    ServiceIPRangeUpdate
-)
+from app.api.v1.models.ip_range import IPRange
+from app.api.v1.schemas.ip_range import IPRangeCreate, IPRangeUpdate
 
-def get_service_ip_range(
-    db: Session, range_id: int
-) -> ServiceIPRange | None:
-    return db.query(ServiceIPRange).filter_by(id=range_id).first()
 
-def get_service_ip_ranges(
-    db: Session,
-    skip: int = 0,
-    limit: int = 100
-) -> list[ServiceIPRange]:
-    return db.query(ServiceIPRange).offset(skip).limit(limit).all()
+def get_ip_range(db: Session, range_id: int) -> Optional[IPRange]:
+    return db.query(IPRange).filter(IPRange.id == range_id).first()
 
-def create_service_ip_range(
-    db: Session,
-    obj_in: ServiceIPRangeCreate
-) -> ServiceIPRange:
-    db_obj = ServiceIPRange(**obj_in.model_dump())
-    db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
-    return db_obj
 
-def update_service_ip_range(
-    db: Session,
-    db_obj: ServiceIPRange,
-    obj_in: ServiceIPRangeUpdate
-) -> ServiceIPRange:
-    data = obj_in.model_dump(exclude_none=True)
-    for k, v in data.items():
-        setattr(db_obj, k, v)
-    db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
-    return db_obj
+def get_ip_ranges(db: Session) -> List[IPRange]:
+    return db.query(IPRange).all()
 
-def delete_service_ip_range(db: Session, range_id: int) -> None:
-    obj = db.query(ServiceIPRange).filter_by(id=range_id).first()
-    if obj:
-        db.delete(obj)
+
+def create_ip_range(db: Session, data: IPRangeCreate) -> IPRange:
+    ip_range = IPRange(**data.model_dump())
+    db.add(ip_range)
+    try:
         db.commit()
+        db.refresh(ip_range)
+    except IntegrityError as e:
+        db.rollback()
+        raise ValueError(f"Failed to create IP range: {str(e)}")
+    return ip_range
+
+
+def update_ip_range(db: Session, range_id: int, data: IPRangeUpdate) -> Optional[IPRange]:
+    ip_range = get_ip_range(db, range_id)
+    if not ip_range:
+        return None
+
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(ip_range, field, value)
+
+    try:
+        db.commit()
+        db.refresh(ip_range)
+    except IntegrityError as e:
+        db.rollback()
+        raise ValueError(f"Failed to update IP range: {str(e)}")
+    return ip_range
+
+
+def delete_ip_range(db: Session, range_id: int) -> bool:
+    ip_range = get_ip_range(db, range_id)
+    if not ip_range:
+        return False
+    db.delete(ip_range)
+    db.commit()
+    return True

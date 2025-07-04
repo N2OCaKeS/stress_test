@@ -1,49 +1,55 @@
-# crud/vm_snapshot.py
+from typing import List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
-from app.api.v1.models.vm_snapshots import VMSnapshot
-from app.api.v1.schemas.vm_snapshots import (
-    VMSnapshotCreate,
-    VMSnapshotUpdate
-)
+from app.api.v1.models.vm_snapshot import VMSnapshot
+from app.api.v1.schemas.vm_snapshot import VMSnapshotCreate, VMSnapshotUpdate
 
-def get_vm_snapshot(
-    db: Session, snapshot_id: int
-) -> VMSnapshot | None:
-    return db.query(VMSnapshot).filter_by(id=snapshot_id).first()
 
-def get_vm_snapshots(
-    db: Session,
-    skip: int = 0,
-    limit: int = 100
-) -> list[VMSnapshot]:
-    return db.query(VMSnapshot).offset(skip).limit(limit).all()
+def get_snapshot(db: Session, snapshot_id: int) -> Optional[VMSnapshot]:
+    return db.query(VMSnapshot).filter(VMSnapshot.id == snapshot_id).first()
 
-def create_vm_snapshot(
-    db: Session,
-    obj_in: VMSnapshotCreate
-) -> VMSnapshot:
-    db_obj = VMSnapshot(**obj_in.model_dump())
-    db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
-    return db_obj
 
-def update_vm_snapshot(
-    db: Session,
-    db_obj: VMSnapshot,
-    obj_in: VMSnapshotUpdate
-) -> VMSnapshot:
-    data = obj_in.model_dump(exclude_none=True)
-    for k, v in data.items():
-        setattr(db_obj, k, v)
-    db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
-    return db_obj
+def get_snapshots(db: Session, vm_id: Optional[int] = None) -> List[VMSnapshot]:
+    q = db.query(VMSnapshot)
+    if vm_id is not None:
+        q = q.filter(VMSnapshot.vm_id == vm_id)
+    return q.all()
 
-def delete_vm_snapshot(db: Session, snapshot_id: int) -> None:
-    obj = db.query(VMSnapshot).filter_by(id=snapshot_id).first()
-    if obj:
-        db.delete(obj)
+
+def create_snapshot(db: Session, data: VMSnapshotCreate) -> VMSnapshot:
+    snapshot = VMSnapshot(**data.model_dump())
+    db.add(snapshot)
+    try:
         db.commit()
+        db.refresh(snapshot)
+    except IntegrityError as e:
+        db.rollback()
+        raise ValueError(f"Failed to create snapshot: {str(e)}")
+    return snapshot
+
+
+def update_snapshot(db: Session, snapshot_id: int, data: VMSnapshotUpdate) -> Optional[VMSnapshot]:
+    snapshot = get_snapshot(db, snapshot_id)
+    if not snapshot:
+        return None
+
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(snapshot, field, value)
+
+    try:
+        db.commit()
+        db.refresh(snapshot)
+    except IntegrityError as e:
+        db.rollback()
+        raise ValueError(f"Failed to update snapshot: {str(e)}")
+    return snapshot
+
+
+def delete_snapshot(db: Session, snapshot_id: int) -> bool:
+    snapshot = get_snapshot(db, snapshot_id)
+    if not snapshot:
+        return False
+    db.delete(snapshot)
+    db.commit()
+    return True

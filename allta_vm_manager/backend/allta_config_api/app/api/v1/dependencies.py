@@ -1,59 +1,107 @@
-# file_api/dependencies.py
-
-import os
+from typing import Optional
 
 import httpx
-from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyCookie
+from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi.security import (
+    OAuth2PasswordBearer,
+    HTTPBearer,
+    HTTPAuthorizationCredentials,
+    APIKeyCookie
+)
+from pydantic import BaseModel
 
-# URL вашего Auth-API (в нём должен быть endpoint GET /api/v1/auth/verify)
-AUTH_VERIFY_URL = os.getenv(
-    "AUTH_VERIFY_URL",
-    "http://allta-auth-api:8000/api/auth/verify"  
+from app.utils.config import settings
+
+# ------------------------------
+# Модель ответа Auth-сервиса
+# ------------------------------
+class AuthVerifyResponse(BaseModel):
+    login: str
+    is_admin: bool
+    id: int
+
+
+# -----------------------------------
+# Swagger UI: логин через форму
+#     (OAuth2 Password flow)
+# -----------------------------------
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.AUTH_API_URL}/login",
+    scheme_name="OAuth2Password",
+    auto_error=False,
 )
 
-# схемы для извлечения raw-token из Header или Cookie
-bearer_scheme = HTTPBearer(auto_error=False)
-cookie_scheme = APIKeyCookie(name="access_token", auto_error=False)
-
-credentials_exception = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Not authenticated",
-    headers={"WWW-Authenticate": "Bearer"},
+# -----------------------------------
+# Swagger UI: ручная вставка JWT
+#     (HTTP Bearer auth)
+# -----------------------------------
+bearer_scheme = HTTPBearer(
+    scheme_name="BearerAuth",
+    auto_error=False,
 )
 
-async def get_raw_token(
-    bearer: HTTPAuthorizationCredentials = Security(bearer_scheme),
-    cookie: str = Security(cookie_scheme),
+
+def get_token(
+    request: Request,
+    oauth2_token: Optional[str] = Security(oauth2_scheme),
+    bearer: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
 ) -> str:
     """
-    Пытаемся достать JWT из Authorization Bearer или из Cookie access_token.
+    Порядок извлечения токена:
+      1) OAuth2PasswordBearer (логин через форму)
+      2) HTTPBearer        (вручную ввести JWT)
+      3) secure-cookie 'access_token'
     """
-    if bearer and bearer.credentials:
+    if oauth2_token:
+        return oauth2_token
+    if bearer and bearer.scheme.lower() == "bearer":
         return bearer.credentials
-    if cookie:
-        return cookie
-    raise credentials_exception
+    if not oauth2_scheme and not bearer and not bearer.scheme.lower() == "bearer":
+        token = request.cookies.get("access_token")
+        return token
 
-async def verify_with_auth_api(
-    token: str = Depends(get_raw_token),
-) -> dict:
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def get_current_user(
+    token: str = Depends(get_token),
+) -> AuthVerifyResponse:
     """
-    Отправляем запрос на Auth-API, чтобы проверить токен.
-    Если всё ок, возвращаем JSON payload ({"login":..., "is_admin":...}).
+    Проверяем токен в Auth-сервисе (/verify).
     """
+    url = f"{settings.AUTH_API_URL}/verify"
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(AUTH_VERIFY_URL, headers=headers, timeout=5.0)
-    except httpx.RequestError as e:
+        resp = httpx.get(url, headers=headers, timeout=5.0)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN):
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Auth service unreachable: {e}"
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Auth service unavailable",
         )
-    if resp.status_code != 200:
+
+    return AuthVerifyResponse(**resp.json())
+
+
+def get_current_admin_user(
+    user: AuthVerifyResponse = Depends(get_current_user)
+) -> AuthVerifyResponse:
+    """
+    Проверяем, что у пользователя is_admin = True.
+    """
+    if not user.is_admin:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
         )
-    return resp.json()
+    return user

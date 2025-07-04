@@ -1,6 +1,7 @@
 version: '3.8'
 services:
-  # Внешние сервисы 
+  # FRONT SERVICE
+  
   allta-devpi:
     build:
       context: ./allta_devpi
@@ -13,9 +14,9 @@ services:
       - allta_devpi_data:/data
     networks:
       - allta_front_service
-    restart: always
+    restart: always    
 
-  #  Внутренние сервисы
+  #  NGINX
   allta-nginx:
     build:
       context: ./allta_nginx
@@ -35,7 +36,9 @@ services:
       - allta-devpi
     restart: always
 
-  # Внутренние базы данных
+
+  # AUTH-API
+
   allta-auth-db:
     build:
       context: ./allta_auth_api/allta_auth_db
@@ -50,42 +53,8 @@ services:
     ports:
       - "5432:5432"          
     networks:
-      - allta_network
+      - allta_auth_api
 
-  allta-server-db:
-    build:
-      context: ./allta_server_api/allta_server_db
-      dockerfile: Dockerfile.allta_server_db
-    image: allta-vm-db:latest
-    container_name: allta_server_db
-    restart: always
-    env_file:
-      - ./env/.env.allta_server_db
-    volumes:
-      - allta_server_db_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"    
-    networks:
-      - allta_network   
-
-  allta-vm-db:
-    build:
-      context: ./allta_vm_api/allta_vm_db
-      dockerfile: Dockerfile.allta_vm_db
-    image: allta-vm-db:latest
-    container_name: allta_vm_db
-    restart: always
-    env_file:
-      - ./env/.env.allta_vm_db
-    volumes:
-      - allta_vm_db_data:/var/lib/postgresql/data
-    ports:
-      - "5434:5432"    
-    networks:
-      - allta_network
-      
-         
-  # Внутренние API сервисы
   allta-auth-api:
     build:
       context: ../backend/allta_auth_api
@@ -100,6 +69,9 @@ services:
       - allta-auth-db
     networks:
       - allta_network
+      - allta_auth_api
+
+  # CONFIG API
 
   allta-config-api:
     build:
@@ -118,23 +90,7 @@ services:
     volumes:
       - allta_config_data:/data
 
-  allta-vm-api:
-    build:
-      context: ../backend/allta_vm_api
-      dockerfile: ../../docker_allta/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
-    image: allta-vm-api
-    container_name: allta_vm_api
-    restart: always
-    env_file:
-      - ./env/.env.allta_vm_api
-    depends_on:
-      - allta-nginx
-      - allta-auth-api
-      - allta-vm-db
-    networks:
-      - allta_network
-    volumes:
-      - allta_vm_api:/data
+  # SERVER API
 
   allta-server-api:
     build:
@@ -150,10 +106,79 @@ services:
       - allta-auth-api
       - allta-server-db
     networks:
+      - allta_server_api
       - allta_network
+    volumes:
+      - allta_server_api:/data
+
+  allta-server-db:
+    build:
+      context: ./allta_server_api/allta_server_db
+      dockerfile: Dockerfile.allta_server_db
+    image: allta-vm-db:latest
+    container_name: allta_server_db
+    restart: always
+    env_file:
+      - ./env/.env.allta_server_db
+    volumes:
+      - allta_server_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"    
+    networks:
+      - allta_network   
+
+  # VM_API
+  allta-vm-db:
+    build:
+      context: ./allta_vm_api/allta_vm_db
+      dockerfile: Dockerfile.allta_vm_db
+    image: allta-vm-db:latest
+    container_name: allta_vm_db
+    restart: always
+    env_file:
+      - ./env/.env.allta_vm_db
+    volumes:
+      - allta_vm_db_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"    
+    networks:
+      - allta_network
+      
+  allta-vm-api:
+    build:
+      context: ../backend/allta_vm_api
+      dockerfile: ../../docker_allta/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
+    image: allta-vm-api
+    container_name: allta_vm_api
+    restart: always
+    env_file:
+      - ./env/.env.allta_vm_api
+    depends_on:
+      - allta-nginx
+      - allta-auth-api
+      - allta-vm-db
+    networks:
+      - allta_vm_api
+      - allta_network
+    volumes:
+      - allta_vm_api:/data
+         
+  # ALL API DOCS
+  allta-swagger:
+    build:
+      context: ./allta_swagger
+      dockerfile: Dockerfile.allta_swagger
+    image: allta_swagger:latest
+    container_name: allta_swagger
+    networks:
+      allta_network:
+    depends_on:
+      - allta-nginx
+    ports:
+      - "8080:8080"
+    restart: always        
 
 volumes:
-  # Внешние тома
   allta_devpi_data:
     driver: local
     driver_opts:
@@ -161,54 +186,69 @@ volumes:
       device: /var/allta_services/volumes/allta_devpi_data
       o: bind
 
-  # Внутренние тома
-
-  # Database
+  # AUTH API
   allta_auth_db_data:
     driver: local
     driver_opts:
       type: none
       device: ${AUTH_DB_PATH}
       o: bind   
-  allta_server_db_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${SERVER_DB_PATH}
-      o: bind
-  allta_vm_db_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${VM_DB_PATH}
-      o: bind      
 
-  # Api
+  # CONFIG API
   allta_config_data:
     driver: local
     driver_opts:
       type: none
       device: ${CONFIG_API_DATA_PATH}
       o: bind
+
+  # SERVER API
   allta_server_api:
     driver: local
     driver_opts:
       type: none
       device: ${SERVER_API_DATA_PATH}
-      o: bind      
+      o: bind   
+
+  allta_server_db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${SERVER_DB_PATH}
+      o: bind
+
+  # VM API
   allta_vm_api:
     driver: local
     driver_opts:
       type: none
       device: ${VM_API_DATA_PATH}
       o: bind
-  
+    
+  allta_vm_db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${VM_DB_PATH}
+      o: bind      
       
 
 networks:
+  # ALL API
   allta_network:
     driver: bridge
   allta_front_service:
     driver: bridge
 
+  # AUTH API
+  allta_auth_api:
+    driver: bridge
+
+  # SERVER API
+  allta_server_api:
+    driver: bridge
+
+  # VM API
+  allta_vm_api:
+    driver: bridge
 

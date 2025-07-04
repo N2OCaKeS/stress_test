@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 
 # ========== gunicorn ==========
 bind = "0.0.0.0:8000"
-workers = 1
+workers = 4
 worker_class = "uvicorn.workers.UvicornWorker"
 loglevel = "debug"
 
@@ -33,7 +33,7 @@ def on_starting(server):
     alembic_cfg.set_main_option("sqlalchemy.url", db_url)
     command.upgrade(alembic_cfg, "head")
 
-    KEY_FILE = "secret.key"
+    KEY_FILE = settings.KEY_FILE_PATH
     if not os.path.exists(KEY_FILE):
         key = Fernet.generate_key()
         with open(KEY_FILE, "wb") as key_file:

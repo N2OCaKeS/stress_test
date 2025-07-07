@@ -105,13 +105,13 @@ class _VirtInstall:
                 f"--memory {ram} --vcpus {cpu} --import --disk path={vm_path}/{disk} "
                 f"--os-variant {os_version} --network network=test "
                 "--noautoconsole --noreboot --cpu host-model,+vmx --autostart "
-                "--controller type=pci,model=pcie-root,index=0 "
-                "--controller type=pci,model=pcie-root-port,index=1 "
-                "--controller type=pci,model=pcie-root-port,index=2 "
-                "--controller type=pci,model=pcie-root-port,index=3 "
-                "--controller type=pci,model=pcie-root-port,index=4 "
-                "--controller type=pci,model=pcie-root-port,index=5 "
-                "--controller type=pci,model=pcie-root-port,index=6 "
+                # "--controller type=pci,model=pcie-root,index=0 "
+                # "--controller type=pci,model=pcie-root-port,index=1 "
+                # "--controller type=pci,model=pcie-root-port,index=2 "
+                # "--controller type=pci,model=pcie-root-port,index=3 "
+                # "--controller type=pci,model=pcie-root-port,index=4 "
+                # "--controller type=pci,model=pcie-root-port,index=5 "
+                # "--controller type=pci,model=pcie-root-port,index=6 "
             ))
             # virt-install --connect qemu:///system -n test --memory 6144 --vcpus 6 --import --disk path=/var/lib/libvirt/images/pool/test.qcow2 --os-variant alse17 --network network=test --noautoconsole --noreboot --cpu host-model,+vmx --controller type=pci,model=pcie-root,index=0 --controller type=pci,model=pcie-root-port,index=1     
             
@@ -313,7 +313,7 @@ class _VirtInstall:
             cmds = [
                 # 1) hostname и /etc/hosts
                 "sudo hostnamectl set-hostname {host} && sudo timedatectl set-ntp true && "
-                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\t10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
+                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
 
                 # 2) репо
                 "echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",

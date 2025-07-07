@@ -15,7 +15,7 @@ setup(
   long_description_content_type='text/markdown',
   url='https://git.astralinux.ru/projects/QA/repos/stress_test/browse?at=refs%2Fheads%2Flibs',
   packages=find_packages(),
-  install_requires=['paramiko', 'requests'],
+  install_requires=['paramiko', 'requests', 'pytz'],
   classifiers=[],
   keywords='astralinux stresstest vm',
   python_requires='>=3.12'

@@ -10,6 +10,7 @@ import numpy as np
 from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH, VMS_DATES, VMS
 from time import sleep
 from tasks import test_1
+import asyncio
 
 
 sys_cls = SystemCommands()
@@ -17,14 +18,12 @@ sys_cls = SystemCommands()
 class CreateVM:
     def __init__(self,
                  vbox=None,
-                 testdir=None,
                  vm_count=None,
                  vms_dates=VMS_DATES,
                  vms=VMS):
         
         self.provider = Libvirt()
         self.vbox = vbox
-        self.testdir = testdir
         self.vm_count = vm_count
         self.vms = vms
         self.vms_dates = vms_dates
@@ -33,7 +32,7 @@ class CreateVM:
         self.username = "u"
         self.password = "1"
 
-
+    
     def common_build(self):
         self.provider.prepare()
         self.vms_dates = self.provider.build(box=self.vbox,
@@ -68,10 +67,10 @@ class CreateVM:
 class Test_1(CreateVM):
     def __init__(self,
              vbox=None,
-             testdir=None,
+             report_path=None,
              vm_count=None,
              vms_dates=VMS_DATES):
-        super().__init__(vbox=vbox, testdir=testdir, vm_count=vm_count, vms_dates=vms_dates)
+        super().__init__(vbox=vbox, report_path=report_path, vm_count=vm_count, vms_dates=vms_dates)
 
     # Launch 
     def start(self):
@@ -81,30 +80,31 @@ class Test_1(CreateVM):
             json_string = f.read()
             self.vms_dates = json.loads(json_string)
 
-        self.provider.execute(commands=test_1["task_unpack_tar"],
-                         vms_groups=self.main_group,
-                         vms_dates=self.vms_dates,
-                         username=self.username,
-                         password=self.password)
+        #self.provider.execute(commands=test_1["task_unpack_tar"],
+        #                 vms_groups=self.main_group,
+        #                 vms_dates=self.vms_dates,
+        #                 username=self.username,
+        #                 password=self.password)
         
-        self.provider.sed(sed_conf=test_1["task_sed_cipher"],
-                          vms_dates=self.vms_dates,
-                          username=self.username,
-                          password=self.password)
+        #self.provider.sed(sed_conf=test_1["task_sed_cipher"],
+        #                  vms_dates=self.vms_dates,
+        #                  username=self.username,
+        #                  password=self.password)
         
-        self.provider.execute(commands=test_1["task_start_server"],
-                         vms_dates=self.vms_dates,
-                         username=self.username,
-                         password=self.password)
+        #self.provider.execute(commands=test_1["task_start_server"],
+        #                 vms_dates=self.vms_dates,
+        #                 username=self.username,
+        #                 password=self.password)
         
-        self.provider.execute(commands=test_1["task_run_iperf"],
-                         vms_groups=self.clients_group,
-                         vms_dates=self.vms_dates,
-                         username=self.username,
-                         password=self.password)
+        #self.provider.execute(commands=test_1["task_run_iperf"],
+        #                 vms_groups=self.clients_group,
+        #                 vms_dates=self.vms_dates,
+        #                 username=self.username,
+        #                 password=self.password)
         
         self.provider.execute(commands=test_1["task_add_permission"],
                          vms_dates=self.vms_dates,
+                         vms_groups=self.clients_group,
                          username=self.username,
                          password=self.password)
         

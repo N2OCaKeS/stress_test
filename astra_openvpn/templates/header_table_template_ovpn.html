@@ -28,8 +28,8 @@
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Params</b></td>
           <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
              <ul>
-                 <li>Пользователи на шаг: {users}</li>
-		 <li>Время выполнения шага: {timestep} секунд</li>
+                 <li>Кол-во клиентов в минуту: {spawn_rate}</li>
+		         <li>Всего клиентов: {total_clients}</li>
             </ul>
           </td>
         </tr>
@@ -54,8 +54,8 @@
   Целью тестирования является оценка влияния среды контейниризации на работу веб-приложения под нагрузкой, генерируемой locust. Результатом тестирования является таблица значений со следующими параметрами:<br/>
 </p>
 <ul>
-  <li><b>User Count</b>: Количество пользователей одновременно выполняющих запросы к приложению;</li>
-  <li><b>Avg Requests/s</b>: Среднее количество запросов к приложению, включая ошибочные(если такие имеются);</li>
+  <li><b>User Count</b>: Колличество клиентов с пробросом трафика;</li>
+  <li><b>Avg Requests/s</b>: ;</li>
   <li><b>Avg Failures/s</b>: Среднее количество ошибочных ответов приложения;</li>
   <li><b>Avg Response Time</b>: Среднее время ответа(в миллисекундах) от приложения;</li>
 </ul>

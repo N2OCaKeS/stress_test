@@ -56,7 +56,7 @@ class AIOPerfVPN:
     async def run_tun(self, item):
         tun_dev = f"tun{item}"
         cfg_dir = f"/home/u/openvpn/clients_keys/tester{item}"
-        log_file = f"{self.log}/openvpn/clients/{tun_dev}.log"
+        log_file = f"{self.log}/openvpn/clients/clients_{tun_dev}.log"
 
         proc = await asyncio.create_subprocess_shell(
             f"cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --auth-nocache >> {log_file} 2>&1"
@@ -149,8 +149,8 @@ class AIOPerfVPN:
             test_result.write("Задано туннелей,Всего туннелей,Успешных подключений,Результат теста\n") # создаем
             test_result.write(f"{self.vms_ranges[self.hostname]},"
                               f"{sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')},"
-                              f"{self.counter},",
-                              True if self.vms_ranges[self.hostname] == self.counter == active else False)
+                              f"{self.counter},"
+                              f"{'PASS' if self.vms_ranges[self.hostname] == self.counter == active else 'FAIL'}")
             
         print(f"\nИтоги:")
         print(f"Задано туннелей: {self.vms_ranges[self.hostname]}")

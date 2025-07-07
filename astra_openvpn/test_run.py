@@ -13,7 +13,7 @@ ovpn_test = Test_1(vbox=BOX,
 # libvirt-install
 #ovpn_test.common_build()
 #ovpn_test.provision()
-#ovpn_test.start()
+ovpn_test.start()
 
 # vagrant-libvirt.old
 #ovpn_test.vms_destroy()
@@ -23,7 +23,7 @@ ovpn_test = Test_1(vbox=BOX,
 
 #print("RESULTS NEXT STAGE")
 
-#rp.build()
+rp.build()
 print(rp.pass_fail())
 
 #rp.build()

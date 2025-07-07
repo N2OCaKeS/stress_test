@@ -29,6 +29,11 @@ Pin: release l=extended
 Pin-Priority: 500
 EOF
 
+mkdir -p results
+mkdir -p results/raw
+mkdir -p results/raw/openvpn
+mkdir -p results/raw/iperf
+
 if [ "$HOSTNAME" = "testvm1" ]; then
     echo "---$(HOSTNAME)---i"
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server

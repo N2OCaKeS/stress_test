@@ -31,15 +31,15 @@ VMS_DATES = {  # Полный список ВМ
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 6000
-DURATION_RATE = 2500
+RANGE = 1200
+DURATION_RATE = RANGE / 120 * 60
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)
 
 # Common dirs/files
-OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/activate"
+OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
+VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/activate"
 REPORT_PATH = f"{OVPN_PATH}/results"
 TEMPLATE_PATH = f"{OVPN_PATH}/templates"
 

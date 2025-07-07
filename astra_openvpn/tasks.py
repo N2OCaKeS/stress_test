@@ -30,7 +30,7 @@ task_unpack_tar = {
     "g_main_group": {
         "unpack": {
             "command": (
-                f"cd /home/u/ && tar -xzvf ovpn.tar.gz > /dev/null 2>&1 && "
+                f"cd /home/u/ && tar -xzvf ovpn.subnet.tar.gz > /dev/null 2>&1 && "
                 'sudo su -c "cp -r /home/u/openvpn /etc/"'
             ),
             "signal set": "",
@@ -82,40 +82,42 @@ task_run_iperf = {
 }
 
 task_add_permission = {
-    "testvm1": {
-        "add_permission":{
+    "g_clients_group": {
+        "task1":{
             "command":
-                'sudo su -c "chmod -R 777 /var/log/openvpn && chown -R u:u /var/log/openvpn"',
+                'sudo su -c "chmod -R 777 /var/log/openvpn && chown -R u:u /var/log/openvpn && '
+                'chmod -R 777 /var/log/iperf && chown -R u:u /var/log/iperf"',
             "signal set": "",
             "signal get": ""
+        }  
+    },
+    "testvm1":{
+        "task2":{
+            "command":
+            'sudo su -c "chmod -R 777 /var/log/openvpn && chown -R u:u /var/log/openvpn"'
+            }
         }
-    }
 }
 
 # Pull results ->
 
 scp_pull = {
-    "testvm1": {
+    "testvm1": [{
         "mode": "pull",
-        "path_host": "./results/raw",
-        "path_vm": "/var/log/openvpn/"
-    },
+        "path_host": "./results/raw/openvpn",
+        "path_vm": "/var/log/openvpn/openvpn.log"
+    }],
     "g_clients_group":[
-        
         {
             "mode": "pull",
-            "path_host": f"./results/raw/iperf/iperf_{vm}/",
+            "path_host": "./results/raw/iperf",
             "path_vm": "/var/log/iperf/"
-        }
-        for vm in [key for key in VMS_DATES][1:]
-    ],
-    "g_clients_group":[
+        },
         {
             "mode": "pull",
-            "path_host": f"./results/raw/openvpn/ovpn_clients_{vm}",
+            "path_host": "./results/raw/openvpn/ovpn_clients",
             "path_vm": "/var/log/openvpn/clients/"
         }
-        for vm in [key for key in VMS_DATES][1:]
     ]
 }
 

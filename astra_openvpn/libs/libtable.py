@@ -149,8 +149,8 @@ class Report:
         if avg_reconnects <= 2:
             self.criteria.append(True)
         else: self.criteria.append(False)
-        print(f"Критерий Unique clients - {"PASS" if self.criteria[0] == True else Fail}\n"
-              f"Критерий AVG Reconects - {"PASS" if self.criteria[1] == True else Fail}")
+        print(f"Критерий Unique clients - {"PASS" if self.criteria[0] == True else 'Fail'}\n"
+              f"Критерий AVG Reconects - {"PASS" if self.criteria[1] == True else 'Fail'}")
         if self.criteria[0] and self.criteria[1]:
             return "PASS"
         else: return "FAIL"

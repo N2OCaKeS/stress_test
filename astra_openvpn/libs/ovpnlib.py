@@ -2,7 +2,7 @@ import subprocess
 from os import linesep
 import paramiko
 from os.path import exists
-from ovpn_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL
+from ovpn_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL, PACKAGE
 import requests
 import time
 
@@ -104,6 +104,7 @@ def info_list():
 
         with open(INFO_FILENAME, 'a+') as info:
             info.writelines(info_lst)
+            info.write(PACKAGE)
 
 
 def response():

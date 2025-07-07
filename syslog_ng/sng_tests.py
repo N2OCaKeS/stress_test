@@ -377,7 +377,7 @@ class SNGCheckWriteLogsTest():
             itog_status_file.write(self.status)
         
         # 4 +++
-        self.vm.destroy_vm()
+        # self.vm.destroy_vm()
 
         end_time = datetime.now()
         print(end_time)

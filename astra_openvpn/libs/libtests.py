@@ -1,16 +1,7 @@
-from allta import SystemCommands, VBox, Libvirt, LibvirtManager
-from threading import Thread
-import requests
-import os
-import datetime
-import re
-import pandas as pd
+from allta import SystemCommands, Libvirt
 import json
-import numpy as np
 from ovpn_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VENV_PATH, RANGE, REPORT_PATH, VMS_DATES, VMS
-from time import sleep
 from tasks import test_1
-import asyncio
 
 
 sys_cls = SystemCommands()
@@ -19,14 +10,17 @@ class CreateVM:
     def __init__(self,
                  vbox=None,
                  vm_count=None,
+                 rc_name=None,
                  vms_dates=VMS_DATES,
-                 vms=VMS):
+                 vms=VMS,
+                 provider=Libvirt()):
         
-        self.provider = Libvirt()
+        self.provider = provider
         self.vbox = vbox
         self.vm_count = vm_count
         self.vms = vms
         self.vms_dates = vms_dates
+        self.rc_name = rc_name
         self.main_group = {"main_group": self.vms}
         self.clients_group = {"clients_group": self.vms[1:]}
         self.username = "u"
@@ -36,9 +30,9 @@ class CreateVM:
     def common_build(self):
         self.provider.prepare()
         self.vms_dates = self.provider.build(box=self.vbox,
-                                       rc="1.8.1.6",
-                                       vms=self.vms,
-                                       vms_dates=self.vms_dates)
+                                             rc=self.rc_name,
+                                             vms=self.vms,
+                                             vms_dates=self.vms_dates)
         return self.vms_dates
     
     
@@ -67,10 +61,10 @@ class CreateVM:
 class Test_1(CreateVM):
     def __init__(self,
              vbox=None,
-             report_path=None,
              vm_count=None,
+             rc_name=None,
              vms_dates=VMS_DATES):
-        super().__init__(vbox=vbox, vm_count=vm_count, vms_dates=vms_dates)
+        super().__init__(vbox=vbox, rc_name=rc_name, vm_count=vm_count, vms_dates=vms_dates)
 
     # Launch 
     def start(self):
@@ -97,7 +91,7 @@ class Test_1(CreateVM):
                          password=self.password)
     
         self.provider.execute(commands=test_1["task_run_iperf"],
-                         vms_groups=self.clients_group,
+                         vms_groups=self.main_group,
                          vms_dates=self.vms_dates,
                          username=self.username,
                          password=self.password)

@@ -10,7 +10,7 @@ parser.add_argument('-n',
                     dest='NAME')
 args = parser.parse_args()
 
-with open(f'/home/askeladd/git/stress_test/{args.NAME}', 'r') as r:
+with open(f'/home/u/{args.NAME}', 'r') as r:
     dates = r.read()
 
-subprocess.run(f'sudo {VENV_PATH} ovpn20k_run.py {dates}', shell=True)
+subprocess.run(f'sudo {VENV_PATH} ovpn_run.py {dates}', shell=True)

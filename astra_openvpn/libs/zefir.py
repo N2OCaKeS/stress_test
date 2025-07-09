@@ -8,7 +8,7 @@ from numpy import where
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
-from libs.dockerlib import response
+from libs.ovpnlib import response
 from libs.libpublic import Public
 from time import sleep, ctime
 from ovpn_conf import JIRA_URL, CONFLUENCE_URL

@@ -116,7 +116,27 @@ def response():
         jira, life = str(type(e).__name__), str(e)
         return jira, life
     
-def change_cipher_18():
-    for i in range(0, 10000):  # От tester0 до tester9999
-        sys_cls.cmd(f"cd /home/u/openvpn/clients_keys/tester{i} && "
-            "sed -i 's/grasshopper-cbc/kuznyechik-cbc/g' client.ovpn")
+@timer
+def change_conf_settings(host, av):
+    if av == "1.8":
+        if host != "testvm1":
+            for i in range(0, 10000):  # От tester0 до tester9999
+                sys_cls.cmd(f"cd /home/u/openvpn/clients_keys/tester{i} && "
+                            "sed -i 's/grasshopper-cbc/kuznyechik-cbc/g' client.ovpn")
+                sys_cls.cmd(f'echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
+                            f'>> /home/u/openvpn/clients_keys/tester{i}/client.ovpn')
+                
+        if exists("/etc/openvpn/server.conf"):    
+            sys_cls.cmd(f'echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
+                        f'>> /etc/openvpn/server.conf')
+            sys_cls.cmd(f'astra-openvpn-server start')
+        else: "Конфигурация сервера не найдена в /etc/hosts"
+    elif av == "1.7":
+        if host != "testvm1":
+            for i in range(0, 10000):
+                sys_cls.cmd(f"echo -e '\nncp-disable\n'"
+                            f">> /home/u/openvpn/clients_keys/tester{i}/client.ovpn")
+        if exists("/etc/openvpn/server.conf"):
+            sys_cls.cmd(f"echo -e '\nncp-disable\n'"
+                        f">> /etc/openvpn/server.conf")
+    else: "Не удалось изменить конфиг. файлы"

@@ -1,6 +1,5 @@
 import pandas as pd
 import re
-import os
 from ovpn_conf import REPORT_PATH, RANGE, VMS_COUNT, VMS
 from datetime import datetime
 from pathlib import Path
@@ -139,18 +138,55 @@ class Report:
 
 
     def pass_fail(self):
+        # Читаем данные
         df = pd.read_csv("./results/processed/clients_sessions_count.csv")
-        if len(df) >= self.range / 100 * 99 - 1: # 1 допустим 1 процент ошибок по Unique Clients
-            self.criteria.append(True)
-        else: self.criteria.append(False)
         
-        avg_reconnects = df["session_count"].mean()
-
-        if avg_reconnects <= 2:
-            self.criteria.append(True)
-        else: self.criteria.append(False)
-        print(f"Критерий Unique clients - {"PASS" if self.criteria[0] == True else 'Fail'}\n"
-              f"Критерий AVG Reconects - {"PASS" if self.criteria[1] == True else 'Fail'}")
-        if self.criteria[0] and self.criteria[1]:
-            return "PASS"
-        else: return "FAIL"
+        # Рассчитываем метрики
+        total_expected = self.range
+        total_actual = len(df) - 1  # Исключаем строку TOTAL_SESSIONS
+        error_percent = (1 - (total_actual / total_expected)) * 100
+        avg_reconnects = df[df['common_name'] != 'TOTAL_SESSIONS']['session_count'].mean()
+        
+        # Определяем критерии
+        unique_clients_ok = total_actual >= self.range / 100 * 99
+        avg_reconnects_ok = avg_reconnects <= 2
+        
+        self.criteria.extend([unique_clients_ok, avg_reconnects_ok])
+        
+        # Создаем DataFrame с результатами
+        result_df = pd.DataFrame({
+            'metric': [
+                'Unique clients', 
+                'Average reconnects',
+                'Error percentage',
+                'Total expected',
+                'Total actual',
+                'Final verdict'
+            ],
+            'value': [
+                'PASS' if unique_clients_ok else 'FAIL',
+                'PASS' if avg_reconnects_ok else 'FAIL',
+                f"{error_percent:.2f}%",
+                total_expected,
+                total_actual,
+                'PASS' if all(self.criteria) else 'FAIL'
+            ],
+            'threshold': [
+                f">= {self.range / 100 * 99}",
+                "<= 2",
+                "< 1%",
+                "",
+                "",
+                "All PASS"
+            ]
+        })
+        
+        # Сохраняем в CSV
+        output_dir = Path(self.report_path) / "processed"
+        result_df.to_csv(output_dir / "test_results_summary.csv", index=False)
+        
+        print(f"\nРезультаты теста:")
+        print(result_df.to_string(index=False))
+        print(f"\nФайл с результатами: {output_dir/'test_results_summary.csv'}")
+        
+        return "PASS" if all(self.criteria) else "FAIL"

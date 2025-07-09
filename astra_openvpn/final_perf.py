@@ -2,7 +2,7 @@ import os
 import math
 import asyncio
 from datetime import datetime
-from libs.ovpnlib import timer, change_cipher_18
+from libs.ovpnlib import timer, change_conf_settings
 from ovpn_conf import RANGE, DURATION_RATE, VMS, VMS_COUNT, CONNECTIONS_PER_MINUTE, COLORS, sys_cls
 
 
@@ -41,11 +41,6 @@ class AIOPerfVPN:
         self.counter = 0
         self.aio_lock = asyncio.Lock()
         self.last_batch_time = None
-
-    with open("/home/av.txt", "r", encoding="UTF-8") as ver:
-        temp = ver.read()
-        if ".".join(temp.split("."))[:3] == "1.8":
-            change_cipher_18()
 
 
     async def run_iperf(self, tun_ip, tun_dev):
@@ -153,10 +148,10 @@ class AIOPerfVPN:
         active = sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')
         with open(f"{self.log}/openvpn/{self.hostname}_result.csv", "w", encoding="UTF-8") as test_result:
             test_result.write("Задано туннелей,Всего туннелей,Успешных подключений,Результат теста\n") # создаем
-            test_result.write(f"{self.vms_ranges[self.hostname]},"
+            test_result.write(f"{len(self.vms_ranges)},"
                               f"{sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')},"
                               f"{self.counter},"
-                              f"{'PASS' if self.vms_ranges[self.hostname] == self.counter == active else 'FAIL'}")
+                              f"{'PASS' if self.vms_ranges[self.hostname] == self.counter == active else 'FAIL'}" + "\n")
             
         print(f"\nИтоги:")
         print(f"Задано туннелей: {self.vms_ranges[self.hostname]}")
@@ -165,5 +160,12 @@ class AIOPerfVPN:
 
 
 if __name__ == "__main__":
+    
     perf_cls = AIOPerfVPN()
-    asyncio.run(perf_cls.load_test())
+
+    with open("/home/av.txt", "r", encoding="UTF-8") as ver:
+        temp = ver.read()
+        av = ".".join(temp.split("."))[:3]
+        change_conf_settings(host=perf_cls.hostname, av=av)
+    if perf_cls.hostname != "testvm1":
+        asyncio.run(perf_cls.load_test())

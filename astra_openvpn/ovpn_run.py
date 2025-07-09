@@ -2,14 +2,14 @@ import subprocess
 import sys
 from os import path
 import argparse
-from ovpn_conf import VENV_PATH
+from ovpn_conf import VENV_PATH, BOX, VMS_COUNT, VMS_DATES
 from libs.zefir import UploaderZC
 from libs.libtests import Test_1
-
+from libs.libtable import Report
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
-                    choices=["20k"],
+                    choices=["ovpn"],
                     action='store_true',
                     help="Choose test name.",
                     dest="TEST")
@@ -83,39 +83,27 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     required=True,
                     help='test-cycle-version',
                     dest='TCV')
+parser.add_argument("-rc",
+                    action="store",
+                    required=True,
+                    help="rc_name",
+                    dest="RC")
 args = parser.parse_args()
-
-
-def run_command(command):
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            check=True,
-            text=True,
-            stdout=sys.stdout,
-            stderr=sys.stderr
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        print("Команда завершилась с ошибкой:")
-        print(e)
-        return False
     
 
 if __name__ == "__main__":
 
     uzs = UploaderZC(folder_tree_id=args.FTI,
-                 test_cycle_name=args.TCYC,
-                 test_case_name=args.TCAS,
-                 basic_auth=args.BA,
-                 test_cycle_version=args.TCV,
-                 token=args.TOKEN,
-                 username=args.USER,
-                 conf_space=args.SPACE,
-                 conf_parent_page=args.PPAGE,
-                 conf_new_page_name=args.NPAGE,
-                 grade_stand=args.STAND)
+                     test_cycle_name=args.TCYC,
+                     test_case_name=args.TCAS,
+                     basic_auth=args.BA,
+                     test_cycle_version=args.TCV,
+                     token=args.TOKEN,
+                     username=args.USER,
+                     conf_space=args.SPACE,
+                     conf_parent_page=args.PPAGE,
+                     conf_new_page_name=args.NPAGE,
+                     grade_stand=args.STAND)
 
     uzs.upload_test_cycle_status('progress')
     
@@ -123,14 +111,28 @@ if __name__ == "__main__":
         TODO Здесь запускаем тесты
     """
 
-    if args.TEST == "pf":
-        ovpn_test = Test_1() # <- build, provision, test
+    if args.TEST == "ovpn":
+
+        ovpn_test = Test_1(vbox=BOX,
+                           vm_count=VMS_COUNT,
+                           vms_dates=VMS_DATES,
+                           rc_name=args.RC)
+        rp = Report()
+
+        #load-test
+        ovpn_test.common_build()
+        ovpn_test.provision()
+        ovpn_test.start()
+
+        #results + report
+        rp.build()
         
-        
+        ovpn_test.vms_destroy()
+
+
+
     else: "Тест не найден"
     
-    ovpn_test.choose_box()
-    ovpn_test.run_test()
 
     uzs.public = True
     uzs.statistics = False

@@ -67,7 +67,7 @@ task_start_server = {
 }
 
 task_run_iperf = {
-    'g_clients_group': {
+    'g_main_group': {
         "run_perf": {
             "command": (
                 'sudo su -c "ulimit -u 100000 && '
@@ -104,18 +104,18 @@ task_add_permission = {
 scp_pull = {
     "testvm1": [{
         "mode": "pull",
-        "path_host": "./results/raw/openvpn/log",
+        "path_host": "./results/raw/openvpn/openvpn.log",
         "path_vm": "/var/log/openvpn/openvpn.log"
     }],
     "g_clients_group":[
         {
             "mode": "pull",
-            "path_host": "./results/raw/iperf",
+            "path_host": "./results/raw/",
             "path_vm": "/var/log/iperf/"
         },
         {
             "mode": "pull",
-            "path_host": "./results/raw/openvpn/ovpn_clients",
+            "path_host": "./results/raw/openvpn/",
             "path_vm": "/var/log/openvpn/clients/"
         }
     ]

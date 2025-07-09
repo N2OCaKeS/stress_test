@@ -36,7 +36,7 @@ class CreateVM:
     def common_build(self):
         self.provider.prepare()
         self.vms_dates = self.provider.build(box=self.vbox,
-                                       rc="1.7.5",
+                                       rc="1.8.1.6",
                                        vms=self.vms,
                                        vms_dates=self.vms_dates)
         return self.vms_dates
@@ -70,7 +70,7 @@ class Test_1(CreateVM):
              report_path=None,
              vm_count=None,
              vms_dates=VMS_DATES):
-        super().__init__(vbox=vbox, report_path=report_path, vm_count=vm_count, vms_dates=vms_dates)
+        super().__init__(vbox=vbox, vm_count=vm_count, vms_dates=vms_dates)
 
     # Launch 
     def start(self):
@@ -80,27 +80,27 @@ class Test_1(CreateVM):
             json_string = f.read()
             self.vms_dates = json.loads(json_string)
 
-        #self.provider.execute(commands=test_1["task_unpack_tar"],
-        #                 vms_groups=self.main_group,
-        #                 vms_dates=self.vms_dates,
-        #                 username=self.username,
-        #                 password=self.password)
-        
-        #self.provider.sed(sed_conf=test_1["task_sed_cipher"],
-        #                  vms_dates=self.vms_dates,
-        #                  username=self.username,
-        #                  password=self.password)
-        
-        #self.provider.execute(commands=test_1["task_start_server"],
-        #                 vms_dates=self.vms_dates,
-        #                 username=self.username,
-        #                 password=self.password)
-        
-        #self.provider.execute(commands=test_1["task_run_iperf"],
-        #                 vms_groups=self.clients_group,
-        #                 vms_dates=self.vms_dates,
-        #                 username=self.username,
-        #                 password=self.password)
+        self.provider.execute(commands=test_1["task_unpack_tar"],
+                         vms_groups=self.main_group,
+                         vms_dates=self.vms_dates,
+                         username=self.username,
+                         password=self.password)
+    
+        self.provider.sed(sed_conf=test_1["task_sed_cipher"],
+                          vms_dates=self.vms_dates,
+                          username=self.username,
+                          password=self.password)
+    
+        self.provider.execute(commands=test_1["task_start_server"],
+                         vms_dates=self.vms_dates,
+                         username=self.username,
+                         password=self.password)
+    
+        self.provider.execute(commands=test_1["task_run_iperf"],
+                         vms_groups=self.clients_group,
+                         vms_dates=self.vms_dates,
+                         username=self.username,
+                         password=self.password)
         
         self.provider.execute(commands=test_1["task_add_permission"],
                          vms_dates=self.vms_dates,

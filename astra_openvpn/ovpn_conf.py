@@ -32,7 +32,7 @@ VMS_DATES = {  # Полный список ВМ
 # Test №1
 USER = ["u", "askeladd"]
 RANGE = 1200
-DURATION_RATE = RANGE / 120 * 60
+DURATION_RATE = RANGE
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)

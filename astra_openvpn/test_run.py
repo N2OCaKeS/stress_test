@@ -8,11 +8,10 @@ rp = Report()
 
 ovpn_test = Test_1(vbox=BOX,
                    vm_count=VMS_COUNT,
-                   vms_dates=VMS_DATES,
-                   testdir=REPORT_PATH)
+                   vms_dates=VMS_DATES)
 # libvirt-install
-#ovpn_test.common_build()
-#ovpn_test.provision()
+ovpn_test.common_build()
+ovpn_test.provision()
 ovpn_test.start()
 
 # vagrant-libvirt.old

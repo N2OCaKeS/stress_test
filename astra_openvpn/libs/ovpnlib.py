@@ -2,7 +2,7 @@ import subprocess
 from os import linesep
 import paramiko
 from os.path import exists
-from ovpn_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL, PACKAGE
+from ovpn_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL, PACKAGE, sys_cls
 import requests
 import time
 
@@ -115,3 +115,8 @@ def response():
     except Exception as e:
         jira, life = str(type(e).__name__), str(e)
         return jira, life
+    
+def change_cipher_18():
+    for i in range(0, 10000):  # От tester0 до tester9999
+        sys_cls.cmd(f"cd /home/u/openvpn/clients_keys/tester{i} && "
+            "sed -i 's/grasshopper-cbc/kuznyechik-cbc/g' client.ovpn")

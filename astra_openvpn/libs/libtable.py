@@ -140,7 +140,7 @@ class Report:
 
     def pass_fail(self):
         df = pd.read_csv("./results/processed/clients_sessions_count.csv")
-        if len(df) >= self.range / 100 * 99 - 1:
+        if len(df) >= self.range / 100 * 99 - 1: # 1 допустим 1 процент ошибок по Unique Clients
             self.criteria.append(True)
         else: self.criteria.append(False)
         

@@ -2,8 +2,9 @@ import os
 import math
 import asyncio
 from datetime import datetime
-from libs.ovpnlib import timer
+from libs.ovpnlib import timer, change_cipher_18
 from ovpn_conf import RANGE, DURATION_RATE, VMS, VMS_COUNT, CONNECTIONS_PER_MINUTE, COLORS, sys_cls
+
 
 class AIOPerfVPN:
     """
@@ -21,7 +22,7 @@ class AIOPerfVPN:
         self.range = ranger
         self.duration = duration
         self.vms = vms
-        self.vms_count = vms_count - 1
+        self.vms_count = vms_count - 1  
         self.cpm = connections_per_minute
         self.hostname = sys_cls.check_output_command("echo $HOSTNAME").split(".")[0]
         self.colors = colors
@@ -40,6 +41,11 @@ class AIOPerfVPN:
         self.counter = 0
         self.aio_lock = asyncio.Lock()
         self.last_batch_time = None
+
+    with open("/home/av.txt", "r", encoding="UTF-8") as ver:
+        temp = ver.read()
+        if ".".join(temp.split("."))[:3] == "1.8":
+            change_cipher_18()
 
 
     async def run_iperf(self, tun_ip, tun_dev):

@@ -104,7 +104,7 @@ task_add_permission = {
 scp_pull = {
     "testvm1": [{
         "mode": "pull",
-        "path_host": "./results/raw/openvpn",
+        "path_host": "./results/raw/openvpn/log",
         "path_vm": "/var/log/openvpn/openvpn.log"
     }],
     "g_clients_group":[

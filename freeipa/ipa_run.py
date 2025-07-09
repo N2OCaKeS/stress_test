@@ -196,7 +196,7 @@ if __name__ == "__main__":
     print(total_rating)
     put_system_info_in_file(time_start_script, INFO_FILENAME)
 
-    upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/ipa_report.txt', f'{args.TCYC}_ipa_report.txt')
+    # upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/ipa_report.txt', f'{args.TCYC}_ipa_report.txt')
 
     uzs.public = True
     uzs.total_rating = total_rating

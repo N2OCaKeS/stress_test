@@ -36,6 +36,7 @@ DURATION_RATE = RANGE
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)
+ERRORS = 1 # Допустимый 1% ошибок
 
 # Common dirs/files
 OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"

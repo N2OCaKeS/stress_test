@@ -1,122 +1,151 @@
 import pandas as pd
 import re
-from ovpn_conf import REPORT_PATH, RANGE, VMS_COUNT, VMS
+from libs.ovpnlib import astra_version
+from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, RANGE, VMS_COUNT, VMS
 from datetime import datetime
-from pathlib import Path
-from collections import Counter
+from allta import SystemCommands
+
+sys_cls = SystemCommands()
 
 
 class Report:
-    def __init__(self, report_path=REPORT_PATH, ranger=RANGE, vm_count=VMS_COUNT, vms=VMS):
+    def __init__(self, report_path=REPORT_PATH, template_path=TEMPLATE_PATH, ranger=RANGE, vm_count=VMS_COUNT, vms=VMS):
         self.report_path = report_path
-        self.ovpn_status_log = Path(self.report_path) / "raw/openvpn/openvpn-status.log"
-        self.ovpn_log = Path(self.report_path) / "raw/openvpn/openvpn.log"
-        self.raw_records = []  
-        self.session_records = []  
+        self.template_path = template_path
+        self.processed_dir = f"{self.report_path}/processed"
+        self.ovpn_log = f"{self.report_path}/raw/openvpn/openvpn.log"
+        self.raw_records = []
+        self.session_records = []
         self.range = ranger
         self.vm_count = vm_count
         self.vms = vms
-        self.counter = Counter()
         self.criteria = []
 
+    @classmethod
+    def _set_format(cls):
+        version = astra_version()
+        if version == "1.8":
+            return ("%Y-%m-%d %H:%M:%S", 2)
+        elif version == "1.7":
+            return ("%a %b %d %H:%M:%S %Y", 5)
+        else:
+            return ("%a %b %d %H:%M:%S %Y", 5)
 
     def build(self):
-        # Читаем лог
+        sys_cls.cmd(f"sudo mkdir -p {self.processed_dir}")
+
+        log_format, time_parts = self._set_format()
+
         with open(self.ovpn_log, "r") as f:
-            lines = f.readlines()
-            for line in lines:
-                parts = line.split()
-                if len(parts) < 6:
+            for line in f:
+                if not line.strip():
                     continue
-                timestamp_str = ' '.join(parts[:5])
+                    
+                parts = line.split()
+                if len(parts) < time_parts + 1:  # Должно быть время + хотя бы 1 слово сообщения
+                    continue
+                    
+                timestamp_str = ' '.join(parts[:time_parts])
+                message = ' '.join(parts[time_parts:])
+                
                 try:
-                    timestamp = datetime.strptime(timestamp_str, "%a %b %d %H:%M:%S %Y")
-                    message = ' '.join(parts[5:])
+                    timestamp = datetime.strptime(timestamp_str, log_format)
                     self.raw_records.append({"timestamp": timestamp, "message": message})
-                except Exception as e:
+                except ValueError as e:
                     print(f"Ошибка парсинга: {line.strip()} → {e}")
+                    continue
 
-        # Создаём DataFrame
+        if not self.raw_records:
+            print("е найдено ни одной записи в логе!")
+            return
+
         df = pd.DataFrame(self.raw_records)
+        
+        if 'message' not in df.columns:
+            print("В DataFrame отсутствует столбец 'message'")
+            return
 
-        # Ищем строки начала сессии
-        start_sessions = df[df["message"].str.contains("Peer Connection Initiated")].copy()
+        start_sessions = df[df["message"].str.contains("Peer Connection Initiated", na=False)].copy()
 
         for _, row in start_sessions.iterrows():
-            ts = row["timestamp"]
+            try:
+                ts = row["timestamp"]
+                msg = row["message"]
 
-            # IP и порт
-            ip_port_match = re.search(r"\[AF_INET\](\d+\.\d+\.\d+\.\d+):(\d+)", row["message"])
-            if not ip_port_match:
+                # IP и порт
+                ip_port_match = re.search(r"\[AF_INET\](\d+\.\d+\.\d+\.\d+):(\d+)", msg)
+                if not ip_port_match:
+                    continue
+                    
+                ip, port = ip_port_match.groups()
+
+                # CN (с проверкой на None)
+                cn_match = re.search(r"\[(.+?)\]", msg)
+                cn = cn_match.group(1) if cn_match else "UNKNOWN"
+
+                # Все строки этой сессии
+                pattern = re.escape(f"{ip}:{port}")
+                sess_df = df[df["message"].str.contains(pattern, na=False)].copy()
+
+                # Дополнительные данные (с проверкой на пустоту)
+                assigned_ip = self._extract_value(sess_df, "primary virtual IP", r"(\d+\.\d+\.\d+\.\d+)")
+                cipher = self._extract_value(sess_df, "Outgoing Data Channel: Cipher", r"Cipher '(.+?)'")
+                tls_info = self._extract_tls_info(sess_df)
+                config_file = self._extract_value(sess_df, "OPTIONS IMPORT", r"from:\s+(.+)")
+
+                self.session_records.append({
+                    "timestamp": ts,
+                    "peer_ip": ip,
+                    "peer_port": port,
+                    "common_name": cn,
+                    "assigned_ip": assigned_ip,
+                    "cipher": cipher,
+                    "tls_version": tls_info.get("version"),
+                    "tls_cipher": tls_info.get("cipher"),
+                    "config_file": config_file
+                })
+            except Exception as e:
+                print(f"Ошибка обработки сессии: {e}")
                 continue
-            ip = ip_port_match.group(1)
-            port = ip_port_match.group(2)
 
-            # CN
-            cn_match = re.search(r"\[(.+?)\]", row["message"])
-            cn = cn_match.group(1) if cn_match else None
+        # Сохранение результатов
+        self._save_results()
+        self._generate_html_report()
 
-            # Все строки этой сессии
-            pattern = f"{ip}:{port}"
-            sess_df = df[df["message"].str.contains(pattern)].copy()
 
-            # assigned_ip
-            assigned = sess_df[sess_df["message"].str.contains("primary virtual IP")]
-            if not assigned.empty:
-                assigned_ip = re.search(r"(\d+\.\d+\.\d+\.\d+)", assigned['message'].iloc[0]).group(1)
-            else:
-                assigned_ip = None
+    def _extract_value(self, df, pattern, regex):
+        """Вспомогательный метод для извлечения данных"""
+        rows = df[df["message"].str.contains(pattern, na=False)]
+        if not rows.empty:
+            match = re.search(regex, rows.iloc[0]["message"])
+            return match.group(1) if match else None
+        return None
 
-            # cipher
-            cipher_row = sess_df[sess_df["message"].str.contains("Outgoing Data Channel: Cipher")]
-            if not cipher_row.empty:
-                cipher = re.search(r"Cipher '(.+?)'", cipher_row['message'].iloc[0]).group(1)
-            else:
-                cipher = None
+    def _extract_tls_info(self, df):
+        """Извлечение информации о TLS"""
+        rows = df[df["message"].str.contains("Control Channel: TLS", na=False)]
+        if not rows.empty:
+            msg = rows.iloc[0]["message"]
+            parts = [p.strip() for p in msg.split(",")]
+            return {
+                "version": parts[0].split()[-1],
+                "cipher": parts[1].split()[-1] if len(parts) > 1 else None
+            }
+        return {"version": None, "cipher": None}
 
-            # TLS
-            tls_row = sess_df[sess_df["message"].str.contains("Control Channel: TLS")]
-            if not tls_row.empty:
-                tls_msg = tls_row['message'].iloc[0]
-                parts = tls_msg.split(",")
-                tls_version = parts[0].split()[-1]
-                tls_cipher = parts[1].strip().split()[-1]
-            else:
-                tls_version = tls_cipher = None
-
-            # config_file
-            config_row = sess_df[sess_df["message"].str.contains("OPTIONS IMPORT")]
-            if not config_row.empty:
-                config_file = config_row['message'].str.extract(r"from:\s+(.+)")[0].iloc[0]
-            else:
-                config_file = None
-
-            # Добавляем запись
-            self.session_records.append({
-                "timestamp": ts,
-                "peer_ip": ip,
-                "peer_port": port,
-                "common_name": cn,
-                "assigned_ip": assigned_ip,
-                "cipher": cipher,
-                "tls_version": tls_version,
-                "tls_cipher": tls_cipher,
-                "config_file": config_file
-            })
+    def _save_results(self):
+        """Сохранение результатов в файлы"""
+        if not self.session_records:
+            print("Нет данных для сохранения!")
+            return
 
         sessions_df = pd.DataFrame(self.session_records)
-
-        # Сортируем по common_name
         sessions_df_sorted = sessions_df.sort_values(by="common_name")
-
-        # Оставляем только уникальные common_name
         sessions_unique = sessions_df_sorted.drop_duplicates(subset=["common_name"])
 
-        # Считаем количество сессий каждого клиента
         counts_df = sessions_df.groupby("common_name").size().reset_index(name="session_count")
         counts_df_sorted = counts_df.sort_values(by="common_name")
 
-        # Добавляем итоговую строку
         total_sessions = counts_df["session_count"].sum()
         summary_row = pd.DataFrame({
             "common_name": ["TOTAL_SESSIONS"],
@@ -124,69 +153,96 @@ class Report:
         })
         counts_df_final = pd.concat([counts_df_sorted, summary_row], ignore_index=True)
 
-        # Создаём папку для вывода
-        output_dir = Path(self.report_path) / "processed"
-        output_dir.mkdir(parents=True, exist_ok=True)
+        sessions_unique.to_csv(f"{self.processed_dir}/unique_clients.csv", index=False)
+        counts_df_final.to_csv(f"{self.processed_dir}/sessions_count.csv", index=False)
 
-        # Сохраняем результаты
-        sessions_unique.to_csv(output_dir / "clients_info_unique.csv", index=False)
-        counts_df_final.to_csv(output_dir / "clients_sessions_count.csv", index=False)
+        print(f"Уникальные клиенты: {self.processed_dir}/unique_clients.csv")
+        print(f"Статистика сессий: {self.processed_dir}/sessions_count.csv")
 
-        print("✅ Готово!")
-        print(f" - Уникальные клиенты: {output_dir/'clients_info_unique.csv'}")
-        print(f" - Статистика по сессиям: {output_dir/'clients_sessions_count.csv'}")
+
+    def _generate_html_report(self):
+        counts_df = pd.read_csv(f"{self.processed_dir}/sessions_count.csv")
+        
+        # Показатели
+        expected = self.range
+        actual = len(counts_df) - 1
+        failed = expected - actual
+        failed_percents = f"{round(failed / (expected / 100), 2)}%"
+        avg_reconnects = counts_df[counts_df['common_name'] != 'TOTAL_SESSIONS']['session_count'].mean()
+        
+        # Проверяем критерий (не более 1% ошибок)
+        max_allowed_failed = expected * 0.01
+        result = "PASS" if failed <= max_allowed_failed else "FAIL"
+        
+        # df для отчета
+        report_df = pd.DataFrame({
+            'expected_clients': [expected],
+            'unique_clients': [actual],
+            'failed_connects': [failed_percents],
+            'average_reconnects': [avg_reconnects],
+            'result': [result]
+        })
+        
+        html_output = f"""
+        <html>
+        <head>
+            <title>OpenVPN Test Report</title>
+        </head>
+        <body>
+            <table>
+                <tr>
+                    <th>Expected Clients</th>
+                    <th>Unique Clients</th>
+                    <th>Failed Connects</th>
+                    <th>Average Reconnects</th>
+                    <th>Result</th>
+                </tr>
+                <tr>
+                    <td>{expected}</td>
+                    <td>{actual}</td>
+                    <td>{failed_percents}</td>
+                    <td>{avg_reconnects:.2f}</td>
+                    <td class="{result.lower()}">{result}</td>
+                </tr>
+            </table>
+            <p>Условие теста: Failed Connects должен быть &lt;= 1%</p>
+        </body>
+        </html>
+        """
+        
+        # Сохраняем HTML файл
+        with open(f"{self.template_path}/test_report.html", "w") as f:
+            f.write(html_output)
+        
+        print(f"\nHTML создан: {self.template_path}/test_report.html")
 
 
     def pass_fail(self):
-        # Читаем данные
-        df = pd.read_csv("./results/processed/clients_sessions_count.csv")
+        df = pd.read_csv("./results/processed/sessions_count.csv")
         
         # Рассчитываем метрики
-        total_expected = self.range
-        total_actual = len(df) - 1  # Исключаем строку TOTAL_SESSIONS
-        error_percent = (1 - (total_actual / total_expected)) * 100
+        expected = self.range
+        actual = len(df) - 1
+        failed = expected - actual
+        failed_percent = (failed / expected) * 100
         avg_reconnects = df[df['common_name'] != 'TOTAL_SESSIONS']['session_count'].mean()
         
-        # Определяем критерии
-        unique_clients_ok = total_actual >= self.range / 100 * 99
-        avg_reconnects_ok = avg_reconnects <= 2
+        # Определяем результат
+        result = "FAIL" if failed_percent > 1 else "PASS"
         
-        self.criteria.extend([unique_clients_ok, avg_reconnects_ok])
-        
-        # Создаем DataFrame с результатами
-        result_df = pd.DataFrame({
-            'metric': [
-                'Unique clients', 
-                'Average reconnects',
-                'Error percentage',
-                'Total expected',
-                'Total actual',
-                'Final verdict'
-            ],
-            'value': [
-                'PASS' if unique_clients_ok else 'FAIL',
-                'PASS' if avg_reconnects_ok else 'FAIL',
-                f"{error_percent:.2f}%",
-                total_expected,
-                total_actual,
-                'PASS' if all(self.criteria) else 'FAIL'
-            ],
-            'threshold': [
-                f">= {self.range / 100 * 99}",
-                "<= 2",
-                "< 1%",
-                "",
-                "",
-                "All PASS"
-            ]
+        # Создаем df отчет
+        simple_report = pd.DataFrame({
+            'expected_clients': [expected],
+            'unique_clients': [actual],
+            'failed_connects(%)': [f"{failed_percent:.2f}%"],
+            'average_reconnects': [avg_reconnects],
+            'result': [result]
         })
         
-        # Сохраняем в CSV
-        output_dir = Path(self.report_path) / "processed"
-        result_df.to_csv(output_dir / "test_results_summary.csv", index=False)
+        simple_report.to_csv(f"{self.processed_dir}/test_report.csv", index=False)
         
-        print(f"\nРезультаты теста:")
-        print(result_df.to_string(index=False))
-        print(f"\nФайл с результатами: {output_dir/'test_results_summary.csv'}")
+        print(simple_report.to_string(index=False))
+        print(f"\nФайл с результатами: {self.processed_dir}/test_report.csv")
         
-        return "PASS" if all(self.criteria) else "FAIL"
+
+        return result

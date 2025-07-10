@@ -135,6 +135,8 @@ class Public:
                                                     total_clients=self.clients,
                                                     clients_nodes=self.vms_count-1, 
                                                     spawn_rate=self.spawn_rate*(self.vms_count-1))
+        with open(f"{TEMPLATE_PATH}/test_report.html", "r", encoding="UTF-8") as file:
+            test_table = file.read()
 
 
         # paths = [[f"{REPORT_PATH}/openvpn_testvm{i}" for i in self.vms_count-1],
@@ -209,7 +211,10 @@ class Public:
         #     server_steps_html])
 
         # создание страницы отчета
-        html_page = '\n'.join([header_table])
+        html_page = '\n'.join([
+            header_table,
+            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">Результаты теста</h2>',
+            test_table])
 
         #выкладываем информацию на страницу
         if release_pp and release_np:

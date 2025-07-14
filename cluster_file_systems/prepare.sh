@@ -73,3 +73,8 @@ echo '/home/u/git/stress_test/ *(rw,sync,no_root_squash,no_subtree_check)' | sud
 # sudo service nfs-kernel-server restart
 sudo systemctl restart nfs-kernel-server
 
+sudo firewall-cmd --permanent --zone=libvirt --add-service=nfs
+sudo firewall-cmd --permanent --zone=libvirt --add-service=mountd
+sudo firewall-cmd --permanent --zone=libvirt --add-service=rpc-bind
+sudo firewall-cmd --reload
+

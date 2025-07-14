@@ -3,7 +3,7 @@ import sys
 from libs.libreport import ReportToConfluence
 from libs.ovpnlib import info_list
 sys.path.append(os.path.join(os.getcwd(), '..'))
-from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, RANGE, CONNECTIONS_PER_MINUTE, VMS_COUNT
+from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, RANGE, CONNECTIONS_PER_MINUTE, VMS_COUNT, GRAPH_DESCRIPTIONS
 
 
 class Public:
@@ -138,83 +138,24 @@ class Public:
         with open(f"{TEMPLATE_PATH}/test_report.html", "r", encoding="UTF-8") as file:
             test_table = file.read()
 
+        with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
+            images_lst = []
+            img_temp = template.read()
+            for file in os.listdir(f"{REPORT_PATH}/processed"):
+                if file.endswith('png'):
+                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
+                                                    img_png=file,
+                                                    description=GRAPH_DESCRIPTIONS[file]))
+            images = '\n'.join(images_lst)
 
-        # paths = [[f"{REPORT_PATH}/openvpn_testvm{i}" for i in self.vms_count-1],
-        #          [f"{REPORT_PATH}/iperf_testvm{i}" for i in self.vms_count-1]]
-        
-
-        # r_docker = ""
-        # r_server = ""
-        # r_locust_proc = ""
-
-        # for path in paths:
-        #     with open(path, 'r') as f:
-        #         lines = f.readlines()
-        #         if len(lines) >= 2:
-        #             header = lines[0].strip().rstrip(':')
-        #             second_line = lines[1].strip()
-        #             # Определяем тип файла по содержимому заголовка
-        #             if "nginx_server" in header:
-        #                 r_server = second_line
-        #                 print("server:", r_server)
-        #             elif "nginx_docker" in header:
-        #                 r_docker = second_line
-        #                 print("docker:", r_docker)
-        #             elif "locust_proc" in header:
-        #                 r_locust_proc = second_line
-        #                 print("locust_proc:", r_locust_proc)
-
-        # Делаем rating html
-        # with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
-        #     rating_temp = template.read()
-        #     rating = rating_temp.format(rd=r_docker, rl=r_locust_proc, rs=r_server)
-
-        # # Таблицы на 3 теста
-        # docker_stats = os.path.join(TEMPLATE_PATH, 'docker', 'results_stats.html')
-        # docker_steps = os.path.join(TEMPLATE_PATH, 'docker', 'step_stats_summary.html')
-        # locust_stats = os.path.join(TEMPLATE_PATH, 'locust', 'results_stats.html')
-        # locust_steps = os.path.join(TEMPLATE_PATH, 'locust', 'step_stats_summary.html')
-        # server_stats = os.path.join(TEMPLATE_PATH, 'server', 'results_stats.html')
-        # server_steps = os.path.join(TEMPLATE_PATH, 'server', 'step_stats_summary.html')
-        # with open(docker_stats, 'r') as f:
-        #     docker_stats_html = f.read()
-        # with open(docker_steps, 'r') as f:
-        #     docker_steps_html = f.read()
-        # with open(locust_stats, 'r') as f:
-        #     locust_stats_html = f.read()
-        # with open(locust_steps, 'r') as f:
-        #     locust_steps_html = f.read()
-        # with open(server_stats, 'r') as f:
-        #     server_stats_html = f.read()
-        # with open(server_steps, 'r') as f:
-        #     server_steps_html = f.read()
-        
-        # 
-        # html_page = '\n'.join([
-        #     header_table,
-        #     rating,
-        #     "<hr></hr>"
-        #     '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">Детальные результаты по сценариям</h2>',
-        #     '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">1. Приложение в Docker | Нагрузчик в Docker 🐳</h2>', 
-        #     "<h3>Общая статистика</h3>",
-        #     docker_stats_html,
-        #     docker_steps_html,
-
-        #     '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">2. Приложение в Docker | Нагрузчик на хосте 🐳</h2>',
-        #     "<h3>Общая статистика</h3>",
-        #     locust_stats_html,
-        #     locust_steps_html,
-
-        #     '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">3. Приложение на хосте | Нагрузчик на хосте 💻</h2>',
-        #     "<h3>Общая статистика</h3>",
-        #     server_stats_html,
-        #     server_steps_html])
 
         # создание страницы отчета
         html_page = '\n'.join([
             header_table,
             '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">Результаты теста</h2>',
-            test_table])
+            test_table,
+            images])
+        
 
         #выкладываем информацию на страницу
         if release_pp and release_np:

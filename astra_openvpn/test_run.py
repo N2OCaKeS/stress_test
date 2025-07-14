@@ -9,7 +9,7 @@ rp = Report()
 ovpn_test = Test_1(vbox=BOX,
                    vm_count=VMS_COUNT,
                    vms_dates=VMS_DATES,
-                   rc_name="1.8.3.4")
+                   rc_name="1.8.1.6")
 # libvirt-install
 #ovpn_test.common_build()
 #ovpn_test.provision()
@@ -22,6 +22,8 @@ ovpn_test = Test_1(vbox=BOX,
 
 
 print("RESULTS NEXT STAGE")
-rp.build()
-rp.pass_fail()
+# rp.build()
+# rp.pass_fail()
+#rp.plot_waves()
 public.run_publish()
+

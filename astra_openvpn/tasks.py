@@ -117,6 +117,12 @@ scp_pull = {
             "mode": "pull",
             "path_host": "./results/raw/openvpn/",
             "path_vm": "/var/log/openvpn/clients/"
+        },
+        {
+            "mode": "pull",
+            "path_host": "./results/raw/",
+            "path_vm": "/var/log/active/"
+
         }
     ]
 }

@@ -1,5 +1,9 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import warnings
 import re
+import os
 from libs.ovpnlib import astra_version
 from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, RANGE, VMS_COUNT, VMS
 from datetime import datetime
@@ -24,12 +28,13 @@ class Report:
     @classmethod
     def _set_format(cls):
         version = astra_version()
-        if version == "1.8":
+        if ".".join(version[0].split(".")[:2]) == "1.8":
             return ("%Y-%m-%d %H:%M:%S", 2)
-        elif version == "1.7":
+        elif ".".join(version[0].split(".")[:2]) == "1.7":
             return ("%a %b %d %H:%M:%S %Y", 5)
         else:
             return ("%a %b %d %H:%M:%S %Y", 5)
+
 
     def build(self):
         sys_cls.cmd(f"sudo mkdir -p {self.processed_dir}")
@@ -246,3 +251,43 @@ class Report:
         
 
         return result
+    
+
+    def plot_waves(self):
+        files = ["testvm2_counts.csv",
+                "testvm3_counts.csv",
+                "testvm4_counts.csv",
+                "testvm5_counts.csv"]
+        dir = f"{self.report_path}/raw/active"
+        
+        # Создаем словарь для накопления суммарных значений
+        total_clients = {}
+        
+        for file in files:
+            fpath = os.path.join(dir, file)
+            if os.path.exists(fpath):
+                df = pd.read_csv(fpath, header=None, names=["Минута", "Клиенты"])
+                # Суммируем значения для каждой минуты
+                for minute, clients in zip(df["Минута"], df["Клиенты"]):
+                    if minute in total_clients:
+                        total_clients[minute] += clients
+                    else:
+                        total_clients[minute] = clients
+        
+        # Преобразуем словарь в DataFrame для удобства построения
+        total_df = pd.DataFrame(list(total_clients.items()), columns=["Минута", "Клиенты"])
+        total_df = total_df.sort_values("Минута")  # Сортируем по минутам
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(total_df["Минута"], total_df["Клиенты"], marker='o', color='blue', label='Всего клиентов')
+        
+        plt.title("Общее количество активных клиентов по минутам")
+        plt.xlabel("Минута")
+        plt.ylabel("Клиенты")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+
+        plt_path = f"{self.report_path}/processed/cgraph.png"
+        plt.savefig(plt_path)
+        return plt_path

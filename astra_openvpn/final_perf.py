@@ -3,7 +3,7 @@ import math
 import asyncio
 from datetime import datetime
 from libs.ovpnlib import timer, change_conf_settings
-from ovpn_conf import RANGE, DURATION_RATE, VMS, VMS_COUNT, CONNECTIONS_PER_MINUTE, COLORS, sys_cls
+from ovpn_conf import RANGE, VMS, VMS_COUNT, CONNECTIONS_PER_MINUTE, COLORS, sys_cls
 
 
 class AIOPerfVPN:
@@ -14,18 +14,18 @@ class AIOPerfVPN:
     """
     def __init__(self, 
                  ranger=RANGE, 
-                 duration=DURATION_RATE, 
                  vms=VMS, 
                  vms_count=VMS_COUNT,
                  connections_per_minute=CONNECTIONS_PER_MINUTE,
                  colors=COLORS):
         self.range = ranger
-        self.duration = duration
         self.vms = vms
         self.vms_count = vms_count - 1  
         self.cpm = connections_per_minute
         self.hostname = sys_cls.check_output_command("echo $HOSTNAME").split(".")[0]
         self.colors = colors
+        self.batch_counter = self.range // 120
+        self.wave_counter, self.wave_temp = 0, 0
 
         # range for each VM
         self.step = self.range // self.vms_count
@@ -43,12 +43,13 @@ class AIOPerfVPN:
         self.last_batch_time = None
 
 
-    async def run_iperf(self, tun_ip, tun_dev):
+    async def run_iperf(self, tun_ip, tun_dev, batch_number):
         try:
             proc = await asyncio.create_subprocess_shell(
-                f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {self.duration} -B {tun_ip} -i 3 > {self.log}/iperf/{tun_dev}.log 2>&1"
+                f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {batch_number * 60 + 100} -B {tun_ip} -i 3 > {self.log}/iperf/{tun_dev}.log 2>&1"
             )
             print(f"{tun_dev} | Iperf | запущен")
+
             return proc
         except Exception as e:
             print(f"{tun_dev} | Iperf | error: {str(e)}")
@@ -100,7 +101,8 @@ class AIOPerfVPN:
     async def load_test(self):
         sys_cls.cmd("mkdir -p /var/log/openvpn/clients")
         sys_cls.cmd("mkdir -p /var/log/iperf")
-        
+        sys_cls.cmd("mkdir -p /var/log/active")
+
         total_tunnels = len(self.vms_ranges[self.hostname])
         batches = math.ceil(total_tunnels / self.cpm)
         
@@ -126,37 +128,36 @@ class AIOPerfVPN:
             # Создаем туннели текущей партии
             tasks = [self.run_tun(item) for item in current_batch]
             results = await asyncio.gather(*tasks)
-            
+
             # Запускаем iperf для успешных туннелей
             iperf_tasks = []
             for result in results:
                 if result and isinstance(result, tuple):
                     tun_dev, tun_ip = result
-                    iperf_tasks.append(self.run_iperf(tun_ip, tun_dev))
+                    iperf_tasks.append(self.run_iperf(tun_ip, tun_dev, self.batch_counter))
+            self.batch_counter -= 1
             
             await asyncio.gather(*iperf_tasks)
             
             batch_duration = (datetime.now() - batch_start_time).total_seconds()
             print(f"Партия {batch_num+1} завершена за {batch_duration:.2f} сек")
+            active = self.count_active_tunnels(batch_num+1)
+            self.save_batch_result(batch_num=batch_num+1, active_tunnels=active)
         
-        await asyncio.sleep(100)
+        await asyncio.sleep(125)
         
-        # Запись результатов
-        # if os.path.exists(f"{self.log}/openvpn/{self.hostname}_result.csv"): # дозаписываем если есть
-        #     with open(f"{self.log}/openvpn/{self.hostname}_result.csv", "a", encoding="UTF-8") as test_result:
-        # else:
-        active = sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')
-        with open(f"{self.log}/openvpn/{self.hostname}_result.csv", "w", encoding="UTF-8") as test_result:
-            test_result.write("Задано туннелей,Всего туннелей,Успешных подключений,Результат теста\n") # создаем
-            test_result.write(f"{len(self.vms_ranges)},"
-                              f"{sys_cls.check_output_command('ls -la /sys/class/net | grep tun | wc -l')},"
-                              f"{self.counter},"
-                              f"{'PASS' if self.vms_ranges[self.hostname] == self.counter == active else 'FAIL'}" + "\n")
-            
-        print(f"\nИтоги:")
-        print(f"Задано туннелей: {self.vms_ranges[self.hostname]}")
-        print(f"Всего туннелей: {active}")
-        print(f"Успешных подключений: {self.counter}")
+
+    # Вспом ф-ции
+    def count_active_tunnels(self):
+        current_count = len([name for name in os.listdir('/sys/class/net') if name.startswith('tun')])
+        delta = current_count - self.wave_temp
+        self.wave_temp = current_count
+        return delta
+    
+
+    def save_batch_result(self, batch_num, active_tunnels):
+        with open(f"{self.log}/active/{self.hostname}_counts.csv", "a") as f:
+            f.write(f"{batch_num},{active_tunnels}\n")
 
 
 if __name__ == "__main__":
@@ -169,3 +170,4 @@ if __name__ == "__main__":
         change_conf_settings(host=perf_cls.hostname, av=av)
     if perf_cls.hostname != "testvm1":
         asyncio.run(perf_cls.load_test())
+

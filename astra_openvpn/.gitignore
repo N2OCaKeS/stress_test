@@ -14,6 +14,5 @@ openvpn
 results
 vms_dates.txt
 test-box-config.json
-aye.py
 public.py
 test_report.html

@@ -32,11 +32,14 @@ VMS_DATES = {  # Полный список ВМ
 # Test №1
 USER = ["u", "askeladd"]
 RANGE = 1200
-DURATION_RATE = RANGE
+DURATION_RATE = 100 + RANGE // 2
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)
 ERRORS = 1 # Допустимый 1% ошибок
+GRAPH_DESCRIPTIONS = {'cgraph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График количества активаций клиентских туннелей на минуту теста.<ul><li><b>OX</b>: Минута теста;</li><li><b>OY</b>: Количество успешно подключенных туннелей к серверу;</li><li><b>Функция</b>: Аппроксимирующая функция точек;</li></ul></p>'}
+  
+
 
 # Common dirs/files
 OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"

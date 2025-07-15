@@ -42,8 +42,8 @@ GRAPH_DESCRIPTIONS = {'cgraph.png': '<p style="font-family: Century Gothic, sans
 
 
 # Common dirs/files
-OVPN_PATH = f"/home/{USER[0]}/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/{USER[0]}/python/Python-3.12.1/venv/bin/python3.12"
+OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
+VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/python3.12"
 REPORT_PATH = f"{OVPN_PATH}/results"
 TEMPLATE_PATH = f"{OVPN_PATH}/templates"
 
@@ -79,9 +79,7 @@ print(BOX)
 
 # print(SYS_VERSION, SYS_KERNEL, PACKAGE, sep="\n")
 print(RC)
-print(".".join(RC.split(".")[:2]))
 
-print(VERSION_OS)
 
 
 

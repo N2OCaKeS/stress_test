@@ -17,3 +17,5 @@ test-box-config.json
 aye.py
 public.py
 test_report.html
+dates_stand4.conf
+JIRA_ERROR.log

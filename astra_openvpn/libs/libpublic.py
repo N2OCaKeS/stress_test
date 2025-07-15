@@ -3,7 +3,7 @@ import sys
 from libs.libreport import ReportToConfluence
 from libs.ovpnlib import info_list
 sys.path.append(os.path.join(os.getcwd(), '..'))
-from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, RANGE, CONNECTIONS_PER_MINUTE, VMS_COUNT, GRAPH_DESCRIPTIONS
+from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, RANGE, CONNECTIONS_PER_MINUTE, VMS_COUNT, GRAPH_DESCRIPTIONS, VERSION_OS
 
 
 class Public:
@@ -134,7 +134,8 @@ class Public:
                                                     arm_st=self.stands[self.grade_stand]['storage'],
                                                     total_clients=self.clients,
                                                     clients_nodes=self.vms_count-1, 
-                                                    spawn_rate=self.spawn_rate*(self.vms_count-1))
+                                                    spawn_rate=self.spawn_rate*(self.vms_count-1),
+                                                    cipher="grasshopper-cbc" if VERSION_OS == "1.7" else "kuznyechik-cbc")
         with open(f"{TEMPLATE_PATH}/test_report.html", "r", encoding="UTF-8") as file:
             test_table = file.read()
 

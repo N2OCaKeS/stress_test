@@ -10,7 +10,6 @@ from libs.libtable import Report
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
                     choices=["ovpn"],
-                    action='store_true',
                     help="Choose test name.",
                     dest="TEST")
 parser.add_argument('-u', '--username',
@@ -74,7 +73,7 @@ parser.add_argument('-tcas', '--test-case-name',
 
 parser.add_argument('-ba', '--basic-auth',
                     action='store',
-                    required=True,
+                    required=False,
                     help='basic-auth',
                     dest='BA')
 
@@ -83,11 +82,6 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     required=True,
                     help='test-cycle-version',
                     dest='TCV')
-parser.add_argument("-rc",
-                    action="store",
-                    required=True,
-                    help="rc_name",
-                    dest="RC")
 args = parser.parse_args()
     
 
@@ -116,7 +110,7 @@ if __name__ == "__main__":
         ovpn_test = Test_1(vbox=BOX,
                            vm_count=VMS_COUNT,
                            vms_dates=VMS_DATES,
-                           rc_name=args.RC)
+                           rc_name=args.TCV)
         rp = Report()
 
         #load-test
@@ -126,8 +120,10 @@ if __name__ == "__main__":
 
         #results + report
         rp.build()
+        rp.pass_fail()
+        rp.plot_waves()
         
-        ovpn_test.vms_destroy()
+        #ovpn_test.vms_destroy()
 
 
 

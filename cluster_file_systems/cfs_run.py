@@ -329,6 +329,11 @@ if args.VBOX or args.LIBVIRT: # вирт. стенд
     virt_machines = VMS(rc_vbox=args.VBOX, vm_count=len(all_hosts), hostip=HOST_IP, kernel=args.KERNEL)
     virt_machines.prepare_and_start()
 
+    cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=nfs")
+    cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=mountd")
+    cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=rpc-bind")
+    cmd("sudo firewall-cmd --reload")
+
     cmd(storagecreate.format(fs=args.FS,
                              size=args.DISK_SIZE))
 

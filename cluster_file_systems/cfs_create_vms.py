@@ -154,8 +154,7 @@ class VMS:
                 } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
 
-        lm = LibvirtManager()
-        lm.power_off(self.vm_dates.keys())
+        LibvirtManager.power_off(self.vm_dates.keys())
 
 
 

@@ -4,7 +4,8 @@ from json import loads
 from libs.libactions import cmd
 from libs.libcfs import check_output_command
 from time import sleep
-from allta import Libvirt
+from allta import Libvirt, LibvirtManager
+
 
 class VMS:
     def __init__(self, rc_vbox=None, vm_count=None, testdir=None, kernel="6.1", hostip=None, mode='o', provider=Libvirt()):
@@ -153,9 +154,13 @@ class VMS:
                 } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
 
+        lm = LibvirtManager()
+        lm.power_off(self.vm_dates.keys())
+
+
 
 if __name__ == "__main__":
-    vm1 = VMS(rc_vbox="1.8.0.14", vm_count=3, hostip="10.177.103.202")
+    vm1 = VMS(rc_vbox="1.8.3.4", vm_count=3, hostip="10.177.103.203")
     vm1.prepare_and_start()
     tmp = vm1.vm_dates
     print("VM DATES\n", tmp)

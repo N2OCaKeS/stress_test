@@ -89,7 +89,7 @@ TEMPLATE_PATH = '{}/templates'.format(LOCAL_SCRIPT_DIR)
 # Количество Inode
 INODE_COUNT = '-N 255'
 #
-STORAGE_NAME = 'sdb'
+STORAGE_NAME = 'sda'
 #
 STORAGE_MOUNT_DIR = '/mnt'
 #

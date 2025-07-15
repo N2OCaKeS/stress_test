@@ -57,8 +57,7 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-# pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta
-pip install -i http://10.177.103.10:3141/debug/debug --trust 10.177.103.10 allta
+pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta
 
 cd /home/u/git/stress_test/$1
 python3.12 -m pip install --upgrade pip
@@ -73,8 +72,8 @@ echo '/home/u/git/stress_test/ *(rw,sync,no_root_squash,no_subtree_check)' | sud
 # sudo service nfs-kernel-server restart
 sudo systemctl restart nfs-kernel-server
 
-sudo firewall-cmd --permanent --zone=libvirt --add-service=nfs
-sudo firewall-cmd --permanent --zone=libvirt --add-service=mountd
-sudo firewall-cmd --permanent --zone=libvirt --add-service=rpc-bind
-sudo firewall-cmd --reload
+# sudo firewall-cmd --permanent --zone=libvirt --add-service=nfs
+# sudo firewall-cmd --permanent --zone=libvirt --add-service=mountd
+# sudo firewall-cmd --permanent --zone=libvirt --add-service=rpc-bind
+# sudo firewall-cmd --reload
 

@@ -291,3 +291,4 @@ class Report:
         plt_path = f"{self.report_path}/processed/cgraph.png"
         plt.savefig(plt_path)
         return plt_path
+

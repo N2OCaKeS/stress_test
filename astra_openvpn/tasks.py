@@ -1,6 +1,6 @@
 # Start Test_1:
 
-from ovpn_conf import VMS_DATES, VERSION_OS
+from ovpn_conf import VMS_DATES, VERSION_OS, VMS
 
 # Provision ->
 
@@ -85,8 +85,8 @@ task_add_permission = {
     "g_clients_group": {
         "task1":{
             "command":
-                'sudo su -c "chmod -R 777 /var/log/openvpn && chown -R u:u /var/log/openvpn && '
-                'chmod -R 777 /var/log/iperf && chown -R u:u /var/log/iperf"',
+                'sudo su -c "chmod -R 777 /var/log/openv* && chown -R u:u /var/log/openv* && '
+                'chmod -R 777 /var/log/iper* && chown -R u:u /var/log/iper*"',
             "signal set": "",
             "signal get": ""
         }  
@@ -107,23 +107,22 @@ scp_pull = {
         "path_host": "./results/raw/openvpn/openvpn.log",
         "path_vm": "/var/log/openvpn/openvpn.log"
     }],
-    "g_clients_group":[
-        {
+    "g_clients_group": [
+        *[{
             "mode": "pull",
-            "path_host": "./results/raw/",
-            "path_vm": "/var/log/iperf/"
-        },
-        {
+            "path_host": "./results/raw/iperf",
+            "path_vm": f"/var/log/iperf_{vm}/"
+        } for vm in VMS],
+        *[{
             "mode": "pull",
             "path_host": "./results/raw/openvpn/",
-            "path_vm": "/var/log/openvpn/clients/"
-        },
-        {
+            "path_vm": f"/var/log/openvpn/clients_{vm}/"
+        } for vm in VMS],
+        *[{
             "mode": "pull",
             "path_host": "./results/raw/",
-            "path_vm": "/var/log/active/"
-
-        }
+            "path_vm": f"/var/log/active/"
+        }]
     ]
 }
 

@@ -46,7 +46,7 @@ class AIOPerfVPN:
     async def run_iperf(self, tun_ip, tun_dev, batch_number):
         try:
             proc = await asyncio.create_subprocess_shell(
-                f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {batch_number * 60 + 100} -B {tun_ip} -i 3 > {self.log}/iperf/{tun_dev}.log 2>&1"
+                f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {batch_number * 60 + 100} -B {tun_ip} -i 3 > {self.log}/iperf_{self.hostname}/{tun_dev}.log 2>&1"
             )
             print(f"{tun_dev} | Iperf | запущен")
 
@@ -58,7 +58,7 @@ class AIOPerfVPN:
     async def run_tun(self, item):
         tun_dev = f"tun{item}"
         cfg_dir = f"/home/u/openvpn/clients_keys/tester{item}"
-        log_file = f"{self.log}/openvpn/clients/clients_{tun_dev}.log"
+        log_file = f"{self.log}/openvpn/clients_{self.hostname}/clients_{tun_dev}.log"
 
         proc = await asyncio.create_subprocess_shell(
             f"cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --auth-nocache >> {log_file} 2>&1"
@@ -99,9 +99,9 @@ class AIOPerfVPN:
 
     @timer
     async def load_test(self):
-        sys_cls.cmd("mkdir -p /var/log/openvpn/clients")
-        sys_cls.cmd("mkdir -p /var/log/iperf")
-        sys_cls.cmd("mkdir -p /var/log/active")
+        sys_cls.cmd(f"mkdir -p /var/log/openvpn/clients_{self.hostname}")
+        sys_cls.cmd(f"mkdir -p /var/log/iperf_{self.hostname}")
+        sys_cls.cmd(f"mkdir -p /var/log/active")
 
         total_tunnels = len(self.vms_ranges[self.hostname])
         batches = math.ceil(total_tunnels / self.cpm)
@@ -111,38 +111,43 @@ class AIOPerfVPN:
         for batch_num in range(batches):
             batch_start = batch_num * self.cpm
             batch_end = (batch_num + 1) * self.cpm
-            # current banch - текущий набор туннелей * cpm(clients_per_minute)
             current_batch = list(self.vms_ranges[self.hostname])[batch_start:batch_end]
-            
+
             if self.last_batch_time is not None:
                 elapsed = (datetime.now() - self.last_batch_time).total_seconds()
                 if elapsed < 60:
                     wait_time = 60 - elapsed
                     print(f"Ожидаем {wait_time:.1f} сек до следующей партии...")
                     await asyncio.sleep(wait_time)
-            
+
             batch_start_time = datetime.now()
             self.last_batch_time = batch_start_time
             print(f"\nПартия {batch_num+1}/{batches} | Начало в {batch_start_time.strftime('%H:%M:%S')}")
-            
-            # Создаем туннели текущей партии
+
             tasks = [self.run_tun(item) for item in current_batch]
             results = await asyncio.gather(*tasks)
 
-            # Запускаем iperf для успешных туннелей
             iperf_tasks = []
             for result in results:
                 if result and isinstance(result, tuple):
                     tun_dev, tun_ip = result
                     iperf_tasks.append(self.run_iperf(tun_ip, tun_dev, self.batch_counter))
             self.batch_counter -= 1
-            
+
             await asyncio.gather(*iperf_tasks)
-            
+
+            # ⏳ Дождаться конца минуты (или хотя бы 10 сек задержка)
+            elapsed = (datetime.now() - batch_start_time).total_seconds()
+            if elapsed < 60:
+                await asyncio.sleep(60 - elapsed)
+
+            # ✅ Фиксируем количество туннелей после полной волны
+            active = self.count_active_tunnels()
+            self.save_batch_result(batch_num=batch_num+1, active_tunnels=active)
+
             batch_duration = (datetime.now() - batch_start_time).total_seconds()
             print(f"Партия {batch_num+1} завершена за {batch_duration:.2f} сек")
-            active = self.count_active_tunnels(batch_num+1)
-            self.save_batch_result(batch_num=batch_num+1, active_tunnels=active)
+
         
         await asyncio.sleep(125)
         
@@ -170,4 +175,3 @@ if __name__ == "__main__":
         change_conf_settings(host=perf_cls.hostname, av=av)
     if perf_cls.hostname != "testvm1":
         asyncio.run(perf_cls.load_test())
-

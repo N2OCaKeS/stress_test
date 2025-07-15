@@ -138,6 +138,11 @@ class Public:
         with open(f"{TEMPLATE_PATH}/test_report.html", "r", encoding="UTF-8") as file:
             test_table = file.read()
 
+        for file in os.listdir(f"{REPORT_PATH}/processed"):
+            confluence_report.attache_files(f'{REPORT_PATH}/processed/{file}',
+                                            self.c_space,
+                                            c_np)
+
         with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
             images_lst = []
             img_temp = template.read()
@@ -190,3 +195,4 @@ class Public:
 
         else:
             self.preset_publish(self.c_pp, self.c_np)
+

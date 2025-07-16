@@ -44,6 +44,28 @@ class VMS:
         self.provider.check(VMS, VMS_DATES)
         print(f'VMS DATES:\n{VMS_DATES}')
 
+        cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=nfs")
+        cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=mountd")
+        cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=rpc-bind")
+        cmd("sudo firewall-cmd --reload")
+        
+        self.provider.scp(
+            scp_settings={
+                'g_VMS': [
+                    {
+                        'mode': 'push', 
+                        'path_host': '/home/u/git/stress_test/cluster_file_systems/req.txt', 
+                        'path_vm': '/home/u/req.txt'
+                    }
+                ]
+            },
+            vms_dates=VMS_DATES,
+            vms_groups={
+                'VMS':VMS
+            }
+        )
+        print(f'<{str(self.provider.scp.__name__).upper()}> block done ' + ('*' * 50))
+
         self.provider.scp(
             scp_settings={
                 'g_VMS': [

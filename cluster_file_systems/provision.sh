@@ -70,8 +70,8 @@ sleep 30
 test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install fabric
 test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install fabric --break-system-packages
 
-test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install -r /git/req.txt
-test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install -r /git/req.txt --break-system-packages
+test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install -r /home/u/req.txt
+test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install -r /home/u/req.txt --break-system-packages
 
 test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install numpy --upgrade
 test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install numpy --upgrade --break-system-packages

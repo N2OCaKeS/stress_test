@@ -48,6 +48,7 @@ class VMS:
         cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=mountd")
         cmd("sudo firewall-cmd --permanent --zone=libvirt --add-service=rpc-bind")
         cmd("sudo firewall-cmd --reload")
+        sleep(30)
         
         self.provider.scp(
             scp_settings={

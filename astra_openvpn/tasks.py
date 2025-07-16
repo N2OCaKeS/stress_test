@@ -2,6 +2,10 @@
 
 from ovpn_conf import VMS_DATES, VERSION_OS, VMS
 
+from final_perf import AIOPerfVPN
+
+perf = AIOPerfVPN()
+
 # Provision ->
 
 scp_provision = {
@@ -52,22 +56,20 @@ task_sed_cipher = {
     ]
 }
 
-task_start_server = {
-    "testvm1": {
-        "start_server":
-        {
-            "command": (
-            'sudo su root -c "astra-openvpn-server start" && '
-            'sudo su root -c "iperf -s -u -B 10.8.0.1 -i 1 -D "'
-        ),
-        "signal set": "",
-        "signal get": ""
-        }
-    }
-}
-
 task_run_iperf = {
-    'g_main_group': {
+    "testvm1": {
+        "server_settings": {
+            "command": (
+                'sudo su -c "ulimit -u 100000 && '
+                'ulimit -n 100000 && '
+                'ulimit -s 100000 && '
+                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/final_perf.py"'
+                ),
+            "signal set": "first",
+            "signal get": ""
+            }
+        },
+    'g_clients_group': {
         "run_perf": {
             "command": (
                 'sudo su -c "ulimit -u 100000 && '
@@ -76,7 +78,7 @@ task_run_iperf = {
                 '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/final_perf.py"'
             ),
             "signal set": "",
-            "signal get": ""
+            "signal get": ["first"]
         }
     }
 }
@@ -102,35 +104,39 @@ task_add_permission = {
 # Pull results ->
 
 scp_pull = {
-    "testvm1": [{
+    "testvm1": [
+    {
         "mode": "pull",
         "path_host": "./results/raw/openvpn/openvpn.log",
         "path_vm": "/var/log/openvpn/openvpn.log"
+    },
+    {
+        "mode": "pull",
+        "path_host": "./results/raw/iperf/iperf_server.log",
+        "path_vm": "/var/log/iperf_server.log"
     }],
-    "g_clients_group": [
-        *[{
-            "mode": "pull",
-            "path_host": "./results/raw/iperf",
-            "path_vm": f"/var/log/iperf_{vm}/"
-        } for vm in VMS],
-        *[{
-            "mode": "pull",
-            "path_host": "./results/raw/openvpn/",
-            "path_vm": f"/var/log/openvpn/clients_{vm}/"
-        } for vm in VMS],
-        *[{
-            "mode": "pull",
-            "path_host": "./results/raw/",
-            "path_vm": f"/var/log/active/"
-        }]
-    ]
+    "g_clients_group":[
+    {
+        "mode": "pull",
+        "path_host": "./results/raw/",
+        "path_vm": "/var/log/openvpn"
+    },
+    {
+        "mode": "pull",
+        "path_host": "./results/raw/",
+        "path_vm": "/var/log/iperf"
+    },
+    {
+        "mode": "pull",
+        "path_host": "./results/raw/",
+        "path_vm": "/var/log/active"
+    }]
 }
 
 test_1 = {"scp_provision": scp_provision,
           "task_provision": task_provision,
           "task_unpack_tar": task_unpack_tar,
           "task_sed_cipher": task_sed_cipher,
-          "task_start_server": task_start_server,
           "task_run_iperf": task_run_iperf,
           "task_add_permission": task_add_permission,
           "scp_pull": scp_pull}

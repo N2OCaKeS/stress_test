@@ -29,23 +29,15 @@ Pin: release l=extended
 Pin-Priority: 500
 EOF
 
+# raw results dirs
 mkdir -p results
 mkdir -p results/raw
-mkdir -p results/raw/openvpn
+mkdir -p results/raw/active
 mkdir -p results/raw/iperf
+mkdir -p results/raw/openvpn
 
-if [ "$HOSTNAME" = "testvm1" ]; then
-    echo "---$(HOSTNAME)---i"
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server
-    sudo astra-openvpn-server start
-    sudo astra-openvpn-server status
-    sudo astra-openvpn-server client tester
-    sudo chown -R vagrant:vagrant /etc/openvpn/clients_keys/tester/
-else
-    echo "---($HOSTNAME)---"
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y astra-openvpn-server openvpn sshpass iperf
 
-fi
 
 # venv packages
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config
@@ -70,9 +62,9 @@ sudo make altinstall
 python3.12 -m venv venv
 source venv/bin/activate
 cd ${CPATH}
-pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r ${CPATH}/req.txt
+pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
 #if [[ $? != 0 ]]; then
 #    python3.12 -m pip install -r requirements.txt
 

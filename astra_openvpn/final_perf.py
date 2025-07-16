@@ -46,7 +46,7 @@ class AIOPerfVPN:
     async def run_iperf(self, tun_ip, tun_dev, batch_number):
         try:
             proc = await asyncio.create_subprocess_shell(
-                f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {batch_number * 60 + 100} -B {tun_ip} -i 3 > {self.log}/iperf_{self.hostname}/{tun_dev}.log 2>&1"
+                f"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {batch_number * 60 + 100} -B {tun_ip} -i 5 > {self.log}/iperf/clients_{self.hostname}/{tun_dev}.log 2>&1"
             )
             print(f"{tun_dev} | Iperf | запущен")
 
@@ -100,7 +100,8 @@ class AIOPerfVPN:
     @timer
     async def load_test(self):
         sys_cls.cmd(f"mkdir -p /var/log/openvpn/clients_{self.hostname}")
-        sys_cls.cmd(f"mkdir -p /var/log/iperf_{self.hostname}")
+        sys_cls.cmd(f"mkdir -p /var/log/iperf")
+        sys_cls.cmd(f"mkdir -p /var/log/iperf/clients_{self.hostname}")
         sys_cls.cmd(f"mkdir -p /var/log/active")
 
         total_tunnels = len(self.vms_ranges[self.hostname])
@@ -136,12 +137,10 @@ class AIOPerfVPN:
 
             await asyncio.gather(*iperf_tasks)
 
-            # ⏳ Дождаться конца минуты (или хотя бы 10 сек задержка)
             elapsed = (datetime.now() - batch_start_time).total_seconds()
             if elapsed < 60:
                 await asyncio.sleep(60 - elapsed)
 
-            # ✅ Фиксируем количество туннелей после полной волны
             active = self.count_active_tunnels()
             self.save_batch_result(batch_num=batch_num+1, active_tunnels=active)
 

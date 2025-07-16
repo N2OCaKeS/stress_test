@@ -12,6 +12,7 @@ parser.add_argument("--test",
                     choices=["ovpn"],
                     help="Choose test name.",
                     dest="TEST")
+
 parser.add_argument('-u', '--username',
                     action='store',
                     required=True,
@@ -73,7 +74,7 @@ parser.add_argument('-tcas', '--test-case-name',
 
 parser.add_argument('-ba', '--basic-auth',
                     action='store',
-                    required=False,
+                    required=True,
                     help='basic-auth',
                     dest='BA')
 
@@ -123,7 +124,7 @@ if __name__ == "__main__":
         rp.pass_fail()
         rp.plot_waves()
         
-        #ovpn_test.vms_destroy()
+        # ovpn_test.vms_destroy()
 
 
 

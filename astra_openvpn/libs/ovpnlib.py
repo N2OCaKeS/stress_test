@@ -123,20 +123,23 @@ def change_conf_settings(host, av):
             for i in range(0, 10000):  # От tester0 до tester9999
                 sys_cls.cmd(f"cd /home/u/openvpn/clients_keys/tester{i} && "
                             "sed -i 's/grasshopper-cbc/kuznyechik-cbc/g' client.ovpn")
-                sys_cls.cmd(f'echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
+                sys_cls.cmd('echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
                             f'>> /home/u/openvpn/clients_keys/tester{i}/client.ovpn')
                 
         if exists("/etc/openvpn/server.conf"):    
-            sys_cls.cmd(f'echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
-                        f'>> /etc/openvpn/server.conf')
-            sys_cls.cmd(f'astra-openvpn-server start')
+            sys_cls.cmd('echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
+                        '>> /etc/openvpn/server.conf')
+            sys_cls.cmd('astra-openvpn-server start && '
+                        "iperf -s -u -B 10.8.0.1 -i 5 > /var/log/iperf_server.log 2>&1 & ")
         else: "Конфигурация сервера не найдена в /etc/hosts"
     elif av == "1.7":
         if host != "testvm1":
             for i in range(0, 10000):
-                sys_cls.cmd(f"echo -e '\nncp-disable\n'"
+                sys_cls.cmd("echo -e '\nncp-disable\n'"
                             f">> /home/u/openvpn/clients_keys/tester{i}/client.ovpn")
         if exists("/etc/openvpn/server.conf"):
-            sys_cls.cmd(f"echo -e '\nncp-disable\n'"
-                        f">> /etc/openvpn/server.conf")
+            sys_cls.cmd("echo -e '\nncp-disable\n'"
+                        ">> /etc/openvpn/server.conf")
+            sys_cls.cmd("astra-openvpn-server start && " 
+                        "iperf -s -u -B 10.8.0.1 -i 5 > /var/log/iperf_server.log 2>&1 & ")
     else: "Не удалось изменить конфиг. файлы"

@@ -175,10 +175,15 @@ class Report:
         failed_percents = f"{round(failed / (expected / 100), 2)}%"
         avg_reconnects = counts_df[counts_df['common_name'] != 'TOTAL_SESSIONS']['session_count'].mean()
         
+        # траффик тут
+        traffic = self.collect_traffic()
+
+
+        
         # Проверяем критерий (не более 1% ошибок)
         max_allowed_failed = expected * 0.01
         result = "PASS" if failed <= max_allowed_failed else "FAIL"
-        
+
         # df для отчета
         report_df = pd.DataFrame({
             'expected_clients': [expected],
@@ -291,4 +296,22 @@ class Report:
         plt_path = f"{self.report_path}/processed/cgraph.png"
         plt.savefig(plt_path)
         return plt_path
+    
 
+    def collect_traffic(self):
+        received_by_server, sent_by_server, dg, lost_dg, lost_percent = 0, 0, 0, 0, 0
+
+        with open(f"{self.report_path}/raw/iperf/iperf_server.log", "r", encoding="UTF-8") as iperf_server_log:
+            for line in iperf_server_log.readlines():
+                if re.search(r"^\[  1\]", line):
+                    received_by_server += int(line.split()[4])
+                    dg += int(line.split()[10].split("/")[1])
+                    lost_dg += int(line.split()[10].split("/")[0])
+                    lost_percent = lost_dg / (dg / 100)
+                elif re.search(r"^\[\ \*2\]", line):
+                    sent_by_server += int(line.split()[4])
+        return [{"received": round(received_by_server, 2)}, 
+                {"sent": round(sent_by_server, 2)}, 
+                {"datagramms": round(dg, 2)}, 
+                {"lost datagramms": round(lost_dg, 2)}, 
+                {"lost datagrams(%)": round(lost_percent, 2)}]

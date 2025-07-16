@@ -31,8 +31,8 @@ VMS_DATES = {  # Полный список ВМ
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 2400
-DURATION_RATE = 100 + RANGE // 2
+RANGE = 240
+DURATION_RATE = RANGE // 2
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]
 CONNECTIONS_PER_MINUTE = 120 // (VMS_COUNT - 1)
@@ -78,8 +78,6 @@ BOX = "1.8.1.o" if VERSION_OS == "1.8" else "1.7.5.o"
 print(BOX)
 
 # print(SYS_VERSION, SYS_KERNEL, PACKAGE, sep="\n")
-print(RC)
-
 
 
 

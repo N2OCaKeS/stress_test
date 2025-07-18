@@ -26,8 +26,10 @@ def separate_astra_version(astra_build_version):
 def get_folder_netinst(astra_build_version, download_dir="netinst"):
     
     astra_version = separate_astra_version(astra_build_version=astra_build_version)
+
+    installation_repo = "installation-di" if astra_version['major_version'] == "1.8" else "installation"
     
-    base_url = f"https://releases.devos.astralinux.ru/frozen/{astra_version['major_version']}/{astra_version['minor_version']}/{astra_version['build_version']}/installation/netinst/"
+    base_url = f"https://releases.devos.astralinux.ru/frozen/{astra_version['major_version']}/{astra_version['minor_version']}/{astra_version['build_version']}/{installation_repo}/netinst/"
 
     os.makedirs(download_dir, exist_ok=True)
     def process_directory(url, current_dir):

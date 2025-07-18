@@ -37,7 +37,7 @@ class PreparingForInstallationOS:
 
     def fill_preseed_file(self, astra_build_version):
         astra_version = separate_astra_version(astra_build_version=astra_build_version)
-        intallation_repo = "installation-di" if astra_version['major_version'] == 1.8 else "intallation"
+        installation_repo = "installation-di" if astra_version['major_version'] == "1.8" else "installation"
         try:
             with open('/fastapi_app/src/pxe_install/preseed_template.cfg', 'r') as file:
                 lines = file.readlines()
@@ -47,7 +47,7 @@ class PreparingForInstallationOS:
                     if 'd-i mirror/http/directory string' in line:
                         line = line.replace(
                             '/frozen/1.7/1.7.5/1.7.5.9/installation/',
-                            f'/frozen/{astra_version['major_version']}/{astra_version['minor_version']}/{astra_version['build_version']}/{intallation_repo}/'
+                            f'/frozen/{astra_version['major_version']}/{astra_version['minor_version']}/{astra_version['build_version']}/{installation_repo}/'
                         )
                     file.write(line)
         except Exception as e:

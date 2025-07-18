@@ -34,14 +34,15 @@ class ServerPresets:
         ### TODO Забирать из БД ACS все стенды
         # all_stands = get_all_stands(only_name=True)
         all_stands = "LowServer MiddleServer"
+        remote_cmd(f"cd /home/u/ && mkdir {all_stands}", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
         remote_cmd(f"cd /srv/tftp && sudo mkdir {all_stands}", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
         remote_cmd(f"cd /var/www/html && sudo mkdir {all_stands}", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
 
     def tune(self):
         remote_cmd("sudo apt install -y kea-dhcp4-server apache2 tftpd-hpa pxelinux grub-efi", host=self.host, user=self.user, passwd=self.passwd, port=self.port)
         self.p_env()
+        self.create_directory_for_stands()
         self.change_apache_settings()
         self.configuring_dhcp()
-        self.create_directory_for_stands()
         # remote_cmd()
         remote_cmd("sudo cp /usr/lib/PXELINUX/pxelinux.0 /srv/tftp/", host=self.host, user=self.user, passwd=self.passwd, port=self.port)

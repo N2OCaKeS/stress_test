@@ -4,12 +4,16 @@
 # Пример: ./recreate_bridge_with_mac.sh br0
 
 declare -A vm_mac_map=(
-    ["virtual-station1"]="08:00:27:AB:CD:01"
-    ["virtual-station2"]="08:00:27:AB:CD:02"
-    ["virtual-station3"]="08:00:27:AB:CD:03"
-    ["virtual-station4"]="08:00:27:AB:CD:04"
+    ["virtual-station-17-1"]="08:00:27:AB:CD:01"
+    ["virtual-station-17-2"]="08:00:27:AB:CD:02"
+    ["virtual-station-17-3"]="08:00:27:AB:CD:03"
+    ["virtual-station-17-4"]="08:00:27:AB:CD:04"
     ["work-station1"]="08:00:27:AB:CD:05"
     ["work-station2"]="08:00:27:AB:CD:06" 
+    ["virtual-station-18-1"]="08:00:27:AB:CD:07"
+    ["virtual-station-18-2"]="08:00:27:AB:CD:08"
+    ["virtual-station-18-3"]="08:00:27:AB:CD:09"
+    ["virtual-station-18-4"]="08:00:27:AB:CD:10"    
 )
 
 BRIDGE="br0"

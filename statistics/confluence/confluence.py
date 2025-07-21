@@ -1,3 +1,4 @@
+import socket
 from atlassian import Confluence
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
@@ -11,6 +12,9 @@ class ConfluencePage:
         self.__username = username
         self.__password = password
         self.__access_token = token
+        # Принудительно используем IPv4 и отключаем DNS-кэш
+        socket.getaddrinfo = lambda *args: [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (args[0], args[1]))]
+        socket._GLOBAL_DNS_CACHE = {}
 
         
         retry_strategy = Retry(
@@ -63,6 +67,9 @@ class StatisticsToConfluence():
         self.__username = username
         self.__password = password
         self.__access_token = token
+        # Принудительно используем IPv4 и отключаем DNS-кэш
+        socket.getaddrinfo = lambda *args: [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (args[0], args[1]))]
+        socket._GLOBAL_DNS_CACHE = {}
 
         retry_strategy = Retry(
             total=60,

@@ -1,2 +1,3 @@
 venv12
 venv
+.env.secrets

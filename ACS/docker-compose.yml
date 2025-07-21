@@ -25,6 +25,7 @@ services:
       context: .
     env_file:
       - .env
+      - .env.secrets
     container_name: fastapi_app
     command: ["/fastapi_app/docker/app.sh"]
     ports:
@@ -65,5 +66,3 @@ services:
 
 volumes:
   dbdata:
-
-

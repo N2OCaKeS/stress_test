@@ -1,3 +1,4 @@
+import os
 from src.utils.secondary_func import remote_cmd, remote_put_file
 # from src.main import get_all_stands
 
@@ -12,8 +13,8 @@ from src.utils.secondary_func import remote_cmd, remote_put_file
 class ServerPresets:
     def __init__(self):
         self.host = "10.177.103.202"
-        self.user = ""
-        self.passwd = ""
+        self.user = os.getenv("PXESU")
+        self.passwd = os.getenv("PXESP")
         self.port = 22
     
     def p_env(self):

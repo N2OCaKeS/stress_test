@@ -1,11 +1,12 @@
+import os
 from src.utils.secondary_func import remote_cmd, remote_put_file, separate_astra_version
 
 
 class PreparingForInstallationOS:
     def __init__(self, astra_build_version, stand_name):
         self.host = "10.177.103.202" #"host.docker.internal"
-        self.user = ""
-        self.passwd = ""
+        self.user = os.getenv("PXESU")
+        self.passwd = os.getenv("PXESP")
         self.port = 22
         self.astra_build_version = astra_build_version
         self.stand_name = stand_name

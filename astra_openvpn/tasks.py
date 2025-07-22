@@ -63,7 +63,7 @@ task_run_iperf = {
                 'sudo su -c "ulimit -u 100000 && '
                 'ulimit -n 100000 && '
                 'ulimit -s 100000 && '
-                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/final_perf.py"'
+                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/new_perf.py"'
                 ),
             "signal set": "first",
             "signal get": ""
@@ -75,7 +75,7 @@ task_run_iperf = {
                 'sudo su -c "ulimit -u 100000 && '
                 'ulimit -n 100000 && '
                 'ulimit -s 100000 && '
-                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/final_perf.py"'
+                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/new_perf.py"'
             ),
             "signal set": "",
             "signal get": ["first"]

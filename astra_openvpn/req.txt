@@ -1,4 +1,5 @@
 requests
 numpy
+matplotlib
 pandas
 atlassian-python-api

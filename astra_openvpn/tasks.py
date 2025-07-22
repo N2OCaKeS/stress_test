@@ -2,10 +2,6 @@
 
 from ovpn_conf import VMS_DATES, VERSION_OS, VMS
 
-from final_perf import AIOPerfVPN
-
-perf = AIOPerfVPN()
-
 # Provision ->
 
 scp_provision = {
@@ -56,29 +52,26 @@ task_sed_cipher = {
     ]
 }
 
-task_run_iperf = {
+task_run_server = {
     "testvm1": {
         "server_settings": {
             "command": (
                 'sudo su -c "ulimit -u 100000 && '
                 'ulimit -n 100000 && '
                 'ulimit -s 100000 && '
-                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/new_perf.py"'
-                ),
-            "signal set": "first",
-            "signal get": ""
+                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py"')
             }
-        },
+        }
+    }
+task_run_clients = {    
     'g_clients_group': {
         "run_perf": {
             "command": (
                 'sudo su -c "ulimit -u 100000 && '
                 'ulimit -n 100000 && '
                 'ulimit -s 100000 && '
-                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/new_perf.py"'
-            ),
-            "signal set": "",
-            "signal get": ["first"]
+                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py"'
+            )
         }
     }
 }
@@ -137,7 +130,8 @@ test_1 = {"scp_provision": scp_provision,
           "task_provision": task_provision,
           "task_unpack_tar": task_unpack_tar,
           "task_sed_cipher": task_sed_cipher,
-          "task_run_iperf": task_run_iperf,
+          "task_run_server": task_run_server,
+          "task_run_clients": task_run_clients,
           "task_add_permission": task_add_permission,
           "scp_pull": scp_pull}
 

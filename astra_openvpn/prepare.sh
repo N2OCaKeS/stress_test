@@ -36,7 +36,7 @@ mkdir -p results/raw/active
 mkdir -p results/raw/iperf
 mkdir -p results/raw/openvpn
 
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y astra-openvpn-server openvpn sshpass iperf
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y astra-openvpn-server openvpn sshpass iperf iptables tmux
 
 
 # venv packages

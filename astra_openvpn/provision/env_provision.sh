@@ -9,7 +9,7 @@ sudo apt update
 sudo apt-get install -y libffi-dev cpp gcc make libpdp-dev
 
 # test packages
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra iptables tmux
 wget -P /home/u/ ftp://10.177.103.10/openvpn/ovpn.subnet.tar.gz
 
 if [ "$HOSTNAME" = "testvm1" ]; then

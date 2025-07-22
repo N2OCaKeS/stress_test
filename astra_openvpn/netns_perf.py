@@ -48,8 +48,7 @@ class AIOPerfVPN:
     async def run_iperf(self, tun_ip, tun_dev, wave_number, netns_name):
         try:
             proc = await asyncio.create_subprocess_shell(
-                f'ip netns exec {netns_name} bash -c' 
-                f'"iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {wave_number * 60 + 100} -B {tun_ip} -i 5 > {self.log}/iperf/clients_{self.hostname}/{tun_dev}.log 2>&1"'
+                f'ip netns exec {netns_name} iperf -c 10.8.0.1 -u --dualtest -b {self.rate} -t {wave_number * 60 + 100} -B {tun_ip} -i 5 >> {self.log}/iperf/clients_{netns_name}.log 2>&1 &'
             )
             print(f"{tun_dev} | Iperf | запущен")
 
@@ -67,82 +66,40 @@ class AIOPerfVPN:
             f'ip netns exec {netns_name} bash -c "cd {cfg_dir} && openvpn --config client.ovpn --dev {tun_dev} --auth-nocache >> {log_file} 2>&1 &"'        )
         print(f"{tun_dev} | OpenVPN запущен")
 
-        tun_created = False
-        for attempt in range(30):
-            if not os.path.exists(f"/sys/class/net/{tun_dev}"):
-                await asyncio.sleep(0.4)
-                continue
-            
-            try:
-                with open(log_file, "r", encoding="utf-8") as f:
-                    if "Initialization Sequence Completed" in f.read():
-                        tun_created = True
-                        break
-            except IOError:
-                pass
-            
-            await asyncio.sleep(0.4)
-        
-        if not tun_created:
-            print(f"{tun_dev} | Туннель не создан после 30 попыток")
-            return None
-        
+        # Без проверки - просто подождать пару секунд для старта
+        await asyncio.sleep(2)
+
         try:
-            self.tun_ip = sys_cls.check_output_command(
-                f"ip -4 addr show dev {tun_dev} | grep inet"
+            # Получить IP из netns сразу
+            tun_ip = sys_cls.check_output_command(
+                f"ip netns exec {netns_name} ip -4 addr show dev {tun_dev} | grep inet"
             ).split()[1].split("/")[0]
-            print(f"{tun_dev} | {self.colors['GREEN']}Pass{self.colors['RESET']} | IP: {self.tun_ip}")
+            print(f"{tun_dev} | {self.colors['GREEN']}Pass{self.colors['RESET']} | IP: {tun_ip}")
             self.counter += 1
-            return tun_dev, self.tun_ip
+            return tun_dev, tun_ip
         except Exception as e:
             print(f"{tun_dev} | {self.colors['RED']}Fail{self.colors['RESET']} | Ошибка получения IP: {str(e)}")
-            return None
+            return tun_dev, None
 
 
     async def setup_netns(self, n):
-        """Создает netns с уникальным IP из всего диапазона 172.20.0.0/16"""
-        netns_name = f"netns{n}"
-
-        if n % 127 == 0:
+        """Создает netns с уникальным IP"""
+        netns = f"vpn{n}"
+        if n % 254 == 0:
             self.octet_counter += 1
 
-        
-        # Генерация IP
-        octet3 = (self.octet_counter // 127) % 127
-        octets_root4 = [i for i in range(2, 256) if i % 2 == 0] # четные - основной 
-        octets_netns4 = [i for i in range(2, 256) if i % 2 != 0] # нечетные - namespace
-        
-        root_ip = f"172.20.{octet3}.{octets_root4[n % 128]}/12"
-        client_ip = f"172.20.{octet3}.{octets_netns4[n % 128]}/12"
-        client_veth = f"veth-{octet3}-{octets_netns4[n % 128]}"  # Уникальное имя
-
-
         try:
-            # Конфигурация netns
             cmds = [
-                # namespace и veth пара
-                f"ip netns add {netns_name}",
-                f"ip link add {client_veth}-host type veth peer name {client_veth}-ns",
-                f"ip link set {client_veth}-ns netns {netns_name}",
-                # ip и вкл интерфейсов
-                f"ip addr add {root_ip} dev {client_veth}-host",
-                f"ip link set {client_veth}-host up",
-                f"ip netns exec {netns_name} ip addr add {client_ip} dev {client_veth}-ns",
-                f"ip netns exec {netns_name} ip link set {client_veth}-ns up",
-                f"ip netns exec {netns_name} ip link set lo up",
-                # iptables
-                f"iptables -A FORWARD -i enp1s0 -o {client_veth}-host -m state --state RELATED,ESTABLISHED -j ACCEPT",
-                f"iptables -A FORWARD -i {client_veth}-host -o enp1s0 -j ACCEPT",
-                # default via
-                f"ip netns exec {netns_name} ip route add default via 172.20.0.1"
+                f"cd /home/u/astra_openvpn && ./vpn.sh start {netns} 172.{self.octet_counter}.{n % 254 + 2} --no-tmux"
             ]
             for cmd in cmds:
+                print(f"COMMAND: {cmd}")
                 sys_cls.cmd(cmd)
-            return netns_name
+            return f"vpn{n}"
             
         except Exception as e:
-            print(f"Error creating {netns_name}: {str(e)}")
-            await self.cleanup_netns(n)
+            print(f"Error creating {netns}: {str(e)}")
+            # await self.cleanup_netns(n)
             return None
 
 
@@ -154,7 +111,6 @@ class AIOPerfVPN:
 
         # Инициализация iptables (один раз)
         sys_cls.cmd("sysctl -w net.ipv4.ip_forward=1")
-        sys_cls.cmd("iptables -t nat -A POSTROUTING -s 172.20.0.0/16 -o enp1s0 -j MASQUERADE")
 
         total_tunnels = len(self.vms_ranges[self.hostname])
         waves = math.ceil(total_tunnels / self.cpm)
@@ -174,23 +130,29 @@ class AIOPerfVPN:
             self.last_wave_time = start_time
 
             print(f"\nПартия {wave+1}/{waves} | Начало в {start_time.strftime('%H:%M:%S')}")
-
             tun_tasks = []
             for i in current_wave:
-                netns_name = f"netns{i}"
+                netns_name = f"vpn{i}"
                 await self.setup_netns(i)
                 tun_tasks.append(self.run_tun(item=i, netns_name=netns_name))
 
             results = await asyncio.gather(*tun_tasks)
+            
+            print("Результаты tun_tasks:")
+            for res in results:
+                print(repr(res))
 
             iperf_tasks = []
-            for result in results:
+            for i, result in zip(current_wave, results):
+                netns_name = f"vpn{i}"
                 if result and isinstance(result, tuple):
                     tun_dev, tun_ip = result
                     iperf_tasks.append(self.run_iperf(tun_ip=tun_ip, 
                                                       tun_dev=tun_dev, 
                                                       wave_number=self.wave_counter, 
-                                                      netns_name=f"netns{i}"))
+                                                      netns_name=netns_name))
+                    print("Таска добавлена")
+            print("Тут должен быть запуск iperf")
             await asyncio.gather(*iperf_tasks)
             self.wave_counter -= 1
 
@@ -214,25 +176,12 @@ class AIOPerfVPN:
         with open(f"{self.log}/active/{self.hostname}_counts.csv", "a") as f:
             f.write(f"{wave_num},{active_tunnels}\n")
 
-    
-    def _init_root_veth():
-        """Один раз настраивает dev для взаимодействия с netns в пространстве root"""
-        if not os.path.exists("/sys/class/net/gw-veth"):
-            sys_cls.cmd("ip link add gw-veth type veth peer name gw-veth-ns")
-            sys_cls.cmd("ip addr add 172.20.0.1/16 dev gw-veth")
-            sys_cls.cmd("ip link set gw-veth up")
-            sys_cls.cmd("sysctl -w net.ipv4.ip_forward=1")
-            sys_cls.cmd("iptables -t net -A POSTROUTING -s 172.20.0.0/16 -o enp1s0 -j MASQUERADE")
 
-
-    def cleanup_netns(n):
+    def cleanup_netns(self, n):
         """Надёжная очистка одного неймспейса"""
-        netns_name = f"netns{n}"
-        veth0 = f"veth{n}-0"
 
         cmds = [
-            f"ip link delete {veth0} 2>/dev/null || true",
-            f"ip netns delete {netns_name} 2>/dev/null || true"
+            f"cd /home/astra_openvpn && ./vpn.sh stop_all"
         ]
 
         for cmd in cmds:
@@ -248,6 +197,4 @@ if __name__ == "__main__":
         av = ".".join(temp.split("."))[:3]
         change_conf_settings(host=perf_cls.hostname, av=av)
     if perf_cls.hostname != "testvm1":
-        for i in range(100):
-            perf_cls.cleanup_netns(i)
         asyncio.run(perf_cls.load_test())

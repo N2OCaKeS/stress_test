@@ -11,8 +11,11 @@ ovpn_test = Test_1(vbox=BOX,
                    vms_dates=VMS_DATES,
                    rc_name="1.8.1.6")
 # libvirt-install
+print("BUILD BUILD BUILD")
 #ovpn_test.common_build()
+print("PROVISION PROVISION PROVISION")
 #ovpn_test.provision()
+print("START START START")
 ovpn_test.start()
 
 # vagrant-libvirt.old

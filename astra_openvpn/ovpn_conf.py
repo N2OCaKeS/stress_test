@@ -31,7 +31,7 @@ VMS_DATES = {  # Полный список ВМ
 
 # Test №1
 USER = ["u", "askeladd"]
-RANGE = 240
+RANGE = 1200
 DURATION_RATE = RANGE // 2
 VMS_COUNT = 5
 VMS = [f"testvm{i}" for i in range(1, VMS_COUNT+1)]

@@ -175,8 +175,8 @@ class Report:
         failed_percents = f"{round(failed / (expected / 100), 2)}%"
         avg_reconnects = counts_df[counts_df['common_name'] != 'TOTAL_SESSIONS']['session_count'].mean()
         
-        # траффик тут
-        traffic = self.collect_traffic()
+        # # траффик тут
+        # traffic = self.collect_traffic()
 
 
         

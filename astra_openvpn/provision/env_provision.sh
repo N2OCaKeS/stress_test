@@ -47,7 +47,10 @@ python3.12 -m venv venv
 source venv/bin/activate
 cd /home/u/astra_openvpn
 sleep 1
-pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
+for i in {1..3}; do 
+  pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10 allta
+  sleep 2
+done
 sleep 1
 python3.12 -m pip install -r /home/u/astra_openvpn/req.txt
 python3.12 -m pip install --upgrade pip

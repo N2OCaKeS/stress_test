@@ -84,12 +84,12 @@ class Test_1(CreateVM):
                           vms_dates=self.vms_dates,
                           username=self.username,
                           password=self.password)
-    
-        self.provider.execute(commands=test_1["task_start_server"],
+
+        self.provider.execute(commands=test_1["task_run_server"],
                          vms_dates=self.vms_dates,
                          username=self.username,
                          password=self.password)
-    
+
         self.provider.execute(commands=test_1["task_run_clients"],
                          vms_groups=self.clients_group,
                          vms_dates=self.vms_dates,

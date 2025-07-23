@@ -64,7 +64,11 @@ source venv/bin/activate
 cd ${CPATH}
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r ${CPATH}/req.txt
-pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
+for i in {1..10}; do 
+  pip list | grep -q allta && break
+  pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10 allta
+  sleep 2
+done
 #if [[ $? != 0 ]]; then
 #    python3.12 -m pip install -r requirements.txt
 

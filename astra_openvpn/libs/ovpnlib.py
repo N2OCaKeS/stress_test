@@ -115,9 +115,28 @@ def response():
     except Exception as e:
         jira, life = str(type(e).__name__), str(e)
         return jira, life
-    
+   
+
 @timer
 def change_conf_settings(host, av):
+    sys_cls.cmd("""
+                cat > /etc/systemd/system/iperf-server.service <<-'EOF'
+                [Unit]
+                Description=iperf server
+                After=network.target
+
+                [Service]
+                ExecStart=/usr/bin/iperf -s -u -B 10.8.0.1 -i 5
+                StandardOutput=file:/var/log/iperf_server.log
+                StandardError=inherit
+                Restart=always
+                User=root
+
+                [Install]
+                WantedBy=multi-user.target
+                EOF
+                """)
+
     if av == "1.8":
         if host != "testvm1":
             for i in range(0, 10000):  # От tester0 до tester9999
@@ -130,8 +149,10 @@ def change_conf_settings(host, av):
             sys_cls.cmd('echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
                         '>> /etc/openvpn/server.conf')
             sys_cls.cmd("astra-openvpn-server start")
-            sys_cls.cmd("iperf -s -u -B 10.8.0.1 -i 5 > /var/log/iperf_server.log 2>&1 &")
+            sys_cls.cmd("systemctl daemon-reload && systemctl start iperf-server")
+            print(sys_cls.check_output_command("netstat -tulpn | grep 5001")) 
         else: "Конфигурация сервера не найдена в /etc/hosts"
+
     elif av == "1.7":
         if host != "testvm1":
             for i in range(0, 10000):
@@ -141,5 +162,5 @@ def change_conf_settings(host, av):
             sys_cls.cmd("echo -e '\nncp-disable\n'"
                         ">> /etc/openvpn/server.conf")
             sys_cls.cmd("astra-openvpn-server start")
-            sys_cls.cmd("iperf -s -u -B 10.8.0.1 -i 5 > /var/log/iperf_server.log 2>&1 &")
-    else: "Не удалось изменить конфиг. файлы"
+            sys_cls.cmd("systemctl daemon-reload && systemctl start iperf-server")
+            print(sys_cls.check_output_command("netstat -tulpn | grep 5001")) 

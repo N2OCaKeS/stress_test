@@ -42,6 +42,7 @@ GRAPH_DESCRIPTIONS = {'cgraph.png': '<p style="font-family: Century Gothic, sans
 
 
 # Common dirs/files
+VM_DIR = f"/home/{USER[1]}/astra_openvpn"
 OVPN_PATH = f"/home/{USER[1]}/git/stress_test/astra_openvpn"
 VENV_PATH = f"/home/{USER[1]}/python/Python-3.12.1/venv/bin/python3.12"
 REPORT_PATH = f"{OVPN_PATH}/results"

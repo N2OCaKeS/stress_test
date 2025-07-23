@@ -59,10 +59,12 @@ task_run_server = {
                 'sudo su -c "ulimit -u 100000 && '
                 'ulimit -n 100000 && '
                 'ulimit -s 100000 && '
-                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py"')
+                '/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py"'
+                )
             }
         }
     }
+
 task_run_clients = {    
     'g_clients_group': {
         "run_perf": {

@@ -1,4 +1,5 @@
 import subprocess
+import asyncio
 from os import linesep
 import paramiko
 from os.path import exists
@@ -120,22 +121,22 @@ def response():
 @timer
 def change_conf_settings(host, av):
     sys_cls.cmd("""
-                cat > /etc/systemd/system/iperf-server.service <<-'EOF'
-                [Unit]
-                Description=iperf server
-                After=network.target
+cat > /etc/systemd/system/iperf-server.service <<EOF
+[Unit]
+Description=iperf server
+After=network.target
 
-                [Service]
-                ExecStart=/usr/bin/iperf -s -u -B 10.8.0.1 -i 5
-                StandardOutput=file:/var/log/iperf_server.log
-                StandardError=inherit
-                Restart=always
-                User=root
+[Service]
+ExecStart=/usr/bin/iperf -s -u -B 10.8.0.1 -i 5 -y C
+StandardOutput=file:/var/log/iperf_server.log
+StandardError=inherit
+Restart=always
+User=root
 
-                [Install]
-                WantedBy=multi-user.target
-                EOF
-                """)
+[Install]
+WantedBy=multi-user.target
+EOF
+""")
 
     if av == "1.8":
         if host != "testvm1":
@@ -149,7 +150,8 @@ def change_conf_settings(host, av):
             sys_cls.cmd('echo -e "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n"'
                         '>> /etc/openvpn/server.conf')
             sys_cls.cmd("astra-openvpn-server start")
-            sys_cls.cmd("systemctl daemon-reload && systemctl start iperf-server")
+            sys_cls.cmd("systemctl daemon-reload && systemctl restart iperf-server.service")
+            #sys_cls.cmd("pkill -f iperf && echo "" > /var/log/iperf_server.log && systemctl restart iperf-server.service")
             print(sys_cls.check_output_command("netstat -tulpn | grep 5001")) 
         else: "Конфигурация сервера не найдена в /etc/hosts"
 
@@ -163,4 +165,55 @@ def change_conf_settings(host, av):
                         ">> /etc/openvpn/server.conf")
             sys_cls.cmd("astra-openvpn-server start")
             sys_cls.cmd("systemctl daemon-reload && systemctl start iperf-server")
-            print(sys_cls.check_output_command("netstat -tulpn | grep 5001")) 
+            print(sys_cls.check_output_command("netstat -tulpn | grep 5001"))
+
+
+async def cmd_async(command: str):
+    """
+    Асинхронно выполняет системную команду.
+
+    Args:
+        command (str): Команда для выполнения.
+
+    Returns:
+        str: Вывод команды (stdout + stderr).
+    """
+    process = await asyncio.create_subprocess_shell(
+        command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    
+    if process.returncode != 0:
+        raise RuntimeError(f"Command failed: {stderr.decode().strip()}")
+    return stdout.decode().strip()
+
+
+async def check_output_command_async(command: str) -> str:
+    """
+    Асинхронно выполняет команду и возвращает её вывод.
+
+    Args:
+        command (str): Команда для выполнения
+
+    Returns:
+        str: Вывод команды или текст ошибки
+
+    Raises:
+        RuntimeError: Если команда завершилась с ошибкой
+    """
+    proc = await asyncio.create_subprocess_shell(
+        command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        limit=1024*1024  # 1MB buffer
+    )
+
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        error_msg = stderr.decode().strip()
+        raise RuntimeError(f"Command failed: {error_msg}")
+
+    return stdout.decode().strip()

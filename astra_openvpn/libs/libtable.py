@@ -300,15 +300,16 @@ class Report:
 
     def collect_traffic(self):
         received_by_server, sent_by_server, dg, lost_dg, lost_percent = 0, 0, 0, 0, 0
-
+        # со звездочкой - \[\ *\*\d+\]
+        # без звездочки - \[(\d+)\]
         with open(f"{self.report_path}/raw/iperf/iperf_server.log", "r", encoding="UTF-8") as iperf_server_log:
             for line in iperf_server_log.readlines():
-                if re.search(r"^\[  1\]", line):
+                if re.search(r"\[(\d+)\]", line):
                     received_by_server += int(line.split()[4])
                     dg += int(line.split()[10].split("/")[1])
                     lost_dg += int(line.split()[10].split("/")[0])
                     lost_percent = lost_dg / (dg / 100)
-                elif re.search(r"^\[\ \*2\]", line):
+                elif re.search(r"\[\ *\*\d+\]", line):
                     sent_by_server += int(line.split()[4])
         return [{"received": round(received_by_server, 2)}, 
                 {"sent": round(sent_by_server, 2)}, 

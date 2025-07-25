@@ -57,5 +57,5 @@ else:
     print('Нет подходящих групп значений для расчета среднего')
 
 
-with open('/home/vagrant/results', 'w') as w:
+with open('/home/u/results', 'w') as w:
     w.write(str(mean_cleaned))

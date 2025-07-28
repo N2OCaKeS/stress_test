@@ -1,22 +1,32 @@
 # От пользователя ceph-amd
-ssh-keygen
-for N in $(seq 1 3); do ssh-copy-id ceph-adm@testvm$N; done
 
 # Указать основную
-ssh-copy-id ceph-adm@astra-ceph-admin
+# ssh-copy-id ceph-adm@astra-ceph-admin
 
-ceph-deploy --username ceph-adm install --mon --osd testvm1 testvm2 testvm3
-for N in $(seq 1 3); do ssh ceph-adm@testvm$N sudo reboot; done
+for N in $(seq 1 3); do sshpass -p "1" ssh-copy-id -o StrictHostKeyChecking=no ceph-adm@astra-ceph$N; done
+ceph-deploy --username ceph-adm install --mon --osd astra-ceph1 astra-ceph2 astra-ceph3
+for N in $(seq 1 3); do ssh ceph-adm@astra-ceph$N sudo reboot; done
 
-ceph-deploy --username ceph-adm install --mgr testvm1
-ceph-deploy --username ceph-adm new testvm1 testvm2 testvm3
+sleep 300
+
+ceph-deploy --username ceph-adm install --mgr astra-ceph1
+ceph-deploy --username ceph-adm new astra-ceph1 astra-ceph2 astra-ceph3
 
 ceph-deploy --username ceph-adm mon create-initial
-ceph-deploy --username ceph-adm mgr create testvm1
+ceph-deploy --username ceph-adm mgr create astra-ceph1
 
-ceph-deploy --username ceph-adm osd create --data /dev/sdb testvm1
-ceph-deploy --username ceph-adm osd create --data /dev/sdb testvm2
-ceph-deploy --username ceph-adm osd create --data /dev/sdb testvm3
+ceph-deploy --username ceph-adm osd create --data /dev/sdb astra-ceph1
+ceph-deploy --username ceph-adm osd create --data /dev/sdb astra-ceph2
+ceph-deploy --username ceph-adm osd create --data /dev/sdb astra-ceph3
+
+for i in {1..5}; do
+    if ceph-deploy --username ceph-adm osd create --data /dev/sdb astra-ceph1; then
+        echo "OSD успешно добавлен на astra-ceph1${i}:/dev/sdb"
+    else
+        echo "Ошибка при добавлении OSD на astra-ceph1${i}:/dev/sdb"
+    fi
+    sleep 5
+done
 
 # Указать основную
 ceph-deploy --username ceph-adm install --cli astra-ceph-admin

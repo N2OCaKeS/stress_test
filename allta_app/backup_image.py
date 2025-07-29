@@ -904,7 +904,7 @@ if read_status() == success:
         db_kernel_changer(24, args.DB_KERNELS)
         db_kernel_changer(32, args.DB_KERNELS, position='end')
     elif args.PSQL_BALANCE:
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} balance {balance_host_release}')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} balance') #{balance_host_release}')
     elif args.PSQL_OOM:
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} oom')
     elif args.FREEIPA_AUTH:

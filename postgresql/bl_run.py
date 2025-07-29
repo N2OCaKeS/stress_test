@@ -107,12 +107,6 @@ parser.add_argument('-vbox', '--set-vbox',
                     dest='SET_BOX')
 args = parser.parse_args()
 
-"""
-VARIABLES
-"""
-
-bl_lib.balance(args.TCV)
-
 
 """
 TEST
@@ -131,6 +125,13 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 conf_new_page_name=args.NPAGE)
 uzs.upload_test_cycle_status('progress')
 
+
+
+"""
+VARIABLES
+"""
+
+bl_lib.balance(args.TCV)
 
 
 

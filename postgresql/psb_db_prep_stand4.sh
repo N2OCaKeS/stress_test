@@ -29,7 +29,7 @@ fi
 
 if [[ $2 == "vanilla" ]]; then
   if test "$(grep -E '1.8.*' /etc/astra_version)"; then
-    apt-get install libssl3 -y
+    #apt-get install libssl3 -y
     dpkg -i /home/u/postgresql_vanilla/16/lib*.deb
     dpkg -i /home/u/postgresql_vanilla/16/postgresql-client-common*.deb
     dpkg -i /home/u/postgresql_vanilla/16/postgresql-common*.deb

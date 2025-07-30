@@ -1,7 +1,18 @@
 main_ceph_ip=$1
 sudo cephadm bootstrap --skip-pull --skip-monitoring-stack --mon-ip $main_ceph_ip --ssh-user ceph-adm --initial-dashboard-user "ceph-adm" --initial-dashboard-password "12345678" --dashboard-password-noupdate
 
-cat /etc/ceph/ceph.pub | ssh ceph-adm@$host 'cat >> .ssh/authorized_keys'
+# cat /etc/ceph/ceph.pub | ssh ceph-adm@$host 'cat >> .ssh/authorized_keys'
+
+for i in {1..5}; do
+    echo "Добавляем хост testvm$i..."
+    if cat /etc/ceph/ceph.pub | ssh ceph-adm@testvm$i 'cat >> .ssh/authorized_keys'; then
+        echo "testvm$i добавлен успешно"
+    else
+        echo "Ошибка при добавлении testvm$i..."
+    fi
+    slep 5
+done
+
 
 for i in {2..5}; do
     echo "Добавляем хост testvm$i..."

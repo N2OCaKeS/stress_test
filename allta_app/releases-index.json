@@ -1,5 +1,5 @@
 {
-  "date": "2025-07-19 00:02:37.984173",
+  "date": "2025-07-30 14:42:39.934873",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -13178,6 +13178,96 @@
             }
           ],
           "path": "frozen/1.8/1.8.3/1.8.3.6",
+          "is_main_symlinked": true
+        },
+        "1.8.3.7": {
+          "astra_lists_commit": "dc7d750f53eda97aa2e57e0e4adb4825d0be512f",
+          "version": {
+            "arch": 1,
+            "family": 8,
+            "release": 3,
+            "special": null,
+            "special_version": null,
+            "build": 7,
+            "real_family": 8,
+            "major_family": "1.8",
+            "release_family": "1.8.3",
+            "comparable_tuple": [
+              1,
+              8,
+              3,
+              "",
+              0,
+              7
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.3/1.8.3.7/iso/extended-1.8.3.7-30.07.25_11.19.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.3/1.8.3.7/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-07-30T11:19:00",
+              "device": null,
+              "hashsums": {
+                "gost": "56f7246df00e1173ae266fe11e36c207e12ca065209992cd5bed3b7e6698468d",
+                "md5": "c5c1f8d7502e7a0fae83dee882ebf925"
+              },
+              "changelog": "frozen/1.8/1.8.3/1.8.3.7/sources/changelogs/changelog-extended-1.8.3.7.html",
+              "release_notes": "frozen/1.8/1.8.3/1.8.3.7/sources/release-notes/release-notes-extended-1.8.3.7.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.3/1.8.3.7/iso/installation-1.8.3.7-30.07.25_11.19.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.3/1.8.3.7/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0025-07-30T11:19:00",
+              "device": null,
+              "hashsums": {
+                "gost": "f3d9f858a044ea3789832bb0ebbf65e950ac95b55edc73540ce4189d03249087",
+                "md5": "15147ea4c2d7a616c172f24ef07ae917"
+              },
+              "changelog": "frozen/1.8/1.8.3/1.8.3.7/sources/changelogs/changelog-installation-1.8.3.7.html",
+              "release_notes": "frozen/1.8/1.8.3/1.8.3.7/sources/release-notes/release-notes-installation-1.8.3.7.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.3/1.8.3.7/iso/devel-1.8.3.7-30.07.25_11.19.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.3/1.8.3.7/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-07-30T11:19:00",
+              "device": null,
+              "hashsums": {
+                "gost": "f937b941f8e7e4ce2516ddecbbd1ea17213c4989438afc22e834a5f36e71b3bf",
+                "md5": "7b7ed0107927a00c5c2eff80f9a217ea"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.3/1.8.3.7/iso/installation-1.8.3.7-30.07.25_11.19-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.3/1.8.3.7/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0025-07-30T11:19:00",
+              "device": "di",
+              "hashsums": {
+                "gost": "fb729e8911772fa911c28d2807a5eb7a9bf16f7e6f0d84960d73c8fb56053915",
+                "md5": "ccccb8985cd649fdfb829486a7607376"
+              },
+              "changelog": "frozen/1.8/1.8.3/1.8.3.7/sources/changelogs/changelog-installation-1.8.3.7.html",
+              "release_notes": "frozen/1.8/1.8.3/1.8.3.7/sources/release-notes/release-notes-installation-1.8.3.7.html"
+            }
+          ],
+          "path": "frozen/1.8/1.8.3/1.8.3.7",
           "is_main_symlinked": true
         }
       }

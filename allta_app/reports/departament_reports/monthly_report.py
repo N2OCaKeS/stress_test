@@ -1,11 +1,25 @@
 import os
+import json
 
 from libreport import MonthlyReport
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 
-# TODO 
-#Использовать dotenv для кредов
 
+# Указать отчетный период "месяц" в формате "YYYY-MM"
+MONTH = '2025-07'
+
+
+with open('/home/u/tokens.json', 'r') as r:
+    tokens = json.load(r)
+CONF_TOKEN = tokens['conf_token']
+USERNAME = tokens['username']
+JIRA_TOKEN = tokens['jira_token']
+PASSWORD = ''
+
+PROJECT_KEY = 'QA'
+REPO_SLUG = 'stress_test'
+
+# Список сотрудников
 AUTHOR_WHITE_LIST = {
     'amedvedev': 'Александр Медведев', 
     'ivelikanov': 'Иван Великанов',
@@ -19,13 +33,6 @@ AUTHOR_JIRA_LIST = {
     'JIRAUSER38882': 'Дмитрий Тимонин'
     }
 
-PROJECT_KEY = 'QA'
-REPO_SLUG = 'stress_test'
-USERNAME = ''
-PASSWORD = ''
-JIRA_TOKEN = ''
-CONF_TOKEN = ''
-MONTH = '2025-07'
 
 
 report = MonthlyReport(author_list=AUTHOR_WHITE_LIST,

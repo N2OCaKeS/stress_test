@@ -39,10 +39,10 @@ sudo ceph osd pool create cephfs_metadata 64
 sudo ceph osd pool application enable cephfs_metadata cephfs
 sudo ceph fs new cephfs cephfs_metadata cephfs_data
 
-sudo mkdir /mnt/cephfs/data_test
+sudo mkdir -p /mnt/cephfs/data_test
 sudo  ceph auth get-or-create client.datatest mon 'allow r' mds 'allow r,allow rw path=/data_test' osd 'allow rw pool=cephfs_data'
 secret_key=$(sudo ceph auth get-key client.datatest)
-
+echo $secret_key
 # mount на другом хосте или вм
 
 

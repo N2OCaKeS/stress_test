@@ -8,25 +8,51 @@
 import paramiko
 import subprocess
 import requests
+import os.path
 
 from time import strftime, time, gmtime
 from os import linesep
 from cfs_conf import JIRA_URL, CONFLUENCE_URL
 
-def create_remote_file(local_file_path, remote_file_path, ip, user, password):
+# def create_remote_file(local_file_path, remote_file_path, ip, user, password, port=22):
+#     client = paramiko.SSHClient()
+#     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+#     client.connect(hostname=ip, username=user, password=password, port=port)
+#     ftp = client.open_sftp()
+#     files = ftp.put(local_file_path, remote_file_path)
+#     ftp.close()
+#     client.close()
+
+def create_remote_file(local_file_path, remote_file_path, ip, user, password, port=22):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname=ip, username=user, password=password, port=22)
-    ftp = client.open_sftp()
-    files = ftp.put(local_file_path, remote_file_path)
-    ftp.close()
+    client.connect(hostname=ip, username=user, password=password, port=port)
+    sftp = client.open_sftp()
+
+    if os.path.isdir(local_file_path):
+        try:
+            sftp.mkdir(remote_file_path)
+        except IOError:
+            pass
+
+        for item in os.listdir(local_file_path):
+            local_item = os.path.join(local_file_path, item)
+            remote_item = os.path.join(remote_file_path, item)
+            if os.path.isdir(local_item):
+                create_remote_file(local_item, remote_item, ip, user, password, port)
+            else:
+                sftp.put(local_item, remote_item)
+    else:
+        sftp.put(local_file_path, remote_file_path)
+
+    sftp.close()
     client.close()
 
 
-def send_remote_command(command, ip, user, password):
+def send_remote_command(command, ip, user, password, port=22):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(hostname=ip, username=user, password=password, port=22)
+    ssh.connect(hostname=ip, username=user, password=password, port=port)
     ssh.get_transport().set_keepalive(60)
     chanel = ssh.get_transport().open_session()
     chanel.get_pty()
@@ -40,10 +66,10 @@ def send_remote_command(command, ip, user, password):
     ssh.close()
 
 
-def get_remote_file(remote_file_path, local_file_path, ip, user, password):
+def get_remote_file(remote_file_path, local_file_path, ip, user, password, port=22):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname=ip, username=user, password=password, port=22)
+    client.connect(hostname=ip, username=user, password=password, port=port)
     ftp = client.open_sftp()
     files = ftp.get (remote_file_path, local_file_path)
     ftp.close()

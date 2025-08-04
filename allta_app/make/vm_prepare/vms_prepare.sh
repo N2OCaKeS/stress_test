@@ -35,8 +35,8 @@ sudo usermod -aG kvm,libvirt,libvirt-qemu $USER
 python libvirt_vm.py
 ./network.sh br0
 
-VMS=("virtual-station-17-1" "virtual-station-17-2" "virtual-station-17-3" "virtual-station-17-4" "work-station1" "work-station2" "virtual-station-18-1" "virtual-station-18-2" "virtual-station-18-3" "virtual-station-18-4" )
-for vm in "${VMS[@]}"; do
+ALL_VMS=("virtual-station-17-1" "virtual-station-17-2" "virtual-station-17-3" "virtual-station-17-4" "work-station1" "work-station2" "virtual-station-18-1" "virtual-station-18-2" "virtual-station-18-3" "virtual-station-18-4" )
+for vm in "${ALL_VMS[@]}"; do
     # Останавливаем ВМ через virsh -c qemu:///system
     virsh -c qemu:///system destroy "$vm"
     sleep 1
@@ -69,12 +69,20 @@ EOF
     systemctl start "$vm.service"
 done
 
-
-for vm in "${VMS[@]}"; do
+VMS_17=("virtual-station-17-1" "virtual-station-17-2" "virtual-station-17-3" "virtual-station-17-4" "work-station1" "work-station2")
+for vm in "${VMS_17[@]}"; do
     SNAPSHOT_NAME="1.7.5.9"
-    # Создаем снимок перед остановкой (имя по дате)
     echo "Создаём снимок $SNAPSHOT_NAME для $vm..."
     virsh -c qemu:///system snapshot-create-as --domain "$vm" --name "$SNAPSHOT_NAME" --description "$SNAPSHOT_NAME" --atomic
+done
+
+
+VMS_18=("virtual-station-18-1" "virtual-station-18-2" "virtual-station-18-3" "virtual-station-18-4")
+for vm in "${VMS_18[@]}"; do
+    SNAPSHOT_NAME="1.8.1.6"
+    echo "Создаём снимок $SNAPSHOT_NAME для $vm..."
+    virsh -c qemu:///system snapshot-create-as --domain "$vm" --name "$SNAPSHOT_NAME" --description "$SNAPSHOT_NAME" --atomic
+    virsh -c qemu:///system destroy --domain "$vm"
 done
 
 

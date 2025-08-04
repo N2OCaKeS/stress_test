@@ -29,7 +29,7 @@ EOF
 
 #Hook docker needed restart warning
 sudo apt-get update 
-for pkg in docker.io docker-compose; do
+for pkg in docker.io docker-compose-v2; do
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $pkg
     sudo apt-get remove needrestart -y
 done

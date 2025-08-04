@@ -6,6 +6,10 @@ services:
     build:
       context: ./allta_devpi
       dockerfile: Dockerfile.allta_devpi
+      args:
+        DEVPI_ADMIN_PASSWORD: ${DEVPI_ADMIN_PASSWORD}
+        DEVPI_USER: ${DEVPI_USER}
+        DEVPI_PASSWORD: ${DEVPI_PASSWORD}
     image: allta-devpi:latest
     container_name: allta-devpi
     env_file:
@@ -15,7 +19,11 @@ services:
     networks:
       - allta_front_service
     restart: always    
-
+    healthcheck:
+      test: ["CMD", "/health/health_checker.sh"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
   #  NGINX
   allta-nginx:
     build:
@@ -33,11 +41,45 @@ services:
           - "allta.devos.astralinux.ru"      
       allta_front_service:
     depends_on:
-      - allta-devpi
+      allta-auth-api:
+        condition: service_healthy
+      allta-config-api:
+        condition: service_healthy
+      allta-server-api:
+        condition: service_healthy
+      allta-vm-api:
+        condition: service_healthy
+      allta-swagger:
+        condition: service_healthy      
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    #   interval: 5s
+    #   timeout: 3s
+    #   retries: 5
     restart: always
 
 
   # AUTH-API
+  allta-auth-api:
+    build:
+      context: ../backend/allta_auth_api
+      dockerfile: ../../docker_allta/allta_auth_api/allta_auth_api/Dockerfile.auth_api
+    image: allta-auth-api
+    container_name: allta_auth_api
+    restart: always
+    env_file:
+      - ./env/.env.allta_auth_api
+    depends_on:
+      allta-auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/auth/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - allta_network
+      - allta_auth_api     
 
   allta-auth-db:
     build:
@@ -54,22 +96,11 @@ services:
       - "5432:5432"          
     networks:
       - allta_auth_api
-
-  allta-auth-api:
-    build:
-      context: ../backend/allta_auth_api
-      dockerfile: ../../docker_allta/allta_auth_api/allta_auth_api/Dockerfile.auth_api
-    image: allta-auth-api
-    container_name: allta_auth_api
-    restart: always
-    env_file:
-      - ./env/.env.allta_auth_api
-    depends_on:
-      - allta-nginx
-      - allta-auth-db
-    networks:
-      - allta_network
-      - allta_auth_api
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5      
 
   # CONFIG API
 
@@ -83,12 +114,18 @@ services:
     env_file:
       - ./env/.env.allta_config_api
     depends_on:
-      - allta-nginx
-      - allta-auth-api
+      allta-auth-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/config/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5              
     networks:
       - allta_network
     volumes:
       - allta_config_data:/data
+
 
   # SERVER API
 
@@ -102,9 +139,15 @@ services:
     env_file:
       - ./env/.env.allta_server_api
     depends_on:
-      - allta-nginx
-      - allta-auth-api
-      - allta-server-db
+      allta-auth-api:
+        condition: service_healthy
+      allta-server-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/server/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5             
     networks:
       - allta_server_api
       - allta_network
@@ -126,8 +169,43 @@ services:
       - "5433:5432"    
     networks:
       - allta_network   
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5      
 
   # VM_API
+
+  allta-vm-api:
+    build:
+      context: ../backend/allta_vm_api
+      dockerfile: ../../docker_allta/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
+    image: allta-vm-api
+    container_name: allta_vm_api
+    restart: always
+    env_file:
+      - ./env/.env.allta_vm_api
+    depends_on:
+      allta-auth-api:
+        condition: service_healthy   
+      allta-server-api:
+        condition: service_healthy                 
+      allta-vm-db:
+        condition: service_healthy
+      allta-devpi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/vm/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5              
+    networks:
+      - allta_vm_api
+      - allta_network
+    volumes:
+      - allta_vm_api:/data
+
   allta-vm-db:
     build:
       context: ./allta_vm_api/allta_vm_db
@@ -143,25 +221,11 @@ services:
       - "5434:5432"    
     networks:
       - allta_network
-      
-  allta-vm-api:
-    build:
-      context: ../backend/allta_vm_api
-      dockerfile: ../../docker_allta/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
-    image: allta-vm-api
-    container_name: allta_vm_api
-    restart: always
-    env_file:
-      - ./env/.env.allta_vm_api
-    depends_on:
-      - allta-nginx
-      - allta-auth-api
-      - allta-vm-db
-    networks:
-      - allta_vm_api
-      - allta_network
-    volumes:
-      - allta_vm_api:/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5      
          
   # ALL API DOCS
   allta-swagger:
@@ -172,10 +236,11 @@ services:
     container_name: allta_swagger
     networks:
       allta_network:
-    depends_on:
-      - allta-nginx
-    ports:
-      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 3s
+      retries: 3      
     restart: always        
 
 volumes:

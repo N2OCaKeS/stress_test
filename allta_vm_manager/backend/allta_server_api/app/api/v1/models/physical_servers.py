@@ -22,12 +22,15 @@ class PhysicalServer(Base):
     ram_total          = Column(Integer, nullable=False)
     virtualization     = Column(Boolean, nullable=False, default=False)
     ssh_port           = Column(Integer, nullable=False, default=22)
+    server_user       = Column(String(100), nullable=False)
+    server_password   = Column(String, nullable=False)    
     driver_type        = Column(
         String(10),
         nullable=False,
         default=DriverType.ilo.value,
         comment="ilo или idrac"
     )
+    
     admin_panel_ip     = Column(INET, nullable=False)
     admin_panel_user   = Column(String(100), nullable=False)
     admin_panel_pass   = Column(String, nullable=False)

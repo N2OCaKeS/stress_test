@@ -1,5 +1,3 @@
-# app/api/v1/user/routes.py
-
 from typing import List
 
 from fastapi import APIRouter, Security, HTTPException, status, Depends
@@ -15,16 +13,13 @@ from app.api.v1.crud.user import update_user
 
 from app.api.v1.dependencies import (
     get_current_user,
-    oauth2_scheme  # <-- схема из dependencies.py
+    oauth2_scheme
 )
 
 router = APIRouter(
     prefix="/user",
-    tags=["user"],
+    tags=["User"],
 )
-
-
-# ——— обычные пользователи ———
 
 @router.get(
     "/me",

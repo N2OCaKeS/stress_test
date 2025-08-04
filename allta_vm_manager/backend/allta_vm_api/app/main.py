@@ -1,7 +1,13 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-
-
+from app.api.v1.routes.heal_checker import router as health
+from app.api.v1.routes.initialize_server import router as init_server
+from app.api.v1.routes.ip_ranges import router as ip_range_routes
+from app.api.v1.routes.manage_virtual_machine import router as vm
+# from app.api.v1.routes.vm_commands import router as commands
+# from app.api.v1.routes.vm_controller import router as controller
+from app.api.v1.routes.vm_snapshot import router as snapshot
 
 app = FastAPI(title="Allta VM API",
     version="1.0.0",
@@ -10,6 +16,32 @@ app = FastAPI(title="Allta VM API",
     docs_url="/v1/docs",
     redoc_url="/v1/redoc",)
 
+origins = [
+    "http://localhost:8000",
+    "http://localhost:8001",
+    "http://localhost:8002",
+    "http://localhost:8003",
+    "http://localhost:8080",    
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8001",
+    "http://127.0.0.1:8002", 
+    "http://127.0.0.1:8003",    
+    "http://127.0.0.1:8080",               
+    "http://allta.devos.astralinux.ru",
+    "https://allta.devos.astralinux.ru",]
 
-# app.include_router(os_versions_router, prefix="/v1", tags=["os"])
-# app.include_router(physical_servers_router, prefix="/v1", tags=["physical-server"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+app.include_router(health, prefix="", tags=["Health"])
+app.include_router(init_server, prefix="/v1", tags=["Init Server"])
+app.include_router(ip_range_routes, prefix="/v1", tags=["IP Ranges"])
+# app.include_router(commands, prefix="/v1", tags=["VM Commands"])
+# app.include_router(controller, prefix="/v1", tags=["VM Controller"])
+app.include_router(snapshot, prefix="/v1", tags=["VM Snapshot"])
+# app.include_router(vm, prefix="/v1", tags=["Virtual Machine"])

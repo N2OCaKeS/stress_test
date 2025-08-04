@@ -14,7 +14,7 @@ from app.utils.config import settings
 from app.api.v1.schemas.token import TokenData
 from app.api.v1.schemas.user import UserRead
 
-router = APIRouter(prefix="", tags=["auth"])
+router = APIRouter(prefix="", tags=["Auth"])
 
 @router.post("/login", response_model=TokenOut)
 def login(

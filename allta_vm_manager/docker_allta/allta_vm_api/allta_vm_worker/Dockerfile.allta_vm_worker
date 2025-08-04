@@ -1,16 +1,23 @@
 FROM python:3.12-slim
 
 RUN apt-get update && \
-    apt-get install -y gcc build-essential && \
-    apt-get clean
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /vm
 
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip
+RUN pip install poetry
 
 COPY . .
+
+RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
+
+EXPOSE 8000
+
+WORKDIR /vm/app
 
 # Запуск Celery worker
 CMD ["celery", "-A", "celery_worker.celery_app:celery_app", "worker", "--loglevel=info"]

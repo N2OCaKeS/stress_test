@@ -1,5 +1,3 @@
-# app/api/v1/user/routes.py
-
 from typing import List
 
 from fastapi import APIRouter, Security, HTTPException, status, Depends
@@ -26,7 +24,7 @@ from app.api.v1.dependencies import (
 
 router = APIRouter(
     prefix="/admin",
-    tags=["admin"],
+    tags=["Admin"],
 )
 
 # ——— админский блок ———

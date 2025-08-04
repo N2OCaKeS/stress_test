@@ -34,6 +34,7 @@ router = APIRouter(
     tags=["Server"],
 )
 
+
 @router.get(
     "/",
     response_model=List[PhysicalServerRead],
@@ -41,7 +42,7 @@ router = APIRouter(
 )
 def list_servers(
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     return get_physical_servers(db)
 
@@ -57,7 +58,10 @@ def create_server(
     data: PhysicalServerCreate,
     db: Session = Depends(get_db),
 ):
-    return create_physical_server(db, data)
+    try:
+        return create_physical_server(db, data)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch(
@@ -71,11 +75,12 @@ def update_server(
     data: PhysicalServerUpdate,
     db: Session = Depends(get_db),
 ):
-    srv = get_physical_server(db, server_id)
-    if not srv:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
-    updated = update_physical_server(db, server_id, data)
-    return updated
+    try:
+        return update_physical_server(db, server_id, data)
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.delete(
@@ -88,9 +93,10 @@ def delete_server(
     server_id: int,
     db: Session = Depends(get_db),
 ):
-    ok = delete_physical_server(db, server_id)
-    if not ok:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
+    try:
+        delete_physical_server(db, server_id)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.post(
@@ -104,19 +110,20 @@ def change_status(
     current_user: AuthVerifyResponse = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    srv = get_physical_server(db, server_id)
-    if not srv:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
+    try:
+        srv = get_physical_server(db, server_id)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
     new_status = data.status
 
     if new_status in {s.value for s in FixedServerStatus}:
         if new_status != FixedServerStatus.free.value and not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin required for this status")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin required for this status")
         srv.status = new_status
     else:
         if new_status != current_user.login and not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Cannot set status on behalf of another user")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cannot set status on behalf of another user")
         srv.status = new_status
 
     db.commit()
@@ -134,26 +141,24 @@ def release_status(
     current_user: AuthVerifyResponse = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    srv = get_physical_server(db, server_id)
-    if not srv:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
+    try:
+        srv = get_physical_server(db, server_id)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
     curr = srv.status
 
-    # если уже free — возвращаем без изменений
     if curr == FixedServerStatus.free.value:
         return srv
 
-    # если fixed статус отличный от free — только админ
     if curr in {s.value for s in FixedServerStatus}:
         if not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin required to change this status")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin required to change this status")
         srv.status = FixedServerStatus.free.value
 
     else:
-        # статус-username: только владелец или админ
         if curr != current_user.login and not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Cannot release status held by another user")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cannot release status held by another user")
         srv.status = FixedServerStatus.free.value
 
     db.commit()

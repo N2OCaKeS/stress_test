@@ -1,5 +1,3 @@
-# app/api/v1/api_token.py
-
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -17,7 +15,7 @@ from app.utils.config import settings
 
 router = APIRouter(
     prefix="/users/{user_id}/tokens",
-    tags=["api key"],
+    tags=["Api key"],
 )
 
 

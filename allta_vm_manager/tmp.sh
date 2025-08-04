@@ -53,6 +53,20 @@ sudo mkdir -p $CONFIG_API_DATA_PATH
 sudo mkdir -p $SERVER_API_DATA_PATH
 sudo mkdir -p $VM_API_DATA_PATH
 
+set -a
+source ./docker_allta/env/.env.allta_devpi
+set +a
+
 cd ./docker_allta
 # docker-compose build
 docker-compose --file docker-compose.yml up --build -d 
+
+until curl -s -o /dev/null $DEVPI_URL; do
+echo "waiting for devpi-server..."
+sleep 60
+done	
+
+devpi use $DEVPI_URL
+devpi login root --password=$DEVPI_ADMIN_PASSWORD
+devpi use root/pypi
+devpi index -c releases bases=root/pypi mirror_whitelist='*'

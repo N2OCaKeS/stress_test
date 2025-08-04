@@ -27,10 +27,10 @@ class PhysicalServerBase(BaseModel):
     ram_total         : int                = Field(..., example=32768)
     virtualization    : bool               = Field(False, example=True)
     ssh_port          : int                = Field(22, example=2222)
-    driver_type       : DriverType         = Field(DriverType.ilo, example="ilo")
-    admin_panel_ip    : str                = Field(..., example="10.0.0.100")
     server_user       : str                = Field(..., example="root")
     server_password   : str                = Field(..., example="password123")
+    driver_type       : DriverType         = Field(DriverType.ilo, example="ilo")    
+    admin_panel_ip    : str                = Field(..., example="10.0.0.100")    
     admin_panel_user  : str                = Field(..., example="admin")
     admin_panel_pass  : str                = Field(..., example="secret!")
     os_version_id     : Optional[int]      = Field(None, example=3)
@@ -50,10 +50,10 @@ class PhysicalServerUpdate(BaseModel):
     ram_total         : Optional[int]
     virtualization    : Optional[bool]
     ssh_port          : Optional[int]
-    driver_type       : Optional[DriverType]
-    admin_panel_ip    : Optional[str]
     server_user       : Optional[str]
     server_password   : Optional[str]
+    driver_type       : Optional[DriverType]    
+    admin_panel_ip    : Optional[str]    
     admin_panel_user  : Optional[str]
     admin_panel_pass  : Optional[str]
     os_version_id     : Optional[int]

@@ -1,34 +1,51 @@
-
 from typing import List, Optional
-from sqlalchemy.orm import Session
+
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.models.virtual_machine import VirtualMachine
 from app.api.v1.schemas.virtual_machine import VMCreate, VMUpdate
 
 
-def get_vm(db: Session, vm_id: int) -> Optional[VirtualMachine]:
-    return db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+async def get_vm(db: AsyncSession, vm_id: int) -> Optional[VirtualMachine]:
+    result = await db.execute(
+        select(VirtualMachine).where(VirtualMachine.id == vm_id)
+    )
+    return result.scalar_one_or_none()
 
 
-def get_vms(db: Session, skip: int = 0, limit: int = 100) -> List[VirtualMachine]:
-    return db.query(VirtualMachine).offset(skip).limit(limit).all()
+async def get_vms(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[VirtualMachine]:
+    result = await db.execute(
+        select(VirtualMachine).offset(skip).limit(limit)
+    )
+    return result.scalars().all()
 
 
-def create_vm(db: Session, data: VMCreate) -> VirtualMachine:
+async def get_vms_with_ip(db: AsyncSession) -> List[VirtualMachine]:
+    """
+    Вернуть все ВМ, у которых уже есть IP.
+    """
+    result = await db.execute(
+        select(VirtualMachine).where(VirtualMachine.ip_address.isnot(None))
+    )
+    return result.scalars().all()
+
+
+async def create_vm(db: AsyncSession, data: VMCreate) -> VirtualMachine:
     vm = VirtualMachine(**data.model_dump())
     db.add(vm)
     try:
-        db.commit()
-        db.refresh(vm)
+        await db.commit()
+        await db.refresh(vm)
     except IntegrityError as e:
-        db.rollback()
+        await db.rollback()
         raise ValueError(f"Failed to create VM: {str(e)}")
     return vm
 
 
-def update_vm(db: Session, vm_id: int, data: VMUpdate) -> Optional[VirtualMachine]:
-    vm = get_vm(db, vm_id)
+async def update_vm(db: AsyncSession, vm_id: int, data: VMUpdate) -> Optional[VirtualMachine]:
+    vm = await get_vm(db, vm_id)
     if not vm:
         return None
 
@@ -36,18 +53,19 @@ def update_vm(db: Session, vm_id: int, data: VMUpdate) -> Optional[VirtualMachin
         setattr(vm, field, value)
 
     try:
-        db.commit()
-        db.refresh(vm)
+        await db.commit()
+        await db.refresh(vm)
     except IntegrityError as e:
-        db.rollback()
+        await db.rollback()
         raise ValueError(f"Failed to update VM: {str(e)}")
     return vm
 
 
-def delete_vm(db: Session, vm_id: int) -> bool:
-    vm = get_vm(db, vm_id)
+async def delete_vm(db: AsyncSession, vm_id: int) -> bool:
+    vm = await get_vm(db, vm_id)
     if not vm:
         return False
-    db.delete(vm)
-    db.commit()
+
+    await db.delete(vm)
+    await db.commit()
     return True

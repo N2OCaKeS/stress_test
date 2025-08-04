@@ -28,3 +28,4 @@ class VMTaskRead(VMTaskBase):
 
     class Config:
         from_attributes = True
+

@@ -13,10 +13,8 @@ class VirtualMachine(Base):
     ip_address = Column(INET, nullable=False)
     os = Column(String(100), nullable=False)
     kernel = Column(String(100), nullable=False)
-
-
     occupied_by = Column(Integer, nullable=True)
 
     status = Column(String(50), nullable=False, default="free")
 
-    snapshots = relationship("VMSnapshot", back_populates="vm")
+    snapshots = relationship("VMSnapshot", back_populates="vm", cascade="all, delete-orphan")

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -vx
+
 WORKER=5
 NGINX_DC="docker-compose.nginx.yml"
 LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
@@ -13,8 +15,8 @@ NGINX_V=$(nginx -v 2>&1 | cut -d '/' -f2 | tr -d '[:space:]')
 SYS_VERSION=$(cat /etc/astra/build_version | tr -d '[:space:]')
 SYS_KERNEL=$(uname -r | tr -d '[:space:]')
 DOCKER_VERSION=$(dpkg -l | grep -E '^ii[[:space:]]+docker.io[[:space:]]' | awk '{print $3}' | sed 's/,//')
-COMPOSE_VERSION=$(dpkg -l | grep docker-compose | awk '{print $3}' | sed 's/,//')
-PACKAGE_VERSIONS="docker_${DOCKER_VERSION}, docker-compose_${COMPOSE_VERSION}"
+COMPOSE_VERSION=$(dpkg -l | grep docker-compose-v2 | awk '{print $3}' | sed 's/,//')
+PACKAGE_VERSIONS="docker_${DOCKER_VERSION}, docker-compose-v2_${COMPOSE_VERSION}"
 
 RESULTS_DIR="./results/docker_web_${SYS_VERSION}_${SYS_KERNEL}"
 mkdir -p "$RESULTS_DIR"
@@ -79,7 +81,7 @@ nginx_server() {
 
     echo "Остановка всех сервисов (Nginx, Docker)"
     sudo systemctl stop nginx.service
-    sudo docker-compose -f ${CPATH}${NGINX_DC} down
+    sudo docker compose -f ${CPATH}${NGINX_DC} down
     sudo docker volume prune -f
     echo "Настройка Nginx"
     sudo rm -f /etc/nginx/conf.d/*
@@ -135,7 +137,7 @@ nginx_docker(){
 
     echo "Остановка старого окружения..."
     sudo systemctl stop nginx.service
-    sudo docker-compose -f "${CPATH}${NGINX_DC}" down
+    sudo docker compose -f "${CPATH}${NGINX_DC}" down
     sudo docker volume prune -f
     sudo pkill -f "gunicorn" || true
     sudo pkill -f "locust" || true
@@ -155,7 +157,7 @@ nginx_docker(){
         sed -i "s|^html = .*|html = ${RESULTS_DIR_DOCKER}/results.html|g" "$LOCUST_CONF"
         sed -i "s|^host = .*|host = http://nginx|g" "$LOCUST_CONF"
         # Стандартный docker-режим: поднимаем контейнеры через docker-compose и ждём завершения работы контейнера master
-        sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build --scale worker=${WORKER}
+        sudo docker compose -f ${CPATH}${NGINX_DC} up -d --build --scale worker=${WORKER}
         check_locust_containers "docker" "${ALL_CONTAINERS[@]}"
         echo "Docker Nginx запущен!"
 
@@ -173,7 +175,7 @@ nginx_docker(){
         # Альтернативный режим: поднимаем только контейнеры Flask и Nginx,
         
 	# затем запускаем Locust в headless-режиме через виртуальное окружение
-        sudo docker-compose -f ${CPATH}${NGINX_DC} up -d --build flask nginx
+        sudo docker compose -f ${CPATH}${NGINX_DC} up -d --build flask nginx
 	check_locust_containers "locust" "${APP_CONTAINERS[@]}"
 	echo "Контейнеры Flask и Nginx запущены (локальный режим)"
         

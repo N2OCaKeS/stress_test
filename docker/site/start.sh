@@ -4,7 +4,7 @@ set -vx
 
 WORKER=5
 NGINX_DC="docker-compose.nginx.yml"
-LOAD_DOCKER_CONTAINERS=("master" "site_worker_1" "site_worker_2" "site_worker_3" "site_worker_4" "site_worker_5")
+LOAD_DOCKER_CONTAINERS=("master" "site-worker-1" "site-worker-2" "site-worker-3" "site-worker-4" "site-worker-5")
 APP_CONTAINERS=("flask" "nginx")
 ALL_CONTAINERS=("${LOAD_DOCKER_CONTAINERS[@]}" "${APP_CONTAINERS[@]}")
 CPATH="/home/u/git/stress_test/docker/site/"

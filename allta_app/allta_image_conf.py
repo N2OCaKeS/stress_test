@@ -489,8 +489,13 @@ psql_annotations = """
 Падение производительности в 1.7.6 было вызвано ошибкой обновления правил аудита при astra-update -ATr. BT-61530.
 Падение производительности в 1.8.0 связано с блокировками. BT-51261.
 """
+sys_service_annotations = """
+Syslog-NG: 1.8.0-1.8.1.UU.2 - была ошибка в подсчете рейтинга, при необходимости переделать.
+Auditd-files: 1.7.6-1.7.6.UU.2 - была ошибка в подсчете рейтинга, при необходимости переделать.
+"""
 
 annotations = {
     "UnixBench": unixbench_annotations,
-    "PostgreSQL": psql_annotations
+    "PostgreSQL": psql_annotations,
+    "Системные службы": sys_service_annotations
 }

@@ -27,6 +27,11 @@ class CephStorageCreate():
                                 user=self.HOSTS[host]['user'],
                                 password=self.HOSTS[host]['password'],
                                 port=self.HOSTS[host]['port'])
+            send_remote_command("sudo bash /var/tmp/storage_init/sync_time.sh", 
+                                ip=self.HOSTS[host]['ip'], 
+                                user=self.HOSTS[host]['user'],
+                                password=self.HOSTS[host]['password'],
+                                port=self.HOSTS[host]['port'])
             ### TODO Синхронизация времени
 
         ### !!! РАЗВОРАЧИВАТЬ ОТ ПОЛЬЗОВАТЕЛЯ ceph-adm
@@ -34,7 +39,7 @@ class CephStorageCreate():
         if self.astra_version.startswith("1.7"):
             send_remote_command("bash /var/tmp/storage_init/ceph_create_old.sh", ip=self.HOSTS['astra-ceph-admin']['ip'], user="ceph-adm", password="1", port=50020)
         elif self.astra_version.startswith("1.8"):
-            send_remote_command("sudo bash /var/tmp/storage_init/sync_time.sh", ip=self.HOSTS['testvm1']['ip'], user="u", password="1", port=60001)
+            # send_remote_command("sudo bash /var/tmp/storage_init/sync_time.sh", ip=self.HOSTS['testvm1']['ip'], user="u", password="1", port=60001)
             # TODO забирать из hosts
             host_main = "10.0.5.31"
             send_remote_command(f"bash /var/tmp/storage_init/ceph_create_new.sh {host_main}", ip=self.HOSTS['testvm1']['ip'], user="ceph-adm", password="1", port=60001)

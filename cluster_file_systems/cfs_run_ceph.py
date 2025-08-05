@@ -9,7 +9,7 @@ from libs.libtable import Report
 class Ceph:
 
     restore_snapshot = 'virsh --connect qemu:///system snapshot-revert {host} {snapshot}'
-    storagecreate = 'cd /var/lib/libvirt/images && sudo qemu-img create -f qcow2 cluster_storage {size}G'
+    storagecreate = 'cd /var/lib/libvirt/images && sudo qemu-img create -f qcow2 cluster_storage{number} {size}G'
     storageattach = "virsh --connect qemu:///system attach-disk {node} --source /var/lib/libvirt/images/cluster_storage --target {storage_name} --persistent --driver qemu --subdriver qcow2 --type disk"
     startvm = 'virsh --connect qemu:///system start {host}'
     controlvm_off = 'virsh --connect qemu:///system destroy {host}'
@@ -22,11 +22,16 @@ class Ceph:
 
 
     def start(self):
+        if self.vbox.startswith("1.8"):
+            self.vmc = 5 
+        else:
+            self.vmc = 4
+
         virt_machines = VMS(rc_vbox=self.vbox, vm_count=len(self.all_hosts), hostip=HOST_IP, kernel=self.kernel)
         virt_machines.prepare_and_start()
 
-        for node in self.all_hosts:
-            check_output_command(self.storagecreate.format(size=...))
+        for ind, node in enumerate(self.all_hosts):
+            check_output_command(self.storagecreate.format(size=..., number=ind))
             sleep(20)
             check_output_command(self.storageattach.format(node=node, storage_name=STORAGE_NAME))
 

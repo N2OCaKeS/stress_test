@@ -352,8 +352,10 @@ class _VirtInstall:
                     vms_list = list(self.vms_date.keys())
                     for vm in vms_list:
                         disk = f"{vm}.qcow2"
+                        system_commands.cmd_with_returncode(f"virsh --connect qemu:///system destroy {vm}")
                         revert_snap = f"sudo qemu-img snapshot -a {vers} {vm_path}/{disk}"
                         system_commands.cmd_with_returncode(revert_snap)
+                        system_commands.cmd_with_returncode(f"virsh --connect qemu:///system start {vm}")
                     print(f"\n\n\nСтавим hostname\n\n\n")
                     start_prepare(cmds[0])
                     print(f"\n\n\nAtra Update\n\n\n")

@@ -6,7 +6,7 @@ from libreport import MonthlyReport
 
 
 # Указать отчетный период "месяц" в формате "YYYY-MM"
-MONTH = '2025-07'
+MONTH = '2025-08'
 
 
 with open('/home/u/tokens.json', 'r') as r:
@@ -20,14 +20,12 @@ PROJECT_KEY = 'QA'
 REPO_SLUG = 'stress_test'
 
 # Список сотрудников
-AUTHOR_WHITE_LIST = {
-    'amedvedev': 'Александр Медведев', 
+AUTHOR_WHITE_LIST = { 
     'ivelikanov': 'Иван Великанов',
     'mfilippenko': 'Максим Филиппенко', 
     'dtimonin': 'Дмитрий Тимонин'
     }
-AUTHOR_JIRA_LIST = {
-    'JIRAUSER95917': 'Александр Медведев', 
+AUTHOR_JIRA_LIST = { 
     'JIRAUSER46491': 'Иван Великанов',
     'JIRAUSER96504': 'Максим Филиппенко', 
     'JIRAUSER38882': 'Дмитрий Тимонин'

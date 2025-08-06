@@ -104,7 +104,7 @@ class _VirtInstall:
                 f"virt-install --connect qemu:///system -n {hostname} "
                 f"--memory {ram} --vcpus {cpu} --import --disk path={vm_path}/{disk} "
                 f"--os-variant {os_version} --network network=test "
-                "--noautoconsole --noreboot --cpu host-model,+vmx --autostart "
+                "--noautoconsole --noreboot --cpu host-model,+vmx --autostart"
                 # "--controller type=pci,model=pcie-root,index=0 "
                 # "--controller type=pci,model=pcie-root-port,index=1 "
                 # "--controller type=pci,model=pcie-root-port,index=2 "
@@ -114,7 +114,12 @@ class _VirtInstall:
                 # "--controller type=pci,model=pcie-root-port,index=6 "
             ))
             # virt-install --connect qemu:///system -n test --memory 6144 --vcpus 6 --import --disk path=/var/lib/libvirt/images/pool/test.qcow2 --os-variant alse17 --network network=test --noautoconsole --noreboot --cpu host-model,+vmx --controller type=pci,model=pcie-root,index=0 --controller type=pci,model=pcie-root-port,index=1     
-            
+            if box == "vm_station":
+                version = ["1.7.5.9", "1.8.1.6"]
+                for vers in version:
+                    revert_snap = f"sudo qemu-img snapshot -a {vers} {vm_path}/{disk}"
+                    system_commands.cmd_with_returncode(revert_snap)
+                    system_commands.cmd(f'virsh --connect qemu:///system snapshot-create-as --domain {hostname} --name "{vers}_build"')
             sleep(10)
             print (system_commands.check_output_command(f"virsh --connect qemu:///system start {hostname}"))
             print(f"[{hostname}] DONE {round(time()-t_start, 1)} сек")

@@ -158,17 +158,20 @@ class ReportTempo():
         task_details = []
 
         for entry in data:
-            dt = datetime.strptime(entry['started'], '%Y-%m-%d %H:%M:%S.%f')
-            parsed_entries.append({
-                'worker': self.jira_user_list[entry['worker']],
-                'date': dt.date(),
-                'hours': float(f"{entry['timeSpentSeconds'] / 3600:.2f}") # Преобразуем секунды в часы
-            })
-            task_details.append({
-                'worker': self.jira_user_list[entry['worker']],
-                'date': dt.date(),
-                'task_key': entry['issue'].get('key') 
-            })
+            try:
+                dt = datetime.strptime(entry['started'], '%Y-%m-%d %H:%M:%S.%f')
+                parsed_entries.append({
+                    'worker': self.jira_user_list[entry['worker']],
+                    'date': dt.date(),
+                    'hours': float(f"{entry['timeSpentSeconds'] / 3600:.2f}") # Преобразуем секунды в часы
+                })
+                task_details.append({
+                    'worker': self.jira_user_list[entry['worker']],
+                    'date': dt.date(),
+                    'task_key': entry['issue'].get('key') 
+                })
+            except Exception as e:
+                print(f'Error is: {type(e).__name__}\nMessage is: {str(e)}\n')
 
         df = pd.DataFrame(parsed_entries)
         task_df = pd.DataFrame(task_details)
@@ -595,12 +598,14 @@ class MonthlyReport(ReportGit):
     def soup_background(self, html):
         soup = BeautifulSoup(html, 'html.parser')
 
+        # Размер блока (каждый автор занимает столько колонок)
+        block_size = 4
+        len_size = len(self.author_list.values())
+
         # Список авторов (ключами служат позиции колонок)
         sorted_authors = sorted(self.author_list.values())
-        AUTHOR_LIST = {name: index * len(self.author_list.values()) for index, name in enumerate(sorted_authors)}
+        AUTHOR_LIST = {name: index * block_size for index, name in enumerate(sorted_authors)}
 
-        # Размер блока (каждый автор занимает столько колонок)
-        block_size = len(self.author_list.values())
 
         # Проходим по строкам
         for row in soup.select("tbody tr"):

@@ -205,6 +205,7 @@ with open('/home/u/tokens.json', 'r') as r:
 __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
+__git_token = tokens['git_token']
 success = f'Success {args.STAND} {args.TEST}'
 in_prog = f'In progress {args.STAND} {args.TEST}'
 fail = f'Fail {args.STAND} {args.TEST}'
@@ -228,6 +229,7 @@ token = f'--token {__conf_token}'
 confluence_space = "--confluence-space 'DEVQA'"
 confluence_parent_page = f'--confluence-parent-page "{parent_page}"'
 confluence_new_page = f'--confluence-new-page "{args.TEST}_{args.RELEASE}_{args.MODE}_{args.KERNEL}_{args.STAND}"'
+gitclone_conf_body = "git clone -c http.extraHeader='Authorization: {}' https://git.astralinux.ru/scm/qa/stress_test.git"
 if args.TEST == 'EXT4 parsec' or args.TEST == 'XFS parsec':
     fs = f'-fs {args.TEST.split()[0].lower()}'
 else:
@@ -861,10 +863,15 @@ reset_thread.start()
 
 provision_thread.join()
 
+with open('git/gitclone.conf', 'w') as w:
+    w.write(gitclone_conf_body.format(__git_token))
+
 #dates.conf
 create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
 #starter
 create_remote_file('/home/u/git/stress_test/allta_app/starter.sh', '/home/u/starter.sh')
+create_remote_file('/home/u/git/stress_test/allta_app/git/git_clone.py', '/home/u/git/git_clone.py')
+create_remote_file('/home/u/git/stress_test/allta_app/git/gitclone.conf', '/home/u/git/gitclone.conf')
 #stand_number
 #with open('/home/u/git/stress_test/stand_number.conf', 'w') as wr:
 #    wr.write(args.ST)

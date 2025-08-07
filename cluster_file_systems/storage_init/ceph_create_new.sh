@@ -57,9 +57,10 @@ sudo cephadm shell -- ceph orch apply mds cephfs --placement='testvm1'
 echo `sudo cat /etc/ceph/ceph.client.admin.keyring | grep key | cut -c8-`  > /home/ceph-adm/admin.secret
 sleep 5
 
-sudo apt install ceph-common -y
-
 create_cephfs(){
+    sudo mkdir /mnt/cephfs
+    sleep 20
+    sudo ceph mds stat
     sudo mount -t ceph testvm1,testvm2,testvm3,testvm4,testvm5:/ /mnt/cephfs -o name=admin,secretfile=/home/ceph-adm/admin.secret
     df -h | grep cephfs
 }
@@ -74,3 +75,12 @@ create_rbd() {
     sudo mount /dev/rbd0 /mnt/ceph-device
     sudo df -h | grep /mnt/ceph-device
 }
+
+if [ "$2" == "cephfs" ]; then
+    create_cephfs
+elif [ "$2" == "rbd" ]; then
+    create_rbd
+else
+    echo "Неизвестный тип: $2. Допустимые значения: cephfs или rbd"
+    exit 1
+fi

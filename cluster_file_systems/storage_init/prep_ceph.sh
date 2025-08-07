@@ -1,6 +1,8 @@
 sudo apt install ssh sshpass -y
 sudo systemctl enable --now ssh
 
+sudo apt install ceph-common -y
+
 # sudo adduser ceph-adm
 # useradd -m -s /bin/bash ceph-adm && echo -e "1\n1" | passwd ceph-adm
 useradd -m -s /bin/bash ceph-adm && usermod -p $(openssl passwd -1 '1') ceph-adm

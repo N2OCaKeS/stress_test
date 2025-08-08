@@ -1,8 +1,22 @@
+import subprocess
+
+from libs.libcfs import check_output_command
+from cfs_conf import STORAGE_MOUNT_DIR
 
 class CephFIOTest:
 
     def __init__(self):
-        pass
+        self.size = "1G"
+        self.directory = STORAGE_MOUNT_DIR
+        self.runtime = 60 # в секундах
+        self.blocksize = "4k"
+        self.report_file = "/var/tmp/report_fio.txt"
 
     def run_test(self):
-        pass
+        com_test = f"sudo fio --directory={self.directory} --direct=1 --rw=randrw --bs={self.blocksize} --ioengine=libaio --iodepth=256 --size={self.size} --runtime={self.runtime} --numjobs=3 --time_based --group_reporting --name=iops-qateam13-job --eta-newline=1 > {self.report_file}"
+        check_output_command(command=com_test)
+
+
+if __name__ == "__main__":
+    fio_test = CephFIOTest()
+    fio_test.run_test()

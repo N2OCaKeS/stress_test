@@ -10,9 +10,10 @@ from cfs_conf import STORAGE_NAME, REPORT_DIR, \
     STORAGE_MOUNT_DIR, USER, PASSWORD, SCRIPT_DIR
 
 class CephStorageCreate():
-    def __init__(self, astra_version, HOSTS):
+    def __init__(self, astra_version, HOSTS, type_load_test):
         self.astra_version = astra_version
         self.HOSTS = HOSTS
+        self.type_load_test = type_load_test
 
     def create_storage(self):
         for host in self.HOSTS.keys():
@@ -44,8 +45,8 @@ class CephStorageCreate():
         elif self.astra_version.startswith("1.8"):
             # TODO забирать из hosts
             host_main = "10.0.5.31"
-            type_test = "cephfs"
-            send_remote_command(f"bash /var/tmp/storage_init/ceph_create_new.sh {host_main} {type_test}", ip=self.HOSTS['testvm1']['ip'], user="ceph-adm", password="1", port=60001)
+            # type_test = "rbd"
+            send_remote_command(f"bash /var/tmp/storage_init/ceph_create_new.sh {host_main} {self.type_load_test}", ip=self.HOSTS['testvm1']['ip'], user="ceph-adm", password="1", port=60001)
         else:
             return Exception(f"Не написан скрипт, разворачивающий ceph для версии {self.astra_version}")
         

@@ -19,6 +19,7 @@ class Ceph:
         self.vbox = vbox
         self.kernel = kernel
         self.all_hosts = all_hosts
+        self.type_load_test = ...
 
 
     def start(self):
@@ -37,6 +38,20 @@ class Ceph:
         
         create_remote_file(local_file_path="libs", 
                             remote_file_path="/var/tmp/libs", 
+                            ip=self.HOSTS["testvm1"]['ip'], 
+                            user=self.HOSTS["testvm1"]['user'], 
+                            password=self.HOSTS["testvm1"]['password'],
+                            port=self.HOSTS["testvm1"]['port'])
+        
+        create_remote_file(local_file_path="fio", 
+                            remote_file_path="/var/tmp/fio", 
+                            ip=self.HOSTS["testvm1"]['ip'], 
+                            user=self.HOSTS["testvm1"]['user'], 
+                            password=self.HOSTS["testvm1"]['password'],
+                            port=self.HOSTS["testvm1"]['port'])
+        
+        create_remote_file(local_file_path="cfs_test_ceph_fio.py", 
+                            remote_file_path="/var/tmp/cfs_test_ceph_fio.py", 
                             ip=self.HOSTS["testvm1"]['ip'], 
                             user=self.HOSTS["testvm1"]['user'], 
                             password=self.HOSTS["testvm1"]['password'],
@@ -78,14 +93,23 @@ class Ceph:
                             port=self.HOSTS["testvm1"]['port'])
 
 
-        storage = CephStorageCreate(astra_version=self.vbox, HOSTS=virt_machines.vm_dates)
+        storage = CephStorageCreate(astra_version=self.vbox, HOSTS=virt_machines.vm_dates, type_load_test=self.type_load_test)
         storage.create_storage()
-        #### TODO
-        send_remote_command(self.run_test_cmd.format(dir=..., file="cfs_test.py", ts=...),
-                            ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+        
+        
+        if self.type_load_test == "fio":
+            send_remote_command(command="sudo python3 cfs_test_ceph_fio.py",
+                                ip=self.HOSTS["testvm1"]['ip'], 
+                                user=self.HOSTS["testvm1"]['user'], 
+                                password=self.HOSTS["testvm1"]['password'],
+                                port=self.HOSTS["testvm1"]['port'])
+        else:
+            #### TODO
+            send_remote_command(self.run_test_cmd.format(dir=..., file="cfs_test.py", ts=...),
+                                ip=self.HOSTS["testvm1"]['ip'], 
+                                user=self.HOSTS["testvm1"]['user'], 
+                                password=self.HOSTS["testvm1"]['password'],
+                                port=self.HOSTS["testvm1"]['port'])
 
         #### TODO
         report = Report()

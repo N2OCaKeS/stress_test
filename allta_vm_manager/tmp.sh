@@ -15,6 +15,11 @@ export CONFIG_API_DATA_PATH=$BASE_PATH/allta_config_api_data
 export SERVER_API_DATA_PATH=$BASE_PATH/allta_server_api_data
 export VM_API_DATA_PATH=$BASE_PATH/allta_vm_api_data
 
+# Devpi
+set -a
+source ./docker_allta/env/.env.allta_devpi
+set +a
+
 # Remove all docker containers and volumes
 cd ./docker_allta
 docker-compose --file docker-compose.yml down -v
@@ -52,10 +57,6 @@ sudo mkdir -p $VM_DB_PATH
 sudo mkdir -p $CONFIG_API_DATA_PATH
 sudo mkdir -p $SERVER_API_DATA_PATH
 sudo mkdir -p $VM_API_DATA_PATH
-
-set -a
-source ./docker_allta/env/.env.allta_devpi
-set +a
 
 cd ./docker_allta
 # docker-compose build

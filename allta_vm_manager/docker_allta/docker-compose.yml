@@ -24,6 +24,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
   #  NGINX
   allta-nginx:
     build:
@@ -85,7 +86,7 @@ services:
     build:
       context: ./allta_auth_api/allta_auth_db
       dockerfile: Dockerfile.allta_auth_db
-    image: allta-db:latest
+    image: allta-auth-db:latest
     container_name: allta_auth_db
     restart: always
     env_file:
@@ -158,7 +159,7 @@ services:
     build:
       context: ./allta_server_api/allta_server_db
       dockerfile: Dockerfile.allta_server_db
-    image: allta-vm-db:latest
+    image: allta-server-db:latest
     container_name: allta_server_db
     restart: always
     env_file:
@@ -220,13 +221,68 @@ services:
     ports:
       - "5434:5432"    
     networks:
-      - allta_network
+      - allta_vm_api
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
       timeout: 5s
       retries: 5      
-         
+
+  allta-vm-redis:
+    build:
+      context: ./allta_vm_api/allta_vm_redis
+      dockerfile: Dockerfile.allta_vm_redis
+    image: allta-vm-redis:latest      
+    container_name: allta_vm_redis
+    env_file:
+      - env/.env.allta_vm_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - allta_vm_api
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  allta-vm-celery:
+    build:
+      context: ../backend/allta_vm_api
+      dockerfile: ../../docker_allta/allta_vm_api/allta_vm_celery/Dockerfile.allta_vm_celery
+    image: allta-vm-celery:latest      
+    container_name: allta_vm_celery
+    env_file:
+      - env/.env.allta_vm_celery
+    depends_on:
+      allta-vm-redis:
+        condition: service_healthy
+    networks:
+      - allta_vm_api
+
+  allta-vm-flower:
+    build:
+      context: ./allta_vm_api/allta_vm_flower
+      dockerfile: Dockerfile.allta_vm_flower
+    image: allta-vm-flower:latest
+    container_name: allta_vm_flower
+    env_file:
+      - ./env/.env.allta_vm_flower
+    depends_on:
+      allta-vm-redis:
+        condition: service_healthy
+    ports:
+      - "5555:5555"
+    command: celery flower --broker=redis://redis:6379/0 --url_prefix=/service/flower/      
+    networks:
+      - allta_network
+      - allta_vm_api
+    # healthcheck:
+    #   test: ["CMD-SHELL", "python - <<'PY'\nimport socket,sys\ns=socket.socket();s.settimeout(2)\ntry:\n s.connect(('127.0.0.1', int('${FLOWER_PORT:-5555}'))); sys.exit(0)\nexcept Exception:\n sys.exit(1)\nPY"]
+    #   interval: 10s
+    #   timeout: 3s
+    #   retries: 5
+             
   # ALL API DOCS
   allta-swagger:
     build:

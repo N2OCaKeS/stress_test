@@ -1,4 +1,4 @@
-from allta import Libvirt, LibvirtManager, SystemCommands
+from allta import Libvirt, SystemCommands
 import json
 
 class VM:
@@ -69,7 +69,6 @@ EOF
         dns = "10.177.180.248, 10.177.128.198"
         gateway = "10.177.103.254"
         mask = "255.255.255.0"
-        base_net = 
 
         commands = {
             "g_all": {
@@ -137,3 +136,27 @@ EOF
         for vm in vms:
             SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system destroy --domain {vm}")
             SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system undefine --remove-all-storage --delete-storage-volume-snapshots --domain {vm}")
+
+    def stop(vms: list):
+        for vm in vms:
+            SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system destroy --domain {vm}")
+
+    def start(vms: list):
+        for vm in vms:
+            SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system start --domain {vm}")
+
+
+class Snapshot:
+
+    def create(vms: list, snapshot_name: str, description: str):
+        for vm in vms:
+            SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system snapshot-create-as --domain {vm} --name {snapshot_name} --description {description}")
+        
+    
+    def delete(vms: list, snapshot_name: str):
+        for vm in vms:
+            SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system snapshot-delete --domain {vm} --snapshotname {snapshot_name}")
+
+    def revert(vms: list, snapshot_name: str):
+        for vm in vms:
+            SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system snapshot-revert --domain {vm} --snapshotname {snapshot_name} --running")

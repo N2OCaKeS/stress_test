@@ -471,36 +471,40 @@ class FlexibleIOTester(CreateVM):
         print(f'VM dates is:\n{self.vm_dates}')
 
         #Send & install fio pkg
-        # create_remote_file(local_file_path=f'{FIO_PATH}/{self.fio_version}', 
-        #                     remote_file_path=f'/home/{self.user}/{self.fio_version}', 
-        #                     ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-        #                     user=self.user, 
-        #                     password=self.password) 
+        if self.fio_version == FIOVERS_17x:
+            create_remote_file(local_file_path=f'{FIO_PATH}/{self.fio_version}', 
+                                remote_file_path=f'/home/{self.user}/{self.fio_version}', 
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+            
+            send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+
+            send_remote_command(command=self.fb_cmd,
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+
+            send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                                ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                                user=self.user, 
+                                password=self.password)
+        else:
+            send_remote_command(command=f'sudo apt-get install fio -y',
+                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+
 
         send_remote_command(command=f'uname -r > /home/{self.user}/kernel.txt',
                             ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
                             user=self.user, 
                             password=self.password) 
-
-        # send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
-        #                     ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-        #                     user=self.user, 
-        #                     password=self.password) 
-
-        # send_remote_command(command=self.fb_cmd,
-        #                     ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-        #                     user=self.user, 
-        #                     password=self.password) 
-
-        # send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
-        #                     ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-        #                     user=self.user, 
-        #                     password=self.password) 
-        
-        send_remote_command(command=f'sudo apt-get install fio -y',
-                            ip=self.vm_dates[f'testvm{self.vm_num}']['ip'], 
-                            user=self.user, 
-                            password=self.password) 
+       
+               
 
         #exec test cmd
         send_remote_command(command=self.fio_cmd,

@@ -1,6 +1,6 @@
 from time import sleep
 
-from allta import VBoxManager, Libvirt, VBox, LibvirtManager, SystemCommands
+from allta import VBoxManager, Libvirt, VBox, SystemCommands
 from new_balance.roles.database.db import DatabaseVM
 from new_balance.roles.domain.domain import DomainVM
 from new_balance.roles.load_balancer.load_balancer import LoadBalancer
@@ -23,6 +23,10 @@ def balance(rc, sec_mode = "s"):
 
     elif isinstance(provider, Libvirt):
         provider.prepare()
+        SystemCommands.cmd(
+            "sudo sed -i 's|#cgroup_controllers = \\[ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuset\", \"cpuacct\" \\]|cgroup_controllers = [ \"cpu\", \"devices\", \"memory\" ]|' /etc/libvirt/qemu.conf"
+        )
+
         if VERSION_OS == '1.7':
             provider.build(f'1.7.5.{sec_mode}', rc, VMS, VMS_DATES)
         elif VERSION_OS == '1.8':
@@ -49,3 +53,4 @@ def balance(rc, sec_mode = "s"):
     test = Test()
     test.test()
     SystemCommands.cmd('cat results_balance.txt')
+

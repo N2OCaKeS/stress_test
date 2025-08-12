@@ -24,7 +24,7 @@ def balance(rc, sec_mode = "s"):
     elif isinstance(provider, Libvirt):
         provider.prepare()
         SystemCommands.cmd(
-            "sudo sed -i 's|#cgroup_controllers = \\[ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuset\", \"cpuacct\" \\]|cgroup_controllers = [ \"cpu\", \"devices\", \"memory\" ]|' /etc/libvirt/qemu.conf"
+            "sudo sed -i 's|#cgroup_controllers = \\[ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuset\", \"cpuacct\" \\]|cgroup_controllers = [ \"cpu\", \"devices\", \"memory\" ]|' /etc/libvirt/qemu.conf && sudo systemctl restart libvirtd"
         )
 
         if VERSION_OS == '1.7':

@@ -8,7 +8,6 @@ __pycache__/
 start.sh
 test.py
 tmp
-cli/*
 
 # Сгенерированнные файлы
 docker_allta/allta_devpi/Dockerfile.allta_devpi

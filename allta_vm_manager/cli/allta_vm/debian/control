@@ -1,0 +1,12 @@
+Source: allta-vm
+Section: utils
+Priority: optional
+Maintainer: Maksim Filippenko <mfilippenko@astralinux.ru>
+Build-Depends: debhelper (>= 11), dh-python, python3-all
+Standards-Version: 4.5.0
+
+Package: allta-vm
+Architecture: amd64
+Depends: ${misc:Depends}
+Description: CLI-инструмент для управления ВМ
+ CLI-интерфейс с изолированным Python для управления виртуальными машинами и снапшотами.

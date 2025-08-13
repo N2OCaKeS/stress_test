@@ -20,4 +20,4 @@ EXPOSE 8000
 WORKDIR /vm/services/worker/
 
 # Запуск Celery worker
-CMD ["celery", "-A", "celery_worker.celery_app:celery_app", "worker", "--loglevel=info"]
+CMD ["celery", "-A", "celery_app:celery_app", "worker", "--loglevel=info"]

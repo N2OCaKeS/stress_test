@@ -9,7 +9,7 @@ from app.db.base import Base
 
 import os
 
-from app.api.v1.models import virtual_machine, vm_snapshot, ip_range, vm_task
+from app.api.v1.models import vm_snapshot, ip_range, vm
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

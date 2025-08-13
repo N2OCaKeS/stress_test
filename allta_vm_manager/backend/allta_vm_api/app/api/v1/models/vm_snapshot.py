@@ -8,7 +8,6 @@ class VMSnapshot(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
-    description = Column(Text, nullable=True)
 
-    vm_id = Column(Integer, ForeignKey("virtual_machines.id", ondelete="CASCADE"), nullable=False)
+    vm_id = Column(Integer, ForeignKey("vm.id", ondelete="CASCADE"), nullable=False)
     vm = relationship("VirtualMachine", back_populates="snapshots")

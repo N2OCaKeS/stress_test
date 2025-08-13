@@ -13,10 +13,12 @@ from app.utils.crypto import Crypto
 
 
 def _decrypt_credentials(server: PhysicalServer):
+    if server.server_password:
+        crypto = Crypto()
+        server.server_password = crypto.decrypt(server.server_password)    
     if server.admin_panel_pass:
         crypto = Crypto()
         server.admin_panel_pass = crypto.decrypt(server.admin_panel_pass)
-
 
 def get_physical_server(db: Session, server_id: int) -> PhysicalServer:
     srv = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
@@ -56,6 +58,7 @@ def create_physical_server(db: Session, data: PhysicalServerCreate) -> PhysicalS
     # Шифрование пароля
     crypto = Crypto()
     payload["admin_panel_pass"] = crypto.encrypt(secret=payload["admin_panel_pass"])
+    payload["server_password"] = crypto.encrypt(secret=payload["server_password"])
 
     server = PhysicalServer(**payload)
     db.add(server)
@@ -105,6 +108,10 @@ def update_physical_server(
     # Проверка driver_type
     if "driver_type" in update_data and update_data["driver_type"] not in [e.value for e in DriverType]:
         raise ValueError(f"Invalid driver_type: {update_data['driver_type']}")
+
+    if "server_password" in update_data:
+        crypto = Crypto()
+        update_data["server_password"] = crypto.encrypt(update_data["server_password"])
 
     # Шифрование пароля
     if "admin_panel_pass" in update_data:

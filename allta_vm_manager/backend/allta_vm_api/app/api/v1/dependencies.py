@@ -1,5 +1,3 @@
-# app/api/v1/dependencies.py
-
 from typing import Optional
 
 import httpx

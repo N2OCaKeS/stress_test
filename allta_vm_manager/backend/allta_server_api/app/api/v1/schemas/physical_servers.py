@@ -33,14 +33,27 @@ class PhysicalServerBase(BaseModel):
     admin_panel_ip    : str                = Field(..., example="10.0.0.100")    
     admin_panel_user  : str                = Field(..., example="admin")
     admin_panel_pass  : str                = Field(..., example="secret!")
-    os_version_id     : Optional[int]      = Field(None, example=3)
+    status            : str                = Field(None, example="free")
+    os_version_id     : Optional[int]      = Field(None, example=1)
 
 
 class PhysicalServerCreate(PhysicalServerBase):
     """
     Всё то же, что и в Base, статус по умолчанию не указывается.
     """
-    pass
+    name              : str                = Field(..., example="server-01")
+    ip_address        : str                = Field(..., example="10.0.0.5")
+    cpu_total         : int                = Field(..., example=16)
+    ram_total         : int                = Field(..., example=32768)
+    virtualization    : bool               = Field(False, example=True)
+    ssh_port          : int                = Field(22, example=2222)
+    server_user       : str                = Field(..., example="root")
+    server_password   : str                = Field(..., example="password123")
+    driver_type       : DriverType         = Field(DriverType.ilo, example="ilo")    
+    admin_panel_ip    : str                = Field(..., example="10.0.0.100")    
+    admin_panel_user  : str                = Field(..., example="admin")
+    admin_panel_pass  : str                = Field(..., example="secret!")
+    os_version_id     : Optional[int]      = Field(None, example=1)    
 
 
 class PhysicalServerUpdate(BaseModel):
@@ -60,31 +73,15 @@ class PhysicalServerUpdate(BaseModel):
 
 
 class PhysicalServerStatusUpdate(BaseModel):
-    status: str = Field(
-        ...,
-        description="Новый статус: одно из фиксированных или логин пользователя"
-    )
+    status: str
 
     @field_validator("status")
     @classmethod
-    def validate_status_or_user(cls, v):
-        # если это фиксированный статус — ок
-        if v in FixedServerStatus.__members__.values():
-            return v
-        # иначе проверяем существование логина через Auth-сервис
-        try:
-            resp = httpx.get(
-                f"{settings.AUTH_API_URL}/verify?login={v}",
-                timeout=3.0,
-            )
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ValueError(f"Пользователь '{v}' не найден")
-            raise ValueError("Ошибка при проверке пользователя в Auth-сервисе")
-        except httpx.RequestError:
-            raise ValueError("Не удалось подключиться к Auth-сервису")
-        return v
+    def normalize_fixed(cls, v: str) -> str:
+        norm = v.strip().lower().replace("_", " ")
+        if norm in FixedServerStatus._value2member_map_:
+            return FixedServerStatus(norm).value
+        return v.strip()
 
 
 class PhysicalServerRead(PhysicalServerBase):

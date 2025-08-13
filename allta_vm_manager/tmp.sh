@@ -31,14 +31,14 @@ sudo rm -rf $DEVPI_PATH
 
 # Back Service
 # Database
-sudo rm -rf $AUTH_DB_PATH
-sudo rm -rf $SERVER_DB_PATH
+# sudo rm -rf $AUTH_DB_PATH
+# sudo rm -rf $SERVER_DB_PATH
 sudo rm -rf $VM_DB_PATH
 
 # Api
 sudo rm -rf $CONFIG_API_DATA_PATH
+# sudo rm -rf $SERVER_API_DATA_PATH
 sudo rm -rf $VM_API_DATA_PATH
-sudo rm -rf $BASE_PATH
 
 # Recreate the directories
 sudo mkdir -p $BASE_PATH

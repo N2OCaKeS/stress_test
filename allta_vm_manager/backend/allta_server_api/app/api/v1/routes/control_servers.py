@@ -5,7 +5,7 @@ from app.db.session import get_db
 from app.api.v1.crud.physical_servers import get_physical_server
 from app.api.v1.schemas.physical_servers import PhysicalServerRead
 from app.api.v1.dependencies import get_current_user, AuthVerifyResponse
-
+from app.utils.server_power import ServerPowerService
 router = APIRouter(
     prefix="/control",
     tags=["Control"],
@@ -47,8 +47,8 @@ def power_on_server(
 
     _check_power_permission(server, current_user)
 
-    # TODO: ваша реальная логика включения (IPMI, Redfish и т.п.)
-    # Например: ipmi_client.power_on(server)
+    ServerPowerService(server=server)
+    ServerPowerService.power_on()
 
     return server
 
@@ -69,8 +69,8 @@ def power_off_server(
 
     _check_power_permission(server, current_user)
 
-    # TODO: ваша реальная логика выключения
-    # Например: ipmi_client.power_off(server)
+    ServerPowerService(server=server)
+    ServerPowerService.power_off()    
 
     return server
 
@@ -91,7 +91,7 @@ def reboot_server(
 
     _check_power_permission(server, current_user)
 
-    # TODO: ваша реальная логика перезагрузки
-    # Например: ipmi_client.reboot(server)
+    ServerPowerService(server=server)
+    ServerPowerService.set_boot_order()
 
     return server

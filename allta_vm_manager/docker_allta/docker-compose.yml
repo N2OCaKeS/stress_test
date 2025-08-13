@@ -51,7 +51,9 @@ services:
       allta-vm-api:
         condition: service_healthy
       allta-swagger:
-        condition: service_healthy      
+        condition: service_healthy     
+      allta-vm-flower:
+        condition: service_healthy         
     # healthcheck:
     #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
     #   interval: 5s
@@ -234,6 +236,7 @@ services:
       dockerfile: Dockerfile.allta_vm_redis
     image: allta-vm-redis:latest      
     container_name: allta_vm_redis
+    restart: always    
     env_file:
       - env/.env.allta_vm_redis
     ports:
@@ -252,6 +255,7 @@ services:
       dockerfile: ../../docker_allta/allta_vm_api/allta_vm_celery/Dockerfile.allta_vm_celery
     image: allta-vm-celery:latest      
     container_name: allta_vm_celery
+    restart: always    
     env_file:
       - env/.env.allta_vm_celery
     depends_on:
@@ -277,11 +281,11 @@ services:
     networks:
       - allta_network
       - allta_vm_api
-    # healthcheck:
-    #   test: ["CMD-SHELL", "python - <<'PY'\nimport socket,sys\ns=socket.socket();s.settimeout(2)\ntry:\n s.connect(('127.0.0.1', int('${FLOWER_PORT:-5555}'))); sys.exit(0)\nexcept Exception:\n sys.exit(1)\nPY"]
-    #   interval: 10s
-    #   timeout: 3s
-    #   retries: 5
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport socket,sys\ns=socket.socket();s.settimeout(2)\ntry:\n s.connect(('127.0.0.1', int('${FLOWER_PORT:-5555}'))); sys.exit(0)\nexcept Exception:\n sys.exit(1)\nPY"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
              
   # ALL API DOCS
   allta-swagger:

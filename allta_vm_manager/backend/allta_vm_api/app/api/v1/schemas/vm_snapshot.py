@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 class VMSnapshotBase(BaseModel):
     name: str = Field(..., example="snapshot-2024-07-05")
-    description: Optional[str] = Field(None, example="Первоначальный снимок после установки")
+
 
 
 class VMSnapshotCreate(VMSnapshotBase):
@@ -13,7 +13,7 @@ class VMSnapshotCreate(VMSnapshotBase):
 
 class VMSnapshotUpdate(BaseModel):
     name: Optional[str]
-    description: Optional[str]
+
 
 
 class VMSnapshotRead(VMSnapshotBase):

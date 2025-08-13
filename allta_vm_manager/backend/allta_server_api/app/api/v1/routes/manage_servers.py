@@ -1,4 +1,5 @@
 from typing import List
+import httpx
 
 from fastapi import (
     APIRouter,
@@ -26,8 +27,11 @@ from app.api.v1.crud.physical_servers import (
 from app.api.v1.dependencies import (
     get_current_user,
     get_current_admin_user,
-    AuthVerifyResponse
+    AuthVerifyResponse,
+    get_token
 )
+from app.api.v1.models.physical_servers import PhysicalServer
+from app.utils.config import settings
 
 router = APIRouter(
     prefix="/manage",
@@ -46,6 +50,21 @@ def list_servers(
 ):
     return get_physical_servers(db)
 
+@router.get(
+    "/{server_id}",
+    response_model=PhysicalServerRead,
+    dependencies=[Depends(get_current_user)],
+    summary="Получить сервер по id (любой аутентифицированный пользователь)",
+)
+def get_server(
+    server_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        srv = get_physical_server(db, server_id)
+        return srv
+    except ValueError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
 @router.post(
     "/",
@@ -99,36 +118,29 @@ def delete_server(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post(
-    "/{server_id}/status",
-    response_model=PhysicalServerRead,
-    summary="Установить статус сервера (take/free)"
-)
-def change_status(
+@router.post("/{server_id}/status")
+def update_status(
     server_id: int,
-    data: PhysicalServerStatusUpdate,
-    current_user: AuthVerifyResponse = Depends(get_current_user),
+    status_in: PhysicalServerStatusUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    try:
-        srv = get_physical_server(db, server_id)
-    except ValueError as e:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
+    server = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
+    if not server:
+        raise HTTPException(404, detail="Server not found")
 
-    new_status = data.status
+    # Логика прав — админ может любой статус
+    if not current_user.is_admin:
+        if status_in.status.lower() != current_user.login.lower():
+            raise HTTPException(403, detail="Not allowed to set this status")
 
-    if new_status in {s.value for s in FixedServerStatus}:
-        if new_status != FixedServerStatus.free.value and not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin required for this status")
-        srv.status = new_status
-    else:
-        if new_status != current_user.login and not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cannot set status on behalf of another user")
-        srv.status = new_status
-
+    # Меняем только статус, остальные поля не трогаем
+    server.status = status_in.status
     db.commit()
-    db.refresh(srv)
-    return srv
+    db.refresh(server)
+
+    # Возвращаем как есть, без расшифровки паролей
+    return {"id": server.id, "status": server.status}
 
 
 @router.post(
@@ -141,22 +153,23 @@ def release_status(
     current_user: AuthVerifyResponse = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    try:
-        srv = get_physical_server(db, server_id)
-    except ValueError as e:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
+    # Получаем сервер без расшифровки паролей
+    srv = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
+    if not srv:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Server with id={server_id} not found")
 
     curr = srv.status
 
     if curr == FixedServerStatus.free.value:
-        return srv
+        return srv  # уже свободен
 
     if curr in {s.value for s in FixedServerStatus}:
+        # Фиксированные статусы может снимать только админ
         if not current_user.is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin required to change this status")
         srv.status = FixedServerStatus.free.value
-
     else:
+        # Если статус = логин пользователя — он может снять сам, иначе только админ
         if curr != current_user.login and not current_user.is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cannot release status held by another user")
         srv.status = FixedServerStatus.free.value

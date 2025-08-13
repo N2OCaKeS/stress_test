@@ -4,10 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes.heal_checker import router as health
 from app.api.v1.routes.initialize_server import router as init_server
 from app.api.v1.routes.ip_ranges import router as ip_range_routes
-from app.api.v1.routes.manage_virtual_machine import router as vm
-# from app.api.v1.routes.vm_commands import router as commands
-# from app.api.v1.routes.vm_controller import router as controller
-from app.api.v1.routes.vm_snapshot import router as snapshot
+from app.api.v1.routes.vm import router as vm
+from app.api.v1.routes.snapshot import router as snapshot
 
 app = FastAPI(title="Allta VM API",
     version="1.0.0",
@@ -39,9 +37,7 @@ app.add_middleware(
 )
 
 app.include_router(health, prefix="", tags=["Health"])
-app.include_router(init_server, prefix="/v1", tags=["Init Server"])
+app.include_router(init_server, prefix="/v1", tags=["Server"])
 app.include_router(ip_range_routes, prefix="/v1", tags=["IP Ranges"])
-# app.include_router(commands, prefix="/v1", tags=["VM Commands"])
-# app.include_router(controller, prefix="/v1", tags=["VM Controller"])
-app.include_router(snapshot, prefix="/v1", tags=["VM Snapshot"])
-# app.include_router(vm, prefix="/v1", tags=["Virtual Machine"])
+app.include_router(vm, prefix="/v1", tags=["VM"])
+app.include_router(snapshot, prefix="/v1", tags=["Snapshot"])

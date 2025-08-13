@@ -20,6 +20,17 @@ services:
 #    driver: bridge
 EOF
 
+
+
+if test "$(grep 1.8 /etc/astra_version)"; then
+  COMPOSE_CMD="docker compose"
+  COMPOSE_VERS="docker-compose-v2"
+else
+  COMPOSE_CMD="docker-compose"
+  COMPOSE_VERS="docker-compose"
+fi
+
+
 sudo tee /etc/systemd/system/node_exporter.service > /dev/null << EOF
 [Unit]
 Description=Docker node exporter service
@@ -29,8 +40,8 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=$NE_PATH
-ExecStart=/usr/bin/docker-compose up -d
-ExecStop=/usr/bin/docker-compose down
+ExecStart=/usr/bin/$COMPOSE_CMD up -d
+ExecStop=/usr/bin/$COMPOSE_CMD down
 RemainAfterExit=yes
 
 [Install]
@@ -39,7 +50,7 @@ EOF
 
 
 sudo apt-get install docker.io -y
-sudo apt-get install docker-compose -y
+sudo apt-get install $COMPOSE_VERS -y
 
 sudo systemctl enable node_exporter.service
 sudo systemctl daemon-reload

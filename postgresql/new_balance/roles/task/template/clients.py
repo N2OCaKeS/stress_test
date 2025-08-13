@@ -3,6 +3,8 @@ from random import choice, randint
 import psycopg2
 import traceback
 from datetime import datetime
+from os.path import exists, isfile
+import subprocess
 
 # Конфигурация
 N_ACCOUNTS = 100000
@@ -84,6 +86,66 @@ def log_error(e):
         f.write(f"{str(e)}\n")
         f.write(f"{traceback.format_exc()}\n\n")
 
+def astra_version():
+    version = ['null', 'null']
+   
+    if exists("/etc/astra_version"):
+        with open("/etc/astra_version", "r") as file:
+            astra_update_version = file.read()
+        version[0] = astra_update_version.strip('\n')
+
+    if exists("/etc/astra_license"):
+        with open("/etc/astra_license", "r") as file:
+                    astra_license = file.read()
+                    if "orel" in astra_license:
+                        version[1] = "orel"
+                    elif "smolensk" in astra_license:
+                        version[1] = "smolensk"
+                    elif "voronezh" in astra_license:
+                        version[1] = "voronezh"
+                    else:
+                        print("Version of distribution not found")
+
+    return version
+
+
+def info_list():
+    import re
+
+    def cmd(command, regex=False):
+        output = subprocess.run(command, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
+        
+        if regex:
+            match = re.search(r'Version: (\S+)', output)
+            return match.group(1) if match else "N/A"
+
+        return output    
+
+    av = astra_version()
+    if av[0].startswith('1.7'):
+         psql_version = 'postgresql-11'
+    elif av[0].startswith('1.8'):
+         psql_version = 'postgresql-15'
+
+    info_lst = [f'{av[0]}({av[1]})\n',
+                cmd('uname -r'),
+                cmd(f'apt-cache show {psql_version}', regex=True) + '\n',
+                cmd('apt-cache show pgpool2', regex=True) + '\n',
+                psql_version + '\n',
+                'pgpool2']
+    
+    with open('psb_info.txt', 'a+') as info:
+            info.writelines(info_lst)
+
+    if isfile('available_packages.txt'):
+        cmd('sudo chown $USER:$USER available_packages.txt')
+        #chown('available_packages.txt', 1001, 1002)
+        #chmod('available_packages.txt', 0o777)
+    with open('available_packages.txt', 'a') as file:
+         pkgs = cmd('apt list postgresql*')
+         file.write('\n2nd iteration:\n')
+         file.write(pkgs)
+
 def main():
     threads = []
     for _ in range(NUM_CLIENTS):
@@ -97,6 +159,7 @@ def main():
     # Вывод итоговой статистики
     total_queries = NUM_TRANSACTIONS * NUM_CLIENTS
     success, fail = results.get_stats()
+    info_list()    
     
     stats = (
         f"Number of successful queries: {success}\n"

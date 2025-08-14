@@ -9,7 +9,7 @@ import subprocess
 # Конфигурация
 N_ACCOUNTS = 100000
 NUM_CLIENTS = 20
-NUM_TRANSACTIONS = 1000
+NUM_TRANSACTIONS = 10000
 SCALE_FACTOR = 100
 
 # Параметры подключения к БД
@@ -65,8 +65,7 @@ def run_pgbench():
                     
                     conn.commit()
                     results.add_success()
-                    
-                    # Выводим статистику каждые 100 успешных запросов
+            
                     if results.success % 100 == 0:
                         s, f = results.get_stats()
                         print(f"Success: {s}, Fail: {f}")

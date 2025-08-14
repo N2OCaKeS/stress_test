@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import uuid
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_async_db
 from app.api.v1.models.vm import VirtualMachine
@@ -11,10 +14,10 @@ from app.api.v1.schemas.vm import VMCreate, VMRead
 from app.api.v1.schemas.vm_batch import (
     BatchVMCreateError,
     BatchVMCreateRequest,
-    BatchVMCreateResponse,
+    BatchVMCreateResponse,  # оставляем, если где-то используется
     BatchVMUpdateRequest,
     VMDeleteRequest,
-    ItemOpError    
+    ItemOpError,
 )
 from app.utils.vm_batch import (
     ensure_server_ready_for_vms_hub,
@@ -22,70 +25,33 @@ from app.utils.vm_batch import (
     get_range_bounds,
     ip_in_range,
     is_ip_free,
-    is_name_free,    
+    is_name_free,
 )
 from app.api.v1.dependencies import (
     get_current_user,
     get_current_admin_user,
     get_token,
 )
-
 from app.api.v1.crud.vm import create_vm
 
 router = APIRouter(prefix="/vm", tags=["VM"])
 
+# -------- пресет базовых ВМ --------
 PRESET_VMS: Dict[str, Dict[str, Any]] = {
-    "virtual-station1": {
-        "host-port": "22",
-        "ip": "10.177.103.101",
-        "ip_bridge": "10.177.103.101",
-        "cpu": "16",
-        "ram": "131072",
-    },
-    "virtual-station2": {
-        "host-port": "22",
-        "ip": "10.177.103.102",
-        "ip_bridge": "10.177.103.102",
-        "cpu": "16",
-        "ram": "131072",
-    },
-    "virtual-station3": {
-        "host-port": "22",
-        "ip": "10.177.103.103",
-        "ip_bridge": "10.177.103.103",
-        "cpu": "16",
-        "ram": "131072",
-    },
-    "virtual-station4": {
-        "host-port": "22",
-        "ip": "10.177.103.104",
-        "ip_bridge": "10.177.103.104",
-        "cpu": "16",
-        "ram": "131072",
-    },
-    "work-station1": {
-        "host-port": "22",
-        "ip": "10.177.103.201",
-        "ip_bridge": "10.177.103.201",
-        "cpu": "16",
-        "ram": "131072",
-    },
-    "work-station2": {
-        "host-port": "22",
-        "ip": "10.177.103.202",
-        "ip_bridge": "10.177.103.202",
-        "cpu": "16",
-        "ram": "131072",
-    },
+    "virtual-station1": {"host-port": "22", "ip": "10.177.103.101", "ip_bridge": "10.177.103.101", "cpu": "16", "ram": "131072"},
+    "virtual-station2": {"host-port": "22", "ip": "10.177.103.102", "ip_bridge": "10.177.103.102", "cpu": "16", "ram": "131072"},
+    "virtual-station3": {"host-port": "22", "ip": "10.177.103.103", "ip_bridge": "10.177.103.103", "cpu": "16", "ram": "131072"},
+    "virtual-station4": {"host-port": "22", "ip": "10.177.103.104", "ip_bridge": "10.177.103.104", "cpu": "16", "ram": "131072"},
+    "work-station1":   {"host-port": "22", "ip": "10.177.103.201", "ip_bridge": "10.177.103.201", "cpu": "16", "ram": "131072"},
+    "work-station2":   {"host-port": "22", "ip": "10.177.103.202", "ip_bridge": "10.177.103.202", "cpu": "16", "ram": "131072"},
 }
 PRESET_NAMES: Set[str] = set(PRESET_VMS.keys())
 
 
-def _can_modify_vm(
-    vm: VirtualMachine, actor: str, is_admin: bool
-) -> Tuple[bool, Optional[str]]:
+# -------- вспомогательные --------
+def _can_modify_vm(vm: VirtualMachine, actor: str, is_admin: bool) -> Tuple[bool, Optional[str]]:
     """
-    Разрешение на удаление/обновление:
+    Разрешение на удаление/обновление/питание:
     - админ: всегда можно (включая базовые)
     - не админ:
         * если базовая (из пресета) — нельзя
@@ -109,6 +75,27 @@ def _uuid_task() -> str:
     return str(uuid.uuid4())
 
 
+async def _create_vms_now(db: AsyncSession, items: List[VMCreate]) -> List[int]:
+    """
+    Синхронно создаёт ВМ в БД (через CRUD) и возвращает их id.
+    Никакого Celery. Ошибки уникальности маппим в 409.
+    """
+    created_ids: List[int] = []
+    for payload in items:
+        try:
+            vm = await create_vm(db, payload)  # внутри commit + refresh
+            created_ids.append(vm.id)
+        except ValueError as e:
+            msg = str(e)
+            # create_vm делает rollback на IntegrityError
+            if "unique" in msg.lower() or "duplicate" in msg.lower():
+                raise HTTPException(status_code=409, detail=f"Duplicate while creating VM {payload.name!r}: {msg}")
+            raise HTTPException(status_code=400, detail=f"Failed to create VM {payload.name!r}: {msg}")
+    return created_ids
+
+
+# -------- endpoints --------
+
 @router.post("/create", status_code=status.HTTP_202_ACCEPTED)
 async def create(
     payload: BatchVMCreateRequest,
@@ -116,59 +103,53 @@ async def create(
     token: str = Depends(get_token),
     user=Depends(get_current_user),  # любой авторизованный
 ):
-    ok, reason, _server = await ensure_server_ready_for_vms_hub(
-        payload.server_id, token
-    )
+    # сервер готов?
+    ok, reason, _server = await ensure_server_ready_for_vms_hub(payload.server_id, token)
     if not ok:
         if reason and "not found" in reason:
             raise HTTPException(status_code=404, detail=reason)
-        raise HTTPException(
-            status_code=400, detail=reason or "server not ready for vms hub"
-        )
+        raise HTTPException(status_code=400, detail=reason or "server not ready for vms hub")
 
+    # диапазон существует?
     ipr = await get_ip_range(db, payload.ip_range_id)
     if not ipr:
-        raise HTTPException(
-            status_code=404, detail=f"IP range id={payload.ip_range_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"IP range id={payload.ip_range_id} not found")
     start_ip, end_ip = get_range_bounds(ipr)
 
+    # валидации и сбор payload'ов
     errs: List[BatchVMCreateError] = []
+    to_create: List[VMCreate] = []
     for name, item in payload.vms.items():
+        ip_str = str(item.ip)
         if not await is_name_free(db, name):
             errs.append(BatchVMCreateError(name=name, reason="name already exists"))
             continue
-        if not ip_in_range(str(item.ip), start_ip, end_ip):
-            errs.append(
-                BatchVMCreateError(
-                    name=name,
-                    reason=f"ip {item.ip} is outside of range {start_ip}..{end_ip}",
-                )
-            )
+        if not ip_in_range(ip_str, start_ip, end_ip):
+            errs.append(BatchVMCreateError(name=name, reason=f"ip {ip_str} is outside of range {start_ip}..{end_ip}"))
             continue
-        if not await is_ip_free(db, str(item.ip)):
-            errs.append(
-                BatchVMCreateError(name=name, reason=f"ip {item.ip} is already in use")
-            )
+        if not await is_ip_free(db, ip_str):
+            errs.append(BatchVMCreateError(name=name, reason=f"ip {ip_str} is already in use"))
+            continue
+
+        to_create.append(VMCreate(
+            name=name,
+            cpu=item.cpu,
+            ram=item.ram,
+            ip_address=ip_str,
+            server_id=payload.server_id,
+        ))
 
     if errs:
-        raise HTTPException(
-            status_code=400, detail={"skipped": [e.model_dump() for e in errs]}
-        )
+        # если нужно «создать то, что можно», можно убрать этот raise, вызвать _create_vms_now(to_create),
+        # а в ответ вернуть и task_id, и skipped.
+        raise HTTPException(status_code=400, detail={"skipped": [e.model_dump() for e in errs]})
 
+    # создаём прямо сейчас (без Celery)
+    await _create_vms_now(db, to_create)
+
+    # возвращаем только task_id (контракт не меняем)
     task_id = _uuid_task()
-
-    # TODO: celery — создать таску batch-создания:
-    # from app.tasks.vm_tasks import create_vms_batch_task
-    # create_vms_batch_task.delay(
-    #     task_id=task_id,
-    #     actor=user.username,
-    #     token=token,
-    #     server_id=payload.server_id,
-    #     ip_range_id=payload.ip_range_id,
-    #     vms={k: v.model_dump() for k, v in payload.vms.items()},
-    # )
-
+    # TODO: позже тут можно запустить celery-задачу реального развёртывания
     return {"task_id": task_id}
 
 
@@ -184,42 +165,44 @@ async def create_default_vms(
     token: str = Depends(get_token),
     user=Depends(get_current_user),
 ):
+    # сервер готов?
     ok, reason, _server = await ensure_server_ready_for_vms_hub(server_id, token)
     if not ok:
         if reason and "not found" in reason:
             raise HTTPException(status_code=404, detail=reason)
-        raise HTTPException(
-            status_code=400, detail=reason or "server not ready for vms hub"
-        )
+        raise HTTPException(status_code=400, detail=reason or "server not ready for vms hub")
 
-    # быстрый предварительный чек занятых IP/имен
+    # быстрый предчек имён/IP
     errs: List[BatchVMCreateError] = []
+    to_create: List[VMCreate] = []
     for name, cfg in PRESET_VMS.items():
         ip = str(cfg["ip"])
+        cpu = int(cfg["cpu"]) if isinstance(cfg["cpu"], str) else cfg["cpu"]
+        ram = int(cfg["ram"]) if isinstance(cfg["ram"], str) else cfg["ram"]
+
         if not await is_name_free(db, name):
             errs.append(BatchVMCreateError(name=name, reason="name already exists"))
-        elif not await is_ip_free(db, ip):
-            errs.append(
-                BatchVMCreateError(name=name, reason=f"ip {ip} is already in use")
-            )
+            continue
+        if not await is_ip_free(db, ip):
+            errs.append(BatchVMCreateError(name=name, reason=f"ip {ip} is already in use"))
+            continue
+
+        to_create.append(VMCreate(
+            name=name,
+            cpu=cpu,
+            ram=ram,
+            ip_address=ip,
+            server_id=server_id,
+        ))
 
     if errs:
-        raise HTTPException(
-            status_code=400, detail={"skipped": [e.model_dump() for e in errs]}
-        )
+        raise HTTPException(status_code=400, detail={"skipped": [e.model_dump() for e in errs]})
+
+    # создаём прямо сейчас (без Celery)
+    await _create_vms_now(db, to_create)
 
     task_id = _uuid_task()
-
-    # TODO: celery — таска на создание пресетных ВМ
-    # from app.tasks.vm_tasks import bootstrap_vms_task
-    # bootstrap_vms_task.delay(
-    #     task_id=task_id,
-    #     actor=user.username,
-    #     token=token,
-    #     server_id=server_id,
-    #     preset=PRESET_VMS,
-    # )
-
+    # TODO: позже тут можно запустить celery-задачу реального развёртывания
     return {"task_id": task_id}
 
 
@@ -284,21 +267,10 @@ async def delete_vms(
             denied.append(ItemOpError(key=str(vm.id), reason=reason or "forbidden"))
 
     if denied:
+        raise HTTPException(status_code=403, detail={"denied": [e.model_dump() for e in denied]})
 
-        raise HTTPException(
-            status_code=403, detail={"denied": [e.model_dump() for e in denied]}
-        )
     task_id = _uuid_task()
-
     # TODO: celery — удалить список ВМ
-    # from app.tasks.vm_tasks import delete_vms_task
-    # delete_vms_task.delay(
-    #     task_id=task_id,
-    #     actor=user.username,
-    #     token=token,
-    #     vm_ids=allowed_ids,
-    # )
-
     return {"task_id": task_id}
 
 
@@ -330,25 +302,14 @@ async def batch_update_vms(
             updates[vm.id] = {"cpu": cfg.cpu, "ram": cfg.ram}
 
     if denied:
-        raise HTTPException(
-            status_code=403, detail={"denied": [e.model_dump() for e in denied]}
-        )
-
+        raise HTTPException(status_code=403, detail={"denied": [e.model_dump() for e in denied]})
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
 
     task_id = _uuid_task()
-
     # TODO: celery — обновить cpu/ram у набора ВМ
-    # from app.tasks.vm_tasks import update_vms_task
-    # update_vms_task.delay(
-    #     task_id=task_id,
-    #     actor=user.username,
-    #     token=token,
-    #     updates=updates,  # {vm_id: {"cpu": int, "ram": int}}
-    # )
-
     return {"task_id": task_id}
+
 
 @router.post("/start", status_code=status.HTTP_202_ACCEPTED)
 async def power_start_vms(
@@ -389,18 +350,8 @@ async def power_start_vms(
         raise HTTPException(status_code=403, detail={"denied": denied})
 
     task_id = _uuid_task()
-
     # TODO: celery — включить набор ВМ
-    # from app.tasks.vm_tasks import power_start_vms_task
-    # power_start_vms_task.delay(
-    #     task_id=task_id,
-    #     actor=user.username,
-    #     token=token,
-    #     vm_ids=allowed_ids,
-    # )
-
     return {"task_id": task_id}
-
 
 
 @router.post("/stop", status_code=status.HTTP_202_ACCEPTED)
@@ -442,14 +393,5 @@ async def power_stop_vms(
         raise HTTPException(status_code=403, detail={"denied": denied})
 
     task_id = _uuid_task()
-
     # TODO: celery — выключить набор ВМ
-    # from app.tasks.vm_tasks import power_stop_vms_task
-    # power_stop_vms_task.delay(
-    #     task_id=task_id,
-    #     actor=user.username,
-    #     token=token,
-    #     vm_ids=allowed_ids,
-    # )
-
     return {"task_id": task_id}

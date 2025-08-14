@@ -1,4 +1,3 @@
-# app/api/v1/models/vm.py
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import INET
@@ -15,8 +14,4 @@ class VirtualMachine(Base):
     status = Column(String(50), nullable=False, default="free")
     server_id = Column(Integer, nullable=False, index=True)  # <<< НОВОЕ ПОЛЕ
 
-    snapshots = relationship(
-        "VMSnapshot",
-        back_populates="vm",
-        cascade="all, delete-orphan",
-    )
+    snapshots = relationship("VMSnapshot", back_populates="vm", cascade="all, delete-orphan")

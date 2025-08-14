@@ -32,20 +32,15 @@ async def create_ip_range(db: AsyncSession, data: IPRangeCreate) -> IPRange:
 
 
 async def update_ip_range(db: AsyncSession, range_id: int, data: IPRangeUpdate) -> Optional[IPRange]:
-    ip_range = await get_ip_range(db, range_id)
-    if not ip_range:
+    obj = await get_ip_range(db, range_id)
+    if not obj:
         return None
-
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(ip_range, field, value)
-
-    try:
-        await db.commit()
-        await db.refresh(ip_range)
-    except IntegrityError as e:
-        await db.rollback()
-        raise ValueError(f"Failed to update IP range: {str(e)}")
-    return ip_range
+    payload = data.model_dump(exclude_unset=True)
+    for k, v in payload.items():
+        setattr(obj, k, v)
+    await db.commit()
+    await db.refresh(obj)
+    return obj
 
 
 async def delete_ip_range(db: AsyncSession, range_id: int) -> bool:

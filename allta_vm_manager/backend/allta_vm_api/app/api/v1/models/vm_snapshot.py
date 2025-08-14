@@ -1,10 +1,12 @@
-
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 class VMSnapshot(Base):
     __tablename__ = "vm_snapshots"
+    __table_args__ = (
+        UniqueConstraint("vm_id", "name", name="uq_vm_snapshot_vm_id_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)

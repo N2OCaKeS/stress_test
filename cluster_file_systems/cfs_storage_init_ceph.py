@@ -87,5 +87,5 @@ if __name__ == "__main__":
     # for host in hosts.keys():
     #     print(hosts["astra-ceph-admin"]['ip'])
     #     # print(host)
-    storage = CephStorageCreate(astra_version="1.8.2", HOSTS=hosts)
+    storage = CephStorageCreate(astra_version="1.8.2", HOSTS=hosts, type_load_test="rbd")
     storage.create_storage()

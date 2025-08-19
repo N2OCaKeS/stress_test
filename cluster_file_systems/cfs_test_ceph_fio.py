@@ -13,9 +13,9 @@ class CephFIOTest:
         self.report_file = "/var/tmp/report_fio.txt"
         self.abv = abv
         if self.abv.startswith("1.8"):
-            check_output_command(command="dpkg -i /var/tmp/fio_3.33-3_amd64.deb")
+            check_output_command(command="dpkg -i /var/tmp/fio/fio_3.33-3_amd64.deb")
         else:
-            check_output_command(command="dpkg -i /var/tmp/fio_3.12-2_amd64.deb")
+            check_output_command(command="dpkg -i /var/tmp/fio/fio_3.12-2_amd64.deb")
 
     def run_test(self):
         com_test = f"sudo fio --directory={self.directory} --direct=1 --rw=randrw --bs={self.blocksize} --ioengine=libaio --iodepth=256 --size={self.size} --runtime={self.runtime} --numjobs=3 --time_based --group_reporting --name=iops-qateam13-job --eta-newline=1 > {self.report_file}"

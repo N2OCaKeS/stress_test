@@ -894,7 +894,7 @@
                   <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
                     <div class="accordion-body" style="text-align: left;">
                       {% for value in kernels %}
-                        <input type="radio" id="{{ value }}" name="kernel" value="{{ value }}">
+                        <input type="checkbox" id="{{ value }}" name="kernel" value="{{ value }}">
                         <label for="{{ value }}">{{ value }}</label><br>                        
                       {% endfor %}
                     </div>

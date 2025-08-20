@@ -381,8 +381,9 @@ try:
                             tt_watchdog.transfer_test_time(test_name=tests[dates_list[i][1]], time=f'{end_time - start_time}')
                             tt_watchdog.create_html()
                         else: 
-                            save_all_output(f'Ядро: {dates_list[i][0][2]} игнорируется\n')
-                            print(f'Ядро: \033[91m{dates_list[i][0][2]}\033[0m игнорируется')
+                            #save_all_output(f'Ядро: {dates_list[i][0][2]} игнорируется\n')
+                            #print(f'Ядро: \033[91m{dates_list[i][0][2]}\033[0m игнорируется')
+                            pass
                 else:
                     save_all_output(f'Ядро: {dates_list[i][0][2]}\n')
                     print(f'Ядро: {dates_list[i][0][2]}')

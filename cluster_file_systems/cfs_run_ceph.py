@@ -150,7 +150,7 @@ class Ceph:
         else:
             pass
             #### TODO
-            send_remote_command(command=f"sudo chmod +x /var/tmp/fs_mark-3.3/fs_mark && {self.run_test_cmd.format(dir="/var/tmp", file="cfs_test.py", ts="fs_mark_count")}",
+            send_remote_command(command=f'sudo chmod +x /var/tmp/fs_mark-3.3/fs_mark && {self.run_test_cmd.format(dir="/var/tmp", file="cfs_test.py", ts="fs_mark_count")}',
                                 ip=self.HOSTS["testvm1"]['ip'], 
                                 user=self.HOSTS["testvm1"]['user'], 
                                 password=self.HOSTS["testvm1"]['password'],

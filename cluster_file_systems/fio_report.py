@@ -37,7 +37,7 @@ def parse_fio_file(file_path):
     return results
 
 if __name__ == "__main__":
-    file_path = 'report_fio.txt'
+    file_path = 'test_fio.txt'
     
     try:
         results = parse_fio_file(file_path)

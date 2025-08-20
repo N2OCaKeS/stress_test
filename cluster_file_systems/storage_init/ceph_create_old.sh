@@ -34,15 +34,46 @@ sudo chmod 644 /etc/ceph/ceph.client.admin.keyrings
 ceph-deploy --username ceph-adm install --mds astra-ceph1
 ceph-deploy --username ceph-adm mds create astra-ceph1
 
-sudo ceph osd pool create cephfs_data 64
-sudo ceph osd pool create cephfs_metadata 64
-sudo ceph osd pool application enable cephfs_metadata cephfs
-sudo ceph fs new cephfs cephfs_metadata cephfs_data
+# sudo ceph osd pool create cephfs_data 64s
+# sudo ceph osd pool create cephfs_metadata 64
+# sudo ceph osd pool application enable cephfs_metadata cephfs
+# sudo ceph fs new cephfs cephfs_metadata cephfs_data
 
-sudo mkdir -p /mnt/cephfs/data_test
-sudo  ceph auth get-or-create client.datatest mon 'allow r' mds 'allow r,allow rw path=/data_test' osd 'allow rw pool=cephfs_data'
-secret_key=$(sudo ceph auth get-key client.datatest)
-echo $secret_key
+# sudo mkdir -p /mnt/cephfs/data_test
+# sudo  ceph auth get-or-create client.datatest mon 'allow r' mds 'allow r,allow rw path=/data_test' osd 'allow rw pool=cephfs_data'
+# secret_key=$(sudo ceph auth get-key client.datatest)
+# echo $secret_key
 # mount на другом хосте или вм
 
+create_cephfs(){
+    sudo ceph osd pool create cephfs_data 64
+    sudo ceph osd pool create cephfs_metadata 64
+    sudo ceph fs new cephfs cephfs_metadata cephfs_data
+    echo `sudo cat /home/ceph-adm/ceph.client.admin.keyring | grep key | cut -c8-`  > /home/ceph-adm/admin.secret
 
+    sudo mkdir /mnt/cephfs
+    sleep 20
+    sudo mount -t ceph astra-ceph1,astra-ceph2,astra-ceph3:/ /mnt/cephfs -o name=admin,secretfile=/home/ceph-adm/admin.secret
+    df -h | grep cephfs
+}
+create_rbd(){
+    sudo ceph osd pool create rbd 128
+    sudo rbd pool init rbd
+    sudo rbd create testrbd --size 4096 --image-feature layering
+    sudo rbd map testrbd --name client.admin
+
+    sudo mkfs.ext4 -m0 /dev/rbd0
+    sudo mkdir /mnt/ceph-device
+    sudo mount /dev/rbd0 /mnt/ceph-device
+    df -h | grep /mnt/ceph-device
+
+}
+
+if [ "$1" == "cephfs" ]; then
+    create_cephfs
+elif [ "$1" == "rbd" ]; then
+    create_rbd
+else
+    echo "Неизвестный тип: $1. Допустимые значения: cephfs или rbd"
+    exit 1
+fi

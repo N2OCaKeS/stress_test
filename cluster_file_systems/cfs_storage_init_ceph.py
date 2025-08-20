@@ -28,11 +28,11 @@ class CephStorageCreate():
                                 user=self.HOSTS[host]['user'],
                                 password=self.HOSTS[host]['password'],
                                 port=self.HOSTS[host]['port'])
-            send_remote_command("sudo bash /var/tmp/storage_init/sync_time.sh", 
-                                ip=self.HOSTS[host]['ip'], 
-                                user=self.HOSTS[host]['user'],
-                                password=self.HOSTS[host]['password'],
-                                port=self.HOSTS[host]['port'])
+            # send_remote_command("sudo bash /var/tmp/storage_init/sync_time.sh", 
+            #                     ip=self.HOSTS[host]['ip'], 
+            #                     user=self.HOSTS[host]['user'],
+            #                     password=self.HOSTS[host]['password'],
+            #                     port=self.HOSTS[host]['port'])
             
 
             
@@ -41,7 +41,7 @@ class CephStorageCreate():
         ### !!! РАЗВОРАЧИВАТЬ ОТ ПОЛЬЗОВАТЕЛЯ ceph-adm
         #### if astra_version == 1.7
         if self.astra_version.startswith("1.7"):
-            send_remote_command("bash /var/tmp/storage_init/ceph_create_old.sh", ip=self.HOSTS['astra-ceph-admin']['ip'], user="ceph-adm", password="1", port=50020)
+            send_remote_command(f"bash /var/tmp/storage_init/ceph_create_old.sh {self.type_interface_ceph}", ip=self.HOSTS['astra-ceph-admin']['ip'], user="ceph-adm", password="1", port=50020)
         elif self.astra_version.startswith("1.8"):
             # TODO забирать из hosts
             host_main = "10.0.5.31"
@@ -51,41 +51,71 @@ class CephStorageCreate():
             return Exception(f"Не написан скрипт, разворачивающий ceph для версии {self.astra_version}")
         
 if __name__ == "__main__":
+    # hosts = {
+    #     'testvm1': {
+    #         'ip': "127.0.0.1",
+    #         'user': "u",
+    #         'password': "1",
+    #         # 'port': 50020
+    #         'port': 60001
+    #         },
+    #     'testvm2': {
+    #         "ip": "127.0.0.1",
+    #         "user": "u",
+    #         "password": "1",
+    #         "port": 60002
+    #     },
+    #     'testvm3': {
+    #         "ip": "127.0.0.1",
+    #         "user": "u",
+    #         "password": "1",
+    #         "port": 60003
+    #     },
+    #     'testvm4': {
+    #         "ip": "127.0.0.1",
+    #         "user": "u",
+    #         "password": "1",
+    #         "port": 60004
+    #     },
+    #     'testvm5': {
+    #         "ip": "127.0.0.1",
+    #         "user": "u",
+    #         "password": "1",
+    #         "port": 60005
+    #     }
+    # }
     hosts = {
-        'testvm1': {
+        'astra-ceph-admin': {
             'ip': "127.0.0.1",
             'user': "u",
             'password': "1",
-            # 'port': 50020
-            'port': 60001
+            'port': 50020
+            # 'port': 60001
             },
-        'testvm2': {
+        'astra-ceph1': {
             "ip": "127.0.0.1",
             "user": "u",
             "password": "1",
-            "port": 60002
+            # "port": 60002
+            "port": 50011
         },
-        'testvm3': {
+        'astra-ceph2': {
             "ip": "127.0.0.1",
             "user": "u",
             "password": "1",
-            "port": 60003
+            # "port": 60003
+            "port": 50012
         },
-        'testvm4': {
+        'astra-ceph3': {
             "ip": "127.0.0.1",
             "user": "u",
             "password": "1",
-            "port": 60004
-        },
-        'testvm5': {
-            "ip": "127.0.0.1",
-            "user": "u",
-            "password": "1",
-            "port": 60005
+            # "port": 60004
+            "port": 50013
         }
     }
     # for host in hosts.keys():
     #     print(hosts["astra-ceph-admin"]['ip'])
     #     # print(host)
-    storage = CephStorageCreate(astra_version="1.8.2", HOSTS=hosts, type_interface_ceph="rbd")
+    storage = CephStorageCreate(astra_version="1.7.7", HOSTS=hosts, type_interface_ceph="cephfs")
     storage.create_storage()

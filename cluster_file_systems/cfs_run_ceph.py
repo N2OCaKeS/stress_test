@@ -118,8 +118,9 @@ class Ceph:
                             password=self.HOSTS["testvm1"]['password'],
                             port=self.HOSTS["testvm1"]['port'])
         
-        make_need_dir = "sudo mkdir /home/u/report /home/u/log"
+        make_need_dir = "sudo mkdir /var/tmp/report /var/tmp/log"
         install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
+        # sudo apt install libgfapi0 -y
         install_pip_req = "sudo pip3 install -r /var/tmp/req.txt --break-system-packages"
 
         send_remote_command(f"{make_need_dir} && {install_need_packages} && {install_pip_req}",

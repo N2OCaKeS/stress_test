@@ -1,7 +1,7 @@
 from time import sleep
 from libs.libcfs import check_output_command, send_remote_command, create_remote_file
 
-# from cfs_create_vms import VMS
+from cfs_create_vms import VMS
 from cfs_storage_init_ceph import CephStorageCreate
 from cfs_conf import STORAGE_NAME, SCRIPT_DIR
 from libs.libtable import Report
@@ -60,14 +60,16 @@ class Ceph:
             self.vmc = 5 
         else:
             self.vmc = 4
-
-        # virt_machines = VMS(rc_vbox=self.vbox, vm_count=len(self.all_hosts), hostip=HOST_IP, kernel=self.kernel)
-        # virt_machines.prepare_and_start()
-        # self.HOSTS = virt_machines.vm_dates
-        # for ind, node in enumerate(self.all_hosts):
-        #     check_output_command(self.storagecreate.format(size=..., number=ind))
-        #     sleep(20)
-        #     check_output_command(self.storageattach.format(node=node, storage_name=STORAGE_NAME))
+        
+        # TODO
+        HOST_IP = "10.177.103.101"
+        virt_machines = VMS(rc_vbox=self.vbox, vm_count=len(self.all_hosts), hostip=HOST_IP, kernel=self.kernel)
+        virt_machines.prepare_and_start()
+        self.HOSTS = virt_machines.vm_dates
+        for ind, node in enumerate(self.all_hosts):
+            check_output_command(self.storagecreate.format(size="25", number=ind))
+            sleep(20)
+            check_output_command(self.storageattach.format(node=node, storage_name=STORAGE_NAME))
         
         create_remote_file(local_file_path="libs", 
                             remote_file_path="/var/tmp/libs", 

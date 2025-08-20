@@ -6,7 +6,7 @@ from allta_image_conf import branches, cycle_tree_index, tests, parent_page_list
 
 stand = 'stand1'
 test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix']
-KERNEL = ['5.15.0-70-generic', '5.10.176-1-generic', '5.15.0-70-lowlatency']
+KERNEL = "['5.15.0-70-generic', '5.10.176-1-generic', '5.15.0-70-lowlatency']"
 
 
 dates_list = [
@@ -28,7 +28,9 @@ class TestRunnerHandler():
                  kernel=KERNEL):
         self.stand = stand
         self.test_list = testlist
-        self.kernel = kernel
+        self.kernel = kernel.strip('[]').replace("'", "").split(', ')
+        print(self.kernel)
+        
     
     def params(self):
         for i in range(0, len(dates_list)):  
@@ -42,6 +44,7 @@ class TestRunnerHandler():
                 if tests[dates_list[i][1]] in self.test_list:
                     if self.kernel:
                         for num in range(0, len(self.kernel)):
+                            print(self.kernel[num])
                             if dates_list[i][0][2] == self.kernel[num]:                           
                                 print(f'Ядро: \033[92m{self.kernel[num]}\033[0m')                           
                                 print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')

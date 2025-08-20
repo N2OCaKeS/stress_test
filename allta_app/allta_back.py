@@ -45,6 +45,8 @@ __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
 
+
+test_kernels = args.KERNEL.strip('[]').replace("'", "").split(', ')
 #__pt_version = '1.7.4'
 __pt_version = args.RELEASE
 #__stand = 'stand1'
@@ -249,14 +251,14 @@ try:
             save_all_output(f'Cтенд: {dates_list[i][0][3]}\n')
             if tests[dates_list[i][1]] in __test_list:
                 if args.KERNEL:
-                    for num in range(0, len(args.KERNEL)):
-                        if dates_list[i][0][2] == args.KERNEL[num]:
-                            save_all_output(f'Ядро: {args.KERNEL[num]}\n')
-                            print(f'Ядро: \033[92m{args.KERNEL[num]}\033[0m')
+                    for num in range(0, len(test_kernels)):
+                        if dates_list[i][0][2] == test_kernels[num]:
+                            save_all_output(f'Ядро: {test_kernels[num]}\n')
+                            print(f'Ядро: \033[92m{test_kernels[num]}\033[0m')
                             save_all_output(f'Тест: {tests[dates_list[i][1]]}\n')
                             print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
-                            kn = f'-kn {args.KERNEL[num]}'
-                            tcyc = f'-tcyc {dates_list[i][0][0]}_{dates_list[i][0][1]}_{args.KERNEL[num]}_{dates_list[i][0][3]}'
+                            kn = f'-kn {test_kernels[num]}'
+                            tcyc = f'-tcyc {dates_list[i][0][0]}_{dates_list[i][0][1]}_{test_kernels[num]}_{dates_list[i][0][3]}'
                             sn = f'-sn {list(dates_list[i][0][3])[-1]}' 
                             rs = f'-rs {dates_list[i][0][0]}'
                             test = f'-test "{tests[dates_list[i][1]]}"' 

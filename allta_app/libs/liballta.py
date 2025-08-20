@@ -287,7 +287,7 @@ def info_collector(page, ajax=None):
             if not tests:
                 tests = 'Тесты не выбраны'
             
-            kernel = request.form.get('kernel')
+            kernel = request.form.getlist('kernel')
             with open(f'conf/{page}_kernel_args.conf', 'w') as w:
                 w.write(str(kernel))
 

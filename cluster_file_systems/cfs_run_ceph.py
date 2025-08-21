@@ -71,7 +71,7 @@ class Ceph:
             sleep(20)
             check_output_command(self.storageattach.format(node=node, number=ind, storage_name=STORAGE_NAME))
             sleep(10)
-            check_output_command(self.startvm.format(node=node))
+            check_output_command(self.startvm.format(host=node))
             sleep(10)
         
         create_remote_file(local_file_path="libs", 

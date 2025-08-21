@@ -16,7 +16,7 @@ ceph-deploy --username ceph-adm mon create-initial
 ceph-deploy --username ceph-adm mgr create astra-ceph1
 
 for i in {1..3}; do
-    if ceph-deploy --username ceph-adm osd create --data /dev/sdb "astra-ceph${i}"; then
+    if ceph-deploy --username ceph-adm osd create --data /dev/sda "astra-ceph${i}"; then
         echo "OSD успешно добавлен на astra-ceph${i}"
     else
         echo "Ошибка при добавлении OSD на astra-ceph${i}"

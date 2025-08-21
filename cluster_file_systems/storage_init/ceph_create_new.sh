@@ -37,10 +37,10 @@ for i in {2..5}; do
 done
 
 for i in {1..5}; do
-    if sudo /usr/sbin/cephadm shell -- ceph orch daemon add osd "testvm${i}:/dev/sdb"; then
-        echo "OSD успешно добавлен на testvm${i}:/dev/sdb"
+    if sudo /usr/sbin/cephadm shell -- ceph orch daemon add osd "testvm${i}:/dev/sda"; then
+        echo "OSD успешно добавлен на testvm${i}:/dev/sda"
     else
-        echo "Ошибка при добавлении OSD на testvm${i}:/dev/sdb"
+        echo "Ошибка при добавлении OSD на testvm${i}:/dev/sda"
     fi
     sleep 5
 done

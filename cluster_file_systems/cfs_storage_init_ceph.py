@@ -28,11 +28,11 @@ class CephStorageCreate():
                                 user=self.HOSTS[host]['user'],
                                 password=self.HOSTS[host]['password'],
                                 port=self.HOSTS[host]['port'])
-            # send_remote_command("sudo bash /var/tmp/storage_init/sync_time.sh", 
-            #                     ip=self.HOSTS[host]['ip'], 
-            #                     user=self.HOSTS[host]['user'],
-            #                     password=self.HOSTS[host]['password'],
-            #                     port=self.HOSTS[host]['port'])
+            send_remote_command("sudo bash /var/tmp/storage_init/sync_time.sh", 
+                                ip=self.HOSTS[host]['ip'], 
+                                user=self.HOSTS[host]['user'],
+                                password=self.HOSTS[host]['password'],
+                                port=self.HOSTS[host]['port'])
             
 
             

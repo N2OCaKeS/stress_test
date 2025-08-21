@@ -10,7 +10,7 @@ class Ceph:
 
     restore_snapshot = 'virsh --connect qemu:///system snapshot-revert {host} {snapshot}'
     storagecreate = 'cd /var/lib/libvirt/images && sudo qemu-img create -f qcow2 cluster_storage{number} {size}G'
-    storageattach = "virsh --connect qemu:///system attach-disk {node} --source /var/lib/libvirt/images/cluster_storage --target {storage_name} --persistent --driver qemu --subdriver qcow2 --type disk"
+    storageattach = "virsh --connect qemu:///system attach-disk {node} --source /var/lib/libvirt/images/cluster_storage{number} --target {storage_name} --persistent --driver qemu --subdriver qcow2 --type disk"
     startvm = 'virsh --connect qemu:///system start {host}'
     controlvm_off = 'virsh --connect qemu:///system destroy {host}'
     run_test_cmd = 'sudo python3 {dir}/{file} --test-set {ts}'

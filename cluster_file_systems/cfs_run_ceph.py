@@ -69,7 +69,7 @@ class Ceph:
         for ind, node in enumerate(self.all_hosts):
             check_output_command(self.storagecreate.format(size="25", number=ind))
             sleep(20)
-            check_output_command(self.storageattach.format(node=node, storage_name=STORAGE_NAME))
+            check_output_command(self.storageattach.format(node=node, number=ind, storage_name=STORAGE_NAME))
             sleep(10)
             check_output_command(self.startvm.format(node=node))
             sleep(10)

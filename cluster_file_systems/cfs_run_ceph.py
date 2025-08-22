@@ -77,51 +77,44 @@ class Ceph:
         create_remote_file(local_file_path="libs", 
                             remote_file_path="/var/tmp/libs", 
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
         
         create_remote_file(local_file_path="fio", 
                             remote_file_path="/var/tmp/fio", 
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
         
         create_remote_file(local_file_path="cfs_test_ceph_fio.py", 
                             remote_file_path="/var/tmp/cfs_test_ceph_fio.py", 
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
         
         create_remote_file(local_file_path="fs_mark-3.3", 
                             remote_file_path="/var/tmp/fs_mark-3.3", 
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
         
         create_remote_file(local_file_path="cfs_test.py", 
                             remote_file_path="/var/tmp/cfs_test.py", 
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
         
         create_remote_file(local_file_path="cfs_conf.py", 
                             remote_file_path="/var/tmp/cfs_conf.py", 
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
         
         create_remote_file(local_file_path="req.txt", 
                             remote_file_path="/var/tmp/req.txt", 
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
         
         make_need_dir = "sudo mkdir /var/tmp/report /var/tmp/log"
         install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
@@ -130,9 +123,8 @@ class Ceph:
 
         send_remote_command(f"{make_need_dir} && {install_need_packages} && {install_pip_req}",
                             ip=self.HOSTS["testvm1"]['ip'], 
-                            user=self.HOSTS["testvm1"]['user'], 
-                            password=self.HOSTS["testvm1"]['password'],
-                            port=self.HOSTS["testvm1"]['port'])
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
 
 
         storage = CephStorageCreate(astra_version=self.vbox, 
@@ -147,9 +139,8 @@ class Ceph:
             pass
             send_remote_command(command=f"cd /var/tmp && sudo python3 cfs_test_ceph_fio.py -abv {self.vbox}",
                                 ip=self.HOSTS["testvm1"]['ip'], 
-                                user=self.HOSTS["testvm1"]['user'], 
-                                password=self.HOSTS["testvm1"]['password'],
-                                port=self.HOSTS["testvm1"]['port'])
+                                user=self.HOSTS["testvm1"]['login'], 
+                                password=self.HOSTS["testvm1"]['password'])
             #### TODO
             # report = Report()
         else:
@@ -157,9 +148,8 @@ class Ceph:
             #### TODO
             send_remote_command(command=f'sudo chmod +x /var/tmp/fs_mark-3.3/fs_mark && {self.run_test_cmd.format(dir="/var/tmp", file="cfs_test.py", ts="fs_mark_count")}',
                                 ip=self.HOSTS["testvm1"]['ip'], 
-                                user=self.HOSTS["testvm1"]['user'], 
-                                password=self.HOSTS["testvm1"]['password'],
-                                port=self.HOSTS["testvm1"]['port'])
+                                user=self.HOSTS["testvm1"]['login'], 
+                                password=self.HOSTS["testvm1"]['password'])
 
 
 if __name__ == "__main__":

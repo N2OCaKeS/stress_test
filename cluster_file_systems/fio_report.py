@@ -1,3 +1,5 @@
+import pandas as pd
+
 def parse_fio_file(file_path):
     results = {
         'read': {'slat_avg': None, 'clat_avg': None, 'lat_avg': None, 'iops': None},
@@ -40,7 +42,13 @@ if __name__ == "__main__":
     file_path = 'test_fio.txt'
     
     try:
+
         results = parse_fio_file(file_path)
+        print(results)
+
+        df = pd.DataFrame(results).T
+        print(df)
+        df.to_html(f"result_fio.html")
 
         print(results)
         

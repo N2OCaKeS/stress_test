@@ -120,8 +120,9 @@ class Ceph:
         install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
         # sudo apt install libgfapi0 -y
         install_pip_req = "sudo pip3 install -r /var/tmp/req.txt --break-system-packages"
+        change_script_dir = "sed -i \"s|SCRIPT_DIR = '/git'|SCRIPT_DIR = '/var/tmp'|g\" cfs_conf.py"
 
-        send_remote_command(f"{make_need_dir} && {install_need_packages} && {install_pip_req}",
+        send_remote_command(f"{make_need_dir} && {install_need_packages} && {install_pip_req} && {change_script_dir}",
                             ip=self.HOSTS["testvm1"]['ip'], 
                             user=self.HOSTS["testvm1"]['login'], 
                             password=self.HOSTS["testvm1"]['password'])

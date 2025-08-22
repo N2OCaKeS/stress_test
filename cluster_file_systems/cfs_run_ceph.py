@@ -1,5 +1,5 @@
 from time import sleep
-from libs.libcfs import check_output_command, send_remote_command, create_remote_file
+from libs.libcfs import check_output_command, send_remote_command, create_remote_file, get_remote_file
 
 from cfs_create_vms import VMS
 from cfs_storage_init_ceph import CephStorageCreate
@@ -142,6 +142,11 @@ class Ceph:
                                 ip=self.HOSTS["testvm1"]['ip'], 
                                 user=self.HOSTS["testvm1"]['login'], 
                                 password=self.HOSTS["testvm1"]['password'])
+            get_remote_file(remote_file_path="/var/tmp/report_fio.txt",
+                            local_file_path="fio.txt",
+                            ip=self.HOSTS["testvm1"]['ip'], 
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
             #### TODO
             # report = Report()
         else:

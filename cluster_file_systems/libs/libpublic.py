@@ -20,7 +20,8 @@ class Public:
                  package=None,
                  file_system=None,
                  test_set=None,
-                 test_cycle_version=None):
+                 test_cycle_version=None,
+                 testname=None):
     
         self.username=username
         self.token=token
@@ -32,6 +33,7 @@ class Public:
         self.fs=file_system
         self.ts=test_set
         self.tcv = test_cycle_version
+        self.testname = testname
         
         self.stands = {
             '1':{'grade':'low(141)',
@@ -97,48 +99,61 @@ class Public:
             confluence_report.attache_files(f'{REPORT_DIR_HOST}/{file}',
                                             self.c_space,
                                             c_np)
+        
+        if self.testname == "fio":
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+                header_table_temp = file.read()
+                # TODO
+                header_table = header_table_temp.format()
+
+            with open(f'{REPORT_DIR_HOST}/result_fio.html', 'r') as file:
+                result_fio = file.read()
+                html_page = '\n'.join([header_table, result_fio])
+        else:
+
+            #генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        package_name=PACKAGES[self.fs],
+                                                        package_vers=info_lst[2],
+                                                        param_files=f'{FILES}-{FILES_LIMIT}/{FILES_STEP}',
+                                                        param_size=f'{SIZE}-{SIZE_LIMIT}/{SIZE_STEP}',
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'],
+                                                        lead_time=info_lst[3])
             
-        #генерация вступительной таблицы
-        with open(INFO_FILENAME) as info:
-            info_lst = info.read().split('\n')
-        with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
-            header_table_temp = file.read()
-            header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],
-                                                    package_name=PACKAGES[self.fs],
-                                                    package_vers=info_lst[2],
-                                                    param_files=f'{FILES}-{FILES_LIMIT}/{FILES_STEP}',
-                                                    param_size=f'{SIZE}-{SIZE_LIMIT}/{SIZE_STEP}',
-                                                    arm_num=self.stands[self.grade_stand]['grade'],
-                                                    arm_proc=self.stands[self.grade_stand]['cpu'],
-                                                    arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'],
-                                                    lead_time=info_lst[3])
-            
-        #создание страницы отчета
-        with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
-            rating_temp = template.read()
-            if self.ts == 'fs_mark_count':
-                rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT, report=REPORT_DIR_HOST)
-                rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_count_lst)))
-            if self.ts == 'fs_mark_size':
-                rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT, report=REPORT_DIR_HOST)
-                rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
+            #создание страницы отчета
+            with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
+                rating_temp = template.read()
+                if self.ts == 'fs_mark_count':
+                    rep = Report(ox_lo_lim=FILES, ox_step=FILES_STEP, ox_up_lim=FILES_LIMIT, report=REPORT_DIR_HOST)
+                    rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_count_lst)))
+                if self.ts == 'fs_mark_size':
+                    rep = Report(ox_lo_lim=SIZE, ox_step=SIZE_STEP, ox_up_lim=SIZE_LIMIT, report=REPORT_DIR_HOST)
+                    rating = rating_temp.format(r=str(rep.get_total_rating(rep.file_size_lst)))
 
-        with open(f'{REPORT_DIR_HOST}/cfs_report_table.html', 'r') as file:
-            main_table = file.read()
+            with open(f'{REPORT_DIR_HOST}/cfs_report_table.html', 'r') as file:
+                main_table = file.read()
 
-        with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
-            images_lst = []
-            img_temp = template.read()
-            for file in os.listdir(REPORT_DIR_HOST):
-                if file.endswith('png'):
-                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
-                                                     img_png=file,
-                                                     description=GRAPH_DESCRIPTIONS[file]))
-            images = '\n'.join(images_lst)
+            with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
+                images_lst = []
+                img_temp = template.read()
+                for file in os.listdir(REPORT_DIR_HOST):
+                    if file.endswith('png'):
+                        images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
+                                                        img_png=file,
+                                                        description=GRAPH_DESCRIPTIONS[file]))
+                images = '\n'.join(images_lst)
 
-        html_page = '\n'.join([header_table, rating, main_table, images])
+            html_page = '\n'.join([header_table, rating, main_table, images])
 
         #выкладываем информацию на страницу
         if release_pp and release_np:

@@ -455,7 +455,7 @@
             },
             {
                 "1.8.1.UU.2.s": [
-                    "alse-gui-adv/1.8.1uu2",
+                    "alse-gui-max/1.8.1.uu2",
                     "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.1.uu2"
                 ]
             },
@@ -473,8 +473,8 @@
             },
             {
                 "1.8.1.UU.1.s": [
-                    "alse-gui-max/1.8.1uu1",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.1uu1"
+                    "alse-gui-max/1.8.1.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.1.uu1"
                 ]
             },
             {

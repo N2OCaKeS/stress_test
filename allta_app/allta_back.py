@@ -250,7 +250,7 @@ try:
             print(f'Cтенд: \033[92m{dates_list[i][0][3]}\033[0m')
             save_all_output(f'Cтенд: {dates_list[i][0][3]}\n')
             if tests[dates_list[i][1]] in __test_list:
-                if args.KERNEL:
+                if args.KERNEL and len(args.KERNEL) > 5:
                     for num in range(0, len(test_kernels)):
                         if dates_list[i][0][2] == test_kernels[num]:
                             save_all_output(f'Ядро: {test_kernels[num]}\n')

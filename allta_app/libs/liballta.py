@@ -291,7 +291,7 @@ def info_collector(page, ajax=None):
             with open(f'conf/{page}_kernel_args.conf', 'w') as w:
                 w.write(str(kernel))
             if not kernel:
-                kernel = ''
+                kernel = 'Ядра не выбраны'
 
             releas = request.form.getlist('releas')
             with open(f'conf/{page}_releas_args.conf', 'w') as w:

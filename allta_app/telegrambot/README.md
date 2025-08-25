@@ -25,8 +25,8 @@
 -  /acs 1.х.х.х <stand#> <'password'>     
       
 **Срочное оперативное обновление:**       
--  /addrc 1.х.х.UU.х.x <'password'> 1.х.х.х   
--  /add_testrun 1.х.х.UU.х.x <'password'> notfinal    
+-  /adduurc 1.х.х.UU.х.x <'password'> 1.х.х.х   
+-  /add_testrun 1.х.х.UU.х.x <'password'> final    
 -  /update_stp 1.х.х.UU.х.x <'password'>     
 -  /acs 1.х.х.UU.х.x <stand#> <'password'> 
      
@@ -38,7 +38,7 @@
 -  /acs 1.х.х.х <stand#> <'password'>   
       
 **Срочное оперативное обновление:**       
--  /addrc 1.х.х.UU.х.x <'password'> 1.х.х.х   
+-  /adduurc 1.х.х.UU.х.x <'password'> 1.х.х.х   
 -  /add_testrun 1.х.х.UU.х.x <'password'> notfinal    
 -  /update_stp 1.х.х.UU.х.x <'password'>     
 -  /acs 1.х.х.UU.х.x <stand#> <'password'> 

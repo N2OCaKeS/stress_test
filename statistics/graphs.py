@@ -308,6 +308,13 @@ class ComparisonKernelLineGraph(Graphs):
             main_logger.debug("в kwargs было передано y_label, задаем описание y_label")
         ax.set_title(f"Линейная диаграмма сравнения по ядрам.\n{self.type_test}")
         colors = ['#f90829', '#007b7a', '#f9b312', '#c7d84c', 'green', 'purple', 'grey']
+
+        if kwargs.get("y_lim"):
+            numeric_values = ratings_for_plt_graph.select_dtypes(include=[np.number]).values
+            max_value = np.nanmax(numeric_values)
+            max_value = max_value * 1.25
+            ax.set_ylim(0, max_value)
+
         for index in range(ratings_for_plt_graph.shape[1]):
             ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
         plt.legend(self.separate_by_kernel_data.keys())

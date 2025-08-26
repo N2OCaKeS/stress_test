@@ -288,7 +288,7 @@ class VirtStatistics(BaseStatistics):
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
                                                                                       saver=comparison_separate_kernel_line_graph_saver,)
-                    comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=item)
+                    comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=item, y_lim=True)
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
           else:

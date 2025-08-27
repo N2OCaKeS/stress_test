@@ -2,37 +2,37 @@
 
 # Указать основную
 # ssh-copy-id ceph-adm@astra-ceph-admin
-sshpass -p "1" ssh-copy-id -o StrictHostKeyChecking=no ceph-adm@astra-ceph-admin;
-for N in $(seq 1 3); do sshpass -p "1" ssh-copy-id -o StrictHostKeyChecking=no ceph-adm@astra-ceph$N; done
-ceph-deploy --username ceph-adm install --mon --osd astra-ceph1 astra-ceph2 astra-ceph3
-for N in $(seq 1 3); do ssh ceph-adm@astra-ceph$N sudo reboot; done
+sshpass -p "1" ssh-copy-id -o StrictHostKeyChecking=no ceph-adm@testvm1;
+for N in $(seq 2 4); do sshpass -p "1" ssh-copy-id -o StrictHostKeyChecking=no ceph-adm@testvm$N; done
+ceph-deploy --username ceph-adm install --mon --osd testvm2 testvm3 testvm4
+for N in $(seq 2 4); do ssh ceph-adm@testvm$N sudo reboot; done
 
 sleep 300
 
-ceph-deploy --username ceph-adm install --mgr astra-ceph1
-ceph-deploy --username ceph-adm new astra-ceph1 astra-ceph2 astra-ceph3
+ceph-deploy --username ceph-adm install --mgr testvm2
+ceph-deploy --username ceph-adm new testvm2 testvm3 testvm4
 
 ceph-deploy --username ceph-adm mon create-initial
-ceph-deploy --username ceph-adm mgr create astra-ceph1
+ceph-deploy --username ceph-adm mgr create testvm2
 
-for i in {1..3}; do
-    if ceph-deploy --username ceph-adm osd create --data /dev/sda "astra-ceph${i}"; then
-        echo "OSD успешно добавлен на astra-ceph${i}"
+for i in {2..4}; do
+    if ceph-deploy --username ceph-adm osd create --data /dev/sda "testvm${i}"; then
+        echo "OSD успешно добавлен на testvm${i}"
     else
-        echo "Ошибка при добавлении OSD на astra-ceph${i}"
+        echo "Ошибка при добавлении OSD на testvm${i}"
     fi
     sleep 5
 done
 
 # Указать основную
-ceph-deploy --username ceph-adm install --cli astra-ceph-admin
-ceph-deploy admin astra-ceph-admin
+ceph-deploy --username ceph-adm install --cli testvm1
+ceph-deploy admin testvm1
 sudo chmod 644 /etc/ceph/ceph.client.admin.keyrings
 
 # Далее разделение на Ceph FS и RBD
 
-ceph-deploy --username ceph-adm install --mds astra-ceph1
-ceph-deploy --username ceph-adm mds create astra-ceph1
+ceph-deploy --username ceph-adm install --mds testvm2
+ceph-deploy --username ceph-adm mds create testvm2
 
 # sudo ceph osd pool create cephfs_data 64s
 # sudo ceph osd pool create cephfs_metadata 64
@@ -51,9 +51,9 @@ create_cephfs(){
     sudo ceph fs new cephfs cephfs_metadata cephfs_data
     echo `sudo cat /home/ceph-adm/ceph.client.admin.keyring | grep key | cut -c8-`  > /home/ceph-adm/admin.secret
 
-    sudo mkdir /mnt/cephfs
+    # sudo mkdir /mnt/cephfs
     sleep 20
-    sudo mount -t ceph astra-ceph1,astra-ceph2,astra-ceph3:/ /mnt/cephfs -o name=admin,secretfile=/home/ceph-adm/admin.secret
+    sudo mount -t ceph testvm2,testvm3,testvm4:/ /mnt -o name=admin,secretfile=/home/ceph-adm/admin.secret
     df -h | grep cephfs
 }
 create_rbd(){
@@ -63,9 +63,9 @@ create_rbd(){
     sudo rbd map testrbd --name client.admin
 
     sudo mkfs.ext4 -m0 /dev/rbd0
-    sudo mkdir /mnt/ceph-device
-    sudo mount /dev/rbd0 /mnt/ceph-device
-    df -h | grep /mnt/ceph-device
+    # sudo mkdir /mnt/ceph-device
+    sudo mount /dev/rbd0 /mnt
+    df -h | grep /mnt
 
 }
 

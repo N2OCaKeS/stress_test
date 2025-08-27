@@ -58,10 +58,10 @@ echo `sudo cat /etc/ceph/ceph.client.admin.keyring | grep key | cut -c8-`  > /ho
 sleep 5
 
 create_cephfs(){
-    sudo mkdir /mnt/cephfs
+    # sudo mkdir /mnt/cephfs
     sleep 20
     sudo ceph mds stat
-    sudo mount -t ceph testvm1,testvm2,testvm3,testvm4,testvm5:/ /mnt/cephfs -o name=admin,secretfile=/home/ceph-adm/admin.secret
+    sudo mount -t ceph testvm1,testvm2,testvm3,testvm4,testvm5:/ /mnt -o name=admin,secretfile=/home/ceph-adm/admin.secret
     df -h | grep cephfs
 }
 
@@ -71,9 +71,9 @@ create_rbd() {
     sudo cephadm shell -- rbd create rbdpool/testrbd --size 4096
     sudo rbd device map rbdpool/testrbd --device-type krbd
     sudo mkfs.ext4 -m0 /dev/rbd0
-    sudo mkdir /mnt/ceph-device
-    sudo mount /dev/rbd0 /mnt/ceph-device
-    sudo df -h | grep /mnt/ceph-device
+    # sudo mkdir /mnt/ceph-device
+    sudo mount /dev/rbd0 /mnt
+    sudo df -h | grep /mnt
 }
 
 if [ "$2" == "cephfs" ]; then

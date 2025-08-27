@@ -60,15 +60,15 @@ def init(phy_if, ip):
     help="Путь до JSON-файла с конфигурацией ВМ",
 )
 @click.option(
-    "--rc",
-    required=True,
-    help="Версия РЦ/ОС, которая будет установлена (например, 1.7.5.9 или 1.8.1.6)",
-)
-@click.option(
     "--box",
     required=False,
-    default=None,
-    help="Имя бокса (по умолчанию выбирается по rc)",
+    default="vm_station",
+    help="Имя бокса (по умолчанию выбирается vm_station (1.7.5.9 и 1.8.1.6 в виде снимков)",
+)
+@click.option(
+    "--rc",
+    required=False,
+    help="Версия РЦ/ОС, которая будет установлена (например, 1.7.5.9 или 1.8.1.6)",
 )
 @click.option(
     "--kernel",
@@ -76,7 +76,13 @@ def init(phy_if, ip):
     default=None,
     help="Версия ядра (по умолчанию текущая на хосте)",
 )
-def vm_create(info_path: str, rc: str, box: str | None, kernel: str | None):
+@click.option(
+    "--new-password",
+    required=False,
+    default='1',
+    help="Пароль который будет установлен на ВМ после сборки",
+)
+def vm_create(info_path: str, rc: str, box: str | None, kernel: str | None, new, new_password: str):
     """Создание ВМ по конфигу.""" 
     if not box:
             box = "vm_station"    
@@ -93,10 +99,16 @@ def vm_create(info_path: str, rc: str, box: str | None, kernel: str | None):
         click.echo(f"[!] Ошибка создания ВМ: {e}", err=True)
         sys.exit(1)
 @vm.command("base-create")
-def base_create():
+@click.option(
+    "--new-password",
+    required=False,
+    default='1',
+    help="Пароль который будет установлен на ВМ после сборки",
+)
+def base_create(new_password: str):
     """Создание базовых ВМ."""
-    Vm.create(info_path="/opt/allta_vm/vm/base_vm.json")
-    pass
+    Vm.create(info_path="/opt/allta_vm/vm/base_vm.json", new_password=new_password)
+    
 
 @vm.command("delete")
 @click.option(
@@ -176,10 +188,16 @@ def vm_start(vms: tuple[str, ...]):
     required=True,
     help="Целевая версия ОС для astra-update (например, 1.7.5.9 или 1.8.1.6)",
 )
-def astra_update(info_path: str, rc: str):
+@click.option(
+    "--new-password",
+    required=False,
+    default='1',
+    help="Пароль который будет установлен на ВМ после сборки",
+)
+def astra_update(info_path: str, rc: str, new_password:str):
     """Запуск astra-update на ВМ и создание snapshot по целевой версии."""
     try:
-        Vm.astra_update(info_path, rc)
+        Vm.astra_update(info_path, rc, new_password)
     except Exception as e:
         click.echo(f"[!] Ошибка astra-update: {e}", err=True)
         sys.exit(1)

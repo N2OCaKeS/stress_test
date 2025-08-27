@@ -1,31 +1,58 @@
-# services/worker/worker/tasks_snapshot.py
-from typing import Iterable
-from celery_app import celery_app
-from utils.ssh import SimpleSSH as ssh_run
+from __future__ import annotations
+from celery import shared_task
+from tasks.common import log, _require, _std_ok
+from utils.ssh import SimpleSSH
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="snapshot.create")
-def snapshot_create(*, host_ip: str, username: str, password: str, vms: Iterable[str], snapshot_name: str, port: int = 22):
-    parts = [f"sudo allta-vm snapshot create --snapshot-name {snapshot_name}"]
-    for v in vms:
+@shared_task(name="task_snapshot_create", bind=True) # Work
+def task_snapshot_create(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names", "snapshot_name"])
+    server = envelope.get("server") or {}
+    vm_names = envelope.get("vm_names") or []
+    snap     = envelope.get("snapshot_name")
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+    parts = [f"sudo allta-vm snapshot create --snapshot-name {snap}"]
+    for v in vm_names:
         parts.append(f"--vms {v}")
     cmd = " ".join(parts)
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "snapshot_create_done", "count": len(list(vms))}
+    ssh.run_command(command=cmd)
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="snapshot.delete")
-def snapshot_delete(*, host_ip: str, username: str, password: str, vms: Iterable[str], snapshot_name: str, port: int = 22):
-    parts = [f"sudo allta-vm snapshot delete --snapshot-name {snapshot_name}"]
-    for v in vms:
+    log.info("Ok snapshot.create RUN: task_id=%s snapshot=%s vm_names=%s",
+             envelope["task_id"], snap, vm_names)
+    return _std_ok(envelope)
+
+@shared_task(name="task_snapshot_delete", bind=True) # Work
+def task_snapshot_delete(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names", "snapshot_name"])
+    server = envelope.get("server") or {}
+    vm_names = envelope.get("vm_names") or []
+    snap     = envelope.get("snapshot_name")
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])    
+
+    parts = [f"sudo allta-vm snapshot delete --snapshot-name {snap}"]
+    for v in vm_names:
         parts.append(f"--vms {v}")
     cmd = " ".join(parts)
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "snapshot_delete_done", "count": len(list(vms))}
+    ssh.run_command(command=cmd)
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="snapshot.revert")
-def snapshot_revert(*, host_ip: str, username: str, password: str, vms: Iterable[str], snapshot_name: str, port: int = 22):
-    parts = [f"sudo allta-vm snapshot revert --snapshot-name {snapshot_name}"]
-    for v in vms:
+    log.info("Ok snapshot.delete RUN: task_id=%s snapshot=%s vm_names=%s",
+             envelope["task_id"], snap, vm_names)
+    return _std_ok(envelope)
+
+@shared_task(name="task_snapshot_revert", bind=True) # Work
+def task_snapshot_revert(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names", "snapshot_name"])
+    server = envelope.get("server") or {}
+    vm_names = envelope.get("vm_names") or []
+    snap     = envelope.get("snapshot_name")
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])    
+
+    parts = [f"sudo allta-vm snapshot revert --snapshot-name {snap}"]
+    for v in vm_names:
         parts.append(f"--vms {v}")
     cmd = " ".join(parts)
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "snapshot_revert_done", "count": len(list(vms))}
+    ssh.run_command(command=cmd)
+
+    log.info("Ok snapshot.revert RUN: task_id=%s snapshot=%s vm_names=%s",
+             envelope["task_id"], snap, vm_names)
+    return _std_ok(envelope)

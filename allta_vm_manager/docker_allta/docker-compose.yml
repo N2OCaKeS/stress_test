@@ -53,7 +53,10 @@ services:
       allta-swagger:
         condition: service_healthy     
       allta-vm-flower:
+        condition: service_healthy  
+      allta-redis-commander:
         condition: service_healthy         
+              
     # healthcheck:
     #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
     #   interval: 5s
@@ -182,8 +185,8 @@ services:
 
   allta-vm-api:
     build:
-      context: ../backend/allta_vm_api
-      dockerfile: ../../docker_allta/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
+      context: ../backend/allta_vm_api/services/api
+      dockerfile: ../../../../docker_allta/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
     image: allta-vm-api
     container_name: allta_vm_api
     restart: always
@@ -205,6 +208,7 @@ services:
       retries: 5              
     networks:
       - allta_vm_api
+      - allta_redis
       - allta_network
     volumes:
       - allta_vm_api:/data
@@ -230,39 +234,21 @@ services:
       timeout: 5s
       retries: 5      
 
-  allta-vm-redis:
-    build:
-      context: ./allta_vm_api/allta_vm_redis
-      dockerfile: Dockerfile.allta_vm_redis
-    image: allta-vm-redis:latest      
-    container_name: allta_vm_redis
-    restart: always    
-    env_file:
-      - env/.env.allta_vm_redis
-    ports:
-      - "6379:6379"
-    networks:
-      - allta_vm_api
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   allta-vm-celery:
     build:
-      context: ../backend/allta_vm_api
-      dockerfile: ../../docker_allta/allta_vm_api/allta_vm_celery/Dockerfile.allta_vm_celery
+      context: ../backend/allta_vm_api/services/worker
+      dockerfile: ../../../../docker_allta/allta_vm_api/allta_vm_celery/Dockerfile.allta_vm_celery
     image: allta-vm-celery:latest      
     container_name: allta_vm_celery
     restart: always    
     env_file:
       - env/.env.allta_vm_celery
     depends_on:
-      allta-vm-redis:
+      allta-redis:
         condition: service_healthy
     networks:
       - allta_vm_api
+      - allta_redis
 
   allta-vm-flower:
     build:
@@ -270,15 +256,17 @@ services:
       dockerfile: Dockerfile.allta_vm_flower
     image: allta-vm-flower:latest
     container_name: allta_vm_flower
+    restart: always      
     env_file:
       - ./env/.env.allta_vm_flower
     depends_on:
-      allta-vm-redis:
+      allta-redis:
         condition: service_healthy
     ports:
       - "5555:5555"
     command: celery flower --broker=redis://redis:6379/0 --url_prefix=/service/flower/      
     networks:
+      - allta_redis    
       - allta_network
       - allta_vm_api
     healthcheck:
@@ -294,6 +282,7 @@ services:
       dockerfile: Dockerfile.allta_swagger
     image: allta_swagger:latest
     container_name: allta_swagger
+    restart: always
     networks:
       allta_network:
     healthcheck:
@@ -301,7 +290,63 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3      
-    restart: always        
+
+  # Redis
+  allta-redis:
+    build:
+      context: ./allta_redis
+      dockerfile: Dockerfile.allta_redis
+    image: allta-redis:latest      
+    container_name: allta_redis
+    restart: always
+    env_file:
+      - env/.env.allta_redis
+    networks:
+      - allta_redis
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10   
+    volumes:
+      - allta_redis_data:/data      
+
+  allta-redis-commander:
+    build:
+      context: ./allta_redis_commander
+      dockerfile: Dockerfile.redis_commander
+    image: allta-redis-commander:latest
+    container_name: allta_redis_commander
+    restart: always
+    env_file:
+      - env/.env.allta_redis_commander
+    networks:
+      - allta_redis
+      - allta_network
+    healthcheck:
+      test: ["CMD", "sh", "-lc", "wget -q -O - http://127.0.0.1:8081/ >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  allta-portainer:
+    build:
+      context: ./allta_portainer
+      dockerfile: Dockerfile.allta_portainer
+    image: allta-portainer:latest
+    container_name: allta_portainer
+    restart: always   
+    volumes:
+      - allta_portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 9000:9000
+      - 9443:9443
+      - 8000:8000
+    networks:
+      - allta_network
 
 volumes:
   allta_devpi_data:
@@ -355,8 +400,22 @@ volumes:
     driver_opts:
       type: none
       device: ${VM_DB_PATH}
-      o: bind      
-      
+      o: bind
+
+  # Redis
+  allta_redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${REDIS_PATH}
+      o: bind
+
+  allta_portainer_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PORTAINER_PATH}
+      o: bind
 
 networks:
   # ALL API
@@ -376,4 +435,7 @@ networks:
   # VM API
   allta_vm_api:
     driver: bridge
+
+  allta_redis:
+    driver: bridge  
 

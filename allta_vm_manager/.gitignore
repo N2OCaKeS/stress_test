@@ -4,12 +4,20 @@
 # Кешированные файлы
 __pycache__/
 
+
 # Файлы для отладки
 start.sh
-test.py
 tmp
 
 # Сгенерированнные файлы
 docker_allta/allta_devpi/Dockerfile.allta_devpi
+
+# Файлы сборки
+cli/allta_vm/bootstrap/python
+cli/allta_vm/debian/allta-vm
+cli/allta_vm/bootstrap/Python-3.12.9
+cli/allta_vm/bootstrap/Python-3.12.9.tgz
+cli/*.deb
+start.sh
 
 .venv/

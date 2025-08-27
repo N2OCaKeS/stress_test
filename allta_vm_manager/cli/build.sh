@@ -1,5 +1,6 @@
 #!/bin/bash
-
+# TODO подумать про сборку, возможно есть смысл перейти на pyinstyaller и собирать в бинарник
+# TODO Пересобрать пакет allta-cli
 set -e
 
 BASE_PATH="$(pwd)"

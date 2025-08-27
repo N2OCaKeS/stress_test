@@ -11,17 +11,25 @@ from app.api.v1.crud.token import create_active_token, revoke_token
 from app.api.v1.schemas.token import TokenOut
 from app.api.v1.dependencies import get_current_user, oauth2_scheme
 from app.utils.config import settings
-from app.api.v1.schemas.token import TokenData
 from app.api.v1.schemas.user import UserRead
 
 router = APIRouter(prefix="", tags=["Auth"])
 
-@router.post("/login", response_model=TokenOut)
+
+@router.post(
+    "/login",
+    response_model=TokenOut,
+    summary="Войти по логину и паролю и получить access token",
+)
 def login(
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    """
+    Аутентифицирует пользователя по логину и паролю.
+    При успехе возвращает JWT и устанавливает `access_token` в cookie (HttpOnly).
+    """
     user = get_user_by_login(db, form_data.username)
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
@@ -34,7 +42,7 @@ def login(
     payload = {
         "jti": token_entry.jti,
         "user_id": user.id,
-        "exp": int(token_entry.expires_at.timestamp())
+        "exp": int(token_entry.expires_at.timestamp()),
     }
     jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -48,26 +56,35 @@ def login(
     )
     return TokenOut(access_token=jwt_token, token_type="bearer")
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Выйти и отозвать текущий токен",
+)
 def logout(
     response: Response,
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    """
+    Отзывает текущий access token и удаляет cookie `access_token`.
+    """
     revoke_token(db, token)
     response.delete_cookie("access_token")
+
 
 @router.get(
     "/verify",
     status_code=200,
-    response_model=UserRead,  # Указываем модель ответа
-    summary="Проверить валидность токена"
+    response_model=UserRead,
+    summary="Проверить валидность токена и получить профиль",
 )
 def verify(
     current_user: UserRead = Security(get_current_user),
 ):
     """
-    Возвращает данные текущего пользователя,
-    если токен валиден (из cookie,Authorization или header).
+    Возвращает данные текущего пользователя при валидном токене.
+    Поддерживаются источники: Cookie, Authorization header.
     """
     return current_user

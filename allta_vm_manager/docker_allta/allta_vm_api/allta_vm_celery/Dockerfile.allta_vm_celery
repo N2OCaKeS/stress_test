@@ -6,7 +6,7 @@ RUN apt-get update && \
       libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /vm
+WORKDIR /celery
 
 RUN pip install --upgrade pip
 RUN pip install poetry
@@ -17,7 +17,7 @@ RUN poetry config virtualenvs.create false && poetry install --no-interaction --
 
 EXPOSE 8000
 
-WORKDIR /vm/services/worker/
+WORKDIR /celery
 
 # Запуск Celery worker
-CMD ["celery", "-A", "celery_app:celery_app", "worker", "--loglevel=info"]
+CMD ["celery", "-A", "celery_app:app", "worker", "-n" ,"worker@allta-vm",  "--loglevel=info"]

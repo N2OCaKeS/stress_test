@@ -1,0 +1,102 @@
+{
+    "configurations": [
+        {
+            "name": "allta_auth_api",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "app.main:app",
+                "--reload"
+            ],
+            "jinja": true,
+            "cwd": "${workspaceFolder}/backend/allta_auth_api/",
+            "env": {
+                "SECRET_KEY": "9ef5fba25d56de92a5bcfa53217dc98bedd3b78234f1f0b5e22ade1f3c1d3295",
+                "ALGORITHM": "HS256",
+                "DATABASE_URL": "postgresql://allta:team13@localhost:5432/allta_auth",
+                "BASE_ADMIN_USERNAME": "admin",
+                "BASE_ADMIN_PASSWORD": "admin"
+            },
+        },
+        {
+            "name": "allta_config_api",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "app.main:app",
+                "--reload",
+                "--port",
+                "8001"
+            ],
+            "jinja": true,
+            "cwd": "${workspaceFolder}/backend/allta_config_api/",
+            "env": {
+                "AUTH_API_URL": "http://allta.devos.astralinux.ru/api/auth"
+            },
+        },        
+        {
+            "name": "allta_server_api",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "app.main:app",
+                "--reload",
+                "--port",
+                "8002"
+            ],
+            "jinja": true,
+            "cwd": "${workspaceFolder}/backend/allta_server_api/",
+            "env": {
+                "DATABASE_URL": "postgresql://allta:team13@localhost:5433/allta_server",
+                "AUTH_API_URL": "http://allta.devos.astralinux.ru/api/auth"
+            },
+        },        
+        {
+            "name": "allta_vm_api",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "app.main:app",
+                "--reload",
+                "--port",
+                "8003"
+            ],
+            "jinja": true,
+            "cwd": "${workspaceFolder}/backend/allta_vm_api/services/api/",
+            "env": {
+                "DATABASE_URL": "postgresql://allta:team13@localhost:5434/allta_vm",
+                "DATABASE_URL_ASYNC": "postgresql+asyncpg://allta:team13@localhost:5434/allta_vm",        
+                "AUTH_API_URL": "http://allta.devos.astralinux.ru/api/auth",
+                "SERVER_API_BASE": "http://allta.devos.astralinux.ru/api/server",
+                "REDIS_URL": "redis://allta:team13@localhost:6379/0",
+                "QUEUE_KEY": "vm-api:vm"
+            },
+        },
+        {
+            "name": "allta_vm_celery",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "celery",
+            "args": [
+                "-A",
+                "celery_app:app",
+                "worker",
+                "-n",
+                "local@allta-vm",
+                "--loglevel=info"
+            ],
+            "cwd": "${workspaceFolder}/backend/allta_vm_api/services/worker",
+            "env": {
+                "CELERY_BROKER_URL": "redis://allta:team13@localhost:6379/0",
+                "CELERY_RESULT_BACKEND": "redis://allta:team13@localhost:6379/1",
+                "QUEUE_KEY": "vm-api:vm",
+                "CELERY_QUEUE": "celery-vm",
+                "ASYNC_DATABASE_URL": "postgresql+asyncpg://allta:team13@localhost:5434/allta_vm",                  
+            }
+        }
+    ]
+}

@@ -27,11 +27,9 @@ def get_file(
     safe_name = os.path.basename(filename)
     file_path = os.path.join(DATA_DIR, safe_name)
 
-    # Если файл есть - отдаём файл
     if os.path.isfile(file_path):
         return FileResponse(file_path, filename=safe_name)
 
-    # Если файла нет - читаем info.json
     records = []
     if os.path.exists(INFO_PATH):
         with open(INFO_PATH, "r", encoding="utf-8") as f:
@@ -40,10 +38,9 @@ def get_file(
                 if isinstance(data, list):
                     records = data
             except json.JSONDecodeError:
-                # Если файл пустой или повреждён
+
                 records = []
 
-    # Возвращаем JSON с detail и info.json
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={
@@ -74,7 +71,6 @@ async def upload_file(
     dst_path = os.path.join(DATA_DIR, file.filename)
     records = []
 
-    # Загружаем существующие записи
     if os.path.exists(INFO_PATH):
         with open(INFO_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -88,12 +84,10 @@ async def upload_file(
             detail=f"File '{file.filename}' already exists"
         )
 
-    # Сохраняем файл
     content = await file.read()
     with open(dst_path, "wb") as f:
         f.write(content)
 
-    # Обновляем info.json
     updated = False
     for rec in records:
         if rec.get("filename") == file.filename:

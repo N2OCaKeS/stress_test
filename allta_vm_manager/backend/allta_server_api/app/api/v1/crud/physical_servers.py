@@ -39,23 +39,19 @@ def create_physical_server(db: Session, data: PhysicalServerCreate) -> PhysicalS
     payload = data.model_dump()
     payload["ip_address"] = str(payload["ip_address"])
 
-    # Проверка OSVersion
     os_id = payload.get("os_version_id")
     if os_id is not None and not db.get(OSVersion, os_id):
         raise ValueError(f"OSVersion with id={os_id} not found")
 
-    # Проверка driver_type
     if payload.get("driver_type") not in [e.value for e in DriverType]:
         raise ValueError(f"Invalid driver_type: {payload.get('driver_type')}")
 
-    # Проверка уникальности IP-адреса
     exists = db.execute(
         select(PhysicalServer).where(PhysicalServer.ip_address == payload["ip_address"])
     ).scalar_one_or_none()
     if exists:
         raise ValueError(f"Server with IP {payload['ip_address']} already exists")
 
-    # Шифрование пароля
     crypto = Crypto()
     payload["admin_panel_pass"] = crypto.encrypt(secret=payload["admin_panel_pass"])
     payload["server_password"] = crypto.encrypt(secret=payload["server_password"])

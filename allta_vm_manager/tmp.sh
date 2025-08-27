@@ -15,6 +15,12 @@ export CONFIG_API_DATA_PATH=$BASE_PATH/allta_config_api_data
 export SERVER_API_DATA_PATH=$BASE_PATH/allta_server_api_data
 export VM_API_DATA_PATH=$BASE_PATH/allta_vm_api_data
 
+# Redis
+export REDIS_PATH=$BASE_PATH/allta_redis_data
+
+# Portainer
+export PORTAINER_PATH=$BASE_PATH/allta_portainer_data
+
 # Devpi
 set -a
 source ./docker_allta/env/.env.allta_devpi
@@ -31,7 +37,7 @@ sudo rm -rf $DEVPI_PATH
 
 # Back Service
 # Database
-# sudo rm -rf $AUTH_DB_PATH
+sudo rm -rf $AUTH_DB_PATH
 # sudo rm -rf $SERVER_DB_PATH
 sudo rm -rf $VM_DB_PATH
 
@@ -39,6 +45,12 @@ sudo rm -rf $VM_DB_PATH
 sudo rm -rf $CONFIG_API_DATA_PATH
 # sudo rm -rf $SERVER_API_DATA_PATH
 sudo rm -rf $VM_API_DATA_PATH
+
+# Redis
+sudo rm -rf $REDIS_PATH
+
+# Portainer 
+sudo rm -rf $PORTAINER_PATH
 
 # Recreate the directories
 sudo mkdir -p $BASE_PATH
@@ -57,6 +69,13 @@ sudo mkdir -p $VM_DB_PATH
 sudo mkdir -p $CONFIG_API_DATA_PATH
 sudo mkdir -p $SERVER_API_DATA_PATH
 sudo mkdir -p $VM_API_DATA_PATH
+
+# REDIS
+sudo mkdir -p $REDIS_PATH
+
+# Portainer
+sudo mkdir -p $PORTAINER_PATH
+
 
 cd ./docker_allta
 # docker-compose build

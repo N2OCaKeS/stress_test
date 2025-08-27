@@ -1,66 +1,143 @@
-# services/worker/worker/tasks_vm.py
-from typing import Iterable, Optional
-from celery_app import celery_app
-from utils.ssh import SimpleSSH as ssh_run
+from __future__ import annotations
+from celery import shared_task
+from tasks.common import log, _require, _std_ok, _std_error
+from utils.ssh import SimpleSSH
+import json
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="vm.create")
-def vm_create(*, host_ip: str, username: str, password: str,
-              info_path: str, rc: str, box: Optional[str] = None, kernel: Optional[str] = None,
-              port: int = 22):
-    """
-    sudo allta-vm vm create --info-path ... --rc ... [--box ...] [--kernel ...]
-    """
-    parts = [f"sudo allta-vm vm create --info-path {info_path} --rc {rc}"]
-    if box:    parts.append(f"--box {box}")
-    if kernel: parts.append(f"--kernel {kernel}")
-    cmd = " ".join(parts)
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "vm_create_done"}
+@shared_task(name="task_vm_create", bind=True) # Work
+def task_vm_create(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vms_full"])
+    server   = envelope.get("server") or {}
+    vms_full = envelope.get("vms_full") or {}
+    json_remote_path = envelope.get("json_remote_path") or {}    
+    box      = "vm_station"
+    rc = "1.7.5.9"
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="vm.base_create")
-def vm_base_create(*, host_ip: str, username: str, password: str, port: int = 22):
-    cmd = "sudo allta-vm vm base-create"
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "vm_base_create_done"}
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="vm.delete")
-def vm_delete(*, host_ip: str, username: str, password: str, vms: Iterable[str], port: int = 22):
-    """
-    sudo allta-vm vm delete --vms vm1 --vms vm2 ...
-    """
-    parts = ["sudo allta-vm vm delete"]
-    for v in vms:
-        parts.append(f"--vms {v}")
-    cmd = " ".join(parts)
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "vm_delete_done", "count": len(list(vms))}
+    export_vms = f'echo \'{json.dumps(vms_full)}\'| sudo tee {json_remote_path}'
+    ssh.run_command(command=export_vms)
+    
+    # command = f"sudo allta-vm vm create --info-path {json_remote_path} --box {box} --rc {rc}"
+    # out = ssh.run_command(command=command)
+    # log.info(out)
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="vm.update")
-def vm_update(*, host_ip: str, username: str, password: str, info_path: str, port: int = 22):
-    cmd = f"sudo allta-vm vm update --info-path {info_path}"
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "vm_update_done"}
+    rm_command = f"sudo rm -rf {json_remote_path} /vms/vm_station.tar.gz /vms/vm_station.qcow2"
+    ssh.run_command(command=rm_command)
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="vm.stop")
-def vm_stop(*, host_ip: str, username: str, password: str, vms: Iterable[str], port: int = 22):
-    parts = ["sudo allta-vm vm stop"]
-    for v in vms:
-        parts.append(f"--vms {v}")
-    cmd = " ".join(parts)
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "vm_stop_done", "count": len(list(vms))}
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="vm.start")
-def vm_start(*, host_ip: str, username: str, password: str, vms: Iterable[str], port: int = 22):
-    parts = ["sudo allta-vm vm start"]
-    for v in vms:
-        parts.append(f"--vms {v}")
-    cmd = " ".join(parts)
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "vm_start_done", "count": len(list(vms))}
+    log.info("Ok vm.create RUN: task_id=%s server=%s vms=%s box=%s",
+             envelope["task_id"], server, list(vms_full.keys()), box)
+    return _std_ok(envelope)
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_jitter=True, max_retries=5, name="vm.astra_update")
-def vm_astra_update(*, host_ip: str, username: str, password: str, info_path: str, rc: str, port: int = 22):
-    cmd = f"sudo allta-vm vm astra-update --info-path {info_path} --rc {rc}"
-    ssh_run(host_ip, username, password, cmd, port)
-    return {"ip": host_ip, "status": "vm_astra_update_done"}
+
+
+@shared_task(name="task_vm_base_create", bind=True) # Work
+def task_vm_base_create(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vms_full"])
+    server   = envelope.get("server") or {}
+    vms_full = envelope.get("vms_full") or {}
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+    command = "sudo allta-vm vm base-create"
+    ssh.run_command(command=command)
+    log.info("Ok vm.base_create RUN: task_id=%s server=%s vms=%s",
+             envelope["task_id"], server, list(vms_full.keys()))
+    return _std_ok(envelope)
+
+
+
+@shared_task(name="task_vm_update", bind=True) # Work
+def task_vm_update(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vms_full"])
+    server   = envelope.get("server") or {}
+    patches = envelope.get("vms_full") or {}
+    json_remote_path = envelope.get("json_remote_path") or {}        
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+    export_vms = f'echo \'{json.dumps(patches)}\'| sudo tee {json_remote_path}'
+    ssh.run_command(command=export_vms)
+
+
+    command = f"sudo allta-vm vm update --info-path {json_remote_path}"
+    ssh.run_command(command=command)
+    log.info("Ok vm.update RUN: task_id=%s patches=%s", envelope["task_id"], patches)
+    return _std_ok(envelope)
+
+
+
+@shared_task(name="task_vm_delete", bind=True) # ?
+def task_vm_delete(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names"])
+    server   = envelope.get("server") or {}
+    vm_names = envelope.get("vm_names") or []
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+    command = ["sudo allta-vm vm delete"]
+    for v in vm_names:
+        command.append(f" --vms {v}")
+    cmd = " ".join(command)
+
+    out = ssh.run_command(command=cmd)
+    log.info(out)
+    log.info("Ok vm.delete RUN: task_id=%s vm_names=%s", envelope["task_id"], vm_names)
+    return _std_ok(envelope)
+
+
+
+@shared_task(name="task_vm_start", bind=True) # Work
+def task_vm_start(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names"])
+    server   = envelope.get("server") or {}
+    vm_names = envelope.get("vm_names") or []
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+    command = ["sudo allta-vm vm start"]
+    for v in vm_names:
+        command.append(f" --vms {v}")
+    cmd = "".join(command)    
+    ssh.run_command(command=cmd)
+
+    log.info("Ok vm.start RUN: task_id=%s vm_names=%s", envelope["task_id"], vm_names)
+    return _std_ok(envelope)
+
+
+
+@shared_task(name="task_vm_stop", bind=True) # Work
+def task_vm_stop(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names"])
+    server   = envelope.get("server") or {}    
+    vm_names = envelope.get("vm_names") or []
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+    command = ["sudo allta-vm vm stop"]
+    for v in vm_names:
+        command.append(f" --vms {v}")
+    cmd = "".join(command)    
+    ssh.run_command(command=cmd)  
+
+    log.info("Ok vm.stop RUN: task_id=%s vm_names=%s", envelope["task_id"], vm_names)
+    return _std_ok(envelope)
+
+
+
+@shared_task(name="task_vm_astra_update", bind=True)
+def task_vm_astra_update(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names", "vms_full", "rc"])
+    server   = envelope.get("server") or {}    
+    rc       = envelope.get("rc")
+    vms_full = envelope.get("vms_full") or []
+    json_remote_path = envelope.get("json_remote_path") or {}     
+    ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+    export_vms = f'echo \'{json.dumps(vms_full)}\'| sudo tee {json_remote_path}'
+    ssh.run_command(command=export_vms)
+
+    command = f"sudo allta-vm vm astra-update --info-path {json_remote_path} --rc {rc}"
+    out = ssh.run_command(command=command)
+    log.info(out)
+    log.info("Ok vm.astra_update RUN: task_id=%s rc=%s vms_full=%s",
+             envelope["task_id"], rc, vms_full)
+    return _std_ok(envelope)
+
+# sudo allta-vm vm delete  --vms additionalProp1111111111

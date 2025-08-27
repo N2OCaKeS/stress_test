@@ -45,7 +45,7 @@ def edit_vm(xml_path: str, cpu: str, ram_mb: str):
     # Изменяем CPU
     vcpu = root.find('vcpu')
     if vcpu is not None:
-        vcpu.text = cpu
+        vcpu.text = str(cpu)
 
     # Конвертируем RAM и изменяем
     ram_kb = str(int(ram_mb) * 1024)  # MB → KB

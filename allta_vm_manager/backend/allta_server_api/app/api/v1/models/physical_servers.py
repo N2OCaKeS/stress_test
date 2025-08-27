@@ -20,6 +20,7 @@ class PhysicalServer(Base):
     ip_address         = Column(INET, unique=True, nullable=False)
     cpu_total          = Column(Integer, nullable=False)
     ram_total          = Column(Integer, nullable=False)
+    phy_if             = Column(String(50), nullable = False, default="eth0")
     virtualization     = Column(Boolean, nullable=False, default=False)
     ssh_port           = Column(Integer, nullable=False, default=22)
     server_user       = Column(String(100), nullable=False)

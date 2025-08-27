@@ -1,12 +1,5 @@
 from typing import List
-import httpx
-
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    status,
-)
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -28,10 +21,8 @@ from app.api.v1.dependencies import (
     get_current_user,
     get_current_admin_user,
     AuthVerifyResponse,
-    get_token
 )
 from app.api.v1.models.physical_servers import PhysicalServer
-from app.utils.config import settings
 
 router = APIRouter(
     prefix="/manage",
@@ -48,7 +39,12 @@ def list_servers(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    """
+    Возвращает список всех зарегистрированных физических серверов.  
+    Доступ: любой аутентифицированный пользователь.
+    """
     return get_physical_servers(db)
+
 
 @router.get(
     "/{server_id}",
@@ -60,11 +56,16 @@ def get_server(
     server_id: int,
     db: Session = Depends(get_db),
 ):
+    """
+    Возвращает информацию о сервере по его ID.  
+    Доступ: любой аутентифицированный пользователь.
+    """
     try:
         srv = get_physical_server(db, server_id)
         return srv
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
+
 
 @router.post(
     "/",
@@ -77,6 +78,10 @@ def create_server(
     data: PhysicalServerCreate,
     db: Session = Depends(get_db),
 ):
+    """
+    Создает новый физический сервер.  
+    Доступ: только администратор.
+    """
     try:
         return create_physical_server(db, data)
     except ValueError as e:
@@ -94,6 +99,10 @@ def update_server(
     data: PhysicalServerUpdate,
     db: Session = Depends(get_db),
 ):
+    """
+    Обновляет данные указанного сервера.  
+    Доступ: только администратор.
+    """
     try:
         return update_physical_server(db, server_id, data)
     except ValueError as e:
@@ -112,48 +121,64 @@ def delete_server(
     server_id: int,
     db: Session = Depends(get_db),
 ):
+    """
+    Удаляет сервер по его ID.  
+    Доступ: только администратор.
+    """
     try:
         delete_physical_server(db, server_id)
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/{server_id}/status")
+@router.post(
+    "/{server_id}/status",
+    summary="Изменить статус сервера",
+)
 def update_status(
     server_id: int,
     status_in: PhysicalServerStatusUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    """
+    Изменяет статус сервера.  
+    Доступ: администратор может установить любой статус.  
+    Обычный пользователь может установить только свой логин в качестве статуса.
+    """
     server = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
     if not server:
         raise HTTPException(404, detail="Server not found")
 
-    # Логика прав — админ может любой статус
     if not current_user.is_admin:
         if status_in.status.lower() != current_user.login.lower():
             raise HTTPException(403, detail="Not allowed to set this status")
 
-    # Меняем только статус, остальные поля не трогаем
     server.status = status_in.status
     db.commit()
     db.refresh(server)
 
-    # Возвращаем как есть, без расшифровки паролей
     return {"id": server.id, "status": server.status}
 
 
 @router.post(
     "/{server_id}/release",
     response_model=PhysicalServerRead,
-    summary="Освободить сервер"
+    summary="Освободить сервер",
 )
 def release_status(
     server_id: int,
     current_user: AuthVerifyResponse = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Получаем сервер без расшифровки паролей
+    """
+    Освобождает сервер (возвращает его в статус `free`).  
+
+    - Если сервер уже свободен, возвращает его без изменений.  
+    - Если сервер находится в фиксированном статусе, снять его может только админ.  
+    - Если сервер занят конкретным пользователем, он может освободить его сам,  
+      в остальных случаях это может сделать только админ.
+    """
     srv = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
     if not srv:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Server with id={server_id} not found")
@@ -161,15 +186,13 @@ def release_status(
     curr = srv.status
 
     if curr == FixedServerStatus.free.value:
-        return srv  # уже свободен
+        return srv
 
     if curr in {s.value for s in FixedServerStatus}:
-        # Фиксированные статусы может снимать только админ
         if not current_user.is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin required to change this status")
         srv.status = FixedServerStatus.free.value
     else:
-        # Если статус = логин пользователя — он может снять сам, иначе только админ
         if curr != current_user.login and not current_user.is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cannot release status held by another user")
         srv.status = FixedServerStatus.free.value

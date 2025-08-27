@@ -1,0 +1,24 @@
+FROM redis:7-alpine
+
+EXPOSE 6379
+
+CMD sh -lc '\
+set -e; \
+ACL=/usr/local/etc/redis/users.acl; \
+mkdir -p /usr/local/etc/redis /data; \
+printf "%s\n" \
+  "user default on >${RI_REDIS_PASSWORD0} ~* &* +@all" \
+  "user ${RI_REDIS_USERNAME0} on >${RI_REDIS_PASSWORD0} ~* &* +@all" \
+  > "$ACL"; \
+exec redis-server \
+  --port 6379 \
+  --aclfile "$ACL" \
+  --dir /data \
+  --dbfilename dump.rdb \
+  --save 60 1 \
+  --appendonly yes \
+  --appendfsync everysec \
+  --aof-use-rdb-preamble yes \
+  --auto-aof-rewrite-percentage 100 \
+  --auto-aof-rewrite-min-size 64mb \
+'

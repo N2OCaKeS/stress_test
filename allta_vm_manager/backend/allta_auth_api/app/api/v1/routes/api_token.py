@@ -15,31 +15,33 @@ from app.utils.config import settings
 
 router = APIRouter(
     prefix="/users/{user_id}/tokens",
-    tags=["Api key"],
+    tags=["API tokens"],
 )
 
 
 @router.get(
     "/",
     response_model=List[APITokenRead],
-    summary="Список бессрочных JWT-токенов пользователя"
+    summary="Список бессрочных JWT-токенов пользователя",
 )
 def list_tokens(
     user_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # только админ или владелец могут смотреть токены
+    """
+    Получить список бессрочных JWT-токенов пользователя.  
+    Доступ: администратор или сам пользователь.
+    """
     if not current_user.is_admin and current_user.id != user_id:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            detail="Нет доступа к токенам другого пользователя"
+            detail="Нет доступа к токенам другого пользователя",
         )
 
     records = get_api_tokens(db, user_id)
     result: List[APITokenRead] = []
     for r in records:
-        # r.jti — это то поле, в котором вы храните identifier для JWT
         token_str = jwt.encode(
             {"jti": r.jti, "user_id": user_id},
             settings.SECRET_KEY,
@@ -58,32 +60,39 @@ def list_tokens(
     "/",
     response_model=APITokenRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Выдать бессрочный JWT-токен (admin)"
+    summary="Выдать бессрочный JWT-токен (admin)",
 )
 def issue_token(
     user_id: int,
-    data: APITokenCreate,
+    _: APITokenCreate,  # пока схема-заглушка, но оставляем для расширяемости
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin_user),  # только админ
+    _admin=Depends(get_current_admin_user),
 ):
-    # create_api_token возвращает Pydantic-схему со свежим token
+    """
+    Создать новый бессрочный JWT-токен для пользователя.  
+    Доступ: только администратор.
+    """
     return create_api_token(db, user_id)
 
 
 @router.delete(
     "/{token_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Отозвать бессрочный JWT-токен (admin)"
+    summary="Отозвать бессрочный JWT-токен (admin)",
 )
 def revoke_token(
     user_id: int,
     token_id: int,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin_user),  # только админ
+    _admin=Depends(get_current_admin_user),
 ):
+    """
+    Отозвать ранее выданный бессрочный JWT-токен по ID.  
+    Доступ: только администратор.
+    """
     success = revoke_api_token(db, token_id)
     if not success:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail="Token not found"
+            detail="Token not found",
         )

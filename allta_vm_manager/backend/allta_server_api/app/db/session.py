@@ -8,7 +8,7 @@ SessionLocal = sessionmaker(
     bind=engine,
     autoflush=False,
     autocommit=False,
-    expire_on_commit=False,   # <<< важно
+    expire_on_commit=False,
 )
 
 def get_db():
@@ -16,7 +16,7 @@ def get_db():
     try:
         yield db
     except Exception:
-        db.rollback()         # <<< важно
+        db.rollback()
         raise
     finally:
         db.close()

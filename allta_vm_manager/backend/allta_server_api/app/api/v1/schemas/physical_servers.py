@@ -25,6 +25,7 @@ class PhysicalServerBase(BaseModel):
     ip_address        : str                = Field(..., example="10.0.0.5")
     cpu_total         : int                = Field(..., example=16)
     ram_total         : int                = Field(..., example=32768)
+    phy_if            : str                = Field(..., example="eth0")   
     virtualization    : bool               = Field(False, example=True)
     ssh_port          : int                = Field(22, example=2222)
     server_user       : str                = Field(..., example="root")
@@ -45,6 +46,7 @@ class PhysicalServerCreate(PhysicalServerBase):
     ip_address        : str                = Field(..., example="10.0.0.5")
     cpu_total         : int                = Field(..., example=16)
     ram_total         : int                = Field(..., example=32768)
+    phy_if            : str                = Field(..., example="eth0")       
     virtualization    : bool               = Field(False, example=True)
     ssh_port          : int                = Field(22, example=2222)
     server_user       : str                = Field(..., example="root")
@@ -61,6 +63,7 @@ class PhysicalServerUpdate(BaseModel):
     ip_address        : Optional[str]
     cpu_total         : Optional[int]
     ram_total         : Optional[int]
+    phu_if            : Optional[str]
     virtualization    : Optional[bool]
     ssh_port          : Optional[int]
     server_user       : Optional[str]

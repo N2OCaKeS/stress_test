@@ -3,7 +3,7 @@ allta_app - v2.43.0
 * Increase ssh_com timeout on 3h
 * Add upd kernels by start psql_balance
 * Add dinamic kernel list by choose release
-
+* Upd favicon
 
 allta_app - v2.42.1
 * Add 1.8.3.UU.1.1

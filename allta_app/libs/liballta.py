@@ -510,7 +510,7 @@ def create_args(page):
     try:
         with open(f'conf/{page}_kernel_args.conf', 'r') as r:
                 kernel_list = str(r.read())
-                if kernel_list == 'None':
+                if kernel_list == 'None' or kernel_list == '[]':
                     kernel_list = 'Ядро не выбрано'
     except FileNotFoundError:
         kernel_list = 'Ядро не выбрано'

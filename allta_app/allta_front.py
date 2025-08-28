@@ -260,6 +260,11 @@ def update_kernel_block(part):
         return get_kernels_from_rc(part)
     
 
+@app.route('/dinamic_kernel_list', methods=['GET'])
+def dinamic_kernel_list(release):
+    return jsonify(get_kernels_from_rc(version_rc=release, get_list=True))
+
+
 @app.route('/backup/<stand>/<version>')
 def backup(stand, version):
     """

@@ -206,13 +206,14 @@ __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
 __git_token = tokens['git_token']
+__srv_pass = tokens['srv_pass']
 success = f'Success {args.STAND} {args.TEST}'
 in_prog = f'In progress {args.STAND} {args.TEST}'
 fail = f'Fail {args.STAND} {args.TEST}'
 done = f'Done {args.STAND} {args.TEST}'
 stand_ip = stands_ip[args.STAND]
 user = 'u'
-password = '1'
+password = __srv_pass
 port = 22
 ipmi = BootOrder(stand=args.STAND)
 clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
@@ -431,7 +432,7 @@ def ssh_command(command, stand_ip=stand_ip):
         client = paramiko.SSHClient()
         
         client.set_missing_host_key_policy(paramiko.WarningPolicy())
-        client.connect(stand_ip, port=port, username=user, password='1', timeout=7200)
+        client.connect(stand_ip, port=port, username=user, password=password, timeout=10800)
         stdin, stdout, stderr = client.exec_command(command)
         response = stdout.read().decode().strip()
     finally:
@@ -676,7 +677,8 @@ class TestRunProvision(BootOrder):
             else:
                 ipmi.reset()
             sleep(3)
-            if args.RELEASE not in systems and not args.PSQL_BALANCE:
+            #if args.RELEASE not in systems and not args.PSQL_BALANCE:
+            if args.RELEASE not in systems:
                 holder = 0
                 while holder == 0:
                     try:
@@ -696,12 +698,13 @@ class TestRunProvision(BootOrder):
                     if modes[args.MODE] == '2':
                         comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
                         comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
-            elif args.PSQL_BALANCE:
-                socket_available()
+            #elif args.PSQL_BALANCE:
+            #    socket_available()
             write_status(success)
             logging.debug('Grub block done\n')
 
-        if args.RELEASE not in systems and not args.PSQL_BALANCE:
+        #if args.RELEASE not in systems and not args.PSQL_BALANCE:
+        if args.RELEASE not in systems:
             if read_status() == success:
                 write_status(in_prog)
                 #comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -748,7 +751,7 @@ def send_remote_command_ansible(command):
             inventory=inventory_manager,
             variable_manager=variable_manager,
             loader=loader,
-            passwords=dict(vault_pass='1'),
+            passwords=dict(vault_pass=password),
             stdout_callback=result_callback,
         )
         tqm.run(play)

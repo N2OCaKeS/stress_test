@@ -80,9 +80,12 @@ with open('/home/u/url_mob', 'r') as r:
     mobile_url = r.read().replace('\n', '').replace('\r', '')
 with open('/home/u/url_brest', 'r') as r:
     brest_url = r.read().replace('\n', '').replace('\r', '')
+with open('/home/u/tokens.json', 'r') as r:
+    tokens = json.load(r)
 
 user_app = 'user'
 user = 'u'
+__srv_pass = tokens['srv_pass']
 port = 22
 with open('/home/u/up', 'r') as r:
     up = r.read()
@@ -290,8 +293,8 @@ def info_collector(page, ajax=None):
             kernel = request.form.getlist('kernel')
             with open(f'conf/{page}_kernel_args.conf', 'w') as w:
                 w.write(str(kernel))
-            if not kernel:
-                kernel = 'Ядра не выбраны'
+            if not kernel or kernel == '[]':
+                kernel = ''
 
             releas = request.form.getlist('releas')
             with open(f'conf/{page}_releas_args.conf', 'w') as w:
@@ -519,7 +522,7 @@ def create_args(page):
 def ssh_command(command, stand_ip):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(stand_ip, port=port, username=user, password='1')
+    client.connect(stand_ip, port=port, username=user, password=__srv_pass)
     stdin, stdout, stderr = client.exec_command(command)
     response = stdout.read().decode().strip()
     client.close()
@@ -1116,7 +1119,7 @@ class BootOrder:
             self.client.logout()
 
     def reset_by_timer(self, func):
-        timer = 7200
+        timer = 10800
         interval = 60
         for _ in range(timer // interval):
             sleep(interval)

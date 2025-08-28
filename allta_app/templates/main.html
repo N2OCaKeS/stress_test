@@ -892,11 +892,11 @@
                     </button>
                   </h2>
                   <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
-                    <div class="accordion-body" style="text-align: left;">
-                      {% for value in kernels %}
+                    <div class="accordion-body" style="text-align: left;" id="dinamic-kernels-container">
+                      <!--{% for value in kernels %} // change to ajax
                         <input type="checkbox" id="{{ value }}" name="kernel" value="{{ value }}">
                         <label for="{{ value }}">{{ value }}</label><br>                        
-                      {% endfor %}
+                      {% endfor %} -->
                     </div>
                   </div>
                 </div>
@@ -923,7 +923,33 @@
           </div>
         </div>
       
-             
+        <!-- dinamic update kernel list -->
+        <script>
+          $(document).ready(function(){
+              $('input[name=releas]').change(function(){
+                  var release_value = $(this).val();
+                  
+                  $.ajax({
+                      url: '/dinamic_kernel_list',
+                      type: 'GET',
+                      dataType: 'json',
+                      data: {
+                          release: release_value
+                      },
+                      success: function(data){
+                          $('#dinamic-kernels-container').empty(); 
+                          
+                          data.forEach(function(kernel){
+                              $('#dinamic-kernels-container').append(
+                                  '<input type="checkbox" id="' + kernel + '" name="kernel" value="' + kernel + '">' +
+                                  '<label for="' + kernel + '">' + kernel + '</label><br>'
+                              );
+                          });
+                      }
+                  });
+              });
+          });
+        </script>
                                      
 
 
@@ -1238,7 +1264,7 @@
             <table class="accordion-table">
               <tr>
                 <td class="col1">
-                  Test WorkStation
+                  VM Test WorkStation
                 </td>
                 <td class="col2">
                   stand1-201
@@ -1278,11 +1304,10 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                   </div>
                   <div class="modal-body text-start">
-                    <b>CPU:</b> Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz</br>
-                    <b>RAM:</b> 32Gb</br>
+                    <b>vCPU:</b> 16</br>
+                    <b>RAM:</b> 128Gb</br>
                     <b>STORAGE:</b></br> 
-                    1. nvme0n1 Samsung 970 EVO 2Tb - системный</br>
-                    2. sda Samsung SSD 870 QVO 2Tb
+                    1. 100Gb - системный
                   </div>
                   <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
@@ -1599,7 +1624,7 @@
               <table class="accordion-table">
                 <tr>
                   <td class="col1">
-                    Test WorkStation
+                    VM Test WorkStation
                   </td>
                   <td class="col2">
                     stand2-202
@@ -1639,11 +1664,10 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                   </div>
                   <div class="modal-body text-start">
-                    <b>CPU:</b> Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz</br>
-                    <b>RAM:</b> 32Gb</br>
+                    <b>vCPU:</b> 16</br>
+                    <b>RAM:</b> 128Gb</br>
                     <b>STORAGE:</b></br> 
-                    1. nvme0n1 SSD 2Tb - системный</br>
-                    2. sda SSD 512Gb
+                    1. 100Gb - системный
                   </div>
                   <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
@@ -3131,10 +3155,10 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                   </div>
                   <div class="modal-body text-start">
-                    <b>CPU:</b> 16</br>
+                    <b>vCPU:</b> 16</br>
                     <b>RAM:</b> 128Gb</br>
                     <b>STORAGE:</b></br> 
-                    1. 70Gb - системный
+                    1. 100Gb - системный
                   </div>
                   <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
@@ -3493,10 +3517,10 @@
                   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body text-start">
-                  <b>CPU:</b> 16</br>
+                  <b>vCPU:</b> 16</br>
                   <b>RAM:</b> 128Gb</br>
                   <b>STORAGE:</b></br> 
-                  1. 70Gb - системный
+                  1. 100Gb - системный
                 </div>
                 <div class="modal-footer">
                   <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
@@ -3854,10 +3878,10 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
               <div class="modal-body text-start">
-                <b>CPU:</b> 16</br>
+                <b>vCPU:</b> 16</br>
                 <b>RAM:</b> 128Gb</br>
                 <b>STORAGE:</b></br> 
-                1. 70Gb - системный
+                1. 100Gb - системный
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
@@ -4215,10 +4239,10 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
               <div class="modal-body text-start">
-                <b>CPU:</b> 16</br>
+                <b>vCPU:</b> 16</br>
                 <b>RAM:</b> 128Gb</br>
                 <b>STORAGE:</b></br> 
-                1. 70Gb - системный
+                1. 100Gb - системный
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>

@@ -40,7 +40,7 @@ fi
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 if grep -qE '1.8.*' /etc/astra_version || uname -r | grep -q 6.1; then
   sudo dpkg -i vagrant_2.4.1-1_x86_64.deb
-if grep -qE '1.7.*' /etc/astra_version && ! uname -r | grep -q '^6\\.1'; then
+elif grep -qE '1.7.*' /etc/astra_version && ! uname -r | grep -q '^6\\.1'; then
   sudo dpkg -i vagrant_2.2.19_x86_64.deb
 fi
 

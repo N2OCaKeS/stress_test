@@ -68,7 +68,7 @@
         },
         "stand4": {
             "FIO": "2:10:45",
-            "FreeIPA auth": "1:08:12",
+            "FreeIPA auth": "2:01:38",
             "OCFS2": "2:13:35",
             "postgresql": "3:26:53",
             "postgresql-aud-off": "2:56:37",
@@ -83,8 +83,8 @@
             "psql oom": "2:07:54",
             "Total time": "0:00:00",
             "syslog-ng-cwl": "1 day, 7:04:37",
-            "digsig-cdt": "1:11:55",
-            "psql balance": "1:19:27"
+            "digsig-cdt": "2:00:41",
+            "psql balance": "2:46:01"
         }
     }
 }

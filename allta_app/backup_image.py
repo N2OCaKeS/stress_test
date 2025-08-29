@@ -432,7 +432,7 @@ def ssh_command(command, stand_ip=stand_ip):
         client = paramiko.SSHClient()
         
         client.set_missing_host_key_policy(paramiko.WarningPolicy())
-        client.connect(stand_ip, port=port, username=user, password=password, timeout=10800)
+        client.connect(stand_ip, port=port, username=user, password=password, timeout=7200)
         stdin, stdout, stderr = client.exec_command(command)
         response = stdout.read().decode().strip()
     finally:
@@ -475,6 +475,10 @@ def socket_available(reboot_counter=0, max_reboot_attempts=3):
             sleep(30)
             continue
         except ssh_exception.NoValidConnectionsError:
+            sleep(30)
+            continue
+        except TimeoutError:
+            logging.error('Error SSH timeout connection')
             sleep(30)
             continue
         except ssh_exception.SSHException:  

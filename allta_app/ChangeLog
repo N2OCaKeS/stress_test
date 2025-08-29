@@ -1,6 +1,6 @@
 allta_app - v2.43.0
 * Upd stands info
-* Increase ssh_com timeout on 3h
+* Add ssh timeout exception
 * Add upd kernels by start psql_balance
 * Add dinamic kernel list by choose release
 * Upd favicon

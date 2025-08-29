@@ -425,6 +425,13 @@ def busy_status_control(stand, name, version=None):
             w.write('Занят')
         with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
             w.write('VMs-Hub')
+    elif name == 'VM-Manager':
+        with open(f'conf/work_status_{stand}.conf', 'w') as w:
+            w.write('Занят')
+        with open(f'conf/chmod_author_{stand}.conf', 'w') as w:
+            w.write('VM-Manager')
+        with open(f'conf/col3_body_{stand}.conf', 'w') as w:
+            w.write(f'VM-Manager tasks')
 
 
 
@@ -1119,7 +1126,7 @@ class BootOrder:
             self.client.logout()
 
     def reset_by_timer(self, func):
-        timer = 10800
+        timer = 7200
         interval = 60
         for _ in range(timer // interval):
             sleep(interval)

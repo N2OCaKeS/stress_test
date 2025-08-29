@@ -1,713 +1,472 @@
+# app/api/v1/routes/vm.py
 from __future__ import annotations
-
-from typing import Any, Dict, List, Optional, Set, Tuple
-
+from typing import Any, Dict, List, Optional, Set
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_async_db
 from app.api.v1.models.vm import VirtualMachine
-from app.api.v1.schemas.vm import VMCreate, VMRead, VMUpdate
-from app.api.v1.schemas.vm_batch import (
-    BatchVMCreateError,
-    BatchVMCreateRequest,
-    BatchVMUpdateRequest,
-    VMDeleteRequest,
-    ItemOpError,
-    AstraUpdateRequest,
+from app.api.v1.schemas.vm import (
+    VMRead, VMStatusUpdate, BatchVMCreateRequest, BatchVMUpdateRequest,
+    VMDeleteRequest, AstraUpdateRequest, CreateDefaultVMsRequest,
+    TaskEnvelope, TaskOperation, ServerTaskInfo, VMSpec, normalize_status,
 )
-from app.utils.vm_batch import (
-    ensure_server_ready_for_vms_hub,
-    get_ip_range,
-    get_range_bounds,
-    ip_in_range,
-    is_ip_free,
-    is_name_free,
+from app.api.v1.dependencies import get_current_user, get_current_admin_user, get_token
+from app.utils.vm_helper import (
+    ensure_server_ready_for_vms_hub, get_ip_range, get_range_bounds,
+    ip_in_range, is_ip_free, is_name_free,
 )
-from app.api.v1.dependencies import (
-    get_current_user,
-    get_current_admin_user,
-    get_token,
-)
-from app.api.v1.crud.vm_snapshot import create_snapshot, SnapshotAlreadyExists
-from app.api.v1.crud.vm import create_vm, delete_vm, update_vm
-from app.api.v1.crud.vm_snapshot import list_snapshots, delete_snapshot
 from app.utils.server_api import get_physical_server_from_remote, get_os_versions
 from app.utils.redis_queue import enqueue_task
-from app.utils.config import settings
+from app.utils.crypto import Crypto
+
 
 router = APIRouter(prefix="/vm", tags=["VM"])
 
 PRESET_VMS: Dict[str, Dict[str, Any]] = {
-    "virtual-station1": {"host-port": "22", "ip": "10.177.103.101", "ip_bridge": "10.177.103.101", "cpu": "16", "ram": "131072"},
-    "virtual-station2": {"host-port": "22", "ip": "10.177.103.102", "ip_bridge": "10.177.103.102", "cpu": "16", "ram": "131072"},
-    "virtual-station3": {"host-port": "22", "ip": "10.177.103.103", "ip_bridge": "10.177.103.103", "cpu": "16", "ram": "131072"},
-    "virtual-station4": {"host-port": "22", "ip": "10.177.103.104", "ip_bridge": "10.177.103.104", "cpu": "16", "ram": "131072"},
-    "work-station1": {"host-port": "22", "ip": "10.177.103.201", "ip_bridge": "10.177.103.201", "cpu": "16", "ram": "131072"},
-    "work-station2": {"host-port": "22", "ip": "10.177.103.202", "ip_bridge": "10.177.103.202", "cpu": "16", "ram": "131072"},
+    "virtual-station1": {"ip": "10.177.103.101", "cpu": 16, "ram": 131072},
+    "virtual-station2": {"ip": "10.177.103.102", "cpu": 16, "ram": 131072},
+    "virtual-station3": {"ip": "10.177.103.103", "cpu": 16, "ram": 131072},
+    "virtual-station4": {"ip": "10.177.103.104", "cpu": 16, "ram": 131072},
+    "work-station1":    {"ip": "10.177.103.201", "cpu": 16, "ram": 131072},
+    "work-station2":    {"ip": "10.177.103.202", "cpu": 16, "ram": 131072},
 }
 PRESET_NAMES: Set[str] = set(PRESET_VMS.keys())
-DEFAULT_SNAPSHOTS = ["1.8.1.6", "1.7.5.9"]
 
 
 def _uuid_task() -> str:
-    """Сгенерировать уникальный идентификатор задачи."""
     return str(uuid.uuid4())
 
 
-def _can_modify_vm(vm: VirtualMachine, actor: str, is_admin: bool) -> Tuple[bool, Optional[str]]:
-    """Проверить право изменения ВМ: админ — всегда; пользователь — если ВМ свободна или занята им; базовые ВМ только для админа."""
-    if is_admin:
-        return True, None
-    if vm.name in PRESET_NAMES:
-        return False, "base vm: admin only"
-    status_val = (vm.status or "").strip()
-    if status_val == "free" or status_val == actor:
-        return True, None
-    return False, f"vm occupied by {status_val!r}"
+def _server_task_info_from_api(srv, server_id: int) -> ServerTaskInfo:
+    # важно: теперь всегда передаём server_id
+    return ServerTaskInfo(
+        id=server_id,
+        ip=str(getattr(srv, "ip_address", "")),
+        username=getattr(srv, "server_user", None),
+        password=getattr(srv, "server_password", None),
+        phy_if=getattr(srv, "phy_if", None),
+    )
 
 
-def _server_task_info_from_api(srv) -> Dict[str, Any]:
-    """Привести информацию о сервере к JSON‑совместимому виду для постановки задачи."""
-    return {
-        "ip": str(getattr(srv, "ip_address", "")),
-        "username": getattr(srv, "server_user", None),
-        "password": getattr(srv, "server_password", None),
-        "phy_if": getattr(srv, "phy_if", None),
-    }
+def _env(*, task_id: str, operation: TaskOperation, server: ServerTaskInfo,
+         vm_password: Optional[str] = None,
+         vms_full: Optional[Dict[str, VMSpec]] = None,
+         vm_names: Optional[List[str]] = None,
+         snapshot_name: Optional[str] = None,
+         rc: Optional[str] = None) -> TaskEnvelope:
+    return TaskEnvelope(
+        task_id=task_id,
+        operation=operation,
+        server=server,
+        vm_password=vm_password,
+        vms_full=vms_full,
+        vm_names=vm_names,
+        snapshot_name=snapshot_name,
+        rc=rc,
+        json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
+    )
 
 
-def _ensure_same_server(vms: List[VirtualMachine]) -> int:
-    """Убедиться, что все ВМ относятся к одному серверу, и вернуть его идентификатор."""
+# ---------- ХЕЛПЕРЫ ВАЛИДАЦИИ ----------
+
+async def _assert_single_server_for_vms(
+    db: AsyncSession,
+    *,
+    ids: Optional[List[int]] = None,
+    names: Optional[List[str]] = None,
+) -> List[VirtualMachine]:
+    """Достаёт ВМ по ids/names, убеждается, что не пусто и все на одном сервере."""
+    if not ids and not names:
+        raise HTTPException(status_code=400, detail="Provide ids or names")
+
+    clauses = []
+    if ids:   clauses.append(VirtualMachine.id.in_(ids))
+    if names: clauses.append(VirtualMachine.name.in_(names))
+
+    res = await db.execute(
+        select(VirtualMachine).where(clauses[0]) if len(clauses) == 1
+        else select(VirtualMachine).where((clauses[0]) | (clauses[1]))
+    )
+    vms = res.scalars().all()
     if not vms:
         raise HTTPException(status_code=404, detail="No VMs found")
+
     server_ids = {vm.server_id for vm in vms}
     if len(server_ids) != 1:
-        raise HTTPException(status_code=400, detail=f"Selected VMs belong to different servers: {sorted(server_ids)}")
-    return next(iter(server_ids))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Selected VMs belong to different servers: {sorted(server_ids)}"
+        )
+    return vms
 
 
-def _envelope(
-    *,
-    task_id: str,
-    operation: str,
-    server: Dict[str, Any],
-    new_password: str = settings.VM_PASS,    
-    vms_full: Optional[Dict[str, Dict[str, Any]]] = None,
-    vm_names: Optional[List[str]] = None,
-    snapshot_name: Optional[str] = None,
-    rc: Optional[str] = None,
-    box: Optional[str] = None,
-    kernel: Optional[str] = None
+async def _build_vms_full_for_create(
+    db: AsyncSession,
+    payload: BatchVMCreateRequest,
+) -> Dict[str, VMSpec]:
+    """
+    Проверяет пул IP (существование), границы диапазона,
+    уникальность имени/адреса и собирает vms_full.
+    """
+    ipr = await get_ip_range(db, payload.ip_range_id)
+    if not ipr:
+        raise HTTPException(status_code=404, detail=f"IP range id={payload.ip_range_id} not found")
 
-) -> Dict[str, Any]:
-    """Сформировать полезную нагрузку для очереди: операция, сервер, конфигурация ВМ, имена ВМ, RC/снимок/бокс."""
-    return {
-        "task_id": task_id,
-        "operation": operation,
-        "server": server,
-        "new_password": new_password,        
-        "vms_full": vms_full,
-        "vm_names": vm_names,
-        "snapshot_name": snapshot_name,
-        "rc": rc,
-        "box": box,
-        "kernel": kernel,
-        "json_remote_path": f"/opt/allta_vm/jobs/{task_id}.json",
-    }
+    start_ip, end_ip = get_range_bounds(ipr)
+
+    errors: List[str] = []
+    vms_full: Dict[str, VMSpec] = {}
+
+    for name, item in payload.vms.items():
+        ip_str = str(item.ip)
+
+        # 1) имя свободно
+        if not await is_name_free(db, name):
+            errors.append(f"name {name!r} already exists")
+            continue
+
+        # 2) IP в пуле
+        if not ip_in_range(ip_str, start_ip, end_ip):
+            errors.append(f"ip {ip_str} is outside of range {start_ip}..{end_ip}")
+            continue
+
+        # 3) IP свободен
+        if not await is_ip_free(db, ip_str):
+            errors.append(f"ip {ip_str} is already in use")
+            continue
+
+        vms_full[name] = VMSpec(
+            cpu=item.cpu,
+            ram=item.ram,
+            ip_bridge=ip_str,
+            server_id=payload.server_id,
+        )
+
+    if errors:
+        raise HTTPException(status_code=400, detail={"skipped": errors})
+
+    return vms_full
 
 
-async def _create_vms_now(db: AsyncSession, items: List[VMCreate]) -> List[VirtualMachine]:
-    """Создать набор ВМ в базе и вернуть ORM‑объекты с присвоенными id."""
-    created: List[VirtualMachine] = []
-    for payload in items:
-        try:
-            vm = await create_vm(db, payload)
-            created.append(vm)
-        except ValueError as e:
-            msg = str(e)
-            if "unique" in msg.lower() or "duplicate" in msg.lower():
-                raise HTTPException(status_code=409, detail=f"Duplicate while creating VM {payload.name!r}: {msg}")
-            raise HTTPException(status_code=400, detail=f"Failed to create VM {payload.name!r}: {msg}")
-    return created
-
-
-@router.post("/create", status_code=status.HTTP_202_ACCEPTED,)
+# ---------- CREATE ----------
+@router.post("/create", status_code=status.HTTP_202_ACCEPTED,
+             summary="Создать набор ВМ (ставит задачу в Redis; БД заполняет воркер)")
 async def create(
     payload: BatchVMCreateRequest,
     db: AsyncSession = Depends(get_async_db),
     token: str = Depends(get_token),
-    user=Depends(get_current_user),
+    _user=Depends(get_current_user),
 ):
-    """
-    Создать набор ВМ.
-
-    Доступ: авторизованные пользователи.
-    Валидация: проверяется готовность сервера, принадлежность IP диапазону, уникальность имён и IP.
-    Побочные эффекты: записи ВМ сохраняются в БД; в очередь отправляется задача `vm.create` с полной конфигурацией,
-    дополнительно регистрируются записи снимков в БД.
-    Ответ: идентификатор задачи.
-    Коды ошибок: 400, 404, 409.
-    """
+    # сервер готов
     ok, reason, _ = await ensure_server_ready_for_vms_hub(payload.server_id, token)
     if not ok:
         if reason and "not found" in reason:
             raise HTTPException(status_code=404, detail=reason)
         raise HTTPException(status_code=400, detail=reason or "server not ready for vms hub")
 
-    ipr = await get_ip_range(db, payload.ip_range_id)
-    if not ipr:
-        raise HTTPException(status_code=404, detail=f"IP range id={payload.ip_range_id} not found")
-    start_ip, end_ip = get_range_bounds(ipr)
+    # пул и занятость IP — проверяем и собираем vms_full
+    vms_full = await _build_vms_full_for_create(db, payload)
 
-    errs: List[BatchVMCreateError] = []
-    to_create_payloads: List[VMCreate] = []
-    for name, item in payload.vms.items():
-        ip_str = str(item.ip)
-        if not await is_name_free(db, name):
-            errs.append(BatchVMCreateError(name=name, reason="name already exists"))
-            continue
-        if not ip_in_range(ip_str, start_ip, end_ip):
-            errs.append(BatchVMCreateError(name=name, reason=f"ip {ip_str} is outside of range {start_ip}..{end_ip}"))
-            continue
-        if not await is_ip_free(db, ip_str):
-            errs.append(BatchVMCreateError(name=name, reason=f"ip {ip_str} is already in use"))
-            continue
-
-        to_create_payloads.append(
-            VMCreate(
-                name=name,
-                cpu=item.cpu,
-                ram=item.ram,
-                ip_address=ip_str,
-                server_id=payload.server_id,
-            )
-        )
-
-    if errs:
-        raise HTTPException(status_code=400, detail={"skipped": [e.model_dump() for e in errs]})
-
-    created_vms = await _create_vms_now(db, to_create_payloads)
-
+    # информация о сервере (для воркера)
     srv = await get_physical_server_from_remote(payload.server_id, token)
+
     task_id = _uuid_task()
-    vms_full = {
-        vm.name: {
-            "cpu": vm.cpu,
-            "ram": vm.ram,
-            "host-port": "22",
-            "ip_bridge": str(vm.ip_address),
-        }
-        for vm in created_vms
-    }
-    box = "vm_station"
-    env = _envelope(
+    env = _env(
         task_id=task_id,
-        operation="vm.create",
-        server=_server_task_info_from_api(srv),
+        operation=TaskOperation.vm_create,
+        server=_server_task_info_from_api(srv, payload.server_id),
         vms_full=vms_full,
-        box=box,
+        vm_password=payload.password,
     )
-    await enqueue_task(env)
-
-    if box:
-        snapshots_to_create: List[str] = []
-        if box == "vm_station":
-            snapshots_to_create = ["1.8.1.6", "1.7.5.9"]
-        elif box == "vm_station1.7" or str(box).startswith("1.7"):
-            snapshots_to_create = ["1.7.5.9"]
-        elif box == "vm_station1.8" or str(box).startswith("1.8"):
-            snapshots_to_create = ["1.8.1.6"]
-        for vm in created_vms:
-            for snap_name in snapshots_to_create:
-                try:
-                    await create_snapshot(db, vm_id=vm.id, name=snap_name)
-                except SnapshotAlreadyExists:
-                    pass
-    else:
-        for vm in created_vms:
-            for snap_name in DEFAULT_SNAPSHOTS:
-                try:
-                    await create_snapshot(db, vm_id=vm.id, name=snap_name)
-                except SnapshotAlreadyExists:
-                    pass
-
+    await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
 
 
-@router.post(
-    "/create-default-vms/{server_id}",
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Создать предзаданные ВМ на сервере (admin only)",
-    dependencies=[Depends(get_current_admin_user)],
-)
+# ---------- CREATE DEFAULT ----------
+@router.post("/create-default-vms/{server_id}", status_code=status.HTTP_202_ACCEPTED,
+             summary="Создать набор базовых ВМ (ставит задачу в Redis; БД заполняет воркер)",
+             dependencies=[Depends(get_current_admin_user)])
 async def create_default_vms(
     server_id: int,
-    db: AsyncSession = Depends(get_async_db),
+    body: CreateDefaultVMsRequest,
     token: str = Depends(get_token),
-    user=Depends(get_current_user),
+    _user=Depends(get_current_user),
 ):
-    """
-    Создать предзаданный набор ВМ на указанном сервере.
-
-    Доступ: только администраторы.
-    Побочные эффекты: записи ВМ сохраняются в БД; в очередь отправляется задача `vm.base_create`;
-    для каждой ВМ создаются записи двух дефолтных снимков.
-    Ответ: идентификатор задачи.
-    Коды ошибок: 400, 404, 409.
-    """
-    ok, reason, _ = await ensure_server_ready_for_vms_hub(server_id, token)
-    if not ok:
-        if reason and "not found" in reason:
-            raise HTTPException(status_code=404, detail=reason)
-        raise HTTPException(status_code=400, detail=reason or "server not ready for vms hub")
-
-    errs: List[BatchVMCreateError] = []
-    to_create_payloads: List[VMCreate] = []
-    for name, cfg in PRESET_VMS.items():
-        ip = str(cfg["ip"])
-        cpu = int(cfg["cpu"]) if isinstance(cfg["cpu"], str) else cfg["cpu"]
-        ram = int(cfg["ram"]) if isinstance(cfg["ram"], str) else cfg["ram"]
-        if not await is_name_free(db, name):
-            errs.append(BatchVMCreateError(name=name, reason="name already exists"))
-            continue
-        if not await is_ip_free(db, ip):
-            errs.append(BatchVMCreateError(name=name, reason=f"ip {ip} is already in use"))
-            continue
-        to_create_payloads.append(VMCreate(name=name, cpu=cpu, ram=ram, ip_address=ip, server_id=server_id))
-
-    if errs:
-        raise HTTPException(status_code=400, detail={"skipped": [e.model_dump() for e in errs]})
-
-    created_vms = await _create_vms_now(db, to_create_payloads)
-
     srv = await get_physical_server_from_remote(server_id, token)
-    task_id = _uuid_task()
-    vms_full = {
-        vm.name: {
-            "cpu": vm.cpu,
-            "ram": vm.ram,
-            "host-port": "22",
-            "ip_bridge": str(vm.ip_address),
-        }
-        for vm in created_vms
+
+    vms_full: Dict[str, VMSpec] = {
+        name: VMSpec(cpu=int(cfg["cpu"]), ram=int(cfg["ram"]),
+                     ip_bridge=str(cfg["ip"]), server_id=server_id)
+        for name, cfg in PRESET_VMS.items()
     }
-    env = _envelope(
+
+    task_id = _uuid_task()
+    env = _env(
         task_id=task_id,
-        operation="vm.base_create",
-        server=_server_task_info_from_api(srv),
+        operation=TaskOperation.vm_base_create,
+        server=_server_task_info_from_api(srv, server_id),
         vms_full=vms_full,
+        vm_password=body.password,
     )
-    await enqueue_task(env)
-
-    for vm in created_vms:
-        for snap_name in DEFAULT_SNAPSHOTS:
-            try:
-                await create_snapshot(db, vm_id=vm.id, name=snap_name)
-            except SnapshotAlreadyExists:
-                pass
-
+    await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
 
 
-@router.get("/{vm_id}", response_model=VMRead)
-async def get_vm_by_id(
-    vm_id: int,
-    db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
-):
-    """
-    Получить информацию о ВМ по её идентификатору.
-
-    Доступ: авторизованные пользователи.
-    Параметры: vm_id — идентификатор ВМ.
-    Ответ: объект VMRead.
-    Коды ошибок: 404.
-    """
+# ---------- READ ----------
+@router.get("/{vm_id}", response_model=VMRead,
+            summary="Получить ВМ по id (пароль расшифрован, если сохранён)")
+async def get_vm_by_id(vm_id: int,
+                       db: AsyncSession = Depends(get_async_db),
+                       _user=Depends(get_current_user)):
     res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
     vm = res.scalar_one_or_none()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
-    return vm
 
+    password = None
+    if getattr(vm, "password_enc", None):
+        try:
+            password = Crypto.decrypt(vm.password_enc)
+        except Exception:
+            password = None
 
-@router.get("/", response_model=List[VMRead])
-async def list_vms(
-    db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, gt=0, le=1000),
-):
-    """
-    Список ВМ с пагинацией.
-
-    Доступ: авторизованные пользователи.
-    Параметры: skip, limit.
-    Ответ: массив VMRead.
-    """
-    res = await db.execute(select(VirtualMachine).offset(skip).limit(limit))
-    return res.scalars().all()
-
-
-@router.delete("/", status_code=status.HTTP_202_ACCEPTED)
-async def delete_vms(
-    payload: VMDeleteRequest,
-    db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
-    token: str = Depends(get_token),
-):
-    """
-    Удалить одну или несколько ВМ по id или имени.
-
-    Доступ: авторизованные пользователи с правом на конкретные ВМ; базовые ВМ — только админ.
-    Поведение: ставится задача `vm.delete`; после постановки записи ВМ и их снимков удаляются из БД.
-    Ответ: идентификатор задачи.
-    Коды ошибок: 400, 403, 404.
-    """
-    ids = payload.ids or []
-    names = payload.names or []
-    if not ids and not names:
-        raise HTTPException(status_code=400, detail="Provide ids or names")
-
-    clauses = []
-    if ids:
-        clauses.append(VirtualMachine.id.in_(ids))
-    if names:
-        clauses.append(VirtualMachine.name.in_(names))
-    res = await db.execute(
-        select(VirtualMachine).where(clauses[0]) if len(clauses) == 1
-        else select(VirtualMachine).where((clauses[0]) | (clauses[1]))
+    return VMRead(
+        id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
+        ip_address=str(vm.ip_address), server_id=vm.server_id,
+        status=vm.status, password=password,
     )
-    vms = res.scalars().all()
-    if not vms:
-        raise HTTPException(status_code=404, detail="No VMs found")
 
-    server_id = _ensure_same_server(vms)
+
+@router.get("/", response_model=List[VMRead],
+            summary="Список ВМ (пароли расшифрованы, если сохранены)")
+async def list_vms(db: AsyncSession = Depends(get_async_db),
+                   _user=Depends(get_current_user),
+                   skip: int = Query(0, ge=0),
+                   limit: int = Query(100, gt=0, le=1000)):
+    res = await db.execute(select(VirtualMachine).offset(skip).limit(limit))
+    rows = res.scalars().all()
+    out: List[VMRead] = []
+    for vm in rows:
+        pwd = None
+        if getattr(vm, "password_enc", None):
+            try:
+                pwd = Crypto.decrypt(vm.password_enc)
+            except Exception:
+                pwd = None
+        out.append(VMRead(
+            id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
+            ip_address=str(vm.ip_address), server_id=vm.server_id,
+            status=vm.status, password=pwd,
+        ))
+    return out
+
+
+# ---------- DELETE ----------
+@router.delete("/", status_code=status.HTTP_202_ACCEPTED,
+               summary="Удалить ВМ (ставит задачу; БД очищает воркер)")
+async def delete_vms(payload: VMDeleteRequest,
+                     db: AsyncSession = Depends(get_async_db),
+                     _user=Depends(get_current_user),
+                     token: str = Depends(get_token)):
+    vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
+    server_id = vms[0].server_id
     srv = await get_physical_server_from_remote(server_id, token)
 
-    denied: List[ItemOpError] = []
-    vm_names: List[str] = []
-    for vm in vms:
-        ok, reason = _can_modify_vm(vm, user.login, getattr(user, "is_admin", False))
-        if ok:
-            vm_names.append(vm.name)
-        else:
-            denied.append(ItemOpError(key=str(vm.id), reason=reason or "forbidden"))
-    if denied:
-        raise HTTPException(status_code=403, detail={"denied": [e.model_dump() for e in denied]})
-
     task_id = _uuid_task()
-    env = _envelope(
+    env = _env(
         task_id=task_id,
-        operation="vm.delete",
-        server=_server_task_info_from_api(srv),
-        vm_names=vm_names,
+        operation=TaskOperation.vm_delete,
+        server=_server_task_info_from_api(srv, server_id),
+        vm_names=[vm.name for vm in vms],
     )
-    await enqueue_task(env)
-
-    for vm in vms:
-        snaps, _ = await list_snapshots(db, vm_id=vm.id)
-        for snap in snaps:
-            await delete_snapshot(db, snapshot_id=snap.id)
-        await delete_vm(db, vm_id=vm.id)
-
+    await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
 
 
-@router.patch("/update", status_code=status.HTTP_202_ACCEPTED)
-async def batch_update_vms(
-    payload: BatchVMUpdateRequest,
-    db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
-    token: str = Depends(get_token),
-):
-    """
-    Массово обновить параметры ВМ (cpu/ram) по именам.
-
-    Доступ: авторизованные пользователи с правом на конкретные ВМ; базовые ВМ — только админ.
-    Поведение: изменения сразу записываются в БД; дополнительно ставится задача `vm.update` с патчами.
-    Ответ: идентификатор задачи.
-    Коды ошибок: 400, 403, 404, 409.
-    """
+# ---------- UPDATE (ресурсы) ----------
+@router.patch("/update", status_code=status.HTTP_202_ACCEPTED,
+              summary="Обновить ресурсы ВМ (ставит задачу; БД обновляет воркер)")
+async def batch_update_vms(payload: BatchVMUpdateRequest,
+                           db: AsyncSession = Depends(get_async_db),
+                           _user=Depends(get_current_user),
+                           token: str = Depends(get_token)):
     if not payload.vms:
         raise HTTPException(status_code=400, detail="Empty payload")
 
-    names = list(payload.vms.keys())
-    res = await db.execute(select(VirtualMachine).where(VirtualMachine.name.in_(names)))
-    vms = res.scalars().all()
-    if not vms:
-        raise HTTPException(status_code=404, detail="No VMs found")
-
-    found_names = {vm.name for vm in vms}
-    missing = [nm for nm in names if nm not in found_names]
-    if missing:
-        raise HTTPException(status_code=404, detail={"missing_names": missing})
-
-    server_id = _ensure_same_server(vms)
+    # берём существующие ВМ по именам и валидируем единый сервер
+    vms = await _assert_single_server_for_vms(db, names=list(payload.vms.keys()))
+    server_id = vms[0].server_id
     srv = await get_physical_server_from_remote(server_id, token)
 
-    denied = []
-    for vm in vms:
-        ok, reason = _can_modify_vm(vm, user.login, getattr(user, "is_admin", False))
-        if not ok:
-            denied.append({"name": vm.name, "reason": reason or "forbidden"})
-    if denied:
-        raise HTTPException(status_code=403, detail={"denied": denied})
-
-    vms_full: Dict[str, Dict[str, int]] = {}
-    for vm in vms:
-        cfg = payload.vms.get(vm.name)
-        patch_data: Dict[str, int] = {}
-        if cfg and getattr(cfg, "cpu", None) is not None:
-            patch_data["cpu"] = cfg.cpu
-        if cfg and getattr(cfg, "ram", None) is not None:
-            patch_data["ram"] = cfg.ram
-
-        if patch_data:
-            try:
-                await update_vm(db, vm.id, VMUpdate(**patch_data))
-            except ValueError as e:
-                msg = str(e)
-                if "unique" in msg.lower() or "duplicate" in msg.lower():
-                    raise HTTPException(status_code=409, detail=msg)
-                raise HTTPException(status_code=400, detail=msg)
-            vms_full[vm.name] = patch_data
-
-    if not vms_full:
-        raise HTTPException(status_code=400, detail="Nothing to update")
+    # собираем единообразный vms_full (только изменённые поля подставляем, остальные – из БД)
+    current_by_name = {vm.name: vm for vm in vms}
+    vms_full: Dict[str, VMSpec] = {}
+    for name, patch in payload.vms.items():
+        vm = current_by_name[name]
+        cpu = patch.cpu if patch.cpu is not None else vm.cpu
+        ram = patch.ram if patch.ram is not None else vm.ram
+        vms_full[name] = VMSpec(cpu=cpu, ram=ram,
+                                ip_bridge=str(vm.ip_address), server_id=vm.server_id)
 
     task_id = _uuid_task()
-    env = _envelope(
+    env = _env(
         task_id=task_id,
-        operation="vm.update",
-        server=_server_task_info_from_api(srv),
+        operation=TaskOperation.vm_update,
+        server=_server_task_info_from_api(srv, server_id),
         vms_full=vms_full,
     )
-    await enqueue_task(env)
+    await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
 
 
-@router.post("/start", status_code=status.HTTP_202_ACCEPTED)
-async def power_start_vms(
-    payload: VMDeleteRequest,
-    db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
-    token: str = Depends(get_token),
-):
-    """
-    Включить одну или несколько ВМ по id или имени.
-
-    Доступ: авторизованные пользователи с правом на конкретные ВМ; базовые ВМ — только админ.
-    Поведение: ставится задача `vm.start`.
-    Ответ: идентификатор задачи.
-    Коды ошибок: 400, 403, 404.
-    """
-    ids = payload.ids or []
-    names = payload.names or []
-    if not ids and not names:
-        raise HTTPException(status_code=400, detail="Provide ids or names")
-
-    clauses = []
-    if ids:
-        clauses.append(VirtualMachine.id.in_(ids))
-    if names:
-        clauses.append(VirtualMachine.name.in_(names))
-    res = await db.execute(
-        select(VirtualMachine).where(clauses[0]) if len(clauses) == 1
-        else select(VirtualMachine).where((clauses[0]) | (clauses[1]))
-    )
-    vms = res.scalars().all()
-    if not vms:
-        raise HTTPException(status_code=404, detail="No VMs found")
-
-    server_id = _ensure_same_server(vms)
+# ---------- POWER START ----------
+@router.post("/start", status_code=status.HTTP_202_ACCEPTED, summary="Старт ВМ (ставит задачу)")
+async def power_start_vms(payload: VMDeleteRequest,
+                          db: AsyncSession = Depends(get_async_db),
+                          _user=Depends(get_current_user),
+                          token: str = Depends(get_token)):
+    vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
+    server_id = vms[0].server_id
     srv = await get_physical_server_from_remote(server_id, token)
 
-    denied = []
-    vm_names: List[str] = []
-    for vm in vms:
-        ok, reason = _can_modify_vm(vm, user.login, getattr(user, "is_admin", False))
-        if ok:
-            vm_names.append(vm.name)
-        else:
-            denied.append({"id": vm.id, "name": vm.name, "reason": reason or "forbidden"})
-    if denied:
-        raise HTTPException(status_code=403, detail={"denied": denied})
-
     task_id = _uuid_task()
-    env = _envelope(
+    env = _env(
         task_id=task_id,
-        operation="vm.start",
-        server=_server_task_info_from_api(srv),
-        vm_names=vm_names,
+        operation=TaskOperation.vm_start,
+        server=_server_task_info_from_api(srv, server_id),
+        vm_names=[vm.name for vm in vms],
     )
-    await enqueue_task(env)
+    await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
 
 
-@router.post("/stop", status_code=status.HTTP_202_ACCEPTED)
-async def power_stop_vms(
-    payload: VMDeleteRequest,
-    db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
-    token: str = Depends(get_token),
-):
-    """
-    Выключить одну или несколько ВМ по id или имени.
-
-    Доступ: авторизованные пользователи с правом на конкретные ВМ; базовые ВМ — только админ.
-    Поведение: ставится задача `vm.stop`.
-    Ответ: идентификатор задачи.
-    Коды ошибок: 400, 403, 404.
-    """
-    ids = payload.ids or []
-    names = payload.names or []
-    if not ids and not names:
-        raise HTTPException(status_code=400, detail="Provide ids or names")
-
-    clauses = []
-    if ids:
-        clauses.append(VirtualMachine.id.in_(ids))
-    if names:
-        clauses.append(VirtualMachine.name.in_(names))
-    res = await db.execute(
-        select(VirtualMachine).where(clauses[0]) if len(clauses) == 1
-        else select(VirtualMachine).where((clauses[0]) | (clauses[1]))
-    )
-    vms = res.scalars().all()
-    if not vms:
-        raise HTTPException(status_code=404, detail="No VMs found")
-
-    server_id = _ensure_same_server(vms)
+# ---------- POWER STOP ----------
+@router.post("/stop", status_code=status.HTTP_202_ACCEPTED, summary="Стоп ВМ (ставит задачу)")
+async def power_stop_vms(payload: VMDeleteRequest,
+                         db: AsyncSession = Depends(get_async_db),
+                         _user=Depends(get_current_user),
+                         token: str = Depends(get_token)):
+    vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
+    server_id = vms[0].server_id
     srv = await get_physical_server_from_remote(server_id, token)
 
-    denied = []
-    vm_names: List[str] = []
-    for vm in vms:
-        ok, reason = _can_modify_vm(vm, user.login, getattr(user, "is_admin", False))
-        if ok:
-            vm_names.append(vm.name)
-        else:
-            denied.append({"id": vm.id, "name": vm.name, "reason": reason or "forbidden"})
-    if denied:
-        raise HTTPException(status_code=403, detail={"denied": denied})
-
     task_id = _uuid_task()
-    env = _envelope(
+    env = _env(
         task_id=task_id,
-        operation="vm.stop",
-        server=_server_task_info_from_api(srv),
-        vm_names=vm_names,
+        operation=TaskOperation.vm_stop,
+        server=_server_task_info_from_api(srv, server_id),
+        vm_names=[vm.name for vm in vms],
     )
-    await enqueue_task(env)
+    await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
 
 
-@router.post("/astra-update", status_code=status.HTTP_202_ACCEPTED)
-async def astra_update(
-    payload: AstraUpdateRequest,
-    db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
-    token: str = Depends(get_token),
-):
-    """
-    Обновить Astra Linux на выбранных ВМ под указанный RC.
-
-    Доступ: авторизованные пользователи с правом на конкретные ВМ; базовые ВМ — только админ.
-    Валидация: `rc` обязателен и проверяется по списку доступных версий с удалённого сервера;
-    все ВМ должны принадлежать одному серверу.
-    Поведение: в очередь отправляется задача `vm.astra_update` c `vm_names`, `vms_full`, `rc` и `snapshot_name=rc`;
-    после постановки задачи в БД регистрируется снимок с именем `rc` для каждой ВМ (если не существует).
-    Ответ: идентификатор задачи и краткая сводка по созданным/пропущенным снимкам.
-    Коды ошибок: 400, 403, 404, 500.
-    """
-    if not getattr(payload, "rc", None):
-        raise HTTPException(status_code=400, detail="Field 'rc' is required")
-
+# ---------- ASTRA UPDATE ----------
+@router.post("/astra-update", status_code=status.HTTP_202_ACCEPTED,
+             summary="Обновление Astra Linux (ставит задачу)")
+async def astra_update(payload: AstraUpdateRequest,
+                       db: AsyncSession = Depends(get_async_db),
+                       _user=Depends(get_current_user),
+                       token: str = Depends(get_token)):
+    # валидируем RC по внешнему API
     versions = await get_os_versions(token)
     allowed_rcs = {item["name"] for item in versions}
     if payload.rc not in allowed_rcs:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid RC '{payload.rc}'. Allowed RCs: {sorted(allowed_rcs)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid RC '{payload.rc}'. Allowed RCs: {sorted(allowed_rcs)}")
 
-    if payload.ids:
-        res = await db.execute(
-            select(VirtualMachine).where(VirtualMachine.id.in_(payload.ids))
-        )
-        vms = res.scalars().all()
-        found_ids = {vm.id for vm in vms}
-        missing = [vid for vid in payload.ids if vid not in found_ids]
-        if missing:
-            raise HTTPException(status_code=404, detail=f"VM ids not found: {missing}")
-    else:
-        res = await db.execute(
-            select(VirtualMachine).where(VirtualMachine.name.in_(payload.names))
-        )
-        vms = res.scalars().all()
-        found_names = {vm.name for vm in vms}
-        missing = [nm for nm in payload.names if nm not in found_names]
-        if missing:
-            raise HTTPException(status_code=404, detail=f"VM names not found: {missing}")
-
-    if not vms:
-        raise HTTPException(status_code=404, detail="No VMs selected")
-
-    server_id = _ensure_same_server(vms)
-
-    for vm in vms:
-        ok, reason = _can_modify_vm(vm, user.login, getattr(user, "is_admin", False))
-        if not ok:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Forbidden for VM id={vm.id}: {reason or 'forbidden'}"
-            )
-
+    # валидируем что все ВМ на одном сервере
+    vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
+    server_id = vms[0].server_id
     srv = await get_physical_server_from_remote(server_id, token)
 
     vm_names = [vm.name for vm in vms]
-    vms_full: Dict[str, Dict[str, object]] = {
-        vm.name: {
-            "cpu": vm.cpu,
-            "ram": vm.ram,
-            "host-port": "22",
-            "ip_bridge": str(vm.ip_address),
-        }
+    vms_full: Dict[str, VMSpec] = {
+        vm.name: VMSpec(cpu=vm.cpu, ram=vm.ram, ip_bridge=str(vm.ip_address), server_id=vm.server_id)
         for vm in vms
     }
 
     task_id = _uuid_task()
-    env = _envelope(
+    env = _env(
         task_id=task_id,
-        operation="vm.astra_update",
-        server=_server_task_info_from_api(srv),
+        operation=TaskOperation.vm_astra_update,
+        server=_server_task_info_from_api(srv, server_id),
         vms_full=vms_full,
         vm_names=vm_names,
         rc=payload.rc,
         snapshot_name=payload.rc,
     )
-    await enqueue_task(env)
+    await enqueue_task(env.model_dump(mode="json"))
+    return {"task_id": task_id}
 
-    skipped: list[int] = []
-    created: list[int] = []
-    for vm in vms:
+
+# ---------- STATUS ----------
+@router.patch("/{vm_id}/status", response_model=VMRead,
+              summary="Установить статус ВМ (fixed или логин).")
+async def set_vm_status(vm_id: int, data: VMStatusUpdate,
+                        db: AsyncSession = Depends(get_async_db),
+                        user=Depends(get_current_user)):
+    res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
+    vm = res.scalar_one_or_none()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+
+    new_status = normalize_status(data.status)
+    if not getattr(user, "is_admin", False):
+        if new_status not in ("free", user.login):
+            raise HTTPException(status_code=403, detail="Not allowed to set this status")
+
+    vm.status = new_status
+    await db.commit()
+    await db.refresh(vm)
+
+    pwd = None
+    if getattr(vm, "password_enc", None):
         try:
-            snap = await create_snapshot(db, vm_id=vm.id, name=payload.rc)
-            created.append(snap.id)
-        except SnapshotAlreadyExists:
-            skipped.append(vm.id)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to register snapshot in DB for VM id={vm.id}: {e}")
+            pwd = Crypto.decrypt(vm.password_enc)
+        except Exception:
+            pwd = None
 
-    return {
-        "task_id": task_id,
-        "snapshots": {
-            "created_count": len(created),
-            "skipped_existing": skipped,
-        },
-    }
+    return VMRead(
+        id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
+        ip_address=str(vm.ip_address), server_id=vm.server_id,
+        status=vm.status, password=pwd,
+    )
 
-# TODO Добавить ендпоинт для массовой смены пароля при обновлении (продумать логику со снимаками)
+
+@router.post("/{vm_id}/release", response_model=VMRead,
+             summary="Сбросить статус ВМ в 'free'.")
+async def release_vm_status(vm_id: int,
+                            db: AsyncSession = Depends(get_async_db),
+                            user=Depends(get_current_user)):
+    res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
+    vm = res.scalar_one_or_none()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+
+    curr = (vm.status or "").strip()
+    if curr != "free":
+        if curr in {"run test", "debug test"} and not getattr(user, "is_admin", False):
+            raise HTTPException(status_code=403, detail="Admin required to release fixed status")
+        if curr not in {"run test", "debug test"} and curr != user.login and not getattr(user, "is_admin", False):
+            raise HTTPException(status_code=403, detail="Cannot release status held by another user")
+        vm.status = "free"
+
+    await db.commit()
+    await db.refresh(vm)
+
+    pwd = None
+    if getattr(vm, "password_enc", None):
+        try:
+            pwd = Crypto.decrypt(vm.password_enc)
+        except Exception:
+            pwd = None
+
+    return VMRead(
+        id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
+        ip_address=str(vm.ip_address), server_id=vm.server_id,
+        status=vm.status, password=pwd,
+    )

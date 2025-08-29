@@ -18,7 +18,6 @@ class Vm:
           4) storage pool 'default' активен (если используешь другой — замени)
         Всё захардкожено, без параметров.
         """
-        # 1) бинарники
         required_bins = [
             "virsh",
             "virt-install",
@@ -130,6 +129,7 @@ class Vm:
 
     def create(info_path, box: str = "vm_station", rc: str = None, kernel: str = None, new_password: str = "1"):
         try:
+            SystemCommands.cmd_with_returncode("sudo systemctl enable --now libvirtd")
             rc_env = Vm._precheck_libvirt_env()
             if rc_env != ExitCodes.OK:
                 return rc_env
@@ -191,7 +191,7 @@ class Vm:
                     }
                 Libvirt.execute(commands=prepare, vms_dates=new_vms_dates, vms_groups=group, username='u', password='1')
 
-                sleep(20)
+                sleep(90)
                 for vm in vms_list:
                     rc_net = SystemCommands.cmd_with_returncode(f"/opt/allta_vm/vm/network.sh {vm}")
                     if rc_net != 0:
@@ -200,7 +200,7 @@ class Vm:
 
                 LibvirtManager.Snapshot.delete(vms=vms_list, snapshot_name=f"{rc_ver}_build")
                 LibvirtManager.Snapshot.create(vms=vms_list, snapshot_name=f"{rc_ver}_build")
-
+                sleep(90)
                 Vm._change_pass(new_password=new_password, vms_dates=vms_dates)
                 LibvirtManager.Snapshot.create(vms=vms_list, snapshot_name=rc_ver)
 
@@ -229,7 +229,7 @@ class Vm:
             for vm in vms:
                 SystemCommands.cmd_with_returncode(f"sudo virsh -c qemu:///system destroy --domain '{vm}' >/dev/null 2>&1")
                 rc_undef = SystemCommands.cmd_with_returncode(
-                    f"sudo virsh -c qemu:///system undefine --remove-all-storage --delete-storage-volume-snapshots --domain '{vm}'"
+                    f"sudo virsh -c qemu:///system undefine --remove-all-storage --domain '{vm}'"
                 )
                 if rc_undef != 0:
                     print(f"[ERROR] Не удалось удалить '{vm}', rc={rc_undef}")

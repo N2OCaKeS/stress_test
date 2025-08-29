@@ -15,7 +15,7 @@ from app.utils.config import settings
 
 router = APIRouter(
     prefix="/users/{user_id}/tokens",
-    tags=["API tokens"],
+    tags=["API key"],
 )
 
 

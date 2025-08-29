@@ -3,7 +3,7 @@ import os
 from sqlalchemy_utils import database_exists, create_database
 from alembic.config import Config as AlembicConfig
 from alembic import command
-
+from cryptography.fernet import Fernet
 from app.utils.config import settings
 
 # ========== gunicorn ==========
@@ -29,3 +29,9 @@ def on_starting(server):
     alembic_cfg = AlembicConfig(os.path.join(here, "alembic.ini"))
     alembic_cfg.set_main_option("sqlalchemy.url", db_url)
     command.upgrade(alembic_cfg, "head")
+
+    KEY_FILE = settings.KEY_FILE_PATH
+    if not os.path.exists(KEY_FILE):
+        key = Fernet.generate_key()
+        with open(KEY_FILE, "wb") as key_file:
+            key_file.write(key)

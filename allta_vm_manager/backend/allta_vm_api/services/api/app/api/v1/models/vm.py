@@ -1,24 +1,22 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
-
+from sqlalchemy.dialects.postgresql import INET
 from app.db.base import Base
 
 
 class VirtualMachine(Base):
-    __tablename__ = "virtual_machines"
+    __tablename__ = "vm"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True)    
     name = Column(String(128), unique=True, nullable=False, index=True)
     cpu = Column(Integer, nullable=False)
     ram = Column(Integer, nullable=False)
-    ip_address = Column(String(64), unique=True, nullable=False, index=True)
-
-    server_id = Column(Integer, ForeignKey("physical_servers.id"), nullable=False, index=True)
+    ip_address = Column(INET, nullable=False)
+    status = Column(String(50), nullable=False, default="free")
+    server_id = Column(Integer, nullable=False, index=True)
     status = Column(String(64), nullable=True, index=True)
+    password_enc = Column(String, nullable=True)
 
-
-    password_enc = Column(String(1024), nullable=True)
-
-    server = relationship("PhysicalServer", back_populates="vms")
+    snapshots = relationship("VMSnapshot", back_populates="vm", cascade="all, delete-orphan")

@@ -10,7 +10,6 @@ class SnapExit:
 
 
 class Snapshot:
-    # ---------- helpers ----------
     @staticmethod
     def _list(vm: str) -> list[str]:
         """

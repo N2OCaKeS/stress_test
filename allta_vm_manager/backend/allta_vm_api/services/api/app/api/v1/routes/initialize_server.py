@@ -14,7 +14,7 @@ from app.utils.server_api import (
 )
 from app.utils.redis_queue import enqueue_task
 from app.api.v1.schemas.task_payload import TaskEnvelope, ServerTaskInfo
-from app.api.v1.crud.vm import get_vms, delete_vm
+from app.api.v1.crud.vm_read import get_vms
 from app.db.session import get_async_db
 from app.api.v1.crud.vm_snapshot import list_snapshots, delete_snapshot
 

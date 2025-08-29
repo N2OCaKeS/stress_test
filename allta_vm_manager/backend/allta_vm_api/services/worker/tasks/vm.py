@@ -10,7 +10,7 @@ def task_vm_create(self, envelope: dict) -> dict:
     server   = envelope.get("server") or {}
     vms_full = envelope.get("vms_full") or {}
     json_remote_path = envelope.get("json_remote_path") or {}    
-    box      = "vm_station"
+    box = "vm_station"
     rc = "1.7.5.9"
 
     ssh = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])

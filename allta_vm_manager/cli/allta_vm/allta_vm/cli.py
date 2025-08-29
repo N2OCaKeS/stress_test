@@ -82,7 +82,7 @@ def init(phy_if, ip):
     default='1',
     help="Пароль который будет установлен на ВМ после сборки",
 )
-def vm_create(info_path: str, rc: str, box: str | None, kernel: str | None, new, new_password: str):
+def vm_create(info_path: str, rc: str, box: str | None, kernel: str | None, new_password: str):
     """Создание ВМ по конфигу.""" 
     if not box:
             box = "vm_station"    
@@ -94,7 +94,7 @@ def vm_create(info_path: str, rc: str, box: str | None, kernel: str | None, new,
             sys.exit(1)
 
     try:
-        Vm.create(info_path=info_path, box=box, rc=rc, kernel=kernel)
+        Vm.create(info_path=info_path, box=box, rc=rc, kernel=kernel, new_password=new_password)
     except Exception as e:
         click.echo(f"[!] Ошибка создания ВМ: {e}", err=True)
         sys.exit(1)

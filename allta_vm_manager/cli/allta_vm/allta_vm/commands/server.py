@@ -1,5 +1,5 @@
 from allta import SystemCommands, Libvirt
-import json
+
 
 class Server():
 
@@ -53,7 +53,7 @@ EOF
         # commad = f"sudo systemctl restart networking"
         command = f"sudo ifdown {phy_if} || true && sudo ifdown {bridge} || true && sudo ifup {bridge}"
         SystemCommands.cmd_with_returncode(command + " & sudo systemctl restart networking")
-
+        SystemCommands.cmd_with_returncode("sudo systemctl enable --now libvirtd")
     def server_init(phy_if, ip):
         Server.__install_deps()
         Server.__net(phy_if=phy_if, ip=ip)

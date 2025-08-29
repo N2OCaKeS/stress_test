@@ -10,6 +10,6 @@ class Settings(BaseSettings):
     QUEUE_KEY: str = getenv("QUEUE_KEY", "tasks:vm")
     VMS_HUB_STATUS: str = "vms hub"
     VM_PASS: str = getenv("VM_PASS", "1")
-
+    KEY_FILE_PATH: str = "/data/secret.key"
     
 settings = Settings()

@@ -262,7 +262,11 @@ def update_kernel_block(part):
 
 @app.route('/dinamic_kernel_list', methods=['GET'])
 def dinamic_kernel_list(release):
-    return jsonify(get_kernels_from_rc(version_rc=release, get_list=True))
+    release_value = request.args.get('release')
+    
+    if not release_value:
+        return jsonify({"error": "Параметр 'release' отсутствует"}), 400
+    return jsonify(get_kernels_from_rc(version_rc=release_value, get_list=True))
 
 
 @app.route('/backup/<stand>/<version>')

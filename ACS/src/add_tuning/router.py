@@ -137,7 +137,7 @@ def install_kernels_api(version_name: str, stand = Depends(get_info_stand)):
 def set_new_pass(stand = Depends(get_info_stand)):
     new_pass = get_new_pass()
     us = "u"
-    com_set_new_pass = f"usermod -p $(openssl passwd -1 '{new_pass}') {us}"
+    com_set_new_pass = f"sudo usermod -p $(openssl passwd -1 '{new_pass}') {us}"
     remote_cmd(command=com_set_new_pass, host=stand[3], user=stand[4], passwd=stand[5])
 
 """

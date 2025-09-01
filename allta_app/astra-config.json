@@ -16,6 +16,7 @@
             "samdc",
             "samac",
             "samfs",
+            "clear",
             "all"
         ],
         "version": [
@@ -41,7 +42,10 @@
                     "1.8.2.o",
                     "1.8.2.UU.1.s",
                     "1.8.2.UU.1.v",
-                    "1.8.2.UU.1.o"
+                    "1.8.2.UU.1.o",
+                    "1.8.3.s",
+                    "1.8.3.v",
+                    "1.8.3.o"
                 ]
             },
             {
@@ -286,6 +290,14 @@
                     "10.0.20.103",
                     "5937"
                 ]
+            },
+            {
+                "clear": [
+                    "52:54:00:24:1F:71",
+                    "vagrant-libvirt",
+                    "127.0.1.1",
+                    "5938"
+                ]
             }
         ],
         "vbox_network": [
@@ -378,20 +390,32 @@
                     "2033",
                     "3443"
                 ]
+            },
+            {
+                "clear": [
+                    "2035",
+                    "3444"
+                ]
             }
         ],
         "vagrant_box": [
             {
-
-
+                "1.8.3.s": [
+                    "alse-gui-max/1.8.3.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-max1.8.3.json"
+                ]
             },
             {
-
-
+                "1.8.3.v": [
+                    "alse-gui-adv/1.8.3.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-adv1.8.3.json"
+                ]
             },
             {
-
-
+                "1.8.3.o": [
+                    "alse-gui-base/1.8.3.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-base1.8.3.json"
+                ]
             },
             {
                 "12.8-testing": [
@@ -401,20 +425,20 @@
             },
             {
                 "1.8-testing.s": [
-                    "alse-gui-max/1.8.2.uu1",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.2.uu1"
+                    "alse-gui-max/1.8.3.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-max1.8.3.json"
                 ]
             },
             {
                 "1.8-testing.v": [
-                    "alse-gui-adv/1.8.2.uu1",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.2.uu1"
+                    "alse-gui-adv/1.8.3.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-adv1.8.3.json"
                 ]
             },
             {
                 "1.8-testing.o": [
-                    "alse-gui-base/1.8.2.uu1",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.2.uu1"
+                    "alse-gui-base/1.8.3.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-base1.8.3.json"
                 ]
             },
             {

@@ -50,6 +50,9 @@
     "1.7.8.2": [
         "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.8/1.7.8.2/base-repository 1.7_x86-64 main contrib non-free"
     ],
+    "1.7.8.4": [
+        "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.8/1.7.8.4/base-repository 1.7_x86-64 main contrib non-free"
+    ],
     "1.8.0": [
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free",
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/extended-repository 1.8_x86-64 main contrib non-free",

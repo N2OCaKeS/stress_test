@@ -140,3 +140,7 @@ def astra_version_update(new_version: str, stand, *args, **kwargs):
     time.sleep(15)
     socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5])
     time.sleep(15)
+    new_pass = get_new_pass()
+    us = "u"
+    com_set_new_pass = f"usermod -p $(openssl passwd -1 '{new_pass}') {us}"
+    remote_cmd(command=com_set_new_pass, host=stand[3], user=stand[4], passwd=stand[5])

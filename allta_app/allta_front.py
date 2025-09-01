@@ -261,7 +261,7 @@ def update_kernel_block(part):
     
 
 @app.route('/dinamic_kernel_list', methods=['GET'])
-def dinamic_kernel_list(release):
+def dinamic_kernel_list():
     release_value = request.args.get('release')
     
     if not release_value:

@@ -1031,11 +1031,11 @@
                     </button>
                   </h2>
                   <div id="collapseKernelslist" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
-                    <div class="accordion-body" style="text-align: left;">
-                      {% for value in kernelslist %}
+                    <div class="accordion-body" style="text-align: left;" id="dinamic-kernels-containerlist">
+                      <!--{% for value in kernelslist %}
                         <input type="checkbox" id="{{ value }}" name="kernelslist" value="{{ value }}">
                         <label for="{{ value }}">{{ value }}</label><br>                        
-                      {% endfor %}
+                      {% endfor %}-->
                     </div>
                   </div>
                 </div>
@@ -1061,6 +1061,33 @@
             </form>
           </div>
         </div>
+
+        <script>
+          $(document).ready(function(){
+              $('input[name=releaseslist]').change(function(){
+                  var release_value = $(this).val();
+                  
+                  $.ajax({
+                      url: '/dinamic_kernel_list',
+                      type: 'GET',
+                      dataType: 'json',
+                      data: {
+                          release: release_value
+                      },
+                      success: function(data){
+                          $('#dinamic-kernels-containerlist').empty(); 
+                          
+                          data.forEach(function(kernel){
+                              $('#dinamic-kernels-containerlist').append(
+                                  '<input type="checkbox" id="' + kernel + '" name="kernelslist" value="' + kernel + '">' +
+                                  '<label for="' + kernel + '">' + kernel + '</label><br>'
+                              );
+                          });
+                      }
+                  });
+              });
+          });
+        </script>
 
         <script>
           $("form").submit(function(event) {

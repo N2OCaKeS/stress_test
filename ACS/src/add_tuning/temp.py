@@ -21,6 +21,14 @@ def temp_task():
     time.sleep(100)
 
 
+def get_new_pass():
+    if os.path.isfile('/fastapi_app/src/add_tuning/env.json'):
+        with open('fastapi_app/src/add_tuning/env.json', 'r') as creds:
+            env = json.load(creds)
+            new_pass = env['srv_pass']
+    return new_pass
+
+
 async def change_repos(version_name, stand):
     print("OK 2")
     # session = await get_async_session()

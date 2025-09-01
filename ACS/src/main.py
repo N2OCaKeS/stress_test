@@ -21,6 +21,8 @@ from src.add_tuning.router import get_info_stand
 from src.add_tuning.temp import astra_version_update
 from src.utils.secondary_func import func_filter_version
 
+from src.pxe_install.router import router as pxe_router
+
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
@@ -30,6 +32,11 @@ app = FastAPI(
 
 app.include_router(add_tunning_router)
 app.include_router(clonezilla_router)
+app.include_router(pxe_router)
+
+"""
+    TODO нужна функция, которая вернет все стенды
+"""
 
 @app.get("/")
 def index():
@@ -44,6 +51,22 @@ async def get_stand(stand_name: str, session: AsyncSession = Depends(get_async_s
         return result.first()
     except Exception as e:
         return {"status": "failed", "error": e}
+    
+
+@app.get("/all_stands")
+async def get_all_stands(only_name: bool = False, session: AsyncSession = Depends(get_async_session)):
+    try:
+        if only_name:
+            query = select(stands.c.name)
+            result = await session.execute(query)
+            return [row[0] for row in result.all()]
+        else:
+            query = select(stands)
+            result = await session.execute(query)
+            return [dict(row._asdict()) for row in result.all()]
+    except Exception as e:
+        return {"status": "failed", "error": e}
+
 
 @app.post("/stands")
 async def create_stand(new_stand: Stand, session: AsyncSession = Depends(get_async_session)):
@@ -53,6 +76,7 @@ async def create_stand(new_stand: Stand, session: AsyncSession = Depends(get_asy
     await session.execute(stmt)
     await session.commit()
     return {"status": "success"}
+
 
 @app.delete("/stands")
 async def delete_stand(stand_name: str, session: AsyncSession = Depends(get_async_session)):

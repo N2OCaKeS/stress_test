@@ -1,15 +1,35 @@
 import os
+import argparse
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from src.utils.secondary_func import remote_put_file, remote_cmd
 
-def get_folder_netinst(astra_build_version, download_dir="netinst"):
+DESCRIPTION = ""
+parser = argparse.ArgumentParser(description=DESCRIPTION)
+parser.add_argument('-abv', '--astra_build_version',
+                    action='store',
+                    required=True,
+                    help='astra linux build version',
+                    dest='ABV')
+args = parser.parse_args()
+
+def separate_astra_version(astra_build_version):
     temp_version = astra_build_version.split(".")
     major_version = temp_version[0] + "." + temp_version[1]
     minor_version = major_version + "." + temp_version[2]
+    return {
+        "build_version": astra_build_version,
+        "major_version": major_version,
+        "minor_version": minor_version
+    }
+
+def get_folder_netinst(astra_build_version, download_dir="netinst"):
     
-    base_url = f"https://releases.devos.astralinux.ru/frozen/{major_version}/{minor_version}/{astra_build_version}/installation/netinst/"
+    astra_version = separate_astra_version(astra_build_version=astra_build_version)
+
+    installation_repo = "installation-di" if astra_version['major_version'] == "1.8" else "installation"
+    
+    base_url = f"https://releases.devos.astralinux.ru/frozen/{astra_version['major_version']}/{astra_version['minor_version']}/{astra_version['build_version']}/{installation_repo}/netinst/"
 
     os.makedirs(download_dir, exist_ok=True)
     def process_directory(url, current_dir):
@@ -43,5 +63,4 @@ def get_folder_netinst(astra_build_version, download_dir="netinst"):
 
     process_directory(base_url, download_dir)
 
-
-get_folder_netinst(astra_build_version="1.7.7.9")
+get_folder_netinst(astra_build_version=args.ABV)

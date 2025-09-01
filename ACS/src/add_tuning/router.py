@@ -10,7 +10,7 @@ from src.schemas import Stand
 from src.models import stands, versions, repos
 from sqlalchemy import select
 
-from .temp import change_repos, astra_version_update, install_kernels
+from .temp import change_repos, astra_version_update, install_kernels, get_new_pass
 
 from .conf import (COMPONENTS_INSTALL, 
                    CLONE_GIT_REPO, 
@@ -132,11 +132,20 @@ def install_kernels_api(version_name: str, stand = Depends(get_info_stand)):
     # Для 1.7.5 install linux-6.1-generic
     return install_kernels(version_name, stand)
 
+
+@router.get("/set-new-pass")
+def set_new_pass(stand = Depends(get_info_stand)):
+    new_pass = get_new_pass()
+    us = "u"
+    com_set_new_pass = f"usermod -p $(openssl passwd -1 '{new_pass}') {us}"
+    remote_cmd(command=com_set_new_pass, host=stand[3], user=stand[4], passwd=stand[5])
+
 """
     TODO Добавить в CELERY!
 """
 @router.get('/astra-update')
 def astra_update(new_version, stand = Depends(get_info_stand)):
+    set_new_pass(stand=stand)
     astra_version_update.delay(new_version=new_version, stand=list(stand))
     return {"ok"}
 

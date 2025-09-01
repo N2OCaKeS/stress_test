@@ -1,6 +1,0 @@
-DEFAULT astra
-LABEL astra
-kernel linux
-append initrd=initrd.gz auto=true priority=critical hostname=LowServer domain=test.local astra-license/license=true url=http://<ip-address>/preseed.cfg interface=auto
-netcfg/dhcp_timeout=60
-TIMEOUT 1

@@ -150,3 +150,14 @@ def convert_stand_name(stand_name):
 
 def busy_status_off(stand):
     res = requests.get(f"http://allta.devos.astralinux.ru/rest/api/busy_status_off/{stand}")
+
+
+def separate_astra_version(astra_build_version):
+    temp_version = astra_build_version.split(".")
+    major_version = temp_version[0] + "." + temp_version[1]
+    minor_version = major_version + "." + temp_version[2]
+    return {
+        "build_version": astra_build_version,
+        "major_version": major_version,
+        "minor_version": minor_version
+    }

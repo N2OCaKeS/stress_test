@@ -25,6 +25,7 @@ services:
       context: .
     env_file:
       - .env
+      - .env.secrets
     container_name: fastapi_app
     command: ["/fastapi_app/docker/app.sh"]
     ports:
@@ -34,7 +35,9 @@ services:
       - redis
     volumes: 
       - /home/u/ilo.json:/fastapi_app/src/ilo/ilo.json
-      - /home/u/tokens.json:/fastapi_app/src/add_tuning/env.json 
+      - /home/u/tokens.json:/fastapi_app/src/add_tuning/env.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway" 
 
   celery:
     build:
@@ -63,5 +66,3 @@ services:
 
 volumes:
   dbdata:
-
-

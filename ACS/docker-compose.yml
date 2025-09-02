@@ -49,6 +49,7 @@ services:
       - redis
     volumes: 
       - /home/u/ilo.json:/fastapi_app/src/ilo/ilo.json
+      - /home/u/tokens.json:/fastapi_app/src/add_tuning/env.json
 
   flower:
     build:

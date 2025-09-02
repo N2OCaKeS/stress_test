@@ -1184,15 +1184,15 @@
 
       </div>
       
-      <script>
-        let systemDiskUsed = "{{ system_disk_used }}";
-        let ftpDiskUsed = "{{ ftp_disk_used }}";
-        let partimagDiskUsed = "{{ partimag_disk_used }}";
-
-        document.getElementById('systemDiskProgress').style.width = systemDiskUsed + "%";
-        document.getElementById('ftpDiskProgress').style.width = ftpDiskUsed + "%";
-        document.getElementById('partimagDiskProgress').style.width = partimagDiskUsed + "%";
-      </script>
+      <script>        
+        let systemDiskUsed = parseFloat("{{ system_disk_used }}"); 
+        let ftpDiskUsed = parseFloat("{{ ftp_disk_used }}");  
+        let partimagDiskUsed = parseFloat("{{ partimag_disk_used }}");
+        
+        document.getElementById('systemDiskProgress').style.width = `${systemDiskUsed}%`;
+        document.getElementById('ftpDiskProgress').style.width = `${ftpDiskUsed}%`;
+        document.getElementById('partimagDiskProgress').style.width = `${partimagDiskUsed}%`;
+        </script>
 
     <script>
       function toggleAccordion() {

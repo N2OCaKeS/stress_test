@@ -175,6 +175,15 @@ def index_page(general_page, ajax=None):
     else: return info_collector(general_page, ajax)
 
 
+def server_diskspace_used():
+    dates = {
+        'system_disk_used': check_output_command("df -h | grep /dev/vda2 | awk '{print$5}'"),
+        'ftp_disk_used': check_output_command("df -h | grep /dev/vdb1 | awk '{print$5}'"),
+        'partimag_disk_used': check_output_command("df -h | grep /dev/vdc1 | awk '{print$5}'")
+    }
+    return dates
+
+
 def info_collector(page, ajax=None):
 
     tests = []
@@ -366,7 +375,8 @@ def info_collector(page, ajax=None):
                                 stand6_snap=cz_comm()['stand6'].keys(),
                                 stand7_snap=cz_comm()['stand7'].keys(),
                                 stand8_snap=cz_comm()['stand8'].keys(),
-                                stand9_snap=cz_comm()['stand9'].keys())
+                                stand9_snap=cz_comm()['stand9'].keys(),
+                                **server_diskspace_used())
 
 
 

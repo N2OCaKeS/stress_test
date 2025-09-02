@@ -1153,8 +1153,46 @@
           <p style="margin: 0; line-height: 1.2;">Смена</p>
           <p style="margin: 0; line-height: 1.2;">параметров</p>
         </div>
+
+        
+        <!-- disk info -->
+        <div style="clear: both;"></div>
+        <br></br>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <p style="margin: 0; line-height: 1.2;">Системный диск</p>
+          <p style="margin: 0; line-height: 1.2;">64 Гб</p>
+        </div>
+        <div style="width: 100%; height: 20px; background-color: #333; position: relative;" id="systemDiskBar">
+          <div style="height: 100%; background-color: #ff7b00;" id="systemDiskProgress"></div>
+        </div>
+        <br />
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <p style="margin: 0; line-height: 1.2;">FTP</p>
+          <p style="margin: 0; line-height: 1.2;">128 Гб</p>
+        </div>
+        <div style="width: 100%; height: 20px; background-color: #333; position: relative;" id="ftpDiskBar">
+          <div style="height: 100%; background-color: #ff7b00;" id="ftpDiskProgress"></div>
+        </div>
+        <br />
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <p style="margin: 0; line-height: 1.2;">Partimag</p>
+          <p style="margin: 0; line-height: 1.2;">3 Тб</p>
+        </div>
+        <div style="width: 100%; height: 20px; background-color: #333; position: relative;" id="partimagDiskBar">
+          <div style="height: 100%; background-color: #ff7b00;" id="partimagDiskProgress"></div>
+        </div>
+
       </div>
       
+      <script>
+        let systemDiskUsed = "{{ system_disk_used }}";
+        let ftpDiskUsed = "{{ ftp_disk_used }}";
+        let partimagDiskUsed = "{{ partimag_disk_used }}";
+
+        document.getElementById('systemDiskProgress').style.width = systemDiskUsed + "%";
+        document.getElementById('ftpDiskProgress').style.width = ftpDiskUsed + "%";
+        document.getElementById('partimagDiskProgress').style.width = partimagDiskUsed + "%";
+      </script>
 
     <script>
       function toggleAccordion() {

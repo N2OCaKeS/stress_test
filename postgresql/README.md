@@ -146,9 +146,9 @@
 -  max_parallel_maintenance_workers = 4
 
 #### Проведение тестирования
-Тестирование проводится в автоматическом режиме с помощью оркестратора Bendiks.
+Тестирование проводится в автоматическом режиме с помощью оркестратора ALLTA.
 
-- [Bendiks](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
+- [ALLTA](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
 
 #### Обработка результатов
 Результаты обрабатываются и выкладываются в пространстве нагрузочного тестирования confluence 

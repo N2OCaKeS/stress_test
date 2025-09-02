@@ -22,10 +22,9 @@ def temp_task():
 
 
 def get_new_pass():
-    if os.path.isfile('/fastapi_app/src/add_tuning/env.json'):
-        with open('fastapi_app/src/add_tuning/env.json', 'r') as creds:
-            env = json.load(creds)
-            new_pass = env['srv_pass']
+    with open('/fastapi_app/src/add_tuning/env.json', 'r') as creds:
+        env = json.load(creds)
+        new_pass = env['srv_pass']
     return new_pass
 
 

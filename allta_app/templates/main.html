@@ -1150,38 +1150,41 @@
             <input class="form-check-input" type="checkbox" role="switch" id="toggleSwitch" onchange="toggleAccordion()">
             <label class="form-check-label" for="toggleSwitch"></label>
           </div>
-          <p style="margin: 0; line-height: 1.2;">Смена</p>
-          <p style="margin: 0; line-height: 1.2;">параметров</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">Смена</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">параметров</p>
         </div>
 
         
-        <!-- disk info -->
+        <!-- disk info
+         TODO
+         Реализовать удобный поиск больших Файлов
+         Чем-то типа:
+         find /home/partimag/ -type f -size +500M -exec ls -lh {} +-->
         <div style="clear: both;"></div>
         <br></br>
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <p style="margin: 0; line-height: 1.2;">Системный диск</p>
-          <p style="margin: 0; line-height: 1.2;">64 Гб</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">Системный диск</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">64 Гб</p>
         </div>
         <div style="width: 100%; height: 20px; background-color: #333; position: relative;" id="systemDiskBar">
           <div style="height: 100%; background-color: #ff7b00;" id="systemDiskProgress"></div>
         </div>
         <br />
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <p style="margin: 0; line-height: 1.2;">FTP</p>
-          <p style="margin: 0; line-height: 1.2;">128 Гб</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">FTP</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">128 Гб</p>
         </div>
         <div style="width: 100%; height: 20px; background-color: #333; position: relative;" id="ftpDiskBar">
           <div style="height: 100%; background-color: #ff7b00;" id="ftpDiskProgress"></div>
         </div>
         <br />
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <p style="margin: 0; line-height: 1.2;">Partimag</p>
-          <p style="margin: 0; line-height: 1.2;">3 Тб</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">Partimag</p>
+          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">3 Тб</p>
         </div>
         <div style="width: 100%; height: 20px; background-color: #333; position: relative;" id="partimagDiskBar">
           <div style="height: 100%; background-color: #ff7b00;" id="partimagDiskProgress"></div>
         </div>
-
       </div>
       
       <script>        

@@ -5,6 +5,7 @@
 # ; Date: 2022
 # ;===========================================================
 
+import stat
 import paramiko
 import subprocess
 import requests
@@ -66,14 +67,49 @@ def send_remote_command(command, ip, user, password, port=22):
     ssh.close()
 
 
+# def get_remote_file(remote_file_path, local_file_path, ip, user, password, port=22):
+#     client = paramiko.SSHClient()
+#     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+#     client.connect(hostname=ip, username=user, password=password, port=port)
+#     ftp = client.open_sftp()
+#     files = ftp.get (remote_file_path, local_file_path)
+#     ftp.close()
+#     client.close()
+
 def get_remote_file(remote_file_path, local_file_path, ip, user, password, port=22):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(hostname=ip, username=user, password=password, port=port)
-    ftp = client.open_sftp()
-    files = ftp.get (remote_file_path, local_file_path)
-    ftp.close()
-    client.close()
+    sftp = client.open_sftp()
+    
+    try:
+        remote_attr = sftp.stat(remote_file_path)
+        
+        if stat.S_ISDIR(remote_attr.st_mode):
+            try:
+                os.makedirs(local_file_path, exist_ok=True)
+            except OSError:
+                pass
+            
+            for item in sftp.listdir_attr(remote_file_path):
+                remote_item = os.path.join(remote_file_path, item.filename)
+                local_item = os.path.join(local_file_path, item.filename)
+                
+                if stat.S_ISDIR(item.st_mode):
+                    get_remote_file(remote_item, local_item, ip, user, password, port)
+                else:
+                    sftp.get(remote_item, local_item)
+        else:
+            # Это файл - просто копируем
+            sftp.get(remote_file_path, local_file_path)
+            
+    except Exception as e:
+        print(f"Ошибка при копировании: {e}")
+        raise
+    
+    finally:
+        sftp.close()
+        client.close()
 
 def astra_version():
     version = []

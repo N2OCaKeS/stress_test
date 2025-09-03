@@ -3,7 +3,7 @@ from libs.libcfs import check_output_command, send_remote_command, create_remote
 
 from cfs_create_vms import VMS
 from cfs_storage_init_ceph import CephStorageCreate
-from cfs_conf import STORAGE_NAME, SCRIPT_DIR
+from cfs_conf import STORAGE_NAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME
 from libs.libtable import Report
 
 class Ceph:
@@ -120,7 +120,7 @@ class Ceph:
         install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
         # sudo apt install libgfapi0 -y
         install_pip_req = "sudo pip3 install -r /var/tmp/req.txt --break-system-packages"
-        change_script_dir = "sed -i \"s|SCRIPT_DIR = '/git'|SCRIPT_DIR = '/var/tmp'|g\" cfs_conf.py"
+        change_script_dir = "sed -i \"s|SCRIPT_DIR = '/git'|SCRIPT_DIR = '/var/tmp'|g\" /var/tmp/cfs_conf.py"
 
         send_remote_command(f"{make_need_dir} ; {install_need_packages} ; {install_pip_req} ; {change_script_dir}",
                             ip=self.HOSTS["testvm1"]['ip'], 
@@ -143,7 +143,7 @@ class Ceph:
                                 user=self.HOSTS["testvm1"]['login'], 
                                 password=self.HOSTS["testvm1"]['password'])
             get_remote_file(remote_file_path="/var/tmp/report_fio.txt",
-                            local_file_path="fio.txt",
+                            local_file_path=f"{REPORT_FILENAME}",
                             ip=self.HOSTS["testvm1"]['ip'], 
                             user=self.HOSTS["testvm1"]['login'], 
                             password=self.HOSTS["testvm1"]['password'])
@@ -156,10 +156,15 @@ class Ceph:
                                 ip=self.HOSTS["testvm1"]['ip'], 
                                 user=self.HOSTS["testvm1"]['login'], 
                                 password=self.HOSTS["testvm1"]['password'])
+            get_remote_file(remote_file_path="/var/tmp/report",
+                            local_file_path=f"{REPORT_DIR}",
+                            ip=self.HOSTS["testvm1"]['ip'], 
+                            user=self.HOSTS["testvm1"]['login'], 
+                            password=self.HOSTS["testvm1"]['password'])
 
 
 if __name__ == "__main__":
-    c = Ceph(vbox="1.8.2",
+    c = Ceph(vbox="1.8.3.7",
              kernel="6.1",
              all_hosts=["testvm1", "testvm2", "testvm3", "testvm4", "testvm5"],
              type_load_test="fio")

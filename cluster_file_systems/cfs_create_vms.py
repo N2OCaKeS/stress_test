@@ -37,9 +37,9 @@ class VMS:
         if isinstance(self.provider, Libvirt):
             self.provider.prepare()
             if VERSION_OS == '1.7':
-                VMS_DATES = self.provider.build(f'1.7.5.{self.mode}', self.rc_name, VMS, VMS_DATES)
+                VMS_DATES = self.provider.build("15GB.1.7.5.o", self.rc_name, VMS, VMS_DATES)
             elif VERSION_OS == '1.8':
-                VMS_DATES = self.provider.build(f'1.8.1.{self.mode}', self.rc_name, VMS, VMS_DATES)
+                VMS_DATES = self.provider.build("15GB.1.8.1.o", self.rc_name, VMS, VMS_DATES)
 
         self.provider.check(VMS, VMS_DATES)
         print(f'VMS DATES:\n{VMS_DATES}')

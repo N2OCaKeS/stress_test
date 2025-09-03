@@ -1,10 +1,10 @@
 <html>
   <head>
     <title>ALLTA</title>
-    <link rel="icon" href="http://10.177.103.10:8000/static/fav_or.png">
+    <link rel="icon" href="http://10.177.103.10:8000/static/fav_ic_48.png">
     <style>
       body {
-        background: #fafafa;
+        background: #00121a;
         color: #333;
         font-family: 'Arial', sans-serif;
         display: flex;
@@ -12,10 +12,11 @@
         align-items: center;
         height: 100vh;
         margin: 0;
+        position: relative; /* Добавляем относительное позиционирование для body */
       }
       h1 {
         font-size: 2.2em;
-        color: #4a4a4a;
+        color: #c8c9c9;
         text-align: center;
         padding: 20px 0;
       }
@@ -31,13 +32,17 @@
       input[type="text"], input[type="password"] {
         width: 100%;
         padding: 15px;
-        border: 1px solid #ddd;
+        border: 1px solid #777777;
         border-radius: 4px;
         font-size: 1em;
+        background-color: #333; /* Цвет фона формы */
+        padding: 20px; /* Внутренние отступы для формы */
+        border-radius: 8px; /* Закругленные углы */
+        color: #c8c9c9;
       }
       input[type="submit"] {
-        background: #4a90e2;
-        color: #fff;
+        background: #ff7b00;
+        color: #c8c9c9;
         padding: 15px;
         border: none;
         border-radius: 4px;
@@ -47,9 +52,29 @@
         color: red;
         text-align: center;
       }
+      .top-left {
+        position: absolute; /* Абсолютное позиционирование */
+        top: 0; /* Верхний край */
+        left: 0; /* Левый край */
+        width: 100%; /* Ширина на всю страницу */
+        height: 30px; /* Фиксированная высота */
+        padding: 0; /* Убираем внутренние отступы */
+        background: linear-gradient(to right, #ff7b00, #002534, #00121a); /* Градиент для фона */
+        color: #00121a;
+        display: flex; /* Используем flexbox */
+        justify-content: left; /* Центрируем по горизонтали */
+        align-items: center; /* Центрируем по вертикали */
+      }
+      .top-left h3 {
+        font-size: 25px; /* размер шрифта */
+        font-weight: normal; /* Нормальный вес шрифта */
+      }
     </style>
   </head>
   <body>
+    <div class="top-left">
+      <h3>ALLTA</h3>
+    </div>
     <div class="login-container">
       <h1>Вход</h1>
       <form method="POST" action="/login">

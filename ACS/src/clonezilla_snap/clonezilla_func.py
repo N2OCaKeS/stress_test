@@ -12,7 +12,7 @@ from paramiko import ssh_exception
 from src.utils.secondary_func import remote_cmd, socket_available, busy_status_off, convert_stand_name
 from src.clonezilla_snap.conf import RESTORE_DISK_COMMAND, SAVE_DISK_COMMAND
 from src.tasks.tasks import celery
-
+from src.add_tuning.temp import get_new_pass
 
 class SnapshotNotCreated(FileNotFoundError):
 
@@ -143,7 +143,7 @@ class BootOrder:
 
 
 @celery.task
-def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, **kwargs):
+def backup_image(stand, snap_name: str, password_cs: str, restore=True, new_pass=False, *args, **kwargs):
 
     """
         TODO Дописать преобразование
@@ -171,7 +171,11 @@ def backup_image(stand, snap_name: str, password_cs: str, restore=True, *args, *
     logging.info("*****СЕЙЧАС ПОЙДЕТ РЕСЕТ****")
     change_boot_order.reset()
     logging.info("****!!!!РЕСЕТ ЗАКОНЧЕН!!!!*****")
-    socket_available(stand_ip=stand[3], user=stand[4], passwd=stand[5], cs_pass=password_cs)
+    if new_pass:
+        password_stand = get_new_pass()
+    else:
+        password_stand = stand[5]
+    socket_available(stand_ip=stand[3], user=stand[4], passwd=password_stand, cs_pass=password_cs)
     logging.info("*****SOCKET AVAILABLE*******")
     sleep(15)
     # return result

@@ -8,6 +8,7 @@ services:
       - "3141:3141"
     volumes:
       - devpi-data:/data
+      - /home/u/tokens.json:/git/tokens.json
     env_file:
       - .env      
     restart: always

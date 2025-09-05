@@ -1,4 +1,6 @@
 import sys
+import datetime
+import pytz
 
 def logger(func):
     """
@@ -38,10 +40,12 @@ def logger(func):
 
             # Формирование строки лога
             log_entry = (
-                f"TASK [{task_name}: {host}] {border_line}\n"
+                f"{border_line}\n"
+                f"TASK [{task_name}: {host}]\n"
+                f"[ {datetime.datetime.now(tz=pytz.timezone('Europe/Moscow')).strftime('%H:%M:%S %d-%m-%Y ')}]\n"
                 f"STATUS [{display_status}]\n"
-                f"COMMAND: {executed_command}\n"
-                f"{command_output}\n"
+                f"COMMAND: {executed_command}\n\n"
+                f"CONCLUSION: {command_output}\n"
                 f"{border_line}\n\n\n"
             )
             

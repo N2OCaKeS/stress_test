@@ -82,7 +82,8 @@ class Libvirt(_VirtualMashines):
         virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc, kernel=kernel)
         vms_dates = virt.build()
 
-        libvirt_manager.create_snapshot(vms=vms, snapshot_name='build')
+        if box != "vm_station":
+            libvirt_manager.create_snapshot(vms=vms, snapshot_name='build')
         system_commands.cmd('virsh -c qemu:///system list --all')
         return vms_dates
 

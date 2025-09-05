@@ -105,8 +105,16 @@ class _VirtInstall:
                 f"--memory {ram} --vcpus {cpu} --import --disk path={vm_path}/{disk} "
                 f"--os-variant {os_version} --network network=test "
                 "--noautoconsole --noreboot --cpu host-model,+vmx --autostart"
+                # "--controller type=pci,model=pcie-root,index=0 "
+                # "--controller type=pci,model=pcie-root-port,index=1 "
+                # "--controller type=pci,model=pcie-root-port,index=2 "
+                # "--controller type=pci,model=pcie-root-port,index=3 "
+                # "--controller type=pci,model=pcie-root-port,index=4 "
+                # "--controller type=pci,model=pcie-root-port,index=5 "
+                # "--controller type=pci,model=pcie-root-port,index=6 "
             ))
-            # virt-install --connect qemu:///system -n test --memory 6144 --vcpus 6  --import --disk path=/tmp/1.7.5.o.qcow2 --os-variant alse17 --network network=test --noautoconsole --noreboot --cpu host-model,+vmx
+            # virt-install --connect qemu:///system -n test --memory 6144 --vcpus 6 --import --disk path=/var/lib/libvirt/images/pool/test.qcow2 --os-variant alse17 --network network=test --noautoconsole --noreboot --cpu host-model,+vmx --controller type=pci,model=pcie-root,index=0 --controller type=pci,model=pcie-root-port,index=1     
+            
             sleep(10)
             print (system_commands.check_output_command(f"virsh --connect qemu:///system start {hostname}"))
             print(f"[{hostname}] DONE {round(time()-t_start, 1)} сек")
@@ -209,43 +217,46 @@ class _VirtInstall:
                 hostname, ip = future.result()
                 self.vms_date[hostname]['ip_bridge'] = ip
 
-        print("\n==> Скачиваем releases.json...")
-        if self.rc:
-            # 1. Скачиваем releases.json
-            resp = requests.get('http://allta.devos.astralinux.ru/rest/api/get-repo-path')
-            resp.raise_for_status()
-            releases = resp.json()
-            print("\n==> Парсим releases.json...")
-            # 2. Берём нужный список deb-строк по self.rc
-            try:
-                sources_lines = releases[self.rc]
-            except KeyError:
-                raise ValueError(f"Нет записи для релиза '{self.rc}' в releases.json")
 
-            # Собираем их в одну строку с разделителем \n
-            sources_str = "\\n".join(sources_lines)
+        if self.box != "vm_station":
+            print("\n==> Скачиваем releases.json...")
+            if self.rc:
+                # 1. Скачиваем releases.json
+                resp = requests.get('http://allta.devos.astralinux.ru/rest/api/get-repo-path')
+                resp.raise_for_status()
+                releases = resp.json()
+                print("\n==> Парсим releases.json...")
+                # 2. Берём нужный список deb-строк по self.rc
+                try:
+                    sources_lines = releases[self.rc]
+                except KeyError:
+                    raise ValueError(f"Нет записи для релиза '{self.rc}' в releases.json")
 
-            # 3. Узнаём текущее локальное ядро (если нужно передавать в скрипт)
-            print("\n==> Парсим ядро...")
-            if self.kernel is not None:
-                kernel = self.kernel
-            else:
-                kernel = system_commands.check_output_command("uname -r").strip()
-            
-            if "-generic" in kernel:
-                suffix = "generic"
-            elif "-lowlatency" in kernel:
-                suffix = "lowlatency"
-            else:
-                raise ValueError(f"Неизвестный тип ядра: {kernel}")
+                # Собираем их в одну строку с разделителем \n
+                sources_str = "\\n".join(sources_lines)
 
-            # Извлекаем major.minor версию (первые два числа)
-            version_parts = kernel.split("-")[0].split(".")
-            if len(version_parts) < 2:
-                raise ValueError(f"Некорректный формат версии: {kernel}")
-            major_minor = ".".join(version_parts[:2])  # "5.10"
-            apt_kernel = f"linux-{major_minor}-{suffix}"
-            print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
+                # 3. Узнаём текущее локальное ядро (если нужно передавать в скрипт)
+                print("\n==> Парсим ядро...")
+                if self.kernel is not None:
+                    kernel = self.kernel
+                else:
+                    kernel = system_commands.check_output_command("uname -r").strip()
+                
+                if "-generic" in kernel:
+                    suffix = "generic"
+                elif "-lowlatency" in kernel:
+                    suffix = "lowlatency"
+                else:
+                    raise ValueError(f"Неизвестный тип ядра: {kernel}")
+
+                # Извлекаем major.minor версию (первые два числа)
+                version_parts = kernel.split("-")[0].split(".")
+                if len(version_parts) < 2:
+                    raise ValueError(f"Некорректный формат версии: {kernel}")
+                major_minor = ".".join(version_parts[:2])  # "5.10"
+                apt_kernel = f"linux-{major_minor}-{suffix}"
+                print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
+
 
             def start_prepare(cmd_template = None, reboot = None):
                 class SafeDict(dict):
@@ -305,7 +316,7 @@ class _VirtInstall:
             cmds = [
                 # 1) hostname и /etc/hosts
                 "sudo hostnamectl set-hostname {host} && sudo timedatectl set-ntp true && "
-                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\t10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
+                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
 
                 # 2) репо
                 "echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
@@ -314,7 +325,7 @@ class _VirtInstall:
                 "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive astra-update -A -T -r",
 
                 # 4) зависимости
-                "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl -y",
+                "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl qemu-guest-agent -y",
 
                 # 5) установка ядра
                 "sudo DEBIAN_FRONTEND=noninteractive apt-get install {apt_kernel} -y",
@@ -334,22 +345,45 @@ class _VirtInstall:
                 "grep '^GRUB_DEFAULT=' /etc/default/grub",
             ]
 
-            print(f"\n\n\nСтавим hostname\n\n\n")
-            start_prepare(cmds[0])
-            print(f"\n\n\nСтавим репозиторий\n\n\n")
-            start_prepare(cmds[1])
-            print(f"\n\n\nAtra Update\n\n\n")
-            start_prepare(cmds[2])
-            print(f"\n\n\nСтавим зависимости\n\n\n")
-            start_prepare(cmds[3])   
-            print(f"\n\n\nСтавим ядро\n\n\n")
-            start_prepare(cmds[4])
-            print(f"\n\n\nОбновляем grub\n\n\n")
-            start_prepare(cmds[5])
-            start_prepare(cmds[6])
-            start_prepare(cmds[7])
-            start_prepare(cmds[8])
-            print(f"\n\nПерезагружаем ВМ\n\n\n")
-            start_prepare(reboot=1)
+            if self.box == "vm_station":
+                version = ["1.7.5.9", "1.8.1.6"]
+                for vers in version:
+                    print(f"\n\n\n\033[31mНастраиваем ВМ для версии ОС: {vers}\033[0m\n\n\n")
+                    vms_list = list(self.vms_date.keys())
+                    for vm in vms_list:
+                        disk = f"{vm}.qcow2"
+                        system_commands.cmd_with_returncode(f"virsh --connect qemu:///system destroy {vm}")
+                        revert_snap = f"sudo qemu-img snapshot -a {vers} {vm_path}/{disk}"
+                        system_commands.cmd_with_returncode(revert_snap)
+                        system_commands.cmd_with_returncode(f"virsh --connect qemu:///system start {vm}")
+                    print(f"\n\n\nСтавим hostname\n\n\n")
+                    start_prepare(cmds[0])
+                    print(f"\n\n\nAtra Update\n\n\n")
+                    start_prepare(cmds[2])    
+                    print(f"\n\n\nСтавим зависимости\n\n\n")
+                    start_prepare(cmds[3])     
+                    print(f"\n\nПерезагружаем ВМ\n\n\n")
+                    start_prepare(reboot=1)                                                    
+                    for vm in vms_list:
+                        disk = f"{vm}.qcow2"                 
+                        system_commands.cmd(f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "{vers}_build"')
+            else:
+                print(f"\n\n\nСтавим hostname\n\n\n")
+                start_prepare(cmds[0])
+                print(f"\n\n\nСтавим репозиторий\n\n\n")
+                start_prepare(cmds[1])
+                print(f"\n\n\nAtra Update\n\n\n")
+                start_prepare(cmds[2])
+                print(f"\n\n\nСтавим зависимости\n\n\n")
+                start_prepare(cmds[3])   
+                print(f"\n\n\nСтавим ядро\n\n\n")
+                start_prepare(cmds[4])
+                print(f"\n\n\nОбновляем grub\n\n\n")
+                start_prepare(cmds[5])
+                start_prepare(cmds[6])
+                start_prepare(cmds[7])
+                start_prepare(cmds[8])
+                print(f"\n\nПерезагружаем ВМ\n\n\n")
+                start_prepare(reboot=1)
         return self.vms_date
 

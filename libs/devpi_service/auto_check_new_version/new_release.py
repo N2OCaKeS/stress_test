@@ -4,30 +4,24 @@ import time
 import re
 import os
 import sys
-from ftplib import FTP
 import configparser
+import json
 
 DEVPI_INDEX_URL = 'http://localhost:3141/root/release'
 
 def cmd(command, cwd=None):
     subprocess.run(command, shell=True, check=True, cwd=cwd)
 
-def download_conf(conf_file):
-    ftp = FTP('10.177.5.111')
-    ftp.login()
-    ftp.cwd('stress_reports/stress_test_config')
-    with open(conf_file, 'wb') as wf:
-        ftp.retrbinary('RETR gitclone.conf', wf.write)
-    ftp.quit()
-    with open(conf_file, 'r') as r:
-        return r.read().strip()
-
-def clone_repo(clone_command, repo_path):
+def clone_repo(repo_path):
     if os.path.exists(repo_path):
         print(f"Удаляем старый репозиторий: {repo_path}")
         cmd(f'rm -rf {repo_path}')
     print("Клонируем репозиторий...")
-    cmd(clone_command)
+    with open('tokens.json', 'r') as file:
+        data = json.load(file)
+        git_token = data['git_token']
+    gitclone_conf_body = f"git clone -c http.extraHeader='Authorization: {git_token}' https://git.astralinux.ru/scm/qa/stress_test.git"
+    cmd(gitclone_conf_body)
 
 def version_exists_on_devpi(version):
     try:
@@ -173,14 +167,9 @@ def monitor_branch(repo_path, branch='libs', check_interval=60):
 
 def main():
     base_dir = os.getcwd()
-    if base_dir != '/git':
-        print("⚠️ Запустите скрипт из директории /git!")
-        sys.exit(1)
 
-    conf_file = os.path.join(base_dir, 'gitclone.conf')
-    clone_command = download_conf(conf_file)
     repo_path = os.path.join(base_dir, 'stress_test')
-    clone_repo(clone_command, repo_path)
+    clone_repo(repo_path)
 
     initial_sync(repo_path, branch='libs')
     monitor_branch(repo_path, branch='libs', check_interval=60)

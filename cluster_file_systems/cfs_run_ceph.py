@@ -187,9 +187,13 @@ class Ceph:
 
     def start(self):
         if self.vbox.startswith("1.8"):
-            self.vmc = 5 
+            self.vmc = 5
+            install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
+            install_pip_req = "sudo pip3 install -r /var/tmp/req.txt --break-system-packages"
         else:
             self.vmc = 4
+            install_need_packages = "sudo apt install libgfapi0 -y"
+            install_pip_req = "sudo pip3 install -r /var/tmp/req.txt"
         
         # TODO
         HOST_IP = "10.177.103.101"
@@ -247,9 +251,9 @@ class Ceph:
                             password=self.HOSTS["testvm1"]['password'])
         
         make_need_dir = "sudo mkdir /var/tmp/report /var/tmp/log"
-        install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
+        # install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
         # sudo apt install libgfapi0 -y
-        install_pip_req = "sudo pip3 install -r /var/tmp/req.txt --break-system-packages"
+        # install_pip_req = "sudo pip3 install -r /var/tmp/req.txt --break-system-packages"
         change_script_dir = "sed -i \"s|SCRIPT_DIR = '/git'|SCRIPT_DIR = '/var/tmp'|g\" /var/tmp/cfs_conf.py"
 
         send_remote_command(f"{make_need_dir} ; {install_need_packages} ; {install_pip_req} ; {change_script_dir}",

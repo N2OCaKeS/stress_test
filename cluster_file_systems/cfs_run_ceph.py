@@ -134,39 +134,6 @@ class Ceph:
         self.type_load_test = type_load_test
         for key, value in kwargs.items():
             setattr(self, key, value)
-        self.HOSTS = {
-            'testvm1': {
-                'ip': "127.0.0.1",
-                'user': "u",
-                'password': "1",
-                # 'port': 50020
-                'port': 60001
-                },
-            'testvm2': {
-                "ip": "127.0.0.1",
-                "user": "u",
-                "password": "1",
-                "port": 60002
-            },
-            'testvm3': {
-                "ip": "127.0.0.1",
-                "user": "u",
-                "password": "1",
-                "port": 60003
-            },
-            'testvm4': {
-                "ip": "127.0.0.1",
-                "user": "u",
-                "password": "1",
-                "port": 60004
-            },
-            'testvm5': {
-                "ip": "127.0.0.1",
-                "user": "u",
-                "password": "1",
-                "port": 60005
-            }
-        }
         # TODO 
         uzs = UploaderZC(folder_tree_id=args.FTI,
                          test_cycle_name=args.TCYC,
@@ -251,9 +218,6 @@ class Ceph:
                             password=self.HOSTS["testvm1"]['password'])
         
         make_need_dir = "sudo mkdir /var/tmp/report /var/tmp/log"
-        # install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
-        # sudo apt install libgfapi0 -y
-        # install_pip_req = "sudo pip3 install -r /var/tmp/req.txt --break-system-packages"
         change_script_dir = "sed -i \"s|SCRIPT_DIR = '/git'|SCRIPT_DIR = '/var/tmp'|g\" /var/tmp/cfs_conf.py"
 
         send_remote_command(f"{make_need_dir} ; {install_need_packages} ; {install_pip_req} ; {change_script_dir}",
@@ -261,31 +225,27 @@ class Ceph:
                             user=self.HOSTS["testvm1"]['login'], 
                             password=self.HOSTS["testvm1"]['password'])
 
-
+        if self.type_load_test == "fio":
+            self.type_interface_ceph = "rbd"
+        elif self.type_load_test == "fsmark":
+            self.type_interface_ceph = "cephfs"
         storage = CephStorageCreate(astra_version=self.vbox, 
-                                    #TODO
                                     HOSTS=self.HOSTS,
-                                    # HOSTS=virt_machines.vm_dates, 
-                                    type_interface_ceph="cephfs")
+                                    type_interface_ceph=self.type_interface_ceph)
         storage.create_storage()
         
-        
         if self.type_load_test == "fio":
-            pass
             send_remote_command(command=f"cd /var/tmp && sudo python3 cfs_test_ceph_fio.py -abv {self.vbox}",
                                 ip=self.HOSTS["testvm1"]['ip'], 
                                 user=self.HOSTS["testvm1"]['login'], 
                                 password=self.HOSTS["testvm1"]['password'])
-            get_remote_file(remote_file_path="/var/tmp/report_fio.txt",
-                            local_file_path=f"{REPORT_PATH_HOST}",
+            get_remote_file(remote_file_path="/var/tmp/report",
+                            local_file_path=f"{REPORT_DIR_HOST}",
                             ip=self.HOSTS["testvm1"]['ip'], 
                             user=self.HOSTS["testvm1"]['login'], 
                             password=self.HOSTS["testvm1"]['password'])
-            #### TODO
-            # report = Report()
+
         else:
-            pass
-            #### TODO
             send_remote_command(command=f'sudo chmod +x /var/tmp/fs_mark-3.3/fs_mark && {self.run_test_cmd.format(dir="/var/tmp", file="cfs_test.py", ts="fs_mark_count")}',
                                 ip=self.HOSTS["testvm1"]['ip'], 
                                 user=self.HOSTS["testvm1"]['login'], 

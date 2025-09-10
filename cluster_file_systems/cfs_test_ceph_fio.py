@@ -10,7 +10,7 @@ class CephFIOTest:
         self.directory = STORAGE_MOUNT_DIR
         self.runtime = 60 # в секундах
         self.blocksize = "4k"
-        self.report_file = "/var/tmp/report_fio.txt"
+        self.report_file = "/var/tmp/report/report_fio.txt"
         self.abv = abv
         if self.abv.startswith("1.8"):
             check_output_command(command="dpkg -i /var/tmp/fio/fio_3.33-3_amd64.deb")

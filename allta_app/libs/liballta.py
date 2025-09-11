@@ -36,9 +36,8 @@ from allta_image_conf import (VENV_PATH,
                                rc_list,
                                releases_list,
                                repo_path,
-                               LowServer_group,
-                               MiddleServer_group,
                                group_tests,
+                               stands_groups,
                                JIRA_URL,
                                releases_dict,
                                cz_comm,
@@ -57,8 +56,6 @@ import pandas as pd
 
 
 
-ls_group = sorted(LowServer_group)
-ms_group = sorted(MiddleServer_group)
 main_options = group_tests + sorted(main_tests)
 brest_options = sorted(brest_tests)
 
@@ -311,13 +308,14 @@ def info_collector(page, ajax=None):
             if not releas:
                 releas = 'Релиз не выбран'
             
-            if str(tests) == "['_LowServer group']":
-                with open(f'conf/{page}_tests_args.conf', 'w') as w:
-                    w.write(str(ls_group))
-            elif str(tests) == "['_MiddleServer group']":
-                with open(f'conf/{page}_tests_args.conf', 'w') as w:
-                    w.write(str(ms_group))
-            else:
+            found_group = []
+            for group in group_tests:
+                if str(tests) == '[\'' + str(group) + '\']':
+                    found_group.append(group)
+                    with open(f'conf/{page}_tests_args.conf', 'w') as w:
+                        w.write(str(sorted(stands_groups['_'.join(group.replace('_', '').split(' '))])))
+            
+            if not found_group:
                 with open(f'conf/{page}_tests_args.conf', 'w') as w:
                     w.write(str(tests))
         
@@ -452,10 +450,10 @@ def run_command_on_stand(num, http=True):
         command = request.form.get(f'command{num}')
     else: command = 'start'
     kernel = None
-    if num == '1' or num == '2' or num =='3' or num == '4' or num == '5':
+    if num == '3' or num == '4' or num == '10' or num =='11' or num == '12' or num == '13':
         prefix = 'main'
-    elif num == '10' or num =='11' or num == '12':
-        prefix = 'brest'
+    #elif num == '10' or num =='11' or num == '12':
+        #prefix = 'brest'
 
     if command == 'start':
         with open(f'front_stand{num}.log', 'w') as w:

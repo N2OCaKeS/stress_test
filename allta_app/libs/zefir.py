@@ -463,15 +463,25 @@ class ZefirTestRun:
         #self.kernel_vers = kernel_vers
         #self.kernel_repo = kernel_repo
         self.use_kernels = use_kernels
-        orel_low_stand3, smolensk_low_stand3, orel_middle_stand4, smolensk_middle_stand4 = changelog_testcycle_handler(rc=self.rc, final=final)
-        self.testcase_orel_low_stand3 = orel_low_stand3
-        self.testcase_smolensk_low_stand3 = smolensk_low_stand3
-        self.testcase_orel_middle_stand4 = orel_middle_stand4
-        self.testcase_smolensk_middle_stand4 = smolensk_middle_stand4
+        orel_stand3, smolensk_stand3, orel_stand4, smolensk_stand4, orel_stand10, smolensk_stand10, \
+        orel_stand11, smolensk_stand11, orel_stand12, smolensk_stand12, orel_stand13, smolensk_stand13 = changelog_testcycle_handler(rc=self.rc, final=final)
         self.stands = stands
         self.modes = test_run_modes
         self.tests_case_zefir_key = tests_case_zefir_key
-
+        self.test_cases_map = {
+            ('orel', 'stand3'): orel_stand3,
+            ('orel', 'stand4'): orel_stand4,
+            ('orel', 'stand10'): orel_stand10,
+            ('orel', 'stand11'): orel_stand11,
+            ('orel', 'stand12'): orel_stand12,
+            ('orel', 'stand13'): orel_stand13,
+            ('smolensk', 'stand3'): smolensk_stand3,
+            ('smolensk', 'stand4'): smolensk_stand4,
+            ('smolensk', 'stand10'): smolensk_stand10,
+            ('smolensk', 'stand11'): smolensk_stand11,
+            ('smolensk', 'stand12'): smolensk_stand12,
+            ('smolensk', 'stand13'): smolensk_stand13
+        }
 
 
     def get_kernels_from_file(self):
@@ -576,79 +586,18 @@ class ZefirTestRun:
         for kernel in self.use_kernels:
             for stand in self.stands:
                 for mode in self.modes:
-                    if mode == 'orel' and stand == 'stand3':
+                    if (mode, stand) in self.test_cases_map:
                         self.create_test_run(bearer_token=self.__jira_token, 
                                              kernel=kernel, 
-                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_orel_low_stand3],
-                                             assignee=self.__username,
-                                             release=self.release,
-                                             mode=mode,
-                                             stand=stand,
-                                             rc=self.rc)
-                    elif mode == 'orel' and stand == 'stand4':
-                        self.create_test_run(bearer_token=self.__jira_token, 
-                                             kernel=kernel, 
-                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_orel_middle_stand4],
-                                             assignee=self.__username,
-                                             release=self.release,
-                                             mode=mode,
-                                             stand=stand,
-                                             rc=self.rc)
-                    elif mode == 'smolensk' and stand == 'stand3':
-                        self.create_test_run(bearer_token=self.__jira_token, 
-                                             kernel=kernel, 
-                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_smolensk_low_stand3],
-                                             assignee=self.__username,
-                                             release=self.release,
-                                             mode=mode,
-                                             stand=stand,
-                                             rc=self.rc)
-                    elif mode == 'smolensk' and stand == 'stand4':
-                        self.create_test_run(bearer_token=self.__jira_token, 
-                                             kernel=kernel, 
-                                             cases=[self.tests_case_zefir_key[test] for test in self.testcase_smolensk_middle_stand4],
+                                             cases=[self.tests_case_zefir_key[test] for test in self.test_cases_map[(mode, stand)]],
                                              assignee=self.__username,
                                              release=self.release,
                                              mode=mode,
                                              stand=stand,
                                              rc=self.rc)
 
-                    # if mode == 'orel' and stand != 'stand2':
-                    #     self.create_test_run(bearer_token=self.__jira_token, 
-                    #                          kernel=kernel, 
-                    #                          cases=[self.tests_case_zefir_key[test] for test in self.testcase_orel],
-                    #                          assignee=self.__username,
-                    #                          release=self.release,
-                    #                          mode=mode,
-                    #                          stand=stand,
-                    #                          rc=self.rc)
-                    # elif mode == 'orel' and stand == 'stand2':
-                    #     self.create_test_run(bearer_token=self.__jira_token, 
-                    #                          kernel=kernel, 
-                    #                          cases=[self.tests_case_zefir_key[test] for test in self.testcase_orel_stand2],
-                    #                          assignee=self.__username,
-                    #                          release=self.release,
-                    #                          mode=mode,
-                    #                          stand=stand,
-                    #                          rc=self.rc)
-                    # elif mode == 'smolensk' and stand != 'stand2':
-                    #     self.create_test_run(bearer_token=self.__jira_token, 
-                    #                          kernel=kernel, 
-                    #                          cases=[self.tests_case_zefir_key[test] for test in self.testcase_smolensk],
-                    #                          assignee=self.__username,
-                    #                          release=self.release,
-                    #                          mode=mode,
-                    #                          stand=stand,
-                    #                          rc=self.rc)
-                    # elif mode == 'smolensk' and stand == 'stand2':
-                    #     self.create_test_run(bearer_token=self.__jira_token, 
-                    #                          kernel=kernel, 
-                    #                          cases=[self.tests_case_zefir_key[test] for test in self.testcase_smolensk_stand2],
-                    #                          assignee=self.__username,
-                    #                          release=self.release,
-                    #                          mode=mode,
-                    #                          stand=stand,
-                    #                          rc=self.rc)
+
+
                     
 
 

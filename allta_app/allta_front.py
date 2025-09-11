@@ -221,7 +221,8 @@ def reboot(stand):
         ssh_command('sudo reboot', 
                     stand_ip=stands_ip[stand])
         return {"status": "success", "message": "ssh reboot entered"}, 200
-    elif stand == "stand3" or stand == "stand4" or stand == "stand5":
+    elif stand == "stand3" or stand == "stand4" or stand == "stand5" or stand == "stand10" \
+    or stand == "stand11" or stand == "stand12" or stand == "stand13":
         ipmi = BootOrder(stand=stand)
         ipmi.reset()
         return {"status": "success", "message": "ipmi reboot entered"}, 200
@@ -302,7 +303,7 @@ def busy_status_stop(stand):
 
 @app.route('/backup/allta', methods=['POST'])
 def backup_request():
-    backup_ip = '10.177.5.21'
+    backup_ip = '10.190.8.178'
     username = request.form.get('username')
     password = request.form.get('password')
     connection_status = check_command(ip=backup_ip,

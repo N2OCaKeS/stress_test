@@ -18,7 +18,7 @@ from libs.liballta import (ReleaseToRepo,
                            run_command_on_stand,
                            busy_status_control)
 from libs.zefir import ZefirResultTable, ZefirTestRun
-from allta_image_conf import JIRA_URL, LowServer_group, MiddleServer_group
+from allta_image_conf import JIRA_URL, LowServer_group, MiddleServer_group, stands_type, stands_ip
 from time import sleep
 
 
@@ -263,6 +263,26 @@ def acs_create_snapshot(version: str, stand):
                                                                                      "version_to_update": version,
                                                                                      "password_cs": __password,
                                                                                      "stand_name": 'HighServer'})
+    elif stand == 'stand10':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'LowServer2'})
+    elif stand == 'stand11':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'LowServer3'})
+    elif stand == 'stand12':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'LowServer4'})
+    elif stand == 'stand13':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'LowServer5'})
     else: res_create_full_snap = 'Wrong stand'
     return res_create_full_snap.text
 
@@ -427,8 +447,6 @@ def mod_allta_conf(value, uu_value=None):
     with open('./allta_conf.json', 'r') as r:
         data = json.load(r)
 
-    stands = {'LowServer':'10.177.103.204',
-              'MiddleServer':'10.177.103.203'}
     cz_name = 'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "{}" \
                 -l ru_RU.UTF-8 startdisk restore {}-{}rc{} nvme0n1'
 
@@ -454,32 +472,19 @@ def mod_allta_conf(value, uu_value=None):
     if value not in data['releases']:
         data['releases'].append(value)       
         data['releases'] = sorted(data['releases']) 
-
-    if uu_value:
-        if value not in data['cz_comm']['stand3'].keys():
-            data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
-                                                            'LowServer',
-                                                            ''.join(value.split('.')[:5]),
-                                                            ''.join(value.split('.')[5:]))
-        if value not in data['cz_comm']['stand4'].keys():
-            data['cz_comm']['stand4'][value] = cz_name.format(stands['MiddleServer'],
-                                                            'MiddleServer',
-                                                            ''.join(value.split('.')[:5]),
-                                                            ''.join(value.split('.')[5:]))
-    else:
-        if value not in data['cz_comm']['stand3'].keys():
-            data['cz_comm']['stand3'][value] = cz_name.format(stands['LowServer'],
-                                                            'LowServer',
-                                                            ''.join(value.split('.')[:3]),
-                                                            ''.join(value.split('.')[3:]))
-        if value not in data['cz_comm']['stand4'].keys():
-            data['cz_comm']['stand4'][value] = cz_name.format(stands['MiddleServer'],
-                                                            'MiddleServer',
-                                                            ''.join(value.split('.')[:3]),
-                                                            ''.join(value.split('.')[3:]))
         
-    data['cz_comm']['stand3'] = {k: v for k, v in sorted(data['cz_comm']['stand3'].items())}
-    data['cz_comm']['stand4'] = {k: v for k, v in sorted(data['cz_comm']['stand4'].items())}
+    for stand in stands_type['phys'].keys():
+        if uu_value:
+            slice_value = 5
+        else: slice_value = 3
+        if stand != 'stand5':
+            if value not in data['cz_comm'][stand].keys():
+                data['cz_comm'][stand][value] = cz_name.format(stands_ip[stand],
+                                                               stands_type['phys'][stand],
+                                                               ''.join(value.split('.')[:slice_value]),
+                                                               ''.join(value.split('.')[slice_value:]))
+        data['cz_comm'][stand] = {k: v for k, v in sorted(data['cz_comm'][stand].items())}
+
     write_allta_conf(data)
     
     repo = ReleaseToRepo(current_directory='.')

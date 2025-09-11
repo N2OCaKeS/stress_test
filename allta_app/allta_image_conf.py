@@ -35,6 +35,30 @@ stands_ip = {
 
 
 #################################################################################################################################################
+#Перечень типов и соотношений используемых стендов
+#################################################################################################################################################
+stands_type = {
+    'virt':{
+        'stand1':'VM Test WorkStation',
+        'stand2':'VM Test WorkStation',
+        'stand6':'VM TestStation',
+        'stand7':'VM TestStation',
+        'stand8':'VM TestStation',
+        'stand9':'VM TestStation'
+    },
+    'phys':{
+        'stand3':'LowServer',
+        'stand4':'MiddleServer',
+        'stand5':'HighServer',
+        'stand10':'LowServer2',
+        'stand11':'LowServer3',
+        'stand12':'LowServer4',
+        'stand13':'LowServer5'
+    }
+}
+
+
+#################################################################################################################################################
 #Atlassian URLs
 #################################################################################################################################################
 JIRA_URL = 'jira.astralinux.ru'
@@ -228,7 +252,7 @@ psyc_conf = {
 #################################################################################################################################################
 #Основной перечень тестов
 #################################################################################################################################################
-group_tests = ['_LowServer group', '_MiddleServer group']
+group_tests = ['_stand3 group', '_stand4 group', '_stand10 group', '_stand11 group', '_stand12 group', '_stand13 group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
@@ -316,12 +340,19 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
         Перечень тестов, разделенных по уровням защищенности и стендам
         """
         topics = {
-            'orel_low_stand3':        ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS', 'docker-wa'],
-            'smolensk_low_stand3':    ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec', 'parsec impact-fs',
-                                    'parsec impact-fs aud-off', 'apache-rp'],
-            'orel_middle_stand4':     ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'OCFS2', 'syslog-ng-cwl',
-                                    'psql balance', 'FreeIPA auth', 'steal time', 'FIO', 'vUnixBench', 'vPingPong'], #'tantor vanilla', 'tantor kernels'
-            'smolensk_middle_stand4': ['postgresql-sm', 'psql parsec', 'steal time-sm', 'psql oom', 'digsig-cdt']}
+            'orel_stand3':      ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'FreeIPA auth', 'unix'],
+            'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'OCFS2', 'unix parsec'],
+            'orel_stand4':      ['postgresql-aud-off', 'postgresql', 'psql balance'],
+            'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla'],
+            'orel_stand10':     ['NTFS', 'psql kernels'],
+            'smolensk_stand10': [],
+            'orel_stand11':     ['docker-wa', 'FIO', 'steal time', 'vUnixBench', 'vPingPong'],
+            'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'steal time-sm', 'psql oom'],
+            'orel_stand12':     ['syslog-ng'],
+            'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
+            'orel_stand13':     ['syslog-ng-cwl'],
+            'smolensk_stand13': []
+        }
 
 
         if str(rc).endswith('.1') and not 'UU' in str(rc) or final:
@@ -331,18 +362,16 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
 
     return handler(topic=get_topic())
 
+stands_groups = {
+    'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'OCFS2', 'FreeIPA auth', 'unix', 'unix parsec'],
+    'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance'],
+    'stand10_group':['NTFS', 'psql kernels'],
+    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'steal time', 'steal time-sm', 'vUnixBench', 'vPingPong', 'psql oom'],
+    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
+    'stand13_group':['syslog-ng-cwl']
+}
 
-LowServer_group = ['EXT4', 'XFS', 'syslog-ng', 'unix', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u', 'unix parsec',
-                   'parsec impact-fs', 'parsec impact-fs aud-off', 'apache-rp', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'NTFS', 'docker-wa']
-MiddleServer_group = ['postgresql-aud-off', 'postgresql', 'psql vanilla', 'psql kernels', 'postgresql-sm', 'FreeIPA auth', 'psql parsec', 
-                      'steal time', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom', 'digsig-cdt', 'psql balance'] #'syslog-ng-cwl'
-
-
-#testcase_orel = ['EXT4', 'NTFS', 'XFS', 'postgresql-aud-off', 'postgresql', 'psql vanilla', 'syslog-ng', 'unix', 'tantor vanilla']
-#testcase_orel_stand2 = ['EXT4', 'NTFS', 'XFS', 'syslog-ng', 'unix', 'RAM-overflow', 'SD-overflow']
-#testcase_smolensk = ['postgresql-sm', 'psql parsec', 'EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
-#testcase_smolensk_stand2 = ['EXT4 parsec', 'XFS parsec', 'auditd-f', 'auditd-p', 'auditd-u']
-test_run_stands = [f'stand{x}' for x in range(3, 6, 1)]
+test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13']] #range(3, 6, 1)]
 test_run_modes = ['orel', 'smolensk']
 tests_case_zefir_key = {
     'postgresql':'BT-T7555',

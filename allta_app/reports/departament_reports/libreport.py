@@ -139,7 +139,7 @@ class ReportTempo():
 
         payload = {
             "from": f"{self.month}-01",
-            "to": f"{self.month}-31",
+            "to": f"{self.month}-30",
             "teamId": ["7"],
             "includeSubtasks": True
         }

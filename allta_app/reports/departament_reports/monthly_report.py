@@ -6,7 +6,7 @@ from libreport import MonthlyReport
 
 
 # Указать отчетный период "месяц" в формате "YYYY-MM"
-MONTH = '2025-08'
+MONTH = '2025-09'
 
 
 with open('/home/u/tokens.json', 'r') as r:

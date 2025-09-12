@@ -73,10 +73,10 @@ class Public:
         if self.storage == 'nvme':
             self.stands['3']['storage'] = 'NVME0n1 3.2Tb'
             self.stands['4']['storage'] = 'NVME0n1 3.2Tb'   
-            self.stands['11']['storage'] = 'NVME0n1 3.2Tb'  
+            self.stands['10']['storage'] = 'NVME0n1 3.2Tb'  
+            self.stands['11']['storage'] = 'NVME0n1 3.2Tb'
             self.stands['12']['storage'] = 'NVME0n1 3.2Tb'
-            self.stands['13']['storage'] = 'NVME0n1 3.2Tb'
-            self.stands['14']['storage'] = 'NVME0n1 3.2Tb' 
+            self.stands['13']['storage'] = 'NVME0n1 3.2Tb' 
 
 
     def preset_publish(self, c_pp, c_np, release_pp=False, release_np=False):

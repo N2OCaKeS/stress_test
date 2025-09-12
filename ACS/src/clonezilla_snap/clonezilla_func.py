@@ -46,13 +46,14 @@ class BootOrder:
         
         self.logger = logging.getLogger(name="BootOrder")
         self.logger.setLevel(logging.DEBUG)
+        self.hpe_stands = ['stand3', 'stand4', 'stand10', 'stand11', 'stand12', 'stand13']
 
     def cmd(self, cmd):
         output = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
         return output
     
     def set_boot_order(self):
-        if self.stand == 'stand3' or self.stand == 'stand4':
+        if self.stand in self.hpe_stands:
             self.__set_boot_order_ilo()
         elif self.stand == 'stand5':
             self.__set_boot_order_idrac()
@@ -129,13 +130,13 @@ class BootOrder:
             if not func.is_alive():
                 return 0
         self.logger.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
-        if self.stand == 'stand3' or self.stand == 'stand4':
+        if self.stand in self.hpe_stands:
             self.logger.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
         elif self.stand == 'stand5':
             self.__reboot_idrac()
 
     def reset(self):
-        if self.stand == 'stand3' or self.stand == 'stand4':
+        if self.stand in self.hpe_stands:
             self.logger.debug('execute IPMI hard reboot')
             self.logger.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
         elif self.stand == 'stand5':

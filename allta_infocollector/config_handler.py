@@ -9,7 +9,7 @@ changing_files = {
      f'{script_dir}/src/handler/import_dashboard_full.sh': ['DB_PATH', 'SERVER_IP'],
      f'{script_dir}/src/handler/import_dashboard_allta.sh': ['DB_PATH', 'SERVER_IP'],
      f'{script_dir}/src/handler/docker-compose.yml': ['PM_DB_PATH'],
-     f'{script_dir}/src/aggregator/conf.py': ['STD_USER', 'STD_PASSWD', 'PROJECT_PATH', 'SERVER_IP']
+     f'{script_dir}/src/aggregator/conf.py': ['UNICAL_PSWD', 'STD_USER', 'STD_PASSWD', 'PROJECT_PATH', 'SERVER_IP']
 }
 
 

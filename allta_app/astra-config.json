@@ -45,7 +45,10 @@
                     "1.8.2.UU.1.o",
                     "1.8.3.s",
                     "1.8.3.v",
-                    "1.8.3.o"
+                    "1.8.3.o",
+                    "1.8.3.UU.1.s",
+                    "1.8.3.UU.1.v",
+                    "1.8.3.UU.1.o"
                 ]
             },
             {
@@ -109,12 +112,25 @@
                     "4.7-testing.s",
                     "4.7-testing.v",
                     "4.7-testing.o",
+                    "4.7.0.s",
+                    "4.7.0.v",
+                    "4.7.0.o",
                     "4.7.5.s",
                     "4.7.5.v",
                     "4.7.5.o",
                     "4.7.6.s",
                     "4.7.6.v",
-                    "4.7.6.o"
+                    "4.7.6.o",
+                    "4.7.7.s",
+                    "4.7.7.v",
+                    "4.7.7.o"
+                ]
+            },
+            {
+                "4.8": [
+                    "4.8-testing.s",
+                    "4.8-testing.v",
+                    "4.8-testing.o"
                 ]
             },
             {
@@ -400,24 +416,6 @@
         ],
         "vagrant_box": [
             {
-                "1.8.3.s": [
-                    "alse-gui-max/1.8.3.7",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-max1.8.3.json"
-                ]
-            },
-            {
-                "1.8.3.v": [
-                    "alse-gui-adv/1.8.3.7",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-adv1.8.3.json"
-                ]
-            },
-            {
-                "1.8.3.o": [
-                    "alse-gui-base/1.8.3.7",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-base1.8.3.json"
-                ]
-            },
-            {
                 "12.8-testing": [
                     "orel-vanilla-gui/12.8.1.7",
                     "http://qa111.devos.astralinux.ru/vault/vagrant/orel-12.8-testing.json"
@@ -425,20 +423,56 @@
             },
             {
                 "1.8-testing.s": [
-                    "alse-gui-max/1.8.3.7",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-max1.8.3.json"
+                    "alse-rc-gui-max/1.8.3.8",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-max%2F1.8.3.8"
                 ]
             },
             {
                 "1.8-testing.v": [
-                    "alse-gui-adv/1.8.3.7",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-adv1.8.3.json"
+                    "alse-rc-gui-adv/1.8.3.8",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-adv%2F1.8.3.8"
                 ]
             },
             {
                 "1.8-testing.o": [
-                    "alse-gui-base/1.8.3.7",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/alse-gui-base1.8.3.json"
+                    "alse-rc-gui-base/1.8.3.8",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-base%2F1.8.3.8"
+                ]
+            },
+            {
+                "1.8.3.UU.1.s": [
+                    "alse-rc-gui-max/1.8.3.8",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-max%2F1.8.3.8"
+                ]
+            },
+            {
+                "1.8.3.UU.1.v": [
+                    "alse-rc-gui-adv/1.8.3.8",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-adv%2F1.8.3.8"
+                ]
+            },
+            {
+                "1.8.3.UU.1.o": [
+                    "alse-rc-gui-base/1.8.3.8",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-base%2F1.8.3.8"
+                ]
+            },
+            {
+                "1.8.3.s": [
+                    "alse-gui-max/1.8.3",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.3"
+                ]
+            },
+            {
+                "1.8.3.v": [
+                    "alse-gui-adv/1.8.3",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.3"
+                ]
+            },
+            {
+                "1.8.3.o": [
+                    "alse-gui-base/1.8.3",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.3"
                 ]
             },
             {
@@ -550,6 +584,42 @@
                 ]
             },
             {
+                "4.8-testing.s": [
+                    "smolensk-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8-testing.v": [
+                    "voronezh-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8-testing.o": [
+                    "orel-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.7.0.s": [
+                    "smolensk-vanilla-gui/4.7.0.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.0.json"
+                ]
+            },
+            {
+                "4.7.0.v": [
+                    "voronezh-vanilla-gui/4.7.0.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.0.json"
+                ]
+            },
+            {
+                "4.7.0.o": [
+                    "orel-vanilla-gui/4.7.0.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.0.json"
+                ]
+            },
+            {
                 "4.7.5.s": [
                     "smolensk-vanilla-gui/4.7.5.5",
                     "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.5.json"
@@ -586,21 +656,39 @@
                 ]
             },
             {
+                "4.7.7.s": [
+                    "smolensk-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.7.json"
+                ]
+            },
+            {
+                "4.7.7.v": [
+                    "voronezh-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.7.json"
+                ]
+            },
+            {
+                "4.7.7.o": [
+                    "orel-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.7.json"
+                ]
+            },
+            {
                 "4.7-testing.s": [
-                    "smolensk-vanilla-gui/4.7.6.9",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.6.json"
+                    "smolensk-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.7.json"
                 ]
             },
             {
                 "4.7-testing.v": [
-                    "voronezh-vanilla-gui/4.7.6.9",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.6.json"
+                    "voronezh-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.7.json"
                 ]
             },
             {
                 "4.7-testing.o": [
-                    "orel-vanilla-gui/4.7.6.9",
-                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.6.json"
+                    "orel-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.7.json"
                 ]
             },
             {

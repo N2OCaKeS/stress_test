@@ -76,7 +76,7 @@ class ReportFIO:
 
     def create_report(self):
         try:
-            results = self.parse_fio_file(self.file_path)
+            results = self.parse_fio_file()
             print(results)
 
             df = pandas.DataFrame(results).T

@@ -52,7 +52,23 @@ class Public:
             '4':{'grade':'MiddleServer(151)',
                  'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
                  'ram':'256GB',
-                 'storage':'SAS SSD 3.8Tb'}
+                 'storage':'SAS SSD 3.8Tb'},
+            '10':{'grade':'LowServer',
+                    'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                    'ram':'128GB',
+                    'storage':'SAS SSD 3.8Tb'},
+            '11':{'grade':'LowServer',
+                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                'ram':'128GB',
+                'storage':'SAS SSD 3.8Tb'},
+            '12':{'grade':'LowServer',
+                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                'ram':'128GB',
+                'storage':'SAS SSD 3.8Tb'},
+            '13':{'grade':'LowServer',
+                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                'ram':'128GB',
+                'storage':'SAS SSD 3.8Tb'}
         }
 
     def preset_publish(self, c_pp, c_np, release_pp=False, release_np=False):

@@ -5,8 +5,9 @@ from libs.libcfs import check_output_command, send_remote_command, create_remote
 from cfs_create_vms import VMS
 from cfs_storage_init_ceph import CephStorageCreate
 from cfs_conf import STORAGE_NAME, SCRIPT_DIR, REPORT_DIR_HOST, REPORT_PATH_HOST
-from libs.libtable import Report
+from libs.libtable import ReportFIO
 from libs.zefir import UploaderZC
+
 
 def parse_args():
     
@@ -244,7 +245,10 @@ class Ceph:
                             ip=self.HOSTS["testvm1"]['ip'], 
                             user=self.HOSTS["testvm1"]['login'], 
                             password=self.HOSTS["testvm1"]['password'])
-
+            
+            report = ReportFIO()
+            report.create_report()
+            
         else:
             send_remote_command(command=f'sudo chmod +x /var/tmp/fs_mark-3.3/fs_mark && {self.run_test_cmd.format(dir="/var/tmp", file="cfs_test.py", ts="fs_mark_count")}',
                                 ip=self.HOSTS["testvm1"]['ip'], 

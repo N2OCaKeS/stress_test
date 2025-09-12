@@ -21,12 +21,73 @@ from libs.libcfs import astra_version
 from pretty_html_table import build_table
 from cfs_conf import REPORT_DIR, REPORT_FILENAME, LOG_PATH, LOG_FILENAME, SCRIPT_DIR, \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
-    FILES_LIMIT, FILES_STEP, FILES
+    FILES_LIMIT, FILES_STEP, FILES, REPORT_DIR_HOST
 
 try:
     from numpy.exceptions import RankWarning
 except ImportError:
     from numpy import RankWarning
+
+
+class ReportFIO:
+    
+    def __init__(self, file_path='test_fio.txt'):
+        self.file_path = file_path
+
+
+    def parse_fio_file(self):
+        results = {
+            'read': {'slat_avg': None, 'clat_avg': None, 'lat_avg': None, 'iops': None},
+            'write': {'slat_avg': None, 'clat_avg': None, 'lat_avg': None, 'iops': None}
+        }
+
+        current_section = None
+
+        with open(self.file_path, 'r') as file:
+            for line in file:
+                line = line.strip()
+                
+                if line.startswith('read:'):
+                    current_section = 'read'
+                    if 'IOPS=' in line:
+                        iops_part = line.split('IOPS=')[1].split(',')[0]
+                        results[current_section]['iops'] = float(iops_part)
+                elif line.startswith('write:'):
+                    current_section = 'write'
+                    if 'IOPS=' in line:
+                        iops_part = line.split('IOPS=')[1].split(',')[0]
+                        results[current_section]['iops'] = float(iops_part)
+                
+                if current_section:
+                    if 'slat (' in line and 'avg=' in line:
+                        parts = line.split('avg=')[1].split(',')[0]
+                        results[current_section]['slat_avg'] = float(parts)
+
+                    elif 'clat (' in line and 'avg=' in line and 'percentiles' not in line:
+                        parts = line.split('avg=')[1].split(',')[0]
+                        results[current_section]['clat_avg'] = float(parts)
+                    
+                    elif line.startswith('lat (') and 'avg=' in line:
+                        parts = line.split('avg=')[1].split(',')[0]
+                        results[current_section]['lat_avg'] = float(parts)
+
+        return results
+
+
+    def create_report(self):
+        try:
+            results = self.parse_fio_file(self.file_path)
+            print(results)
+
+            df = pandas.DataFrame(results).T
+            print(df)
+            df.to_html(f"{REPORT_DIR_HOST}/result_fio.html")
+        
+        except FileNotFoundError:
+            print(f"файл '{self.file_path}' c результами не найден!")
+        except Exception as e:
+            print(f"произошла ошибка: {str(e)}")
+
 
 
 class Report:

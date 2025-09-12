@@ -374,6 +374,10 @@ def info_collector(page, ajax=None):
                                 stand7_snap=cz_comm()['stand7'].keys(),
                                 stand8_snap=cz_comm()['stand8'].keys(),
                                 stand9_snap=cz_comm()['stand9'].keys(),
+                                stand10_snap=cz_comm()['stand10'].keys(),
+                                stand11_snap=cz_comm()['stand11'].keys(),
+                                stand12_snap=cz_comm()['stand12'].keys(),
+                                stand13_snap=cz_comm()['stand13'].keys(),
                                 **server_diskspace_used())
 
 

@@ -283,7 +283,7 @@ EOF"""
                 },                
                 
                 "pgbench manual": {
-                    "command": f"sleep 20 && pgbench -i -s 100 -h {VMS_DATES['database1']['ip_bridge']} -p {POSTGRES_PORT} -U postgres contrprimer",
+                    "command": f"sudo su - postgres -c \"psql -p {POSTGRES_PORT} -c \'CREATE DATABASE test;\'\"",
                     "signal set": "pgbench manual",
                     "signal get": ['database2', "repl start"]
                 },

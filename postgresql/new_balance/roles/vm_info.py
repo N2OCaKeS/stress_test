@@ -37,9 +37,9 @@ USERNAME = 'u'
 PASSWORD = '1'
 
 VMS = ['database1', 'database2', 'database3', 'lbdb1',
-       'lbdb2', 'lbdb3', 'dcfreeipa']  # Краткий список ВМ
+       'lbdb2', 'lbdb3', 'dcfreeipa']
 
-VMS_DATES = {  # Полный список ВМ
+VMS_DATES = {
     'database1': {'host-port': '22',
                   'ip': '10.0.0.11',
                   'ip_bridge': '10.177.103.111',

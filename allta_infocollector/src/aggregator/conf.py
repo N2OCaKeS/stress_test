@@ -1,5 +1,12 @@
+UNICAL_PSWD = '$UNICAL_PSWD'
+
 std_user = '$STD_USER'
-std_password = '$STD_PASSWD'
+if UNICAL_PSWD == 'True':
+    import json
+    with open('/home/u/tokens.json', 'r') as r:
+        tokens = json.load(r)
+    std_password = tokens['srv_pass']
+else: std_password = '$STD_PASSWD'
 
 project_path = '$PROJECT_PATH'
 grafana_name_service = 'grafana_prometheus.service'

@@ -55,10 +55,26 @@ class Public:
             '4':{'grade':'MiddleServer(151)',
                  'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
                  'ram':'256GB',
-                 'storage':'SAS SSD 3.8Tb'}
+                 'storage':'SAS SSD 3.8Tb'},
+            '10':{'grade':'LowServer',
+                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                'ram':'128GB',
+                'storage':'SAS SSD 3.8Tb'},
+            '11':{'grade':'LowServer',
+                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                'ram':'128GB',
+                'storage':'SAS SSD 3.8Tb'},
+            '12':{'grade':'LowServer',
+                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                'ram':'128GB',
+                'storage':'SAS SSD 3.8Tb'},
+            '13':{'grade':'LowServer',
+                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
+                'ram':'128GB',
+                'storage':'SAS SSD 3.8Tb'}
         }
         self.limit=limit
-        if self.grade_stand == '1':
+        if self.grade_stand == '12':
             self.limit = STAND1_UPPER_LIMIT
         elif self.grade_stand == '2':
             self.limit = STAND2_UPPER_LIMIT

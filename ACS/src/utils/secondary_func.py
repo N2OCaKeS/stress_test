@@ -145,6 +145,14 @@ def convert_stand_name(stand_name):
         num_stand = "stand4"
     elif stand_name == "HighServer":
         num_stand = "stand5"
+    elif stand_name == "LowServer2":
+        num_stand = "stand10"
+    elif stand_name == "LowServer3":
+        num_stand = "stand11"
+    elif stand_name == "LowServer4":
+        num_stand = "stand12"
+    elif stand_name == "LowServer5":
+        num_stand = "stand13"    
     return num_stand
 
 

@@ -18,7 +18,7 @@ from libs.liballta import (ReleaseToRepo,
                            run_command_on_stand,
                            busy_status_control)
 from libs.zefir import ZefirResultTable, ZefirTestRun
-from allta_image_conf import JIRA_URL, LowServer_group, MiddleServer_group, stands_type, stands_ip
+from allta_image_conf import JIRA_URL, stands_type, stands_ip, stands_groups, test_run_stands
 from time import sleep
 
 
@@ -189,10 +189,9 @@ async def create_full_snap(message: types.Message, command: CommandObject):
 def run_tests(version, stand):
     tests_dir = 'conf/main_tests_args.conf'
     releases_dir = 'conf/main_releas_args.conf'
-    if stand == 'stand3':
-        tests = LowServer_group
-    elif stand == 'stand4':
-        tests = MiddleServer_group
+
+    group = f'{stand}_group'
+    tests = stands_groups[group]
 
     with open(releases_dir, 'w') as w:
         w.write(str([version]))

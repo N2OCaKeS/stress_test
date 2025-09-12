@@ -259,7 +259,7 @@ try:
                             print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
                             kn = f'-kn {test_kernels[num]}'
                             tcyc = f'-tcyc {dates_list[i][0][0]}_{dates_list[i][0][1]}_{test_kernels[num]}_{dates_list[i][0][3]}'
-                            sn = f'-sn {list(dates_list[i][0][3]).replace('stand', '').lstrip()}' 
+                            sn = f'-sn {str(dates_list[i][0][3]).replace('stand', '').lstrip()}' 
                             rs = f'-rs {dates_list[i][0][0]}'
                             test = f'-test "{tests[dates_list[i][1]]}"' 
                             mode = f'-mode {dates_list[i][0][1]}'
@@ -391,7 +391,7 @@ try:
                     print(f'Тест: \033[92m{tests[dates_list[i][1]]}\033[0m')
                     kn = f'-kn {dates_list[i][0][2]}'
                     tcyc = f'-tcyc {"_".join(dates_list[i][0])}'
-                    sn = f'-sn {list(dates_list[i][0][3]).replace('stand', '').lstrip()}' 
+                    sn = f'-sn {str(dates_list[i][0][3]).replace('stand', '').lstrip()}' 
                     rs = f'-rs {dates_list[i][0][0]}'
                     test = f'-test "{tests[dates_list[i][1]]}"' 
                     mode = f'-mode {dates_list[i][0][1]}'

@@ -1070,7 +1070,8 @@ class BootOrder:
     def set_boot_order(self):
         if self.stand == 'stand3' or self.stand == 'stand4':
             self.__set_boot_order_ilo()
-        elif self.stand == 'stand5':
+        elif self.stand == 'stand5' or self.stand == 'stand10' or self.stand == 'stand11' \
+        or self.stand == 'stand12' or self.stand == 'stand13':
             self.__set_boot_order_idrac()
 
     def __set_boot_order_ilo(self):        
@@ -1143,14 +1144,16 @@ class BootOrder:
         logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
         if self.stand == 'stand3' or self.stand == 'stand4':
             logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
-        elif self.stand == 'stand5':
+        elif self.stand == 'stand5' or self.stand == 'stand10' \
+        or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13':
             self.__reboot_idrac()
 
     def reset(self):
         if self.stand == 'stand3' or self.stand == 'stand4':
             logging.debug('execute IPMI hard reboot')
             logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
-        elif self.stand == 'stand5':
+        elif self.stand == 'stand5' or self.stand == 'stand10' \
+        or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13':
             self.__reboot_idrac()
 
 

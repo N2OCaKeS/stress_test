@@ -208,7 +208,7 @@ def create_test_run(version: str, final=None):
     elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
         release = '.'.join(check_len_version[:5]) 
     
-    stands = ['stand3', 'stand4']
+    stands = test_run_stands
     kernels = get_kernels_from_rc(version, get_list=True)
 
     test_run = ZefirTestRun(use_kernels=kernels,

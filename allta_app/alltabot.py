@@ -734,7 +734,7 @@ async def addrc(message: types.Message, command: CommandObject):
         stand_resp = acs_create_snapshot(rc, stand)
         content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nСоздание снимка: "{rc}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
-        await bot.send_message(chat_id=chat_id, text=f'Запуск ACS на {server}: {stand_resp}', parse_mode=None)
+        await bot.send_message(chat_id=chat_id, text=f'Запуск ACS на {stand}: {stand_resp}', parse_mode=None)
     else: 
         content = Text(f'Доступ запрещен:\n❌ ', {message.from_user.full_name})
         await message.reply(**content.as_kwargs())

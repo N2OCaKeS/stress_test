@@ -1,5 +1,5 @@
 {
-  "date": "2025-08-29 17:47:17.553166",
+  "date": "2025-09-10 19:19:51.021198",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -9625,6 +9625,80 @@
           "path": "frozen/1.7/1.7.8/1.7.8.4",
           "is_main_symlinked": false
         },
+        "1.7.8.5": {
+          "astra_lists_commit": "96f0b04b589b61468ab6d7a5cdbd2ff8632bfb1e",
+          "version": {
+            "arch": 1,
+            "family": 7,
+            "release": 8,
+            "special": null,
+            "special_version": null,
+            "build": 5,
+            "real_family": 7,
+            "major_family": "1.7",
+            "release_family": "1.7.8",
+            "comparable_tuple": [
+              1,
+              7,
+              8,
+              "",
+              0,
+              5
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.8/1.7.8.5/iso/main_update-1.7.8.5-09.09.25_20.21.iso",
+              "type": "main_update",
+              "mount_point": "frozen/1.7/1.7.8/1.7.8.5/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-09-09T20:21:00",
+              "device": null,
+              "hashsums": {
+                "gost": "d83806980905faea0c8acf2cc96004e188504aceef174825d36558e617c6442b",
+                "md5": "ab101a02148fa52e3b16c9937f5fa8ac"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.7/1.7.8/1.7.8.5/iso/base-1.7.8.5-09.09.25_20.21.iso",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.8/1.7.8.5/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-09-09T20:21:00",
+              "device": null,
+              "hashsums": {
+                "gost": "ff735f882fc49c67ce6e16f0864e4228da1504e9052a8a9d9a93223ee1f502ff",
+                "md5": "6ef573e273d282b067275d84c5accf54"
+              },
+              "changelog": "frozen/1.7/1.7.8/1.7.8.5/sources/changelogs/changelog-base-1.7.8.5.html",
+              "release_notes": "frozen/1.7/1.7.8/1.7.8.5/sources/release-notes/release-notes-base-1.7.8.5.html"
+            },
+            {
+              "path": "frozen/1.7/1.7.8/1.7.8.5/iso/installation-1.7.8.5-09.09.25_20.21.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.7/1.7.8/1.7.8.5/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0025-09-09T20:21:00",
+              "device": null,
+              "hashsums": {
+                "gost": "93f3415a89b708869f9128d2ddfd6d3b842ec03323ce62dbaca1d5164b671f71",
+                "md5": "3056018b03adabf27e6de2c87be2eccc"
+              },
+              "changelog": "frozen/1.7/1.7.8/1.7.8.5/sources/changelogs/changelog-installation-1.7.8.5.html",
+              "release_notes": "frozen/1.7/1.7.8/1.7.8.5/sources/release-notes/release-notes-installation-1.7.8.5.html"
+            }
+          ],
+          "path": "frozen/1.7/1.7.8/1.7.8.5",
+          "is_main_symlinked": false
+        },
         "1.7.8.EXT1.1": {
           "astra_lists_commit": null,
           "version": {
@@ -9681,6 +9755,90 @@
             }
           ],
           "path": "frozen/1.7/1.7.8/1.7.8.EXT1.1",
+          "is_main_symlinked": false
+        },
+        "1.7.8.EXT1.2": {
+          "astra_lists_commit": null,
+          "version": {
+            "arch": 1,
+            "family": 7,
+            "release": 8,
+            "special": "EXT",
+            "special_version": 1,
+            "build": 2,
+            "real_family": 7,
+            "major_family": "1.7",
+            "release_family": "1.7.8",
+            "comparable_tuple": [
+              1,
+              7,
+              8,
+              "EXT",
+              1,
+              2
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.8/1.7.8.EXT1.2/iso/extended-1.7.8.EXT1.2-04.09.2025_20.20.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.7/1.7.8/1.7.8.EXT1.2/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2025-09-04T20:20:00",
+              "device": null,
+              "hashsums": {
+                "gost": "65e97ed6de0c8e325dacf680557f834a6d93cca93c6bc3eb365da236a8536493",
+                "md5": "62f8ef485dcce7fe0291341f0b04c6e4"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/1.7/1.7.8/1.7.8.EXT1.2",
+          "is_main_symlinked": false
+        },
+        "1.7.8.EXT1.3": {
+          "astra_lists_commit": null,
+          "version": {
+            "arch": 1,
+            "family": 7,
+            "release": 8,
+            "special": "EXT",
+            "special_version": 1,
+            "build": 3,
+            "real_family": 7,
+            "major_family": "1.7",
+            "release_family": "1.7.8",
+            "comparable_tuple": [
+              1,
+              7,
+              8,
+              "EXT",
+              1,
+              3
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.8/1.7.8.EXT1.3/iso/extended-1.7.8.EXT1.3-10.09.2025_21.10.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.7/1.7.8/1.7.8.EXT1.3/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2025-09-10T21:10:00",
+              "device": null,
+              "hashsums": {
+                "gost": "f6d8feb87e78c45c09109f2827bfb31bd7bcfb2f3df4c96ab40289bf64985c9f",
+                "md5": "c51c73e2419f04d404b26efcd41aadb4"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/1.7/1.7.8/1.7.8.EXT1.3",
           "is_main_symlinked": false
         }
       }
@@ -13638,6 +13796,98 @@
             }
           ],
           "path": "frozen/1.8/1.8.3/1.8.3.8",
+          "is_main_symlinked": true
+        }
+      },
+      "1.8.4": {
+        "1.8.4.14": {
+          "astra_lists_commit": "25cebaac4e00d02ad73f4a48c4d5a3485e6c12f4",
+          "version": {
+            "arch": 1,
+            "family": 8,
+            "release": 4,
+            "special": null,
+            "special_version": null,
+            "build": 14,
+            "real_family": 8,
+            "major_family": "1.8",
+            "release_family": "1.8.4",
+            "comparable_tuple": [
+              1,
+              8,
+              4,
+              "",
+              0,
+              14
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.14/iso/devel-1.8.4.14-05.09.25_10.16.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.14/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-09-05T10:16:00",
+              "device": null,
+              "hashsums": {
+                "gost": "64bf6e002400cfb2416528b19edc3b6d438f33d8ae9cdb2dd6322b44c0bb5e5f",
+                "md5": "db8a6b66f1832f8703b2ef8dc1693ba4"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.14/iso/installation-1.8.4.14-05.09.25_10.16.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.14/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0025-09-05T10:16:00",
+              "device": null,
+              "hashsums": {
+                "gost": "b8ecc6c567cebc98531c832136eefef03714c4d04c96bf61487ff6669a3496e7",
+                "md5": "07bd582ab7bfdf0774a383909b5a1daa"
+              },
+              "changelog": "frozen/1.8/1.8.4/1.8.4.14/sources/changelogs/changelog-installation-1.8.4.14.html",
+              "release_notes": "frozen/1.8/1.8.4/1.8.4.14/sources/release-notes/release-notes-installation-1.8.4.14.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.14/iso/extended-1.8.4.14-05.09.25_10.16.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.14/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-09-05T10:16:00",
+              "device": null,
+              "hashsums": {
+                "gost": "9d5d711b6286cdad8b084e5c5e8c87919bdd413cc69c1c82441876df6dfc4ae1",
+                "md5": "15ee228096b92e698d172ff6092923a4"
+              },
+              "changelog": "frozen/1.8/1.8.4/1.8.4.14/sources/changelogs/changelog-extended-1.8.4.14.html",
+              "release_notes": "frozen/1.8/1.8.4/1.8.4.14/sources/release-notes/release-notes-extended-1.8.4.14.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.14/iso/installation-1.8.4.14-05.09.25_10.16-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.14/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0025-09-05T10:16:00",
+              "device": "di",
+              "hashsums": {
+                "gost": "b1a0cac325eaddeea40b622271c3b850dc78b340642e9211d4ea9d586dc828b9",
+                "md5": "0088e7a869c175190bcaedf415501f2c"
+              },
+              "changelog": "frozen/1.8/1.8.4/1.8.4.14/sources/changelogs/changelog-installation-1.8.4.14.html",
+              "release_notes": "frozen/1.8/1.8.4/1.8.4.14/sources/release-notes/release-notes-installation-1.8.4.14.html"
+            }
+          ],
+          "path": "frozen/1.8/1.8.4/1.8.4.14",
           "is_main_symlinked": true
         }
       }
@@ -19771,6 +20021,114 @@
           "path": "frozen/4.7/4.7.7/4.7.7.KREA1.1",
           "is_main_symlinked": false
         }
+      },
+      "4.7.8": {
+        "4.7.8.1": {
+          "astra_lists_commit": null,
+          "version": {
+            "arch": 4,
+            "family": 7,
+            "release": 8,
+            "special": null,
+            "special_version": null,
+            "build": 1,
+            "real_family": 7,
+            "major_family": "4.7",
+            "release_family": "4.7.8",
+            "comparable_tuple": [
+              4,
+              7,
+              8,
+              "",
+              0,
+              1
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/4.7/4.7.8/4.7.8.1/iso/installation-4.7.8.1-03.09.2025_17.28.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.8/4.7.8.1/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "2025-09-03T17:28:00",
+              "device": null,
+              "hashsums": {
+                "gost": "fa390474be5a49b2427384b5726a456013d40b697cdd23ec6b5bda3e699fa72f",
+                "md5": "f7381d1a1f28dd122e87a5797291e16c"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.8/4.7.8.1/iso/base-4.7.8.1-03.09.2025_16.45.iso",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.8/4.7.8.1/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2025-09-03T16:45:00",
+              "device": null,
+              "hashsums": {
+                "gost": "05ed1eb6915fd3eeab378ce5b3e8041e70ba86dac48053aea8bc93c6207cb799",
+                "md5": "806ed4810ed9bdcb74e7020fe854f428"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.8/4.7.8.1/iso/installation-4.7.8.1-03.09.2025_19.19-mtrust1.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.8/4.7.8.1/installation-mtrust1",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2025-09-03T19:19:00",
+              "device": "mtrust1",
+              "hashsums": {
+                "gost": "636f860ebdf301c0bfba27d9d762ae4295813e350cee9c124d74c9e89a1a93fc",
+                "md5": "f99240d58b49dfd55fff5bae2877c644"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.8/4.7.8.1/iso/installation-4.7.8.1-03.09.2025_17.11-baikal1.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.8/4.7.8.1/installation-baikal1",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "2025-09-03T17:11:00",
+              "device": "baikal1",
+              "hashsums": {
+                "gost": "efd582ae185cc9a2eb8942646c3920850e48c7b708d50fadc258c6f66d28e150",
+                "md5": "59127cfb4775caf7fccbc25d13809996"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.8/4.7.8.1/iso/main_update-4.7.8.1-03.09.2025_16.39.iso",
+              "type": "main_update",
+              "mount_point": "frozen/4.7/4.7.8/4.7.8.1/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2025-09-03T16:39:00",
+              "device": null,
+              "hashsums": {
+                "gost": "a6caf5bace71cb6d449b63cb46d10b4fe8dd29a71171008c365f1ee50b425296",
+                "md5": "e58f857170456c095bb963289bd85752"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/4.7/4.7.8/4.7.8.1",
+          "is_main_symlinked": false
+        }
       }
     },
     "4.8": {
@@ -23784,7 +24142,14 @@
       "1.8.3": {
         "path": "stable/1.8/1.8.3",
         "release_candidate": "1.8.3.7",
-        "special_versions": {}
+        "special_versions": {
+          "UU": {
+            "1.8.3.UU1": {
+              "path": "stable/1.8/1.8.3/UU1",
+              "release_candidate": "1.8.3.8"
+            }
+          }
+        }
       }
     },
     "1.11": {

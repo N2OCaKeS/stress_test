@@ -17,15 +17,19 @@ sudo apt install psmisc -y
 sudo apt install pkexec -y
 sudo apt install policykit-1 -y
 
+ASTRA_VERSION=$(cat /etc/astra_version)
+KERNEL_VERSION=$(uname -r)
 
-if grep -qE '1.8.*' /etc/astra_version || uname -r | grep -q 6.1; then
+if [[ "$ASTRA_VERSION" =~ ^1.8 ]] || [[ "$KERNEL_VERSION" =~ ^6.1 ]]; then
+#if grep -qE '1.8.*' /etc/astra_version || uname -r | grep -q 6.1; then
   sudo dpkg -i virtualbox-7.0_7.0.20*.deb
   if [[ $? != 0 ]]; then
     sudo apt install -fy
     sudo dpkg -i virtualbox-7.0_7.0.20*.deb
   fi
   sudo yes | VBoxManage extpack install --replace Oracle_VM_VirtualBox_Extension_Pack-7.0.20*.vbox-extpack
-elif grep -qE '1.7.*' /etc/astra_version && ! uname -r | grep -q '^6\\.1'; then
+elif [[ "$ASTRA_VERSION" =~ ^1.7 ]] && ! [[ "$KERNEL_VERSION" =~ ^6.1 ]]; then
+#elif grep -qE '1.7.*' /etc/astra_version && ! uname -r | grep -q '^6\\.1'; then
   sudo dpkg -i virtualbox-6.1*.deb
   if [[ $? != 0 ]]; then
     sudo apt install -fy
@@ -38,9 +42,9 @@ fi
 
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
-if grep -qE '1.8.*' /etc/astra_version || uname -r | grep -q 6.1; then
+if [[ "$ASTRA_VERSION" =~ ^1.8 ]] || [[ "$KERNEL_VERSION" =~ ^6.1 ]]; then
   sudo dpkg -i vagrant_2.4.1-1_x86_64.deb
-elif grep -qE '1.7.*' /etc/astra_version && ! uname -r | grep -q '^6\\.1'; then
+elif [[ "$ASTRA_VERSION" =~ ^1.7 ]] && ! [[ "$KERNEL_VERSION" =~ ^6.1 ]]; then
   sudo dpkg -i vagrant_2.2.19_x86_64.deb
 fi
 
@@ -82,7 +86,7 @@ if [ ! -d ~/.vagrant.d/ ]; then
 fi
 
 # check 'vbguest' (Vbox Guests) plugin, install
-if grep -qE '1.8.*' /etc/astra_version || uname -r | grep -q 6.1; then
+if [[ "$ASTRA_VERSION" =~ ^1.8 ]] || [[ "$KERNEL_VERSION" =~ ^6.1 ]]; then
   for plugin in vagrant-vbguest; do
     if test ! "$(vagrant plugin list | grep $plugin)"; then
       wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz
@@ -92,7 +96,7 @@ if grep -qE '1.8.*' /etc/astra_version || uname -r | grep -q 6.1; then
       [ $? != 0 ] && exit 1
     fi
   done
-if grep -qE '1.7.*' /etc/astra_version && ! uname -r | grep -q '^6\\.1'; then
+if [[ "$ASTRA_VERSION" =~ ^1.7 ]] && ! [[ "$KERNEL_VERSION" =~ ^6.1 ]]; then
   for plugin in vagrant-vbguest; do
     if test ! "$(vagrant plugin list | grep $plugin)"; then
       wget -O /tmp/gems.tar.gz ftp://qa111.devos.astralinux.ru/packages/vagrant-plugins/gems.tar.gz

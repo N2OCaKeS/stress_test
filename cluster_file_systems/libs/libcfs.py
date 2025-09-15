@@ -65,7 +65,7 @@ def send_remote_command(command, ip, user, password, port=22):
     if err_output != '':
         print(f'STDERR:\n{err_output}')
     ssh.close()
-
+    return output
 
 # def get_remote_file(remote_file_path, local_file_path, ip, user, password, port=22):
 #     client = paramiko.SSHClient()
@@ -173,6 +173,14 @@ def put_system_info_in_file(start, file):
                                stdout=subprocess.PIPE).stdout.decode("utf-8"),
                 str(lead_time)]
 
+    with open(file, 'a+') as info:
+        info.writelines(info_lst)
+
+def get_remote_system_info(start, file, host, user, passwd):
+    abv = send_remote_command(command="cat /etc/astra/build_version", ip=host, user=user, password=passwd)
+    kernel_version = send_remote_command(command="uname -r", ip=host, user=user, password=passwd)
+    lead_time = strftime("%H:%M:%S", gmtime(time() - start))
+    info_lst = [abv.strip("\n"), kernel_version.strip("\n"), str(lead_time)]
     with open(file, 'a+') as info:
         info.writelines(info_lst)
 

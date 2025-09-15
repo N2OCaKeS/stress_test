@@ -73,6 +73,7 @@ LOG_FILENAME = 'cfs_log'
 LOG_PATH ='{}/log/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 INFO_FILENAME = 'cfs_info.txt'
 INFO_PATH = '{}/{}'.format(SCRIPT_DIR, INFO_FILENAME)
+LOCAL_INFOFILENAME = '{}/{}'.format(LOCAL_SCRIPT_DIR, INFO_FILENAME)
 
 PACKAGES = {'ocfs2': 'ocfs2-tools'}
 

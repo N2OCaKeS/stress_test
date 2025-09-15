@@ -119,10 +119,11 @@ class Public:
         if self.testname == "fio":
             with open(INFO_FILENAME) as info:
                 info_lst = info.read().split('\n')
-            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+            with open(f'{TEMPLATE_PATH}/header_table_template_fio.html', 'r') as file:
                 header_table_temp = file.read()
-                # TODO
-                header_table = header_table_temp.format()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        lead_time=info_lst[3])
 
             with open(f'{REPORT_DIR_HOST}/result_fio.html', 'r') as file:
                 result_fio = file.read()

@@ -179,8 +179,9 @@ def put_system_info_in_file(start, file):
 def get_remote_system_info(start, file, host, user, passwd):
     abv = send_remote_command(command="cat /etc/astra/build_version", ip=host, user=user, password=passwd)
     kernel_version = send_remote_command(command="uname -r", ip=host, user=user, password=passwd)
+    package_version = send_remote_command(command="dpkg -l ceph | awk '{print $3}' | tail -n1", ip=host, user=user, password=passwd)
     lead_time = strftime("%H:%M:%S", gmtime(time() - start))
-    info_lst = [abv.strip("\n"), kernel_version.strip("\n"), str(lead_time)]
+    info_lst = [abv.strip("\n"), kernel_version.strip("\n"), package_version.strip("\n"), str(lead_time)]
     with open(file, 'a+') as info:
         info.writelines(info_lst)
 

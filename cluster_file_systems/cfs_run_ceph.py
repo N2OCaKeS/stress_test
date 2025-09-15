@@ -164,8 +164,6 @@ class Ceph:
             install_need_packages = "sudo apt install libgfapi0 -y"
             install_pip_req = "sudo pip3 install -r /var/tmp/req.txt"
         
-        # TODO
-        # HOST_IP = "10.177.103.101"
         virt_machines = VMS(rc_vbox=self.vbox, vm_count=self.vmc, kernel=self.kernel)
         virt_machines.prepare_and_start()
         self.HOSTS = virt_machines.vm_dates
@@ -265,7 +263,6 @@ class Ceph:
         info_file.close()
         get_remote_system_info(start=start_time, file=LOCAL_INFOFILENAME, host=self.HOSTS["testvm1"]['ip'], user=self.HOSTS["testvm1"]['login'], passwd=self.HOSTS["testvm1"]['password'])
 
-        
         self.uzs.public = True
         self.uzs.statistics = True
         self.uzs.upload_test_cycle_status(zefir_status='pass')

@@ -51,6 +51,6 @@ def balance(rc, sec_mode = "s"):
     load_balancer.load()
 
     test = Test()
-    # test.test()
+    test.test()
     SystemCommands.cmd('cat results_balance.txt')
 

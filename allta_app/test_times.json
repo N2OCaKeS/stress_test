@@ -1,53 +1,53 @@
 {
     "1.7": {
         "stand3": {
-            "EXFAT": "3:53:02",
-            "EXT2": "0:46:21",
-            "EXT3": "0:47:51",
-            "EXT4": "0:48:17",
-            "FAT": "1:25:49",
-            "XFS": "0:49:42",
-            "unix": "1:11:29",
-            "EXT4 parsec": "0:50:18",
-            "XFS parsec": "0:51:53",
-            "unix parsec": "1:11:16",
-            "FreeIPA auth": "1:24:14",
-            "OCFS2": "1:55:51",
+            "EXFAT": "3:51:34",
+            "EXT2": "0:47:07",
+            "EXT3": "0:46:34",
+            "EXT4": "0:46:27",
+            "FAT": "1:30:48",
+            "XFS": "0:57:46",
+            "unix": "1:04:20",
+            "EXT4 parsec": "0:46:12",
+            "XFS parsec": "0:49:42",
+            "unix parsec": "1:10:29",
+            "FreeIPA auth": "0:25:09",
             "Total time": "0:00:00"
         },
         "stand4": {
-            "postgresql": "4:22:40",
-            "postgresql-aud-off": "2:37:23",
-            "postgresql-sm": "4:26:52",
-            "psql parsec": "2:53:10",
-            "psql vanilla": "2:27:58",
-            "psql balance": "2:03:15",
+            "postgresql": "4:23:59",
+            "postgresql-aud-off": "2:27:45",
+            "postgresql-sm": "4:22:47",
+            "psql parsec": "0:40:49",
+            "psql vanilla": "2:34:07",
+            "psql balance": "2:02:29",
+            "steal time": "8:57:07",
+            "steal time-sm": "2:28:32",
             "Total time": "0:00:00"
         },
         "stand10": {
-            "NTFS": "10:28:25",
-            "psql kernels": "1:41:06",
+            "NTFS": "7:57:12",
+            "psql kernels": "1:44:00",
+            "OCFS2": "11:50:09",
             "Total time": "0:00:00"
         },
         "stand11": {
             "parsec impact-fs": "0:42:19",
             "parsec impact-fs aud-off": "0:43:47",
-            "docker-wa": "1:05:23",
-            "FIO": "1:48:15",
-            "steal time": "2:27:43",
-            "steal time-sm": "2:28:32",
-            "vPingPong": "1:16:17",
-            "vUnixBench": "2:39:07",
+            "docker-wa": "0:31:25",
+            "FIO": "1:25:25",
+            "vPingPong": "1:01:48",
+            "vUnixBench": "2:26:22",
             "psql oom": "0:47:12",
             "Total time": "0:00:00"
         },
         "stand12": {
-            "syslog-ng": "4:08:01",
-            "apache-rp": "0:53:43",
-            "auditd-f": "0:55:21",
-            "auditd-p": "1:44:42",
-            "auditd-u": "7:13:28",
-            "digsig-cdt": "0:45:11",
+            "syslog-ng": "2:16:28",
+            "apache-rp": "0:35:56",
+            "auditd-f": "0:48:04",
+            "auditd-p": "1:31:40",
+            "auditd-u": "1:41:36",
+            "digsig-cdt": "0:31:32",
             "Total time": "0:00:00"
         },
         "stand13": {
@@ -68,7 +68,6 @@
             "XFS parsec": "1:03:41",
             "unix parsec": "1:23:14",
             "FreeIPA auth": "2:01:38",
-            "OCFS2": "2:13:35",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -78,11 +77,14 @@
             "psql parsec": "3:13:15",
             "psql vanilla": "2:47:21",
             "psql balance": "2:46:01",
+            "steal time": "2:50:43",
+            "steal time-sm": "2:47:29",
             "Total time": "0:00:00"
         },
         "stand10": {
             "NTFS": "10:24:34",
             "psql kernels": "2:15:01",
+            "OCFS2": "2:13:35",
             "Total time": "0:00:00"
         },
         "stand11": {
@@ -90,8 +92,6 @@
             "parsec impact-fs aud-off": "0:53:04",
             "docker-wa": "1:17:55",
             "FIO": "2:10:45",
-            "steal time": "2:50:43",
-            "steal time-sm": "2:47:29",
             "vPingPong": "1:43:13",
             "vUnixBench": "3:06:34",
             "psql oom": "2:07:54",

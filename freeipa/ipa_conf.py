@@ -1,9 +1,16 @@
+import json
 import subprocess
 
 def cmd(command):
     ret_code = subprocess.run(command, shell=True).returncode
     return ret_code
 
+def get_new_pass():
+    with open("/home/u/token.json", 'r') as tmp_file:
+        tmp = json.load(tmp_file)
+        new_pass = tmp['srv_pass']
+        return new_pass
+    
 try:
     import requests
 except Exception as e:
@@ -25,7 +32,7 @@ INFO_FILENAME = f"{SCRIPT_DIR}/ipa_info.json"
 TEMPLATE_PATH = f'{SCRIPT_DIR}/templates'
 
 USER = "u"
-PASSWORD = '1'
+PASSWORD = get_new_pass()
 
 REPLICA = False
 DOMAIN = "stress-testing.local"

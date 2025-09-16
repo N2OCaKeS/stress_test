@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -vx
 
 #virtualbox
 wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/vbox7

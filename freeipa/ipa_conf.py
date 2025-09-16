@@ -6,7 +6,7 @@ def cmd(command):
     return ret_code
 
 def get_new_pass():
-    with open("/home/u/token.json", 'r') as tmp_file:
+    with open("/home/u/tokens.json", 'r') as tmp_file:
         tmp = json.load(tmp_file)
         new_pass = tmp['srv_pass']
         return new_pass

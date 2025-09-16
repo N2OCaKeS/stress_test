@@ -119,6 +119,7 @@ if __name__ == "__main__":
     out = remote_cmd("ip a", HOSTS['server']['ip'])
     print(out)
     sleep(15)
+    remote_put_file(HOSTS['server']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_init_dc.py', "ipa_init_dc.py")
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/prepare.sh', "prepare.sh")
@@ -152,6 +153,7 @@ if __name__ == "__main__":
     
     
     # Копируем инициализирующие скрипты по sftp и запускаем
+    remote_put_file(HOSTS['clients']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
     remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
     remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_init_client.py', "ipa_init_client.py")
     remote_exec("sudo python3 ipa_init_client.py", 'clients')

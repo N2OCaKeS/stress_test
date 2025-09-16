@@ -137,7 +137,7 @@ class Public:
                 header_table_temp = file.read()
                 header_table = header_table_temp.format(av=info_lst[0],
                                                         kernel=info_lst[1],
-                                                        package_name=PACKAGES[self.fs],
+                                                        package_name=self.fs,
                                                         package_vers=info_lst[2],
                                                         param_files=f'{FILES}-{FILES_LIMIT}/{FILES_STEP}',
                                                         param_size=f'{SIZE}-{SIZE_LIMIT}/{SIZE_STEP}',

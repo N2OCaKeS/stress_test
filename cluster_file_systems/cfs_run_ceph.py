@@ -135,22 +135,21 @@ class Ceph:
         self.type_load_test = kwargs['TS']
         for key, value in kwargs.items():
             setattr(self, key, value)
-        # TODO 
-        uzs = UploaderZC(folder_tree_id=args.FTI,
-                         test_cycle_name=args.TCYC,
-                         test_case_name=args.TCAS,
-                         basic_auth=args.BA,
-                         test_cycle_version=args.TCV,
-                         token=args.TOKEN,
-                         username=args.USER,
-                         conf_space=args.SPACE,
-                         conf_parent_page=args.PPAGE,
-                         conf_new_page_name=args.NPAGE,
-                         grade_stand=args.STAND,
-                         file_system=args.FS,
-                         test_set=args.TS)
-    
-        uzs.upload_test_cycle_status('progress')
+        self.uzs = UploaderZC(folder_tree_id=kwargs["FTI"],
+                              test_cycle_name=kwargs['TCYC'],
+                              test_case_name=kwargs['TCAS'],
+                              basic_auth=kwargs['BA'],
+                              test_cycle_version=kwargs['TCV'],
+                              token=kwargs['TOKEN'],
+                              username=kwargs['USER'],
+                              conf_space=kwargs['SPACE'],
+                              conf_parent_page=kwargs['PPAGE'],
+                              conf_new_page_name=kwargs['NPAGE'],
+                              grade_stand=kwargs['STAND'],
+                              file_system=kwargs['FS'],
+                              test_set=kwargs['TS'])
+
+        self.uzs.upload_test_cycle_status('progress')
 
 
     def start(self):

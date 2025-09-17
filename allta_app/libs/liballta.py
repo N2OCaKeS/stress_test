@@ -96,6 +96,7 @@ process_manager4 = None
 process_manager10 = None
 process_manager11 = None
 process_manager12 = None
+process_manager13 = None
 process_list1 = []
 process_list2 = []
 process_list3 = []
@@ -103,6 +104,7 @@ process_list4 = []
 process_list10 = []
 process_list11 = []
 process_list12 = []
+process_list13 = []
 
 
 fd, temp_file_err = mkstemp(dir='/tmp/', suffix='log', text=True)

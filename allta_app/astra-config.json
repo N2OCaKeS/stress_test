@@ -165,6 +165,7 @@
             },
             {
                 "12.8": [
+                    "12.8.1",
                     "12.8-testing"
                 ]
             }
@@ -415,6 +416,12 @@
             }
         ],
         "vagrant_box": [
+            {
+                "12.8.1": [
+                    "orel-vanilla-gui/12.8.1.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-12.8-testing.json"
+                ]
+            },
             {
                 "12.8-testing": [
                     "orel-vanilla-gui/12.8.1.7",

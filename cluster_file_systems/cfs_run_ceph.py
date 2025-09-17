@@ -1,10 +1,10 @@
 import argparse
-from time import sleep
-from libs.libcfs import check_output_command, send_remote_command, create_remote_file, get_remote_file
+from time import sleep, time
+from libs.libcfs import check_output_command, send_remote_command, create_remote_file, get_remote_file, get_remote_system_info
 
 from cfs_create_vms import VMS
 from cfs_storage_init_ceph import CephStorageCreate
-from cfs_conf import STORAGE_NAME, SCRIPT_DIR, REPORT_DIR_HOST, REPORT_PATH_HOST
+from cfs_conf import STORAGE_NAME, REPORT_DIR_HOST, LOCAL_INFOFILENAME
 from libs.libtable import ReportFIO
 from libs.zefir import UploaderZC
 
@@ -49,7 +49,16 @@ def parse_args():
                         choices=['1',
                                 '2',
                                 '3',
-                                '4'],
+                                '4',
+                                '5',
+                                '6',
+                                '7',
+                                '8',
+                                '9',
+                                '10',
+                                '11',
+                                '12',
+                                '13'],
                         required=True,
                         help='stand num',
                         dest='STAND')
@@ -99,10 +108,11 @@ def parse_args():
                                  'multithreaded',
                                  'big_files',
                                  'fs_mark_count',
-                                 'fs_mark_size'],
-                                 default='fs_mark_count',
-                                 required=False,
-                                 dest='TS')
+                                 'fs_mark_size',
+                                 'fio'],
+                        default='fs_mark_count',
+                        required=False,
+                        dest='TS')
     
     parser.add_argument('-vbox', 
                         action='store',
@@ -128,32 +138,31 @@ class Ceph:
     controlvm_off = 'virsh --connect qemu:///system destroy {host}'
     run_test_cmd = 'sudo python3 {dir}/{file} --test-set {ts}'
 
-    def __init__(self, vbox, kernel, all_hosts, type_load_test, **kwargs):
-        self.vbox = vbox
-        self.kernel = kernel
-        self.all_hosts = all_hosts
-        self.type_load_test = type_load_test
+    def __init__(self, **kwargs):
+        self.vbox = kwargs['VBOX']
+        self.kernel = kwargs['KERNEL']
+        self.type_load_test = kwargs['TS']
         for key, value in kwargs.items():
             setattr(self, key, value)
-        # TODO 
-        uzs = UploaderZC(folder_tree_id=args.FTI,
-                         test_cycle_name=args.TCYC,
-                         test_case_name=args.TCAS,
-                         basic_auth=args.BA,
-                         test_cycle_version=args.TCV,
-                         token=args.TOKEN,
-                         username=args.USER,
-                         conf_space=args.SPACE,
-                         conf_parent_page=args.PPAGE,
-                         conf_new_page_name=args.NPAGE,
-                         grade_stand=args.STAND,
-                         file_system=args.FS,
-                         test_set=args.TS)
-    
-        uzs.upload_test_cycle_status('progress')
+        self.uzs = UploaderZC(folder_tree_id=kwargs["FTI"],
+                              test_cycle_name=kwargs['TCYC'],
+                              test_case_name=kwargs['TCAS'],
+                              basic_auth=kwargs['BA'],
+                              test_cycle_version=kwargs['TCV'],
+                              token=kwargs['TOKEN'],
+                              username=kwargs['USER'],
+                              conf_space=kwargs['SPACE'],
+                              conf_parent_page=kwargs['PPAGE'],
+                              conf_new_page_name=kwargs['NPAGE'],
+                              grade_stand=kwargs['STAND'],
+                              file_system=kwargs['FS'],
+                              test_set=kwargs['TS'])
+
+        self.uzs.upload_test_cycle_status('progress')
 
 
     def start(self):
+        start_time = time()
         if self.vbox.startswith("1.8"):
             self.vmc = 5
             install_need_packages = "sudo apt install python3-pip libgfapi0 libnbd0 libpmemblk1 -y"
@@ -163,12 +172,10 @@ class Ceph:
             install_need_packages = "sudo apt install libgfapi0 -y"
             install_pip_req = "sudo pip3 install -r /var/tmp/req.txt"
         
-        # TODO
-        HOST_IP = "10.177.103.101"
-        virt_machines = VMS(rc_vbox=self.vbox, vm_count=len(self.all_hosts), hostip=HOST_IP, kernel=self.kernel)
+        virt_machines = VMS(rc_vbox=self.vbox, vm_count=self.vmc, kernel=self.kernel)
         virt_machines.prepare_and_start()
         self.HOSTS = virt_machines.vm_dates
-        for ind, node in enumerate(self.all_hosts):
+        for ind, node in enumerate(list(self.HOSTS.keys())):
             check_output_command(self.storagecreate.format(size="25", number=ind))
             sleep(20)
             check_output_command(self.storageattach.format(node=node, number=ind, storage_name=STORAGE_NAME))
@@ -228,7 +235,7 @@ class Ceph:
 
         if self.type_load_test == "fio":
             self.type_interface_ceph = "rbd"
-        elif self.type_load_test == "fsmark":
+        elif self.type_load_test == "fs_mark_count":
             self.type_interface_ceph = "cephfs"
         storage = CephStorageCreate(astra_version=self.vbox, 
                                     HOSTS=self.HOSTS,
@@ -260,6 +267,10 @@ class Ceph:
                             user=self.HOSTS["testvm1"]['login'], 
                             password=self.HOSTS["testvm1"]['password'])
         
+        info_file = open(LOCAL_INFOFILENAME, 'w')
+        info_file.close()
+        get_remote_system_info(start=start_time, file=LOCAL_INFOFILENAME, host=self.HOSTS["testvm1"]['ip'], user=self.HOSTS["testvm1"]['login'], passwd=self.HOSTS["testvm1"]['password'])
+        
         self.uzs.public = True
         self.uzs.statistics = True
         self.uzs.upload_test_cycle_status(zefir_status='pass')
@@ -268,9 +279,5 @@ if __name__ == "__main__":
     args = parse_args()
     args_dict = vars(args)
 
-    c = Ceph(vbox="1.8.3.7",
-             kernel="6.1",
-             all_hosts=["testvm1", "testvm2", "testvm3", "testvm4", "testvm5"],
-             type_load_test="fio",
-             **args_dict)
+    c = Ceph(**args_dict)
     c.start()

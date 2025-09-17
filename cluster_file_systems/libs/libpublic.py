@@ -116,13 +116,18 @@ class Public:
                                             self.c_space,
                                             c_np)
         
-        if self.testname == "fio":
+        if self.ts == "fio":
             with open(INFO_FILENAME) as info:
                 info_lst = info.read().split('\n')
-            with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
+            with open(f'{TEMPLATE_PATH}/header_table_template_fio.html', 'r') as file:
                 header_table_temp = file.read()
-                # TODO
-                header_table = header_table_temp.format()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'],
+                                                        lead_time=info_lst[3])
 
             with open(f'{REPORT_DIR_HOST}/result_fio.html', 'r') as file:
                 result_fio = file.read()
@@ -136,8 +141,6 @@ class Public:
                 header_table_temp = file.read()
                 header_table = header_table_temp.format(av=info_lst[0],
                                                         kernel=info_lst[1],
-                                                        package_name=PACKAGES[self.fs],
-                                                        package_vers=info_lst[2],
                                                         param_files=f'{FILES}-{FILES_LIMIT}/{FILES_STEP}',
                                                         param_size=f'{SIZE}-{SIZE_LIMIT}/{SIZE_STEP}',
                                                         arm_num=self.stands[self.grade_stand]['grade'],

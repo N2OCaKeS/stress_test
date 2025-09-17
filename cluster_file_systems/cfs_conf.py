@@ -73,6 +73,7 @@ LOG_FILENAME = 'cfs_log'
 LOG_PATH ='{}/log/{}'.format(SCRIPT_DIR, LOG_FILENAME)
 INFO_FILENAME = 'cfs_info.txt'
 INFO_PATH = '{}/{}'.format(SCRIPT_DIR, INFO_FILENAME)
+LOCAL_INFOFILENAME = '{}/{}'.format(LOCAL_SCRIPT_DIR, INFO_FILENAME)
 
 PACKAGES = {'ocfs2': 'ocfs2-tools'}
 
@@ -117,7 +118,7 @@ SIZE = 1024
 SIZE_STEP = 1024
 SIZE_LIMIT = 10240
 
-HOST_IP = "10.177.103.203"
+HOST_IP = "10.177.103.206"
 
 HOST_STORAGE = "testvm1"
 NODES = ["testvm2", "testvm3"]

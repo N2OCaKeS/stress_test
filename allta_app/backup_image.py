@@ -206,6 +206,12 @@ parser.add_argument('-psql-oom',
                     help='testlist',
                     dest='PSQL_OOM')
 
+parser.add_argument('-tes',
+                    action='store',
+                    required=True,
+                    help='test env status',
+                    dest='TESTENV')
+
 
 args = parser.parse_args()
 
@@ -234,6 +240,7 @@ branch = args.BRANCH
 parent_page = args.PARP
 systems = ['debian10', 'debian10-5.15', 'altlinux-5.10']
 dates_name = f'dates_{args.STAND}.conf'
+testenv_status = f'testenv_{args.STAND}.conf'
 username = f'--username {__username}'
 token = f'--token {__conf_token}'
 confluence_space = "--confluence-space 'DEVQA'"
@@ -326,6 +333,9 @@ else:
 
 with open(f'/home/u/git/stress_test/allta_app/{dates_name}', 'w') as w:
     w.write(dates)
+
+with open(f'/home/u/git/stress_test/allta_app/{testenv_status}', 'w') as w:
+    w.write(args.TESTENV)
 
 home_dir = os.path.expanduser('~')
 if not os.path.isdir(f'/home/u/git/stress_test/allta_app/status_{args.STAND}'):
@@ -702,15 +712,15 @@ class TestRunProvision(BootOrder):
                         logging.error(str(e))
                         sleep(60)
                 if self.modes:
-                    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                    comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                 u@' + self.stand_ip + " sudo sed -i '/auth[[:space:]]*required[[:space:]]*pam_lastlog.so[[:space:]]*inactive=/s/^/#/' /etc/pam.d/common-auth")
-                    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                    comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                 u@' + self.stand_ip + " cat /etc/pam.d/common-auth")
-                    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                    comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                 u@' + self.stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
                     if modes[args.MODE] == '2':
-                        comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
-                        comm_and_log(f'sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
+                        comm_and_log(f'sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
+                        comm_and_log(f'sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
             #elif args.PSQL_BALANCE:
             #    socket_available()
             write_status(success)
@@ -820,10 +830,11 @@ def db_kernel_changer(cpu_count, database, position=None):
     
     grub.ex_command(set_count)
     grub.ex_command(update)
-    comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no \
+    comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=/dev/null u@' + stand_ip + ' sudo reboot')
     socket_available()
     create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
+    create_remote_file(f'/home/u/git/stress_test/allta_app/{testenv_status}', f'/home/u/{testenv_status}')
 
     if position == 'begin':
         create_remote_file('/home/u/git/stress_test/allta_app/starter.sh', '/home/u/starter.sh')
@@ -885,6 +896,7 @@ with open('git/gitclone.conf', 'w') as w:
 #dates.conf
 create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
 #starter
+create_remote_file(f'/home/u/git/stress_test/allta_app/{testenv_status}', f'/home/u/{testenv_status}')
 create_remote_file('/home/u/git/stress_test/allta_app/starter.sh', '/home/u/starter.sh')
 create_remote_file('/home/u/git/stress_test/allta_app/git/git_clone.py', '/home/u/git/git_clone.py')
 create_remote_file('/home/u/git/stress_test/allta_app/git/gitclone.conf', '/home/u/git/gitclone.conf')
@@ -902,6 +914,7 @@ if read_status() == success:
         with open(f'/home/u/git/stress_test/allta_app/{dates_name}', 'w') as w:
             w.write(ovf_ram_dates)
         create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
+        create_remote_file(f'/home/u/git/stress_test/allta_app/{testenv_status}', f'/home/u/{testenv_status}')
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
         write_status(done)
     elif args.OVF == 'sd':
@@ -911,7 +924,7 @@ if read_status() == success:
                             TCAS=args.TCASE, 
                             TCV=args.RELEASE, 
                             status='fail')
-        comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                     u@' + stand_ip + ' sudo reboot')
         sleep(600)
         if check_running_system:

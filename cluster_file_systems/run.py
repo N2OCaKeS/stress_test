@@ -24,6 +24,6 @@ with open(f'/home/u/{args.NAME}', 'r') as r:
     dates = r.read()
 
 if args.CFS == "ceph":
-    subprocess.run(f'sudo {VENV_PATH} cfs_run.py {dates}', shell=True)
-else:
     subprocess.run(f'sudo {VENV_PATH} cfs_run_ceph.py {dates}', shell=True)
+else:
+    subprocess.run(f'sudo {VENV_PATH} cfs_run.py {dates}', shell=True)

@@ -1,8 +1,8 @@
-allta_app - v2.46.3
+allta_app - v2.47.0
 * Replace tests between
   stands
-
-
+* Fix critical pswd bag
+* Add testenv prepare
 
 
 allta_app - v2.46.2

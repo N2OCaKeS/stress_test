@@ -37,6 +37,12 @@ parser.add_argument('-ts',
                     help='test name(s)',
                     dest='TESTS')
 
+parser.add_argument('-te',
+                    action='store',
+                    required=True,
+                    help='test env status',
+                    dest='TESTENV')
+
 args = parser.parse_args()
 
 with open('/home/u/tokens.json', 'r') as r:
@@ -289,6 +295,7 @@ try:
                             fio = '-lvirt fio'
                             vunixbench = '-lvirt unixbench'
                             vpp = '-lvirt pingpong'
+                            tes = f'-tes {args.TESTENV}'
                             if tests[dates_list[i][1]] == 'auditd-p':
                                 testlist = f'-aud psaud'
                             elif tests[dates_list[i][1]] == 'auditd-f':
@@ -306,70 +313,70 @@ try:
                             #print(f'{sn} {rs} {test} {mode} {kn} {stand} {tcyc} {tcas} {branch} {cti} {pp}')
                             if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {psql} {testnum} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'psql parsec':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {psql_parsec}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_parsec} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'psql vanilla':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {psql_vanilla}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_vanilla} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'psql balance':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {psql_balance}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_balance} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'psql oom':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {psql_oom}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_oom} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'psql kernels':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {psql_kern}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_kern} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'tantor kernels':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {tantor_kern}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {tantor_kern} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'tantor vanilla':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'RAM-overflow':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {ram_ovf}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {ram_ovf} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'SD-overflow':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {sd_ovf}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {sd_ovf} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'FreeIPA auth':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {ipa_auth}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {ipa_auth} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'parsec impact-fs':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {parsec_impact}', shell=True)                           
+                                            {tcas} {branch} {cti} {pp} {testnum} {parsec_impact} {tes}', shell=True)                           
                             elif tests[dates_list[i][1]] == 'parsec impact-fs aud-off':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {parsec_impact_ao}', shell=True) 
+                                            {tcas} {branch} {cti} {pp} {testnum} {parsec_impact_ao} {tes}', shell=True) 
                             elif tests[dates_list[i][1]] == 'apache-rp':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {apache_rp}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {apache_rp} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'steal time':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {steal_time} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'steal time-sm':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {steal_time_sm}', shell=True)
+                                            {tcas} {branch} {cti} {pp} {testnum} {steal_time_sm} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'FIO':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True)  
+                                            {tcas} {branch} {cti} {pp} {testnum} {fio} {tes}', shell=True)  
                             elif tests[dates_list[i][1]] == 'vUnixBench':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {vunixbench}', shell=True) 
+                                            {tcas} {branch} {cti} {pp} {testnum} {vunixbench} {tes}', shell=True) 
                             elif tests[dates_list[i][1]] == 'vPingPong':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {vpp}', shell=True) 
+                                            {tcas} {branch} {cti} {pp} {testnum} {vpp} {tes}', shell=True) 
                             elif tests[dates_list[i][1]].startswith('auditd'):
                                 subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                            {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                            {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
                             else: 
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                                {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                                {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
                             end_time = datetime.datetime.now().replace(microsecond=0)
                             save_all_output('Выполнен\n')
                             print('Выполнен')
@@ -421,6 +428,7 @@ try:
                     fio = '-lvirt fio'
                     vunixbench = '-lvirt unixbench'
                     vpp = '-lvirt pingpong'
+                    tes = f'-tes {args.TESTENV}'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -437,70 +445,70 @@ try:
                     
                     if tests[dates_list[i][1]] == 'postgresql' or tests[dates_list[i][1]] == 'postgresql-sm':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {psql} {testnum}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {psql} {testnum} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'psql parsec':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {psql_parsec}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_parsec} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'psql vanilla':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {psql_vanilla}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_vanilla} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'psql balance':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {psql_balance}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_balance} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'psql oom':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {psql_oom}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_oom} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'psql kernels':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {psql_kern}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {psql_kern} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'tantor kernels':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_kern}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_kern} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'tantor vanilla':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {tantor_vanilla} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'postgresql-aud-off':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {testnum} {psql_aud_off} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'RAM-overflow':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {testnum} {ram_ovf}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {testnum} {ram_ovf} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'SD-overflow':
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                    {tcas} {branch} {cti} {pp} {testnum} {sd_ovf}', shell=True)
+                                    {tcas} {branch} {cti} {pp} {testnum} {sd_ovf} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'FreeIPA auth':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {ipa_auth}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {ipa_auth} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'parsec impact-fs':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {parsec_impact}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {parsec_impact} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'parsec impact-fs aud-off':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {parsec_impact_ao}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {parsec_impact_ao} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'apache-rp':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {apache_rp}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {apache_rp} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'steal time':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time}', shell=True) 
+                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time} {tes}', shell=True) 
                     elif tests[dates_list[i][1]] == 'steal time-sm':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time_sm}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {steal_time_sm} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'FIO':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {fio}', shell=True) 
+                                        {tcas} {branch} {cti} {pp} {testnum} {fio} {tes}', shell=True) 
                     elif tests[dates_list[i][1]] == 'vUnixBench':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {vunixbench}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {vunixbench} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'vPingPong':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum} {vpp}', shell=True)  
+                                        {tcas} {branch} {cti} {pp} {testnum} {vpp} {tes}', shell=True)  
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
-                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                        {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                        {tcas} {branch} {cti} {pp} {testnum}', shell=True)
+                                        {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
                     end_time = datetime.datetime.now().replace(microsecond=0)
                     save_all_output('Выполнен\n')
                     print('Выполнен')

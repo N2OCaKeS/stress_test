@@ -1144,7 +1144,8 @@
           }
         </style>
 
-        <div style="float: left; text-align: left;">
+        
+        <div style="display: flex; align-items: center;">
           <!-- <button id="toggleButton" onclick="toggleAccordion()" style="padding: 0; border: none; background: none;">
               <img src="http://10.177.103.10:8000/static/settings.gif" alt="Settings" style="width: 100%; height: 100%;">
           </button> -->
@@ -1152,9 +1153,38 @@
             <input class="form-check-input" type="checkbox" role="switch" id="toggleSwitch" onchange="toggleAccordion()">
             <label class="form-check-label" for="toggleSwitch"></label>
           </div>
-          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">Смена</p>
-          <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">параметров</p>
+            <div style="margin-left: 10px;">
+              <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">Запуск тестов | Создание прогонов</p>
+            </div>
         </div>
+
+        <div style="display: flex; align-items: center;">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="toggleSwitch" onchange="testenvSwitchfunc(this.checked)">
+            <label class="form-check-label" for="testenvSwitch"></label>
+          </div>
+            <div style="margin-left: 10px;">
+              <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">Стандартный запуск | Тестовое окружение</p>
+            </div>
+        </div>
+
+        <script>
+          function testenvSwitchfunc(isChecked) {
+              // Отправляем AJAX-запрос с текущим состоянием переключателя
+              $.ajax({
+                  url: '/testenv-switch',
+                  method: 'POST',
+                  contentType: 'application/json',
+                  data: JSON.stringify({ state: isChecked ? 'on' : 'off' }),
+                  success: function(response) {
+                      console.log('Test environment switched:', response.message);
+                  },
+                  error: function(error) {
+                      console.error('Error switching test environment:', error.responseText);
+                  }
+              });
+          }
+        </script>
 
         
         <!-- disk info

@@ -29,6 +29,7 @@ from libs.liballta import (index_page,
                           backup_snapshot,
                           backup_vm_snapshot,
                           busy_status_control,
+                          prepare_testenv_status,
                           power_on_stand,
                           main_url,
                           mobile_url,
@@ -584,6 +585,18 @@ def check_for_updates():
         return jsonify({'update_required': 'false'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/testenv-switch', methods=['POST'])
+def testenv_switch():
+    data = request.get_json()
+    switch_state = data['state']
+
+    if switch_state == 'on':
+        prepare_testenv_status(method='put', switch='on')
+    elif switch_state == 'off':
+        prepare_testenv_status(method='put', switch='off')
+
+    return jsonify({'message': f'Set to {switch_state}'})
 
 
 # if __name__ == '__main__':

@@ -7,6 +7,7 @@ set -vx
 #
 localhost=`hostname -I | awk '{print $1}'`
 current_kernel=`uname -r`
+testenv=`cat /home/u/testenv_*.conf`
 
 cleanup_kernel() {
 installed_kernels=$(dpkg --list | grep 'linux-image-[0-9]' | awk '{print $2}')
@@ -69,13 +70,17 @@ echo sed -i \'s/.*cgroup_controllers.*/cgroup_controllers = [ \"cpu\", \"devices
 echo sudo systemctl restart libvirtd >> prepare.sh
 bash prepare.sh $1 $3 $5
 
-if [ "$4" == "kernel" ]; then
-    python3 run.py -n "$2" -kn "$4"
-elif [ "$4" == "balance" ]; then
-    python3 run.py -n "$2" -bl "$4"
-elif [ "$4" == "oom" ]; then
-    python3 run.py -n "$2" -oom "$4"
+if [[ "$testenv" == 'on' ]]; then
+    echo 'Подготовка тестового окружения завершена'
+    exit 0
 else
-    python3 run.py -n "$2"
+    if [ "$4" == "kernel" ]; then
+        python3 run.py -n "$2" -kn "$4"
+    elif [ "$4" == "balance" ]; then
+        python3 run.py -n "$2" -bl "$4"
+    elif [ "$4" == "oom" ]; then
+        python3 run.py -n "$2" -oom "$4"
+    else
+        python3 run.py -n "$2"
+    fi
 fi
-

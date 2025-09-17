@@ -460,6 +460,7 @@ def run_command_on_stand(num, http=True):
         #prefix = 'brest'
 
     if command == 'start':
+        testenv_status = prepare_testenv_status(method='get')
         with open(f'front_stand{num}.log', 'w') as w:
             w.write('Start front logging\n\n')
         with open(f'conf/work_status_stand{num}.conf', 'w') as w:
@@ -473,8 +474,8 @@ def run_command_on_stand(num, http=True):
             with open(f'conf/{prefix}_kernel_args.conf', 'r') as r:
                 kernel = r.read()
 
-        command_to_run = f'{VENV_PATH} allta_back.py -rs {releas} -st stand{num} -ts "{tests}"'
-        command_to_run_kernel = f'{VENV_PATH} allta_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}"'
+        command_to_run = f'{VENV_PATH} allta_back.py -rs {releas} -st stand{num} -ts "{tests}" -te {testenv_status}'
+        command_to_run_kernel = f'{VENV_PATH} allta_back.py -rs {releas} -st stand{num} -ts "{tests}" -kn "{kernel}" -te {testenv_status}'
 
         def run_command_and_log(command):
             with open(f'front_stand{num}.log', 'a') as cpu_ram_output:
@@ -1276,3 +1277,14 @@ class TestTimeWatchdog:
             w.write(html_page)
 
 
+
+def prepare_testenv_status(method: str, switch='off') -> str:
+    if method == 'put':
+        with open('conf/prepare_testenv_status.conf', 'w') as w:
+            status = switch
+            w.write(status)
+        return status
+    elif method == 'get':
+        with open('conf/prepare_testenv_status.conf', 'r') as r:
+            status = r.read().strip()
+        return status

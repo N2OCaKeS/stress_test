@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Set
 from atlassian.errors import ApiPermissionError
 
-from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, ParsecStatistics, PostgreSQLStatistics, DockerStatstics
+from statistics_st import BaseStatistics, FreeIpaStatistics, VirtStatistics, ParsecStatistics, PostgreSQLStatistics, DockerStatstics, FileSystemStatistics
 from parsers import BaseParser, ApacheParser, ParsecParser
 
 from utils import UtilForReadLogs, UtilGetTraceback
@@ -209,6 +209,32 @@ def docker_statistics(body: Statistics):
         response["status"] = "error"
         response["message"] = message_error
     return response
+
+@app.post('/file-systems-statistics')
+def file_systems_statistics(body: Statistics):
+    file_systems_stat = FileSystemStatistics(stat_title="Файловые системы",
+                                             username=body.username, 
+                                             tokenconf=body.token,
+                                             set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2", "CEPH", "CEPH fio"},
+                                             comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"]])
+    response = {
+        "status": "",
+        "message": ""
+    }
+    try:
+        file_systems_stat.create()
+        response["message"] = "Файловые системы - Все прошло успешно"
+    except ApiPermissionError:
+        main_logger.error("confluence тупит пробуем еще раз")
+        sleep(60)
+        file_systems_stat.create()
+        response["status"] = "warning"
+        response["message"] = "Файловые системы - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
+    except Exception as error:
+        message_error = UtilGetTraceback.get_traceback(e=error)
+        response["status"] = "were_errors"
+        response["message"] = f"\nФайловые системы - {message_error}\n"
+
 
 @app.post("/all-statistics")
 def all_statistics(body: Auth):

@@ -5,7 +5,7 @@ from abc import abstractmethod
 
 from confluence.confluence_conf import ID_ROOT_PAGES
 from pages import Pages
-from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser, DockerParser
+from parsers import MainParser, BaseParser, FreeIpaParser, VirtParser, ParsecParser, PostgreSQLParser, DockerParser, FileSystemParser
 from tables import MainTable, MathTable, SummaryTable, TableSeparatelyByKernel, SummaryTableNew, BugsTable, Annotations
 from graphs import MainGraph, SummaryGraph, SummaryLineGraph, ComparisonKernelLineGraph
 from sorting import Scale
@@ -391,3 +391,9 @@ class DockerStatstics(BaseStatistics):
           else:
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return False, None
+          
+
+class FileSystemStatistics(BaseStatistics):
+     def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = FileSystemParser):
+          super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
+     

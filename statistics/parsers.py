@@ -321,3 +321,31 @@ class DockerParser(BaseParser):
 
         score = tuple(ratings)
         return score
+    
+class FileSystemParser(BaseParser):
+    def fio_find_score(self, html_page) -> tuple:
+        data_table = []
+        try:
+            table_results = html_page.find_all("table")[1]
+            for row in table_results.find_all("tr")[1:]:
+                cols = row.find_all("td")
+                cols = [col.text.strip() for col in cols]
+                data_table.append(cols)
+        except:
+            pass
+        try:
+            one_iops_write = data_table[1][3]
+            one_latency_avg_write = data_table[1][2]
+            one_iops_read = data_table[0][3]
+            one_latency_avg_read = data_table[0][2]
+        except IndexError:
+            one_iops_write, one_latency_avg_write, one_iops_read, one_latency_avg_read = 0,0,0,0
+        return (one_iops_write, one_iops_read, one_latency_avg_write, one_latency_avg_read)
+    
+    def find_score(self, html_page, type_test=None) -> tuple:
+        if type_test == "CEPH fio":
+            score = self.fio_find_score(html_page=html_page)
+        else:
+            score = super().find_score(html_page=html_page)
+        return score
+    

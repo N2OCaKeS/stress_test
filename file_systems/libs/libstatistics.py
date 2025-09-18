@@ -16,7 +16,7 @@ class FileSystemStatistics:
             'title_statistics':'Файловые системы',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2'],
+            'set_of_test_types':['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2', 'CEPH', 'CEPH fio'],
             'comparison_list':[['EXT4', 'XFS'], ['EXT4', 'EXT4 parsec']]
         }
 

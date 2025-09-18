@@ -210,7 +210,7 @@ def docker_statistics(body: Statistics):
         response["message"] = message_error
     return response
 
-@app.post('/file-systems-statistics')
+@app.post('/filesystems-statistics')
 def file_systems_statistics(body: Statistics):
     file_systems_stat = FileSystemStatistics(stat_title="Файловые системы",
                                              username=body.username, 
@@ -234,6 +234,7 @@ def file_systems_statistics(body: Statistics):
         message_error = UtilGetTraceback.get_traceback(e=error)
         response["status"] = "were_errors"
         response["message"] = f"\nФайловые системы - {message_error}\n"
+    return response
 
 
 @app.post("/all-statistics")
@@ -282,11 +283,11 @@ def all_statistics(body: Auth):
         response["status"] = "were_errors"
         response["message"].append(f"\nСистемные службы - {message_error}\n")
 
-    file_systems_stat = BaseStatistics(stat_title="Файловые системы",
-                                       username=body.username, 
-                                       tokenconf=body.token,
-                                       set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2"},
-                                       comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"]])
+    file_systems_stat = FileSystemStatistics(stat_title="Файловые системы",
+                                             username=body.username, 
+                                             tokenconf=body.token,
+                                             set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2", "CEPH", "CEPH fio"},
+                                             comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"]])
     try:
         file_systems_stat.create()
         response["message"].append("Файловые системы - Все прошло успешно")

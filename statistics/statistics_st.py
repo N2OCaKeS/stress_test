@@ -396,4 +396,28 @@ class DockerStatstics(BaseStatistics):
 class FileSystemStatistics(BaseStatistics):
      def __init__(self, stat_title, username, tokenconf, set_of_test_types: set, comparison_list: list = None, comparison_kernel_list: list = None, score_parser = FileSystemParser):
           super().__init__(stat_title, username, tokenconf, set_of_test_types, comparison_list, comparison_kernel_list, score_parser)
+
+     def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
+          ceph_fio_columns_score = ["iops write", "iops read", "latency-avg write", "latency-avg read"]
+          columns = ["Релиз", "Ядро", "Режим защищенности", "Стенд"]
+          saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
+          if not type_test == "CEPH fio":
+               return super().unique_functionality(type_test, data_for_tables, rc_version)
+          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=ceph_fio_columns_score)
+          df = table.build()
+          if isinstance(df, pd.DataFrame) and not df.empty:
+               for ind, score in enumerate(ceph_fio_columns_score):
+                    comp_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score)
+                    separate_kernel_data = separate_kernel.build()
+                    comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
+                                                                                      type_test=TypeTest.get_full_name_test_without_df(type_test), 
+                                                                                      saver=comp_separate_kernel_line_graph_saver)
+                    comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=ceph_fio_columns_score[ind])
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return True, df
+          else:
+               main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
+               return False, None
+          
      

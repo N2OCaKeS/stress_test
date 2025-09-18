@@ -334,13 +334,13 @@ class FileSystemParser(BaseParser):
         except:
             pass
         try:
-            one_iops_write = data_table[1][3]
-            one_latency_avg_write = data_table[1][2]
-            one_iops_read = data_table[0][3]
-            one_latency_avg_read = data_table[0][2]
+            iops_write = data_table[1][3]
+            latency_avg_write = data_table[1][2]
+            iops_read = data_table[0][3]
+            latency_avg_read = data_table[0][2]
         except IndexError:
-            one_iops_write, one_latency_avg_write, one_iops_read, one_latency_avg_read = 0,0,0,0
-        return (one_iops_write, one_iops_read, one_latency_avg_write, one_latency_avg_read)
+            iops_write, latency_avg_write, iops_read, latency_avg_read = 0,0,0,0
+        return (iops_write, iops_read, latency_avg_write, latency_avg_read)
     
     def find_score(self, html_page, type_test=None) -> tuple:
         if type_test == "CEPH fio":

@@ -363,10 +363,10 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
     return handler(topic=get_topic())
 
 stands_groups = {
-    'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'OCFS2', 'FreeIPA auth', 'unix', 'unix parsec'],
-    'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance'],
-    'stand10_group':['NTFS', 'psql kernels'],
-    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'steal time', 'steal time-sm', 'vUnixBench', 'vPingPong', 'psql oom'],
+    'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec'],
+    'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm'],
+    'stand10_group':['NTFS', 'psql kernels', 'OCFS2'],
+    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
     'stand13_group':['syslog-ng-cwl']
 }

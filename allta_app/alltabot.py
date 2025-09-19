@@ -39,6 +39,10 @@ path_chlog = '/home/u/git/stress_test/allta_app/ChangeLog'
 path_tgbot_conf = '/home/u/telegrambotconf.json'
 path_stand3 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand3.txt'
 path_stand4 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand4.txt'
+path_stand10 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand10.txt'
+path_stand11 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand11.txt'
+path_stand12 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand12.txt'
+path_stand13 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand13.txt'
 chat_id = '-1002121821530'
 SERVER_ACS_IP_OR_NAME = "10.177.103.10"
 SERVER_ACS_PORT = 9999
@@ -558,12 +562,28 @@ async def test_cycle_check():
         try:
             stand3_results = await is_file_body(path_stand3)
             stand4_results = await is_file_body(path_stand4)
+            stand10_results = await is_file_body(path_stand10)
+            stand11_results = await is_file_body(path_stand11)
+            stand12_results = await is_file_body(path_stand12)
+            stand13_results = await is_file_body(path_stand13)
             if stand3_results:
                 await send_message_to_group(chat_id, stand3_results)
                 remove(path_stand3)
             elif stand4_results:
                 await send_message_to_group(chat_id, stand4_results)
                 remove(path_stand4)
+            elif stand10_results:
+                await send_message_to_group(chat_id, stand10_results)
+                remove(path_stand10)
+            elif stand11_results:
+                await send_message_to_group(chat_id, stand11_results)
+                remove(path_stand11)
+            elif stand12_results:
+                await send_message_to_group(chat_id, stand12_results)
+                remove(path_stand12)
+            elif stand13_results:
+                await send_message_to_group(chat_id, stand13_results)
+                remove(path_stand13)
             await asyncio.sleep(100)
         except Exception as e:
             print(str(e))

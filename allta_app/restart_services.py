@@ -49,7 +49,11 @@ subprocess.run('cd /home/u/folder_git_for_libs && python3 git_clone.py', shell=T
 subprocess.run('cd /home/u/folder_git_for_libs/stress_test && git checkout libs', shell=True)
 subprocess.run('systemctl stop devpi', shell=True)
 subprocess.run('bash /home/u/folder_git_for_libs/stress_test/libs/devpi_service/install_service.sh', shell=True)
-subprocess.run('systemctl restart devpi', shell=True)
+subprocess.run('sudo systemctl restart devpi', shell=True)
+
+subprocess.run('sudo docker image ls', shell=True)
+subprocess.run('y | sudo docker image prune', shell=True)
+subprocess.run('sudo docker image ls', shell=True)
 
 
 conf_file_path = 'conf/needrefresh.conf'

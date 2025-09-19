@@ -619,7 +619,7 @@ def grub_default(kernel, host):
     client_command(f"dpkg -s linux-astra-modules-{kernel} &> /dev/null || sudo apt-get install linux-astra-modules-{kernel} -y")
     kernel_conf = client_command("sudo cat /boot/grub/grub.cfg | grep menuentry_id | \
                                     awk '{{print $17}}' | grep {} | tr -d \"'\"".format(kernel)).rstrip('\n')
-    client_command(f'''sudo sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT={kernel_conf}/' /etc/default/grub''')
+    client_command(f'''sudo sed -i 's/.*GRUB_DEFAULT=.*/GRUB_DEFAULT={kernel_conf}/' /etc/default/grub''')
     if args.AUDIT_OFF or args.PARSEC_IMPACT_AO:
         client_command('''sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT=.*\)"/\\1 audit=0"/' /etc/default/grub''')
     client_command('sudo update-grub')
@@ -719,8 +719,8 @@ class TestRunProvision(BootOrder):
                     comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                 u@' + self.stand_ip + ' sudo astra-modeswitch set ' + modes[args.MODE])
                     if modes[args.MODE] == '2':
-                        comm_and_log(f'sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
-                        comm_and_log(f'sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
+                        comm_and_log(f'sshpass -v -p ' + password + f' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mac-control enable')
+                        comm_and_log(f'sshpass -v -p ' + password + f' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null u@{stand_ip} sudo astra-mic-control enable')
             #elif args.PSQL_BALANCE:
             #    socket_available()
             write_status(success)

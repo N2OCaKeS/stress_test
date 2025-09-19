@@ -106,3 +106,5 @@ if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
 else 
     echo "system does not supports hardware virtualization" 
 fi
+
+

@@ -24,6 +24,7 @@ def load_vms_dates(info_path):
         return vms_dates
     
 
+print(get_repo("1.8.1.UU.1.6"))
 
 
 def edit_vm(xml_path: str, cpu: str, ram_mb: str):

@@ -3,274 +3,268 @@
 
 import sys
 import click
-from allta import SystemCommands
+
+from allta import SystemCommands  # используется для autodetect kernel
 from allta_vm.commands.vm import Vm
 from allta_vm.commands.snapshot import Snapshot
 from allta_vm.commands.server import Server
+from allta_vm.libs.exit_code import ExitCodes
+
+
+def _exit_with_rc(rc: int, ok_msg: str | None = None, err_msg: str | None = None):
+    """
+    Унифицированный выход из CLI-команды.
+    Печатаем сообщение и выходим с нужным кодом.
+    """
+    if rc == ExitCodes.OK:
+        if ok_msg:
+            click.echo(ok_msg, err=False)
+    else:
+        # Если знаем «имя» кода — добавим его для наглядности
+        try:
+            name = ExitCodes(rc).name
+        except Exception:
+            name = str(rc)
+        msg = err_msg or "ошибка выполнения"
+        click.echo(f"[ERROR] {msg} (exit={name})", err=True)
+    raise click.exceptions.Exit(rc)
 
 
 @click.group()
 def cli():
-    """CLI для управления ВМ и снимками."""
+    """CLI для управления ВМ, снапшотами и сервером."""
     pass
 
 
-# === group commands ===
+# === server ===
 
 @cli.group()
 def server():
-    """Инициализация и установка зависимостей"""
+    """Инициализация и установка зависимостей."""
     pass
 
+
+@server.command("init")
+@click.option("--phy-if", "phy_if", required=True, help="Название сетевого интерфейса")
+@click.option("--ip", "ip", required=True, help="IP сервера")
+def server_init(phy_if: str, ip: str):
+    """Установка всех зависимостей и настройка сети."""
+    # Предполагаем, что Server.server_init() возвращает int exit-code.
+    try:
+        rc = Server.server_init(phy_if=phy_if, ip=ip)
+    except Exception as e:
+        click.echo(f"[ERROR] server.init: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+    _exit_with_rc(rc, ok_msg="server.init: OK", err_msg="server.init failed")
+
+
+# === vm ===
 
 @cli.group()
 def vm():
-    """Управление виртуальными машинами"""
+    """Управление виртуальными машинами."""
     pass
 
-
-@cli.group()
-def snapshot():
-    """Управление снимками ВМ"""
-    pass
-
-# === server subcommands ===
-
-@server.command("init")
-@click.option("--phy-if",
-              "phy_if",
-              required=True,
-              help = "Название сетевого интерфейса")
-@click.option("--ip",
-              "ip",
-              required=True,
-              help = "Ip сервера")
-def init(phy_if, ip):
-    """Установка всех зависимостей и настройка сети."""    
-    Server.server_init(phy_if=phy_if, ip=ip)
-
-# === vm subcommands ===
 
 @vm.command("create")
 @click.option(
-    "--info-path",
-    "info_path",
-    required=True,
+    "--info-path", "info_path", required=True,
     type=click.Path(exists=True, dir_okay=False, readable=True),
     help="Путь до JSON-файла с конфигурацией ВМ",
 )
 @click.option(
-    "--box",
-    required=False,
-    default="vm_station",
-    help="Имя бокса (по умолчанию выбирается vm_station (1.7.5.9 и 1.8.1.6 в виде снимков)",
+    "--box", required=False, default="vm_station",
+    help="Имя бокса (по умолчанию vm_station c 1.7.5.9 и 1.8.1.6 как snapshots)",
 )
 @click.option(
-    "--rc",
-    required=False,
-    help="Версия РЦ/ОС, которая будет установлена (например, 1.7.5.9 или 1.8.1.6)",
+    "--rc", required=False,
+    help="Версия РЦ/ОС только если вы указываете параметр box (например, 1.7.5.9 или 1.8.1.6)",
 )
 @click.option(
-    "--kernel",
-    required=False,
-    default=None,
-    help="Версия ядра (по умолчанию текущая на хосте)",
+    "--kernel", required=False, default=None,
+    help="Версия ядра только если вы указываете box (по умолчанию текущая на хосте)",
 )
 @click.option(
-    "--new-password",
-    required=False,
-    default='1',
-    help="Пароль который будет установлен на ВМ после сборки",
+    "--new-password", required=False, default="1",
+    help="Пароль, который будет установлен на ВМ после сборки",
 )
-def vm_create(info_path: str, rc: str, box: str | None, kernel: str | None, new_password: str):
-    """Создание ВМ по конфигу.""" 
+def vm_create(info_path: str, rc: str | None, box: str | None, kernel: str | None, new_password: str):
+    """Создание ВМ по конфигу."""
     if not box:
-            box = "vm_station"    
+        box = "vm_station"
     if not kernel:
         try:
             kernel = SystemCommands.check_output_command("uname -r").strip()
         except Exception as e:
-            click.echo(f"[!] Не удалось получить версию ядра: {e}", err=True)
-            sys.exit(1)
+            click.echo(f"[ERROR] uname -r: {e}", err=True)
+            raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
 
     try:
-        Vm.create(info_path=info_path, box=box, rc=rc, kernel=kernel, new_password=new_password)
+        rc_code = Vm.create(info_path=info_path, box=box, rc=rc, kernel=kernel, new_password=new_password)
     except Exception as e:
-        click.echo(f"[!] Ошибка создания ВМ: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] vm.create: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.create: OK", err_msg="vm.create failed")
+
+
 @vm.command("base-create")
 @click.option(
-    "--new-password",
-    required=False,
-    default='1',
-    help="Пароль который будет установлен на ВМ после сборки",
+    "--new-password", required=False, default="1",
+    help="Пароль, который будет установлен на ВМ после сборки",
 )
-def base_create(new_password: str):
+def vm_base_create(new_password: str):
     """Создание базовых ВМ."""
-    Vm.create(info_path="/opt/allta_vm/vm/base_vm.json", new_password=new_password)
-    
+    try:
+        rc_code = Vm.create(info_path="/opt/allta_vm/vm/base_vm.json", new_password=new_password)
+    except Exception as e:
+        click.echo(f"[ERROR] vm.base-create: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.base-create: OK", err_msg="vm.base-create failed")
+
 
 @vm.command("delete")
 @click.option(
-    "--vms",
-    multiple=True,
-    required=True,
+    "--vms", multiple=True, required=True,
     help="Список ВМ для удаления (можно указать несколько раз)",
 )
 def vm_delete(vms: tuple[str, ...]):
     """Удаление ВМ и их snapshot'ов."""
     try:
-        Vm.delete(list(vms))
+        rc_code = Vm.delete(list(vms))
     except Exception as e:
-        click.echo(f"[!] Ошибка удаления ВМ: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] vm.delete: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.delete: OK", err_msg="vm.delete failed")
 
 
 @vm.command("update")
 @click.option(
-    "--info-path",
-    "info_path",
-    required=True,
+    "--info-path", "info_path", required=True,
     type=click.Path(exists=True, dir_okay=False, readable=True),
     help="Путь до JSON-файла с конфигурацией ВМ",
 )
 def vm_update(info_path: str):
     """Обновление ресурсов ВМ (CPU/RAM) по конфигу."""
     try:
-        Vm.update(info_path)
+        rc_code = Vm.update(info_path)
     except Exception as e:
-        click.echo(f"[!] Ошибка обновления ВМ: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] vm.update: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.update: OK", err_msg="vm.update failed")
 
 
 @vm.command("stop")
 @click.option(
-    "--vms",
-    multiple=True,
-    required=True,
+    "--vms", multiple=True, required=True,
     help="Список ВМ для отключения (можно указать несколько раз)",
 )
 def vm_stop(vms: tuple[str, ...]):
     """Жёсткая остановка ВМ (destroy)."""
     try:
-        Vm.stop(list(vms))
+        rc_code = Vm.stop(list(vms))
     except Exception as e:
-        click.echo(f"[!] Ошибка остановки ВМ: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] vm.stop: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.stop: OK", err_msg="vm.stop failed")
 
 
 @vm.command("start")
 @click.option(
-    "--vms",
-    multiple=True,
-    required=True,
+    "--vms", multiple=True, required=True,
     help="Список ВМ для включения (можно указать несколько раз)",
 )
 def vm_start(vms: tuple[str, ...]):
     """Запуск ВМ."""
     try:
-        Vm.start(list(vms))
+        rc_code = Vm.start(list(vms))
     except Exception as e:
-        click.echo(f"[!] Ошибка запуска ВМ: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] vm.start: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.start: OK", err_msg="vm.start failed")
 
 
 @vm.command("astra-update")
 @click.option(
-    "--info-path",
-    "info_path",
-    required=True,
+    "--info-path", "info_path", required=True,
     type=click.Path(exists=True, dir_okay=False, readable=True),
     help="Путь до JSON-файла с конфигурацией ВМ",
 )
 @click.option(
-    "--rc",
-    required=True,
-    help="Целевая версия ОС для astra-update (например, 1.7.5.9 или 1.8.1.6)",
+    "--rc", required=False,
+    help="Целевая версия ОС/лейбл снапшота; если логика использует имя снапшота — передайте его сюда",
 )
 @click.option(
-    "--new-password",
-    required=False,
-    default='1',
-    help="Пароль который будет установлен на ВМ после сборки",
+    "--new-password", required=False, default="1",
+    help="Пароль, который будет установлен на ВМ (если логика его использует)",
 )
-def astra_update(info_path: str, rc: str, new_password:str):
-    """Запуск astra-update на ВМ и создание snapshot по целевой версии."""
+
+def vm_astra_update(info_path: str, rc: str | None, new_password: str, reboot: bool = True):
+    """
+    Запуск astra-update на ВМ и создание snapshot (в зависимости от реализации Vm.astra_update).
+    Важно: команда возвращает код Vm.astra_update.
+    """
     try:
-        Vm.astra_update(info_path, rc, new_password)
+        rc_code = Vm.astra_update(info_path=info_path, snapshot_name=rc, new_password=new_password)
+
+
     except Exception as e:
-        click.echo(f"[!] Ошибка astra-update: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] vm.astra-update: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.astra-update: OK", err_msg="vm.astra-update failed")
 
 
-# === snapshot subcommands ===
+# === snapshot ===
+
+@cli.group()
+def snapshot():
+    """Управление снимками ВМ."""
+    pass
+
 
 @snapshot.command("create")
-@click.option(
-    "--vms",
-    multiple=True,
-    required=True,
-    help="Список ВМ (можно указать несколько раз)",
-)
-@click.option(
-    "--snapshot-name",
-    "snapshot_name",
-    required=True,
-    help="Имя snapshot'a",
-)
-def snapshot_create(vms: tuple[str, ...], snapshot_name: str):
+@click.option("--vms", multiple=True, required=True, help="Список ВМ")
+@click.option("--name", "name", required=True, help="Имя snapshot'a")
+def snapshot_create(vms: tuple[str, ...], name: str):
     """Создание snapshot'ов для указанных ВМ."""
-    # Описание пока не используется в LibvirtManager.Snapshot.create,
-    # но оставляем параметр для совместимости и будущего расширения.
     try:
-        Snapshot.create(list(vms), snapshot_name)
+        rc = Snapshot.create(list(vms), name)
     except Exception as e:
-        click.echo(f"[!] Ошибка создания snapshot: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] snapshot.create: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+    _exit_with_rc(rc, ok_msg="snapshot.create: OK", err_msg="snapshot.create failed")
 
 
 @snapshot.command("delete")
-@click.option(
-    "--vms",
-    multiple=True,
-    required=True,
-    help="Список ВМ (можно указать несколько раз)",
-)
-@click.option(
-    "--snapshot-name",
-    "snapshot_name",
-    required=True,
-    help="Имя snapshot'a",
-)
-def snapshot_delete(vms: tuple[str, ...], snapshot_name: str):
+@click.option("--vms", multiple=True, required=True, help="Список ВМ")
+@click.option("--name", "name", required=True, help="Имя snapshot'a")
+def snapshot_delete(vms: tuple[str, ...], name: str):
     """Удаление snapshot'ов у указанных ВМ."""
     try:
-        Snapshot.delete(list(vms), snapshot_name)
+        rc = Snapshot.delete(list(vms), name)
     except Exception as e:
-        click.echo(f"[!] Ошибка удаления snapshot: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] snapshot.delete: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+    _exit_with_rc(rc, ok_msg="snapshot.delete: OK", err_msg="snapshot.delete failed")
 
 
 @snapshot.command("revert")
-@click.option(
-    "--vms",
-    multiple=True,
-    required=True,
-    help="Список ВМ (можно указать несколько раз)",
-)
-@click.option(
-    "--snapshot-name",
-    "snapshot_name",
-    required=True,
-    help="Имя snapshot'a",
-)
-def snapshot_revert(vms: tuple[str, ...], snapshot_name: str):
+@click.option("--vms", multiple=True, required=True, help="Список ВМ")
+@click.option("--name", "name", required=True, help="Имя snapshot'a")
+def snapshot_revert(vms: tuple[str, ...], name: str):
     """Откат ВМ к указанному snapshot'у."""
     try:
-        Snapshot.revert(list(vms), snapshot_name)
+        rc = Snapshot.revert(list(vms), name)
     except Exception as e:
-        click.echo(f"[!] Ошибка отката к snapshot: {e}", err=True)
-        sys.exit(1)
+        click.echo(f"[ERROR] snapshot.revert: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+    _exit_with_rc(rc, ok_msg="snapshot.revert: OK", err_msg="snapshot.revert failed")
 
 
 if __name__ == "__main__":

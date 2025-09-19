@@ -33,60 +33,64 @@ cd ..
 
 # Remove all data directories
 # Front Service
-sudo rm -rf $DEVPI_PATH
+# sudo rm -rf $DEVPI_PATH
 
 # Back Service
 # Database
-sudo rm -rf $AUTH_DB_PATH
+# sudo rm -rf $AUTH_DB_PATH
 # sudo rm -rf $SERVER_DB_PATH
-sudo rm -rf $VM_DB_PATH
+# sudo rm -rf $VM_DB_PATH
 
 # Api
-sudo rm -rf $CONFIG_API_DATA_PATH
+# sudo rm -rf $CONFIG_API_DATA_PATH
 # sudo rm -rf $SERVER_API_DATA_PATH
-sudo rm -rf $VM_API_DATA_PATH
+# sudo rm -rf $VM_API_DATA_PATH
 
 # Redis
-sudo rm -rf $REDIS_PATH
+# sudo rm -rf $REDIS_PATH
 
 # Portainer 
-sudo rm -rf $PORTAINER_PATH
+# sudo rm -rf $PORTAINER_PATH
 
 # Recreate the directories
 sudo mkdir -p $BASE_PATH
 
-# Front Service
+# # Front Service
 sudo mkdir -p $DEVPI_PATH
 
-# Back Service
-# Database
+# # Back Service
+# # Database
 sudo mkdir -p $AUTH_DB_PATH
 sudo mkdir -p $SERVER_DB_PATH
 sudo mkdir -p $VM_DB_PATH
 
 
-# Api
+# # Api
 sudo mkdir -p $CONFIG_API_DATA_PATH
+# sudo mkdir -p $CONFIG_API_TOKENS_PATH
 sudo mkdir -p $SERVER_API_DATA_PATH
 sudo mkdir -p $VM_API_DATA_PATH
 
-# REDIS
+# # REDIS
 sudo mkdir -p $REDIS_PATH
 
-# Portainer
+# # Portainer
 sudo mkdir -p $PORTAINER_PATH
 
 
 cd ./docker_allta
-# docker-compose build
+
 docker-compose --file docker-compose.yml up --build -d 
 
 until curl -s -o /dev/null $DEVPI_URL; do
 echo "waiting for devpi-server..."
 sleep 60
 done	
-
+sleep 10
 devpi use $DEVPI_URL
+sleep 3
 devpi login root --password=$DEVPI_ADMIN_PASSWORD
+sleep 3
 devpi use root/pypi
+sleep 3
 devpi index -c releases bases=root/pypi mirror_whitelist='*'

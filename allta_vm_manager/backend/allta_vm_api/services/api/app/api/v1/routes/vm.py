@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_async_db
 from app.api.v1.models.vm import VirtualMachine
+from app.api.v1.models.vm_snapshot import VMSnapshot
 from app.api.v1.schemas.vm import (
     VMRead, VMStatusUpdate, BatchVMCreateRequest, BatchVMUpdateRequest,
     VMDeleteRequest, AstraUpdateRequest, CreateDefaultVMsRequest,
@@ -67,7 +68,7 @@ def _env(*, task_id: str, operation: TaskOperation, server: ServerTaskInfo,
         vm_names=vm_names,
         snapshot_name=snapshot_name,
         rc=rc,
-        json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
+        json_remote_path=f"/opt/allta_vm/jobs/{task_id}/{task_id}.json",
     )
 
 
@@ -372,23 +373,49 @@ async def astra_update(payload: AstraUpdateRequest,
                        db: AsyncSession = Depends(get_async_db),
                        _user=Depends(get_current_user),
                        token: str = Depends(get_token)):
-    # валидируем RC по внешнему API
+    # 1) валидируем RC по внешнему API
     versions = await get_os_versions(token)
     allowed_rcs = {item["name"] for item in versions}
     if payload.rc not in allowed_rcs:
-        raise HTTPException(status_code=400, detail=f"Invalid RC '{payload.rc}'. Allowed RCs: {sorted(allowed_rcs)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid RC '{payload.rc}'. Allowed RCs: {sorted(allowed_rcs)}"
+        )
 
-    # валидируем что все ВМ на одном сервере
+    # 2) валидируем, что все ВМ на одном сервере
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
     server_id = vms[0].server_id
     srv = await get_physical_server_from_remote(server_id, token)
 
+    # 3) NEW: если хотя бы у одной ВМ уже есть снимок с таким RC — ошибка
+    vm_ids = [vm.id for vm in vms]
+    by_id = {vm.id: vm.name for vm in vms}
+    res = await db.execute(
+        select(VMSnapshot.vm_id).where(
+            VMSnapshot.name == payload.rc,
+            VMSnapshot.vm_id.in_(vm_ids),
+        )
+    )
+    existing_ids = set(res.scalars().all())
+    if existing_ids:
+        conflict_vms = sorted(by_id[i] for i in existing_ids if i in by_id)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"Snapshot '{payload.rc}' already exists for some VMs.",
+                "rc": payload.rc,
+                "conflict_vms": conflict_vms,
+            }
+        )
+
+    # 4) собираем vms_full для воркера
     vm_names = [vm.name for vm in vms]
     vms_full: Dict[str, VMSpec] = {
         vm.name: VMSpec(cpu=vm.cpu, ram=vm.ram, ip_bridge=str(vm.ip_address), server_id=vm.server_id)
         for vm in vms
     }
 
+    # 5) ставим задачу
     task_id = _uuid_task()
     env = _env(
         task_id=task_id,
@@ -401,6 +428,8 @@ async def astra_update(payload: AstraUpdateRequest,
     )
     await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
+
+
 
 
 # ---------- STATUS ----------

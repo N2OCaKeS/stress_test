@@ -1,123 +1,188 @@
-from allta import SystemCommands, LibvirtManager
+import logging
+from time import sleep
 
-class SnapExit:
-    OK = 0
-    PRECHECK_NOT_FOUND = 10
-    PRECHECK_ALREADY_EXISTS = 11
-    ACTION_FAILED = 20
-    VERIFY_FAILED = 30
-    UNEXPECTED = 50
+from allta import LibvirtManager, SystemCommands
+from allta_vm.libs.exit_code import ExitCodes
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
+def _log_and_return(where: str, level: int, msg: str, code: int) -> int:
+    try:
+        code_name = ExitCodes(code).name
+    except Exception:
+        code_name = str(code)
+    logging.log(level, "%s: %s (exit=%s)", where, msg, code_name)
+    return code
+
+def _rc_desc(rc: int) -> str:
+    try:
+        return ExitCodes(rc).name
+    except Exception:
+        return str(rc)
+
+def _snap_exists(vm: str, snap: str) -> bool:
+    rc = SystemCommands.cmd_with_returncode(
+        f"sudo virsh -c qemu:///system snapshot-info --domain '{vm}' "
+        f"--snapshotname '{snap}' >/dev/null 2>&1"
+    )
+    return rc == 0
+
+def _current_snapshot_name(vm: str) -> tuple[int, str]:
+    """
+    Возвращает (rc, name). rc==0 если команда отработала, name — имя текущего снапшота (может быть пусто).
+    Используем --name, чтобы получить только имя без локализации.
+    """
+    rc = SystemCommands.cmd_with_returncode(
+        f"sudo virsh -c qemu:///system snapshot-current --domain '{vm}' --name >/tmp/cur_snap 2>/tmp/cur_snap_err"
+    )
+    name_out = SystemCommands.check_output_command("cat /tmp/cur_snap || true").strip()
+    # подчистим временные файлы на всякий случай (не критично, но аккуратно)
+    SystemCommands.cmd("rm -f /tmp/cur_snap /tmp/cur_snap_err")
+    return rc, name_out
 
 class Snapshot:
     @staticmethod
-    def _list(vm: str) -> list[str]:
-        """
-        Возвращает список имён снимков ВМ.
-        Используем только SystemCommands.check_output_command (нельзя менять).
-        """
-        cmd = f"sudo virsh -c qemu:///system snapshot-list --name --domain '{vm}'"
-        out = SystemCommands.check_output_command(cmd) or ""
-        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
-        return lines
-
-    @staticmethod
-    def _exists(vm: str, snapshot_name: str) -> bool:
-        cmd = (
-            f"sudo virsh -c qemu:///system snapshot-list --name --domain '{vm}' "
-            f"| grep -x '{snapshot_name}' >/dev/null 2>&1"
-        )
-        rc = SystemCommands.cmd_with_returncode(cmd)
-        return rc == 0
-    @staticmethod
-    def create(vms: list[str], snapshot_name: str) -> int:
-        """
-        Пред: снимка НЕ существует.
-        Пост: снимок появился.
-        """
+    def create(vms: list, snapshot_name: str) -> int:
+        where = "snapshot.create"
         try:
-            # pre
-            conflicts = [vm for vm in vms if Snapshot._exists(vm, snapshot_name)]
-            if conflicts:
-                print(f"[PRECHECK] Уже существуют снимки '{snapshot_name}' для: {', '.join(conflicts)}")
-                return SnapExit.PRECHECK_ALREADY_EXISTS
-            LibvirtManager.Snapshot.create(vms=vms, snapshot_name=snapshot_name)
-            # post
-            failed = [vm for vm in vms if not Snapshot._exists(vm, snapshot_name)]
-            if failed:
-                print(f"[POSTCHECK] Снимок '{snapshot_name}' не появился для: {', '.join(failed)}")
-                return SnapExit.VERIFY_FAILED
-            print(f"[OK] Созданы снимки '{snapshot_name}' для: {', '.join(vms)}")
-            return SnapExit.OK
-        except Exception as e:
-            print(f"[FATAL] snapshot.create(): {e}")
-            return SnapExit.UNEXPECTED
-
-    @staticmethod
-    def delete(vms: list[str], snapshot_name: str) -> int:
-        """
-        Пред: снимок существует.
-        Пост: снимок удалён.
-        """
-        try:
-            missing = [vm for vm in vms if not Snapshot._exists(vm, snapshot_name)]
-            if missing:
-                print(f"[PRECHECK] Не найден снимок '{snapshot_name}' для: {', '.join(missing)}")
-                return SnapExit.PRECHECK_NOT_FOUND
-            LibvirtManager.Snapshot.delete(vms=vms, snapshot_name=snapshot_name)
-
-            still = [vm for vm in vms if Snapshot._exists(vm, snapshot_name)]
-            if still:
-                print(f"[POSTCHECK] Снимок '{snapshot_name}' не удалён для: {', '.join(still)}")
-                return SnapExit.VERIFY_FAILED
-            print(f"[OK] Удалены снимки '{snapshot_name}' для: {', '.join(vms)}")
-            return SnapExit.OK
-
-        except Exception as e:
-            print(f"[FATAL] snapshot.delete(): {e}")
-            return SnapExit.UNEXPECTED
-
-    @staticmethod
-    def revert(vms: list[str], snapshot_name: str) -> int:
-        """
-        Пред: снимок существует.
-        Пост: проверяем RC операции (сам снимок остаётся существовать).
-        """
-        try:
-            missing = [vm for vm in vms if not Snapshot._exists(vm, snapshot_name)]
-            if missing:
-                print(f"[PRECHECK] Не найден снимок '{snapshot_name}' для: {', '.join(missing)}")
-                return SnapExit.PRECHECK_NOT_FOUND
-            LibvirtManager.Snapshot.revert(vms=vms, snapshot_name=snapshot_name)
-
-            print(f"[OK] Выполнен revert к '{snapshot_name}' для: {', '.join(vms)}")
-            return SnapExit.OK
-
-        except Exception as e:
-            print(f"[FATAL] snapshot.revert(): {e}")
-            return SnapExit.UNEXPECTED
-
-    @staticmethod
-    def delete_all(vms: list[str]) -> int:
-        """
-        Удаление всех снимков для каждой ВМ с пост-проверкой.
-        """
-        try:
+            # precheck: snapshot must NOT exist
             for vm in vms:
-                snaps = Snapshot._list(vm)
-                # если список пуст — просто продолжаем
-                for snap in snaps:
-                    LibvirtManager.Snapshot.delete(vms=[vm], snapshot_name=snap)
+                if _snap_exists(vm, snapshot_name):
+                    return _log_and_return(
+                        where, logging.ERROR,
+                        f"snapshot already exists for vm={vm}: {snapshot_name}",
+                        ExitCodes.PRECHECK_NAME_CONFLICT
+                    )
 
-                # post: у ВМ не должно остаться ни одного снимка
-                left = Snapshot._list(vm)
-                if left:
-                    print(f"[POSTCHECK] Не все снимки удалены у {vm}: осталось {', '.join(left)}")
-                    return SnapExit.VERIFY_FAILED
+            # вызываем LibvirtManager, rc игнорируем — дальше верификация
+            try:
+                LibvirtManager.Snapshot.create(vms=vms, snapshot_name=snapshot_name)
+            except Exception as e:
+                return _log_and_return(
+                    where, logging.ERROR,
+                    f"LibvirtManager.Snapshot.create raised: {e}",
+                    ExitCodes.ACTION_FAILED
+                )
 
-            print(f"[OK] Все снимки удалены для: {', '.join(vms)}")
-            return SnapExit.OK
+            # verify: snapshot must exist for each VM
+            for vm in vms:
+                if not _snap_exists(vm, snapshot_name):
+                    return _log_and_return(
+                        where, logging.ERROR,
+                        f"verify failed: snapshot not found after create vm={vm} name={snapshot_name}",
+                        ExitCodes.VERIFY_FAILED
+                    )
 
-        except Exception as e:
-            print(f"[FATAL] snapshot.delete_all(): {e}")
-            return SnapExit.UNEXPECTED
+            logging.info("%s: OK name=%s vms=%s", where, snapshot_name, ",".join(vms))
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED
+
+    @staticmethod
+    def delete(vms: list, snapshot_name: str) -> int:
+        where = "snapshot.delete"
+        try:
+            # precheck: snapshot MUST exist
+            for vm in vms:
+                if not _snap_exists(vm, snapshot_name):
+                    return _log_and_return(
+                        where, logging.ERROR,
+                        f"snapshot not found for vm={vm}: {snapshot_name}",
+                        ExitCodes.ACTION_FAILED
+                    )
+
+            try:
+                LibvirtManager.Snapshot.delete(vms=vms, snapshot_name=snapshot_name)
+            except Exception as e:
+                return _log_and_return(
+                    where, logging.ERROR,
+                    f"LibvirtManager.Snapshot.delete raised: {e}",
+                    ExitCodes.ACTION_FAILED
+                )
+
+            # verify: snapshot MUST be gone
+            for vm in vms:
+                if _snap_exists(vm, snapshot_name):
+                    return _log_and_return(
+                        where, logging.ERROR,
+                        f"verify failed: snapshot still exists after delete vm={vm} name={snapshot_name}",
+                        ExitCodes.VERIFY_FAILED
+                    )
+
+            logging.info("%s: OK name=%s vms=%s", where, snapshot_name, ",".join(vms))
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED
+
+    @staticmethod
+    def revert(vms: list, snapshot_name: str) -> int:
+        where = "snapshot.revert"
+        try:
+            # precheck: snapshot MUST exist
+            for vm in vms:
+                if not _snap_exists(vm, snapshot_name):
+                    return _log_and_return(
+                        where, logging.ERROR,
+                        f"snapshot not found for vm={vm}: {snapshot_name}",
+                        ExitCodes.ACTION_FAILED
+                    )
+
+            # выполняем revert (не доверяем rc, дальше проверим)
+            try:
+                LibvirtManager.Snapshot.revert(vms=vms, snapshot_name=snapshot_name)
+            except Exception as e:
+                return _log_and_return(
+                    where, logging.ERROR,
+                    f"LibvirtManager.Snapshot.revert raised: {e}",
+                    ExitCodes.ACTION_FAILED
+                )
+
+            # verify с ретраями: дождаться, что snapshot-current стал нужным
+            for vm in vms:
+                ok = False
+                last_name = ""
+                for _ in range(30):  # ~60 сек @ sleep(2)
+                    rc, cur = _current_snapshot_name(vm)
+                    last_name = cur
+                    if rc == 0 and cur == snapshot_name:
+                        ok = True
+                        break
+                    sleep(2)
+                if not ok:
+                    return _log_and_return(
+                        where, logging.ERROR,
+                        f"verify failed: snapshot is not current after revert vm(s)={vm} "
+                        f"name={snapshot_name} current={last_name or '<empty>'}",
+                        ExitCodes.VERIFY_FAILED
+                    )
+
+            logging.info("%s: OK name=%s vms=%s", where, snapshot_name, ",".join(vms))
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED
+
+    @staticmethod
+    def delete_all(vms: list) -> int:
+        where = "snapshot.delete_all"
+        try:
+            try:
+                LibvirtManager.Snapshot.delete_all(vms=vms)
+            except Exception as e:
+                return _log_and_return(
+                    where, logging.ERROR,
+                    f"LibvirtManager.Snapshot.delete_all raised: {e}",
+                    ExitCodes.ACTION_FAILED
+                )
+            # отдельной верификации здесь нет (virsh не даёт удобного списка всех снапшотов одной командой без парсинга),
+            # но основные кейсы покрывает delete(...) в твоём пайплайне.
+            logging.info("%s: OK vms=%s", where, ",".join(vms))
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED

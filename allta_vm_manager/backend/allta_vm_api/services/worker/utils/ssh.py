@@ -47,7 +47,7 @@ class SimpleSSH:
         *,
         timeout: int = 300,
         stream: Optional[LineLogger] = None,
-        get_pty: bool = False,
+        get_pty: bool = True,
     ) -> Dict[str, object]:
         """
         Выполняет команду и возвращает:

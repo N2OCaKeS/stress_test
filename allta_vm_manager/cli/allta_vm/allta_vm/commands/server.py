@@ -1,33 +1,75 @@
+import logging
 from allta import SystemCommands, Libvirt
+from allta_vm.libs.exit_code import ExitCodes
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 
-class Server():
+def _rc_name(code: int) -> str:
+    try:
+        return ExitCodes(code).name
+    except Exception:
+        return str(code)
 
-    def __install_deps():
-        base_commands = "sudo apt-get update && sudo apt-get install -y "
-        deps = f"build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev  \
-                libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace \
-                python3-requests sshpass tar wget bridge-utils "
-        version_os = SystemCommands.check_output_command("cat /etc/astra_version")
-        if version_os.startswith("1.8"):
-            deps += "linux-tools-6.1*-generic linux-tools-6.6*-generic "
-        if version_os.startswith("1.7"):
-            deps += f"linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15* \
-                            linux-tools-5.15*-lowlatency libssl1.1 psmisc"
-            
-        rc = SystemCommands.cmd_with_returncode(base_commands + deps)
-        if rc != 0:
-            raise RuntimeError(f"[install_deps] error")
+def _log_and_return(where: str, level: int, msg: str, code: int) -> int:
+    logging.log(level, "%s: %s (exit=%s)", where, msg, _rc_name(code))
+    return code
 
-        Libvirt.prepare()
-    
-    def __net(phy_if, ip):
-        bridge = "br0"
-        phy_if = phy_if
+class Server:
+    @staticmethod
+    def __install_deps() -> int:
+        where = "server.install_deps"
+        try:
+            base = "sudo apt-get update && sudo apt-get install -y "
+            deps = (
+                "build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev "
+                "libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace "
+                "python3-requests sshpass tar wget bridge-utils "
+            )
 
-        SystemCommands.cmd_with_returncode('sudo cp /etc/network/interfaces /etc/network/interfaces.bak')
+            try:
+                version_os = SystemCommands.check_output_command("cat /etc/astra_version").strip()
+            except Exception:
+                return _log_and_return(where, logging.ERROR, "cannot read /etc/astra_version", ExitCodes.PRECHECK_SERVICE)
 
-        schedule = f"""sudo tee /etc/network/interfaces > /dev/null <<EOF
+            if version_os.startswith("1.8"):
+                deps += "linux-tools-6.1*-generic linux-tools-6.6*-generic "
+            elif version_os.startswith("1.7"):
+                deps += (
+                    "linux-tools-5.10*-generic linux-tools-5.15*-generic linux-tools-common-5.15* "
+                    "linux-tools-5.15*-lowlatency libssl1.1 psmisc "
+                )
+            else:
+                logging.warning("%s: unknown astra version '%s', continue with base deps only", where, version_os)
+
+            rc_apt = SystemCommands.cmd_with_returncode(base + deps)
+            if rc_apt != 0:
+                return _log_and_return(where, logging.ERROR, "apt install failed", ExitCodes.ACTION_FAILED)
+
+            try:
+                rc_prep = Libvirt.prepare()
+            except Exception:
+                rc_prep = ExitCodes.UNEXPECTED
+            if rc_prep != ExitCodes.OK:
+                return _log_and_return(where, logging.ERROR, f"Libvirt.prepare failed rc={_rc_name(rc_prep)}", ExitCodes.ACTION_FAILED)
+
+            logging.info("%s: OK", where)
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED
+
+    @staticmethod
+    def __net(phy_if: str, ip: str) -> int:
+        where = "server.net"
+        try:
+            bridge = "br0"
+
+            SystemCommands.cmd_with_returncode("sudo cp /etc/network/interfaces /etc/network/interfaces.bak || true")
+
+            cfg = f"""sudo tee /etc/network/interfaces > /dev/null <<EOF
 auto lo
 iface lo inet loopback
 
@@ -44,16 +86,40 @@ iface {bridge} inet static
 
 iface {phy_if} inet manual
 EOF
+"""
+            rc_cfg = SystemCommands.cmd_with_returncode(cfg)
+            if rc_cfg != 0:
+                return _log_and_return(where, logging.ERROR, "write /etc/network/interfaces failed", ExitCodes.ACTION_FAILED)
 
-""" 
-        # Rework interface
-        SystemCommands.cmd_with_returncode(schedule)
+            cmd_if = f"sudo ifdown {phy_if} || true && sudo ifdown {bridge} || true && sudo ifup {bridge}"
+            rc_if = SystemCommands.cmd_with_returncode(cmd_if + " && sudo systemctl restart networking")
+            if rc_if != 0:
+                return _log_and_return(where, logging.ERROR, "network reconfigure failed", ExitCodes.ACTION_FAILED)
 
-        # Restart net
-        # commad = f"sudo systemctl restart networking"
-        command = f"sudo ifdown {phy_if} || true && sudo ifdown {bridge} || true && sudo ifup {bridge}"
-        SystemCommands.cmd_with_returncode(command + " & sudo systemctl restart networking")
-        SystemCommands.cmd_with_returncode("sudo systemctl enable --now libvirtd")
-    def server_init(phy_if, ip):
-        Server.__install_deps()
-        Server.__net(phy_if=phy_if, ip=ip)
+            rc_libvirt = SystemCommands.cmd_with_returncode("sudo systemctl enable --now libvirtd")
+            if rc_libvirt != 0:
+                return _log_and_return(where, logging.ERROR, "libvirtd enable/start failed", ExitCodes.PRECHECK_SERVICE)
+
+            logging.info("%s: OK phy_if=%s ip=%s", where, phy_if, ip)
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED
+
+    @staticmethod
+    def server_init(phy_if: str, ip: str) -> int:
+        where = "server.init"
+        try:
+            rc_deps = Server.__install_deps()
+            if rc_deps != ExitCodes.OK:
+                return _log_and_return(where, logging.ERROR, f"deps failed rc={_rc_name(rc_deps)}", rc_deps)
+
+            rc_net = Server.__net(phy_if=phy_if, ip=ip)
+            if rc_net != ExitCodes.OK:
+                return _log_and_return(where, logging.ERROR, f"net failed rc={_rc_name(rc_net)}", rc_net)
+
+            logging.info("%s: OK", where)
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED

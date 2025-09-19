@@ -13,7 +13,7 @@ services:
     image: allta-devpi:latest
     container_name: allta-devpi
     env_file:
-      - ./env/.env.allta_devpi
+      - $CRED_PATH/env.allta_devpi
     volumes:
       - allta_devpi_data:/data
     networks:
@@ -56,12 +56,12 @@ services:
         condition: service_healthy  
       allta-redis-commander:
         condition: service_healthy         
-              
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-    #   interval: 5s
-    #   timeout: 3s
-    #   retries: 5
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     restart: always
 
 
@@ -74,7 +74,7 @@ services:
     container_name: allta_auth_api
     restart: always
     env_file:
-      - ./env/.env.allta_auth_api
+      - $CRED_PATH/env.allta_auth_api
     depends_on:
       allta-auth-db:
         condition: service_healthy
@@ -95,11 +95,9 @@ services:
     container_name: allta_auth_db
     restart: always
     env_file:
-      - ./env/.env.allta_auth_db
+      - $CRED_PATH/env.allta_auth_db
     volumes:
-      - allta_auth_db_data:/var/lib/postgresql/data 
-    ports:
-      - "5432:5432"          
+      - allta_auth_db_data:/var/lib/postgresql/data        
     networks:
       - allta_auth_api
     healthcheck:
@@ -118,7 +116,7 @@ services:
     container_name: allta_config_api
     restart: always
     env_file:
-      - ./env/.env.allta_config_api
+      - $CRED_PATH/env.allta_config_api
     depends_on:
       allta-auth-api:
         condition: service_healthy
@@ -131,6 +129,7 @@ services:
       - allta_network
     volumes:
       - allta_config_data:/data
+      - ${CONFIG_API_TOKENS_PATH}:/cred/tokens.json:ro
 
 
   # SERVER API
@@ -143,7 +142,7 @@ services:
     container_name: allta_server_api
     restart: always
     env_file:
-      - ./env/.env.allta_server_api
+      - $CRED_PATH/env.allta_server_api
     depends_on:
       allta-auth-api:
         condition: service_healthy
@@ -168,11 +167,9 @@ services:
     container_name: allta_server_db
     restart: always
     env_file:
-      - ./env/.env.allta_server_db
+      - $CRED_PATH/env.allta_server_db
     volumes:
-      - allta_server_db_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"    
+      - allta_server_db_data:/var/lib/postgresql/data 
     networks:
       - allta_network   
     healthcheck:
@@ -191,7 +188,7 @@ services:
     container_name: allta_vm_api
     restart: always
     env_file:
-      - ./env/.env.allta_vm_api
+      - $CRED_PATH/env.allta_vm_api
     depends_on:
       allta-auth-api:
         condition: service_healthy   
@@ -221,11 +218,9 @@ services:
     container_name: allta_vm_db
     restart: always
     env_file:
-      - ./env/.env.allta_vm_db
+      - $CRED_PATH/env.allta_vm_db
     volumes:
       - allta_vm_db_data:/var/lib/postgresql/data
-    ports:
-      - "5434:5432"    
     networks:
       - allta_vm_api
     healthcheck:
@@ -242,13 +237,15 @@ services:
     container_name: allta_vm_celery
     restart: always    
     env_file:
-      - env/.env.allta_vm_celery
+      - $CRED_PATH/env.allta_vm_celery
     depends_on:
       allta-redis:
         condition: service_healthy
     networks:
       - allta_vm_api
       - allta_redis
+    volumes:
+      - allta_vm_api:/data      
 
   allta-vm-flower:
     build:
@@ -258,12 +255,10 @@ services:
     container_name: allta_vm_flower
     restart: always      
     env_file:
-      - ./env/.env.allta_vm_flower
+      - $CRED_PATH/env.allta_vm_flower
     depends_on:
       allta-redis:
         condition: service_healthy
-    ports:
-      - "5555:5555"
     command: celery flower --broker=redis://redis:6379/0 --url_prefix=/service/flower/      
     networks:
       - allta_redis    
@@ -300,11 +295,9 @@ services:
     container_name: allta_redis
     restart: always
     env_file:
-      - env/.env.allta_redis
+      - $CRED_PATH/env.allta_redis
     networks:
       - allta_redis
-    ports:
-      - 6379:6379
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -321,7 +314,7 @@ services:
     container_name: allta_redis_commander
     restart: always
     env_file:
-      - env/.env.allta_redis_commander
+      - $CRED_PATH/env.allta_redis_commander
     networks:
       - allta_redis
       - allta_network
@@ -342,9 +335,7 @@ services:
       - allta_portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - 9000:9000
       - 9443:9443
-      - 8000:8000
     networks:
       - allta_network
 
@@ -371,6 +362,7 @@ volumes:
       type: none
       device: ${CONFIG_API_DATA_PATH}
       o: bind
+      
 
   # SERVER API
   allta_server_api:

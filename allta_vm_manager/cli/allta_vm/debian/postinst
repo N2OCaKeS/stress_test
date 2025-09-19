@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
-chmod +x /usr/bin/allta_vm
+chmod +x /usr/bin/allta-vm
 chmod +x /opt/allta_vm/vm/base_network.sh
 chmod +x /opt/allta_vm/vm/network.sh
 chmod +x /opt/allta_vm/vm/provision.sh
-
-chmod 755 /opt/allta_vm/
+chmod 755 -R /opt/allta_vm/
+mkdir /opt/allta_vm/jobs
+chmod 755 -R /opt/allta_vm/jobs
 
 exit 0

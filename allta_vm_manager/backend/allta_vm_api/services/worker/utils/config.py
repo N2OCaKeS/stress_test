@@ -6,5 +6,6 @@ class Settings(BaseSettings):
     RESULT_BACKEND: str = getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")
     QUEUE_KEY: str = getenv("QUEUE_KEY", "queue")
     CELERY_QUEUE: str = getenv("CELERY_QUEUE", "celery-vm")
-    ASYNC_DATABASE_URL: str = getenv("ASYNC_DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")   
+    DATABASE_URL_ASYNC: str = getenv("DATABASE_URL_ASYNC", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")   
+    KEY_FILE_PATH: str = "/data/secret.key"    
 settings = Settings()

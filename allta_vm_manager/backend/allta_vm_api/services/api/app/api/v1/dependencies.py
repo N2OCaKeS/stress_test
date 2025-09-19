@@ -46,20 +46,20 @@ def get_token(
     oauth2_token: Optional[str] = Security(oauth2_scheme),
     bearer: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
 ) -> str:
-    """
-    Порядок извлечения токена:
-      1) OAuth2PasswordBearer (логин через форму)
-      2) HTTPBearer        (вручную ввести JWT)
-      3) secure-cookie 'access_token'
-    """
+    # 1) токен из OAuth2PasswordBearer (форма в Swagger)
     if oauth2_token:
         return oauth2_token
-    if bearer and bearer.scheme.lower() == "bearer":
-        return bearer.credentials
-    if not oauth2_scheme and not bearer and not bearer.scheme.lower() == "bearer":
-        token = request.cookies.get("access_token")
-        return token
 
+    # 2) токен из Authorization: Bearer <...>
+    if bearer and bearer.scheme and bearer.scheme.lower() == "bearer":
+        return bearer.credentials
+
+    # 3) токен из secure-cookie
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token
+
+    # нет ни одного источника — честно 401
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",

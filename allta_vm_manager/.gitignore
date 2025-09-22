@@ -9,9 +9,6 @@ __pycache__/
 start.sh
 tmp
 
-# Сгенерированнные файлы
-docker_allta/allta_devpi/Dockerfile.allta_devpi
-
 # Файлы сборки
 cli/allta_vm/bootstrap/python
 cli/allta_vm/debian/allta-vm

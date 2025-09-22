@@ -82,7 +82,11 @@ Allta_app_services это программный комплекс состоящ
 
 ## Подробная информация о проекте
 
-###
+### Интерактиваня документация
+
+Интерактивная документация доступна по следующему адресу: [http://allta.devos.astralinux.ru/api/docs](http://allta.devos.astralinux.ru/api/docs)
+
+### Прочая информация
 
 #### Каталоги с данными
 
@@ -109,7 +113,7 @@ Allta_app_services это программный комплекс состоящ
 |          Сервис           |                                Описание                                |                                                                           Точка входа                                                                           |
 | :-----------------------: | :--------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------: |
 |           nginx           |            Единый прокси и точка доступа для всех сервисов             |                                              [http://allta.devos.astralinux.ru](http://allta.devos.astralinux.ru)                                               |
-|           devpi           |                 Хранилище самописных библиотек python                  |                                [http://allta.devos.astralinux.ru/service/devpi ](http://allta.devos.astralinux.ru/service/devpi)                                |
+|        ALLTA Devpi        |                 Хранилище самописных библиотек python                  |                                [http://allta.devos.astralinux.ru/service/devpi ](http://allta.devos.astralinux.ru/service/devpi)                                |
 | postgresql (3 контейнера) |                Базы данных для хранения данных для api                 |                                                              Доступ из вне контейнеров невозможен                                                               |
 |         portainer         | Сервис для управления контейнерами докер просмотра их статусов и логов |                                       [https://allta.devos.astralinux.ru:9443/](https://allta.devos.astralinux.ru:9443/)                                        |
 |           redis           |                   Очеред для задач по управлению ВМ                    | Доступ из вне контейнеров невозможен на прямую, только через [http://allta.devos.astralinux.ru/service/redis/](http://allta.devos.astralinux.ru/service/redis/) |
@@ -119,13 +123,13 @@ Allta_app_services это программный комплекс состоящ
 
 ###### Самописные решения
 
-|   Сервис   |                    Описание                     |                                                                           Точка входа                                                                           |
-| :--------: | :---------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-|  auth_api  | Единый прокси и точка доступа для всех сервисов |                                    [http://allta.devos.astralinux.ru/api/auth/](http://allta.devos.astralinux.ru/api/auth/)                                     |
-| config_api | Единый прокси и точка доступа для всех сервисов |                                  [http://allta.devos.astralinux.ru/api/config/](http://allta.devos.astralinux.ru/api/config/)                                   |
-| server_api | Единый прокси и точка доступа для всех сервисов |                                  [http://allta.devos.astralinux.ru/api/server/](http://allta.devos.astralinux.ru/api/server/)                                   |
-|   vm_api   | Единый прокси и точка доступа для всех сервисов |                                      [http://allta.devos.astralinux.ru/api/vm/](http://allta.devos.astralinux.ru/api/vm/)                                       |
-| vm_celery  | Единый прокси и точка доступа для всех сервисов | Доступ из вне контейнеров невозможен на прямую, только через [http://allta.devos.astralinux.ru/service/flower](http://allta.devos.astralinux.ru/service/flower) |
+|        Сервис         |                              Описание                              |                                                                           Точка входа                                                                           |
+| :-------------------: | :----------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+|      ALLTA Auth       |                   Единый сервис для авторизации                    |                                    [http://allta.devos.astralinux.ru/api/auth/](http://allta.devos.astralinux.ru/api/auth/)                                     |
+|     ALLTA Config      |            Сервис для получения конфигурационных файлов            |                                  [http://allta.devos.astralinux.ru/api/config/](http://allta.devos.astralinux.ru/api/config/)                                   |
+|     ALLTA Server      | Сервис по управлению информацией о серверах и управления серверами |                                  [http://allta.devos.astralinux.ru/api/server/](http://allta.devos.astralinux.ru/api/server/)                                   |
+|    ALLTA VMManager    |               Сервис для управления ВМ и их создания               |                                      [http://allta.devos.astralinux.ru/api/vm/](http://allta.devos.astralinux.ru/api/vm/)                                       |
+| ALLTA VMManagerWorker |                     Воркер который создает ВМ                      | Доступ из вне контейнеров невозможен на прямую, только через [http://allta.devos.astralinux.ru/service/flower](http://allta.devos.astralinux.ru/service/flower) |
 
 ###### Самописные решения (cli утилиты)
 

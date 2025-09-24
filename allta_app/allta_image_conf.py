@@ -342,10 +342,10 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
         topics = {
             'orel_stand3':      ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'FreeIPA auth', 'unix'],
             'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'unix parsec'],
-            'orel_stand4':      ['postgresql-aud-off', 'postgresql', 'psql balance', 'steal time'],
+            'orel_stand4':      ['postgresql-aud-off', 'postgresql', 'psql balance', 'steal time', 'psql kernels'],
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla', 'steal time-sm'],
-            'orel_stand10':     ['NTFS', 'psql kernels'],
-            'smolensk_stand10': ['OCFS2'],
+            'orel_stand10':     ['NTFS', 'OCFS2'],
+            'smolensk_stand10': [],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
             'orel_stand12':     ['syslog-ng'],
@@ -364,8 +364,8 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
 
 stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec'],
-    'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm'],
-    'stand10_group':['NTFS', 'psql kernels', 'OCFS2'],
+    'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
+    'stand10_group':['NTFS', 'OCFS2'],
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
     'stand13_group':['syslog-ng-cwl']
@@ -521,10 +521,35 @@ psql_annotations = """
 sys_service_annotations = """
 Syslog-NG: 1.8.0-1.8.1.UU.2 - была ошибка в подсчете рейтинга, при необходимости переделать.
 Auditd-files: 1.7.6-1.7.6.UU.2 - была ошибка в подсчете рейтинга, при необходимости переделать.
+Небольшое увеличение рейтинга в 1.7.8 связано с переходом на новые сервера. Для удобства сравнения оставлены старые результаты.
+"""
+apache_annotations = """
+Увеличение рейтинга x2 в 1.7.8 связано с переходом на новые сервера. Для удобства сравнения оставлены старые результаты.
+"""
+docker_annotations = """
+Небольшое увеличение рейтинга в 1.7.8 связано с переходом на новые сервера. Для удобства сравнения оставлены старые результаты.
+"""
+freeipa_annotations = """
+Небольшое увеличение рейтинга в 1.7.8 связано с переходом на новые сервера. Для удобства сравнения оставлены старые результаты.
+"""
+filesys_annotations = """
+Увеличение рейтинга в 1.7.8 связано с переходом на новые сервера. Для удобства сравнения оставлены старые результаты.
+"""
+parsec_annotations = """
+Небольшое увеличение рейтинга в 1.7.8 связано с переходом на новые сервера. Для удобства сравнения оставлены старые результаты.
+"""
+virt_annotations = """
+Увеличение рейтинга в 1.7.8 связано с переходом на новые сервера. Для удобства сравнения оставлены старые результаты.
 """
 
 annotations = {
-    "UnixBench": unixbench_annotations,
+    "Apache": apache_annotations,
+    "Docker": docker_annotations,
+    "FreeIPA": freeipa_annotations,
+    "Parsec": parsec_annotations,
     "PostgreSQL": psql_annotations,
-    "Системные службы": sys_service_annotations
+    "Qemu/KVM/Libvirt": virt_annotations,
+    "UnixBench": unixbench_annotations,
+    "Системные службы": sys_service_annotations,
+    "Файловые системы": filesys_annotations
 }

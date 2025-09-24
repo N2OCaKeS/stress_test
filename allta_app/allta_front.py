@@ -267,7 +267,7 @@ def update_stp(version):
     return index_page('main')
 
 
-@app.route('/api/load_info/<stand>', methods=['GET'])
+@app.route('/rest/api/load_info/<stand>', methods=['GET'])
 def get_load_info(stand):
     conn = psycopg2.connect(
                             host=psyc['host'],

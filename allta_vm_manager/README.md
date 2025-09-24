@@ -13,7 +13,7 @@ Allta_app_services это программный комплекс состоящ
 1. Необходимо склонировать git репозиторий в отдельный каталог и переключиться на ветку с проектов
 
     ```bash
-    mkdir git_folder_for_allta_service
+    mkdir folder_git_for_allta_service
     cd git_folder_for_allta_service
     git clone ssh://git@git.astralinux.ru:7999/qa/stress_test.git
     git checkout allta_vmmanager

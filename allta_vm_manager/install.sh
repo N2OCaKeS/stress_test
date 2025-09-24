@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Путь до папки с вашим docker-compose.yml
-export COMPOSE_DIR="/home/u/git_folder_for_allta_service/stress_test/allta_vm_manager/docker_allta"
+export COMPOSE_DIR="/home/u/folder_git_for_allta_service/stress_test/allta_vm_manager/docker_allta"
 
 usage() {
   cat <<'EOF'

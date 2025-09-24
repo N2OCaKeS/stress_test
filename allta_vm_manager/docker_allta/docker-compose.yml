@@ -2,28 +2,30 @@ version: '3.8'
 services:
   # FRONT SERVICE
   
-  allta-devpi:
-    build:
-      context: ./allta_devpi
-      dockerfile: Dockerfile.allta_devpi
-      args:
-        DEVPI_ADMIN_PASSWORD: ${DEVPI_ADMIN_PASSWORD}
-        DEVPI_USER: ${DEVPI_USER}
-        DEVPI_PASSWORD: ${DEVPI_PASSWORD}
-    image: allta-devpi:latest
-    container_name: allta-devpi
-    env_file:
-      - $CRED_PATH/env.allta_devpi
-    volumes:
-      - allta_devpi_data:/data
-    networks:
-      - allta_front_service
-    restart: always    
-    healthcheck:
-      test: ["CMD", "/health/health_checker.sh"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+  # allta-devpi:
+  #   build:
+  #     context: ./allta_devpi
+  #     dockerfile: Dockerfile.allta_devpi
+  #     args:
+  #       DEVPI_ADMIN_PASSWORD: ${DEVPI_ADMIN_PASSWORD}
+  #       DEVPI_USER: ${DEVPI_USER}
+  #       DEVPI_PASSWORD: ${DEVPI_PASSWORD}
+  #   image: allta-devpi:latest
+  #   container_name: allta-devpi
+  #   ports:
+  #     - "3141:3141"
+  #   env_file:
+  #     - $CRED_PATH/env.allta_devpi
+  #   volumes:
+  #     - devpi-data:/data
+  #   networks:
+  #     - allta_front_service
+  #   restart: always    
+  #   healthcheck:
+  #     test: ["CMD", "/health/health_checker.sh"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 5
 
   #  NGINX
   allta-nginx:
@@ -196,8 +198,8 @@ services:
         condition: service_healthy                 
       allta-vm-db:
         condition: service_healthy
-      allta-devpi:
-        condition: service_healthy
+      # allta-devpi:
+      #   condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/vm/health"]
       interval: 5s
@@ -340,12 +342,13 @@ services:
       - allta_network
 
 volumes:
-  allta_devpi_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: /var/allta_services/volumes/allta_devpi_data
-      o: bind
+  # allta_devpi_data:
+  #   driver: local
+  #   driver_opts:
+  #     type: none
+  #     device: /var/allta_services/volumes/allta_devpi_data
+  #     o: bind
+
 
   # AUTH API
   allta_auth_db_data:

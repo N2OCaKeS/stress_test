@@ -37,7 +37,7 @@ services:
     ports:
       - "127.0.0.1:21500:80"
     volumes:
-      - devpi_service_devpi:/data:ro
+      - devpi_service_devpi-data:/data:ro
     networks:
       allta_network:
         aliases:

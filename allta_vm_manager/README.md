@@ -14,7 +14,7 @@ Allta_app_services это программный комплекс состоящ
 
     ```bash
     mkdir folder_git_for_allta_service
-    cd git_folder_for_allta_service
+    cd folder_git_for_allta_service
     git clone ssh://git@git.astralinux.ru:7999/qa/stress_test.git
     git checkout allta_vmmanager
     ```

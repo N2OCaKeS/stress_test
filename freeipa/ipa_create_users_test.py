@@ -1,23 +1,44 @@
-import ipalib
-import sys
-from ipalib import api
-from threading import Thread
+import asyncio
+from python_freeipa import ClientMeta
+from python_freeipa.exceptions import FreeIPAError
+import urllib3
 
-api.bootstrap(context='server')
-api.finalize()
-api.activate()
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def create_user(login):
+SERVER = "virtual-station1.stress-testing.local"
+USER_START = 1
+USER_END = 100
+
+client = ClientMeta(SERVER, verify_ssl=False)
+client.login_kerberos()
+
+async def create_user(i):
+    login = f"user{i}"
+    givenname = f"Test{i}"
+    sn = f"User{i}"
+    cn = f"{givenname} {sn}"
+
+    loop = asyncio.get_running_loop()
     try:
-        result = api.Command['user_add'](login, givenname='Test', sn=f'User{login}')
-        print(f"Created {login}: {result}")
-    except Exception as e:
-        print(f"Error {login}: {e}")
+        await loop.run_in_executor(
+            None,
+            lambda: client.user_add(
+                login,
+                givenname,
+                sn,
+                cn,
+                o_userpassword="Test1234!",
+                o_loginshell="/bin/bash"
+            )
+        )
+        print(f"создан {login}")
+    except FreeIPAError as e:
+        print(f"ошибка {login}: {e}")
 
-threads = []
-for i in range(100):
-    t = Thread(target=create_user, args=(f'user{i}',))
-    t.start()
-    threads.append(t)
-for t in threads:
-    t.join()
+async def main():
+    tasks = [create_user(i) for i in range(USER_START, USER_END)]
+    await asyncio.gather(*tasks)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+    print("все пользователи созданы")

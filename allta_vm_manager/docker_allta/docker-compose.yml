@@ -35,9 +35,9 @@ services:
     image: allta-nginx:latest
     container_name: allta-nginx
     ports:
-      - "80:80"
+      - "127.0.0.1:21500:80"
     volumes:
-      - allta_devpi_data:/data:ro
+      - devpi_service_devpi:/data:ro
     networks:
       allta_network:
         aliases:
@@ -348,7 +348,8 @@ volumes:
   #     type: none
   #     device: /var/allta_services/volumes/allta_devpi_data
   #     o: bind
-
+  devpi_service_devpi-data:
+    external: true
 
   # AUTH API
   allta_auth_db_data:

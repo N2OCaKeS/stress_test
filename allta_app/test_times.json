@@ -21,13 +21,13 @@
             "psql parsec": "0:40:49",
             "psql vanilla": "2:34:07",
             "psql balance": "2:01:26",
+            "psql kernels": "1:44:00",
             "steal time": "2:33:44",
             "steal time-sm": "1:57:28",
             "Total time": "0:00:00"
         },
         "stand10": {
             "NTFS": "7:52:09",
-            "psql kernels": "1:44:00",
             "OCFS2": "11:50:09",
             "Total time": "0:00:00"
         },
@@ -77,13 +77,13 @@
             "psql parsec": "3:13:15",
             "psql vanilla": "2:47:21",
             "psql balance": "2:46:01",
+            "psql kernels": "2:15:01",
             "steal time": "2:50:43",
             "steal time-sm": "2:47:29",
             "Total time": "0:00:00"
         },
         "stand10": {
             "NTFS": "10:24:34",
-            "psql kernels": "2:15:01",
             "OCFS2": "2:13:35",
             "Total time": "0:00:00"
         },

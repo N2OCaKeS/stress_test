@@ -52,7 +52,7 @@ subprocess.run('bash /home/u/folder_git_for_libs/stress_test/libs/devpi_service/
 subprocess.run('sudo systemctl restart devpi', shell=True)
 
 subprocess.run('sudo docker image ls', shell=True)
-subprocess.run('y | sudo docker image prune', shell=True)
+subprocess.run('sudo docker image prune', shell=True)
 subprocess.run('sudo docker image ls', shell=True)
 
 

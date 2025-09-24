@@ -6408,27 +6408,41 @@ $(document).ready(function() {
 </script>
 
 <script>
-// Периодическая проверка наличия обновлений (раз в минуту)
-  setInterval(checkForUpdates, 60000); // Проверяем каждые 60 секунд
+  // Периодическая проверка наличия обновлений (раз в минуту)
+  const CHECK_INTERVAL_MS = 60000;
+  let checkTimer = setInterval(checkForUpdates, CHECK_INTERVAL_MS);
 
   async function checkForUpdates() {
     try {
-      const response = await fetch('/check-for-updates');
+      const response = await fetch('/check-for-updates', { credentials: 'include' });
       if (!response.ok) throw new Error(`Ошибка ${response.status}`);
-    
       const data = await response.json();
-      if (data.update_required === true) { // Если сервер сообщил, что обновление необходимо
-        console.log("Обнаружены изменения, перезагружаю страницу");
-        refreshPage(); // Выполняем обновление страницы
+      if (data.update_required === true) {
+        console.log("Обнаружены изменения — выполняю logout и перенаправляю на /login");
+        await logoutAndRedirect();
       }
     } catch (err) {
       console.error(err.message || err.toString());
     }
   }
 
-  // Функционал перезагрузки страницы
-  function refreshPage() {
-    window.location.reload(true); // Принудительно обновляем страницу
+  async function logoutAndRedirect() {
+    clearInterval(checkTimer);
+
+    try {
+
+      await fetch('/logout', {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Accept': '*/*' }
+      });
+    } catch (err) {
+      console.warn('Ошибка при вызове /logout:', err);
+    } finally {
+      try { localStorage.removeItem('access_token'); } catch(e) {}
+      try { sessionStorage.removeItem('access_exp'); } catch(e) {}
+      window.location.href = '/login';
+    }
   }
 </script>
 

@@ -1,12 +1,46 @@
+upstream gunicorn_upstream { server 10.177.103.10:8000; } # Gunicorn allta
+upstream container_nginx   { server 127.0.0.1:21500; }   # Nginx-docker
+
 server {
     listen 80;
     server_name allta.devos.astralinux.ru 10.177.103.80;
 
-    location / {
-        proxy_pass http://10.177.103.10:8000;  # направляет на Gunicorn
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # Nginx-docker Routes
+    location ^~ /api/ {
+        proxy_pass http://container_nginx;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 200m;
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
+    }
+
+    # Nginx-docker
+    location ^~ /service/ {
+        proxy_pass http://container_nginx;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 200m;
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
+    }
+
+    # Nginx-host allta-gunicorn
+    location / {
+        proxy_pass http://gunicorn_upstream;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 200m;
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
     }
 }

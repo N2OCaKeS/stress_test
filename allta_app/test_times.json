@@ -18,10 +18,10 @@
             "postgresql": "4:32:11",
             "postgresql-aud-off": "2:34:21",
             "postgresql-sm": "4:22:47",
-            "psql parsec": "0:40:49",
+            "psql parsec": "1:56:49",
             "psql vanilla": "2:34:07",
             "psql balance": "2:01:26",
-            "psql kernels": "1:44:00",
+            "psql kernels": "1:46:36",
             "steal time": "2:33:44",
             "steal time-sm": "1:57:28",
             "Total time": "0:00:00"

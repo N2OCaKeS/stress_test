@@ -1,5 +1,7 @@
-from atlassian import Confluence
 import requests
+
+from atlassian import Confluence
+
 
 confluence_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-confluence-url'
 response_confluence_url = requests.get(confluence_url_api)
@@ -125,11 +127,14 @@ class SendCommentToConfluence(ConfluenceAPI):
             return str(full_link)
         except KeyError:
             print(f"Страница с результатами для {load_page_version} не найдена")
-            return f"<span style=\"color:red;\">Страница с результатами для {load_page_version} не найдена</span><br><br>"
+            return 'Fail'
+            #return f"<span style=\"color:red;\">Страница с результатами для {load_page_version} не найдена</span><br><br>"
 
 
     def send_comment(self):
         start_point = 0
+        if self._get_load_page_statistics_url(self.load_page_version) == 'Fail':
+            return None
         statistic_url = self._get_load_page_statistics_url(self.load_page_version)
         comment_text = f"""
                         <strong>Нагрузочное тестирование</strong><br>

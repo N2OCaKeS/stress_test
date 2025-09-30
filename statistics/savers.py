@@ -46,6 +46,6 @@ class SaveText:
     
     def save(self, text: str, name: str):
         paragraph_html = f'<hr/><h1>Аннотация</h1><pre>{text}</pre>'
-        file = open(f"{UtilForBuildPath.build_path(self.main_folder, stat_rc_vers=self.stat_rc_vers)}/{name}", "w")
+        file = open(f"{UtilForBuildPath.build_path(self.main_folder.replace("/", "-"), stat_rc_vers=self.stat_rc_vers)}/{name}", "w")
         file.writelines(paragraph_html)
         file.close()

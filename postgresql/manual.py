@@ -2,8 +2,14 @@ import argparse
 import subprocess
 import os
 import threading
+
 from time import sleep
 from statistics import median
+from os.path import isfile, isdir
+from os import mkdir
+
+
+PSQL_VERSION = 15
 
 
 parser = argparse.ArgumentParser()
@@ -45,6 +51,19 @@ parser.add_argument('-set_hdd',
                     help='set test storage on HDD',
                     dest='HDD')
 
+parser.add_argument('-parsec_off',
+                    action='store_true',
+                    required=False,
+                    help='parsec disable',
+                    dest='PARSECOFF')
+
+parser.add_argument('-i',
+                    action='store',
+                    required=False,
+                    choices=['psqlpro'],
+                    help='install BD',
+                    dest='INSTBD')
+
 args = parser.parse_args()
 
 
@@ -60,11 +79,14 @@ def check_output_command(command, out=None):
     else:
         return errors
 
+
 def cmd(command):
     subprocess.run(command, shell=True)
 
+
 def prepare():
-    cmd('sudo bash psb_db_prep_manual_test.sh 15')
+    cmd(f'sudo bash psb_db_prep_manual_test.sh {PSQL_VERSION}')
+
 
 def cpu_load(function):
     results = []
@@ -84,32 +106,36 @@ def cpu_load(function):
         if not function.is_alive():
             return print(f'\nMedian CPU loads:\n[CPU::user::system::RAM]:\n{__median()}\n')
          
+
 def start_test():
     cmd('pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
     
+
 def test():
     start_test_thread = threading.Thread(target=start_test)
     cpu_load_thread = threading.Thread(target=cpu_load, args=(start_test_thread,))
 
-    cmd('pg_ctlcluster 15 TEST start')
+    cmd(f'pg_ctlcluster {PSQL_VERSION} TEST start')
     cpu_load_thread.start()
     start_test_thread.start()
     start_test_thread.join()
-    cmd('pg_ctlcluster 15 TEST stop')
+    cmd(f'pg_ctlcluster {PSQL_VERSION} TEST stop')
+
 
 def cleare():
     #Cluster
     cmd('sudo systemctl restart postgresql.service')
-    cmd('pg_ctlcluster 15 TEST restart')
-    cmd('pg_ctlcluster 15 TEST stop')
+    cmd(f'pg_ctlcluster {PSQL_VERSION} TEST restart')
+    cmd(f'pg_ctlcluster {PSQL_VERSION} TEST stop')
     #Journald
-    cmd('journalctl --rotate --vacuum-time=1s --unit=postgresql@15-TEST')
+    cmd(f'journalctl --rotate --vacuum-time=1s --unit=postgresql@{PSQL_VERSION}-TEST')
     #Syslog-NG
     cmd('logrotate --force /etc/logrotate.d/syslog-ng-mod-astra')
     if os.path.isfile('perf.data'):
         cmd('sudo rm -r perf.data')
-    cmd('sudo rm -r /var/lib/postgresql/15/TEST/pg_log/*')
+    cmd(f'sudo rm -r /var/lib/postgresql/{PSQL_VERSION}/TEST/pg_log/*')
     print('Cleared logs done\n')
+
 
 def count():
     def __sum_audit_count():
@@ -124,10 +150,10 @@ def count():
     journald = check_output_command('journalctl -t postgres | wc -l')
     syslog_ng = check_output_command('grep -a "postgres" /parsec/log/astra/events | wc -l')
 
-    if os.listdir('/var/lib/postgresql/15/TEST/pg_log/'):
-        comm = 'sudo grep -o "type=\'AUDIT\'" /var/lib/postgresql/15/TEST/pg_log/{} | wc -l'
-        files = os.listdir('/var/lib/postgresql/15/TEST/pg_log')
-        bd_logs = sum([int(check_output_command(comm.format(logs))) for logs in files])
+    if os.listdir(f'/var/lib/postgresql/{PSQL_VERSION}/TEST/pg_log/'):
+        comm = 'sudo grep -o "type=\'AUDIT\'" /var/lib/postgresql/{}/TEST/pg_log/{} | wc -l'
+        files = os.listdir(f'/var/lib/postgresql/{PSQL_VERSION}/TEST/pg_log')
+        bd_logs = sum([int(check_output_command(comm.format(PSQL_VERSION, logs))) for logs in files])
     else: bd_logs = 0
 
     if os.path.isfile('/tmp/pg_test_audit.log'):
@@ -142,12 +168,14 @@ def count():
     except Exception as e:
             print(f'Error: {type(e).__name__}\nMessage: {str(e)}')
 
+
 def flame():
-    cmd('pg_ctlcluster 15 TEST start')
+    cmd(f'pg_ctlcluster {PSQL_VERSION} TEST start')
     cmd('sudo perf record -g -a pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test')
     cmd(f'sudo perf script | perl libs/libstackcollapse-perf.pl | perl libs/libflamegraph.pl > result_{args.FLAME}.svg')
-    cmd('pg_ctlcluster 15 TEST stop')
+    cmd(f'pg_ctlcluster {PSQL_VERSION} TEST stop')
     print('Flamegraph done')
+
 
 def set_hdd(part='sdb', fs=args.HDD): 
     if fs == 'xfs':
@@ -165,6 +193,37 @@ def set_hdd(part='sdb', fs=args.HDD):
     cmd(f'mount /dev/{part}1 /var/lib/postgresql/')
 
 
+def parsec_disable():
+    """
+    Отключение модуля parsec, поможет исключить его влияние на системные процессы:
+    """
+
+    cmd('lsmod | grep parseс')
+    if not isdir('/etc/modprobe.d'):
+        mkdir('/etc/modprobe.d/')
+    with open('/etc/modprobe.d/parsec.conf', 'w') as w:
+        w.write('install parsec /bin/false')
+
+    cmd('sudo update-initramfs -u -k all')
+    print('Перезагрузите стенд и проверьте корректность отключения модуля: "lsmod | grep parseс"')
+
+
+def install_bd(bd=args.INSTBD, key=None):
+    """
+    Для скачивания скрипта потребуется ключ
+    """
+    if bd == 'psqlpro':
+        cmd(f'wget --user {key} --password='' https://repo.postgrespro.ru/ent/ent-17/keys/pgpro-repo-add.sh')
+        cmd('sudo bash pgpro-repo-add.sh')
+        cmd('sudo apt-get update -y')
+        cmd('sudo apt-get install postgrespro-ent-17')
+        cmd('sudo apt-get install postgrespro-ent-17-contrib')
+        cmd('/opt/pgpro/ent-17/bin/pg-setup initdb')
+        cmd('/opt/pgpro/ent-17/bin/pg-setup service enable')
+        cmd('/opt/pgpro/ent-17/bin/pg-setup service start')
+
+
+
 if args.CLEARE:
     cleare()
 elif args.COUNT:
@@ -177,6 +236,10 @@ elif args.FLAME:
     flame()
 elif args.HDD:
     set_hdd()
+elif args.PARSECOFF:
+    parsec_disable()
+elif args.INSTBD:
+    install_bd()
 
 
     

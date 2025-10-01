@@ -319,8 +319,9 @@ class ComparisonKernelLineGraph(Graphs):
             ax.plot(merged_df['Релиз'], ratings_for_plt_graph.iloc[::, index], "o-", color=colors[index])
         plt.legend(self.separate_by_kernel_data.keys())
 
-        ax.set_xticks(range(len(merged_df["Релиз"])))
-        ax.set_xticklabels(merged_df["Релиз"], rotation=20, horizontalalignment='right')
+        # ax.set_xticks(range(len(merged_df["Релиз"])))
+        # ax.set_xticklabels(merged_df["Релиз"], rotation=20, horizontalalignment='right')
+        plt.xticks(rotation=20, horizontalalignment='right')
         
         # Lighten borders
         plt.gca().spines["top"].set_alpha(.0)

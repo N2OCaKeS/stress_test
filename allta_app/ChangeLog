@@ -1,3 +1,10 @@
+allta_app - v2.48.3
+* Remove create fail comment
+  in OS blog
+* Add debian12 cz_comm
+* Upd test time
+
+
 allta_app - v2.48.2
 * Add logout button
 

@@ -224,8 +224,9 @@ nginx_remove_blocks() {
 }
 
 exports(){
-	export BASE_PATH="/var/allta_services/volumes"
-	export CRED_PATH="/var/allta_services/config"
+    export FILE_PATH="/var/allta_services"
+	export BASE_PATH=$FILE_PATH/volumes
+	export CRED_PATH=$FILE_PATH/config
 	export SERVER_DB_PATH=$BASE_PATH/allta_server_db_data
 	export VM_DB_PATH=$BASE_PATH/allta_vm_db_data
 	export SERVER_API_DATA_PATH=$BASE_PATH/allta_server_api_data
@@ -236,6 +237,7 @@ exports(){
 
 
 dir(){
+    sudo mkdir -p "$FILE_PATH"    
 	sudo mkdir -p "$BASE_PATH"
 	sudo mkdir -p "$SERVER_DB_PATH"
 	sudo mkdir -p "$VM_DB_PATH"
@@ -285,7 +287,11 @@ reinstall(){
 remove(){
 	exports
 	cd "$COMPOSE_DIR"
+    sudo systemctl stop $SERIVE_NAME
 	docker-compose --file docker-compose.yml down -v
+	sudo rm -rf /etc/systemd/system/$SERIVE_NAME
+    sudo systemctl daemon-reexec
+    sudo systemctl daemon-reload
 
 	local -a IMAGES=(
 		"allta-vm-nginx:latest"
@@ -313,6 +319,9 @@ remove(){
 	sudo rm $CRED_PATH/env.allta_vm_celery 
 	sudo rm $CRED_PATH/env.allta_vm_db 
 	sudo rm	$CRED_PATH/env.allta_vm_flower
+    sudo rmdir --ignore-fail-on-non-empty $CRED_PATH
+    sudo rmdir --ignore-fail-on-non-empty $BASE_PATH
+    sudo rmdir --ignore-fail-on-non-empty $FILE_PATH    
 	nginx_remove_blocks
 }
 

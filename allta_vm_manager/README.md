@@ -61,7 +61,7 @@ Allta_VM_Service это программный комплекс состоящи
 
 ## Обновление проекта
 
-###
+### Если был обновлен код без добавления новых переменных в env
 
 #### 1. Обновляем git
 
@@ -73,6 +73,33 @@ Allta_VM_Service это программный комплекс состоящи
 
    ```bash
    sudo systemctl restart allta_vm.service
+   ```
+
+### Если были добавлены новые переменные в env
+
+#### 1. Обновляем git
+
+   ```bash
+   git pull
+   ```
+
+#### 2. Останавливаем сервисы
+
+   ```bash
+   sudo systemctl stop allta_vm.service
+   ```
+
+#### 3. Добавляем новые переменные в env файлы
+
+   ```bash
+   cd /var/allta_services/config 
+   nano env.* # Изменяем только те env в которые добавили новые переменные
+   ```
+
+#### 4. Запускаем сервис
+
+   ```bash
+   sudo systemctl start allta_vm.service
    ```
 
 ## Подробная информация о проекте

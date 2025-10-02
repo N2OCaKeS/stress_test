@@ -24,7 +24,8 @@ from libs.libtable import Report
 from libs.libcfs import create_remote_file
 from cfs_create_vms import VMS
 from libs.zefir import UploaderZC
-
+from libs.libparseargs import parse_args
+from cfs_run_ceph import Ceph
 from cfs_conf import  \
     USER, PASSWORD, PORT, LOG_FILENAME, SCRIPT_DIR, REPORT_DIR, REPORT_FILENAME, INFO_FILENAME, \
     FILES, FILES_STEP, FILES_LIMIT, \
@@ -32,147 +33,15 @@ from cfs_conf import  \
     START_BORDER_FOR_DATA, STEP_FOR_DATA, END_BORDER_FOR_DATA, \
     STORAGE_NAME, HOST_IP, HOST_STORAGE, NODES
 
-DESCRIPTION = ""
-parser = argparse.ArgumentParser(description=DESCRIPTION)
-parser.add_argument('-u', '--username',
-                    action='store',
-                    required=True,
-                    help='confluence user',
-                    dest='USER')
 
-parser.add_argument('-t', '--token',
-                    action='store',
-                    required=False,
-                    default=None,
-                    help='confluence access token',
-                    dest='TOKEN')
+args = parse_args()
+args_dict = vars(args)
 
-parser.add_argument('-cs', '--confluence-space',
-                    action='store',
-                    required=True,
-                    help='confluence space',
-                    dest='SPACE')
+if args.CFS == "ceph":
+    c = Ceph(**args_dict)
+    c.start()
+    exit(0)
 
-parser.add_argument('-cpp', '--confluence-parent-page',
-                    action='store',
-                    required=True,
-                    help='confluence parent page',
-                    dest='PPAGE')
-
-parser.add_argument('-cnp', '--confluence-new-page',
-                    action='store',
-                    required=True,
-                    help='confluence new page',
-                    dest='NPAGE')
-
-parser.add_argument('-sn', '--stand-num',
-                    action='store',
-                    choices=['1',
-                             '2',
-                             '3',
-                             '4',
-                             '5',
-                             '6',
-                             '7',
-                             '8',
-                             '9',
-                             '10',
-                             '11',
-                             '12',
-                             '13'],
-                    required=True,
-                    help='stand num',
-                    dest='STAND')
-
-parser.add_argument('-fti', '--folder-tree-id',
-                    action='store',
-                    required=True,
-                    help='folder-tree-id',
-                    dest='FTI')
-
-parser.add_argument('-tcyc', '--test-cycle-name',
-                    action='store',
-                    required=True,
-                    help='test-cycle-name',
-                    dest='TCYC')
-
-parser.add_argument('-tcas', '--test-case-name',
-                    action='store',
-                    required=True,
-                    help='test-case-name',
-                    dest='TCAS')
-
-parser.add_argument('-ba', '--basic-auth',
-                    action='store',
-                    required=True,
-                    help='basic-auth',
-                    dest='BA')
-
-parser.add_argument('-tcv', '--test-cycle-version',
-                    action='store',
-                    required=True,
-                    help='test-cycle-version',
-                    dest='TCV')
-
-parser.add_argument('--libvirt',
-                    action='store_true',
-                    required=False,
-                    help='virtualization type',
-                    dest='LIBVIRT')
-
-parser.add_argument('--disk-size',
-                    action='store',
-                    required=False,
-                    type=str,
-                    default='25',
-                    help='size of vdi disk',
-                    dest='DISK_SIZE')
-
-parser.add_argument('-fs',
-                    action='store',
-                    choices=['ocfs2', 'gfs2'],
-                    required=True,
-                    help='filesystem',
-                    dest='FS')
-
-parser.add_argument('--test-set',
-                    action='store',
-                    choices=['base_load',
-                             'timeout',
-                             'multithreaded',
-                             'big_files',
-                             'fs_mark_count',
-                             'fs_mark_size'],
-                    default='fs_mark_count',
-                    required=False,
-                    dest='TS')
-
-parser.add_argument('--multithreading',
-                    action='store_true',
-                    required=False,
-                    help='get data from config',
-                    dest='MULTITHREADING')
-
-parser.add_argument('--parsec',
-                    action='store_true',
-                    required=False,
-                    help='',
-                    dest='PARSEC')
-
-parser.add_argument('-vbox', 
-                    action='store',
-                    required=True,
-                    help='vbox name',
-                    dest='VBOX')
-
-parser.add_argument('-kernel', 
-                    action='store',
-                    required=True,
-                    help='vbox name',
-                    dest='KERNEL')
-
-
-args = parser.parse_args()
 args.STORAGE = HOST_STORAGE
 args.NODES = NODES
 all_hosts = args.NODES + [args.STORAGE]

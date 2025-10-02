@@ -1,0 +1,134 @@
+version: '3.8'
+services:
+  #  NGINX
+  allta-nginx:
+    build:
+      context: ./allta_nginx
+      dockerfile: Dockerfile.allta_nginx
+    image: allta-auth-nginx:latest
+    container_name: allta-auth-nginx
+    ports:
+      - "127.0.0.1:21500:80"
+    networks:
+      allta_network:
+      allta_front_service:
+    depends_on:
+      allta-auth-api:
+        condition: service_healthy
+      allta-config-api:
+        condition: service_healthy
+      allta-swagger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: always
+
+
+  # AUTH-API
+  allta-auth-api:
+    build:
+      context: ../backend/allta_auth_api
+      dockerfile: ../../docker_auth/allta_auth_api/allta_auth_api/Dockerfile.auth_api
+    image: allta-auth-api
+    container_name: allta_auth_api
+    restart: always
+    env_file:
+      - $CRED_PATH/env.allta_auth_api
+    depends_on:
+      allta-auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/auth/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - allta_network
+      - allta_auth_api     
+
+  allta-auth-db:
+    build:
+      context: ./allta_auth_api/allta_auth_db
+      dockerfile: Dockerfile.allta_auth_db
+    image: allta-auth-db:latest
+    container_name: allta_auth_db
+    restart: always
+    env_file:
+      - $CRED_PATH/env.allta_auth_db
+    volumes:
+      - allta_auth_db_data:/var/lib/postgresql/data        
+    networks:
+      - allta_network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  allta-config-api:
+    build:
+      context: ../backend/allta_config_api
+      dockerfile: ../../docker_auth/allta_config_api/Dockerfile.allta_config_api
+    image: allta-config-api
+    container_name: allta_config_api
+    restart: always
+    env_file:
+      - $CRED_PATH/env.allta_config_api
+    depends_on:
+      allta-auth-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/config/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5              
+    networks:
+      - allta_network
+    volumes:
+      - allta_config_data:/data
+      - ${CONFIG_API_TOKENS_PATH}:/cred/tokens.json:ro
+
+  allta-swagger:
+    build:
+      context: ./allta_swagger
+      dockerfile: Dockerfile.allta_swagger
+    image: allta_swagger:latest
+    container_name: allta_swagger
+    restart: always
+    networks:
+      allta_network:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 3s
+      retries: 3     
+
+volumes:
+  # AUTH API
+  allta_auth_db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${AUTH_DB_PATH}
+      o: bind   
+  allta_config_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${CONFIG_API_DATA_PATH}
+      o: bind      
+
+networks:
+
+  allta_network:
+    driver: bridge
+  allta_front_service:
+    driver: bridge
+
+  # AUTH API
+  allta_auth_api:
+    driver: bridge

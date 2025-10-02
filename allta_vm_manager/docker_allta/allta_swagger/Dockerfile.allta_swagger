@@ -1,9 +1,0 @@
-FROM swaggerapi/swagger-ui
-
-# Копируем конфиг в контейнер
-COPY ./template/swagger-config.yaml /usr/share/nginx/html/swagger-config.yaml
-
-# Указываем путь к конфигу через переменную окружения
-ENV CONFIG_URL=/api/docs/swagger-config.yaml
-
-EXPOSE 8080

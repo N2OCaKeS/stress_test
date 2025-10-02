@@ -1,9 +1,0 @@
-# Dockerfile
-FROM postgres:16.9-alpine
-
-VOLUME ["/var/lib/postgresql/data"]
-EXPOSE 5432
-
-# COPY ./template/initdb.sql /docker-entrypoint-initdb.d/initdb.sql
-# COPY ./template/filling_db.sql /docker-entrypoint-initdb.d/filling_db.sql
-COPY ./template/01-init-allta.sh /docker-entrypoint-initdb.d/01-init-allta.sh

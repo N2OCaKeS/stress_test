@@ -1,7 +1,7 @@
 allta_app - v2.49.0
 * Add tests CEPH, CEPH fio
-
-
+* Add calc all statisctics
+  after testrunner
 
 
 

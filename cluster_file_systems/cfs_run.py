@@ -37,7 +37,7 @@ from cfs_conf import  \
 args = parse_args()
 args_dict = vars(args)
 
-if args.CFS == "ceph":
+if args.FS == "ceph":
     c = Ceph(**args_dict)
     c.start()
     exit(0)

@@ -312,13 +312,21 @@ class Vm:
                             'signal set': 'hostname',
                             'signal get': ''
                         },
+                        'install allta_cli':{
+                            'command': (
+                                f"wget ftp://10.177.103.10/allta_1.0.0_amd64.deb && "
+                                f"sudo dpkg -i allta_1.0.0_amd64.deb && rm allta_1.0.0_amd64.deb"
+                            ),
+                            'signal set': 'allta',
+                            'signal get': ['hostname']},  
                         'prepare': {
                             'command': (
                                 f"sudo chmod 777 /home/u/env_provision.sh && "
-                                f"sudo su -c '/home/u/env_provision.sh {vms_dates[vm_name]['ip_bridge']}'"
+                                f"sudo su -c '/home/u/env_provision.sh {vms_dates[vm_name]['ip_bridge']}' &&"
+                                f"sudo rm /home/u/env_provision.sh"
                             ),
                             'signal set': 'prepare',
-                            'signal get': ['hostname']
+                            'signal get': ['allta']
                         },
                         'confirm': {
                             'command': "(sleep 2 && sudo reboot) &",

@@ -300,6 +300,12 @@ elif args.TEST == 'EXT4 parsec' or args.TEST == 'XFS parsec':
 elif args.TEST == 'OCFS2':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --libvirt'
+elif args.TEST == 'CEPH':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --cfs ceph'
+elif args.TEST == 'CEPH fio':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --test-set fio --cfs ceph'
 elif args.TEST == 'syslog-ng-cwl':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -cwl'

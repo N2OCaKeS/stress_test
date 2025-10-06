@@ -1,3 +1,10 @@
+allta_app - v2.49.0
+* Add tests CEPH, CEPH fio
+
+
+
+
+
 allta_app - v2.48.3
 * Remove create fail comment
   in OS blog

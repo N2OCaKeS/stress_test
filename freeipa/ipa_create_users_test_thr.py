@@ -89,7 +89,7 @@ def main():
         print(total_time)
         print(average_time_per_user)
         with open("ipa_report.txt", 'a') as report_file:
-            report_file.write(f"{user_count} {successful_users} {total_time} {average_time_per_user}")
+            report_file.write(f"{user_count} {successful_users} {total_time} {average_time_per_user}\n")
         
         print("Удаление пользователей...")
         for user_id in range(USER_START, user_count):

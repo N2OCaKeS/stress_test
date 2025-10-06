@@ -436,5 +436,5 @@ shutdown_all_hosts()
 
 
 uzs.public = True
-uzs.statistics = True
+#uzs.statistics = True
 uzs.upload_test_cycle_status(zefir_status='pass')

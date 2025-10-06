@@ -250,7 +250,7 @@ gitclone_conf_body = "git clone -c http.extraHeader='Authorization: {}' https://
 if args.TEST == 'EXT4 parsec' or args.TEST == 'XFS parsec':
     fs = f'-fs {args.TEST.split()[0].lower()}'
 else:
-    fs = f'-fs {args.TEST.lower()}'
+    fs = f'-fs {args.TEST.lower().split()[0]}'
 #ts = '-ts fs_mark_count'
 sn = f'-sn {args.ST}'
 fti = f'-fti {args.CTI}'

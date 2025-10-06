@@ -131,7 +131,7 @@ def parse_args():
     
     parser.add_argument('-fs',
                         action='store',
-                        choices=['ocfs2', 'gfs2'],
+                        choices=['ocfs2', 'gfs2', 'ceph'],
                         required=False,
                         help='filesystem',
                         dest='FS')
@@ -142,11 +142,11 @@ def parse_args():
                         help='virtualization type',
                         dest='LIBVIRT')
     
-    parser.add_argument('--cfs',
-                        action='store',
-                        choices=['ceph','ocfs2'],
-                        default='ocfs2',
-                        required=False,
-                        dest='CFS')
+#     parser.add_argument('--cfs',
+#                         action='store',
+#                         choices=['ceph','ocfs2'],
+#                         default='ocfs2',
+#                         required=False,
+#                         dest='CFS')
 
     return parser.parse_args()

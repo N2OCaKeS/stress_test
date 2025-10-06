@@ -37,7 +37,7 @@ from cfs_conf import  \
 args = parse_args()
 args_dict = vars(args)
 
-if args.CFS == "ceph":
+if args.FS == "ceph":
     c = Ceph(**args_dict)
     c.start()
     exit(0)
@@ -436,5 +436,5 @@ shutdown_all_hosts()
 
 
 uzs.public = True
-#uzs.statistics = True
+# #uzs.statistics = True
 uzs.upload_test_cycle_status(zefir_status='pass')

@@ -153,7 +153,7 @@ class Ceph:
         get_remote_system_info(start=start_time, file=LOCAL_INFOFILENAME, host=self.HOSTS["testvm1"]['ip'], user=self.HOSTS["testvm1"]['login'], passwd=self.HOSTS["testvm1"]['password'])
         
         self.uzs.public = True
-        self.uzs.statistics = True
+        #self.uzs.statistics = True
         self.uzs.upload_test_cycle_status(zefir_status='pass')
 
 if __name__ == "__main__":

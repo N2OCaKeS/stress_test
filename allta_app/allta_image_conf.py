@@ -82,7 +82,7 @@ modes = {
 #################################################################################################################################################
 tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
                                  'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
-            'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2'],
+            'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2', 'CEPH', 'CEPH fio'],
             'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
             'UnixBench':        ['unix', 'unix parsec'],
             'FreeIPA':          ['FreeIPA auth'],
@@ -141,6 +141,8 @@ branches = {
     'postgresql benchmark audit-off':'postgresql',
     'tantor benchmark vanilla':'postgresql',
     'tantor benchmark kernels':'postgresql',
+    'ceph benchmark':'cluster_file_systems',
+    'ceph fio benchmark':'cluster_file_systems',
     'file system benchmark. OCFS2':'cluster_file_systems',
     'file system benchmark. NTFS':'file_systems',
     'file system benchmark. EXT3':'file_systems',
@@ -201,6 +203,8 @@ tests = {
     'postgresql benchmark audit-off':'postgresql-aud-off',
     'tantor benchmark vanilla':'tantor vanilla',
     'tantor benchmark kernels':'tantor kernels',
+    'ceph benchmark':'CEPH',
+    'ceph fio benchmark':'CEPH fio',
     'file system benchmark. OCFS2':'OCFS2',
     'file system benchmark. NTFS':'NTFS',
     'file system benchmark. EXT3':'EXT3',
@@ -257,7 +261,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
-              'digsig-cdt', 'docker-wa']
+              'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio']
 
 
 
@@ -344,7 +348,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'unix parsec'],
             'orel_stand4':      ['postgresql-aud-off', 'postgresql', 'psql balance', 'steal time', 'psql kernels'],
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla', 'steal time-sm'],
-            'orel_stand10':     ['NTFS', 'OCFS2'],
+            'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio'],
             'smolensk_stand10': [],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
@@ -365,7 +369,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
 stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
-    'stand10_group':['NTFS', 'OCFS2'],
+    'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio'],
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
     'stand13_group':['syslog-ng-cwl']
@@ -413,7 +417,9 @@ tests_case_zefir_key = {
     'steal time-sm':'BT-T15186',
     'psql oom':'BT-T16134',
     'digsig-cdt':'BT-T16391',
-    'docker-wa':'BT-T16564'
+    'docker-wa':'BT-T16564',
+    'CEPH':'BT-T17640', 
+    'CEPH fio':'BT-T17641'
 }
 
 
@@ -439,7 +445,8 @@ testname_columns = {
                     'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
                     'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm',
                     'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl',
-                    'DIGSIG. Check digsig time':'DIGSIG-cdt', 'docker web-application':'Docker-WA'
+                    'DIGSIG. Check digsig time':'DIGSIG-cdt', 'docker web-application':'Docker-WA', 'ceph benchmark':'FS_CEPH',
+                    'ceph fio benchmark':'FS_CEPH_fio'
                     }
 
 

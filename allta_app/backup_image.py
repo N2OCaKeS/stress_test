@@ -302,10 +302,10 @@ elif args.TEST == 'OCFS2':
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --libvirt'
 elif args.TEST == 'CEPH':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --cfs ceph'
+              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL}'
 elif args.TEST == 'CEPH fio':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --test-set fio --cfs ceph'
+              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --test-set fio'
 elif args.TEST == 'syslog-ng-cwl':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -cwl'

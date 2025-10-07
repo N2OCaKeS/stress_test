@@ -392,7 +392,7 @@ with open(INFO_FILENAME, 'a+') as info:
 #upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/{REPORT_FILENAME}', f'{args.FS}_{args.TCYC}_{REPORT_FILENAME}')
 
 uzs.public = True
-uzs.statistics = True
+#uzs.statistics = True
 uzs.upload_test_cycle_status(zefir_status='pass')
 
 if path.isfile('libs/zefir.log'):

@@ -25,3 +25,5 @@ fi
 # echo "$HOSTS_ENTRIES" | sudo tee -a /etc/hosts > /dev/null
 
 sudo -u ceph-adm ssh-keygen -t rsa -N "" -f /home/ceph-adm/.ssh/id_rsa
+
+sudo apt install podman -y

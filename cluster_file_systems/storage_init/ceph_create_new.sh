@@ -13,7 +13,7 @@ for i in {1..5}; do
     else
         echo "Ошибка при добавлении ceph.pub на testvm$i..."
     fi
-    slep 5
+    sleep 5
 done
 
 

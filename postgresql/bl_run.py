@@ -152,7 +152,7 @@ if os.path.isfile('results_balance.txt'):
     df.to_html(f'{REPORT_PATH}/results_balance.html', index=False)
 
     uzs.public = True
-    uzs.statistics = True
+    #uzs.statistics = True
     uzs.balance = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 else:

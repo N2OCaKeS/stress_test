@@ -270,7 +270,7 @@ def main():
     #upload_results_to_ftp(args.TCV, f'{REPORT_DIR}/{REPORT_FILENAME}', f'syslog-ng_{args.TCYC}_{REPORT_FILENAME}')
 
     uzs.public = True
-    uzs.statistics = True
+    #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
 main()

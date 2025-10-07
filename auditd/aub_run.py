@@ -435,7 +435,7 @@ elif args.TEST_LIST == 'fileaud':
 #upload_results_to_ftp(args.TCV, f'{REPORT_DIR}/{REPORT_FILENAME}', f'{args.TEST_LIST}_{args.TCYC}_{REPORT_FILENAME}')
 
 uzs.public = True
-uzs.statistics = True
+#uzs.statistics = True
 uzs.upload_test_cycle_status(zefir_status='pass')
 
 if path.isfile('libs/zefir.log'):

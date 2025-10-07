@@ -10,7 +10,7 @@ import os
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SERVER = "virtual-station1.stress-testing.local"
-USER_START = 1
+USER_START = 10
 USER_STEP = 10
 USER_MAX = 100
 MAX_WORKERS = os.cpu_count()
@@ -40,7 +40,7 @@ def create_user(i, client_inst):
         
         end_time = time.time()
         elapsed = end_time - start_time
-        print(f"Создан {login} за {elapsed} секунд")
+        # print(f"Создан {login} за {elapsed} секунд")
         results_queue.put((login, elapsed, True))
         
     except FreeIPAError as e:
@@ -51,14 +51,14 @@ def del_user(user_id):
     try:
         login = f"user{user_id}"
         client.user_del(login)
-        print(f"Пользователь {login} успешно удален")
+        # print(f"Пользователь {login} успешно удален")
         # return (username, True)
     except FreeIPAError as e:
         print(f"Ошибка удаления {login}: {e}")
         # return (username, False)
 
 def main():
-    for user_count in range(USER_START, USER_MAX + USER_STEP, USER_STEP):
+    for user_count in range(USER_START, USER_MAX, USER_STEP):
         start_total = time.time()
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             future_to_user = {

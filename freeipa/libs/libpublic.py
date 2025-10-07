@@ -138,7 +138,7 @@ class Public:
             rating_temp = template.read()
             rating = rating_temp.format(r=self.total_rating)
         
-        with open(f"{REPORT_PATH}/ipa_auth_report_table.html") as report_table:
+        with open(f"{REPORT_PATH}/ipa_test_report_table.html") as report_table:
             r_table = report_table.read()
         
         #TODO Дописать описание графов

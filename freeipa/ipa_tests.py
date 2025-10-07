@@ -10,6 +10,25 @@ from ipa_conf import USER, HOSTS, REPORT_PATH #, LOWER_LIMITE_CLIENTS, STEP_CLIE
 # from ipa_init_client_enroll import presettings_on_hosts_for_ipa_clients, create_centos_cont, init_ipa_client, delete_clients_from_dc, delete_docker_cont, check_qty_clients
 
 
+class Results:
+    @staticmethod
+    def get_results():
+        """
+        Забираем файл с результатами
+        """
+        if not path.exists(REPORT_PATH):
+            os.mkdir(REPORT_PATH, mode=0o755)
+        remote_put_file(host=HOSTS['clients']['ip'],
+                        remote_path=f'/home/{USER}/ipa_report.txt',
+                        local_path=f"{REPORT_PATH}/ipa_report.txt",
+                        local_to_remote=False)
+    
+        remote_put_file(host=HOSTS['clients']['ip'],
+                        remote_path=f'/home/{USER}/ipa_report_error.txt',
+                        local_path=f"{REPORT_PATH}/ipa_report_error.txt",
+                        local_to_remote=False)
+
+
 class AutentificationTest():
     def create_users(self):
         """
@@ -26,21 +45,13 @@ class AutentificationTest():
         """
         remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_auth_2.py', "ipa_auth_2.py")
         remote_exec(f"ulimit -n 100000 && python3 ipa_auth_2.py -H {out_hostname_server}", 'clients')
+        Results.get_results()
         
-        """
-        Забираем файл с результатами
-        """
-        if not path.exists(REPORT_PATH):
-            os.mkdir(REPORT_PATH, mode=0o755)
-        remote_put_file(host=HOSTS['clients']['ip'],
-                        remote_path=f'/home/{USER}/ipa_report.txt',
-                        local_path=f"{REPORT_PATH}/ipa_report.txt",
-                        local_to_remote=False)
-    
-        remote_put_file(host=HOSTS['clients']['ip'],
-                        remote_path=f'/home/{USER}/ipa_report_error.txt',
-                        local_path=f"{REPORT_PATH}/ipa_report_error.txt",
-                        local_to_remote=False)
+        
+class CreateUsersTest():
+    def run(self):
+        remote_exec(f"venv/bin/python3 ipa_create_users_test_thr.py", 'server')
+        Results.get_results()
 
 
 # class EnrollementTest():

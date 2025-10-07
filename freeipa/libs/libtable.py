@@ -167,7 +167,7 @@ class Report:
         return round(total_rating * multiplier, accuracy)
 
 
-    def create_beauty_table(self, path=REPORT_PATH, table_name='ipa_auth_report_table.html'):
+    def create_beauty_table(self, path=REPORT_PATH, table_name='ipa_test_report_table.html'):
         beauty_table = build_table(self.raw_table, 'blue_light')
         with open('{}/{}'.format(path, table_name), 'w') as beauty_html_table:
             beauty_html_table.write(beauty_table)

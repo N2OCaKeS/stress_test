@@ -107,7 +107,7 @@ if args.DIGSIG:
 else:
     test.parsec_impact_by_fs_load()
 uzs.public = True
-uzs.statistics = True
+#uzs.statistics = True
 uzs.upload_test_cycle_status(zefir_status='pass')
 
 

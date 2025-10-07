@@ -202,7 +202,7 @@ if __name__ == "__main__":
 
     uzs.public = True
     uzs.total_rating = total_rating
-    uzs.statistics = True
+    #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
         

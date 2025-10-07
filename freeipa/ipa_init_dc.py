@@ -77,7 +77,7 @@ def initialization_freeipa_server():
     # else:
     #     cmd("sudo pip3 install python-freeipa")
     cmd("sudo python3 -m venv venv")
-    cmd("venv/bin/pip3 install python-freeipa")
+    cmd("venv/bin/pip3 install python-freeipa requests-gssapi gssapi")
     """
         Перезапуск контроллера домена
     """

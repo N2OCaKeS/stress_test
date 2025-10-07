@@ -187,7 +187,7 @@ if __name__ == '__main__':
     status = syslog_test.run_test()
 
     uzs.public = True
-    uzs.statistics = True
+    #uzs.statistics = True
     if status == False:
         uzs.upload_test_cycle_status(zefir_status='fail')
     else:

@@ -122,7 +122,7 @@ if __name__ == "__main__":
             report.wa_report()
 
             uzs.public = True
-            uzs.statistics = True
+            #uzs.statistics = True
             uzs.upload_test_cycle_status(zefir_status='pass')
         else:
             print('Тест завершился с иключением')

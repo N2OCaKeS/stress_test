@@ -1,25 +1,25 @@
 version: '3.8'
 services:
   #  NGINX
-  allta-vm-nginx:
+  vmmanager-vm-nginx:
     build:
       context: ./allta_nginx
       dockerfile: Dockerfile.allta_nginx
-    image: allta-vm-nginx:latest
-    container_name: allta-vm-nginx
+    image: vmmanager-vm-nginx:latest
+    container_name: vmmanager-vm-nginx
     ports:
-      - "127.0.0.1:21501:80"
+      - "21501:80"
     networks:
-      allta_network: 
+      vmmanager_network:
     depends_on:
-      allta-server-api:
+      vmmanager-server-api:
         condition: service_healthy
-      allta-vm-api:
-        condition: service_healthy 
-      allta-vm-flower:
-        condition: service_healthy  
-      allta-redis-commander:
-        condition: service_healthy         
+      vmmanager-vm-api:
+        condition: service_healthy
+      vmmanager-vm-flower:
+        condition: service_healthy
+      vmmanager-redis-commander:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/ >/dev/null || exit 1"]
       interval: 10s
@@ -28,177 +28,182 @@ services:
       start_period: 10s
     restart: always
 
-  # SERVER API
 
-  allta-server-api:
+  # SERVER API
+  vmmanager-server-api:
     build:
       context: ../backend/allta_server_api
       dockerfile: ../../docker_vm/allta_server_api/allta_server_api/Dockerfile.allta_server_api
-    image: allta-server-api:latest
-    container_name: allta-server-api
+    image: vmmanager-server-api:latest
+    container_name: vmmanager-server-api
     restart: always
     env_file:
-      - $CRED_PATH/env.allta_server_api
+      - $CRED_PATH/env.vmmanager_server_api
     depends_on:
-      allta-server-db:
+      vmmanager-server-db:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/server/health"]
       interval: 5s
       timeout: 3s
-      retries: 5             
+      retries: 5
     networks:
-      - allta_server_api
-      - allta_network
+      - vmmanager_server_api
+      - vmmanager_network
     volumes:
       - allta_server_api:/data
 
-  allta-server-db:
+
+  vmmanager-server-db:
     build:
       context: ./allta_server_api/allta_server_db
       dockerfile: Dockerfile.allta_server_db
-    image: allta-server-db:latest
-    container_name: allta-server-db
+    image: vmmanager-server-db:latest
+    container_name: vmmanager-server-db
     restart: always
     env_file:
-      - $CRED_PATH/env.allta_server_db
+      - $CRED_PATH/env.vmmanager_server_db
     volumes:
-      - allta_server_db_data:/var/lib/postgresql/data 
+      - allta_server_db_data:/var/lib/postgresql/data
     networks:
-      - allta_network   
+      - vmmanager_server_api
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
       timeout: 5s
-      retries: 5      
+      retries: 5
+
 
   # VM_API
-
-  allta-vm-api:
+  vmmanager-vm-api:
     build:
       context: ../backend/allta_vm_api/services/api
       dockerfile: ../../../../docker_vm/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
-    image: allta-vm-api
-    container_name: allta_vm_api
+    image: vmmanager-vm-api
+    container_name: vmmanager-vm-api
     restart: always
     env_file:
-      - $CRED_PATH/env.allta_vm_api
+      - $CRED_PATH/env.vmmanager_vm_api
     depends_on:
-      allta-server-api:
-        condition: service_healthy                 
-      allta-vm-db:
+      vmmanager-server-api:
         condition: service_healthy
-      # allta-devpi:
-      #   condition: service_healthy
+      vmmanager-vm-db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/vm/health"]
       interval: 5s
       timeout: 3s
-      retries: 5              
+      retries: 5
     networks:
-      - allta_vm_api
-      - allta_redis
-      - allta_network
+      - vmmanager_vm_api
+      - vmmanager_redis
+      - vmmanager_network
     volumes:
       - allta_vm_api:/data
 
-  allta-vm-db:
+
+  vmmanager-vm-db:
     build:
       context: ./allta_vm_api/allta_vm_db
       dockerfile: Dockerfile.allta_vm_db
-    image: allta-vm-db:latest
-    container_name: allta_vm_db
+    image: vmmanager-vm-db:latest
+    container_name: vmmanager-vm-db
     restart: always
     env_file:
-      - $CRED_PATH/env.allta_vm_db
+      - $CRED_PATH/env.vmmanager_vm_db
     volumes:
       - allta_vm_db_data:/var/lib/postgresql/data
     networks:
-      - allta_vm_api
+      - vmmanager_vm_api
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
       timeout: 5s
-      retries: 5      
+      retries: 5
 
-  allta-vm-celery:
+
+  vmmanager-vm-celery:
     build:
       context: ../backend/allta_vm_api/services/worker
       dockerfile: ../../../../docker_vm/allta_vm_api/allta_vm_celery/Dockerfile.allta_vm_celery
-    image: allta-vm-celery:latest      
-    container_name: allta_vm_celery
-    restart: always    
+    image: vmmanager-vm-celery:latest
+    container_name: vmmanager-vm-celery
+    restart: always
     env_file:
-      - $CRED_PATH/env.allta_vm_celery
+      - $CRED_PATH/env.vmmanager_vm_celery
     depends_on:
-      allta-redis:
+      vmmanager-redis:
         condition: service_healthy
     networks:
-      - allta_vm_api
-      - allta_redis
+      - vmmanager_vm_api
+      - vmmanager_redis
     volumes:
-      - allta_vm_api:/data      
+      - allta_vm_api:/data
 
-  allta-vm-flower:
+
+  vmmanager-vm-flower:
     build:
       context: ./allta_vm_api/allta_vm_flower
       dockerfile: Dockerfile.allta_vm_flower
-    image: allta-vm-flower:latest
-    container_name: allta_vm_flower
-    restart: always      
+    image: vmmanager-vm-flower:latest
+    container_name: vmmanager-vm-flower
+    restart: always
     env_file:
-      - $CRED_PATH/env.allta_vm_flower
+      - $CRED_PATH/env.vmmanager_vm_flower
     depends_on:
-      allta-redis:
+      vmmanager-redis:
         condition: service_healthy
-    command: celery flower --broker=redis://redis:6379/0 --url_prefix=/service/flower/      
+    command: celery flower --broker=redis://redis:6379/0 --url_prefix=/service/flower/
     networks:
-      - allta_redis    
-      - allta_network
-      - allta_vm_api
+      - vmmanager_redis
+      - vmmanager_network
+      - vmmanager_vm_api
     healthcheck:
       test: ["CMD-SHELL", "python - <<'PY'\nimport socket,sys\ns=socket.socket();s.settimeout(2)\ntry:\n s.connect(('127.0.0.1', int('${FLOWER_PORT:-5555}'))); sys.exit(0)\nexcept Exception:\n sys.exit(1)\nPY"]
       interval: 10s
       timeout: 3s
-      retries: 5 
+      retries: 5
+
 
   # Redis
-  allta-redis:
+  vmmanager-redis:
     build:
       context: ./allta_redis
       dockerfile: Dockerfile.allta_redis
-    image: allta-redis:latest      
-    container_name: allta_redis
+    image: vmmanager-redis:latest
+    container_name: vmmanager-redis
     restart: always
     env_file:
-      - $CRED_PATH/env.allta_redis
+      - $CRED_PATH/env.vmmanager_redis
     networks:
-      - allta_redis
+      - vmmanager_redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 10   
+      retries: 10
     volumes:
-      - allta_redis_data:/data      
+      - allta_redis_data:/data
 
-  allta-redis-commander:
+
+  vmmanager-redis-commander:
     build:
       context: ./allta_redis_commander
       dockerfile: Dockerfile.redis_commander
-    image: allta-redis-commander:latest
-    container_name: allta_redis_commander
+    image: vmmanager-redis-commander:latest
+    container_name: vmmanager-redis-commander
     restart: always
     env_file:
-      - $CRED_PATH/env.allta_redis_commander
+      - $CRED_PATH/env.vmmanager_redis_commander
     networks:
-      - allta_redis
-      - allta_network
+      - vmmanager_redis
+      - vmmanager_network
     healthcheck:
       test: ["CMD", "sh", "-lc", "wget -q -O - http://127.0.0.1:8081/ >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 10
+
 
 volumes:
   allta_server_api:
@@ -206,7 +211,7 @@ volumes:
     driver_opts:
       type: none
       device: ${SERVER_API_DATA_PATH}
-      o: bind   
+      o: bind
 
   allta_server_db_data:
     driver: local
@@ -221,7 +226,7 @@ volumes:
       type: none
       device: ${VM_API_DATA_PATH}
       o: bind
-    
+
   allta_vm_db_data:
     driver: local
     driver_opts:
@@ -236,21 +241,18 @@ volumes:
       device: ${REDIS_PATH}
       o: bind
 
-
-
 networks:
   # ALL API
-  allta_network:
+  vmmanager_network:
     driver: bridge
 
   # SERVER API
-  allta_server_api:
+  vmmanager_server_api:
     driver: bridge
 
   # VM API
-  allta_vm_api:
+  vmmanager_vm_api:
     driver: bridge
 
-  allta_redis:
-    driver: bridge  
-
+  vmmanager_redis:
+    driver: bridge

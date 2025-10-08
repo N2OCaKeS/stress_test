@@ -53,8 +53,15 @@ HOSTS = {
     #           }
 }
 
+# Для Test1
 MAX_USERS_AUTH = 3000
 USERS_AUTH_STEP = 500
+
+# Для Test2
+USER_CREATE_START = 10
+USER_CREATE_STEP = 10
+USER_CREATE_MAX = 100
+
 
 '''
     Описание для графиков отчета

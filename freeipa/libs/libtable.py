@@ -156,9 +156,9 @@ class Report:
     def get_total_rating_create_users_test(self, 
                                            multiplier=10**(4),
                                            accuracy=2):
-        weight_successful_users = ...
-        weight_total_time = ...
-        weight_average_time_per_user = ...
+        weight_successful_users = 0.333
+        weight_total_time = 0.333
+        weight_average_time_per_user = 0.333
         total_rating = (
             ((self.get_rating_successful_users() * weight_successful_users) ** (1)) +
             ((self.get_rating_total_time() * weight_total_time) ** (-1)) +

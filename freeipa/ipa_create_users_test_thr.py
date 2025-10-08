@@ -7,12 +7,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
 import os
 
+from ipa_conf import USER_CREATE_START, USER_CREATE_MAX, USER_CREATE_STEP
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SERVER = "virtual-station1.stress-testing.local"
-USER_START = 10
-USER_STEP = 10
-USER_MAX = 100
 MAX_WORKERS = os.cpu_count()
 
 client = ClientMeta(SERVER, verify_ssl=False)
@@ -58,11 +57,11 @@ def del_user(user_id):
         # return (username, False)
 
 def main():
-    for user_count in range(USER_START, USER_MAX, USER_STEP):
+    for user_count in range(USER_CREATE_START, USER_CREATE_MAX, USER_CREATE_STEP):
         start_total = time.time()
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             future_to_user = {
-                executor.submit(create_user, i, client): i for i in range(USER_START, user_count)
+                executor.submit(create_user, i, client): i for i in range(USER_CREATE_START, user_count)
             }
             
             for future in as_completed(future_to_user):
@@ -92,7 +91,7 @@ def main():
             report_file.write(f"{user_count} {successful_users} {total_time} {average_time_per_user}\n")
         
         print("Удаление пользователей...")
-        for user_id in range(USER_START, user_count):
+        for user_id in range(USER_CREATE_START, user_count):
             del_user(user_id=user_id)
        
 

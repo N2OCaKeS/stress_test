@@ -4,62 +4,6 @@ export INSTALL_PATH="$(pwd)"
 export COMPOSE_DIR="$(pwd)/docker_auth"
 export SERIVE_NAME="allta_auth.service"
 
-ALLTA_FILE="/etc/nginx/sites-available/allta"
-SVC_NAME="allta_auth"
-SVC_TARGET="127.0.0.1:21500"
-BACKUP_DIR="/etc/nginx/.backups"
-BACKUP_PATH=""
-
-
-UPSTREAM_BLOCK="${UPSTREAM_BLOCK:-$(cat <<EOF
-# ${SVC_NAME}
-upstream ${SVC_NAME} { server ${SVC_TARGET}; }
-# /${SVC_NAME}
-EOF
-)}"
-
-LOCATIONS_BLOCK="${LOCATIONS_BLOCK:-$(cat <<EOF
-    # ${SVC_NAME}
-
-    location ^~ /api/auth/ {
-        proxy_pass http://allta_auth;
-        proxy_set_header Host               \$host;
-        proxy_set_header X-Real-IP          \$remote_addr;
-        proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto  \$scheme;
-        client_max_body_size 200m;
-        proxy_read_timeout  3600s;
-        proxy_send_timeout  3600s;
-    }
-
-    location ^~ /api/config/ {
-        proxy_pass http://allta_auth;
-        proxy_set_header Host               \$host;
-        proxy_set_header X-Real-IP          \$remote_addr;
-        proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto  \$scheme;
-        client_max_body_size 200m;
-        proxy_read_timeout  3600s;
-        proxy_send_timeout  3600s;
-    }
-
-    location = /api/docs { return 301 /api/docs/; }
-
-    location ^~ /api/docs/ {
-        proxy_pass http://allta_auth;
-        proxy_set_header Host               \$host;
-        proxy_set_header X-Real-IP          \$remote_addr;
-        proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto  \$scheme;
-        client_max_body_size 200m;
-        proxy_read_timeout  3600s;
-        proxy_send_timeout  3600s;
-    }
-
-    # /${SVC_NAME}
-EOF
-)}"
-
 usage() {
   cat <<'EOF'
 Usage: ./manage.sh <command>
@@ -100,111 +44,6 @@ EOF
     else
         echo "Сервис уже запущен."
     fi
-}
-
-nginx_update() {
-    if sudo nginx -t; then
-        sudo systemctl reload nginx 2>/dev/null || sudo nginx -s reload
-        echo "nginx reloaded"
-    else
-        echo "nginx -t FAILED — restoring: ${BACKUP_PATH}" >&2
-        if [[ -n "${BACKUP_PATH}" && -f "${BACKUP_PATH}" ]]; then
-            sudo mv -f "${BACKUP_PATH}" "$ALLTA_FILE"
-            sudo nginx -t || true
-        fi
-        exit 1
-    fi
-}
-nginx_add_blocks() {
-    BACKUP_PATH="${BACKUP_DIR}/$(basename "$ALLTA_FILE").$(date +%Y%m%d%H%M%S).bak"
-    sudo cp -a "$ALLTA_FILE" "$BACKUP_PATH"
-
-    sudo awk -v start="^[[:space:]]*# ${SVC_NAME}[[:space:]]*$" -v stop="^[[:space:]]*# /${SVC_NAME}[[:space:]]*$" '
-        BEGIN { skip = 0 }
-        {
-            if ($0 ~ start) { skip = 1; next }
-            if (skip && $0 ~ stop) { skip = 0; next }
-            if (!skip) print $0
-        }
-    ' "$ALLTA_FILE" | sudo tee "${ALLTA_FILE}.wrk" >/dev/null
-    sudo mv -f "${ALLTA_FILE}.wrk" "$ALLTA_FILE"
-
-    sudo awk -v blk="$UPSTREAM_BLOCK" '
-        BEGIN { n=0; last_up=0; first_srv=0 }
-        {
-            lines[++n] = $0
-            if ($0 ~ /upstream[[:space:]]+[A-Za-z0-9_]+[[:space:]]*\{/) last_up = n
-            if (first_srv==0 && $0 ~ /^[[:space:]]*server[[:space:]]*\{/) first_srv = n
-        }
-        END {
-            ins_idx = 0
-            if (n == 0) { print blk; exit }  # пустой файл
-
-            if (last_up > 0) {
-                # ищем ближайший "# /<тег>" после last_up, но до первого server
-                for (i = last_up + 1; i <= n; i++) {
-                    if (lines[i] ~ /^[[:space:]]*# \/[A-Za-z0-9_]+[[:space:]]*$/) { ins_idx = i; break }
-                    if (first_srv > 0 && i == first_srv) break
-                }
-                if (ins_idx == 0) ins_idx = last_up
-            } else if (first_srv > 0) {
-                ins_idx = first_srv - 1
-            } else {
-                ins_idx = n
-            }
-
-            for (i = 1; i <= n; i++) {
-                print lines[i]
-                if (i == ins_idx) print blk
-            }
-        }
-    ' "$ALLTA_FILE" | sudo tee "${ALLTA_FILE}.wrk" >/dev/null
-    sudo mv -f "${ALLTA_FILE}.wrk" "$ALLTA_FILE"
-
-    sudo awk -v blk="$LOCATIONS_BLOCK" '
-        BEGIN { n=0; first_srv=0; srvname_line=0 }
-        {
-            lines[++n] = $0
-            if (first_srv==0 && $0 ~ /^[[:space:]]*server[[:space:]]*\{/) first_srv = n
-            if (first_srv>0 && srvname_line==0 && $0 ~ /^[[:space:]]*server_name[[:space:]]+/) srvname_line = n
-        }
-        END {
-            if (n == 0) { print blk; exit }  # на всякий случай
-            if (srvname_line > 0) {
-                for (i=1; i<=n; i++) {
-                    print lines[i]
-                    if (i == srvname_line) print blk
-                }
-            } else if (first_srv > 0) {
-                for (i=1; i<=n; i++) {
-                    print lines[i]
-                    if (i == first_srv) print blk
-                }
-            } else {
-                for (i=1; i<=n; i++) print lines[i]
-                print blk
-            }
-        }
-    ' "$ALLTA_FILE" | sudo tee "${ALLTA_FILE}.wrk" >/dev/null
-    sudo mv -f "${ALLTA_FILE}.wrk" "$ALLTA_FILE"
-
-    nginx_update
-}
-
-nginx_remove_blocks() {
-    BACKUP_PATH="${BACKUP_DIR}/$(basename "$ALLTA_FILE").$(date +%Y%m%d%H%M%S).bak"
-    sudo cp -a "$ALLTA_FILE" "$BACKUP_PATH"
-
-    sudo awk -v start="^[[:space:]]*# ${SVC_NAME}[[:space:]]*$" -v stop="^[[:space:]]*# /${SVC_NAME}[[:space:]]*$" '
-        BEGIN { skip=0 }
-        {
-            if ($0 ~ start) { skip=1; next }
-            if (skip && $0 ~ stop) { skip=0; next }
-            if (!skip) print $0
-        }
-    ' "$ALLTA_FILE" | sudo tee "${ALLTA_FILE}.wrk" >/dev/null
-    sudo mv -f "${ALLTA_FILE}.wrk" "$ALLTA_FILE"
-	nginx_update
 }
 
 exports(){
@@ -270,10 +109,11 @@ remove(){
     sudo systemctl daemon-reload
 
 	local -a IMAGES=(
-		"allta-auth-nginx:latest"
-		"allta-auth-api:latest"
-		"allta-auth-db:latest"
-		"allta-config-api:latest"
+		"authservice-auth-nginx:latest"
+		"authservice-auth-api:latest"
+		"authservice-auth-db:latest"
+		"authservice-config-api:latest"
+        "docs-api-vm-auth:latest"
 	)
 
 	for img in "${IMAGES[@]}"; do
@@ -289,7 +129,6 @@ remove(){
     sudo rmdir --ignore-fail-on-non-empty $CRED_PATH
     sudo rmdir --ignore-fail-on-non-empty $BASE_PATH
     sudo rmdir --ignore-fail-on-non-empty $FILE_PATH     
-	nginx_remove_blocks
 }
 
 precond(){
@@ -300,8 +139,6 @@ precond(){
 	sudo systemctl enable docker.service
 	sudo systemctl start docker.service
 	sudo mkdir -p "$BACKUP_DIR"
-	nginx_add_blocks
-
 	dir
 	creds
 	service

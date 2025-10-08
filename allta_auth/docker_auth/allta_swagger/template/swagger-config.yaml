@@ -1,12 +1,12 @@
 urls:
   - name: "Allta auth api"
-    url: "http://allta.devos.astralinux.ru/api/auth/v1/openapi.json"
+    url: "http://allta.devos.astralinux.ru:21500/api/auth/v1/openapi.json"
   - name: "Allta config api"
-    url: "http://allta.devos.astralinux.ru/api/config/v1/openapi.json"    
+    url: "http://allta.devos.astralinux.ru:21500/api/config/v1/openapi.json"    
   - name: "Allta server api"
-    url: "http://allta.devos.astralinux.ru/api/server/v1/openapi.json"
+    url: "http://allta.devos.astralinux.ru:21501/api/server/v1/openapi.json"
   - name: "Allta vm api"
-    url: "http://allta.devos.astralinux.ru/api/vm/v1/openapi.json"    
-  - name: "Allta ACS"
-    url: "http://10.177.103.10:9999/openapi.json"
+    url: "http://allta.devos.astralinux.ru:21501/api/vm/v1/openapi.json"    
+  # - name: "Allta ACS"
+  #   url: "http://10.177.103.10:9999/openapi.json"
 

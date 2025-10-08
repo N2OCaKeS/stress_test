@@ -5,7 +5,7 @@ import threading
 
 from time import sleep
 from statistics import median
-from os.path import isfile, isdir
+from os.path import isfile, isdir, dirname, abspath
 from os import mkdir
 
 
@@ -216,11 +216,85 @@ def install_bd(bd=args.INSTBD, key=None):
         cmd(f'wget --user {key} --password='' https://repo.postgrespro.ru/ent/ent-17/keys/pgpro-repo-add.sh')
         cmd('sudo bash pgpro-repo-add.sh')
         cmd('sudo apt-get update -y')
-        cmd('sudo apt-get install postgrespro-ent-17')
-        cmd('sudo apt-get install postgrespro-ent-17-contrib')
+        cmd('sudo apt-get install postgrespro-ent-17 -y')
+        cmd('sudo apt-get install postgrespro-ent-17-contrib -y')
         cmd('/opt/pgpro/ent-17/bin/pg-setup initdb')
         cmd('/opt/pgpro/ent-17/bin/pg-setup service enable')
         cmd('/opt/pgpro/ent-17/bin/pg-setup service start')
+
+
+def create_vms_test_env(mode='s',
+                        key=None):
+    VMS = ['testvm1']
+    VMS_DATES = {'testvm1': {'host-port': '22', 
+                            'cpu': '8', 
+                            'ram': '32768'}}
+    tasks = {
+        'g_VMS':{
+            'get_key':{
+                'command': f'wget --user {key} --password='' https://repo.postgrespro.ru/ent/ent-17/keys/pgpro-repo-add.sh',
+                'signal set': 'get_key', 
+                'signal get': ''
+            },
+            'add_pgpro_repo':{
+                'command': 'sudo bash pgpro-repo-add.sh',
+                'signal set': 'add_pgpro_repo', 
+                'signal get': ['get_key']
+            },
+            'apt_update':{
+                'command': 'sudo apt-get update -y',
+                'signal set': 'apt_update', 
+                'signal get': ['add_pgpro_repo']
+            },
+            'install_pgpro':{
+                'command': 'sudo apt-get install postgrespro-ent-17 -y && sudo apt-get install postgrespro-ent-17-contrib -y',
+                'signal set': 'install_pgpro', 
+                'signal get': ['apt_update']
+            },
+            'initdb':{
+                'command': '/opt/pgpro/ent-17/bin/pg-setup initdb',
+                'signal set': 'initdb', 
+                'signal get': ['install_pgpro']
+            },
+            'start_service':{
+                'command': '/opt/pgpro/ent-17/bin/pg-setup service enable && /opt/pgpro/ent-17/bin/pg-setup service start',
+                'signal set': 'start_service', 
+                'signal get': ['initdb']
+            },
+            'install_perf':{
+                'command': 'sudo apt-get install linux-tools-`uname -r` || sudo apt-get install perf',
+                'signal set': 'start_service', 
+                'signal get': ['initdb']
+            },
+        }
+    }
+
+    cp_prep_file = {
+        'g_VMS': [
+            {
+                'mode': 'push', 
+                'path_host': f'{dirname(abspath(__file__))}/psbpro_db_prep_manual_test.sh', 
+                'path_vm': '/home/psbpro_db_prep_manual_test.sh'
+            }
+        ]
+    }
+
+    install_bd(bd='psqlpro', key=key)
+    cmd('sudo apt-get install python3-pip -y')
+    cmd('pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta')
+    from allta import Libvirt
+    provider = Libvirt()
+
+    provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES)
+    if provider.check(VMS, VMS_DATES) == 0:
+        provider.scp(scp_settings=cp_prep_file, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+    
+"""
+TODO 
+Адаптировать настройку базы под ВМ
+Настроить pgbench на отправку в ВМ
+"""
 
 
 

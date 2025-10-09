@@ -7,6 +7,7 @@ from time import sleep
 from statistics import median
 from os.path import isfile, isdir, dirname, abspath
 from os import mkdir
+from datetime import datetime
 
 
 PSQL_VERSION = 15
@@ -63,6 +64,12 @@ parser.add_argument('-i',
                     choices=['psqlpro'],
                     help='install BD',
                     dest='INSTBD')
+
+parser.add_argument('-pg_vm',
+                    action='store_true',
+                    required=False,
+                    help='test pgpro on vm',
+                    dest='PGVM')
 
 args = parser.parse_args()
 
@@ -228,7 +235,8 @@ def create_vms_test_env(mode='s',
     VMS = ['testvm1']
     VMS_DATES = {'testvm1': {'host-port': '22', 
                             'cpu': '8', 
-                            'ram': '32768'}}
+                            'ram': '32768',
+                            'ip_bridge': '10.177.103.77'}}
     tasks = {
         'g_VMS':{
             'get_key':{
@@ -262,9 +270,34 @@ def create_vms_test_env(mode='s',
                 'signal get': ['initdb']
             },
             'install_perf':{
-                'command': 'sudo apt-get install linux-tools-`uname -r` || sudo apt-get install perf',
-                'signal set': 'start_service', 
-                'signal get': ['initdb']
+                'command': 'sudo apt-get install linux-tools-`uname -r` -y || sudo apt-get install perf -y',
+                'signal set': 'install_perf', 
+                'signal get': ['start_service']
+            },
+            'psbpro_prep':{
+                'command': 'sudo bash /home/psbpro_db_prep_manual_test.sh vm',
+                'signal set': 'psbpro_prep', 
+                'signal get': ['install_perf']
+            },
+        }
+    }
+
+    perf_task = {
+        'g_VMS':{
+            'start_perf':{
+                'command': '(sudo perf record -g -a &); PERF_PID=$!; echo "$PERF_PID" > /home/pid',
+                'signal set': 'start_perf', 
+                'signal get': ''
+            },
+        }
+    }
+
+    kill_perf_task = {
+        'g_VMS':{
+            'kill_perf':{
+                'command': 'sudo kill -SIGINT $(cat /home/pid)',
+                'signal set': 'kill_perf', 
+                'signal get': ''
             },
         }
     }
@@ -279,22 +312,35 @@ def create_vms_test_env(mode='s',
         ]
     }
 
+    cp_perf_data = {
+        'g_VMS': [
+            {
+                'mode': 'pull', 
+                'path_host': f'{dirname(abspath(__file__))}/perf.data', 
+                'path_vm': '/home/perf.data'
+            }
+        ]
+    }
+
+
     install_bd(bd='psqlpro', key=key)
     cmd('sudo apt-get install python3-pip -y')
-    cmd('pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta')
-    from allta import Libvirt
+    cmd('pip install allta==1.0.11 -i http://10.177.103.10:3141/root/release --trust 10.177.103.10')
+    from allta import Libvirt, LibvirtManager
     provider = Libvirt()
 
-    provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES)
+    vm_date = provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES)
+    LibvirtManager.Vm.bridge(vms_date=vm_date, new_vms_date=VMS_DATES, username="u", password="1")
     if provider.check(VMS, VMS_DATES) == 0:
         provider.scp(scp_settings=cp_prep_file, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
-    
-"""
-TODO 
-Адаптировать настройку базы под ВМ
-Настроить pgbench на отправку в ВМ
-"""
+        provider.execute(commands=perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        cmd(f'sudo /opt/pgpro/ent-17/bin/pgbench -h {VMS_DATES['testvm1']['ip_bridge']} -p 6000 -U postgres -t 1000 -j 30 -c 30 test')
+        provider.execute(commands=kill_perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        provider.scp(scp_settings=cp_perf_data, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        cmd(f'sudo perf script | perl libs/libstackcollapse-perf.pl | perl libs/libflamegraph.pl > result_{datetime.now().strftime("%H:%M:%S")}.svg')
+        print('Flamegraph done')
+    else: print('Настройка ВМ прошла неудачно')
 
 
 
@@ -314,6 +360,8 @@ elif args.PARSECOFF:
     parsec_disable()
 elif args.INSTBD:
     install_bd()
+elif args.PGVM:
+    create_vms_test_env()
 
 
     

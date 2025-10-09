@@ -5,8 +5,9 @@ import threading
 
 from time import sleep
 from statistics import median
-from os.path import isfile, isdir
+from os.path import isfile, isdir, dirname, abspath
 from os import mkdir
+from datetime import datetime
 
 
 PSQL_VERSION = 15
@@ -63,6 +64,12 @@ parser.add_argument('-i',
                     choices=['psqlpro'],
                     help='install BD',
                     dest='INSTBD')
+
+parser.add_argument('-pg_vm',
+                    action='store_true',
+                    required=False,
+                    help='test pgpro on vm',
+                    dest='PGVM')
 
 args = parser.parse_args()
 
@@ -216,11 +223,124 @@ def install_bd(bd=args.INSTBD, key=None):
         cmd(f'wget --user {key} --password='' https://repo.postgrespro.ru/ent/ent-17/keys/pgpro-repo-add.sh')
         cmd('sudo bash pgpro-repo-add.sh')
         cmd('sudo apt-get update -y')
-        cmd('sudo apt-get install postgrespro-ent-17')
-        cmd('sudo apt-get install postgrespro-ent-17-contrib')
+        cmd('sudo apt-get install postgrespro-ent-17 -y')
+        cmd('sudo apt-get install postgrespro-ent-17-contrib -y')
         cmd('/opt/pgpro/ent-17/bin/pg-setup initdb')
         cmd('/opt/pgpro/ent-17/bin/pg-setup service enable')
         cmd('/opt/pgpro/ent-17/bin/pg-setup service start')
+
+
+def create_vms_test_env(mode='s',
+                        key=None):
+    VMS = ['testvm1']
+    VMS_DATES = {'testvm1': {'host-port': '22', 
+                            'cpu': '8', 
+                            'ram': '32768',
+                            'ip_bridge': '10.177.103.77'}}
+    tasks = {
+        'g_VMS':{
+            'get_key':{
+                'command': f'wget --user {key} --password='' https://repo.postgrespro.ru/ent/ent-17/keys/pgpro-repo-add.sh',
+                'signal set': 'get_key', 
+                'signal get': ''
+            },
+            'add_pgpro_repo':{
+                'command': 'sudo bash pgpro-repo-add.sh',
+                'signal set': 'add_pgpro_repo', 
+                'signal get': ['get_key']
+            },
+            'apt_update':{
+                'command': 'sudo apt-get update -y',
+                'signal set': 'apt_update', 
+                'signal get': ['add_pgpro_repo']
+            },
+            'install_pgpro':{
+                'command': 'sudo apt-get install postgrespro-ent-17 -y && sudo apt-get install postgrespro-ent-17-contrib -y',
+                'signal set': 'install_pgpro', 
+                'signal get': ['apt_update']
+            },
+            'initdb':{
+                'command': '/opt/pgpro/ent-17/bin/pg-setup initdb',
+                'signal set': 'initdb', 
+                'signal get': ['install_pgpro']
+            },
+            'start_service':{
+                'command': '/opt/pgpro/ent-17/bin/pg-setup service enable && /opt/pgpro/ent-17/bin/pg-setup service start',
+                'signal set': 'start_service', 
+                'signal get': ['initdb']
+            },
+            'install_perf':{
+                'command': 'sudo apt-get install linux-tools-`uname -r` -y || sudo apt-get install perf -y',
+                'signal set': 'install_perf', 
+                'signal get': ['start_service']
+            },
+            'psbpro_prep':{
+                'command': 'sudo bash /home/psbpro_db_prep_manual_test.sh vm',
+                'signal set': 'psbpro_prep', 
+                'signal get': ['install_perf']
+            },
+        }
+    }
+
+    perf_task = {
+        'g_VMS':{
+            'start_perf':{
+                'command': '(sudo perf record -g -a &); PERF_PID=$!; echo "$PERF_PID" > /home/pid',
+                'signal set': 'start_perf', 
+                'signal get': ''
+            },
+        }
+    }
+
+    kill_perf_task = {
+        'g_VMS':{
+            'kill_perf':{
+                'command': 'sudo kill -SIGINT $(cat /home/pid)',
+                'signal set': 'kill_perf', 
+                'signal get': ''
+            },
+        }
+    }
+
+    cp_prep_file = {
+        'g_VMS': [
+            {
+                'mode': 'push', 
+                'path_host': f'{dirname(abspath(__file__))}/psbpro_db_prep_manual_test.sh', 
+                'path_vm': '/home/psbpro_db_prep_manual_test.sh'
+            }
+        ]
+    }
+
+    cp_perf_data = {
+        'g_VMS': [
+            {
+                'mode': 'pull', 
+                'path_host': f'{dirname(abspath(__file__))}/perf.data', 
+                'path_vm': '/home/perf.data'
+            }
+        ]
+    }
+
+
+    install_bd(bd='psqlpro', key=key)
+    cmd('sudo apt-get install python3-pip -y')
+    cmd('pip install allta==1.0.11 -i http://10.177.103.10:3141/root/release --trust 10.177.103.10')
+    from allta import Libvirt, LibvirtManager
+    provider = Libvirt()
+
+    vm_date = provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES)
+    LibvirtManager.Vm.bridge(vms_date=vm_date, new_vms_date=VMS_DATES, username="u", password="1")
+    if provider.check(VMS, VMS_DATES) == 0:
+        provider.scp(scp_settings=cp_prep_file, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        provider.execute(commands=perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        cmd(f'sudo /opt/pgpro/ent-17/bin/pgbench -h {VMS_DATES['testvm1']['ip_bridge']} -p 6000 -U postgres -t 1000 -j 30 -c 30 test')
+        provider.execute(commands=kill_perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        provider.scp(scp_settings=cp_perf_data, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        cmd(f'sudo perf script | perl libs/libstackcollapse-perf.pl | perl libs/libflamegraph.pl > result_{datetime.now().strftime("%H:%M:%S")}.svg')
+        print('Flamegraph done')
+    else: print('Настройка ВМ прошла неудачно')
 
 
 
@@ -240,6 +360,8 @@ elif args.PARSECOFF:
     parsec_disable()
 elif args.INSTBD:
     install_bd()
+elif args.PGVM:
+    create_vms_test_env()
 
 
     

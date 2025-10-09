@@ -31,7 +31,7 @@ except ImportError:
 
 class ReportFIO:
     
-    def __init__(self, file_path='test_fio.txt'):
+    def __init__(self, file_path=f"{REPORT_DIR_HOST}/report_fio.txt"):
         self.file_path = file_path
 
 

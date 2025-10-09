@@ -68,7 +68,7 @@ create_cephfs(){
 create_rbd() {
     sudo cephadm shell -- ceph osd pool create rbdpool 128
     sudo cephadm shell -- ceph osd pool application enable rbdpool rbd
-    sudo cephadm shell -- rbd create rbdpool/testrbd --size 4096
+    sudo cephadm shell -- rbd create rbdpool/testrbd --size 24576
     sudo rbd device map rbdpool/testrbd --device-type krbd
     sudo mkfs.ext4 -m0 /dev/rbd0
     # sudo mkdir /mnt/ceph-device

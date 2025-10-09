@@ -61,7 +61,7 @@ def main():
         start_total = time.time()
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             future_to_user = {
-                executor.submit(create_user, i, client): i for i in range(USER_CREATE_START, user_count)
+                executor.submit(create_user, i, client): i for i in range(user_count)
             }
             
             for future in as_completed(future_to_user):

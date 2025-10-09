@@ -9,7 +9,7 @@ class FileSystemStatistics:
         
         self.username = username
         self.token = token
-        self.url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
+        self.url = 'http://allta.devos.astralinux.ru:7777/filesystems-statistics'
 
     def update_statistics(self):
         data = {

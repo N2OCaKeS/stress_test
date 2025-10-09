@@ -7,7 +7,7 @@ def readme():
 # При выпуски в релиз версия меняется автоматически на ту что была установлена в коммите
 setup(
   name='allta',
-  version='1.0.10', 
+  version='1.0.11', 
   author='team13',
   author_email='mfilippenko@astralinux.ru',
   description='Библиотеки для stress тестов',
@@ -18,5 +18,8 @@ setup(
   install_requires=['paramiko', 'requests', 'pytz'],
   classifiers=[],
   keywords='astralinux stresstest vm',
-  python_requires='>=3.12'
+  python_requires='>=3.12',
+  package_data={
+    "allta": ["**/*.sh"],
+  },
 )

@@ -324,8 +324,8 @@ def create_vms_test_env(mode='s',
 
 
     install_bd(bd='psqlpro', key=key)
-    cmd('sudo apt-get install python3-pip -y')    
-    cmd('python3 -m pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10 allta==1.0.11')
+    cmd('sudo apt-get install python3-pip -y')
+    cmd('pip install allta==1.0.11 -i http://10.177.103.10:3141/root/release --trust 10.177.103.10')
     from allta import Libvirt, LibvirtManager
     provider = Libvirt()
 

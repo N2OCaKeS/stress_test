@@ -86,10 +86,12 @@ class LibvirtManager():
             from ..Libvit import Libvirt
 
             net = system_commands.check_output_command("ip -4 route get 8.8.8.8 | awk '{for(i=1;i<=NF;i++){if($i==\"dev\") d=$(i+1); if($i==\"src\") s=$(i+1)}} END{print s, d}'")
-            system_commands.check_output_command("sudo cp /etc/network/interfaces /etc/network/interfaces.bak || true")
+
             ip, phy_if = net.strip().split()
             bridge = "br0"
-            cfg = f"""sudo tee /etc/network/interfaces > /dev/null <<EOF
+            if phy_if != bridge:
+                system_commands.check_output_command("sudo cp /etc/network/interfaces /etc/network/interfaces.bak || true")
+                cfg = f"""sudo tee /etc/network/interfaces > /dev/null <<EOF
 auto lo
 iface lo inet loopback
 
@@ -107,18 +109,17 @@ iface {bridge} inet static
 iface {phy_if} inet manual
 EOF
 """
-            system_commands.cmd_with_returncode(cfg)
-            system_commands.cmd_with_returncode(f"sudo ifdown {phy_if} || true && sudo ifup {bridge} && sudo systemctl restart networking")
-            print ("Net well done")
+                system_commands.cmd_with_returncode(cfg)
+                system_commands.cmd_with_returncode(f"sudo ifdown {phy_if} || true && sudo ifup {bridge} && sudo systemctl restart networking")
+            else: 
+                print(f"У вас уже настроен сетевой интерфес типа мост: {bridge}")
             def get_file_path(filename: str) -> str:
                 res = files(scripts_pkg).joinpath(filename)
                 with as_file(res) as p:
                     return str(p)
             vms_list = list(vms_date.keys())
             network_path = get_file_path("network.sh")
-            print(network_path)
             provision_path = get_file_path("provision.sh")
-            print(provision_path)
             group = {'all': vms_list}
             scp_prepare = {
                 "g_all": [
@@ -149,14 +150,11 @@ EOF
                     }
                 }
 
-            print(prepare)
 
             Libvirt.execute(commands=prepare, vms_dates=vms_date, vms_groups=group, username=username, password=password)
-            print("execute succes")
             for vm in vms_list:
                 commands = f"{network_path} {vm}"
-                print(commands)
-                system_commands.cmd_with_returncode(f"{network_path} {vm}")
+                system_commands.cmd_with_returncode(commands)
             return 0
 
     class Snapshot():

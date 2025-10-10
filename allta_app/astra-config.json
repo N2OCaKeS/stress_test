@@ -22,6 +22,9 @@
         "version": [
             {
                 "1.8": [
+                    "1.8-night.s",
+                    "1.8-night.v",
+                    "1.8-night.o",
                     "1.8-testing.s",
                     "1.8-testing.v",
                     "1.8-testing.o",
@@ -53,6 +56,9 @@
             },
             {
                 "1.7": [
+                    "1.7-night.s",
+                    "1.7-night.v",
+                    "1.7-night.o",
                     "1.7-testing.s",
                     "1.7-testing.v",
                     "1.7-testing.o",
@@ -104,7 +110,10 @@
                     "1.7.7.UU.1.o",
                     "1.7.7.UU.2.s",
                     "1.7.7.UU.2.v",
-                    "1.7.7.UU.2.o"
+                    "1.7.7.UU.2.o",
+                    "1.7.8.s",
+                    "1.7.8.v",
+                    "1.7.8.o"
                 ]
             },
             {
@@ -442,6 +451,24 @@
             },
             {
                 "1.8-testing.o": [
+                    "alse-gui-base/1.8.3.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.3.uu1"
+                ]
+            },
+            {
+                "1.8-night.s": [
+                    "alse-gui-max/1.8.3.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.3.uu1"
+                ]
+            },
+            {
+                "1.8-night.v": [
+                    "alse-gui-adv/1.8.3.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.3.uu1"
+                ]
+            },
+            {
+                "1.8-night.o": [
                     "alse-gui-base/1.8.3.uu1",
                     "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.3.uu1"
                 ]
@@ -993,21 +1020,57 @@
                 ]
             },
             {
+                "1.7.8.s": [
+                    "alse-rc-gui-max/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-max%2F1.7.8.6"
+                ]
+            },
+            {
+                "1.7.8.v": [
+                    "alse-rc-gui-adv/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-adv%2F1.7.8.6"
+                ]
+            },
+            {
+                "1.7.8.o": [
+                    "alse-rc-gui-base/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-base%2F1.7.8.6"
+                ]
+            },
+            {
                 "1.7-testing.s": [
-                    "alse-gui-max/1.7.7.uu2",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.7.uu2"
+                    "alse-rc-gui-max/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-max%2F1.7.8.6"
                 ]
             },
             {
                 "1.7-testing.v": [
-                    "alse-gui-adv/1.7.7.uu2",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.7.uu2"
+                    "alse-rc-gui-adv/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-adv%2F1.7.8.6"
                 ]
             },
             {
                 "1.7-testing.o": [
-                    "alse-gui-base/1.7.7.uu2",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.7.uu2"
+                    "alse-rc-gui-base/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-base%2F1.7.8.6"
+                ]
+            },
+            {
+                "1.7-night.s": [
+                    "alse-rc-gui-max/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-max%2F1.7.8.6"
+                ]
+            },
+            {
+                "1.7-night.v": [
+                    "alse-rc-gui-adv/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-adv%2F1.7.8.6"
+                ]
+            },
+            {
+                "1.7-night.o": [
+                    "alse-rc-gui-base/1.7.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant-rc/alse-rc-gui-base%2F1.7.8.6"
                 ]
             },
             {

@@ -265,12 +265,12 @@ def create_vms_test_env(mode='s',
                 'signal get': ['apt_update']
             },
             'initdb':{
-                'command': '/opt/pgpro/ent-17/bin/pg-setup initdb',
+                'command': 'sudo /opt/pgpro/ent-17/bin/pg-setup initdb',
                 'signal set': 'initdb', 
                 'signal get': ['install_pgpro']
             },
             'start_service':{
-                'command': '/opt/pgpro/ent-17/bin/pg-setup service enable && /opt/pgpro/ent-17/bin/pg-setup service start',
+                'command': 'sudo /opt/pgpro/ent-17/bin/pg-setup service enable && sudo /opt/pgpro/ent-17/bin/pg-setup service start',
                 'signal set': 'start_service', 
                 'signal get': ['initdb']
             },
@@ -335,6 +335,7 @@ def create_vms_test_env(mode='s',
     provider.prepare()
     vm_date = provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES)
     LibvirtManager.Vm.bridge(vms_date=vm_date, new_vms_date=VMS_DATES, username="u", password="1")
+    sleep(90)
     if provider.check(VMS, VMS_DATES) == 0:
         provider.scp(scp_settings=cp_prep_file, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})

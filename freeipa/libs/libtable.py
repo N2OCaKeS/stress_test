@@ -8,7 +8,7 @@ from scipy import integrate
 from matplotlib import pyplot as plt
 from pretty_html_table import build_table
 from sklearn import preprocessing
-from ipa_conf import SCRIPT_DIR, REPORT_PATH
+from ipa_conf import SCRIPT_DIR, REPORT_PATH, USER_CREATE_MAX
 
 
 class Report:    
@@ -49,8 +49,12 @@ class Report:
         elif self.type_test == "create_user":
             self.user_count = [int(param) for param in raw_data[::4]]
             self.successful_users = [int(param) for param in raw_data[1::4]]
-            self.total_time = [int(param) for param in raw_data[2::4]]
-            self.average_time_per_user = [int(param) for param in raw_data[3::4]]
+            self.total_time = [float(param) for param in raw_data[2::4]]
+            self.average_time_per_user = [float(param) for param in raw_data[3::4]]
+            self.raw_table = pd.DataFrame({'user_count': self.user_count,
+                                        'successful_users': self.successful_users,
+                                        'total_time': self.total_time,
+                                        'average_time_per_user': self.average_time_per_user})
 
 
     @staticmethod
@@ -114,19 +118,19 @@ class Report:
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
                                y=self.raw_table['successful_users'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=...)
+                               y_max_for_mathmodel=USER_CREATE_MAX * 100)
     
     def get_rating_total_time(self):
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
                                y=self.raw_table['total_time'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=...)
+                               y_max_for_mathmodel=34000)
     
     def get_rating_average_time_per_user(self):
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
                                y=self.raw_table['average_time_per_user'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=...)
+                               y_max_for_mathmodel=100)
 
 
     def get_rating_proc_errors(self, weight_c):
@@ -159,6 +163,9 @@ class Report:
         weight_successful_users = 0.333
         weight_total_time = 0.333
         weight_average_time_per_user = 0.333
+        print(self.get_rating_successful_users())
+        print(self.get_rating_total_time())
+        print(self.get_rating_average_time_per_user())
         total_rating = (
             ((self.get_rating_successful_users() * weight_successful_users) ** (1)) +
             ((self.get_rating_total_time() * weight_total_time) ** (-1)) +

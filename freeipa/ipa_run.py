@@ -188,6 +188,7 @@ if __name__ == "__main__":
                             title_graph="value_for_last_proc_delay/user_count",
                             x_label="Количество пользователй",
                             y_label="Время аутентификации почти последним пользователем")
+        total_rating = report.get_total_rating()
 
     elif args.TT == "create_users":
         create_users_test = CreateUsersTest()
@@ -212,9 +213,10 @@ if __name__ == "__main__":
                             title_graph="average_time_per_user/user_count",
                             x_label="Количество пользователей",
                             y_label="Среднее время создания пользователя")
+        total_rating = report.get_total_rating_create_users_test()
     else:
         report = Report()
-    total_rating = report.get_total_rating()
+    
     print(total_rating)
     put_system_info_in_file(time_start_script, INFO_FILENAME)
 

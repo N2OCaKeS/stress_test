@@ -72,6 +72,7 @@ class Libvirt(_VirtualMashines):
                     'hostname':{
                         'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
+                        'cpu': ""
                         }
                     }
             kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то по умолчанию установит то же что и на хосте
@@ -83,7 +84,7 @@ class Libvirt(_VirtualMashines):
         vms_dates = virt.build()
 
         if box != "vm_station":
-            libvirt_manager.create_snapshot(vms=vms, snapshot_name='build')
+            libvirt_manager.Snapshot.create(vms=vms, snapshot_name='build')
         system_commands.cmd('virsh -c qemu:///system list --all')
         return vms_dates
 

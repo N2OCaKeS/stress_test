@@ -3,7 +3,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import sleep, time
-
+import copy
 import requests
 
 from ..._system_command.SystemCommands import SystemCommands as system_commands
@@ -45,7 +45,7 @@ class _VirtInstall:
         """
         self.box = box
         self.rc = rc
-        self.vms_date = vms_date
+        self.vms_date = copy.deepcopy(vms_date)
         self.kernel = kernel
 
 

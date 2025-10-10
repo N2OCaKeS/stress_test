@@ -61,9 +61,10 @@ parser.add_argument('-parsec_off',
 parser.add_argument('-i',
                     action='store',
                     required=False,
-                    choices=['psqlpro'],
-                    help='install BD',
-                    dest='INSTBD')
+                    choices=['psqlpro',
+                             'python'],
+                    help='install',
+                    dest='INST')
 
 parser.add_argument('-pg_vm',
                     action='store_true',
@@ -215,7 +216,7 @@ def parsec_disable():
     print('Перезагрузите стенд и проверьте корректность отключения модуля: "lsmod | grep parseс"')
 
 
-def install_bd(bd=args.INSTBD, key=None):
+def install_bd(bd=args.INST, key=None):
     """
     Для скачивания скрипта потребуется ключ
     """
@@ -232,6 +233,10 @@ def install_bd(bd=args.INSTBD, key=None):
 
 def create_vms_test_env(mode='s',
                         key=None):
+    """
+    Reqiered python >= 3.12
+    """
+    
     VMS = ['testvm1']
     VMS_DATES = {'testvm1': {'host-port': '22', 
                             'cpu': '8', 
@@ -324,8 +329,6 @@ def create_vms_test_env(mode='s',
 
 
     install_bd(bd='psqlpro', key=key)
-    cmd('sudo apt-get install python3-pip -y')
-    cmd('python3 -m pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10 allta==1.0.11')
     from allta import Libvirt, LibvirtManager
     provider = Libvirt()
 
@@ -335,13 +338,16 @@ def create_vms_test_env(mode='s',
         provider.scp(scp_settings=cp_prep_file, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
-        cmd(f'sudo /opt/pgpro/ent-17/bin/pgbench -h {VMS_DATES['testvm1']['ip_bridge']} -p 6000 -U postgres -t 1000 -j 30 -c 30 test')
+        cmd('sudo /opt/pgpro/ent-17/bin/pgbench -h %s -p 6000 -U postgres -t 1000 -j 30 -c 30 test' % VMS_DATES['testvm1']['ip_bridge'])
         provider.execute(commands=kill_perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.scp(scp_settings=cp_perf_data, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         cmd(f'sudo perf script | perl libs/libstackcollapse-perf.pl | perl libs/libflamegraph.pl > result_{datetime.now().strftime("%H:%M:%S")}.svg')
         print('Flamegraph done')
     else: print('Настройка ВМ прошла неудачно')
 
+
+def install_python():
+    cmd('sudo bash install_python.sh')
 
 
 if args.CLEARE:
@@ -358,8 +364,10 @@ elif args.HDD:
     set_hdd()
 elif args.PARSECOFF:
     parsec_disable()
-elif args.INSTBD:
+elif args.INST == 'psqlpro':
     install_bd()
+elif args.INST == 'python':
+    install_python()
 elif args.PGVM:
     create_vms_test_env()
 

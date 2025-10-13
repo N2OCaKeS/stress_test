@@ -10,11 +10,26 @@ DATA_DIR="/var/lib/pgpro/ent-${PG_VERSION}/data"
 CONF_DIR="${DATA_DIR}/postgresql.conf" 
 HBA_CONF="${DATA_DIR}/pg_hba.conf"  
 BIN_PATH="/opt/pgpro/ent-${PG_VERSION}/bin/" 
+STORAGE="sdb"
+
+
+# Подключение диска
+if [[ "$2" == "${STORAGE}" ]]; then
+    lsblk | grep "${STORAGE}"
+    if [ $? -eq 0 ]; then
+        sudo umount "$DATA_DIR"
+        sudo parted -s /dev/${STORAGE} select && sudo parted -s /dev/${STORAGE} rm 1
+        sudo parted -s /dev/${STORAGE} mklabel gpt mkpart primary ext4 0% 100%
+        sudo mkfs -t ext4 -F /dev/${STORAGE}1
+        sudo mount /dev/${STORAGE}1 "$DATA_DIR"
+    fi
+fi
 
 # Удаление старых данных и создание каталога
 sudo rm -rf $DATA_DIR
 sudo mkdir -p "$DATA_DIR"
 sudo chown -R postgres:postgres "$DATA_DIR"
+sudo chmod 700 "$DATA_DIR"
 
 # Инициализация кластера
 sudo -u postgres ${BIN_PATH}/initdb -D "$DATA_DIR" --auth-local trust --auth-host md5

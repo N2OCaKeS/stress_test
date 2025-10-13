@@ -280,7 +280,7 @@ def create_vms_test_env(mode='s',
                 'signal get': ['start_service']
             },
             'psbpro_prep':{
-                'command': 'sudo bash /home/psbpro_db_prep_manual_test.sh vm',
+                'command': 'sudo bash /home/psbpro_db_prep_manual_test.sh vm sdb',
                 'signal set': 'psbpro_prep', 
                 'signal get': ['install_perf']
             },

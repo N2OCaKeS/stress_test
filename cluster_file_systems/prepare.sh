@@ -58,7 +58,7 @@ sudo make altinstall
 python3.12 -m venv venv
 source venv/bin/activate
 
-pip install allta==1.0.11 -i http://10.177.103.10:3141/root/release --trust 10.177.103.10
+pip install allta==1.0.10 -i http://10.177.103.10:3141/root/release --trust 10.177.103.10
 
 cd /home/u/git/stress_test/$1
 python3.12 -m pip install --upgrade pip

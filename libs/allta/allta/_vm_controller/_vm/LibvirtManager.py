@@ -266,7 +266,6 @@ EOF
         @BaseDecorators.trycorator
         @staticmethod
         def generator(
-            self,
             command: str | list,
             target: str,
             sync: bool = True,
@@ -300,11 +299,11 @@ EOF
                     this_block_name = base if n == 1 else f"{base} [{i}]"
 
                 if i == 1:
-                    sig_get = [] if sync else ""
+                    sig_get = ""
                 else:
-                    sig_get = [i - 1] if sync else str(i - 1)
+                    sig_get = [f"{i - 1}"] if sync else ""
 
-                sig_set = i if (sync and i < n) else ""
+                sig_set = f"{i}" if (sync and i < n) else ""
 
                 blocks[this_block_name] = {
                     "command": cmd,

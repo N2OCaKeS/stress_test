@@ -119,14 +119,14 @@ EOF
                     return str(p)
             vms_list = list(vms_date.keys())
             network_path = get_file_path("network.sh")
-            provision_path = get_file_path("provision.sh")
+            provision_path = get_file_path("static_ip.sh")
             group = {'all': vms_list}
             scp_prepare = {
                 "g_all": [
                     {
                         'mode': 'push',
                         'path_host': f"{provision_path}",
-                        'path_vm': '/home/u/env_provision.sh'
+                        'path_vm': '/home/u/static_ip.sh'
                     }
                 ],
             }
@@ -136,9 +136,9 @@ EOF
                 prepare[vm_name] = {
                     'prepare': {
                         'command': (
-                            f"sudo chmod 777 /home/u/env_provision.sh && "
-                            f"sudo su -c '/home/u/env_provision.sh {new_vms_date[vm_name]['ip_bridge']}' && "
-                            f"sudo rm /home/u/env_provision.sh"
+                            f"sudo chmod 777 /home/u/static_ip.sh && "
+                            f"sudo su -c '/home/u/static_ip.sh {new_vms_date[vm_name]['ip_bridge']}' && "
+                            f"sudo rm /home/u/static_ip.sh"
                         ),
                         'signal set': 'prepare',
                         'signal get': ""
@@ -155,6 +155,8 @@ EOF
             for vm in vms_list:
                 commands = f"{network_path} {vm}"
                 system_commands.cmd_with_returncode(commands)
+            print("Ожидаем включения ВМ")
+            sleep (60)
             return 0
 
     class Snapshot():

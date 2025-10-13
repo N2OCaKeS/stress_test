@@ -6,6 +6,27 @@ SYS_VERSION=$(cat /etc/astra/build_version | tr -d '[:space:]')
 SYS_KERNEL=$(uname -r | tr -d '[:space:]')
 
 
+18repo() {
+cat << EOF > /etc/apt/sources.list
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/extended-repository 1.8_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/devel-repository 1.8_x86-64 main contrib non-free
+EOF
+}
+
+17repo() {
+cat << EOF > /etc/apt/sources.list
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/installation/ 1.7_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/ 1.7_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/update-repository/ 1.7_x86-64 main contrib non-free
+deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/EXT_latest/extended-repository/ 1.7_x86-64 main contrib non-free
+EOF
+}
+
+test "$(grep 1.7 /etc/astra_version)" && 17repo && sudo apt update
+test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
+
+
 # set repo
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
@@ -35,9 +56,9 @@ for pkg in docker.io docker-compose-v2; do
 done
 
 # test packages
-sudo apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 nginx build-essential zlib1g-dev wget 
-sudo apt-get install -y libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev 
-sudo apt-get install -y libbz2-dev libffi-dev strace libcurl4-gnutls-dev  python3-requests liblzma-dev
+sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
+sudo apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 nginx  
+sudo apt-get install -y strace libcurl4-gnutls-dev  python3-requests liblzma-dev
 sudo apt-get install -y linux-tools-`uname -r`
 
 

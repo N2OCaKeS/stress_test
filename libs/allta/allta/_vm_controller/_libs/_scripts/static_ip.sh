@@ -12,7 +12,7 @@ sudo timedatectl set-ntp true
 iface=`ip a | grep '2: ' | awk '{print$2}' | tr -d ':' | head -n 1`
 
 # network settings
-ip=1
+ip=$1
 dns1="10.177.180.246"
 dns2="10.177.128.198"
 gateway="10.177.103.254"

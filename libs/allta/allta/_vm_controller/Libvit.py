@@ -75,10 +75,10 @@ class Libvirt(_VirtualMashines):
                         'cpu': ""
                         }
                     }
-            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то по умолчанию установит то же что и на хосте
+            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то оставит ядро по умолчанию 
             bridge (bool, optional): Настроить ли мост по тем ip адресам что указаны в vms_dates, по умолчанию выключено.
         Returns:
-            dict: Обновленный список хостов.
+            dict: Обновленный vms_dates (ИСПОЛЬЗОВАТЬ ТОЛЬКО ДЛЯ ВНУТРЕННЕЙ СЕТИ Libvirt).
         """
 
         virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc, kernel=kernel)

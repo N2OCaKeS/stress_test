@@ -5,7 +5,11 @@ from .._libs import _scripts as scripts_pkg
 
 from time import sleep
 from importlib.resources import files, as_file
-class LibvirtManager():
+import re
+from collections import defaultdict
+
+
+class LibvirtManager:
     """
     Класс для управления виртуальными машинами через libvirt.
 
@@ -16,16 +20,17 @@ class LibvirtManager():
     - Получение списка доступных ВМ.
     """
 
-    class Vm():
+    class Vm:
         """
         Класс для управления виртуальными машинами через Libvirt.
 
         Основные функции:
         - Включение и выключение ВМ.
         - Получение списка доступных ВМ.
-        """        
+        """
+
         @BaseDecorators.trycorator
-        @staticmethod   
+        @staticmethod
         def vm_list():
             """
             Возвращает список всех виртуальных машин.
@@ -33,10 +38,12 @@ class LibvirtManager():
             Returns:
                 str: Список виртуальных машин.
             """
-            return system_commands.check_output_command('virsh --connect qemu:///system list --all')
+            return system_commands.check_output_command(
+                "virsh --connect qemu:///system list --all"
+            )
 
         @BaseDecorators.trycorator
-        @staticmethod 
+        @staticmethod
         def start(vms):
             """
             Включает одну или несколько виртуальных машин.
@@ -49,13 +56,13 @@ class LibvirtManager():
             """
             if isinstance(vms, str):
                 vms = [vms]
-            
+
             for vm in vms:
-                system_commands.cmd(f'virsh --connect qemu:///system start {vm}')
+                system_commands.cmd(f"virsh --connect qemu:///system start {vm}")
             return 0
 
         @BaseDecorators.trycorator
-        @staticmethod 
+        @staticmethod
         def stop(vms):
             """
             Выключает одну или несколько виртуальных машин.
@@ -68,13 +75,16 @@ class LibvirtManager():
             """
             if isinstance(vms, str):
                 vms = [vms]
-            
+
             for vm in vms:
-                system_commands.cmd(f'virsh --connect qemu:///system destroy {vm}')
-            return 0     
+                system_commands.cmd(f"virsh --connect qemu:///system destroy {vm}")
+            return 0
+
         @BaseDecorators.trycorator
-        @staticmethod 
-        def bridge(vms_date: dict, new_vms_date: dict, username: str = "u", password: str = "1"):
+        @staticmethod
+        def bridge(
+            vms_date: dict, new_vms_date: dict, username: str = "u", password: str = "1"
+        ):
             """Устанавливает тип соединения bridge на ВМ
 
             Args:
@@ -85,12 +95,16 @@ class LibvirtManager():
             """
             from ..Libvit import Libvirt
 
-            net = system_commands.check_output_command("ip -4 route get 8.8.8.8 | awk '{for(i=1;i<=NF;i++){if($i==\"dev\") d=$(i+1); if($i==\"src\") s=$(i+1)}} END{print s, d}'")
+            net = system_commands.check_output_command(
+                'ip -4 route get 8.8.8.8 | awk \'{for(i=1;i<=NF;i++){if($i=="dev") d=$(i+1); if($i=="src") s=$(i+1)}} END{print s, d}\''
+            )
 
             ip, phy_if = net.strip().split()
             bridge = "br0"
             if phy_if != bridge:
-                system_commands.check_output_command("sudo cp /etc/network/interfaces /etc/network/interfaces.bak || true")
+                system_commands.check_output_command(
+                    "sudo cp /etc/network/interfaces /etc/network/interfaces.bak || true"
+                )
                 cfg = f"""sudo tee /etc/network/interfaces > /dev/null <<EOF
 auto lo
 iface lo inet loopback
@@ -110,56 +124,71 @@ iface {phy_if} inet manual
 EOF
 """
                 system_commands.cmd_with_returncode(cfg)
-                system_commands.cmd_with_returncode(f"sudo ifdown {phy_if} || true && sudo ifup {bridge} && sudo systemctl restart networking")
-            else: 
+                system_commands.cmd_with_returncode(
+                    f"sudo ifdown {phy_if} || true && sudo ifup {bridge} && sudo systemctl restart networking"
+                )
+            else:
                 print(f"У вас уже настроен сетевой интерфес типа мост: {bridge}")
+
             def get_file_path(filename: str) -> str:
                 res = files(scripts_pkg).joinpath(filename)
                 with as_file(res) as p:
                     return str(p)
+
             vms_list = list(vms_date.keys())
             network_path = get_file_path("network.sh")
             provision_path = get_file_path("static_ip.sh")
-            group = {'all': vms_list}
+            group = {"all": vms_list}
             scp_prepare = {
                 "g_all": [
                     {
-                        'mode': 'push',
-                        'path_host': f"{provision_path}",
-                        'path_vm': '/home/u/static_ip.sh'
+                        "mode": "push",
+                        "path_host": f"{provision_path}",
+                        "path_vm": "/home/u/static_ip.sh",
                     }
                 ],
             }
-            _SCP_Command.execute(scp=scp_prepare, vms_date=vms_date, groups=group, username=username, password=password)
+            _SCP_Command.execute(
+                scp=scp_prepare,
+                vms_date=vms_date,
+                groups=group,
+                username=username,
+                password=password,
+            )
             prepare = {}
             for vm_name in vms_date:
                 prepare[vm_name] = {
-                    'prepare': {
-                        'command': (
+                    "prepare": {
+                        "command": (
                             f"sudo chmod 777 /home/u/static_ip.sh && "
                             f"sudo su -c '/home/u/static_ip.sh {new_vms_date[vm_name]['ip_bridge']}' && "
                             f"sudo rm /home/u/static_ip.sh"
                         ),
-                        'signal set': 'prepare',
-                        'signal get': ""
+                        "signal set": "prepare",
+                        "signal get": "",
                     },
-                    'conf': {
-                        'command': "(sleep 2 && sudo shutdown -r now) &",                        
-                        'signal set': '',
-                        'signal get': ['prepare']
-                    }
+                    "conf": {
+                        "command": "(sleep 2 && sudo shutdown -r now) &",
+                        "signal set": "",
+                        "signal get": ["prepare"],
+                    },
                 }
 
-
-            Libvirt.execute(commands=prepare, vms_dates=vms_date, vms_groups=group, username=username, password=password)
+            Libvirt.execute(
+                commands=prepare,
+                vms_dates=vms_date,
+                vms_groups=group,
+                username=username,
+                password=password,
+            )
             for vm in vms_list:
                 commands = f"{network_path} {vm}"
                 system_commands.cmd_with_returncode(commands)
             print("Ожидаем включения ВМ")
-            sleep (60)
+            sleep(60)
             return 0
 
-    class Snapshot():
+    class Snapshot:
         """
         Класс для управления снимками виртуальных машин через Libvirt.
 
@@ -168,8 +197,9 @@ EOF
         - Удалить снимок
         - Откатить снимок
         """
+
         @BaseDecorators.trycorator
-        @staticmethod 
+        @staticmethod
         def create(vms, snapshot_name=None):
             """
             Создаёт снимки всех указанных виртуальных машин.
@@ -180,12 +210,16 @@ EOF
             """
             if snapshot_name:
                 for vm in vms:
-                    system_commands.cmd(f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "{snapshot_name}"')
+                    system_commands.cmd(
+                        f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "{snapshot_name}"'
+                    )
             else:
                 for vm in vms:
-                    system_commands.cmd(f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "snapshot"')
+                    system_commands.cmd(
+                        f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "snapshot"'
+                    )
             return 0
-        
+
         @BaseDecorators.trycorator
         @staticmethod
         def delete(vms, snapshot_name):
@@ -197,8 +231,10 @@ EOF
                 snapshot_name (str): Имя снимка.
             """
             for vm in vms:
-                system_commands.cmd(f'virsh --connect qemu:///system snapshot-delete --domain {vm} --snapshotname "{snapshot_name}"')
-        
+                system_commands.cmd(
+                    f'virsh --connect qemu:///system snapshot-delete --domain {vm} --snapshotname "{snapshot_name}"'
+                )
+
         @BaseDecorators.trycorator
         @staticmethod
         def revert(vms, snapshot_name):
@@ -210,7 +246,69 @@ EOF
                 snapshot_name (str): Имя снимка.
             """
             for vm in vms:
-                system_commands.cmd(f'virsh --connect qemu:///system snapshot-revert --domain {vm} --snapshotname "{snapshot_name}"')    
+                system_commands.cmd(
+                    f'virsh --connect qemu:///system snapshot-revert --domain {vm} --snapshotname "{snapshot_name}"'
+                )
 
+    class Command:
+        """Класс для генерации команд"""
 
-    
+        @staticmethod
+        def _normalize_commands(command: str | list[str]) -> list[str]:
+            if isinstance(command, list):
+                return [str(c) for c in command if str(c).strip()]
+            return [str(command)]
+
+        @staticmethod
+        def _block_from_command(cmd: str) -> str:
+            return re.sub(r"\s+", "_", cmd.strip())
+
+        @BaseDecorators.trycorator
+        @staticmethod
+        def generator(
+            command: str | list,
+            target: str,
+            sync: bool = True,
+            block_name: str = None,
+        ):
+            """Генерирует команды
+
+            Args:
+                command (str | list): Команда или список из команд
+                target (str): ВМ(передавать имя) или группа ВМ (передавать как g_<имя группы>) на которой должны быть выполнены команды
+                sync (bool, optional): Выполнять последовательно или асинхронно. По умолчанию последовательно True.
+                name_block (str, optional): Имя блока команд. По умолчанию будут ставиться команда с замененными " " на "_".
+
+            Returns:
+                dict: готовый список команд, для исполнения через Libvirt.execute()
+            """
+            cmds = LibvirtManager.Command._normalize_commands(command)
+            n = len(cmds)
+            blocks = {}
+            seen_names = defaultdict(int)
+
+            provided_name = block_name
+
+            for i, cmd in enumerate(cmds, start=1):
+                if provided_name is None:
+                    base = LibvirtManager.Command._block_from_command(cmd)
+                    seen_names[base] += 1
+                    this_block_name = base if seen_names[base] == 1 else f"{base}_{i}"
+                else:
+                    base = str(provided_name)
+                    this_block_name = base if n == 1 else f"{base} [{i}]"
+
+                if i == 1:
+                    sig_get = ""
+                else:
+                    sig_get = [f"{i - 1}"] if sync else ""
+
+                sig_set = f"{i}" if (sync and i < n) else ""
+
+                blocks[this_block_name] = {
+                    "command": cmd,
+                    "signal set": sig_set,
+                    "signal get": sig_get,
+                }
+
+            return {str(target): blocks}

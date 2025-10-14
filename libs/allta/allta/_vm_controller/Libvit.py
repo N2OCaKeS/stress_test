@@ -53,7 +53,7 @@ class Libvirt(_VirtualMashines):
     
 
     @classmethod
-    def build(cls, box: str,  rc: str, vms, vms_dates: dict, kernel: str = None) -> dict:
+    def build(cls, box: str,  rc: str, vms, vms_dates: dict, kernel: str = None, bridge: bool = False) -> dict:
 
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
@@ -76,12 +76,13 @@ class Libvirt(_VirtualMashines):
                         }
                     }
             kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то по умолчанию установит то же что и на хосте
+            bridge (bool, optional): Настроить ли мост по тем ip адресам что указаны в vms_dates, по умолчанию выключено.
         Returns:
             dict: Обновленный список хостов.
         """
 
         virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc, kernel=kernel)
-        vms_dates = virt.build()
+        vms_dates = virt.build(bridge=bridge)
 
         if box != "vm_station":
             libvirt_manager.Snapshot.create(vms=vms, snapshot_name='build')

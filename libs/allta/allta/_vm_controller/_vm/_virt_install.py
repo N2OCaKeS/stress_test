@@ -1,9 +1,11 @@
 import json
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import sleep, time
 import copy
 import requests
+
+from importlib.resources import files, as_file
+from .._libs import _scripts as scripts_pkg
 
 from ..._system_command.SystemCommands import SystemCommands as system_commands
 from .._libs._scp_command import _SCP_Command
@@ -43,6 +45,8 @@ class _VirtInstall:
         self.box = box
         self.rc = rc
         self.vms_date = copy.deepcopy(vms_date)
+        self.original_vms_date = copy.deepcopy(vms_date)
+        self.vm_path = "/vms"
         self.kernel = kernel
 
     def _box_wrapper(self) -> tuple:
@@ -136,7 +140,7 @@ class _VirtInstall:
 
     @staticmethod
     def _get_ip(hostname, system_commands):
-        sleep(10)  # Даём время на получение DHCP
+        sleep(10)
         try:
             ip_output = system_commands.check_output_command(
                 f"virsh -c qemu:///system domifaddr {hostname} | awk '{{print $4}}' | tail -n 2"
@@ -148,8 +152,76 @@ class _VirtInstall:
             print(f"[{hostname}] IP ERROR: {e}")
             return hostname, None
 
-    def build(self):
-        vm_path = "/vms"
+    def _set_ip_bridge(self, vms_date):
+        LibvirtManager.Vm.bridge(
+            vms_date=self.vms_date, new_vms_date=vms_date, username="u", password="1"
+        )
+
+    def _resize_disk(self, vms_date: dict, username: str = "u", password: str = "1"):
+        from ..Libvit import Libvirt
+        for vm in vms_date:
+            LibvirtManager.Vm.stop(vm)
+            system_commands.cmd_with_returncode(
+                f"sudo qemu-img resize '{self.vm_path}'/{vm}.qcow2 {vms_date[vm]["disk"]}G"
+            )
+            LibvirtManager.Vm.start(vm)
+        sleep(60)
+
+        vms_list = list(vms_date.keys())
+        group = {"all": vms_list}
+
+        def get_file_path(filename: str) -> str:
+            res = files(scripts_pkg).joinpath(filename)
+            with as_file(res) as p:
+                return str(p)
+
+        resize_script = get_file_path("resize_disk.sh")
+
+        scp_prepare = {
+            "g_all": [
+                {
+                    "mode": "push",
+                    "path_host": f"{resize_script}",
+                    "path_vm": "/home/u/resize_disk.sh",
+                }
+            ],
+        }
+        _SCP_Command.execute(
+            scp=scp_prepare,
+            vms_date=self.vms_date,
+            groups=group,
+            username=username,
+            password=password,
+        )
+        prepare = {}
+        for vm_name in vms_date:
+            prepare[vm_name] = {
+                "prepare: resize disk": {
+                    "command": (
+                        f"sudo chmod 777 /home/u/resize_disk.sh && "
+                        f"sudo su -c '/home/u/resize_disk.sh' && "
+                        f"sudo rm /home/u/resize_disk.sh"
+                    ),
+                    "signal set": "resize_disk",
+                    "signal get": "",
+                },
+                "prepare: resize disk confirm": {
+                    "command": "(sleep 2 && sudo shutdown -r now) &",
+                    "signal set": "",
+                    "signal get": ["resize_disk"],
+                },
+            }
+        Libvirt.execute(
+            commands=prepare,
+            vms_dates=self.vms_date,
+            vms_groups=group,
+            username=username,
+            password=password,
+        )
+        sleep(60)
+
+    def build(self, bridge: bool = False):
+        vm_path = self.vm_path
         box_name, box_url, os_version = self._box_wrapper()
         system_commands.cmd(f"mkdir {vm_path} && chmod 777 {vm_path}")
         system_commands.cmd(
@@ -331,7 +403,7 @@ class _VirtInstall:
             cmds = [
                 # 1) hostname и /etc/hosts
                 "sudo hostnamectl set-hostname {host} && sudo timedatectl set-ntp true && "
-                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
+                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\treleases' | sudo tee /etc/hosts",
                 # 2) репо
                 "echo -e '{sources_str}' | sudo tee /etc/apt/sources.list",
                 # 3) обновление и Astra Update
@@ -388,7 +460,7 @@ class _VirtInstall:
             elif self.box == "debian12":
                 cmds = [
                     "sudo hostnamectl set-hostname {host} && sudo timedatectl set-ntp true && "
-                    "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\ttreleases' | sudo tee /etc/hosts",
+                    "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\treleases' | sudo tee /etc/hosts",
                     "sudo DEBIAN_FRONTEND=noninteractive apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install wget curl rsync htop gcc make perl qemu-guest-agent -y",
                 ]
                 print(f"\n\n\nСтавим hostname\n\n\n")
@@ -397,6 +469,54 @@ class _VirtInstall:
                 start_prepare(cmds[1])
                 print(f"\n\nПерезагружаем ВМ\n\n\n")
                 start_prepare(reboot=1)
+
+                # Disk
+                vms_dates_disk = {}
+                min_gb = 10
+                for name, cfg in self.original_vms_date.items():
+                    if "disk" not in cfg:
+                        continue
+                    disk_gb = int(cfg["disk"])
+                    if disk_gb <= min_gb:
+                        for i in range(5):
+                            print(
+                                f"\n\nВНИМАНИЕ для ВМ: {name}, был указан размер диска меньше минимального: {min_gb}. Изменение размера произведено не будет!!!"
+                            )
+                            continue
+                    vms_dates_disk[name] = cfg.copy()
+
+                if vms_dates_disk != {}:
+                    vm_str = ""
+                    for vm in vms_dates_disk.keys():
+                        vm_str = vm_str + vm + " "
+                    print(f"Изменяем размер диска для следующих ВМ: {vm_str}")
+                    self._resize_disk(vms_date=vms_dates_disk)
+                    print("\n==> Повторное получение IP адресов...")
+
+                    with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
+                        ip_futures = [
+                            executor.submit(self._get_ip, hostname, system_commands)
+                            for hostname in self.vms_date.keys()
+                        ]
+                        for future in as_completed(ip_futures):
+                            hostname, ip = future.result()
+                            self.vms_date[hostname]["ip_bridge"] = ip
+
+                # Bridge Ip                            
+                if bridge == True:
+                    vms_dates_bridge = {}
+                    for name, cfg in self.original_vms_date.items():
+                        if "ip_bridge" in cfg:
+                            vms_dates_bridge[name] = cfg.copy()
+
+                    if vms_dates_bridge != {}:
+                        vm_str = ""
+                        for vm in vms_dates_bridge.keys():
+                            vm_str = vm_str + vm + " "
+                        print(
+                            f"Устанавливаем bridge_net и ip адреса для следующих ВМ: {vm_str}"
+                        )
+                        self._set_ip_bridge(vms_date=vms_dates_bridge)
 
             else:
                 print(f"\n\n\nСтавим hostname\n\n\n")
@@ -416,4 +536,53 @@ class _VirtInstall:
                 start_prepare(cmds[8])
                 print(f"\n\nПерезагружаем ВМ\n\n\n")
                 start_prepare(reboot=1)
+
+                # Disk
+                vms_dates_disk = {}
+                min_gb = 15
+                for name, cfg in self.original_vms_date.items():
+                    if "disk" not in cfg:
+                        continue
+                    disk_gb = int(cfg["disk"])
+                    if disk_gb <= min_gb:
+                        for i in range(5):
+                            print(
+                                f"\n\nВНИМАНИЕ для ВМ: {name}, был указан размер диска меньше минимального: {min_gb}. Изменение размера произведено не будет!!!"
+                            )
+                            continue
+                    vms_dates_disk[name] = cfg.copy()
+
+                if vms_dates_disk != {}:
+                    vm_str = ""
+                    for vm in vms_dates_disk.keys():
+                        vm_str = vm_str + vm + " "
+                    print(f"Изменяем размер диска для следующих ВМ: {vm_str}")
+                    self._resize_disk(vms_date=vms_dates_disk)
+                    print("\n==> Повторное получение IP адресов...")
+
+                    with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
+                        ip_futures = [
+                            executor.submit(self._get_ip, hostname, system_commands)
+                            for hostname in self.vms_date.keys()
+                        ]
+                        for future in as_completed(ip_futures):
+                            hostname, ip = future.result()
+                            self.vms_date[hostname]["ip_bridge"] = ip
+
+                # Bridge Ip                            
+                if bridge == True:
+                    vms_dates_bridge = {}
+                    for name, cfg in self.original_vms_date.items():
+                        if "ip_bridge" in cfg:
+                            vms_dates_bridge[name] = cfg.copy()
+
+                    if vms_dates_bridge != {}:
+                        vm_str = ""
+                        for vm in vms_dates_bridge.keys():
+                            vm_str = vm_str + vm + " "
+                        print(
+                            f"Устанавливаем bridge_net и ip адреса для следующих ВМ: {vm_str}"
+                        )
+                        self._set_ip_bridge(vms_date=vms_dates_bridge)                
+
         return self.vms_date

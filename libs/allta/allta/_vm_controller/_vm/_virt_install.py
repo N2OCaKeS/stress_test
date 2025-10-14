@@ -40,7 +40,7 @@ class _VirtInstall:
                     "database2": { "ip": "10.177.103.112", "cpus": "4", "memory": "32768" },
                     ...
                 }
-            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то по умолчанию установит то же что и на хосте
+            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то оставит ядро по умолчанию 
         """
         self.box = box
         self.rc = rc
@@ -159,6 +159,7 @@ class _VirtInstall:
 
     def _resize_disk(self, vms_date: dict, username: str = "u", password: str = "1"):
         from ..Libvit import Libvirt
+
         for vm in vms_date:
             LibvirtManager.Vm.stop(vm)
             system_commands.cmd_with_returncode(
@@ -329,23 +330,20 @@ class _VirtInstall:
                 print("\n==> Парсим ядро...")
                 if self.kernel is not None:
                     kernel = self.kernel
-                else:
-                    kernel = system_commands.check_output_command("uname -r").strip()
+                    if "-generic" in kernel:
+                        suffix = "generic"
+                    elif "-lowlatency" in kernel:
+                        suffix = "lowlatency"
+                    else:
+                        raise ValueError(f"Неизвестный тип ядра: {kernel}")
 
-                if "-generic" in kernel:
-                    suffix = "generic"
-                elif "-lowlatency" in kernel:
-                    suffix = "lowlatency"
-                else:
-                    raise ValueError(f"Неизвестный тип ядра: {kernel}")
-
-                # Извлекаем major.minor версию (первые два числа)
-                version_parts = kernel.split("-")[0].split(".")
-                if len(version_parts) < 2:
-                    raise ValueError(f"Некорректный формат версии: {kernel}")
-                major_minor = ".".join(version_parts[:2])  # "5.10"
-                apt_kernel = f"linux-{major_minor}-{suffix}"
-                print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
+                    # Извлекаем major.minor версию (первые два числа)
+                    version_parts = kernel.split("-")[0].split(".")
+                    if len(version_parts) < 2:
+                        raise ValueError(f"Некорректный формат версии: {kernel}")
+                    major_minor = ".".join(version_parts[:2])  # "5.10"
+                    apt_kernel = f"linux-{major_minor}-{suffix}"
+                    print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
 
             def start_prepare(cmd_template=None, reboot=None):
                 class SafeDict(dict):
@@ -357,13 +355,20 @@ class _VirtInstall:
                     futures = []
                     for host in self.vms_date:
                         if reboot is None:
-                            # собираем словарь с теми ключами, которые реально подставляем
-                            mapping = SafeDict(
-                                host=host,
-                                sources_str=sources_str,
-                                apt_kernel=apt_kernel,
-                                kernel=kernel,
-                            )
+                            if self.kernel is not None:
+                                # собираем словарь с теми ключами, которые реально подставляем
+                                mapping = SafeDict(
+                                    host=host,
+                                    sources_str=sources_str,
+                                    apt_kernel=apt_kernel,
+                                    kernel=kernel,
+                                )
+                            else:
+                                mapping = SafeDict(
+                                    host=host,
+                                    sources_str=sources_str,
+                                )
+
                             # и делаем безопасный .format_map()
                             full_cmd = cmd_template.format_map(mapping)
 
@@ -502,7 +507,7 @@ class _VirtInstall:
                             hostname, ip = future.result()
                             self.vms_date[hostname]["ip_bridge"] = ip
 
-                # Bridge Ip                            
+                # Bridge Ip
                 if bridge == True:
                     vms_dates_bridge = {}
                     for name, cfg in self.original_vms_date.items():
@@ -527,13 +532,19 @@ class _VirtInstall:
                 start_prepare(cmds[2])
                 print(f"\n\n\nСтавим зависимости\n\n\n")
                 start_prepare(cmds[3])
-                print(f"\n\n\nСтавим ядро\n\n\n")
-                start_prepare(cmds[4])
-                print(f"\n\n\nОбновляем grub\n\n\n")
-                start_prepare(cmds[5])
-                start_prepare(cmds[6])
-                start_prepare(cmds[7])
-                start_prepare(cmds[8])
+                if self.kernel is not None:
+                    print(f"\n\n\nСтавим ядро\n\n\n")
+                    start_prepare(cmds[4])
+                    print(f"\n\n\nОбновляем grub\n\n\n")
+                    start_prepare(cmds[5])
+                    start_prepare(cmds[6])
+                    start_prepare(cmds[7])
+                    start_prepare(cmds[8])
+                else:
+                    print(
+                        f"\n\n\nЯдро не указано пропускаем установку ядра и обновление grub\n\n"
+                    )
+
                 print(f"\n\nПерезагружаем ВМ\n\n\n")
                 start_prepare(reboot=1)
 
@@ -569,7 +580,7 @@ class _VirtInstall:
                             hostname, ip = future.result()
                             self.vms_date[hostname]["ip_bridge"] = ip
 
-                # Bridge Ip                            
+                # Bridge Ip
                 if bridge == True:
                     vms_dates_bridge = {}
                     for name, cfg in self.original_vms_date.items():
@@ -583,6 +594,6 @@ class _VirtInstall:
                         print(
                             f"Устанавливаем bridge_net и ip адреса для следующих ВМ: {vm_str}"
                         )
-                        self._set_ip_bridge(vms_date=vms_dates_bridge)                
+                        self._set_ip_bridge(vms_date=vms_dates_bridge)
 
         return self.vms_date

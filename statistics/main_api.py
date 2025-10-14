@@ -223,6 +223,7 @@ def file_systems_statistics(body: Statistics):
     }
     try:
         file_systems_stat.create()
+        response['status'] = "success"
         response["message"] = "Файловые системы - Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")

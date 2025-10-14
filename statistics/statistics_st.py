@@ -15,6 +15,7 @@ from typetest import TypeTest
 from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent, NoAnnotationsForComponent
 
 from logging_conf import main_logger
+# from newlogging import task_logger
 
 
 class Statistics:
@@ -41,7 +42,6 @@ class BaseStatistics(Statistics):
           self.stat_title = self.stat_title.replace("-", "/")
           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
           
-     
      def _get_pages(self):
           confluence_obj = Pages(username=self.username, token=self.tokenconf)
           all_pages, rc_all_pages = [], {}
@@ -96,7 +96,8 @@ class BaseStatistics(Statistics):
           except Exception as err:
                main_logger.exception("Ошибка")
                main_logger.critical(f"{self.stat_title} СТАТИСТИКА НЕ ВЫЛОЖИЛАСЬ!!!!")
-
+     
+     # @task_logger()
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
           main_logger.info("Начало уникального функционала для каждого типа статистики")
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
@@ -157,7 +158,7 @@ class BaseStatistics(Statistics):
           # Здесь выкладывание в confluence
           self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 
-
+     # @task_logger
      def create(self):
           all_pages, rc_all_pages, confluence_obj = self._get_pages()
           if not all_pages or not rc_all_pages:

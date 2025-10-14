@@ -333,7 +333,7 @@ def create_vms_test_env(mode='s',
     provider = Libvirt()
 
     provider.prepare()
-    vm_date = provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES)
+    vm_date = provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES, kernel='6.1.141-1-generic')
     LibvirtManager.Vm.bridge(vms_date=vm_date, new_vms_date=VMS_DATES, username="u", password="1")
     sleep(90)
     if provider.check(VMS, VMS_DATES) == 0:

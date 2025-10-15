@@ -198,7 +198,7 @@ def set_hdd(part='sdb', fs=args.HDD, bd='psql'):
             cmd('rm -r /var/lib/postgresql')
             os.mkdir('/var/lib/postgresql')
     elif bd == 'pgpro_on_vm':
-        mount_path = '/VMS'
+        mount_path = '/vms'
         if not os.path.isdir(mount_path):
             os.mkdir(mount_path)
 
@@ -238,17 +238,18 @@ def install_bd(bd=args.INST, key=None):
 
 
 def create_vms_test_env(mode='s',
+                        user='u',
                         key=None):
     """
     Reqiered python >= 3.12
     """
     
     VMS = ['testvm1']
-    VMS_DATES = {VMS: {'host-port': '22', 
-                       'cpu': '8', 
-                       'ram': '32768',
-                       'ip_bridge': '10.177.103.77',
-                       'disk': '200'}}
+    VMS_DATES = {'testvm1': {'host-port': '22', 
+                             'cpu': '8', 
+                             'ram': '32768',
+                             'ip_bridge': '10.177.103.77',
+                             'disk': '200'}}
     tasks = {
         'g_VMS':{
             'get_key':{
@@ -271,10 +272,15 @@ def create_vms_test_env(mode='s',
                 'signal set': 'install_pgpro', 
                 'signal get': ['apt_update']
             },
+            'rmdate':{
+                'command': 'sudo rm -R /var/lib/pgpro/ent-17/data',
+                'signal set': 'rmdate', 
+                'signal get': ['install_pgpro']
+            },
             'initdb':{
                 'command': 'sudo /opt/pgpro/ent-17/bin/pg-setup initdb',
                 'signal set': 'initdb', 
-                'signal get': ['install_pgpro']
+                'signal get': ['rmdate']
             },
             'start_service':{
                 'command': 'sudo /opt/pgpro/ent-17/bin/pg-setup service enable && sudo /opt/pgpro/ent-17/bin/pg-setup service start',
@@ -287,7 +293,7 @@ def create_vms_test_env(mode='s',
                 'signal get': ['start_service']
             },
             'psbpro_prep':{
-                'command': 'sudo bash /home/psbpro_db_prep_manual_test.sh vm',
+                'command': f'sudo bash /home/{user}/psbpro_db_prep_manual_test.sh vm',
                 'signal set': 'psbpro_prep', 
                 'signal get': ['install_perf']
             },
@@ -297,7 +303,7 @@ def create_vms_test_env(mode='s',
     perf_task = {
         'g_VMS':{
             'start_perf':{
-                'command': '(sudo perf record -g -a &); PERF_PID=$!; echo "$PERF_PID" > /home/pid',
+                'command': f'(sudo perf record -g -a &); PERF_PID=$!; echo "$PERF_PID" > /home/{user}/pid',
                 'signal set': 'start_perf', 
                 'signal get': ''
             },
@@ -307,7 +313,7 @@ def create_vms_test_env(mode='s',
     kill_perf_task = {
         'g_VMS':{
             'kill_perf':{
-                'command': 'sudo kill -SIGINT $(cat /home/pid)',
+                'command': f'sudo kill -SIGINT $(cat /home/{user}/pid)',
                 'signal set': 'kill_perf', 
                 'signal get': ''
             },
@@ -319,7 +325,7 @@ def create_vms_test_env(mode='s',
             {
                 'mode': 'push', 
                 'path_host': f'{dirname(abspath(__file__))}/psbpro_db_prep_manual_test.sh', 
-                'path_vm': '/home/psbpro_db_prep_manual_test.sh'
+                'path_vm': f'/home/{user}/psbpro_db_prep_manual_test.sh'
             }
         ]
     }
@@ -329,7 +335,7 @@ def create_vms_test_env(mode='s',
             {
                 'mode': 'pull', 
                 'path_host': f'{dirname(abspath(__file__))}/perf.data', 
-                'path_vm': '/home/perf.data'
+                'path_vm': f'/home/{user}/perf.data'
             }
         ]
     }

@@ -10,6 +10,7 @@ from abc import abstractmethod
 from sorting import Scale
 from typetest import TypeTest
 from logging_conf import main_logger
+from newlogging import task_logger
 
 """
     TODO Необходимо реализовать интерактивный график, смотреть запись техсреды от ОНИ (который работал в Apple)
@@ -35,7 +36,7 @@ class MainGraphW(Graphs):
     """
         Класс предназначен для построение главной столбчатой диаграммы
     """
-    def __init__(self, list_of_score, scale_txt, type_test, saver, ylabel = "Значение рейтинга"):
+    def __init__(self, list_of_score, scale_txt, type_test, saver, ylabel = "Значение рейтинга", stat_title=None, rc_version=None):
         self.list_of_score = list_of_score
         self.ylabel = ylabel
         self.grid = False
@@ -43,6 +44,8 @@ class MainGraphW(Graphs):
         self.scale_txt = scale_txt
         self.type_test = type_test
         self.saver = saver
+        self.stat_title = stat_title
+        self.rc_version = rc_version
         main_logger.debug(f"Тип теста: {self.type_test}")
         main_logger.debug(f"Отработал конструктор scale_x = {self.scale_x}, шкала = {self.scale_txt}")
         
@@ -64,6 +67,7 @@ class MainGraphW(Graphs):
         yellow_patch = mpatches.Patch(color=Colors.WARNING, label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
         return [red_patch, green_patch, yellow_patch]
     
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def draw(self):
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
         rect = ax.bar(self.scale_x, self.list_of_score, color=self._get_colors())
@@ -93,10 +97,11 @@ class MainGraph(MainGraphW):
     """
         Класс предназначен для построение ПЕРЕВЕРНУТОЙ главной столбчатой диаграммы
     """
-    def __init__(self, list_of_score, scale_txt, type_test, saver, xlabel = "Значение рейтинга"):
+    def __init__(self, list_of_score, scale_txt, type_test, saver, xlabel = "Значение рейтинга", stat_title=None, rc_version=None):
         self.xlabel = xlabel
-        super().__init__(list_of_score, scale_txt, type_test, saver, xlabel)
+        super().__init__(list_of_score, scale_txt, type_test, saver, xlabel, stat_title, rc_version)
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def draw(self):
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT + 8))
         # fig.set_facecolor("#bbbbbb")
@@ -141,7 +146,7 @@ class SummaryGraphW(Graphs):
     """
       TODO Добавить цвета
     """
-    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76']):
+    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76'], stat_title=None, rc_version=None):
         self.saver = saver
         self.stand_grade = stand_grade
         self.comparison_scale_of_score = comparison_scale_of_score
@@ -152,7 +157,10 @@ class SummaryGraphW(Graphs):
         self.comparison_len = len(comparison_scale_of_score)
         self.bar_width = 0.8
         self.scale_x = np.arange(len(scale_txt))
+        self.stat_title = stat_title
+        self.rc_version = rc_version
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def draw(self, *args, **kwargs) -> None:
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
         max_score = 1 # Единица чтобы не было предупреждения  "UserWarning: Attempting to set identical low and high ylims makes transformation singular; automatically expanding"
@@ -195,9 +203,10 @@ class SummaryGraphW(Graphs):
 
 
 class SummaryGraph(SummaryGraphW):
-    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76']):
-        super().__init__(saver, stand_grade, comparison_scale_of_score, scale_txt, comparison_names, graph_name, colors)
+    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76'], stat_title=None, rc_version=None):
+        super().__init__(saver, stand_grade, comparison_scale_of_score, scale_txt, comparison_names, graph_name, colors, stat_title, rc_version)
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def draw(self, *args, **kwargs) -> None:
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH + 2, FigSize.HEIGHT + 12))
         max_score = 1 # Единица чтобы не было предупреждения  "UserWarning: Attempting to set identical low and high ylims makes transformation singular; automatically expanding"
@@ -249,6 +258,11 @@ class SummaryGraph(SummaryGraphW):
 
 
 class SummaryLineGraph(SummaryGraph):
+    def __init__(self, stat_title=None, rc_version=None):
+        self.stat_title = stat_title
+        self.rc_version = rc_version
+        
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def draw(self, *args, **kwargs):
         legend = []
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
@@ -288,11 +302,14 @@ class SummaryLineGraph(SummaryGraph):
 
 
 class ComparisonKernelLineGraph(Graphs):
-    def __init__(self, separate_by_kernel_data, type_test, saver):
+    def __init__(self, separate_by_kernel_data, type_test, saver, stat_title=None, rc_version=None):
         self.separate_by_kernel_data = separate_by_kernel_data
         self.type_test = type_test
         self.saver = saver
+        self.stat_title = stat_title
+        self.rc_version = rc_version
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def draw(self, *args, **kwargs):
         dataframes = [p for p in self.separate_by_kernel_data.values()]
         sfx_tuple = ("x", "y", "z", "w", "e", "t", "u", "i")

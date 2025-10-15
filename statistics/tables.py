@@ -14,6 +14,7 @@ from sorting import SortMainTable, SortUniqueMajorKernel
 from typetest import TypeTest
 
 from logging_conf import main_logger
+from newlogging import task_logger
 
 class Table:
     @abstractmethod
@@ -31,10 +32,12 @@ class MainTable(Table):
     """
         Класс для построения главной сравнительной таблицы
     """
-    def __init__(self, data, saver, columns: list = None, columns_scores: list = ['Рейтинг']):
+    def __init__(self, data, saver, columns: list = None, columns_scores: list = ['Рейтинг'], stat_title=None, rc_version=None):
         self.data = data
         self.saver = saver
         self.columns_scores = columns_scores
+        self.stat_title = stat_title
+        self.rc_version = rc_version
         if not columns:
             self.columns = ['type_test', 'Релиз', 'Ядро', 'Режим защищенности', 'Стенд'] + self.columns_scores
         else:
@@ -55,6 +58,7 @@ class MainTable(Table):
 
         return value_with_link
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def build(self) -> pd.DataFrame:
         # Создаем оъект датафрема (таблицы) на основе наших данных
         
@@ -95,7 +99,7 @@ class MathTable(Table):
     """
         Класс для построения математической сравнительной таблицы
     """
-    def __init__(self, dataframe, saver):
+    def __init__(self, dataframe, saver, stat_title=None, rc_version=None):
         self.dataframe = dataframe
         self.saver = saver
         self.data = dataframe.iloc[:, -1]
@@ -105,6 +109,8 @@ class MathTable(Table):
         self.median = round(np.median(self.data), 3)
         self.std = round(np.std(self.data), 3)
         self.var = round(np.var(self.data), 3)
+        self.stat_title = stat_title
+        self.rc_version = rc_version
 
     def __create_math_array(self) -> np.array:
         return np.array(
@@ -120,7 +126,8 @@ class MathTable(Table):
 
     def __build_dataframe(self) -> pd.DataFrame:
         return pd.DataFrame(data=self.__create_math_array(), columns=["Оценка", "Значение"])
-        
+    
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def build(self):
         df = self.__build_dataframe()
         """
@@ -133,10 +140,13 @@ class MathTable(Table):
 
 
 class SummaryTable(Table):
-    def __init__(self, dataframes):
+    def __init__(self, dataframes, stat_title=None, rc_version=None):
         self.dataframes = dataframes
+        self.stat_title = stat_title
+        self.rc_version = rc_version
         # self.saver = saver
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def build(self):
         df_merged = pd.merge(self.dataframes[0], self.dataframes[1],
                              how="outer",
@@ -157,11 +167,14 @@ class SummaryTableNew(Table):
     """
         TODO доделать, должна быть более универсальная чем SummaryTable
     """
-    def __init__(self, dataframes, score = "Рейтинг"):
+    def __init__(self, dataframes, score = "Рейтинг", stat_title=None, rc_version=None):
         self.dataframes = dataframes
         self.score = score
         self.sfx_tuple = ("x", "y", "z", "w", "e", "t", "u", "i")
+        self.stat_title = stat_title
+        self.rc_version = rc_version
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def build(self):
         sfx_iter = iter(self.sfx_tuple)
         df_merged = reduce(
@@ -186,10 +199,13 @@ class SummaryTableNew(Table):
 
 
 class TableSeparatelyByKernel(Table):
-    def __init__(self, dataframe: pd.DataFrame, score: str):
+    def __init__(self, dataframe: pd.DataFrame, score: str, stat_title=None, rc_version=None):
         self.dataframe = dataframe
         self.score = score if score != None else "Рейтинг"
+        self.stat_title = stat_title
+        self.rc_version = rc_version
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def build(self):
         unique_kernels = list(self.dataframe['Ядро'].unique())
         keys_kernel = SortUniqueMajorKernel.groupby_uniq_kernel(uniq_kernels=unique_kernels)
@@ -208,12 +224,15 @@ class TableSeparatelyByKernel(Table):
     
 
 class BugsTable(Table):
-    def __init__(self, saver, component):
+    def __init__(self, saver, component, stat_title=None, rc_version=None):
         self.saver = saver
         self.component = component
         self.url = 'http://allta.devos.astralinux.ru/rest/api/known-bugs'
         self.response = requests.get(url=self.url)
+        self.stat_title = stat_title
+        self.rc_version = rc_version
 
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def build(self):
         if self.response.status_code == 200:
             data = self.response.json()
@@ -247,12 +266,15 @@ class BugsTable(Table):
 
 
 class Annotations(Table):
-    def __init__(self, saver, component):
+    def __init__(self, saver, component, stat_title=None, rc_version=None):
         self.saver = saver
         self.component = component
         self.url = 'http://allta.devos.astralinux.ru/rest/api/annotations'
         self.response = requests.get(url=self.url)
+        self.stat_title = stat_title
+        self.rc_version = rc_version
     
+    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
     def build(self):
         if self.response.status_code == 200:
             data = self.response.json()

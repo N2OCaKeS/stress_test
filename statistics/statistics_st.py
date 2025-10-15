@@ -15,7 +15,7 @@ from typetest import TypeTest
 from errors import NoDataAvailableForThisTestType, NoBugsFoundForComponent, NoAnnotationsForComponent
 
 from logging_conf import main_logger
-# from newlogging import task_logger
+from newlogging import task_logger
 
 
 class Statistics:
@@ -56,11 +56,12 @@ class BaseStatistics(Statistics):
      def _compare_scores_by_kernel(self, df: pd.DataFrame, type_test: str, stat_rc_vers: str, score=None):
           comparison_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title, stat_rc_vers=stat_rc_vers)
           if self.comparison_kernel_list and type_test in self.comparison_kernel_list:
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score, stat_title=self.stat_title, rc_version=stat_rc_vers)
                     separate_kernel_data = separate_kernel.build()
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data,
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test),
-                                                                                      saver=comparison_separate_kernel_line_graph_saver)
+                                                                                      saver=comparison_separate_kernel_line_graph_saver,
+                                                                                      stat_title=self.stat_title, rc_version=stat_rc_vers)
                     comparison_separate_kernel_line_graph.draw()
                     main_logger.info(f"Отработало  сравнение по ядрам {self.stat_title} - {type_test} (Заданное при вызове класса) {','.join(self.comparison_kernel_list)}")
      
@@ -72,7 +73,7 @@ class BaseStatistics(Statistics):
                     condition = (isinstance(df1, pd.DataFrame) and isinstance(df2, pd.DataFrame)) and (not df1.empty and not df2.empty)
                     if condition:
                          for ind, score_col in enumerate(score_columns):
-                              sum_table = SummaryTableNew(dataframes=[df1, df2], score=score_col)
+                              sum_table = SummaryTableNew(dataframes=[df1, df2], score=score_col, stat_title=self.stat_title, rc_version=stat_rc_vers)
                               result_data = sum_table.build()
                               saver_comparison_graph = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=stat_rc_vers)
                               sum_graph = SummaryGraph(saver=saver_comparison_graph,
@@ -80,7 +81,9 @@ class BaseStatistics(Statistics):
                                                        comparison_scale_of_score=result_data[2],
                                                        scale_txt=result_data[1],
                                                        comparison_names=[comporison_item[0], comporison_item[1]],
-                                                       graph_name=" vs ".join([comporison_item[0], comporison_item[1]]))
+                                                       graph_name=" vs ".join([comporison_item[0], comporison_item[1]]),
+                                                       stat_title=self.stat_title,
+                                                       rc_version=stat_rc_vers)
                               sum_graph.draw(graph_ind=ind, y_label=score_col)
                               main_logger.info(f"Отработало сравнение {self.stat_title} (Заданное при вызове класса)")
 
@@ -97,22 +100,24 @@ class BaseStatistics(Statistics):
                main_logger.exception("Ошибка")
                main_logger.critical(f"{self.stat_title} СТАТИСТИКА НЕ ВЫЛОЖИЛАСЬ!!!!")
      
-     # @task_logger()
+     @task_logger()
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
           main_logger.info("Начало уникального функционала для каждого типа статистики")
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
           saver_graph = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
-          table = MainTable(data=data_for_tables.get(type_test), saver=saver)
+          table = MainTable(data=data_for_tables.get(type_test), saver=saver, stat_title=self.stat_title, rc_version=rc_version)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
-               math_table = MathTable(dataframe=df, saver=saver)
+               math_table = MathTable(dataframe=df, saver=saver, stat_title=self.stat_title, rc_version=rc_version)
                math_table.build()
 
                reversed_df = df.iloc[::-1]
                graph = MainGraph(list_of_score=reversed_df.iloc[:, -1], 
                                    scale_txt=Scale.get_base_scale_text(dataframe=reversed_df), 
                                    type_test=TypeTest.get_type_test(dataframe=df),
-                                   saver=saver_graph)
+                                   saver=saver_graph,
+                                   stat_title=self.stat_title,
+                                   rc_version=rc_version)
                graph.draw()
                main_logger.info("Конец уникального функционала для каждого типа статистики")
                return True, df
@@ -145,18 +150,18 @@ class BaseStatistics(Statistics):
           
           try:
                saver_bugs_table = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
-               bugs_table = BugsTable(saver=saver_bugs_table, component=self.stat_title)
+               bugs_table = BugsTable(saver=saver_bugs_table, component=self.stat_title, stat_title=self.stat_title, rc_version=stat_rc_version)
                bugs_table.build()
           except NoBugsFoundForComponent:
                main_logger.info(f"Не найдено багов для компонента {self.stat_title}")
           try:
                saver_annotations = SaveText(main_folder=self.stat_title, stat_rc_vers=stat_rc_version)
-               annotations = Annotations(saver=saver_annotations, component=self.stat_title)
+               annotations = Annotations(saver=saver_annotations, component=self.stat_title, stat_title=self.stat_title, rc_version=stat_rc_version)
                annotations.build()
           except NoAnnotationsForComponent:
                main_logger.info(f"Не найдено аннотации для компонента {self.stat_title}")
           # Здесь выкладывание в confluence
-          self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
+          # self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 
      # @task_logger
      def create(self):
@@ -199,17 +204,19 @@ class PostgreSQLStatistics(BaseStatistics):
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
           if not type_test == "psql balance":
                return super().unique_functionality(type_test, data_for_tables, rc_version)
-          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=balance_columns_score)
+          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=balance_columns_score, stat_title=self.stat_title, rc_version=rc_version)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
                # Здесь сравнение по ядрам
                for ind, score in enumerate(balance_columns_score):
                     comp_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score, stat_title=self.stat_title, rc_version=rc_version)
                     separate_kernel_data = separate_kernel.build()
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
-                                                                                      saver=comp_separate_kernel_line_graph_saver)
+                                                                                      saver=comp_separate_kernel_line_graph_saver,
+                                                                                      stat_title=self.stat_title, 
+                                                                                      rc_version=rc_version)
                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=balance_columns_score[ind])
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
@@ -233,17 +240,19 @@ class FreeIpaStatistics(BaseStatistics):
                         "Число (в %) непройденных аутен. и авториз. в секунду при макс. кол-ве пользователей",
                         "Рейтинг"]
 
-          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=col_scores)
+          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=col_scores, stat_title=self.stat_title, rc_version=rc_version)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
                # Здесь сравнение по ядрам
                for ind, score in enumerate(col_scores):
                     comp_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score, stat_title=self.stat_title, rc_version=rc_version)
                     separate_kernel_data = separate_kernel.build()
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
-                                                                                      saver=comp_separate_kernel_line_graph_saver)
+                                                                                      saver=comp_separate_kernel_line_graph_saver,
+                                                                                      stat_title=self.stat_title, 
+                                                                                      rc_version=rc_version)
                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=col_scores[ind])
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
@@ -277,18 +286,22 @@ class VirtStatistics(BaseStatistics):
           except KeyError:
                score_cols = ["Рейтинг"]
           table = MainTable(data=data_for_tables.get(type_test), 
-                              saver=saver,
-                              columns=columns,
-                              columns_scores=score_cols)
+                            saver=saver,
+                            columns=columns,
+                            columns_scores=score_cols,
+                            stat_title=self.stat_title, 
+                            rc_version=rc_version)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
                comparison_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
                for ind, item in enumerate(score_cols):
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=item)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=item, stat_title=self.stat_title, rc_version=rc_version)
                     separate_kernel_data = separate_kernel.build()
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
-                                                                                      saver=comparison_separate_kernel_line_graph_saver,)
+                                                                                      saver=comparison_separate_kernel_line_graph_saver,
+                                                                                      stat_title=self.stat_title, 
+                                                                                      rc_version=rc_version)
                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=item, y_lim=True)
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
@@ -321,16 +334,20 @@ class ParsecStatistics(BaseStatistics):
           table = MainTable(data=data_for_tables.get(type_test), 
                             saver=saver,
                             columns=columns,
-                            columns_scores=score_cols)
+                            columns_scores=score_cols,
+                            stat_title=self.stat_title, 
+                            rc_version=rc_version)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
                comparison_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
                for ind, item in enumerate(score_cols):
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=item)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=item, stat_title=self.stat_title, rc_version=rc_version)
                     separate_kernel_data = separate_kernel.build()
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
-                                                                                      saver=comparison_separate_kernel_line_graph_saver,)
+                                                                                      saver=comparison_separate_kernel_line_graph_saver,
+                                                                                      stat_title=self.stat_title, 
+                                                                                      rc_version=rc_version)
                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=item)
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df
@@ -358,7 +375,9 @@ class DockerStatstics(BaseStatistics):
           table = MainTable(data=data_for_tables.get(type_test), 
                             saver=saver,
                             columns=columns,
-                            columns_scores=score_cols)
+                            columns_scores=score_cols,
+                            stat_title=self.stat_title, 
+                            rc_version=rc_version)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
                if type_test == "docker-wa":
@@ -368,7 +387,7 @@ class DockerStatstics(BaseStatistics):
                     #                                                    score_columns=score_cols,
                     #                                                    saver=main_graph_docker_saver)
                     # main_group_inter_graph.draw()
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score_cols)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score_cols, stat_title=self.stat_title, rc_version=rc_version)
                     separate_kernel_data = separate_kernel.build()
                     saver_sum_line_graph = SaveGraph(main_folder=self.stat_title.replace("/", "-"), stat_rc_vers=rc_version)
                     for ind, (kernel, df_sep_by_kernel) in enumerate(separate_kernel_data.items(), start=1):
@@ -385,6 +404,8 @@ class DockerStatstics(BaseStatistics):
                               comparison_names=score_cols,
                               graph_name=f"{kernel}",
                               colors=['#f90829', '#007b7a', '#f9b312'],
+                              stat_title=self.stat_title, 
+                              rc_version=rc_version
                          )
                          line_graph_one_kernel.draw(graph_ind=ind)
                     main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
@@ -404,16 +425,18 @@ class FileSystemStatistics(BaseStatistics):
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
           if not type_test == "CEPH fio":
                return super().unique_functionality(type_test, data_for_tables, rc_version)
-          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=ceph_fio_columns_score)
+          table = MainTable(data=data_for_tables.get(type_test), saver=saver, columns=columns, columns_scores=ceph_fio_columns_score, stat_title=self.stat_title, rc_version=rc_version)
           df = table.build()
           if isinstance(df, pd.DataFrame) and not df.empty:
                for ind, score in enumerate(ceph_fio_columns_score):
                     comp_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score, stat_title=self.stat_title, rc_version=rc_version)
                     separate_kernel_data = separate_kernel.build()
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 
-                                                                                      saver=comp_separate_kernel_line_graph_saver)
+                                                                                      saver=comp_separate_kernel_line_graph_saver,
+                                                                                      stat_title=self.stat_title, 
+                                                                                      rc_version=rc_version)
                     comparison_separate_kernel_line_graph.draw(graph_ind=ind, y_label=ceph_fio_columns_score[ind])
                main_logger.info(f"Конец уникального функционала для {self.__class__.__name__}")
                return True, df

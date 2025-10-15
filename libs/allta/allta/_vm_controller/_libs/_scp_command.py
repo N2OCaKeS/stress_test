@@ -2,6 +2,7 @@ from ..._system_command.SystemCommands import SystemCommands
 import threading
 from .._decorator._logger import logger
 
+
 class _SCP_Command:
     """
     Класс для копирования файлов между локальной системой и виртуальными машинами с помощью SCP.
@@ -32,10 +33,18 @@ class _SCP_Command:
 
     @staticmethod
     @logger
-    def _execute_scp(mode: str, host: str, path_host: str, path_vm: str,
-                     vms_date: dict, task_name: str = 'SCP', username: str = 'u', password: str = '1', **kwargs) -> dict:
+    def _execute_scp(mode: str,
+                    host: str,
+                    path_host: str,
+                    path_vm: str,
+                    vms_date: dict,
+                    task_name: str = 'SCP',
+                    username: str = 'u',
+                    password: str = '1',
+                    **kwargs) -> dict:
         """
-        Выполняет SCP-команду для копирования файлов.
+        Выполняет SCP-команду для копирования файлов с детальной обработкой ошибок
+        и печатью результата в терминал.
         """
         kwargs.setdefault('task_name', f"SCP {mode}")
         kwargs.setdefault('host', host)
@@ -44,6 +53,7 @@ class _SCP_Command:
         try:
             if mode not in ('push', 'pull'):
                 raise ValueError(f"Неизвестный режим копирования: {mode}")
+
             vm_info = vms_date.get(host, {})
             ip = vm_info.get('ip_bridge', '')
             port = vm_info.get('host-port', 22)
@@ -52,30 +62,65 @@ class _SCP_Command:
                 raise ValueError(f"Не указан ip для хоста: {host}")
 
             if mode == 'push':
-                command = f"sudo sshpass -p {password} scp -r -P {port} -o StrictHostKeyChecking=no {path_host} {username}@{ip}:{path_vm}"
-            else:  # mode == 'pull'
-                command = f"sudo sshpass -p {password} scp -r -P {port} -o StrictHostKeyChecking=no {username}@{ip}:{path_vm} {path_host}"
+                command = (
+                    f"sudo sshpass -p {password} scp -r -P {port} "
+                    f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+                    f"{path_host} {username}@{ip}:{path_vm}"
+                )
+            else:
+                command = (
+                    f"sudo sshpass -p {password} scp -r -P {port} "
+                    f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+                    f"{username}@{ip}:{path_vm} {path_host}"
+                )
 
-            output = SystemCommands.check_output_command(command)
+            exit_status, out = SystemCommands.check_output_command_with_returncode(command)
+
+            if exit_status != 0:
+                output_stderr = out
+                output_full = out
+                print(
+                    f"[{host}] Ошибка при выполнении '{command}'"
+                    f"\n\n ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n{output_full}"
+                )
+                return {
+                    'host': host,
+                    'task_name': task_name or 'unknown',
+                    'command': command,
+                    'output': (output_stderr, '\n\n\n', output_full),
+                    'status': 'error',
+                }
+
+            # Успех
+            print(f"[{host}] Команда закончила выполнение: {command}")
             return {
-                "output": output,
-                "status": "OK",
-                "host": host,
-                "task_name": f"SCP {mode}",
-                "command": command
+                'host': host,
+                'task_name': task_name or 'unknown',
+                'command': command,
+                'output': out,
+                'status': 'OK',
             }
+
         except Exception as e:
+            print(
+                f"[{host}] Исключение при подготовке/выполнении SCP '{command}': {e}"
+            )
             return {
-                "output": f"Ошибка выполнения SCP: {str(e)}",
-                "status": "error",
-                "host": host,
-                "task_name": f"SCP {mode}",
-                "command": command
+                'host': host,
+                'task_name': task_name or 'unknown',
+                'command': command,
+                'output': f"Ошибка выполнения SCP: {e}",
+                'status': 'error'
             }
 
     @staticmethod
-    def execute(scp: dict, vms_date: dict, groups: dict = None,
-                username: str = "u", password: str = "1") -> dict:
+    def execute(
+        scp: dict,
+        vms_date: dict,
+        groups: dict = None,
+        username: str = "u",
+        password: str = "1",
+    ) -> dict:
         """
         Выполняет копирование файлов на основе расширенных настроек SCP
         (для каждого хоста или группы — список операций).
@@ -96,8 +141,9 @@ class _SCP_Command:
         threads = []
 
         def worker(mode, host, path_host, path_vm, task_name):
-            result = _SCP_Command._execute_scp(mode, host, path_host, path_vm,
-                                               vms_date, task_name, username, password)
+            result = _SCP_Command._execute_scp(
+                mode, host, path_host, path_vm, vms_date, task_name, username, password
+            )
             log_messages.append(result.get("output", ""))
 
         for target, file_ops in scp.items():
@@ -120,17 +166,29 @@ class _SCP_Command:
 
             # Для каждого хоста в группе или для одиночного хоста
             for host in hosts:
+                if host not in vms_date:
+                    message = (
+                        f"[{host}] ВМ не найдена в vms_date — пропускаю. "
+                        f"Доступные ВМ: {', '.join(vms_date.keys()) or 'нет'}"
+                    )
+                    print(message)
+                    log_messages.append(message)
+                    continue                
                 for op in file_ops:
-                    mode = op.get('mode')
-                    path_host = op.get('path_host')
-                    path_vm = op.get('path_vm')
+                    mode = op.get("mode")
+                    path_host = op.get("path_host")
+                    path_vm = op.get("path_vm")
                     task_name = f"SCP {mode} {host} {path_vm}"
 
                     if not mode or not path_host or not path_vm:
-                        log_messages.append(f"Не хватает параметров для операции на {host}")
+                        log_messages.append(
+                            f"Не хватает параметров для операции на {host}"
+                        )
                         continue
 
-                    thread = threading.Thread(target=worker, args=(mode, host, path_host, path_vm, task_name))
+                    thread = threading.Thread(
+                        target=worker, args=(mode, host, path_host, path_vm, task_name)
+                    )
                     threads.append(thread)
                     thread.start()
 
@@ -138,4 +196,3 @@ class _SCP_Command:
             thread.join()
 
         return {"output": "\n".join(log_messages), "status": "OK"}
-

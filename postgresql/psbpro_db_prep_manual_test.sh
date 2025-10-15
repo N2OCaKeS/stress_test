@@ -30,6 +30,7 @@ sudo rm -rf $DATA_DIR
 sudo mkdir -p "$DATA_DIR"
 sudo chown -R postgres:postgres "$DATA_DIR"
 sudo chmod 700 "$DATA_DIR"
+sudo pdpl-user -i 63 postgres
 
 # Инициализация кластера
 sudo -u postgres ${BIN_PATH}/initdb -D "$DATA_DIR" --auth-local trust --auth-host md5

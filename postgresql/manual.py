@@ -185,20 +185,26 @@ def flame():
     print('Flamegraph done')
 
 
-def set_hdd(part='sdb', fs=args.HDD): 
+def set_hdd(part='sdb', fs=args.HDD, bd='psql'): 
     if fs == 'xfs':
         option = 'f'
     else: option = 'F'
 
-    if not os.path.isdir('/var/lib/postgresql'):
-        os.mkdir('/var/lib/postgresql')
-    else: 
-        cmd('rm -r /var/lib/postgresql')
-        os.mkdir('/var/lib/postgresql')
+    if bd == 'psql':
+        mount_path = '/var/lib/postgresql/'
+        if not os.path.isdir('/var/lib/postgresql'):
+            os.mkdir('/var/lib/postgresql')
+        else: 
+            cmd('rm -r /var/lib/postgresql')
+            os.mkdir('/var/lib/postgresql')
+    elif bd == 'pgpro_on_vm':
+        mount_path = '/VMS'
+        if not os.path.isdir(mount_path):
+            os.mkdir(mount_path)
 
     cmd(f'parted -s /dev/{part} mklabel gpt mkpart primary {fs} 0% 100%')
     cmd(f'mkfs -t {fs} -{option} /dev/{part}1')
-    cmd(f'mount /dev/{part}1 /var/lib/postgresql/')
+    cmd(f'mount /dev/{part}1 {mount_path}')
 
 
 def parsec_disable():
@@ -238,10 +244,11 @@ def create_vms_test_env(mode='s',
     """
     
     VMS = ['testvm1']
-    VMS_DATES = {'testvm1': {'host-port': '22', 
-                            'cpu': '8', 
-                            'ram': '32768',
-                            'ip_bridge': '10.177.103.77'}}
+    VMS_DATES = {VMS: {'host-port': '22', 
+                       'cpu': '8', 
+                       'ram': '32768',
+                       'ip_bridge': '10.177.103.77',
+                       'disk': '200'}}
     tasks = {
         'g_VMS':{
             'get_key':{
@@ -280,7 +287,7 @@ def create_vms_test_env(mode='s',
                 'signal get': ['start_service']
             },
             'psbpro_prep':{
-                'command': 'sudo bash /home/psbpro_db_prep_manual_test.sh vm sdb',
+                'command': 'sudo bash /home/psbpro_db_prep_manual_test.sh vm',
                 'signal set': 'psbpro_prep', 
                 'signal get': ['install_perf']
             },
@@ -329,6 +336,7 @@ def create_vms_test_env(mode='s',
 
 
     install_bd(bd='psqlpro', key=key)
+    set_hdd(part='sda', fs='ext4', bd='pgpro_on_vm')
     from allta import Libvirt, LibvirtManager
     provider = Libvirt()
 

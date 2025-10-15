@@ -57,25 +57,25 @@ class SystemCommands:
         """
         return subprocess.run(command, shell=True)
 
-@staticmethod
-def check_output_command_with_returncode(command: str) -> list[int | str, str]:
-    """
-    Выполняет системную команду и возвращает её код возврата и вывод.
+    @staticmethod
+    def check_output_command_with_returncode(command: str) -> list[int | str, str]:
+        """
+        Выполняет системную команду и возвращает её код возврата и вывод.
 
-    Args:
-        command (str): Команда, которая должна быть выполнена.
+        Args:
+            command (str): Команда, которая должна быть выполнена.
 
-    Returns:
-        list: Массив из двух элементов:
-            - int: Код возврата (0 = успех, не 0 = ошибка)
-            - str: Вывод команды (stdout) или ошибки (stderr), если она была.
-    """
-    result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, universal_newlines=True)
-    output, errors = result.communicate()
-    
-    # Очистка от пустых строк
-    output = os.linesep.join([s for s in output.splitlines() if s])
-    errors = os.linesep.join([s for s in errors.splitlines() if s])
-    
-    return [result.returncode, output if not errors else errors]
+        Returns:
+            list: Массив из двух элементов:
+                - int: Код возврата (0 = успех, не 0 = ошибка)
+                - str: Вывод команды (stdout) или ошибки (stderr), если она была.
+        """
+        result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, universal_newlines=True)
+        output, errors = result.communicate()
+        
+        # Очистка от пустых строк
+        output = os.linesep.join([s for s in output.splitlines() if s])
+        errors = os.linesep.join([s for s in errors.splitlines() if s])
+        
+        return [result.returncode, output if not errors else errors]

@@ -16,7 +16,7 @@ ovpn_test = Test_1(vbox=BOX,
 #print("PROVISION PROVISION PROVISION")
 #ovpn_test.provision()
 #rint("START START START")
-#ovpn_test.start()
+ovpn_test.start()
 
 # vagrant-libvirt.old
 #ovpn_test.vms_destroy()

@@ -1,0 +1,8 @@
+--index http://10.177.103.10:3141/root/release
+--trusted-host 10.177.103.10
+requests
+matplotlib
+numpy
+pandas
+atlassian-python-api
+allta==1.0.16

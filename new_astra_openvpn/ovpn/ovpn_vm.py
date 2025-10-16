@@ -47,7 +47,7 @@ class Ovpn:
             print("ВМ созданы и настроены")
 
     def provision(self):
-        print("Выполняется provision")
+        print("\n\n\n Выполняется provision \n\n\n")
         scp_provision = {
             "g_all": [
                 {
@@ -102,10 +102,10 @@ class Ovpn:
             password=PASSWORD,
             timeout=15,
         )
-        print("Provison выполнен")
+        print("\n\n\n Provison выполнен \n\n\n")
 
     def server_settings(self):
-        print("Настраивается сервер")
+        print("\n\n\n Настраивается сервер \n\n\n")
         cipher = ["grasshopper-cbc", "kuznyechik-cbc"]
         sed_server_settings = {
             "testvm1": [
@@ -129,7 +129,7 @@ class Ovpn:
                         "sudo su -c 'ulimit -u 100000 && "
                         "ulimit -n 100000 && "
                         "ulimit -s 100000 && "
-                        "/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py'"
+                        "/home/u/python/Python-3.12.1/venv/bin/python /home/u/netns_perf.py'"
                     )
                 }
             }
@@ -142,16 +142,17 @@ class Ovpn:
             password=PASSWORD,
             timeout=15,
         )
+        print(f"\n\n\n Сервер настроен \n\n\n")
 
     def start_test(self):
         start_client = {
             "g_clients_group": {
                 "run_perf": {
                     "command": (
-                        "sudo ulimit -u 100000 && "
-                        "sudo ulimit -n 100000 && "
-                        "sudo ulimit -s 100000 && "
-                        "sudo /home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py"
+                        "sudo su -c 'ulimit -u 100000 && "
+                        "ulimit -n 100000 && "
+                        "ulimit -s 100000 && "
+                        "/home/u/python/Python-3.12.1/venv/bin/python /home/u/netns_perf.py'"
                     )
                 }
             }

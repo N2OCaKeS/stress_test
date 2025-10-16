@@ -346,10 +346,7 @@ class AIOPerfVPN:
                 current_count += 1
         return current_count
 
-        # current_count = len([name for name in os.listdir('/sys/class/net') if name.startswith('tun')])
-        # delta = current_count - self.wave_temp
-        # self.wave_temp = current_count
-        # return delta
+
     
 
     def save_wave_result(self, wave_num, active_tunnels):

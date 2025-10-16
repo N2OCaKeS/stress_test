@@ -1,4 +1,7 @@
 from allta import Libvirt, LibvirtManager
+import json
+from pathlib import Path
+from time import sleep
 from ovpn.vm_conf import (
     VMS,
     VMS_DATES,
@@ -16,14 +19,32 @@ class Ovpn:
         self.new_vms_dates = {}
 
     def build(self, rc: str, mode: str):
-        print("Выполняеся сборка ВМ")
-        Libvirt.prepare()
-        box = f"1.8.1.{mode}" if VERSION_OS.startswith("1.8") else f"1.7.5.{mode}"
-        self.new_vms_dates = Libvirt.build(box=box, rc=rc, vms=VMS, vms_dates=VMS_DATES)
-        print("ВМ успешно собраны, начинаю создание снимков")
-        print(self.new_vms_dates)
-        LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Build")
-        print("Снимки созданы")
+        path = Path("vms_dates.txt")
+
+        if path.is_file():
+            print("Ищем существующие ВМ")
+            self.new_vms_dates = json.loads(path.read_text(encoding="utf-8"))
+            print("ВМ найдены, восстанавливаем")
+            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Build")
+            sleep(10)
+            print("ВМ восстановлены")
+
+        else:
+            print("Выполняеся сборка ВМ")
+            Libvirt.prepare()
+            box = f"1.8.1.{mode}" if VERSION_OS.startswith("1.8") else f"1.7.5.{mode}"
+            self.new_vms_dates = Libvirt.build(
+                box=box, rc=rc, vms=VMS, vms_dates=VMS_DATES
+            )
+            print("ВМ успешно собраны, начинаю создание снимков")
+            print(self.new_vms_dates)
+            LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Build")
+            print("Снимки созданы")
+            print("Сохраняем данные о ВМ")
+            with open(path, "w", encoding="UTF-8") as f:
+                json.dump(self.new_vms_dates, f)
+            print("Данные сохранены")
+            print("ВМ созданы и настроены")
 
     def provision(self):
         print("Выполняется provision")
@@ -108,10 +129,10 @@ class Ovpn:
             "testvm1": {
                 "server_settings": {
                     "command": (
-                        "sudo ulimit -u 100000 && "
-                        "sudo ulimit -n 100000 && "
-                        "sudo ulimit -s 100000 && "
-                        "sudo /home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py"
+                        "sudo su -c 'ulimit -u 100000 && "
+                        "ulimit -n 100000 && "
+                        "ulimit -s 100000 && "
+                        "/home/u/python/Python-3.12.1/venv/bin/python /home/u/astra_openvpn/netns_perf.py'"
                     )
                 }
             }

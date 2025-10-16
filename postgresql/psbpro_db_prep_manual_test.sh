@@ -28,6 +28,7 @@ fi
 
 # Удаление старых данных и создание каталога
 sudo rm -rf $DATA_DIR
+sudo rm -R $DATA_DIR
 sudo mkdir -p "$DATA_DIR"
 sudo chown -R postgres:postgres "$DATA_DIR"
 sudo chmod 700 "$DATA_DIR"
@@ -57,6 +58,7 @@ sudo -u postgres ${BIN_PATH}/psql "-p $PORT" -c "ALTER SCHEMA public OWNER TO $U
 # Настройка
 # https://pgtune.fariton.ru/
 sed -i -e 's/md5/trust/g' -e 's/scram-sha-256/trust/g' -e 's/peer/trust/g' "$HBA_CONF"
+echo 'host    all             all             10.177.103.0/24         trust' | sudo tee -a "$HBA_CONF"
 
 if [[ "$1" == "host" ]]; then
     sed -i 's/#ac_enable_maclabels_on_files.*$/ac_enable_maclabels_on_files = true/' "$CONF_DIR"
@@ -94,12 +96,16 @@ elif [[ "$1" == "vm" ]]; then
     sed -i 's/max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/' "$CONF_DIR"
     sed -i 's/max_parallel_workers.*/max_parallel_workers = 8/' "$CONF_DIR"
     sed -i 's/max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/' "$CONF_DIR"
+    sed -i "s/.*listen_addresses.*/listen_addresses = '*'/" "$CONF_DIR"
 else 
     echo "Не выбран режим настройки БД!"
 fi
 
-sudo -u postgres ${BIN_PATH}/pg_ctl -D "$DATA_DIR" -m fast restart
+#sudo -u postgres ${BIN_PATH}/pg_ctl -D "$DATA_DIR" -m fast restart
 sudo systemctl stop ${PG_SERVICE} 
+sleep 2
+sudo kill -SIGINT `ps -aux | grep '/opt/pgpro/ent-17/bin/postgres -p 6000' | head -n 1 | awk '{print$2}'`
+sleep 10
 sudo systemctl start ${PG_SERVICE}
 sudo systemctl status ${PG_SERVICE}
 
@@ -108,6 +114,6 @@ sudo -u postgres ${BIN_PATH}/pgbench -i -h localhost -p 6000 -U $USER -s 100 $DB
 #sudo perf record -g -a /opt/pgpro/ent-17/bin/pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test
 
 
-sudo perf record -g -a &
-PERF_PID=$!
-echo "$PERF_PID" > /home/u/pid
+#sudo perf record -g -a &
+#PERF_PID=$!
+#echo "$PERF_PID" > /home/u/pid

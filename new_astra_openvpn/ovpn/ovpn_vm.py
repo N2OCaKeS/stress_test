@@ -24,6 +24,7 @@ class Ovpn:
         if path.is_file():
             print("Ищем существующие ВМ")
             self.new_vms_dates = json.loads(path.read_text(encoding="utf-8"))
+            print(self.new_vms_dates)
             print("ВМ найдены, восстанавливаем")
             LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Build")
             sleep(10)
@@ -37,7 +38,6 @@ class Ovpn:
                 box=box, rc=rc, vms=VMS, vms_dates=VMS_DATES
             )
             print("ВМ успешно собраны, начинаю создание снимков")
-            print(self.new_vms_dates)
             LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Build")
             print("Снимки созданы")
             print("Сохраняем данные о ВМ")
@@ -48,7 +48,6 @@ class Ovpn:
 
     def provision(self):
         print("Выполняется provision")
-        print(self.new_vms_dates)
         scp_provision = {
             "g_all": [
                 {
@@ -63,7 +62,6 @@ class Ovpn:
                 },
             ]
         }
-
         Libvirt.scp(
             scp_settings=scp_provision,
             vms_dates=self.new_vms_dates,
@@ -96,7 +94,6 @@ class Ovpn:
                 },
             }
         }
-        print(self.new_vms_dates)
         Libvirt.execute(
             commands=provision,
             vms_dates=self.new_vms_dates,

@@ -4,8 +4,8 @@ from os import path
 import argparse
 from new_astra_openvpn.conf import VENV_PATH, BOX, VMS_COUNT, VMS_DATES
 from libs.zefir import UploaderZC
-from libs.libtests import Test_1
-from libs.libtable import Report
+# from libs.libtests import Test_1
+# from libs.libtable import Report
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
@@ -125,8 +125,6 @@ if __name__ == "__main__":
         rp.plot_waves()
         
         # ovpn_test.vms_destroy()
-
-
 
     else: "Тест не найден"
     

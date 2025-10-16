@@ -5,8 +5,6 @@ from ovpn.vm_conf import (
     VMS_GROUP,
     USER,
     PASSWORD,
-    BOX,
-    RC,
     KERNEL,
     TEMPLATE_PATH,
     VERSION_OS,
@@ -14,18 +12,22 @@ from ovpn.vm_conf import (
 
 
 class Ovpn:
+    def __init__(self):
+        self.new_vms_dates = {}
 
-    def build():
+    def build(self, rc: str, mode: str):
         print("Выполняеся сборка ВМ")
         Libvirt.prepare()
-        Libvirt.build(
-            box=BOX, rc=RC, vms=VMS, vms_dates=VMS_DATES, kernel=KERNEL, bridge=True
-        )
+        box = f"1.8.1.{mode}" if VERSION_OS.startswith("1.8") else f"1.7.5.{mode}"
+        self.new_vms_dates = Libvirt.build(box=box, rc=rc, vms=VMS, vms_dates=VMS_DATES)
         print("ВМ успешно собраны, начинаю создание снимков")
+        print(self.new_vms_dates)
         LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Build")
+        print("Снимки созданы")
 
-    def provision():
+    def provision(self):
         print("Выполняется provision")
+        print(self.new_vms_dates)
         scp_provision = {
             "g_all": [
                 {
@@ -43,7 +45,7 @@ class Ovpn:
 
         Libvirt.scp(
             scp_settings=scp_provision,
-            vms_dates=VMS_DATES,
+            vms_dates=self.new_vms_dates,
             vms_groups=VMS_GROUP,
             username=USER,
             password=PASSWORD,
@@ -73,9 +75,10 @@ class Ovpn:
                 },
             }
         }
+        print(self.new_vms_dates)
         Libvirt.execute(
             commands=provision,
-            vms_dates=VMS_DATES,
+            vms_dates=self.new_vms_dates,
             vms_groups=VMS_GROUP,
             username=USER,
             password=PASSWORD,
@@ -83,7 +86,7 @@ class Ovpn:
         )
         print("Provison выполнен")
 
-    def server_settings():
+    def server_settings(self):
         print("Настраивается сервер")
         cipher = ["grasshopper-cbc", "kuznyechik-cbc"]
         sed_server_settings = {
@@ -97,7 +100,7 @@ class Ovpn:
         }
         Libvirt.sed(
             sed_conf=sed_server_settings,
-            vms_dates=VMS_DATES,
+            vms_dates=self.new_vms_dates,
             username=USER,
             password=PASSWORD,
         )
@@ -115,14 +118,14 @@ class Ovpn:
         }
         Libvirt.execute(
             commands=run_server,
-            vms_dates=VMS_DATES,
+            vms_dates=self.new_vms_dates,
             vms_groups=VMS_GROUP,
             username=USER,
             password=PASSWORD,
             timeout=15,
         )
 
-    def start_test():
+    def start_test(self):
         start_client = {
             "g_clients_group": {
                 "run_perf": {
@@ -137,13 +140,13 @@ class Ovpn:
         }
         Libvirt.execute(
             commands=start_client,
-            vms_dates=VMS_DATES,
+            vms_dates=self.new_vms_dates,
             vms_groups=VMS_GROUP,
             username=USER,
             password=PASSWORD,
         )
 
-    def get_logs():
+    def get_logs(self):
         scp_pull = {
             "testvm1": [
                 {
@@ -157,22 +160,33 @@ class Ovpn:
                     "path_vm": "/var/log/iperf_server.log",
                 },
             ],
-            "g_clients_group": [
+        }
+
+        for i in range(2, 6):
+            vm = f"testvm{i}"
+            path_log = f"./results/raw/{vm}"
+            scp_pull[vm] = [
                 {
                     "mode": "pull",
-                    "path_host": "./results/raw/",
+                    "path_host": f"./results/raw/{path_log}",
                     "path_vm": "/var/log/openvpn",
                 },
                 {
                     "mode": "pull",
-                    "path_host": "./results/raw/",
+                    "path_host": f"./results/raw/{path_log}",
                     "path_vm": "/var/log/iperf",
                 },
                 {
                     "mode": "pull",
-                    "path_host": "./results/raw/",
+                    "path_host": f"./results/raw/{path_log}",
                     "path_vm": "/var/log/active",
                 },
-            ],
-        }
-        Libvirt.scp(scp_settings=scp_pull, vms_dates=VMS_DATES, vms_groups=VMS_GROUP, username=USER, password=PASSWORD)
+            ]
+
+        Libvirt.scp(
+            scp_settings=scp_pull,
+            vms_dates=self.new_vms_dates,
+            vms_groups=VMS_GROUP,
+            username=USER,
+            password=PASSWORD,
+        )

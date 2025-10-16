@@ -29,6 +29,8 @@ Pin: release l=extended
 Pin-Priority: 500
 EOF
 
+sudo DEBIAN_FRONTEND=noninteractive apt-get update
+
 # raw results dirs
 mkdir -p results
 mkdir -p results/raw
@@ -40,14 +42,18 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y astra-openvpn-server open
 
 
 # venv packages
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev strace 
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libcurl4-gnutls-dev
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y rustc cargo
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-requests
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y liblzma-dev
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-tools-`uname -r`
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y   build-essential pkg-config \
+  zlib1g-dev libbz2-dev liblzma-dev xz-utils \
+  libssl-dev libreadline-dev libsqlite3-dev \
+  libffi-dev libncurses5-dev \
+  libgdbm-dev libgdbm-compat-dev \
+  libnss3-dev libexpat1-dev \
+  tk-dev uuid-dev \
+  curl wget ca-certificates \
+  rustc cargo \
+  strace \
+  "linux-tools-${SYS_KERNEL}" \
+  python3-requests
 
 #python
 sudo mkdir /home/u/python
@@ -56,13 +62,14 @@ sudo wget -P /home/u/python ftp://10.177.103.10/python/*
 tar -xf Python-3.12.1.tar.xz
 cd Python-3.12.1
 ./configure --enable-optimizations
-make -j 
+make -j
 sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-cd ${CPATH}
+cd /home/u/git/stress_test/new_astra_openvpn/
 python3.12 -m pip install --upgrade pip
-python3.12 -m pip install -r ${CPATH}/req.txt
-#if [[ $? != 0 ]]; then
-#    python3.12 -m pip install -r requirements.txt
+python -m pip install -r req.txt
+if [[ $? != 0 ]]; then
+    python -m pip install -r req.txt
+fi

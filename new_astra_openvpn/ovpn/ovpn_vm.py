@@ -145,6 +145,7 @@ class Ovpn:
         print()
 
     def start_test(self):
+        print("\n\n\n Запускаем тест \n\n\n")
         start_client = {
             "g_clients_group": {
                 "run_perf": {
@@ -164,8 +165,10 @@ class Ovpn:
             username=USER,
             password=PASSWORD,
         )
+        print("\n\n\n Тест выполнен \n\n\n")
 
     def get_logs(self):
+        print("\n\n\n Получаем логи \n\n\n")
         scp_pull = {
             "testvm1": [
                 {
@@ -209,3 +212,4 @@ class Ovpn:
             username=USER,
             password=PASSWORD,
         )
+        print("\n\n\n Логи получены \n\n\n")

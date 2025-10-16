@@ -10,6 +10,7 @@ DATA_DIR="/var/lib/pgpro/ent-${PG_VERSION}/data"
 CONF_DIR="${DATA_DIR}/postgresql.conf" 
 HBA_CONF="${DATA_DIR}/pg_hba.conf"  
 BIN_PATH="/opt/pgpro/ent-${PG_VERSION}/bin/" 
+PG_SERVICE="postgrespro-ent-${PG_VERSION}.service"
 STORAGE="sdb"
 
 
@@ -98,8 +99,15 @@ else
 fi
 
 sudo -u postgres ${BIN_PATH}/pg_ctl -D "$DATA_DIR" -m fast restart
-
+sudo systemctl stop ${PG_SERVICE} 
+sudo systemctl start ${PG_SERVICE}
+sudo systemctl status ${PG_SERVICE}
 
 sudo -u postgres ${BIN_PATH}/pgbench -i -h localhost -p 6000 -U $USER -s 100 $DB_NAME
 
 #sudo perf record -g -a /opt/pgpro/ent-17/bin/pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test
+
+
+sudo perf record -g -a &
+PERF_PID=$!
+echo "$PERF_PID" > /home/u/pid

@@ -292,10 +292,15 @@ def create_vms_test_env(mode='s',
                 'signal set': 'install_perf', 
                 'signal get': ['start_service']
             },
+        }
+    }
+
+    psbpro_prep = {
+        'g_VMS':{
             'psbpro_prep':{
                 'command': f'sudo bash /home/{user}/psbpro_db_prep_manual_test.sh vm',
                 'signal set': 'psbpro_prep', 
-                'signal get': ['install_perf']
+                'signal get': ''
             },
         }
     }
@@ -353,6 +358,7 @@ def create_vms_test_env(mode='s',
     if provider.check(VMS, VMS_DATES) == 0:
         provider.scp(scp_settings=cp_prep_file, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        provider.execute(commands=psbpro_prep, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         cmd('sudo /opt/pgpro/ent-17/bin/pgbench -h %s -p 6000 -U postgres -t 1000 -j 30 -c 30 test' % VMS_DATES['testvm1']['ip_bridge'])
         provider.execute(commands=kill_perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})

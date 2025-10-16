@@ -100,7 +100,7 @@ class BaseStatistics(Statistics):
                main_logger.exception("Ошибка")
                main_logger.critical(f"{self.stat_title} СТАТИСТИКА НЕ ВЫЛОЖИЛАСЬ!!!!")
      
-     @task_logger()
+     # @task_logger()
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
           main_logger.info("Начало уникального функционала для каждого типа статистики")
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
@@ -125,6 +125,7 @@ class BaseStatistics(Statistics):
                main_logger.info("Конец уникального функционала для каждого типа статистики")
                return False, None
      
+     @task_logger()
      def _create_single_stat(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None):
           parse = MainParser(pages_ids=all_pages, CP=confluence_obj.CP, parser=self.score_parser)
           data_for_tables, d_keys = parse.find_data()
@@ -163,7 +164,7 @@ class BaseStatistics(Statistics):
           # Здесь выкладывание в confluence
           # self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 
-     # @task_logger
+     # @task_logger()
      def create(self):
           all_pages, rc_all_pages, confluence_obj = self._get_pages()
           if not all_pages or not rc_all_pages:

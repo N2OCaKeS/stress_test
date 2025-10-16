@@ -123,7 +123,7 @@ class Public:
         # TODO Дописать info файл
         with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
             header_table_temp = file.read()
-            header_table = header_table_temp.format(av=f"{info_dct.get("astra_version")}({info_dct.get("astra_mode")})",
+            header_table = header_table_temp.format(av=f"{info_dct.get('astra_version')}({info_dct.get('astra_mode')})",
                                                     kernel=info_dct.get("kernel_version"),
                                                     package_name='astra-freeipa-server',
                                                     package_vers=info_dct.get("package_version"),

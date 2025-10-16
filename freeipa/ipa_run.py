@@ -9,8 +9,9 @@ from libs.libipa import (remote_exec,
                          put_system_info_in_file, 
                          upload_results_to_ftp)
 from ipa_conf import HOSTS, USER, INFO_FILENAME, REPORT_PATH
-from libs.zefir import UploaderZC
+# from libs.zefir import UploaderZC
 from ipa_tests import AutentificationTest, CreateUsersTest
+from libs.libpublic import Public
 
 
 
@@ -51,34 +52,43 @@ parser.add_argument('-sn', '--stand-num',
                     choices=['1',
                              '2',
                              '3',
-                             '4'],
+                             '4',
+                             '5',
+                             '6',
+                             '7',
+                             '8',
+                             '9',
+                             '10',
+                             '11',
+                             '12',
+                             '13'],
                     required=True,
                     help='stand num',
                     dest='STAND')
 
-parser.add_argument('-fti', '--folder-tree-id',
-                    action='store',
-                    required=True,
-                    help='folder-tree-id',
-                    dest='FTI')
+# parser.add_argument('-fti', '--folder-tree-id',
+#                     action='store',
+#                     required=True,
+#                     help='folder-tree-id',
+#                     dest='FTI')
 
-parser.add_argument('-tcyc', '--test-cycle-name',
-                    action='store',
-                    required=True,
-                    help='test-cycle-name',
-                    dest='TCYC')
+# parser.add_argument('-tcyc', '--test-cycle-name',
+#                     action='store',
+#                     required=True,
+#                     help='test-cycle-name',
+#                     dest='TCYC')
 
-parser.add_argument('-tcas', '--test-case-name',
-                    action='store',
-                    required=True,
-                    help='test-case-name',
-                    dest='TCAS')
+# parser.add_argument('-tcas', '--test-case-name',
+#                     action='store',
+#                     required=True,
+#                     help='test-case-name',
+#                     dest='TCAS')
 
-parser.add_argument('-ba', '--basic-auth',
-                    action='store',
-                    required=True,
-                    help='basic-auth',
-                    dest='BA')
+# parser.add_argument('-ba', '--basic-auth',
+#                     action='store',
+#                     required=True,
+#                     help='basic-auth',
+#                     dest='BA')
 
 parser.add_argument('-tcv', '--test-cycle-version',
                     action='store',
@@ -101,19 +111,19 @@ if __name__ == "__main__":
     time_start_script = datetime.now()
     print("Hello")
 
-    uzs = UploaderZC(folder_tree_id=args.FTI,
-                 test_cycle_name=args.TCYC,
-                 test_case_name=args.TCAS,
-                 basic_auth=args.BA,
-                 test_cycle_version=args.TCV,
-                 token=args.TOKEN,
-                 username=args.USER,
-                 conf_space=args.SPACE,
-                 conf_parent_page=args.PPAGE,
-                 conf_new_page_name=args.NPAGE,
-                 grade_stand=args.STAND)
+    # uzs = UploaderZC(folder_tree_id=args.FTI,
+    #              test_cycle_name=args.TCYC,
+    #              test_case_name=args.TCAS,
+    #              basic_auth=args.BA,
+    #              test_cycle_version=args.TCV,
+    #              token=args.TOKEN,
+    #              username=args.USER,
+    #              conf_space=args.SPACE,
+    #              conf_parent_page=args.PPAGE,
+    #              conf_new_page_name=args.NPAGE,
+    #              grade_stand=args.STAND)
     
-    uzs.upload_test_cycle_status('progress')
+    # uzs.upload_test_cycle_status('progress')
 
     """
         Ининциализация КД
@@ -127,7 +137,7 @@ if __name__ == "__main__":
     out = remote_cmd("ip a", HOSTS['server']['ip'])
     print(out)
     sleep(15)
-    remote_put_file(HOSTS['server']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
+    # remote_put_file(HOSTS['server']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_init_dc.py', "ipa_init_dc.py")
     remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/prepare.sh', "prepare.sh")
@@ -137,26 +147,26 @@ if __name__ == "__main__":
     """
         Инициализация клиента
     """
-    # Ждем пока КД перезагрузится
+    # # Ждем пока КД перезагрузится
     while host_is_available("server") == False:
         print("\033[91mКД пока не доступен по ssh!\033[0m")
         sleep(300)
     
-    if host_is_available("clients") == False:
-        sleep(120)
-        if host_is_available('clients') == False:
-            print("\033[91mКлиент не доступен по ssh!\033[0m")
-            exit()
+    # if host_is_available("clients") == False:
+    #     sleep(120)
+    #     if host_is_available('clients') == False:
+    #         print("\033[91mКлиент не доступен по ssh!\033[0m")
+    #         exit()
 
-    out_rep = remote_cmd("ip a", HOSTS['clients']['ip'])
-    print(out_rep)
-    sleep(300)
+    # out_rep = remote_cmd("ip a", HOSTS['clients']['ip'])
+    # print(out_rep)
+    # sleep(300)
     
-    # Копируем инициализирующие скрипты по sftp и запускаем
-    remote_put_file(HOSTS['clients']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
-    remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
-    remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_init_client.py', "ipa_init_client.py")
-    remote_exec("sudo python3 ipa_init_client.py", 'clients')
+    # # Копируем инициализирующие скрипты по sftp и запускаем
+    # # remote_put_file(HOSTS['clients']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
+    # remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
+    # remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_init_client.py', "ipa_init_client.py")
+    # remote_exec("sudo python3 ipa_init_client.py", 'clients')
     """
         Запускаем тест
     """
@@ -222,9 +232,16 @@ if __name__ == "__main__":
 
     # upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/ipa_report.txt', f'{args.TCYC}_ipa_report.txt')
 
-    uzs.public = True
-    uzs.total_rating = total_rating
-    # uzs.statistics = True
-    uzs.upload_test_cycle_status(zefir_status='pass')
+    # uzs.public = True
+    # uzs.total_rating = total_rating
+    # # uzs.statistics = True
+    # uzs.upload_test_cycle_status(zefir_status='pass')
+    public = Public(username=args.USER,
+                    token=args.TOKEN,
+                    conf_space=args.SPACE,
+                    conf_parent_page=args.PPAGE,
+                    conf_new_page_name=args.NPAGE,
+                    grade_stand=args.STAND)
+    public.run_publish()
 
         

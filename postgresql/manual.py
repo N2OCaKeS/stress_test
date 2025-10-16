@@ -308,7 +308,7 @@ def create_vms_test_env(mode='s',
     perf_task = {
         'g_VMS':{
             'start_perf':{
-                'command': f'(sudo perf record -g -a &); PERF_PID=$!; echo "$PERF_PID" > /home/{user}/pid',
+                'command': f'sudo nohup perf record -g -a -o /home/{user}/perf.data > /dev/null 2>&1 &',
                 'signal set': 'start_perf', 
                 'signal get': ''
             },
@@ -318,8 +318,13 @@ def create_vms_test_env(mode='s',
     kill_perf_task = {
         'g_VMS':{
             'kill_perf':{
-                'command': f'sudo kill -SIGINT $(cat /home/{user}/pid)',
+                'command': f'sudo pkill perf || true',
                 'signal set': 'kill_perf', 
+                'signal get': ''
+            },
+            'chmod':{
+                'command': f'sleep 30 && sudo chmod -R 777 /home/{user}/perf.data',
+                'signal set': 'chmod', 
                 'signal get': ''
             },
         }
@@ -347,7 +352,7 @@ def create_vms_test_env(mode='s',
 
 
     install_bd(bd='psqlpro', key=key)
-    set_hdd(part='sda', fs='ext4', bd='pgpro_on_vm')
+    set_hdd(part='sdb', fs='ext4', bd='pgpro_on_vm')
     from allta import Libvirt, LibvirtManager
     provider = Libvirt()
 
@@ -361,7 +366,8 @@ def create_vms_test_env(mode='s',
         provider.scp(scp_settings=cp_prep_file, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=tasks, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=psbpro_prep, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
-        #provider.execute(commands=perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        provider.execute(commands=perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
+        print('Start pgbench')
         cmd('sudo /opt/pgpro/ent-17/bin/pgbench -h %s -p 6000 -U postgres -t 1000 -j 30 -c 30 test' % VMS_DATES['testvm1']['ip_bridge'])
         provider.execute(commands=kill_perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.scp(scp_settings=cp_perf_data, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})

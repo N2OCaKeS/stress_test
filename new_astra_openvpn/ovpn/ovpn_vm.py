@@ -61,17 +61,17 @@ class Ovpn:
                 "wget": {
                     "command": "wget -P /home/u/ ftp://10.177.103.10/openvpn/ovpn.subnet.tar.gz",
                     "signal set": "wget",
-                    "signal get": "provision",
+                    "signal get": ["provision"],
                 },
                 "unpack tar": {
                     "command": "tar -xzvf ovpn.subnet.tar.gz > /dev/null 2>&1 ",
                     "signal set": "unpack",
-                    "signal get": "wget",
+                    "signal get": ["wget"],
                 },
                 "cp tar config to etc": {
                     "command": "sudo cp -r /home/u/openvpn /etc/",
                     "signal set": "",
-                    "signal get": "unpack",
+                    "signal get": ["unpack"],
                 },
             }
         }

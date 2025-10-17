@@ -62,7 +62,7 @@ class TablePackageExtractor:
             testrun_logger.warning(f"Ошибка запроса при получении журнала изменений из {changelog_url}: {e}")
         except Exception as e:
             testrun_logger.warning(f"Неожиданная ошибка обработки журнала изменений от {changelog_url}: {e}")
-    
+
     def is_loaded(self):
         return bool(self.changelog_html) and bool(self.soup.find())
     
@@ -71,7 +71,8 @@ class TablePackageExtractor:
             return set()
         
         try:
-            section = self.soup.find('a', {'name': section_name})
+            section = self.soup.find('a', {'name': section_name}) or self.soup.find('h2', string=section_name)
+            
             if not section:
                 return set()
             

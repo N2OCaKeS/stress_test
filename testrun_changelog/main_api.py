@@ -16,7 +16,7 @@ def get_components_for_testrun_by_changelog(astra_linux_build_version: str, firs
 
         controller = RepositoryAnalysisController()
         for repo in filtered_repo:
-            repo_config = RepositoryConfig(repo_url=repo, tables_to_process=['Added_binaries', 'Changelog', 'Upgraded_binaries'])
+            repo_config = RepositoryConfig(repo_url=repo, tables_to_process=['Added_binaries', 'Changelog', 'Upgraded_binaries', 'Обновленные бинарные пакеты', 'Изменения в пакетах (changelog для обновленных пакетов)', 'Обновленные бинарные пакеты'])
             controller.add_repository(repo_config)
         
         results = controller.run_analysis(include_components=first_level_dependencies, ret_groups_with_pkgs=return_dct_component_with_packages)

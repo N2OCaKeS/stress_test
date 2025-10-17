@@ -57,7 +57,7 @@ def del_user(user_id):
         # return (username, False)
 
 def main():
-    for user_count in range(USER_CREATE_START, USER_CREATE_MAX, USER_CREATE_STEP):
+    for user_count in range(USER_CREATE_START, USER_CREATE_MAX + USER_CREATE_STEP, USER_CREATE_STEP):
         start_total = time.time()
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             future_to_user = {

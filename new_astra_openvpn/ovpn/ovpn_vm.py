@@ -26,8 +26,8 @@ class Ovpn:
             self.new_vms_dates = json.loads(path.read_text(encoding="utf-8"))
             print(self.new_vms_dates)
             print("ВМ найдены, восстанавливаем")
-            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Build")
-            # LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
+            # LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Build")
+            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
             sleep(10)
             print("ВМ восстановлены")
         else:

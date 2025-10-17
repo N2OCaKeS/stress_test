@@ -26,8 +26,8 @@ class Ovpn:
             self.new_vms_dates = json.loads(path.read_text(encoding="utf-8"))
             print(self.new_vms_dates)
             print("ВМ найдены, восстанавливаем")
-            # LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Build")
-            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
+            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Build")
+            # LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
             sleep(10)
             print("ВМ восстановлены")
         else:
@@ -57,7 +57,14 @@ class Ovpn:
                     "path_host": f"{TEMPLATE_PATH}/netns_perf.py",
                     "path_vm": "/home/u/",
                 },
-            ]
+            ],
+            "g_clients_group": [
+                {
+                    "mode": "push",
+                    "path_host": f"{TEMPLATE_PATH}/vpn.sh",
+                    "path_vm": "/home/u/",
+                },
+            ],
         }
         Libvirt.scp(
             scp_settings=scp_provision,
@@ -190,17 +197,17 @@ class Ovpn:
             scp_pull[vm] = [
                 {
                     "mode": "pull",
-                    "path_host": f"./results/raw/{path_log}",
+                    "path_host": f"{path_log}",
                     "path_vm": "/var/log/openvpn",
                 },
                 {
                     "mode": "pull",
-                    "path_host": f"./results/raw/{path_log}",
+                    "path_host": f"{path_log}",
                     "path_vm": "/var/log/iperf",
                 },
                 {
                     "mode": "pull",
-                    "path_host": f"./results/raw/{path_log}",
+                    "path_host": f"{path_log}",
                     "path_vm": "/var/log/active",
                 },
             ]

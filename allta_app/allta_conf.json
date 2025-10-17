@@ -35,7 +35,8 @@
         "1.8.3.6": "1.8.3.6",
         "1.8.3.7": "1.8.3.7",
         "1.8.3.UU.1.1": "1.8.3.8",
-        "1.8.4.24": "1.8.4.24"
+        "1.8.4.24": "1.8.4.24",
+        "1.8.4.42": "1.8.4.42"
     },
     "rc_list": [
         "1.7.5.UU.1.7",
@@ -62,7 +63,8 @@
         "1.8.3.6",
         "1.8.3.7",
         "1.8.3.UU.1.1",
-        "1.8.4.24"
+        "1.8.4.24",
+        "1.8.4.42"
     ],
     "releases_list": [
         "1.7.1",
@@ -128,7 +130,8 @@
         "1.8.3.6",
         "1.8.3.7",
         "1.8.3.UU.1.1",
-        "1.8.4.24"
+        "1.8.4.24",
+        "1.8.4.42"
     ],
     "cycle_tree_index": {
         "1.7.1": "2947",
@@ -214,6 +217,7 @@
         "1.8.3.UU.1.1": "10933",
         "1.8.4": "11194",
         "1.8.4.24": "11195",
+        "1.8.4.42": "11384",
         "altlinux-5.10": "2982",
         "debian10": "2967",
         "debian10-5.15": "2974",
@@ -253,7 +257,8 @@
         "1.8.3.6",
         "1.8.3.7",
         "1.8.3.UU.1.1",
-        "1.8.4.24"
+        "1.8.4.24",
+        "1.8.4.42"
     ],
     "cz_comm": {
         "stand1": {
@@ -281,7 +286,8 @@
             "1.8.3.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.204\"                 -l ru_RU.UTF-8 startdisk restore LowServer-183rc6 nvme0n1",
             "1.8.3.7": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.204\"                 -l ru_RU.UTF-8 startdisk restore LowServer-183rc7 nvme0n1",
             "1.8.3.UU.1.1": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.204\"                 -l ru_RU.UTF-8 startdisk restore LowServer-183UU1rc1 nvme0n1",
-            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.204\"                 -l ru_RU.UTF-8 startdisk restore LowServer-184rc24 nvme0n1"
+            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.204\"                 -l ru_RU.UTF-8 startdisk restore LowServer-184rc24 nvme0n1",
+            "1.8.4.42": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.204\"                 -l ru_RU.UTF-8 startdisk restore LowServer-184rc42 nvme0n1"
         },
         "stand4": {
             "1.7.5": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-175 nvme0n1",
@@ -301,6 +307,7 @@
             "1.8.3.7": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-183rc7 nvme0n1",
             "1.8.3.UU.1.1": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-183UU1rc1 nvme0n1",
             "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-184rc24 nvme0n1",
+            "1.8.4.42": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-184rc42 nvme0n1",
             "debian12": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.203\"                 -l ru_RU.UTF-8 startdisk restore MiddleServer-debian12 nvme0n1"
         },
         "stand5": {
@@ -329,7 +336,8 @@
             "1.7.8.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.206\"                 -l ru_RU.UTF-8 startdisk restore LowServer2-178rc6 nvme0n1",
             "1.7.9.25": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.206\"                 -l ru_RU.UTF-8 startdisk restore LowServer2-179rc25 nvme0n1",
             "1.8.1.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.206\"                 -l ru_RU.UTF-8 startdisk restore LowServer2-181rc6 nvme0n1",
-            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.206\"                 -l ru_RU.UTF-8 startdisk restore LowServer2-184rc24 nvme0n1"
+            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.206\"                 -l ru_RU.UTF-8 startdisk restore LowServer2-184rc24 nvme0n1",
+            "1.8.4.42": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.206\"                 -l ru_RU.UTF-8 startdisk restore LowServer2-184rc42 nvme0n1"
         },
         "stand11": {
             "1.7.5": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.207\"                 -l ru_RU.UTF-8 startdisk restore LowServer3-175 nvme0n1",
@@ -337,7 +345,8 @@
             "1.7.8.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.207\"                 -l ru_RU.UTF-8 startdisk restore LowServer3-178rc6 nvme0n1",
             "1.7.9.25": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.207\"                 -l ru_RU.UTF-8 startdisk restore LowServer3-179rc25 nvme0n1",
             "1.8.1.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.207\"                 -l ru_RU.UTF-8 startdisk restore LowServer3-181rc6 nvme0n1",
-            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.207\"                 -l ru_RU.UTF-8 startdisk restore LowServer3-184rc24 nvme0n1"
+            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.207\"                 -l ru_RU.UTF-8 startdisk restore LowServer3-184rc24 nvme0n1",
+            "1.8.4.42": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.207\"                 -l ru_RU.UTF-8 startdisk restore LowServer3-184rc42 nvme0n1"
         },
         "stand12": {
             "1.7.5": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.208\"                 -l ru_RU.UTF-8 startdisk restore LowServer4-175 nvme0n1",
@@ -345,7 +354,8 @@
             "1.7.8.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.208\"                 -l ru_RU.UTF-8 startdisk restore LowServer4-178rc6 nvme0n1",
             "1.7.9.25": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.208\"                 -l ru_RU.UTF-8 startdisk restore LowServer4-179rc25 nvme0n1",
             "1.8.1.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.208\"                 -l ru_RU.UTF-8 startdisk restore LowServer4-181rc6 nvme0n1",
-            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.208\"                 -l ru_RU.UTF-8 startdisk restore LowServer4-184rc24 nvme0n1"
+            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.208\"                 -l ru_RU.UTF-8 startdisk restore LowServer4-184rc24 nvme0n1",
+            "1.8.4.42": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.208\"                 -l ru_RU.UTF-8 startdisk restore LowServer4-184rc42 nvme0n1"
         },
         "stand13": {
             "1.7.5": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                 -l ru_RU.UTF-8 startdisk restore LowServer5-175 nvme0n1",
@@ -353,7 +363,8 @@
             "1.7.8.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                 -l ru_RU.UTF-8 startdisk restore LowServer5-178rc6 nvme0n1",
             "1.7.9.25": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                 -l ru_RU.UTF-8 startdisk restore LowServer5-179rc25 nvme0n1",
             "1.8.1.6": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                 -l ru_RU.UTF-8 startdisk restore LowServer5-181rc6 nvme0n1",
-            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                 -l ru_RU.UTF-8 startdisk restore LowServer5-184rc24 nvme0n1"
+            "1.8.4.24": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                 -l ru_RU.UTF-8 startdisk restore LowServer5-184rc24 nvme0n1",
+            "1.8.4.42": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                 -l ru_RU.UTF-8 startdisk restore LowServer5-184rc42 nvme0n1"
         }
     },
     "kernels": [
@@ -440,6 +451,7 @@
         "pkg_path_1.8.3.7": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.3/1.8.3.7/installation/dists/1.8_x86-64/main/binary-amd64/Packages",
         "pkg_path_1.8.3.UU.1.1": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.3/1.8.3.8/installation/dists/1.8_x86-64/main/binary-amd64/Packages",
         "pkg_path_1.8.4.24": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.4/1.8.4.24/installation/dists/1.8_x86-64/main/binary-amd64/Packages",
+        "pkg_path_1.8.4.42": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.4/1.8.4.42/installation/dists/1.8_x86-64/main/binary-amd64/Packages",
         "vers_path_1.7.0": "https://releases.devos.astralinux.ru/frozen/1.7/1.7.0/1.7.0.18/base-repository/dists/1.7_x86-64/Release",
         "vers_path_1.7.1": "https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/1.7.1.8/base-repository/dists/1.7_x86-64/Release",
         "vers_path_1.7.2": "https://releases.devos.astralinux.ru/frozen/1.7/1.7.2/1.7.2.5/base-repository/dists/1.7_x86-64/Release",
@@ -475,6 +487,7 @@
         "vers_path_1.8.3.6": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.3/1.8.3.6/installation/dists/1.8_x86-64/Release",
         "vers_path_1.8.3.7": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.3/1.8.3.7/installation/dists/1.8_x86-64/Release",
         "vers_path_1.8.3.UU.1.1": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.3/1.8.3.8/installation/dists/1.8_x86-64/Release",
-        "vers_path_1.8.4.24": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.4/1.8.4.24/installation/dists/1.8_x86-64/Release"
+        "vers_path_1.8.4.24": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.4/1.8.4.24/installation/dists/1.8_x86-64/Release",
+        "vers_path_1.8.4.42": "https://releases.devos.astralinux.ru/frozen/1.8/1.8.4/1.8.4.42/installation/dists/1.8_x86-64/Release"
     }
 }

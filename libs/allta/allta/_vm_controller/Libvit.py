@@ -186,93 +186,116 @@ class Libvirt(_VirtualMashines):
         Returns:
             int: Код завершения выполнения.
         """
-
+        def _normalize_signal_get(raw):
+            if raw is None or raw == "":
+                return None
+            if isinstance(raw, str):
+                return [raw]
+            if isinstance(raw, list):
+                return raw[:]
+            return [str(raw)]
 
         threads = []
 
         def _threaded_execution(host: str, task_name: str, task: dict, username: str, password: str):
+            sig_get = _normalize_signal_get(task.get('signal get'))
+            sig_set = task.get('signal set')
+
             if task_name.lower() == "reboot":
-                # Для задачи "reboot" для одиночного хоста вызываем reboot_vm,
-                # передавая signal_get и ready_signal
                 reboot_status = reboot.reboot_vm(
                     host, vms_dates, username, password,
-                    signal_get=task.get('signal get'),
-                    ready_signal=task.get('signal set')
+                    signal_get=sig_get,
+                    ready_signal=sig_set
                 )
                 if not reboot_status:
                     print(f"Перезагрузка {host} не удалась.")
-                    return
+                return
 
-            else:
-                ssh_command.cmd(
+            # per-task nowait
+            if bool(task.get("nowait", False)):
+                nwt = task.get("nowait_timeout", 30)
+                try:
+                    nwt = int(nwt)
+                except Exception:
+                    nwt = 30
+
+                ssh_command.cmd_detach(
                     host=host,
                     command=task['command'],
                     username=username,
                     password=password,
                     vm_dates=vms_dates,
-                    signal_set=task.get('signal set'),
-                    signal_get=task.get('signal get'),
+                    signal_set=sig_set,
+                    signal_get=sig_get,   # None -> не ждём сигнал в _SSH_Command
                     task_name=task_name,
-                    time_out=timeout
+                    time_out=timeout,
+                    nowait_timeout=nwt,
                 )
+                return
 
-        # Итерация по командам
+            # обычный синхронный путь
+            ssh_command.cmd(
+                host=host,
+                command=task['command'],
+                username=username,
+                password=password,
+                vm_dates=vms_dates,
+                signal_set=sig_set,
+                signal_get=sig_get,
+                task_name=task_name,
+                time_out=timeout,
+            )
+
+        # Разворачиваем команды по целям
         for target, tasks in commands.items():
             if target.startswith("g_"):
-                # Команды для группы ВМ
                 group_name = target[2:]
                 if vms_groups and group_name in vms_groups:
                     for task_name, task in tasks.items():
                         if task_name.lower() == "reboot":
-                            # Для задачи reboot для группы вызываем reboot_group,
-                            # передавая signal_get и ready_signal
                             def group_worker():
                                 reboot.reboot_group(
                                     vms_groups[group_name], vms_dates, username, password,
-                                    signal_get=task.get('signal get'),
+                                    signal_get=_normalize_signal_get(task.get('signal get')),
                                     ready_signal=task.get('signal set')
                                 )
-                            thread = threading.Thread(target=group_worker)
-                            threads.append(thread)
-                            thread.start()
+                            t = threading.Thread(target=group_worker)
+                            threads.append(t)
+                            t.start()
                         else:
                             for host in vms_groups[group_name]:
-                                thread = threading.Thread(
+                                t = threading.Thread(
                                     target=_threaded_execution,
                                     args=(host, task_name, task, username, password)
                                 )
-                                threads.append(thread)
-                                thread.start()
+                                threads.append(t)
+                                t.start()
                 else:
                     print(f"Группа '{group_name}' не найдена в vms_groups.")
             else:
-                # Команды для отдельного хоста
                 host = target
                 for task_name, task in tasks.items():
                     if task_name.lower() == "reboot":
-                        # Для одиночного хоста с задачей "reboot" вызываем reboot_vm,
-                        # передавая signal_get и ready_signal
-                        thread = threading.Thread(
+                        t = threading.Thread(
                             target=lambda: reboot.reboot_vm(
                                 host, vms_dates, username, password,
-                                signal_get=task.get('signal get'),
+                                signal_get=_normalize_signal_get(task.get('signal get')),
                                 ready_signal=task.get('signal set')
                             )
                         )
-                        threads.append(thread)
-                        thread.start()
+                        threads.append(t)
+                        t.start()
                     else:
-                        thread = threading.Thread(
+                        t = threading.Thread(
                             target=_threaded_execution,
                             args=(host, task_name, task, username, password)
                         )
-                        threads.append(thread)
-                        thread.start()
+                        threads.append(t)
+                        t.start()
 
-        for thread in threads:
-            thread.join()
+        for t in threads:
+            t.join()
 
-        # Удаление всех сигналов после выполнения команд
         signals.remove_all()
         return 0
     

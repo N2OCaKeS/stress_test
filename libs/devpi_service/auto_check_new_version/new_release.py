@@ -7,7 +7,7 @@ import sys
 import configparser
 import json
 
-DEVPI_INDEX_URL = 'http://localhost:3141/root/release'
+DEVPI_INDEX_URL = 'http://10.177.103.10:3141/root/release'
 
 def cmd(command, cwd=None):
     subprocess.run(command, shell=True, check=True, cwd=cwd)

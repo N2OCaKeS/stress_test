@@ -1,9 +1,10 @@
 from ..._decorators.Decorators import BaseDecorators
 from ._signals import _Signals as signals
-import paramiko
+import paramiko, threading, time, shlex
 
 # Новый декоратор для логирования
 from .._decorator._logger import logger
+
 
 class _SSH_Command:
     """
@@ -19,8 +20,17 @@ class _SSH_Command:
     @BaseDecorators.trycorator
     @logger
     @staticmethod
-    def cmd(host: str, command: str, vm_dates: dict, username: str = 'u', password: str = '1',
-            signal_set: str = None, signal_get: list = None, task_name: str = None, time_out: int = 15) -> dict:
+    def cmd(
+        host: str,
+        command: str,
+        vm_dates: dict,
+        username: str = "u",
+        password: str = "1",
+        signal_set: str = None,
+        signal_get: list = None,
+        task_name: str = None,
+        time_out: int = 15,
+    ) -> dict:
         """
         Выполняет SSH-команду на удалённом хосте с обработкой ошибок.
 
@@ -56,21 +66,21 @@ class _SSH_Command:
                     error_msg = f"ОШИБКА СИГНАЛ {signal_get} НЕ НАЙДЕН"
                     print(f"[{host}] {error_msg}")
                     return {
-                        'host': host,
-                        'task_name': task_name or 'unknown',
-                        'command': command,
-                        'output': error_msg,
-                        'status': 'error'
+                        "host": host,
+                        "task_name": task_name or "unknown",
+                        "command": command,
+                        "output": error_msg,
+                        "status": "error",
                     }
 
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(
-                hostname=vm_dates[host].get('ip_bridge', ''),
-                port=int(vm_dates[host].get('host-port', 22)),
+                hostname=vm_dates[host].get("ip_bridge", ""),
+                port=int(vm_dates[host].get("host-port", 22)),
                 username=username,
                 password=password,
-                timeout=10
+                timeout=10,
             )
 
             stdin, stdout, stderr = ssh.exec_command(command)
@@ -92,15 +102,16 @@ class _SSH_Command:
             output = output_stdout + ("\n" + output_stderr if output_stderr else "")
 
             if exit_status != 0:
-                print(f"[{host}] Ошибка при выполнении '{command}': ОШИБКА:\n{output_stderr}\n\n\n ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n\n{output}\n\n\n (exit status: {exit_status})")
+                print(
+                    f"[{host}] Ошибка при выполнении '{command}': ОШИБКА:\n{output_stderr}\n\n\n ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n\n{output}\n\n\n (exit status: {exit_status})"
+                )
                 return {
-                    'host': host,
-                    'task_name': task_name or 'unknown',
-                    'command': command,
-                    'output': (output_stderr,f'\n\n\n', output),
-                    'status': 'error'
+                    "host": host,
+                    "task_name": task_name or "unknown",
+                    "command": command,
+                    "output": (output_stderr, f"\n\n\n", output),
+                    "status": "error",
                 }
-
 
             print(f"[{host}] Команда закончила выполнение: {command}")
 
@@ -108,43 +119,205 @@ class _SSH_Command:
                 signals.set(host, signal_set)
 
             return {
-                'host': host,
-                'task_name': task_name if task_name else 'unknown',
-                'command': command,
-                'output': output,
-                'status': 'ok'
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": output,
+                "status": "ok",
             }
 
         except paramiko.AuthenticationException:
             print(f"[{host}] Ошибка аутентификации.")
             return {
-                'host': host,
-                'task_name': task_name if task_name else 'unknown',
-                'command': command,
-                'output': 'Ошибка аутентификации',
-                'status': 'error'
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": "Ошибка аутентификации",
+                "status": "error",
             }
 
         except paramiko.SSHException as e:
             print(f"[{host}] Ошибка SSH: {str(e)}")
             return {
-                'host': host,
-                'task_name': task_name if task_name else 'unknown',
-                'command': command,
-                'output': str(e),
-                'status': 'error'
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": str(e),
+                "status": "error",
             }
 
         except Exception as e:
             print(f"[{host}] Ошибка: {str(e)}")
             return {
-                'host': host,
-                'task_name': task_name if task_name else 'unknown',
-                'command': command,
-                'output': str(e),
-                'status': 'error'
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": str(e),
+                "status": "error",
             }
 
         finally:
             if ssh:
                 ssh.close()
+
+
+    @BaseDecorators.trycorator
+    @logger
+    @staticmethod
+    def cmd_detach(
+        host: str,
+        command: str,
+        vm_dates: dict,
+        username: str = "u",
+        password: str = "1",
+        signal_set: str = None,
+        signal_get: list = None,
+        task_name: str = None,
+        time_out: int = 15,
+        nowait_timeout: int = 30,
+    ) -> dict:
+        """
+        Поведение как у cmd(...), но соединение закрывается через nowait_timeout секунд,
+        даже если команда ещё выполняется. Если команда завершилась раньше таймаута —
+        статус/вывод как в cmd(...).
+        """
+        ssh = None
+        chan = None
+        try:
+            if signal_get:
+                if len(signal_get) == 1:
+                    signal_get = [host, signal_get[0]]
+                elif not signal_get[0]:
+                    signal_get[0] = host
+
+                if not signals.get(signal_get, timeout_min=time_out):
+                    error_msg = f"ОШИБКА СИГНАЛ {signal_get} НЕ НАЙДЕН"
+                    print(f"[{host}] {error_msg}")
+                    return {
+                        "host": host,
+                        "task_name": task_name or "unknown",
+                        "command": command,
+                        "output": error_msg,
+                        "status": "error",
+                    }
+
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(
+                hostname=vm_dates[host].get("ip_bridge", ""),
+                port=int(vm_dates[host].get("host-port", 22)),
+                username=username,
+                password=password,
+                timeout=10,
+            )
+
+            stdin, stdout, stderr = ssh.exec_command(command)
+            chan = stdout.channel
+
+            end_ts = time.time() + max(0, int(nowait_timeout))
+            out_buf = []
+            err_buf = []
+
+            def _drain():
+                while chan.recv_ready():
+                    out_buf.append(stdout.recv(4096).decode(errors="ignore"))
+                while chan.recv_stderr_ready():
+                    err_buf.append(stderr.recv_stderr(4096).decode(errors="ignore"))
+
+            while time.time() < end_ts:
+                _drain()
+                if chan.exit_status_ready():
+                    # команда уже завершилась — дочитываем остатки и обрабатываем как в cmd
+                    _drain()
+                    exit_status = chan.recv_exit_status()
+                    output_stdout = "".join(out_buf)
+                    output_stderr = "".join(err_buf)
+                    output = output_stdout + ("\n" + output_stderr if output_stderr else "")
+
+                    if exit_status != 0:
+                        print(
+                            f"[{host}] Ошибка при выполнении '{command}': ОШИБКА:\n{output_stderr}\n\n\n"
+                            f" ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n\n{output}\n\n\n (exit status: {exit_status})"
+                        )
+                        return {
+                            "host": host,
+                            "task_name": task_name or "unknown",
+                            "command": command,
+                            "output": (output_stderr, "\n\n\n", output),
+                            "status": "error",
+                        }
+
+                    print(f"[{host}] Команда закончила выполнение: {command}")
+
+                    if signal_set:
+                        signals.set(host, signal_set)
+
+                    return {
+                        "host": host,
+                        "task_name": task_name if task_name else "unknown",
+                        "command": command,
+                        "output": output,
+                        "status": "ok",
+                    }
+
+                time.sleep(0.1)
+
+            _drain()
+            output = "".join(out_buf) + ("\n" + "".join(err_buf) if err_buf else "")
+
+            try:
+                if not chan.closed:
+                    chan.close()
+            except Exception:
+                pass
+            try:
+                ssh.close()
+            except Exception:
+                pass
+
+            if signal_set:
+                signals.set(host, signal_set)
+
+            print(f"[{host}] Детач: ssh закрыт через {nowait_timeout}s, команда продолжит выполняться на хосте.")
+
+            return {
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": output,
+                "status": "ok",
+            }
+
+        except paramiko.AuthenticationException:
+            print(f"[{host}] Ошибка аутентификации.")
+            return {
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": "Ошибка аутентификации",
+                "status": "error",
+            }
+        except paramiko.SSHException as e:
+            print(f"[{host}] Ошибка SSH: {str(e)}")
+            return {
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": str(e),
+                "status": "error",
+            }
+        except Exception as e:
+            print(f"[{host}] Ошибка: {str(e)}")
+            return {
+                "host": host,
+                "task_name": task_name if task_name else "unknown",
+                "command": command,
+                "output": str(e),
+                "status": "error",
+            }
+        finally:
+            try:
+                if ssh:
+                    ssh.close()
+            except Exception:
+                pass

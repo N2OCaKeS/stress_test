@@ -176,14 +176,10 @@ class _SSH_Command:
         time_out: int = 15,
         nowait_timeout: int = 30,
     ) -> dict:
-        """
-        Поведение как у cmd(...), но соединение закрывается через nowait_timeout секунд,
-        даже если команда ещё выполняется. Если команда завершилась раньше таймаута —
-        статус/вывод как в cmd(...).
-        """
         ssh = None
         chan = None
         try:
+            # --- ждём сигнал, если надо (как в cmd) ---
             if signal_get:
                 if len(signal_get) == 1:
                     signal_get = [host, signal_get[0]]
@@ -201,6 +197,7 @@ class _SSH_Command:
                         "status": "error",
                     }
 
+            # --- подключаемся и запускаем команду БЕЗ обёрток ---
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(
@@ -213,21 +210,23 @@ class _SSH_Command:
 
             stdin, stdout, stderr = ssh.exec_command(command)
             chan = stdout.channel
+            # делаем чтение неблокирующим
+            chan.settimeout(0.0)
 
             end_ts = time.time() + max(0, int(nowait_timeout))
-            out_buf = []
-            err_buf = []
+            out_buf, err_buf = [], []
 
             def _drain():
+                # Читай ИЗ КАНАЛА, не из stdout/stderr-обёрток
                 while chan.recv_ready():
-                    out_buf.append(stdout.recv(4096).decode(errors="ignore"))
+                    out_buf.append(chan.recv(4096).decode(errors="ignore"))
                 while chan.recv_stderr_ready():
-                    err_buf.append(stderr.recv_stderr(4096).decode(errors="ignore"))
+                    err_buf.append(chan.recv_stderr(4096).decode(errors="ignore"))
 
+            # ждём до nowait_timeout
             while time.time() < end_ts:
                 _drain()
                 if chan.exit_status_ready():
-                    # команда уже завершилась — дочитываем остатки и обрабатываем как в cmd
                     _drain()
                     exit_status = chan.recv_exit_status()
                     output_stdout = "".join(out_buf)
@@ -248,13 +247,11 @@ class _SSH_Command:
                         }
 
                     print(f"[{host}] Команда закончила выполнение: {command}")
-
                     if signal_set:
                         signals.set(host, signal_set)
-
                     return {
                         "host": host,
-                        "task_name": task_name if task_name else "unknown",
+                        "task_name": task_name or "unknown",
                         "command": command,
                         "output": output,
                         "status": "ok",
@@ -262,11 +259,12 @@ class _SSH_Command:
 
                 time.sleep(0.1)
 
+            # не успела завершиться к таймауту — дочитываем, закрываем SSH, ставим сигнал
             _drain()
             output = "".join(out_buf) + ("\n" + "".join(err_buf) if err_buf else "")
 
             try:
-                if not chan.closed:
+                if chan and not chan.closed:
                     chan.close()
             except Exception:
                 pass
@@ -279,42 +277,24 @@ class _SSH_Command:
                 signals.set(host, signal_set)
 
             print(f"[{host}] Детач: ssh закрыт через {nowait_timeout}s, команда продолжит выполняться на хосте.")
-
             return {
                 "host": host,
-                "task_name": task_name if task_name else "unknown",
+                "task_name": task_name or "unknown",
                 "command": command,
-                "output": output,
+                "output": output,  # может быть пустым — это ок
                 "status": "ok",
             }
 
         except paramiko.AuthenticationException:
-            print(f"[{host}] Ошибка аутентификации.")
-            return {
-                "host": host,
-                "task_name": task_name if task_name else "unknown",
-                "command": command,
-                "output": "Ошибка аутентификации",
-                "status": "error",
-            }
+            msg = "Ошибка аутентификации"
+            print(f"[{host}] {msg}")
+            return {"host": host, "task_name": task_name or "unknown", "command": command, "output": msg, "status": "error"}
         except paramiko.SSHException as e:
-            print(f"[{host}] Ошибка SSH: {str(e)}")
-            return {
-                "host": host,
-                "task_name": task_name if task_name else "unknown",
-                "command": command,
-                "output": str(e),
-                "status": "error",
-            }
+            print(f"[{host}] Ошибка SSH: {e}")
+            return {"host": host, "task_name": task_name or "unknown", "command": command, "output": str(e), "status": "error"}
         except Exception as e:
-            print(f"[{host}] Ошибка: {str(e)}")
-            return {
-                "host": host,
-                "task_name": task_name if task_name else "unknown",
-                "command": command,
-                "output": str(e),
-                "status": "error",
-            }
+            print(f"[{host}] Ошибка: {e}")
+            return {"host": host, "task_name": task_name or "unknown", "command": command, "output": str(e), "status": "error"}
         finally:
             try:
                 if ssh:

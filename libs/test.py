@@ -38,11 +38,11 @@ def execute_no_wait():
     example_task1 = {
         "testvm1": {
             "prepare_task": {
-                "command": "sudo apt-get install iperf -y",
+                "command": "sudo apt-get install linux-tools-$(uname -r) -y",
                 "signal set": "1",
             },
             "test_task": {
-                "command": "sudo perf record -g -a",
+                "command": "sudo perf record -g -a &",
                 "signal get": "1",
                 "nowait": True,  # default = False
                 "nowait_timeout": 3,  # default = 30 sec
@@ -60,5 +60,5 @@ def scp():
     }
     Libvirt.scp(scp_settings=scp, vms_dates=vms_dates)
 
-build()
+# build()
 execute_no_wait()

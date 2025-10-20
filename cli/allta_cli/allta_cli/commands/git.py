@@ -62,6 +62,18 @@ def _build_command(token: str, dest: Path) -> str:
         raise ValueError("git_clone_command() вернула пустую строку.")
     return cmd
 
+# NEW: выбор базового каталога (root/sudo -> /home/u/git)
+def _choose_root_base() -> Path:
+    is_root = False
+    try:
+        is_root = (os.geteuid() == 0)
+    except AttributeError:
+        # Windows или нестандартная платформа — fallback по переменным окружения sudo
+        pass
+    if is_root or os.environ.get("SUDO_USER") or os.environ.get("SUDO_UID"):
+        return Path("/home/u/git")
+    return _as_path(GIT_DEST_DIR)
+
 def git_clone() -> int:
     print(SEP)
     print("GIT CLONE (start)")
@@ -69,7 +81,7 @@ def git_clone() -> int:
 
     # 0) пути
     try:
-        root = _as_path(GIT_DEST_DIR)
+        root = _choose_root_base()
         _ensure_root_dir(root)
         dest = _prepare_dest(root)
     except Exception as e:
@@ -105,11 +117,13 @@ def git_clone() -> int:
 
     if rc == 0:
         try:
-            rc2 = SystemCommands.cmd_with_returncode(command=f'git config http.extraHeader "Authorization: {token}"') 
+            rc2 = SystemCommands.cmd_with_returncode(
+                command=f'git -C {shlex.quote(str(dest))} config http.extraHeader "Authorization: {token}"'
+            )
         except Exception as e:
             print(f"Ошибка запуска команды: {e}")
             print(SEP); print("GIT config (end)"); print(SEP)
-            return 1            
+            return 1
 
     if rc == 0:
         try:

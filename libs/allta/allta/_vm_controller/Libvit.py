@@ -37,6 +37,7 @@ class Libvirt(_VirtualMashines):
 
     Этот класс наследуется от абстрактного класса `_VirtualMashines` и реализует его методы.
     """
+
     @classmethod
     def prepare(cls) -> int:
         """
@@ -46,15 +47,24 @@ class Libvirt(_VirtualMashines):
             int: Код завершения выполнения команды.
         """
 
-        system_commands.cmd_with_returncode(f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar sshpass -y")
-        system_commands.cmd_with_returncode(f"sudo usermod -aG kvm,libvirt,libvirt-qemu,libvirt-admin $USER")
+        system_commands.cmd_with_returncode(
+            f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar sshpass -y"
+        )
+        system_commands.cmd_with_returncode(
+            f"sudo usermod -aG kvm,libvirt,libvirt-qemu,libvirt-admin $USER"
+        )
         return 0
 
-    
-
     @classmethod
-    def build(cls, box: str,  rc: str, vms, vms_dates: dict, kernel: str = None, bridge: bool = False) -> dict:
-
+    def build(
+        cls,
+        box: str,
+        rc: str,
+        vms,
+        vms_dates: dict,
+        kernel: str = None,
+        bridge: bool = False,
+    ) -> dict:
         """
         Создаёт и настраивает виртуальные машины на основе Vagrantfile.
 
@@ -67,7 +77,7 @@ class Libvirt(_VirtualMashines):
             rc (str, optional): Версия операционной системы. Если не указан, не используется.
             prepare_path (str, optional): Путь к файлу подготовки окружения. Если не указан, не используется.
             vms_date (dict): Полная информация о виртуальных машинах.
-                
+
                 vm_dates = {
                     'hostname':{
                         'host-port':'*', # порт ssh
@@ -75,7 +85,7 @@ class Libvirt(_VirtualMashines):
                         'cpu': ""
                         }
                     }
-            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то оставит ядро по умолчанию 
+            kernel (str, optional): То какое ядро необходимо установить (полный вывод uname -r), если не задано то оставит ядро по умолчанию
             bridge (bool, optional): Настроить ли мост по тем ip адресам что указаны в vms_dates, по умолчанию выключено.
         Returns:
             dict: Обновленный vms_dates (ИСПОЛЬЗОВАТЬ ТОЛЬКО ДЛЯ ВНУТРЕННЕЙ СЕТИ Libvirt).
@@ -85,8 +95,8 @@ class Libvirt(_VirtualMashines):
         vms_dates = virt.build(bridge=bridge)
 
         if box != "vm_station":
-            libvirt_manager.Snapshot.create(vms=vms, snapshot_name='build')
-        system_commands.cmd('virsh -c qemu:///system list --all')
+            libvirt_manager.Snapshot.create(vms=vms, snapshot_name="build")
+        system_commands.cmd("virsh -c qemu:///system list --all")
         return vms_dates
 
     @classmethod
@@ -96,11 +106,11 @@ class Libvirt(_VirtualMashines):
 
         Args:
             vms (list): Список имён виртуальных машин.
-                
+
                 vms = ['hostname1', 'hostname2']
 
             vms_date (list): Полная информация о виртуальных машинах.
-                
+
                 vm_dates = {
                     'hostname1':{
                         'host-port':'*', # порт ssh
@@ -109,15 +119,22 @@ class Libvirt(_VirtualMashines):
                     'hostname2':{
                         'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        }                        
+                        }
                     }
 
         Returns:
             int: 0, если все машины доступны, иначе 1.
         """
+
         def _check_ping():
-            bad_vms = [vm for vm in vms if system_commands.cmd_with_returncode(
-                f"ping -c 1 {vms_dates[vm]['ip_bridge']}") != 0]
+            bad_vms = [
+                vm
+                for vm in vms
+                if system_commands.cmd_with_returncode(
+                    f"ping -c 1 {vms_dates[vm]['ip_bridge']}"
+                )
+                != 0
+            ]
             return bad_vms
 
         if _check_ping():
@@ -128,8 +145,15 @@ class Libvirt(_VirtualMashines):
             return 0
 
     @classmethod
-    def execute(cls, commands: dict, vms_dates: dict, vms_groups: dict = None,
-                username: str = "u", password: str = "1", timeout: int = 15) -> int:
+    def execute(
+        cls,
+        commands: dict,
+        vms_dates: dict,
+        vms_groups: dict = None,
+        username: str = "u",
+        password: str = "1",
+        timeout: int = 15,
+    ) -> int:
         """
         Выполняет команды на виртуальных машинах. Если имя задачи равно "reboot", то производится
         перезагрузка с ожиданием готовности ВМ. При выполнении команды для группы ВМ перезагрузка
@@ -144,6 +168,12 @@ class Libvirt(_VirtualMashines):
                                 'command':"",
                                 'signal set': 'test' # Если не надо ставить оставить пустым
                                 'signal get': '' # Если не надо получать оставить пустым
+                            },
+                            interective_task3: {
+                                "command": "sudo perf record -g -a", # Interective task, автоматически закончиться спустя указанное время
+                                "signal get": "1",
+                                "nowait": True,  # default = False
+                                "nowait_timeout": 15,  # default = 30 sec
                             }
                         },
                     'g_group1':{ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
@@ -158,12 +188,12 @@ class Libvirt(_VirtualMashines):
                                 'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
                             },
                             'reboot':{ # Перезагрузит ВМ
-                                'signal set': '' 
+                                'signal set': ''
                                 'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
                             },
                     }
             vms_date (list): Полная информация о виртуальных машинах.
-                
+
                 vm_dates = {
                     'hostname1':{
                         'host-port':'*', # порт ssh
@@ -172,10 +202,10 @@ class Libvirt(_VirtualMashines):
                     'hostname2':{
                         'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        }                        
+                        }
                     }
             vms_groups (dict, optional): Группы виртуальных машин.
-                
+
                 vms_groups = {
                     'group1':['hostname1', 'hostname2'],
                     }
@@ -186,6 +216,7 @@ class Libvirt(_VirtualMashines):
         Returns:
             int: Код завершения выполнения.
         """
+
         def _normalize_signal_get(raw):
             if raw is None or raw == "":
                 return None
@@ -197,15 +228,20 @@ class Libvirt(_VirtualMashines):
 
         threads = []
 
-        def _threaded_execution(host: str, task_name: str, task: dict, username: str, password: str):
-            sig_get = _normalize_signal_get(task.get('signal get'))
-            sig_set = task.get('signal set')
+        def _threaded_execution(
+            host: str, task_name: str, task: dict, username: str, password: str
+        ):
+            sig_get = _normalize_signal_get(task.get("signal get"))
+            sig_set = task.get("signal set")
 
             if task_name.lower() == "reboot":
                 reboot_status = reboot.reboot_vm(
-                    host, vms_dates, username, password,
+                    host,
+                    vms_dates,
+                    username,
+                    password,
                     signal_get=sig_get,
-                    ready_signal=sig_set
+                    ready_signal=sig_set,
                 )
                 if not reboot_status:
                     print(f"Перезагрузка {host} не удалась.")
@@ -221,12 +257,12 @@ class Libvirt(_VirtualMashines):
 
                 ssh_command.cmd_detach(
                     host=host,
-                    command=task['command'],
+                    command=task["command"],
                     username=username,
                     password=password,
                     vm_dates=vms_dates,
                     signal_set=sig_set,
-                    signal_get=sig_get,   # None -> не ждём сигнал в _SSH_Command
+                    signal_get=sig_get,  # None -> не ждём сигнал в _SSH_Command
                     task_name=task_name,
                     time_out=timeout,
                     nowait_timeout=nwt,
@@ -236,7 +272,7 @@ class Libvirt(_VirtualMashines):
             # обычный синхронный путь
             ssh_command.cmd(
                 host=host,
-                command=task['command'],
+                command=task["command"],
                 username=username,
                 password=password,
                 vm_dates=vms_dates,
@@ -253,12 +289,19 @@ class Libvirt(_VirtualMashines):
                 if vms_groups and group_name in vms_groups:
                     for task_name, task in tasks.items():
                         if task_name.lower() == "reboot":
+
                             def group_worker():
                                 reboot.reboot_group(
-                                    vms_groups[group_name], vms_dates, username, password,
-                                    signal_get=_normalize_signal_get(task.get('signal get')),
-                                    ready_signal=task.get('signal set')
+                                    vms_groups[group_name],
+                                    vms_dates,
+                                    username,
+                                    password,
+                                    signal_get=_normalize_signal_get(
+                                        task.get("signal get")
+                                    ),
+                                    ready_signal=task.get("signal set"),
                                 )
+
                             t = threading.Thread(target=group_worker)
                             threads.append(t)
                             t.start()
@@ -266,7 +309,7 @@ class Libvirt(_VirtualMashines):
                             for host in vms_groups[group_name]:
                                 t = threading.Thread(
                                     target=_threaded_execution,
-                                    args=(host, task_name, task, username, password)
+                                    args=(host, task_name, task, username, password),
                                 )
                                 threads.append(t)
                                 t.start()
@@ -278,9 +321,14 @@ class Libvirt(_VirtualMashines):
                     if task_name.lower() == "reboot":
                         t = threading.Thread(
                             target=lambda: reboot.reboot_vm(
-                                host, vms_dates, username, password,
-                                signal_get=_normalize_signal_get(task.get('signal get')),
-                                ready_signal=task.get('signal set')
+                                host,
+                                vms_dates,
+                                username,
+                                password,
+                                signal_get=_normalize_signal_get(
+                                    task.get("signal get")
+                                ),
+                                ready_signal=task.get("signal set"),
                             )
                         )
                         threads.append(t)
@@ -288,7 +336,7 @@ class Libvirt(_VirtualMashines):
                     else:
                         t = threading.Thread(
                             target=_threaded_execution,
-                            args=(host, task_name, task, username, password)
+                            args=(host, task_name, task, username, password),
                         )
                         threads.append(t)
                         t.start()
@@ -298,38 +346,44 @@ class Libvirt(_VirtualMashines):
 
         signals.remove_all()
         return 0
-    
+
     @classmethod
-    def scp(cls, scp_settings: dict, vms_dates: dict, vms_groups: dict = None,
-            username: str = "u", password: str = "1") -> int:
+    def scp(
+        cls,
+        scp_settings: dict,
+        vms_dates: dict,
+        vms_groups: dict = None,
+        username: str = "u",
+        password: str = "1",
+    ) -> int:
         """
         Выполняет копирование файлов между локальной системой и виртуальными машинами.
 
         Args:
             scp_settings (dict): Настройки для копирования файлов.
-                
+
                 scp_settings = {
                     'hostname1': [
                         {
                             'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                            'path_host': '', 
+                            'path_host': '',
                             'path_vm': ''
                         }
                     ]
                     'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
                         {
                             'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                            'path_host': '', 
+                            'path_host': '',
                             'path_vm': ''
                         },
                         {
                             'mode': 'push', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                            'path_host': '', 
+                            'path_host': '',
                             'path_vm': ''
-                        },                        
+                        },
                     ]
             vms_date (list): Полная информация о виртуальных машинах.
-                
+
                 vm_dates = {
                     'hostname1':{
                         'host-port':'*', # порт ssh
@@ -338,10 +392,10 @@ class Libvirt(_VirtualMashines):
                     'hostname2':{
                         'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        }                        
+                        }
                     }
             vms_groups (dict, optional): Группы виртуальных машин.
-                
+
                 vms_groups = {
                     'group1':['hostname1', 'hostname2'],
                     }
@@ -357,20 +411,21 @@ class Libvirt(_VirtualMashines):
             vms_date=vms_dates,
             groups=vms_groups,
             username=username,
-            password=password
+            password=password,
         )
         return 0
 
     @classmethod
-    def set_hosts(cls, domain: str, vms_dates: dict,
-                  username: str = "u", password: str = "1"):
+    def set_hosts(
+        cls, domain: str, vms_dates: dict, username: str = "u", password: str = "1"
+    ):
         """
         Настраивает файл /etc/hosts на всех указанных виртуальных машинах.
 
         Args:
             domain (str): Домен для формирования FQDN.
             vms_date (list): Полная информация о виртуальных машинах.
-                
+
                 vm_dates = {
                     'hostname1':{
                         'host-port':'*', # порт ssh
@@ -379,59 +434,62 @@ class Libvirt(_VirtualMashines):
                     'hostname2':{
                         'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        }                        
+                        }
                     }
             username (str, optional): Имя пользователя для подключения по SSH. По умолчанию "u".
             password (str, optional): Пароль для подключения по SSH. По умолчанию "1".
         """
 
         set_hosts.set_hosts(
-            domain=domain,
-            vms_dates=vms_dates,
-            username=username,
-            password=password
+            domain=domain, vms_dates=vms_dates, username=username, password=password
         )
         return 0
 
     @classmethod
-    def sed(cls, sed_conf: dict, vms_dates: dict, vms_groups: dict = None,
-            username: str = "u", password: str = "1"):
+    def sed(
+        cls,
+        sed_conf: dict,
+        vms_dates: dict,
+        vms_groups: dict = None,
+        username: str = "u",
+        password: str = "1",
+    ):
         """
         Выполняет замену строки в файле
 
         Args:
             sed_conf (dict): Настройки для копирования файлов.
-                
-                sed_conf = {
-                    'hostname1':[                
-                        {   
-                            'path': '',
-                            'old': '',
-                            'new': ''
-                        },
-                        {   
-                            'path': '',
-                            'old': '',
-                            'new': ''
-                        },                        
-                    ],
-                    'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>      
-                        {   
-                            'path': '',
-                            'old': '',
-                            'new': ''
-                        },
-                        {   
-                            'path': '',
-                            'old': '',
-                            'new': ''
-                        },                        
 
-                    ],                       
+                sed_conf = {
+                    'hostname1':[
+                        {
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },
+                        {
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },
+                    ],
+                    'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+                        {
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },
+                        {
+                            'path': '',
+                            'old': '',
+                            'new': ''
+                        },
+
+                    ],
                     }
 
             vms_date (list): Полная информация о виртуальных машинах.
-                
+
                 vm_dates = {
                     'hostname1':{
                         'host-port':'*', # порт ssh
@@ -440,10 +498,10 @@ class Libvirt(_VirtualMashines):
                     'hostname2':{
                         'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        }                        
+                        }
                     }
             vms_groups (dict, optional): Группы виртуальных машин.
-                
+
                 vms_groups = {
                     'group1':['hostname1', 'hostname2'],
                     }
@@ -459,17 +517,23 @@ class Libvirt(_VirtualMashines):
             vms_dates=vms_dates,
             groups=vms_groups,
             username=username,
-            password=password
+            password=password,
         )
         return 0
 
-    @classmethod    
-    def freeipa(cls, domain: dict, vms_dates: dict, vms_groups: dict = None,
-            username: str = "u", password: str = "1"):
+    @classmethod
+    def freeipa(
+        cls,
+        domain: dict,
+        vms_dates: dict,
+        vms_groups: dict = None,
+        username: str = "u",
+        password: str = "1",
+    ):
         """Развертывает домен freeipa и вводит в него клиенты
 
         Args:
-            domain (dict): Настройка для freeipa 
+            domain (dict): Настройка для freeipa
                 domain = {
                     'settings': {
                         'domain': 'example.com',
@@ -483,7 +547,7 @@ class Libvirt(_VirtualMashines):
                     }
                 }
             vms_date (list): Полная информация о виртуальных машинах.
-                
+
                 vm_dates = {
                     'hostname1':{
                         'host-port':'*', # порт ssh
@@ -492,10 +556,10 @@ class Libvirt(_VirtualMashines):
                     'hostname2':{
                         'host-port':'*', # порт ssh
                         'ip_bridge':'*.*.*.*', # ip моста
-                        }                        
+                        }
                     }
             vms_groups (dict, optional): Группы виртуальных машин.
-                
+
                 vms_groups = {
                     'group1':['hostname1', 'hostname2'],
                     }
@@ -505,8 +569,13 @@ class Libvirt(_VirtualMashines):
         Returns:
             _type_: _description_
         """
-        freeipa.freeipa(domain = domain, vm_dates=vms_dates, vms_groups=vms_groups, ssh_user=username, ssh_password=password)
+        freeipa.freeipa(
+            domain=domain,
+            vm_dates=vms_dates,
+            vms_groups=vms_groups,
+            ssh_user=username,
+            ssh_password=password,
+        )
         return 0
 
     apt: _AptManagerProtocol = cast(_AptManagerProtocol, _apt._AptManager())
-

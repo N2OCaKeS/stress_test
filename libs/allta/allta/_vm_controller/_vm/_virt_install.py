@@ -166,7 +166,7 @@ class _VirtInstall:
                 f"sudo qemu-img resize '{self.vm_path}'/{vm}.qcow2 {vms_date[vm]["disk"]}G"
             )
             LibvirtManager.Vm.start(vm)
-        sleep(60)
+        sleep(90)
 
         vms_list = list(vms_date.keys())
         group = {"all": vms_list}

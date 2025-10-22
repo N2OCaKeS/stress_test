@@ -14,7 +14,7 @@ cli/allta_vm/bootstrap/python
 cli/allta_vm/debian/allta-vm
 cli/allta_vm/bootstrap/Python-3.12.9
 cli/allta_vm/bootstrap/Python-3.12.9.tgz
-cli/*.deb
+allta_vm_manager/cli/allta-vm_*_amd64.deb
 start.sh
 
 .venv/

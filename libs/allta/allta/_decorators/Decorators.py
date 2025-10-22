@@ -1,3 +1,6 @@
+import time
+from functools import wraps
+
 class BaseDecorators():
     """
     Класс с базовыми декораторами.
@@ -18,3 +21,15 @@ class BaseDecorators():
                 return result
 
         return wrapper
+    
+    # def timer(function):
+    #     "Оборачивает функцию в таймер и выводит время выполнения функции"
+    #     @wraps(function)
+    #     def wrapper(*args, **kwargs):
+    #         t0 = time.perf_counter()
+    #         result = function(*args, **kwargs)
+    #         dt = (time.perf_counter() - t0) * 1000
+    #         print(f"{function.__name__}: {dt:.2f} ms")
+    #         return result
+    #     return wrapper        
+        

@@ -38,8 +38,8 @@ class Libvirt(_VirtualMashines):
     Этот класс наследуется от абстрактного класса `_VirtualMashines` и реализует его методы.
     """
 
-    def __init__():
-        pass
+    # def __init__():
+    #     pass
 
     @classmethod
     def prepare(cls) -> int:

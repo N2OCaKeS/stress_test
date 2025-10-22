@@ -198,7 +198,7 @@ def set_hdd(part='sdb', fs=args.HDD, bd='psql'):
             cmd('rm -r /var/lib/postgresql')
             os.mkdir('/var/lib/postgresql')
     elif bd == 'pgpro_on_vm':
-        mount_path = '/vms'
+        mount_path = '/home/hdd'
         if not os.path.isdir(mount_path):
             os.mkdir(mount_path)
 
@@ -249,7 +249,17 @@ def create_vms_test_env(mode='s',
                            'cpu': '8', 
                            'ram': '32768',
                            'ip_bridge': '10.177.103.77',
-                           'disk': '200'}}
+                           'disk': '50',
+                           'additional_disks': {
+                                'disk1': {
+                                    'size': '200',
+                                    'mount_point': '/var/lib/pgpro',
+                                    'fs_type': 'ext4',
+                                }
+                            }
+                }
+    }
+    
     tasks = {
         'g_VMS':{
             'get_key':{
@@ -359,6 +369,7 @@ def create_vms_test_env(mode='s',
     provider.prepare()
     vm_date = provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES, kernel='6.1.141-1-generic')
     sleep(90)
+    LibvirtManager.Vm.additional_disk(vms_dates=VMS_DATES, disk_path='/home/hdd', disk_pool_name='hdd_disk')
     LibvirtManager.Vm.bridge(vms_date=vm_date, new_vms_date=VMS_DATES, username="u", password="1")
     LibvirtManager.Snapshot.create(VMS, snapshot_name='snap1')
     #LibvirtManager.Snapshot.revert(VMS, snapshot_name='snap1')
@@ -368,7 +379,7 @@ def create_vms_test_env(mode='s',
         provider.execute(commands=psbpro_prep, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.execute(commands=perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         print('Start pgbench')
-        cmd('sudo /opt/pgpro/ent-17/bin/pgbench -h %s -p 6000 -U postgres -t 1000 -j 30 -c 30 test' % VMS_DATES[VM_NAME]['ip_bridge'])
+        cmd('sudo /opt/pgpro/ent-17/bin/pgbench -h %s -p 6000 -U postgres -t 1000 -j 50 -c 50 test' % VMS_DATES[VM_NAME]['ip_bridge'])
         provider.execute(commands=kill_perf_task, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         provider.scp(scp_settings=cp_perf_data, vms_dates=VMS_DATES, vms_groups={'VMS':VMS})
         cmd(f'sudo perf script | perl libs/libstackcollapse-perf.pl | perl libs/libflamegraph.pl > result_{datetime.now().strftime("%H:%M:%S")}.svg')

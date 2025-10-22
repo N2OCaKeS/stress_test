@@ -18,7 +18,7 @@ from ._vm.LibvirtManager import LibvirtManager as libvirt_manager
 
 
 from typing import cast
-
+import sys
 import threading
 
 
@@ -37,6 +37,9 @@ class Libvirt(_VirtualMashines):
 
     Этот класс наследуется от абстрактного класса `_VirtualMashines` и реализует его методы.
     """
+
+    # def __init__():
+    #     pass
 
     @classmethod
     def prepare(cls) -> int:
@@ -100,7 +103,7 @@ class Libvirt(_VirtualMashines):
         return vms_dates
 
     @classmethod
-    def check(cls, vms: list, vms_dates: dict):
+    def check(cls, vms: list, vms_dates: dict, ping_retries: int = 5, ping_timeout_s: int = 1):
         """
         Проверяет доступность виртуальных машин через ping.
 
@@ -121,28 +124,46 @@ class Libvirt(_VirtualMashines):
                         'ip_bridge':'*.*.*.*', # ip моста
                         }
                     }
+            ping_retries (int): Кол-во попыток для проверки. По умолчанию 3.
+            ping_timeout_s (int): Таймауты для проверок в секундах. По умолчанию 1.                                
 
         Returns:
             int: 0, если все машины доступны, иначе 1.
         """
-
-        def _check_ping():
-            bad_vms = [
-                vm
-                for vm in vms
-                if system_commands.cmd_with_returncode(
-                    f"ping -c 1 {vms_dates[vm]['ip_bridge']}"
-                )
-                != 0
-            ]
-            return bad_vms
-
-        if _check_ping():
-            print("Не удалось решить проблемы с настройкой сети, ВМ недоступна(ы)")
-            return 1
-        else:
-            print("All vms is available")
+        if not vms:
+            print("Список ВМ пуст — нечего проверять.")
             return 0
+
+        failed = []
+
+        for vm in vms:
+            if vm not in vms_dates:
+                failed.append(f"{vm} (нет записи в vms_dates)")
+                continue
+
+            ip = vms_dates[vm].get("ip_bridge")
+            if not ip:
+                failed.append(f"{vm} (не задан ip_bridge)")
+                continue
+
+            ok = False
+            for _ in range(ping_retries):
+                rc = system_commands.cmd_with_returncode(f"ping -c 1 -W {ping_timeout_s} {ip}")
+                if rc == 0:
+                    ok = True
+                    break
+            if not ok:
+                failed.append(f"{vm} @ {ip}")
+
+        if failed:
+            print("Недоступны ВМ по ping:")
+            for item in failed:
+                print(f"  - {item}")
+            print("Прерываю выполнение")
+            sys.exit(1)
+
+        print("All VMs are available (ping)")
+        return 0
 
     @classmethod
     def execute(

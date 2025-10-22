@@ -3,6 +3,30 @@ from allta import Libvirt, LibvirtManager
 vms_dates = {
     "testvm1": {"cpu": "4", "ram": "4096", "ip_bridge": "10.177.103.180", "disk": "100"}
 }
+
+
+vms_dates = {
+    "testvm1": {
+        "cpu": "4",
+        "ram": "4096",
+        "ip_bridge": "10.177.103.180",
+        "disk": "100",
+        "additional_disks": {
+            "disk1": {
+                "size": "100",  # default 10 gb
+                "mount_point": "/home/testuser",  # default none, if default then not mount in vm
+            },
+            "disk2": {
+                "size": "100",  # default 10 gb
+                "mount_point": "/home/testuser2",  # default none, if default then not mount in vm
+                "fs_type": "ntfs",  # default ext4
+            },
+            "disk3": {
+                "size": "10",  # default 10 gb
+            },
+        },
+    }
+}
 vms = list(vms_dates.keys())
 
 
@@ -21,6 +45,8 @@ def build_old():
         vms_date=old, new_vms_date=vms_dates, username="u", password="1"
     )
 
+def check():
+    Libvirt.check(vms=vms, vms_dates=vms_dates)
 
 def execute():
     example_task1 = {
@@ -32,7 +58,6 @@ def execute():
         }
     }
     Libvirt.execute(commands=example_task1, vms_dates=vms_dates)
-
 
 def execute_no_wait():
     example_task1 = {
@@ -60,5 +85,12 @@ def scp():
     }
     Libvirt.scp(scp_settings=scp, vms_dates=vms_dates)
 
+
+def additional_disk():
+    return LibvirtManager.Vm.additional_disk(vms_dates=vms_dates, disk_path="/home/u")
+    
+
+
 # build()
-execute_no_wait()
+check()
+# additional_disk()

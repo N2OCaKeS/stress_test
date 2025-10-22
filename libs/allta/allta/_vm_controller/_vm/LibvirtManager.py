@@ -4,8 +4,12 @@ from .._libs._scp_command import _SCP_Command
 from .._libs import _scripts as scripts_pkg
 
 from time import sleep
+
 from importlib.resources import files, as_file
 import re
+import os
+import json
+from pathlib import Path
 from collections import defaultdict
 
 
@@ -187,6 +191,213 @@ EOF
             print("Ожидаем включения ВМ")
             sleep(60)
             return 0
+
+        @BaseDecorators.trycorator
+        @staticmethod
+        def additional_disk(
+            vms_dates: dict,
+            disk_path: str = "/vms/additional_disk",
+            disk_pool_name: str = "additional",
+            username: str = "u",
+            password: str = "1"
+        ):
+            """Подключение дополнительных дисков к ВМ с монтированием
+
+            Args:
+                vms_dates (dict): Информация о ВМ
+                disk_path (str, optional): Путь по которому будут создаваться новые диски. По умолчанию "/vms/additional_disk".
+                disk_pool_name (str, optional): Название libvirt disk pool. По умолчанию "additional".
+                username (str, optional): Имя пользователя. Defaults to "u".
+                password (str, optional): Пароль. Defaults to "1".
+
+
+            Returns:
+                int: Всегда возвращает 0 смотреть логи
+            """
+            from allta import Libvirt
+
+            def get_file_path(filename: str):
+                res = files(scripts_pkg).joinpath(filename)
+                with as_file(res) as p:
+                    return str(p)
+                
+            script_path = get_file_path("additional_disk.sh")
+
+            default_disk_size_gb = 10
+            tasks = {}
+            scp = {}
+
+            system_commands.check_output_command(f"sudo mkdir -p {disk_path} && sudo chmod 777 {disk_path}")
+
+            pool_list = system_commands.check_output_command("sudo virsh --connect qemu:///system pool-list --all || true")
+            if disk_pool_name not in pool_list:
+                system_commands.check_output_command(
+                    f"sudo virsh --connect qemu:///system pool-define-as {disk_pool_name} dir --target {disk_path}"
+                )
+            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-build {disk_pool_name} || true")
+            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-start {disk_pool_name} || true")
+            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-autostart {disk_pool_name} || true")
+            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-refresh {disk_pool_name} || true")
+
+            for vm, cfg in (vms_dates or {}).items():
+                additional_disks = (cfg or {}).get("additional_disks") or {}
+                if not isinstance(additional_disks, dict) or not additional_disks:
+                    continue
+
+                scp.setdefault(vm, []).append({
+                    "mode": "push",
+                    "path_host": script_path,
+                    "path_vm": "/tmp/additional_disk.sh",
+                })
+
+                tasks.setdefault(vm, {})
+                signal_counter = 1
+                prev_signal = ""
+
+                used_targets = set()
+                domblk = system_commands.check_output_command(
+                    f"sudo virsh --connect qemu:///system domblklist {vm} --details || true"
+                )
+                for line in domblk.splitlines():
+                    parts = line.split()
+                    if len(parts) >= 5 and parts[0] in ("file", "block", "network"):
+                        used_targets.add(parts[2])  # Target (vda/vdb/...)
+
+                for disk_name, dcfg in additional_disks.items():
+                    raw_size = (dcfg or {}).get("size", default_disk_size_gb)
+                    try:
+                        size_gb = int(str(raw_size).strip())
+                    except Exception:
+                        size_gb = default_disk_size_gb
+
+                    qcow_path = os.path.join(disk_path, f"{vm}_{disk_name}.qcow2")
+
+                    exists = system_commands.check_output_command(f"test -f {qcow_path} && echo yes || echo no")
+                    if exists.strip() != "yes":
+                        system_commands.check_output_command(f"sudo qemu-img create -f qcow2 {qcow_path} {size_gb}G")
+                        system_commands.check_output_command(f"sudo chmod 666 {qcow_path} || true")
+
+                    # уже подключен?
+                    attached = system_commands.check_output_command(
+                        f"sudo virsh --connect qemu:///system domblklist {vm} --details | grep -F {qcow_path} || true"
+                    )
+                    serial = f"{vm}_{disk_name}"
+
+                    if qcow_path not in attached:
+                        attached_ok = False
+                        for code in range(ord("b"), ord("z") + 1):
+                            target = f"vd{chr(code)}"
+                            if target in used_targets:
+                                continue
+                            try:
+                                system_commands.check_output_command(
+                                    f"sudo virsh --connect qemu:///system attach-disk {vm} {qcow_path} {target} "
+                                    f"--persistent --driver qemu --subdriver qcow2 --targetbus virtio --serial {serial}"
+                                )
+                                used_targets.add(target)
+                                attached_ok = True
+                                break
+                            except Exception as e:
+                                msg = str(e)
+                                if ("цель" in msg and "существует" in msg) or ("target" in msg and "exists" in msg):
+                                    used_targets.add(target)
+                                    continue
+                                raise
+                        if not attached_ok:
+                            raise RuntimeError("Не удалось подобрать свободный target (vd[b-z])")
+
+                    fs_type = (dcfg or {}).get("fs_type", "ext4")
+                    mount_point = (dcfg or {}).get("mount_point", "").strip()
+                    if mount_point:
+                        cmd = f"sudo /tmp/additional_disk.sh {serial} {fs_type} {mount_point}"
+                    else:
+                        cmd = f"sudo /tmp/additional_disk.sh {serial} {fs_type}"
+
+                    task_name = f"additional disk {disk_name}"
+                    tasks[vm][task_name] = {
+                        "command": cmd,
+                        "signal set": str(signal_counter),
+                        "signal get": prev_signal,
+                    }
+                    prev_signal = str(signal_counter)
+                    signal_counter += 1
+
+                if prev_signal:
+                    tasks[vm]["reboot"] = {
+                        "signal get": prev_signal
+                    }
+            Libvirt.scp(scp_settings=scp, vms_dates=vms_dates, username=username, password=password)
+            Libvirt.execute(commands=tasks, vms_dates=vms_dates, username=username, password=password)
+            return 0
+
+        @BaseDecorators.trycorator
+        @staticmethod
+        def save_vms_data(vms_dates: dict, save_path: str = "./vms_dates.json"):
+            """Сохраняет информацию о ВМ
+
+            Args:
+                vms_data (dict): Список ВМ с информацией об ip_bridge
+                save_path (str, optional): В какой файл сохранить информацию. По умолчанию "./vms_dates.json".
+
+            Returns:
+                _type_: int
+            """
+            try:
+                if not isinstance(vms_dates, dict):
+                    print("save_vms_data: vms_data должен быть dict")
+                    return 1
+
+                Path(save_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+                with open(save_path, "w", encoding="UTF-8") as f:
+                    json.dump(vms_dates, f, ensure_ascii=False, indent=2)
+                return 0
+
+            except TypeError as e:
+                print(f"save_vms_data: данные не сериализуемы в JSON: {e}")
+                return 1
+
+            except OSError as e:
+                print(f"save_vms_data: не удалось записать файл '{save_path}': {e}")
+                return 1
+
+        @BaseDecorators.trycorator
+        @staticmethod
+        def load_vms_data(save_path: str = "./vms_dates.json"):
+            """Загружает инфрмация о ВМ
+
+            Args:
+                save_path (str, optional): Из какого файла загрузить информацию. По умолчанию "./vms_dates.json".
+
+            Returns:
+                _type_: dict
+            """
+            try:
+                path = Path(save_path)
+                if not path.exists():
+                    print(f"load_vms_data: файл не найден: {path}")
+                    return {}
+
+                with path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                if not isinstance(data, dict):
+                    print("load_vms_data: в файле должен быть JSON-объект (dict)")
+                    return {}
+
+                return data
+
+            except json.JSONDecodeError as e:
+                print(f"load_vms_data: некорректный JSON в '{save_path}': {e}")
+                return {}
+
+            except OSError as e:
+                print(f"load_vms_data: ошибка чтения '{save_path}': {e}")
+                return {}
+
+            except Exception as e:
+                print(f"load_vms_data: непредвиденная ошибка: {e}")
+                return {}
 
     class Snapshot:
         """

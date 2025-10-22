@@ -224,14 +224,14 @@ class _VirtInstall:
     def build(self, bridge: bool = False):
         vm_path = self.vm_path
         box_name, box_url, os_version = self._box_wrapper()
-        system_commands.cmd(f"mkdir {vm_path} && chmod 777 {vm_path}")
+        system_commands.cmd(f"sudo mkdir {vm_path} && sudo chmod 777 {vm_path}")
         system_commands.cmd(
-            f"virsh pool-define-as vms dir --target {vm_path} && virsh pool-build vms && virsh pool-start vms && virsh pool-autostart vms"
+            f"sudo virsh --connect qemu:///system pool-define-as vms dir --target {vm_path} && sudo virsh --connect qemu:///system pool-build vms && sudo virsh --connect qemu:///system pool-start vms && sudo virsh --connect qemu:///system pool-autostart vms"
         )
         system_commands.cmd(
-            f"rm -rf {vm_path}/{box_name}.tar.gz; wget -P {vm_path} {box_url}"
+            f"sudo rm -rf {vm_path}/{box_name}.tar.gz; sudo wget -P {vm_path} {box_url}"
         )
-        system_commands.cmd(f"tar xzf {vm_path}/{box_name}.tar.gz -C {vm_path}/")
+        system_commands.cmd(f"sudo tar xzf {vm_path}/{box_name}.tar.gz -C {vm_path}/")
 
         # Сеть libvirt (создать если ещё нет)
 
@@ -251,8 +251,8 @@ class _VirtInstall:
 
         try:
             system_commands.check_output_command(
-                f"virsh --connect qemu:///system net-create {network_path} && "
-                f"virsh --connect qemu:///system net-autostart --network test"
+                f"sudo virsh --connect qemu:///system net-create {network_path} && "
+                f"sudo virsh --connect qemu:///system net-autostart --network test"
             )
         except Exception as e:
             print("WARNING: Сеть test возможно уже существует.")

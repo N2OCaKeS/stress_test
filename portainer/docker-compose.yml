@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+
+  allta-portainer:
+    build:
+      context: ./allta_portainer
+      dockerfile: Dockerfile.allta_portainer
+    image: allta-portainer:latest
+    container_name: allta_portainer
+    restart: always   
+    volumes:
+      - allta_portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 9443:9443
+
+volumes:
+  allta_portainer_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PORTAINER_PATH}
+      o: bind

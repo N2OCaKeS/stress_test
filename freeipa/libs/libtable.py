@@ -46,7 +46,7 @@ class Report:
                                         'value_for_last_proc_delay': self.value_for_last_proc_delay,
                                         'min_znach': self.min_znach,
                                         'max_znach': self.max_znach})
-        elif self.type_test == "create_user":
+        elif self.type_test == "create_users":
             self.user_count = [int(param) for param in raw_data[::4]]
             self.successful_users = [int(param) for param in raw_data[1::4]]
             self.total_time = [float(param) for param in raw_data[2::4]]
@@ -55,6 +55,7 @@ class Report:
                                         'successful_users': self.successful_users,
                                         'total_time': self.total_time,
                                         'average_time_per_user': self.average_time_per_user})
+            print(self.raw_table)
 
 
     @staticmethod

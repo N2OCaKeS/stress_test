@@ -19,6 +19,7 @@ client = ClientMeta(SERVER, verify_ssl=False)
 client.login("admin", "12345678")
 
 results_queue = queue.Queue()
+result_queue_error = queue.Queue()
 
 def create_user(i, client_inst):
     login = f"user{i}"
@@ -45,6 +46,7 @@ def create_user(i, client_inst):
     except FreeIPAError as e:
         print(f"Ошибка создания {login}: {e}")
         results_queue.put((login, 0, False))
+        result_queue_error.put((login, e))
 
 def del_user(user_id):
     try:
@@ -54,6 +56,7 @@ def del_user(user_id):
         # return (username, True)
     except FreeIPAError as e:
         print(f"Ошибка удаления {login}: {e}")
+        result_queue_error.put((login, e))
         # return (username, False)
 
 def main():
@@ -89,6 +92,13 @@ def main():
         print(average_time_per_user)
         with open("ipa_report.txt", 'a') as report_file:
             report_file.write(f"{user_count} {successful_users} {total_time} {average_time_per_user}\n")
+
+        tmpf = open("ipa_report_error.txt", "w")
+        tmpf.close()
+        while not result_queue_error.empty():
+            login, error = result_queue_error.get()
+            with open("ipa_report_error.txt", 'a') as error_file:
+                error_file.write(f"{login}: {error}\n")
         
         print("Удаление пользователей...")
         for user_id in range(user_count):

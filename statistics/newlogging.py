@@ -3,7 +3,7 @@ import datetime
 import traceback
 from functools import wraps
 
-def task_logger(log_file="/fastapi_app_stat/logs/tasks.log", only_task=True):
+def task_logger(level=2):
     def decorator(func):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
@@ -36,9 +36,12 @@ def task_logger(log_file="/fastapi_app_stat/logs/tasks.log", only_task=True):
                         f"{border_line}\n\n\n",
                 ]
 
-                if not only_task:
+                if level == 2:
                     log_entry.insert(2, f"CLASS: {self.__class__.__name__}")
+                elif level == 3:
+                    log_entry.insert()
                 
+                log_file = f"{self.username}_{self.stat_title}_level{level}.log"
                 with open(log_file, "a", encoding="utf-8") as f:
                     f.write("".join(log_entry))
         

@@ -58,7 +58,7 @@ class MainTable(Table):
 
         return value_with_link
 
-    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
+    @task_logger(level=3)
     def build(self) -> pd.DataFrame:
         # Создаем оъект датафрема (таблицы) на основе наших данных
         
@@ -127,7 +127,7 @@ class MathTable(Table):
     def __build_dataframe(self) -> pd.DataFrame:
         return pd.DataFrame(data=self.__create_math_array(), columns=["Оценка", "Значение"])
     
-    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
+    @task_logger(level=3)
     def build(self):
         df = self.__build_dataframe()
         """
@@ -146,7 +146,7 @@ class SummaryTable(Table):
         self.rc_version = rc_version
         # self.saver = saver
 
-    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
+    @task_logger(level=3)
     def build(self):
         df_merged = pd.merge(self.dataframes[0], self.dataframes[1],
                              how="outer",
@@ -174,7 +174,7 @@ class SummaryTableNew(Table):
         self.stat_title = stat_title
         self.rc_version = rc_version
 
-    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
+    @task_logger(level=3)
     def build(self):
         sfx_iter = iter(self.sfx_tuple)
         df_merged = reduce(
@@ -205,7 +205,7 @@ class TableSeparatelyByKernel(Table):
         self.stat_title = stat_title
         self.rc_version = rc_version
 
-    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
+    @task_logger(level=3)
     def build(self):
         unique_kernels = list(self.dataframe['Ядро'].unique())
         keys_kernel = SortUniqueMajorKernel.groupby_uniq_kernel(uniq_kernels=unique_kernels)
@@ -232,7 +232,7 @@ class BugsTable(Table):
         self.stat_title = stat_title
         self.rc_version = rc_version
 
-    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
+    @task_logger(level=3)
     def build(self):
         if self.response.status_code == 200:
             data = self.response.json()
@@ -274,7 +274,7 @@ class Annotations(Table):
         self.stat_title = stat_title
         self.rc_version = rc_version
     
-    @task_logger(log_file="/fastapi_app_stat/logs/tasks_and_func.log", only_task=False)
+    @task_logger(level=3)
     def build(self):
         if self.response.status_code == 200:
             data = self.response.json()

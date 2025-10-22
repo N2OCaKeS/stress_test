@@ -125,7 +125,7 @@ class BaseStatistics(Statistics):
                main_logger.info("Конец уникального функционала для каждого типа статистики")
                return False, None
      
-     @task_logger()
+     @task_logger(level=2)
      def _create_single_stat(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None):
           parse = MainParser(pages_ids=all_pages, CP=confluence_obj.CP, parser=self.score_parser)
           data_for_tables, d_keys = parse.find_data()

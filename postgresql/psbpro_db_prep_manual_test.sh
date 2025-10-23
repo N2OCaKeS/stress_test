@@ -80,7 +80,7 @@ if [[ "$1" == "host" ]]; then
     sed -i 's/max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/' "$CONF_DIR"
 elif [[ "$1" == "vm" ]]; then
     sed -i 's/#ac_enable_maclabels_on_files.*$/ac_enable_maclabels_on_files = true/' "$CONF_DIR"
-    sed -i 's/max_connections.*/max_connections = 60/' "$CONF_DIR"
+    sed -i 's/max_connections.*/max_connections = 100/' "$CONF_DIR"
     sed -i 's/shared_buffers.*/shared_buffers = 8GB/' "$CONF_DIR"
     sed -i 's/effective_cache_size.*/effective_cache_size = 24GB/' "$CONF_DIR"
     sed -i 's/maintenance_work_mem.*/maintenance_work_mem = 2GB/' "$CONF_DIR"

@@ -127,20 +127,25 @@ ________________________________________________________________________________
         "testvm1": {
             "cpu": "4",
             "ram": "4096",
-            "ip_bridge": "10.177.103.180",
             "disk": "100",
             "additional_disks": {
                 "disk1": {
                     "size": "100",  # default 10 gb
-                    "mount_point": "/home/testuser",  # default none, if default then not mount in vm
+                    "mount_point": "/home/testuser2",  # default none, if default then not mount in vm
+                    "fs_type": "ext4",  # default ext4
                 },
                 "disk2": {
                     "size": "100",  # default 10 gb
                     "mount_point": "/home/testuser2",  # default none, if default then not mount in vm
-                    "fs_type": "ntfs",  # default ext4
+                    "fs_type": "ntfs",  # default ext4 FOR QCOW DISK
                 },
                 "disk3": {
-                    "size": "10",  # default 10 gb
+                    "device": "/dev/vdb",  # default none
+                    "fs_type": "ext4", # default none FOR BLOCK DISK if default then NOT format
+                    "mount_point": "/vms" # default none, if default then not mount in vm
+                },
+                "disk4": {
+                    "device": "/dev/vdc2",  # default none
                 },
             },
         }

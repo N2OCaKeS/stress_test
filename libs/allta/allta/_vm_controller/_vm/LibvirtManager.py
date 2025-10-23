@@ -199,7 +199,7 @@ EOF
             disk_path: str = "/vms/additional_disk",
             disk_pool_name: str = "additional",
             username: str = "u",
-            password: str = "1"
+            password: str = "1",
         ):
             """Подключение дополнительных дисков к ВМ с монтированием
 
@@ -214,120 +214,206 @@ EOF
             Returns:
                 int: Всегда возвращает 0 смотреть логи
             """
-            from allta import Libvirt
-
-            def get_file_path(filename: str):
+            from ..Libvit import Libvirt
+            def get_file_path(filename: str) -> str:
                 res = files(scripts_pkg).joinpath(filename)
                 with as_file(res) as p:
                     return str(p)
-                
+
+            def pick_target(vm_name: str, used_overrides: set | None = None) -> str:
+                """
+                Читает текущее состояние домена и возвращает первый свободный vd[b-z].
+                Объединяет занятость из virsh и локальные 'used_overrides'.
+                """
+                domblk = system_commands.check_output_command(
+                    f"sudo virsh --connect qemu:///system domblklist {vm_name} --details || true"
+                )
+                used = set()
+                for line in domblk.splitlines():
+                    parts = line.split()
+
+                    if len(parts) >= 3 and parts[0] in ("file", "block", "network"):
+                        used.add(parts[2])
+                if used_overrides:
+                    used |= set(used_overrides)
+
+                for code in range(ord("b"), ord("z") + 1):
+                    t = f"vd{chr(code)}"
+                    if t not in used:
+                        return t
+                raise RuntimeError("Не удалось подобрать свободный target (vd[b-z])")
+
+            def host_block_exists(path: str) -> bool:
+                return system_commands.check_output_command(
+                    f"test -b {path} && echo yes || echo no"
+                ).strip() == "yes"
+
+            # === подготовка пути/пула (для qcow2) ===
             script_path = get_file_path("additional_disk.sh")
-
             default_disk_size_gb = 10
-            tasks = {}
-            scp = {}
 
-            system_commands.check_output_command(f"sudo mkdir -p {disk_path} && sudo chmod 777 {disk_path}")
+            tasks: dict = {}
+            scp: dict = {}
 
-            pool_list = system_commands.check_output_command("sudo virsh --connect qemu:///system pool-list --all || true")
+            system_commands.check_output_command(
+                f"sudo mkdir -p {disk_path} && sudo chmod 777 {disk_path}"
+            )
+            pool_list = system_commands.check_output_command(
+                "sudo virsh --connect qemu:///system pool-list --all || true"
+            )
             if disk_pool_name not in pool_list:
                 system_commands.check_output_command(
                     f"sudo virsh --connect qemu:///system pool-define-as {disk_pool_name} dir --target {disk_path}"
                 )
-            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-build {disk_pool_name} || true")
-            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-start {disk_pool_name} || true")
-            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-autostart {disk_pool_name} || true")
-            system_commands.check_output_command(f"sudo virsh --connect qemu:///system pool-refresh {disk_pool_name} || true")
+            system_commands.check_output_command(
+                f"sudo virsh --connect qemu:///system pool-build {disk_pool_name} || true"
+            )
+            system_commands.check_output_command(
+                f"sudo virsh --connect qemu:///system pool-start {disk_pool_name} || true"
+            )
+            system_commands.check_output_command(
+                f"sudo virsh --connect qemu:///system pool-autostart {disk_pool_name} || true"
+            )
+            system_commands.check_output_command(
+                f"sudo virsh --connect qemu:///system pool-refresh {disk_pool_name} || true"
+            )
 
             for vm, cfg in (vms_dates or {}).items():
                 additional_disks = (cfg or {}).get("additional_disks") or {}
                 if not isinstance(additional_disks, dict) or not additional_disks:
                     continue
 
-                scp.setdefault(vm, []).append({
-                    "mode": "push",
-                    "path_host": script_path,
-                    "path_vm": "/tmp/additional_disk.sh",
-                })
-
                 tasks.setdefault(vm, {})
                 signal_counter = 1
                 prev_signal = ""
+                have_guest_tasks_for_vm = False
 
                 used_targets = set()
-                domblk = system_commands.check_output_command(
+                _cur = system_commands.check_output_command(
                     f"sudo virsh --connect qemu:///system domblklist {vm} --details || true"
                 )
-                for line in domblk.splitlines():
+                for line in _cur.splitlines():
                     parts = line.split()
-                    if len(parts) >= 5 and parts[0] in ("file", "block", "network"):
-                        used_targets.add(parts[2])  # Target (vda/vdb/...)
+                    if len(parts) >= 3 and parts[0] in ("file", "block", "network"):
+                        used_targets.add(parts[2])
 
                 for disk_name, dcfg in additional_disks.items():
-                    raw_size = (dcfg or {}).get("size", default_disk_size_gb)
-                    try:
-                        size_gb = int(str(raw_size).strip())
-                    except Exception:
-                        size_gb = default_disk_size_gb
+                    dcfg = dcfg or {}
 
-                    qcow_path = os.path.join(disk_path, f"{vm}_{disk_name}.qcow2")
-
-                    exists = system_commands.check_output_command(f"test -f {qcow_path} && echo yes || echo no")
-                    if exists.strip() != "yes":
-                        system_commands.check_output_command(f"sudo qemu-img create -f qcow2 {qcow_path} {size_gb}G")
-                        system_commands.check_output_command(f"sudo chmod 666 {qcow_path} || true")
-
-                    # уже подключен?
-                    attached = system_commands.check_output_command(
-                        f"sudo virsh --connect qemu:///system domblklist {vm} --details | grep -F {qcow_path} || true"
-                    )
+                    host_path = (dcfg.get("device") or "").strip()
+                    fs_type = (dcfg.get("fs_type") or "").strip()
+                    mount_point = (dcfg.get("mount_point") or "").strip()
                     serial = f"{vm}_{disk_name}"
 
-                    if qcow_path not in attached:
-                        attached_ok = False
-                        for code in range(ord("b"), ord("z") + 1):
-                            target = f"vd{chr(code)}"
-                            if target in used_targets:
-                                continue
-                            try:
-                                system_commands.check_output_command(
-                                    f"sudo virsh --connect qemu:///system attach-disk {vm} {qcow_path} {target} "
-                                    f"--persistent --driver qemu --subdriver qcow2 --targetbus virtio --serial {serial}"
-                                )
-                                used_targets.add(target)
-                                attached_ok = True
-                                break
-                            except Exception as e:
-                                msg = str(e)
-                                if ("цель" in msg and "существует" in msg) or ("target" in msg and "exists" in msg):
-                                    used_targets.add(target)
-                                    continue
-                                raise
-                        if not attached_ok:
-                            raise RuntimeError("Не удалось подобрать свободный target (vd[b-z])")
+                    if host_path:
+                        # ======== ФИЗИЧЕСКОЕ УСТРОЙСТВО ========
+                        if not host_block_exists(host_path):
+                            raise RuntimeError(f"{host_path} не является блочным устройством на хосте")
 
-                    fs_type = (dcfg or {}).get("fs_type", "ext4")
-                    mount_point = (dcfg or {}).get("mount_point", "").strip()
-                    if mount_point:
-                        cmd = f"sudo /tmp/additional_disk.sh {serial} {fs_type} {mount_point}"
+                        attached_line = system_commands.check_output_command(
+                            f"sudo virsh --connect qemu:///system domblklist {vm} --details | grep -F '{host_path}' || true"
+                        )
+                        if host_path not in attached_line:
+                            target = pick_target(vm, used_targets)
+                            system_commands.check_output_command(
+                                f"sudo virsh --connect qemu:///system attach-disk {vm} {host_path} {target} "
+                                f"--persistent --driver qemu --targetbus virtio --serial {serial}"
+                            )
+                            used_targets.add(target)
+
+                        if fs_type or mount_point:
+                            if not have_guest_tasks_for_vm:
+                                scp.setdefault(vm, []).append({
+                                    "mode": "push",
+                                    "path_host": script_path,
+                                    "path_vm": "/tmp/additional_disk.sh",
+                                })
+                                have_guest_tasks_for_vm = True
+
+                            fs_arg = fs_type if fs_type else "KEEPFS"
+                            cmd = f"sudo /tmp/additional_disk.sh {serial} {fs_arg}"
+                            if mount_point:
+                                cmd += f" {mount_point}"
+
+                            task_name = f"additional disk {disk_name}"
+                            tasks[vm][task_name] = {
+                                "command": cmd,
+                                "signal set": str(signal_counter),
+                                "signal get": prev_signal,
+                            }
+                            prev_signal = str(signal_counter)
+                            signal_counter += 1
+
                     else:
-                        cmd = f"sudo /tmp/additional_disk.sh {serial} {fs_type}"
+                        size_raw = dcfg.get("size", default_disk_size_gb)
+                        try:
+                            size_gb = int(str(size_raw).strip())
+                        except Exception:
+                            size_gb = default_disk_size_gb
 
-                    task_name = f"additional disk {disk_name}"
-                    tasks[vm][task_name] = {
-                        "command": cmd,
-                        "signal set": str(signal_counter),
-                        "signal get": prev_signal,
-                    }
-                    prev_signal = str(signal_counter)
-                    signal_counter += 1
+                        qcow_path = os.path.join(disk_path, f"{vm}_{disk_name}.qcow2")
+                        exists = system_commands.check_output_command(
+                            f"test -f {qcow_path} && echo yes || echo no"
+                        )
+                        if exists.strip() != "yes":
+                            system_commands.check_output_command(
+                                f"sudo qemu-img create -f qcow2 {qcow_path} {size_gb}G"
+                            )
+                            system_commands.check_output_command(
+                                f"sudo chmod 666 {qcow_path} || true"
+                            )
+
+                        attached_line = system_commands.check_output_command(
+                            f"sudo virsh --connect qemu:///system domblklist {vm} --details | grep -F '{qcow_path}' || true"
+                        )
+                        if qcow_path not in attached_line:
+                            target = pick_target(vm, used_targets)
+                            system_commands.check_output_command(
+                                f"sudo virsh --connect qemu:///system attach-disk {vm} {qcow_path} {target} "
+                                f"--persistent --driver qemu --subdriver qcow2 --targetbus virtio --serial {serial}"
+                            )
+                            used_targets.add(target)
+
+                        if not have_guest_tasks_for_vm:
+                            scp.setdefault(vm, []).append({
+                                "mode": "push",
+                                "path_host": script_path,
+                                "path_vm": "/tmp/additional_disk.sh",
+                            })
+                            have_guest_tasks_for_vm = True
+
+                        fs_for_qcow = fs_type if fs_type else "ext4"
+                        cmd = f"sudo /tmp/additional_disk.sh {serial} {fs_for_qcow}"
+                        if mount_point:
+                            cmd += f" {mount_point}"
+
+                        task_name = f"additional disk {disk_name}"
+                        tasks[vm][task_name] = {
+                            "command": cmd,
+                            "signal set": str(signal_counter),
+                            "signal get": prev_signal,
+                        }
+                        prev_signal = str(signal_counter)
+                        signal_counter += 1
 
                 if prev_signal:
-                    tasks[vm]["reboot"] = {
-                        "signal get": prev_signal
-                    }
-            Libvirt.scp(scp_settings=scp, vms_dates=vms_dates, username=username, password=password)
-            Libvirt.execute(commands=tasks, vms_dates=vms_dates, username=username, password=password)
+                    tasks[vm]["reboot"] = {"signal get": prev_signal}
+
+            if scp:
+                Libvirt.scp(
+                    scp_settings=scp,
+                    vms_dates=vms_dates,
+                    username=username,
+                    password=password,
+                )
+            if tasks:
+                Libvirt.execute(
+                    commands=tasks,
+                    vms_dates=vms_dates,
+                    username=username,
+                    password=password,
+                )
+
             return 0
 
         @BaseDecorators.trycorator

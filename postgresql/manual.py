@@ -243,6 +243,7 @@ def create_vms_test_env(mode='s',
     """
     Reqiered python >= 3.12
     """
+    HDD_DDEVICE = 'sdb'
     VM_NAME = 'testvm1'
     VMS = [VM_NAME]
     VMS_DATES = {VM_NAME: {'host-port': '22', 
@@ -252,7 +253,7 @@ def create_vms_test_env(mode='s',
                            'disk': '50',
                            'additional_disks': {
                                 'disk1': {
-                                    'size': '200',
+                                    'device': f'/dev/{HDD_DDEVICE}',
                                     'mount_point': '/var/lib/pgpro',
                                     'fs_type': 'ext4',
                                 }
@@ -362,7 +363,7 @@ def create_vms_test_env(mode='s',
 
 
     install_bd(bd='psqlpro', key=key)
-    set_hdd(part='sdb', fs='ext4', bd='pgpro_on_vm')
+    #set_hdd(part=HDD_DDEVICE, fs='ext4', bd='pgpro_on_vm')
     from allta import Libvirt, LibvirtManager
     provider = Libvirt()
 
@@ -370,7 +371,7 @@ def create_vms_test_env(mode='s',
     vm_date = provider.build(f'1.8.1.{mode}', '1.8.3.7', VMS, VMS_DATES, kernel='6.1.141-1-generic')
     sleep(90)
     LibvirtManager.Vm.bridge(vms_date=vm_date, new_vms_date=VMS_DATES, username="u", password="1")
-    LibvirtManager.Vm.additional_disk(vms_dates=VMS_DATES, disk_path='/home/hdd', disk_pool_name='hdd_disk')
+    LibvirtManager.Vm.additional_disk(vms_dates=VMS_DATES, disk_pool_name='hdd_disk')
     LibvirtManager.Snapshot.create(VMS, snapshot_name='snap1')
     #LibvirtManager.Snapshot.revert(VMS, snapshot_name='snap1')
     if provider.check(VMS, VMS_DATES) == 0:

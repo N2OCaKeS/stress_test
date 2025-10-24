@@ -36,7 +36,7 @@ class MainGraphW(Graphs):
     """
         Класс предназначен для построение главной столбчатой диаграммы
     """
-    def __init__(self, list_of_score, scale_txt, type_test, saver, ylabel = "Значение рейтинга", stat_title=None, rc_version=None):
+    def __init__(self, list_of_score, scale_txt, type_test, saver, ylabel = "Значение рейтинга"):
         self.list_of_score = list_of_score
         self.ylabel = ylabel
         self.grid = False
@@ -44,8 +44,6 @@ class MainGraphW(Graphs):
         self.scale_txt = scale_txt
         self.type_test = type_test
         self.saver = saver
-        self.stat_title = stat_title
-        self.rc_version = rc_version
         main_logger.debug(f"Тип теста: {self.type_test}")
         main_logger.debug(f"Отработал конструктор scale_x = {self.scale_x}, шкала = {self.scale_txt}")
         
@@ -68,7 +66,7 @@ class MainGraphW(Graphs):
         return [red_patch, green_patch, yellow_patch]
     
     @task_logger(level=3)
-    def draw(self):
+    def draw(self, *args, **kwargs):
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
         rect = ax.bar(self.scale_x, self.list_of_score, color=self._get_colors())
         ax.grid(self.grid)
@@ -97,12 +95,12 @@ class MainGraph(MainGraphW):
     """
         Класс предназначен для построение ПЕРЕВЕРНУТОЙ главной столбчатой диаграммы
     """
-    def __init__(self, list_of_score, scale_txt, type_test, saver, xlabel = "Значение рейтинга", stat_title=None, rc_version=None):
+    def __init__(self, list_of_score, scale_txt, type_test, saver, xlabel = "Значение рейтинга"):
         self.xlabel = xlabel
-        super().__init__(list_of_score, scale_txt, type_test, saver, xlabel, stat_title, rc_version)
+        super().__init__(list_of_score, scale_txt, type_test, saver, xlabel)
 
     @task_logger(level=3)
-    def draw(self):
+    def draw(self, *args, **kwargs):
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT + 8))
         # fig.set_facecolor("#bbbbbb")
         pos = ax.get_position()
@@ -146,7 +144,7 @@ class SummaryGraphW(Graphs):
     """
       TODO Добавить цвета
     """
-    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76'], stat_title=None, rc_version=None):
+    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76']):
         self.saver = saver
         self.stand_grade = stand_grade
         self.comparison_scale_of_score = comparison_scale_of_score
@@ -157,8 +155,6 @@ class SummaryGraphW(Graphs):
         self.comparison_len = len(comparison_scale_of_score)
         self.bar_width = 0.8
         self.scale_x = np.arange(len(scale_txt))
-        self.stat_title = stat_title
-        self.rc_version = rc_version
 
     @task_logger(level=3)
     def draw(self, *args, **kwargs) -> None:
@@ -203,8 +199,8 @@ class SummaryGraphW(Graphs):
 
 
 class SummaryGraph(SummaryGraphW):
-    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76'], stat_title=None, rc_version=None):
-        super().__init__(saver, stand_grade, comparison_scale_of_score, scale_txt, comparison_names, graph_name, colors, stat_title, rc_version)
+    def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76']):
+        super().__init__(saver, stand_grade, comparison_scale_of_score, scale_txt, comparison_names, graph_name, colors)
 
     @task_logger(level=3)
     def draw(self, *args, **kwargs) -> None:
@@ -258,10 +254,6 @@ class SummaryGraph(SummaryGraphW):
 
 
 class SummaryLineGraph(SummaryGraph):
-    def __init__(self, stat_title=None, rc_version=None):
-        self.stat_title = stat_title
-        self.rc_version = rc_version
-        
     @task_logger(level=3)
     def draw(self, *args, **kwargs):
         legend = []
@@ -302,12 +294,10 @@ class SummaryLineGraph(SummaryGraph):
 
 
 class ComparisonKernelLineGraph(Graphs):
-    def __init__(self, separate_by_kernel_data, type_test, saver, stat_title=None, rc_version=None):
+    def __init__(self, separate_by_kernel_data, type_test, saver):
         self.separate_by_kernel_data = separate_by_kernel_data
         self.type_test = type_test
         self.saver = saver
-        self.stat_title = stat_title
-        self.rc_version = rc_version
 
     @task_logger(level=3)
     def draw(self, *args, **kwargs):

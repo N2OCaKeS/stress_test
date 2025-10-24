@@ -32,12 +32,10 @@ class MainTable(Table):
     """
         Класс для построения главной сравнительной таблицы
     """
-    def __init__(self, data, saver, columns: list = None, columns_scores: list = ['Рейтинг'], stat_title=None, rc_version=None):
+    def __init__(self, data, saver, columns: list = None, columns_scores: list = ['Рейтинг']):
         self.data = data
         self.saver = saver
         self.columns_scores = columns_scores
-        self.stat_title = stat_title
-        self.rc_version = rc_version
         if not columns:
             self.columns = ['type_test', 'Релиз', 'Ядро', 'Режим защищенности', 'Стенд'] + self.columns_scores
         else:
@@ -59,7 +57,8 @@ class MainTable(Table):
         return value_with_link
 
     @task_logger(level=3)
-    def build(self) -> pd.DataFrame:
+    def build(self, *args, **kwargs) -> pd.DataFrame:
+        print(kwargs, flush=True)
         # Создаем оъект датафрема (таблицы) на основе наших данных
         
         df = pd.DataFrame(data=self.data)
@@ -99,7 +98,7 @@ class MathTable(Table):
     """
         Класс для построения математической сравнительной таблицы
     """
-    def __init__(self, dataframe, saver, stat_title=None, rc_version=None):
+    def __init__(self, dataframe, saver):
         self.dataframe = dataframe
         self.saver = saver
         self.data = dataframe.iloc[:, -1]
@@ -109,8 +108,6 @@ class MathTable(Table):
         self.median = round(np.median(self.data), 3)
         self.std = round(np.std(self.data), 3)
         self.var = round(np.var(self.data), 3)
-        self.stat_title = stat_title
-        self.rc_version = rc_version
 
     def __create_math_array(self) -> np.array:
         return np.array(
@@ -128,7 +125,7 @@ class MathTable(Table):
         return pd.DataFrame(data=self.__create_math_array(), columns=["Оценка", "Значение"])
     
     @task_logger(level=3)
-    def build(self):
+    def build(self, *args, **kwargs):
         df = self.__build_dataframe()
         """
             TODO Проконтролировать передачу имени файла и описание заголовка перед таблицей
@@ -140,10 +137,8 @@ class MathTable(Table):
 
 
 class SummaryTable(Table):
-    def __init__(self, dataframes, stat_title=None, rc_version=None):
+    def __init__(self, dataframes):
         self.dataframes = dataframes
-        self.stat_title = stat_title
-        self.rc_version = rc_version
         # self.saver = saver
 
     @task_logger(level=3)
@@ -167,15 +162,13 @@ class SummaryTableNew(Table):
     """
         TODO доделать, должна быть более универсальная чем SummaryTable
     """
-    def __init__(self, dataframes, score = "Рейтинг", stat_title=None, rc_version=None):
+    def __init__(self, dataframes, score = "Рейтинг"):
         self.dataframes = dataframes
         self.score = score
         self.sfx_tuple = ("x", "y", "z", "w", "e", "t", "u", "i")
-        self.stat_title = stat_title
-        self.rc_version = rc_version
 
     @task_logger(level=3)
-    def build(self):
+    def build(self, *args, **kwargs):
         sfx_iter = iter(self.sfx_tuple)
         df_merged = reduce(
             lambda left, right: pd.merge(
@@ -199,14 +192,12 @@ class SummaryTableNew(Table):
 
 
 class TableSeparatelyByKernel(Table):
-    def __init__(self, dataframe: pd.DataFrame, score: str, stat_title=None, rc_version=None):
+    def __init__(self, dataframe: pd.DataFrame, score: str):
         self.dataframe = dataframe
         self.score = score if score != None else "Рейтинг"
-        self.stat_title = stat_title
-        self.rc_version = rc_version
 
     @task_logger(level=3)
-    def build(self):
+    def build(self, *args, **kwargs):
         unique_kernels = list(self.dataframe['Ядро'].unique())
         keys_kernel = SortUniqueMajorKernel.groupby_uniq_kernel(uniq_kernels=unique_kernels)
         separate_by_kernel_df = dict()
@@ -224,16 +215,14 @@ class TableSeparatelyByKernel(Table):
     
 
 class BugsTable(Table):
-    def __init__(self, saver, component, stat_title=None, rc_version=None):
+    def __init__(self, saver, component):
         self.saver = saver
         self.component = component
         self.url = 'http://allta.devos.astralinux.ru/rest/api/known-bugs'
         self.response = requests.get(url=self.url)
-        self.stat_title = stat_title
-        self.rc_version = rc_version
 
     @task_logger(level=3)
-    def build(self):
+    def build(self, *args, **kwargs):
         if self.response.status_code == 200:
             data = self.response.json()
 
@@ -266,16 +255,14 @@ class BugsTable(Table):
 
 
 class Annotations(Table):
-    def __init__(self, saver, component, stat_title=None, rc_version=None):
+    def __init__(self, saver, component):
         self.saver = saver
         self.component = component
         self.url = 'http://allta.devos.astralinux.ru/rest/api/annotations'
         self.response = requests.get(url=self.url)
-        self.stat_title = stat_title
-        self.rc_version = rc_version
     
     @task_logger(level=3)
-    def build(self):
+    def build(self, *args, **kwargs):
         if self.response.status_code == 200:
             data = self.response.json()
             try:

@@ -340,7 +340,9 @@ class FileSystemParser(BaseParser):
             latency_avg_read = data_table[0][2]
         except IndexError:
             iops_write, latency_avg_write, iops_read, latency_avg_read = 0,0,0,0
-        return (iops_write, iops_read, latency_avg_write, latency_avg_read)
+        
+        return tuple(0 if x == 'None' else x for x in (iops_write, iops_read, latency_avg_write, latency_avg_read))
+        # return (iops_write, iops_read, latency_avg_write, latency_avg_read)
     
     def find_score(self, html_page, type_test=None) -> tuple:
         if type_test == "CEPH fio":

@@ -41,7 +41,7 @@ def task_logger(level=2):
                 elif level == 3:
                     log_entry.insert()
                 
-                log_file = f"{self.username}_{self.stat_title}_level{level}.log"
+                log_file = f"logs/{self.username}_{self.stat_title}_level{level}.log"
                 with open(log_file, "a", encoding="utf-8") as f:
                     f.write("".join(log_entry))
         

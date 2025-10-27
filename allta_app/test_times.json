@@ -59,17 +59,17 @@
     },
     "1.8": {
         "stand3": {
-            "EXFAT": "4:22:26",
-            "EXT2": "1:08:29",
-            "EXT3": "1:15:41",
-            "EXT4": "1:06:09",
-            "FAT": "1:46:47",
-            "XFS": "1:07:33",
-            "unix": "1:23:44",
-            "EXT4 parsec": "1:05:42",
-            "XFS parsec": "1:10:10",
-            "unix parsec": "1:23:32",
-            "FreeIPA auth": "1:32:48",
+            "EXFAT": "4:10:45",
+            "EXT2": "0:53:17",
+            "EXT3": "0:55:48",
+            "EXT4": "0:54:46",
+            "FAT": "1:37:51",
+            "XFS": "0:55:26",
+            "unix": "1:20:14",
+            "EXT4 parsec": "0:55:16",
+            "XFS parsec": "0:59:01",
+            "unix parsec": "1:21:20",
+            "FreeIPA auth": "1:29:43",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -80,38 +80,38 @@
             "psql vanilla": "3:04:52",
             "psql balance": "2:44:38",
             "psql kernels": "2:13:36",
-            "steal time": "2:21:47",
-            "steal time-sm": "2:45:14",
+            "steal time": "2:50:07",
+            "steal time-sm": "2:43:49",
             "Total time": "0:00:00"
         },
         "stand10": {
-            "NTFS": "7:19:48",
-            "OCFS2": "1:26:23",
-            "CEPH": "3:04:12",
-            "CEPH fio": "1:23:56",
+            "NTFS": "7:03:35",
+            "OCFS2": "1:12:09",
+            "CEPH": "2:57:57",
+            "CEPH fio": "1:16:37",
             "Total time": "0:00:00"
         },
         "stand11": {
-            "parsec impact-fs": "0:38:19",
-            "parsec impact-fs aud-off": "0:36:36",
-            "docker-wa": "0:59:29",
-            "FIO": "1:21:21",
-            "vPingPong": "0:59:00",
-            "vUnixBench": "2:22:43",
+            "parsec impact-fs": "0:35:14",
+            "parsec impact-fs aud-off": "0:34:42",
+            "docker-wa": "0:57:43",
+            "FIO": "1:17:38",
+            "vPingPong": "0:56:42",
+            "vUnixBench": "2:20:36",
             "psql oom": "1:17:29",
             "Total time": "0:00:00"
         },
         "stand12": {
-            "syslog-ng": "4:19:16",
+            "syslog-ng": "2:25:17",
             "apache-rp": "0:33:02",
-            "auditd-f": "0:48:21",
-            "auditd-p": "2:04:58",
-            "auditd-u": "6:12:02",
-            "digsig-cdt": "1:17:18",
+            "auditd-f": "0:44:32",
+            "auditd-p": "1:58:04",
+            "auditd-u": "3:16:22",
+            "digsig-cdt": "1:14:29",
             "Total time": "0:00:00"
         },
         "stand13": {
-            "syslog-ng-cwl": "1 day, 6:49:20",
+            "syslog-ng-cwl": "1 day, 6:48:46",
             "Total time": "0:00:00"
         }
     }

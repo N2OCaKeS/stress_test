@@ -105,9 +105,9 @@ class BaseStatistics(Statistics):
                main_logger.exception("Ошибка")
                main_logger.critical(f"{self.stat_title} СТАТИСТИКА НЕ ВЫЛОЖИЛАСЬ!!!!")
      
-     # @task_logger()
      def unique_functionality(self, type_test, data_for_tables, rc_version) -> tuple:
           self.info_for_log['rc_version'] = rc_version
+          self.info_for_log['type_test'] = type_test
           main_logger.info("Начало уникального функционала для каждого типа статистики")
           saver = SaveTableToFile(main_folder=self.stat_title, stat_rc_vers=rc_version)
           saver_graph = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
@@ -130,7 +130,7 @@ class BaseStatistics(Statistics):
                return False, None
      
      @task_logger(level=2)
-     def _create_single_stat(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None):
+     def _create_single_stat(self, all_pages, confluence_obj, stat_rc_version=None, pp_title_rc_vers=None, *args, **kwargs):
           self.info_for_log['rc_version'] = stat_rc_version
           parse = MainParser(pages_ids=all_pages, CP=confluence_obj.CP, parser=self.score_parser)
           data_for_tables, d_keys = parse.find_data()
@@ -169,12 +169,12 @@ class BaseStatistics(Statistics):
           # Здесь выкладывание в confluence
           # self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 
-     # @task_logger()
-     def create(self):
+     @task_logger(level=1)
+     def create(self, *args, **kwargs):
           all_pages, rc_all_pages, confluence_obj = self._get_pages()
           if not all_pages or not rc_all_pages:
                main_logger.critical(f"{self.stat_title} НЕ НАЙДЕНЫ НЕОБХОДИМЫЕ СТРАНИЦЫ")
-          self._create_single_stat(all_pages=all_pages, confluence_obj=confluence_obj)
+          self._create_single_stat(all_pages=all_pages, confluence_obj=confluence_obj, **self.info_for_log)
           for key_version, pages_ids in rc_all_pages.items():
                stat_for_rc_version_os = key_version.split(" ⬝ ")[1]
                if pages_ids:
@@ -182,7 +182,8 @@ class BaseStatistics(Statistics):
                     self._create_single_stat(all_pages=pages_ids,
                                              confluence_obj=confluence_obj,
                                              stat_rc_version=stat_for_rc_version_os,
-                                             pp_title_rc_vers=key_version)
+                                             pp_title_rc_vers=key_version,
+                                             **self.info_for_log)
                     
      def __del__(self):
           shutil.rmtree(self.stat_title.replace("/", "-"))

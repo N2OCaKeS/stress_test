@@ -16,7 +16,14 @@ from typetest import TypeTest
 from logging_conf import main_logger
 from newlogging import task_logger
 
-class Table:
+# class ClassNameMeta(type):
+#     """Метакласс, который добавляет свойство class_name ко всем классам"""
+#     def __new__(cls, name, bases, attrs):
+#         attrs['class_name'] = name
+#         return super().__new__(cls, name, bases, attrs)
+
+
+class Table():
     @abstractmethod
     def build():
         pass

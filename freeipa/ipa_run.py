@@ -99,7 +99,7 @@ parser.add_argument('-tt', '--type-test',
                     action='store',
                     required=True,
                     choices=['auth',
-                             'create_users'],
+                             'create-users'],
                     help='type test',
                     default="auth",
                     dest='TT')
@@ -200,7 +200,7 @@ if __name__ == "__main__":
                             y_label="Время аутентификации почти последним пользователем")
         total_rating = report.get_total_rating()
 
-    elif args.TT == "create_users":
+    elif args.TT == "create-users":
         create_users_test = CreateUsersTest()
         create_users_test.run()
         report = Report(type_test=args.TT)
@@ -226,6 +226,7 @@ if __name__ == "__main__":
         total_rating = report.get_total_rating_create_users_test()
     else:
         report = Report()
+        total_rating = 0
     
     print(total_rating)
     put_system_info_in_file(time_start_script, INFO_FILENAME)
@@ -241,7 +242,9 @@ if __name__ == "__main__":
                     conf_space=args.SPACE,
                     conf_parent_page=args.PPAGE,
                     conf_new_page_name=args.NPAGE,
-                    grade_stand=args.STAND)
+                    grade_stand=args.STAND,
+                    test_cycle_version=args.TCV,
+                    total_rating=total_rating)
     public.run_publish()
 
         

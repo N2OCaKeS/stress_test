@@ -17,6 +17,7 @@ class Report:
         self.width = img_width
         self.height = img_height
         self.type_test = type_test
+        print(self.__class__.__name__)
         
         # create dir
         if not path.exists(REPORT_PATH):
@@ -24,6 +25,7 @@ class Report:
 
         with open(f"{REPORT_PATH}/ipa_report.txt") as file:
             raw_data = file.read().split()
+            print(raw_data)
 
         if self.type_test == "auth":
             self.user_count = [int(param) for param in raw_data[::6]]
@@ -46,7 +48,8 @@ class Report:
                                         'value_for_last_proc_delay': self.value_for_last_proc_delay,
                                         'min_znach': self.min_znach,
                                         'max_znach': self.max_znach})
-        elif self.type_test == "create_users":
+        elif self.type_test == "create-users":
+            print("TUT")
             self.user_count = [int(param) for param in raw_data[::4]]
             self.successful_users = [int(param) for param in raw_data[1::4]]
             self.total_time = [float(param) for param in raw_data[2::4]]
@@ -176,6 +179,7 @@ class Report:
 
 
     def create_beauty_table(self, path=REPORT_PATH, table_name='ipa_test_report_table.html'):
+        print("CREATE BEAUTY TABLE")
         beauty_table = build_table(self.raw_table, 'blue_light')
         with open('{}/{}'.format(path, table_name), 'w') as beauty_html_table:
             beauty_html_table.write(beauty_table)

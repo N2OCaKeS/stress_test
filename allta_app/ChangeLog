@@ -1,3 +1,11 @@
+allta_app - v2.49.3
+* Fix url filesystems statistics
+* Add CEPH, CEPH fio in statistics config file
+
+
+
+
+
 allta_app - v2.49.2
 * Add 1.8.4.42
 

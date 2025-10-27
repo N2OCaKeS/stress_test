@@ -599,7 +599,7 @@ def systemservices_statistics():
 # Файловые системы statistics
 @app.route("/filesystems-statistics", methods=['POST'])
 def filesystems_statistics():
-    url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
+    url = 'http://allta.devos.astralinux.ru:7777/filesystems-statistics'
     data = {
             'title_statistics':'Файловые системы',
             'username': request.form.get('username'),

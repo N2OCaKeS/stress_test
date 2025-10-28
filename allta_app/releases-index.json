@@ -1,5 +1,5 @@
 {
-  "date": "2025-10-16 22:59:53.205875",
+  "date": "2025-10-28 09:40:24.887053",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -14345,6 +14345,96 @@
           ],
           "path": "frozen/1.8/1.8.4/1.8.4.42",
           "is_main_symlinked": true
+        },
+        "1.8.4.46": {
+          "astra_lists_commit": "9b4381e5929af3b7c5e6f7fc6813502caf140ae8",
+          "version": {
+            "arch": 1,
+            "family": 8,
+            "release": 4,
+            "special": null,
+            "special_version": null,
+            "build": 46,
+            "real_family": 8,
+            "major_family": "1.8",
+            "release_family": "1.8.4",
+            "comparable_tuple": [
+              1,
+              8,
+              4,
+              "",
+              0,
+              46
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.46/iso/devel-1.8.4.46-27.10.25_09.42.iso",
+              "type": "devel",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.46/devel-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-10-27T09:42:00",
+              "device": null,
+              "hashsums": {
+                "gost": "5aeb7ef0c8284d2b08bce3addad3c3456abc9cc66e6647b5a267d26657e72871",
+                "md5": "388404fd5155ac900164ef3f856bff24"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.46/iso/extended-1.8.4.46-27.10.25_09.42.iso",
+              "type": "extended",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.46/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0025-10-27T09:42:00",
+              "device": null,
+              "hashsums": {
+                "gost": "89846850c6041d055322822ec1658bea18b235286ed417e3f295004e4cf25aa0",
+                "md5": "d8ed7fc88aefa22643b137225c10c785"
+              },
+              "changelog": "frozen/1.8/1.8.4/1.8.4.46/sources/changelogs/changelog-extended-1.8.4.46.html",
+              "release_notes": "frozen/1.8/1.8.4/1.8.4.46/sources/release-notes/release-notes-extended-1.8.4.46.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.46/iso/installation-1.8.4.46-27.10.25_09.42.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.46/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0025-10-27T09:42:00",
+              "device": null,
+              "hashsums": {
+                "gost": "0a7920d95775fa9941308f3a2e53193591cc997109822990a9618c568f2a1d88",
+                "md5": "a666e3c74f42241042102af0b377bcba"
+              },
+              "changelog": "frozen/1.8/1.8.4/1.8.4.46/sources/changelogs/changelog-installation-1.8.4.46.html",
+              "release_notes": "frozen/1.8/1.8.4/1.8.4.46/sources/release-notes/release-notes-installation-1.8.4.46.html"
+            },
+            {
+              "path": "frozen/1.8/1.8.4/1.8.4.46/iso/installation-1.8.4.46-27.10.25_09.42-di.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.8/1.8.4/1.8.4.46/installation-di",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0025-10-27T09:42:00",
+              "device": "di",
+              "hashsums": {
+                "gost": "3eaf171312d56bfd7e2bd1324617c7441674c87f4d62ee5522d243d500023fdf",
+                "md5": "0d3a2d6a1cff282ac6b340ae12e7dd84"
+              },
+              "changelog": "frozen/1.8/1.8.4/1.8.4.46/sources/changelogs/changelog-installation-1.8.4.46.html",
+              "release_notes": "frozen/1.8/1.8.4/1.8.4.46/sources/release-notes/release-notes-installation-1.8.4.46.html"
+            }
+          ],
+          "path": "frozen/1.8/1.8.4/1.8.4.46",
+          "is_main_symlinked": true
         }
       }
     },
@@ -25478,6 +25568,18 @@
             "4.7.7.UU1": {
               "path": "stable/4.7/4.7.7/UU1",
               "release_candidate": "4.7.7.5"
+            }
+          }
+        }
+      },
+      "4.7.8": {
+        "path": "stable/4.7/4.7.8",
+        "release_candidate": "4.7.8.4",
+        "special_versions": {
+          "EXT": {
+            "4.7.8.EXT1": {
+              "path": "stable/4.7/4.7.8/EXT1",
+              "release_candidate": "4.7.8.EXT1.2"
             }
           }
         }

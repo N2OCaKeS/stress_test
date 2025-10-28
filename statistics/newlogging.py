@@ -33,14 +33,18 @@ def task_logger(level=2):
                         f"STATUS {status}\n",
                         f"{border_line}\n\n\n",
                 ]
-                if level == 2:
+                log_file = f"logs/{kwargs.get('username')}_{kwargs.get('stat_title')}_level{level}.log"
+                if level == 1:
+                    log_entry.insert(1, f"TASK [{kwargs.get('stat_title')}]\n")
+                    log_file = f"logs/{kwargs.get('username')}_all_statistics.log"
+                elif level == 2:
                     log_entry.insert(1, lvltwostr)
                 elif level == 3:
                     log_entry.insert(1, lvltwostr)
                     log_entry.insert(3, f"CLASS: [{instance.__class__.__name__}]\n")
                     log_entry.insert(4, f"TYPE TEST: [{kwargs.get('type_test')}]\n")
                 
-                log_file = f"logs/{kwargs.get('username')}_{kwargs.get('stat_title')}_level{level}.log"
+                
                 with open(log_file, "a", encoding="utf-8") as f:
                     f.write("".join(log_entry))
         

@@ -1,4 +1,5 @@
 import os
+import os.path
 import pandas as pd
 import shutil
 from abc import abstractmethod
@@ -46,6 +47,14 @@ class BaseStatistics(Statistics):
                "rc_version": None,
                "type_test": None
           }
+          for level in range(2, 4):
+               log_filename = f"logs/{self.info_for_log['username']}_{self.info_for_log['stat_title']}_level{level}"
+               if os.path.exists(log_filename):
+                    with open(log_filename, "w"):
+                         pass
+               else:
+                    print(f"ФАЙЛА {log_filename} НЕТУ!")
+                    
           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
           
      def _get_pages(self):

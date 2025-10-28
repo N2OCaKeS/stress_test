@@ -65,7 +65,6 @@ class MainTable(Table):
 
     @task_logger(level=3)
     def build(self, *args, **kwargs) -> pd.DataFrame:
-        print(kwargs, flush=True)
         # Создаем оъект датафрема (таблицы) на основе наших данных
         
         df = pd.DataFrame(data=self.data)

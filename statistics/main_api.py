@@ -51,13 +51,13 @@ def base_statistics_api(body: Statistics):
         "message": ""
     }
     try:
-        base_stat.create()
+        base_stat.create(**base_stat.info_for_log)
         response['status'] = "success"
         response["message"] = "Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        base_stat.create()
+        base_stat.create(**base_stat.info_for_log)
         response["status"] = "warning"
         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:
@@ -81,13 +81,13 @@ def freeipa_statistics_api(body: Statistics):
         "message": ""
     }
     try:
-        freeipa_stat.create()
+        freeipa_stat.create(**freeipa_stat.info_for_log)
         response['status'] = "success"
         response["message"] = "Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        freeipa_stat.create()
+        freeipa_stat.create(**freeipa_stat.info_for_log)
         response["status"] = "warning"
         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:
@@ -110,13 +110,13 @@ def virt_statistics_api(body: Statistics):
         "message": ""
     }
     try:
-        virt_stat.create()
+        virt_stat.create(**virt_stat.info_for_log)
         response['status'] = "success"
         response["message"] = "Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        virt_stat.create()
+        virt_stat.create(**virt_stat.info_for_log)
         response["status"] = "warning"
         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:
@@ -138,13 +138,13 @@ def parsec_statistics_api(body: Statistics):
         "message": ""
     }
     try:
-        parsec_stat.create()
+        parsec_stat.create(**parsec_stat.info_for_log)
         response['status'] = "success"
         response["message"] = "Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        parsec_stat.create()
+        parsec_stat.create(**parsec_stat.info_for_log)
         response["status"] = "warning"
         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:
@@ -167,13 +167,13 @@ def postgresql_statistics_api(body: Statistics):
         "message": ""
     }
     try:
-        postgresql_stat.create()
+        postgresql_stat.create(**postgresql_stat.info_for_log)
         response['status'] = "success"
         response["message"] = "Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        postgresql_stat.create()
+        postgresql_stat.create(**postgresql_stat.info_for_log)
         response["status"] = "warning"
         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:
@@ -195,13 +195,13 @@ def docker_statistics(body: Statistics):
         "message": ""
     }
     try:
-        docker_stat.create()
+        docker_stat.create(**docker_stat.info_for_log)
         response['status'] = "success"
         response["message"] = "Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        docker_stat.create()
+        docker_stat.create(**docker_stat.info_for_log)
         response["status"] = "warning"
         response["message"] = "Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:
@@ -222,13 +222,13 @@ def file_systems_statistics(body: Statistics):
         "message": ""
     }
     try:
-        file_systems_stat.create()
+        file_systems_stat.create(**file_systems_stat.info_for_log)
         response['status'] = "success"
         response["message"] = "Файловые системы - Все прошло успешно"
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        file_systems_stat.create()
+        file_systems_stat.create(**file_systems_stat.info_for_log)
         response["status"] = "warning"
         response["message"] = "Файловые системы - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно"
     except Exception as error:
@@ -240,6 +240,15 @@ def file_systems_statistics(body: Statistics):
 
 @app.post("/all-statistics")
 def all_statistics(body: Auth):
+
+    log_allstat_filename = f"logs/{body.username}_all_statistics.log"
+    if os.path.exists(log_allstat_filename):
+        os.rename(log_allstat_filename, f"{log_allstat_filename}.old")
+    if os.path.exists(f"{log_allstat_filename}.old"):
+        os.rename(f"{log_allstat_filename}.old", f"{log_allstat_filename}.oldest")
+    if os.path.exists(f"{log_allstat_filename}.oldest"):
+        os.remove(f"{log_allstat_filename}.oldest")
+
     response = {
         "status": "success",
         "message": []
@@ -252,12 +261,12 @@ def all_statistics(body: Auth):
                                )
     
     try:
-        unix_stat.create()
+        unix_stat.create(**unix_stat.info_for_log)
         response["message"].append("UnixBench - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        unix_stat.create()
+        unix_stat.create(**unix_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("UnixBench - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:
@@ -271,12 +280,12 @@ def all_statistics(body: Auth):
                                           set_of_test_types={"auditd-p", "auditd-f", "auditd-u", "syslog-ng"}
                                           )
     try:
-        system_services_stat.create()
+        system_services_stat.create(**system_services_stat.info_for_log)
         response["message"].append("Системные службы - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        system_services_stat.create()
+        system_services_stat.create(**system_services_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("Системные службы - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:
@@ -290,12 +299,12 @@ def all_statistics(body: Auth):
                                              set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2", "CEPH", "CEPH fio"},
                                              comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"]])
     try:
-        file_systems_stat.create()
+        file_systems_stat.create(**file_systems_stat.info_for_log)
         response["message"].append("Файловые системы - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        file_systems_stat.create()
+        file_systems_stat.create(**file_systems_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("Файловые системы - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:
@@ -314,12 +323,12 @@ def all_statistics(body: Auth):
                                               ["postgresql", "psql vanilla"]],
                                           comparison_kernel_list=["postgresql"])
     try:
-        postresql_stat.create()
+        postresql_stat.create(**postresql_stat.info_for_log)
         response["message"].append("PostgreSQL - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        postresql_stat.create()
+        postresql_stat.create(**postresql_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("PostgreSQL - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:
@@ -333,12 +342,12 @@ def all_statistics(body: Auth):
                                  set_of_test_types={"apache-rp"},
                                  score_parser=ApacheParser)
     try:
-        apache_stat.create()
+        apache_stat.create(**apache_stat.info_for_log)
         response["message"].append("Apache - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        apache_stat.create()
+        apache_stat.create(**apache_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("Apache - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:
@@ -353,12 +362,12 @@ def all_statistics(body: Auth):
                                    comparison_list=[["parsec impact-fs", "parsec impact-fs aud-off"]],
                                    score_parser=ParsecParser)
     try:
-        parsec_stat.create()
+        parsec_stat.create(**parsec_stat.info_for_log)
         response["message"].append("Parsec - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        parsec_stat.create()
+        parsec_stat.create(**parsec_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("Parsec - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:
@@ -372,12 +381,12 @@ def all_statistics(body: Auth):
                                      set_of_test_types={'FreeIPA auth'},
                                      )
     try:
-        freeipa_stat.create()
+        freeipa_stat.create(**freeipa_stat.info_for_log)
         response["message"].append("FreeIPA - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        freeipa_stat.create()
+        freeipa_stat.create(**freeipa_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("FreeIPA - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:
@@ -391,12 +400,12 @@ def all_statistics(body: Auth):
                                set_of_test_types={"FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm"},
                                comparison_list=[["steal time", "steal time-sm"]])
     try:
-        virt_stat.create()
+        virt_stat.create(**virt_stat.info_for_log)
         response["message"].append("Qemu/KVM/Libvirt - Все прошло успешно")
     except ApiPermissionError:
         main_logger.error("confluence тупит пробуем еще раз")
         sleep(60)
-        virt_stat.create()
+        virt_stat.create(**virt_stat.info_for_log)
         response["status"] = "warning"
         response["message"].append("Qemu/KVM/Libvirt - Все должно было отработать но была ошибка ApiPermissionError, после нее создание статистики было вызвано повторно")
     except Exception as error:

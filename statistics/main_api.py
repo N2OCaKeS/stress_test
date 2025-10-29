@@ -243,11 +243,8 @@ def all_statistics(body: Auth):
 
     log_allstat_filename = f"logs/{body.username}_all_statistics.log"
     if os.path.exists(log_allstat_filename):
-        os.rename(log_allstat_filename, f"{log_allstat_filename}.old")
-    if os.path.exists(f"{log_allstat_filename}.old"):
-        os.rename(f"{log_allstat_filename}.old", f"{log_allstat_filename}.oldest")
-    if os.path.exists(f"{log_allstat_filename}.oldest"):
-        os.remove(f"{log_allstat_filename}.oldest")
+        with open(log_allstat_filename, "w"):
+            pass
 
     response = {
         "status": "success",

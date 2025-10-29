@@ -33,7 +33,7 @@ def task_logger(level=2):
                         f"STATUS {status}\n",
                         f"{border_line}\n\n\n",
                 ]
-                log_file = f"logs/{kwargs.get('username')}_{kwargs.get('stat_title')}_level{level}.log"
+                log_file = f"logs/{kwargs.get('username')}_{kwargs.get('stat_title').replace("/", "-")}_level{level}.log"
                 if level == 1:
                     log_entry.insert(1, f"TASK [{kwargs.get('stat_title')}]\n")
                     log_file = f"logs/{kwargs.get('username')}_all_statistics.log"

@@ -48,12 +48,10 @@ class BaseStatistics(Statistics):
                "type_test": None
           }
           for level in range(2, 4):
-               log_filename = f"logs/{self.info_for_log['username']}_{self.info_for_log['stat_title']}_level{level}"
+               log_filename = f"logs/{self.info_for_log['username']}_{self.info_for_log['stat_title'].replace("/","-")}_level{level}.log"
                if os.path.exists(log_filename):
                     with open(log_filename, "w"):
                          pass
-               else:
-                    print(f"ФАЙЛА {log_filename} НЕТУ!")
                     
           main_logger.info(f"Отработал конструктор {self.__class__.__name__}, {self.stat_title}")
           
@@ -176,7 +174,7 @@ class BaseStatistics(Statistics):
           except NoAnnotationsForComponent:
                main_logger.info(f"Не найдено аннотации для компонента {self.stat_title}")
           # Здесь выкладывание в confluence
-          # self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
+          self._upload_to_confluence(stat_rc_vers=stat_rc_version, pp_title=pp_title_rc_vers)
 
      @task_logger(level=1)
      def create(self, *args, **kwargs):
@@ -263,7 +261,7 @@ class FreeIpaStatistics(BaseStatistics):
                # Здесь сравнение по ядрам
                for ind, score in enumerate(col_scores):
                     comp_separate_kernel_line_graph_saver = SaveGraph(main_folder=self.stat_title, stat_rc_vers=rc_version)
-                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score, stat_title=self.stat_title, rc_version=rc_version)
+                    separate_kernel = TableSeparatelyByKernel(dataframe=df, score=score)
                     separate_kernel_data = separate_kernel.build(**self.info_for_log)
                     comparison_separate_kernel_line_graph = ComparisonKernelLineGraph(separate_by_kernel_data=separate_kernel_data, 
                                                                                       type_test=TypeTest.get_full_name_test_without_df(type_test), 

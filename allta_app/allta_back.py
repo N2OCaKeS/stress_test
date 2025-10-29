@@ -51,6 +51,10 @@ __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']
 
+with open('allta_conf.json', 'r') as r:
+     allta_conf = json.load(r)
+(rc_number := allta_conf['build_rc_relation'].get(args.RELEASE, ''))
+
 
 test_kernels = args.KERNEL.strip('[]').replace("'", "").split(', ')
 #__pt_version = '1.7.4'
@@ -63,6 +67,7 @@ bot_file = f'/home/u/git/stress_test/allta_app/telegrambot/results_{args.STAND}.
 total_start_time = datetime.datetime.now().replace(microsecond=0) 
 
 conf = SendCommentToConfluence(rc_name=__pt_version,
+                               rc_number=rc_number,
                                username=__username,
                                token=__conf_token)
 

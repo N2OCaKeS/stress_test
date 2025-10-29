@@ -446,7 +446,7 @@ def add_testrun_folder(rc):
                 __create_testrun_folder(name)
 
 
-def mod_allta_conf(value, uu_value=None):
+def mod_allta_conf(value, rc, uu_value=None):
     with open('./allta_conf.json', 'r') as r:
         data = json.load(r)
 
@@ -475,6 +475,9 @@ def mod_allta_conf(value, uu_value=None):
     if value not in data['releases']:
         data['releases'].append(value)       
         data['releases'] = sorted(data['releases']) 
+    if value not in data['build_rc_relation'].keys():
+        data['build_rc_relation'][value] = rc
+        data['build_rc_relation'] = {k: v for k, v in sorted(data['build_rc_relation'].items())}
         
     for stand in stands_type['phys'].keys():
         if uu_value:
@@ -675,22 +678,23 @@ async def process_callback(query: types.CallbackQuery):
 @dp.message(Command('addrc'))
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
+    build = None
     password = None
     if command.args is None:
-        await message.reply('❌ Укажите версию RC и пароль')
+        await message.reply('❌ Укажите Build версию, RC и пароль')
         return
     try:
-        rc, password = command.args.split(' ', maxsplit=1)
+        build, rc, password = command.args.split(' ', maxsplit=2)
     except ValueError:
-        content = Text('❌ Укажите версию RC, пароль. Пример:\n'
-                            '/addrc <RC> <password>')
+        content = Text('❌ Укажите Build версию, RC, пароль. Пример:\n'
+                            '/addrc <Build> <RC> <password>')
         await message.reply(**content.as_kwargs())
         return
     if password == __password:
-        await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию RC: {rc}')
-        mod_allta_conf(rc)
+        await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию: {build}')
+        mod_allta_conf(build, rc)
         #stand3, stand4 = acs_create_snapshot(rc)
-        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация RC: "{rc}"'
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация: "{build}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
         #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand3}', parse_mode=None)
         #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления MiddleServer: {stand4}', parse_mode=None)
@@ -702,23 +706,24 @@ async def addrc(message: types.Message, command: CommandObject):
 @dp.message(Command('adduurc'))
 async def addrc(message: types.Message, command: CommandObject):
     rc = None
+    build = None
     password = None
     uu_value = None #Использовать только если UU, иначе игнорировать
     if command.args is None:
-        await message.reply('❌ Укажите версию RC и пароль')
+        await message.reply('❌ Укажите Build версию, RC и пароль')
         return
     try:
-        rc, password, uu_value = command.args.split(' ', maxsplit=2)
+        build, rc, password, uu_value = command.args.split(' ', maxsplit=3)
     except ValueError:
-        content = Text('❌ Укажите версию RC, пароль и UU build version при наличии. Пример:\n'
-                            '/adduurc <RC> <password> <UU build version>')
+        content = Text('❌ Укажите Build версию, RC, пароль и UU build version при наличии. Пример:\n'
+                            '/adduurc <Build> <RC> <password> <UU build version>')
         await message.reply(**content.as_kwargs())
         return
     if password == __password:
-        await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию RC: {rc}')
-        mod_allta_conf(rc, uu_value)
+        await message.reply(f'✅ Доступ разрешен\nДобавляю новую конфигурацию: {build}')
+        mod_allta_conf(build, rc, uu_value)
         #stand3, stand4 = acs_create_snapshot(rc)
-        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация RC: "{rc}"'
+        content = f'Пользователь: "{message.from_user.full_name}"\nID: "{message.from_user.id}"\n\nДействие:\nДобавлена конфигурация: "{build}"'
         await bot.send_message(chat_id=chat_id, text=content, parse_mode=None)
         #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления LowServer: {stand3}', parse_mode=None)
         #await bot.send_message(chat_id=chat_id, text=f'Запуск обновления MiddleServer: {stand4}', parse_mode=None)

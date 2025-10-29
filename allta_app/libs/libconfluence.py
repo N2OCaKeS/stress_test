@@ -77,24 +77,26 @@ class ConfluenceAPI():
 class SendCommentToConfluence(ConfluenceAPI):
     def __init__(self,
                  rc_name: str,
+                 rc_number: str,
                  username: str,
                  token: str):
         super().__init__(username=username, 
                          token=token)
 
         self.rc = rc_name
+        self.rc_version = rc_number
         self.check_len_version = self.rc.split('.')
 
         if len(self.check_len_version) == 4 and self.check_len_version[3] != 'UU':
             self.release_version = '.'.join(self.check_len_version[:3])
-            self.rc_version = self.check_len_version[-1]
+            #self.rc_version = self.check_len_version[-1]
             self.load_page_version = self.release_version
-            self.rc_template = f"RC{self.rc_version} оперативного обновления Astra Linux SE {self.release_version}"
+            self.rc_template = f"{self.rc_version} оперативного обновления Astra Linux SE {self.release_version}"
         elif len(self.check_len_version) == 6 and self.check_len_version[3] == 'UU':
             self.release_version = '.'.join(self.check_len_version[:4]) + self.check_len_version[4]
-            self.rc_version = self.check_len_version[-1]
+            #self.rc_version = self.check_len_version[-1]
             self.load_page_version = '.'.join(self.check_len_version[:5])
-            self.rc_template = f"RC{self.rc_version} срочного обновления Astra Linux SE {self.release_version}"
+            self.rc_template = f"{self.rc_version} срочного обновления Astra Linux SE {self.release_version}"
 
         print(f"release_version: {self.release_version}")
         print(f"rc_version: {self.rc_version}")

@@ -227,6 +227,8 @@
         "debian10-5.15": "2974",
         "debian11-6.1": "2977"
     },
+    "build_rc_relation": {
+    },
     "releases": [
         "1.7.1",
         "1.7.2",

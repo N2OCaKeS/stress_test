@@ -10,6 +10,7 @@ from abc import abstractmethod
 from sorting import Scale
 from typetest import TypeTest
 from logging_conf import main_logger
+from newlogging import task_logger
 
 """
     TODO Необходимо реализовать интерактивный график, смотреть запись техсреды от ОНИ (который работал в Apple)
@@ -64,7 +65,8 @@ class MainGraphW(Graphs):
         yellow_patch = mpatches.Patch(color=Colors.WARNING, label='Рейтинг выше мат. ожидания на величину x1.5 превышающую стандартное отклонение')
         return [red_patch, green_patch, yellow_patch]
     
-    def draw(self):
+    @task_logger(level=3)
+    def draw(self, *args, **kwargs):
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
         rect = ax.bar(self.scale_x, self.list_of_score, color=self._get_colors())
         ax.grid(self.grid)
@@ -97,7 +99,8 @@ class MainGraph(MainGraphW):
         self.xlabel = xlabel
         super().__init__(list_of_score, scale_txt, type_test, saver, xlabel)
 
-    def draw(self):
+    @task_logger(level=3)
+    def draw(self, *args, **kwargs):
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT + 8))
         # fig.set_facecolor("#bbbbbb")
         pos = ax.get_position()
@@ -153,6 +156,7 @@ class SummaryGraphW(Graphs):
         self.bar_width = 0.8
         self.scale_x = np.arange(len(scale_txt))
 
+    @task_logger(level=3)
     def draw(self, *args, **kwargs) -> None:
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
         max_score = 1 # Единица чтобы не было предупреждения  "UserWarning: Attempting to set identical low and high ylims makes transformation singular; automatically expanding"
@@ -198,6 +202,7 @@ class SummaryGraph(SummaryGraphW):
     def __init__(self, saver, stand_grade, comparison_scale_of_score: list, scale_txt, comparison_names: list, graph_name: str, colors: list = ['#88c1f2', '#ea5c76']):
         super().__init__(saver, stand_grade, comparison_scale_of_score, scale_txt, comparison_names, graph_name, colors)
 
+    @task_logger(level=3)
     def draw(self, *args, **kwargs) -> None:
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH + 2, FigSize.HEIGHT + 12))
         max_score = 1 # Единица чтобы не было предупреждения  "UserWarning: Attempting to set identical low and high ylims makes transformation singular; automatically expanding"
@@ -249,6 +254,7 @@ class SummaryGraph(SummaryGraphW):
 
 
 class SummaryLineGraph(SummaryGraph):
+    @task_logger(level=3)
     def draw(self, *args, **kwargs):
         legend = []
         fig, ax = plt.subplots(figsize=(FigSize.WIDTH, FigSize.HEIGHT))
@@ -293,6 +299,7 @@ class ComparisonKernelLineGraph(Graphs):
         self.type_test = type_test
         self.saver = saver
 
+    @task_logger(level=3)
     def draw(self, *args, **kwargs):
         dataframes = [p for p in self.separate_by_kernel_data.values()]
         sfx_tuple = ("x", "y", "z", "w", "e", "t", "u", "i")

@@ -14,8 +14,16 @@ from sorting import SortMainTable, SortUniqueMajorKernel
 from typetest import TypeTest
 
 from logging_conf import main_logger
+from newlogging import task_logger
 
-class Table:
+# class ClassNameMeta(type):
+#     """Метакласс, который добавляет свойство class_name ко всем классам"""
+#     def __new__(cls, name, bases, attrs):
+#         attrs['class_name'] = name
+#         return super().__new__(cls, name, bases, attrs)
+
+
+class Table():
     @abstractmethod
     def build():
         pass
@@ -55,7 +63,8 @@ class MainTable(Table):
 
         return value_with_link
 
-    def build(self) -> pd.DataFrame:
+    @task_logger(level=3)
+    def build(self, *args, **kwargs) -> pd.DataFrame:
         # Создаем оъект датафрема (таблицы) на основе наших данных
         
         df = pd.DataFrame(data=self.data)
@@ -120,8 +129,9 @@ class MathTable(Table):
 
     def __build_dataframe(self) -> pd.DataFrame:
         return pd.DataFrame(data=self.__create_math_array(), columns=["Оценка", "Значение"])
-        
-    def build(self):
+    
+    @task_logger(level=3)
+    def build(self, *args, **kwargs):
         df = self.__build_dataframe()
         """
             TODO Проконтролировать передачу имени файла и описание заголовка перед таблицей
@@ -137,6 +147,7 @@ class SummaryTable(Table):
         self.dataframes = dataframes
         # self.saver = saver
 
+    @task_logger(level=3)
     def build(self):
         df_merged = pd.merge(self.dataframes[0], self.dataframes[1],
                              how="outer",
@@ -162,7 +173,8 @@ class SummaryTableNew(Table):
         self.score = score
         self.sfx_tuple = ("x", "y", "z", "w", "e", "t", "u", "i")
 
-    def build(self):
+    @task_logger(level=3)
+    def build(self, *args, **kwargs):
         sfx_iter = iter(self.sfx_tuple)
         df_merged = reduce(
             lambda left, right: pd.merge(
@@ -190,7 +202,8 @@ class TableSeparatelyByKernel(Table):
         self.dataframe = dataframe
         self.score = score if score != None else "Рейтинг"
 
-    def build(self):
+    @task_logger(level=3)
+    def build(self, *args, **kwargs):
         unique_kernels = list(self.dataframe['Ядро'].unique())
         keys_kernel = SortUniqueMajorKernel.groupby_uniq_kernel(uniq_kernels=unique_kernels)
         separate_by_kernel_df = dict()
@@ -214,7 +227,8 @@ class BugsTable(Table):
         self.url = 'http://allta.devos.astralinux.ru/rest/api/known-bugs'
         self.response = requests.get(url=self.url)
 
-    def build(self):
+    @task_logger(level=3)
+    def build(self, *args, **kwargs):
         if self.response.status_code == 200:
             data = self.response.json()
 
@@ -253,7 +267,8 @@ class Annotations(Table):
         self.url = 'http://allta.devos.astralinux.ru/rest/api/annotations'
         self.response = requests.get(url=self.url)
     
-    def build(self):
+    @task_logger(level=3)
+    def build(self, *args, **kwargs):
         if self.response.status_code == 200:
             data = self.response.json()
             try:

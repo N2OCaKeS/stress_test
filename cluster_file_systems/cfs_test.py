@@ -195,7 +195,7 @@ if args.TS == 'fs_mark_count':
                        step=FILES_STEP)
 
     try:
-        run_test.test_7_fs_mark33_count()
+        run_test.test_7_fs_mark33_count(parsec=args.PARSEC)
     except Exception as exeption:
         log.info(exeption)
     finally:

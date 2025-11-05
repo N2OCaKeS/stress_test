@@ -6,9 +6,9 @@ rc = "1.8.1.6"
 mode = "o"
 ovpn = Ovpn()
 ovpn.build(rc, mode)
-# ovpn.provision()
+ovpn.provision()
 ovpn.server_settings()
-ovpn.start_test()
+# ovpn.start_test()
 
 # rp = Report()
 

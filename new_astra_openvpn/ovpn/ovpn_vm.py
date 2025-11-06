@@ -26,8 +26,8 @@ class Ovpn:
             self.new_vms_dates = json.loads(path.read_text(encoding="utf-8"))
             print(self.new_vms_dates)
             print("ВМ найдены, восстанавливаем")
-            # LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="build")
-            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
+            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="build")
+            #LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
             sleep(10)
             print("ВМ восстановлены")
         else:
@@ -107,9 +107,9 @@ class Ovpn:
             timeout=15,
         )
         print("\n\n\n Provison выполнен \n\n\n")
-        print("\n\n\n Делаем снимок  \n\n\n")
-        LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Provision")
-        print("\n\n\n Cнимок успешно создан  \n\n\n")
+        # print("\n\n\n Делаем снимок  \n\n\n")
+        # LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Provision")
+        # print("\n\n\n Cнимок успешно создан  \n\n\n")
 
     def server_settings(self):
         print("\n\n\n Настраивается сервер \n\n\n")

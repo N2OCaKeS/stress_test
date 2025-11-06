@@ -215,8 +215,8 @@ def file_systems_statistics(body: Statistics):
     file_systems_stat = FileSystemStatistics(stat_title="Файловые системы",
                                              username=body.username, 
                                              tokenconf=body.token,
-                                             set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2", "CEPH", "CEPH fio"},
-                                             comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"]])
+                                             set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2", "CEPH", "CEPH fio", "CEPH parsec"},
+                                             comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"], ["CEPH", "CEPH parsec"]])
     response = {
         "status": "",
         "message": ""
@@ -293,8 +293,8 @@ def all_statistics(body: Auth):
     file_systems_stat = FileSystemStatistics(stat_title="Файловые системы",
                                              username=body.username, 
                                              tokenconf=body.token,
-                                             set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2", "CEPH", "CEPH fio"},
-                                             comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"]])
+                                             set_of_test_types={"EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS", "XFS parsec", "OCFS2", "CEPH", "CEPH fio", "CEPH parsec"},
+                                             comparison_list=[["EXT4", "XFS"], ["EXT4", "EXT4 parsec"], ["CEPH", "CEPH parsec"]])
     try:
         file_systems_stat.create(**file_systems_stat.info_for_log)
         response["message"].append("Файловые системы - Все прошло успешно")

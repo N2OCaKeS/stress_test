@@ -163,7 +163,7 @@ class _VirtInstall:
         for vm in vms_date:
             LibvirtManager.Vm.stop(vm)
             system_commands.cmd_with_returncode(
-                f"sudo qemu-img resize '{self.vm_path}'/{vm}.qcow2 {vms_date[vm]["disk"]}G"
+                f"qemu-img resize '{self.vm_path}'/{vm}.qcow2 {vms_date[vm]["disk"]}G"
             )
             LibvirtManager.Vm.start(vm)
         sleep(90)
@@ -224,14 +224,14 @@ class _VirtInstall:
     def build(self, bridge: bool = False):
         vm_path = self.vm_path
         box_name, box_url, os_version = self._box_wrapper()
-        system_commands.cmd(f"sudo mkdir {vm_path} && sudo chmod 777 {vm_path}")
+        system_commands.cmd(f"sudo mkdir -p {vm_path} && sudo chmod 777 {vm_path}")
         system_commands.cmd(
-            f"sudo virsh --connect qemu:///system pool-define-as vms dir --target {vm_path} && sudo virsh --connect qemu:///system pool-build vms && sudo virsh --connect qemu:///system pool-start vms && sudo virsh --connect qemu:///system pool-autostart vms"
+            f"virsh --connect qemu:///system pool-define-as vms dir --target {vm_path} && virsh --connect qemu:///system pool-build vms && virsh --connect qemu:///system pool-start vms && virsh --connect qemu:///system pool-autostart vms"
         )
         system_commands.cmd(
-            f"sudo rm -rf {vm_path}/{box_name}.tar.gz; sudo wget -P {vm_path} {box_url}"
+            f"rm -rf {vm_path}/{box_name}.tar.gz; wget -P {vm_path} {box_url}"
         )
-        system_commands.cmd(f"sudo tar xzf {vm_path}/{box_name}.tar.gz -C {vm_path}/")
+        system_commands.cmd(f"tar xzf {vm_path}/{box_name}.tar.gz -C {vm_path}/")
 
         # Сеть libvirt (создать если ещё нет)
 
@@ -251,8 +251,8 @@ class _VirtInstall:
 
         try:
             system_commands.check_output_command(
-                f"sudo virsh --connect qemu:///system net-create {network_path} && "
-                f"sudo virsh --connect qemu:///system net-autostart --network test"
+                f"virsh --connect qemu:///system net-create {network_path} && "
+                f"virsh --connect qemu:///system net-autostart --network test"
             )
         except Exception as e:
             print("WARNING: Сеть test возможно уже существует.")
@@ -302,7 +302,7 @@ class _VirtInstall:
                 hostname, ip = future.result()
                 self.vms_date[hostname]["ip_bridge"] = ip
         system_commands.cmd(
-            f"sudo rm {vm_path}/{self.box}.qcow2 {vm_path}/{self.box}.tar.gz"
+            f"rm {vm_path}/{self.box}.qcow2 {vm_path}/{self.box}.tar.gz"
         )
 
         if self.box != "vm_station":

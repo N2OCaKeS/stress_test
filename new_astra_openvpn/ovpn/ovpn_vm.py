@@ -235,20 +235,23 @@ EOF'""",
     def start_test(self):
         print("\n\n\n Запускаем тест \n\n\n")
 
-        for i in range()
+        client_count = 1200
+        client_per_minutes = 30
+        start_client = {}
+        for idx, i in enumerate(range(2, 6)):  # 2,3,4
+            host = f"testvm{i}"
+            client_start = idx * client_count  # 0, 1200, 2400
 
-        start_client = {
-            "g_clients_group": {
-                "run_perf": {
-                    "command": (
-                        "sudo su -c 'ulimit -u 100000 && "
-                        "ulimit -n 100000 && "
-                        "ulimit -s 100000 && "
-                        "python3.12 /home/u/loader.py --client_per_minutes 30 --client_start 0 --client_count 1200'"
-                    )
-                }
-            }
-        }
+            cmd = (
+                "sudo su -c 'ulimit -u 100000 && "
+                "ulimit -n 100000 && "
+                "ulimit -s 100000 && "
+                f"python3.12 /home/u/loader.py --client_per_minutes {client_per_minutes} "
+                f"--client_start {client_start} --client_count {client_count}'"
+            )
+
+            start_client[host] = {"run_perf": {"command": cmd}}
+
         Libvirt.execute(
             commands=start_client,
             vms_dates=self.new_vms_dates,
@@ -256,6 +259,7 @@ EOF'""",
             username=USER,
             password=PASSWORD,
         )
+        
         print("\n\n\n Тест выполнен \n\n\n")
 
     def get_logs(self):

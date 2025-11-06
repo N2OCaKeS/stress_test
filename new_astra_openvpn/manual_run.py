@@ -8,7 +8,7 @@ ovpn = Ovpn()
 ovpn.build(rc, mode)
 ovpn.provision()
 ovpn.server_settings()
-# ovpn.start_test()
+ovpn.start_test()
 
 # rp = Report()
 

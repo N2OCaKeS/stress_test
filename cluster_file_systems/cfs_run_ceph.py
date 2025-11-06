@@ -55,7 +55,7 @@ class Ceph:
             install_need_packages = "sudo apt install libgfapi0 -y"
             install_pip_req = "sudo pip3 install -r /var/tmp/req.txt"
         
-        virt_machines = VMS(rc_vbox=self.vbox, vm_count=self.vmc, kernel=self.kernel)
+        virt_machines = VMS(rc_vbox=self.vbox, vm_count=self.vmc, kernel=self.kernel, parsec=self.parsec)
         virt_machines.prepare_and_start()
         self.HOSTS = virt_machines.vm_dates
         for ind, node in enumerate(list(self.HOSTS.keys())):

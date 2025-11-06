@@ -27,7 +27,7 @@ class Ovpn:
             print(self.new_vms_dates)
             print("ВМ найдены, восстанавливаем")
             LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="build")
-            #LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
+            # LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
             sleep(10)
             print("ВМ восстановлены")
         else:
@@ -63,7 +63,7 @@ class Ovpn:
                     "mode": "push",
                     "path_host": f"{TEMPLATE_PATH}/loader.py",
                     "path_vm": "/home/u/",
-                },                
+                },
             ],
         }
         Libvirt.scp(
@@ -96,7 +96,7 @@ class Ovpn:
                     "signal set": "",
                     "signal get": ["unpack"],
                 },
-            }
+            },
         }
         Libvirt.execute(
             commands=provision,
@@ -106,6 +106,8 @@ class Ovpn:
             password=PASSWORD,
             timeout=15,
         )
+
+        Libvirt.set_hosts(domain="stress.rbt", vms_dates=VMS_DATES, username=USER, password=PASSWORD)
         print("\n\n\n Provison выполнен \n\n\n")
         # print("\n\n\n Делаем снимок  \n\n\n")
         # LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Provision")
@@ -259,7 +261,7 @@ EOF'""",
             username=USER,
             password=PASSWORD,
         )
-        
+
         print("\n\n\n Тест выполнен \n\n\n")
 
     def get_logs(self):

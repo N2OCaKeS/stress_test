@@ -1,4 +1,4 @@
-sudo apt install podman -y
+# sudo apt install podman -y
 sudo apt install ssh sshpass -y
 sudo systemctl enable --now ssh
 

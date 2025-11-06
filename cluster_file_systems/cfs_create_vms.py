@@ -8,7 +8,7 @@ from allta import Libvirt, LibvirtManager
 
 
 class VMS:
-    def __init__(self, rc_vbox=None, vm_count=None, testdir=None, kernel="6.1", hostip=None, mode='o', provider=Libvirt()):
+    def __init__(self, rc_vbox=None, vm_count=None, testdir=None, kernel="6.1", hostip=None, mode='o', provider=Libvirt(), parsec=False):
         self.kernel = kernel
         self.rc_name = rc_vbox
         self.vm_count = vm_count
@@ -21,6 +21,7 @@ class VMS:
         self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
         self.mode = mode
         self.provider = provider
+        self.parsec = parsec
 
     def prepare_and_start(self):
         VERSION_OS = '.'.join(self.rc_name.split('.')[:2])
@@ -30,16 +31,21 @@ class VMS:
         VMS_DATES = { # Полный список ВМ
             testvm: {'host-port': '22',
                      'cpu': '4',
-                     'ram': '8192'}
+                     'ram': '8192',
+                     'disk': '15'}
             for testvm in VMS
         }
 
+        if self.parsec:
+            security_mode = 's'
+        else:
+            security_mode = 'o'
         if isinstance(self.provider, Libvirt):
             self.provider.prepare()
             if VERSION_OS == '1.7':
-                VMS_DATES = self.provider.build("15GB.1.7.5.o", self.rc_name, VMS, VMS_DATES)
+                VMS_DATES = self.provider.build(f"1.7.5.{security_mode}", self.rc_name, VMS, VMS_DATES)
             elif VERSION_OS == '1.8':
-                VMS_DATES = self.provider.build("15GB.1.8.1.o", self.rc_name, VMS, VMS_DATES)
+                VMS_DATES = self.provider.build(f"1.8.1.{security_mode}", self.rc_name, VMS, VMS_DATES)
 
         self.provider.check(VMS, VMS_DATES)
         print(f'VMS DATES:\n{VMS_DATES}')
@@ -105,70 +111,6 @@ class VMS:
         )
         print(f'<{str(self.provider.execute.__name__).upper()}> block done ' + ('*' * 50))
 
-
-
-        # astra_config_url = 'http://allta.devos.astralinux.ru/rest/api/get-box-config'
-        # response_ac = requests.get(astra_config_url)
-        # if response_ac.status_code == 200:
-        #     with open('box-config.json', 'wb') as acb:
-        #         acb.write(response_ac.content)
-        # else:
-        #     print(f'Failed to get file from {astra_config_url}: {response_ac.status_code}')
-
-        # with open('box-config.json', 'r') as r:
-        #     dates = loads(r.read())
-
-        # def box_wrapper(box):
-        #     true_key = False
-        #     box_name = ''
-        #     box_url = ''
-        #     for i in dates['vagrant_box']:
-        #         if box in str(i):
-        #             for key in i.keys():
-        #                 if str(key).endswith('o'):
-        #                     true_key = key
-        #                     box_name = i[true_key][0]
-        #                     box_url = i[true_key][1]             
-                    
-        #     if true_key == False:
-        #         for i in dates['vagrant_box']:
-        #             if str(box).startswith('1.7'):
-        #                   if '1.7.1.o' in str(i):
-        #                     box_name = i['1.7.1.o'][0]
-        #                     box_url = i['1.7.1.o'][1]
-        #             elif str(box).startswith('1.8'):
-        #                 if '1.8.0.o' in str(i):
-        #                     box_name = i['1.8.0.o'][0]
-        #                     box_url = i['1.8.0.o'][1]
-            
-        #     return box_name, box_url
-
-        # # if not os.path.isdir(self.testdir):
-        # #     os.mkdir(self.testdir)
-
-        # # add_box
-        
-        # box_name, box_url = box_wrapper(self.rc_name)
-        # print(box_name)
-        # print(box_url)
-        # cmd(f'vagrant box add --provider virtualbox {box_name} {box_url}')
-        # cmd(f'vagrant mutate {box_name} libvirt --input-provider virtualbox --force-virtio')
-
-        #         # add define pool
-        # try:
-        #     cmd('virsh --connect=qemu:///system pool-define-as --name default --type dir --target /var/lib/libvirt/images')
-        #     cmd('virsh --connect=qemu:///system pool-autostart default')
-        #     cmd('virsh --connect=qemu:///system pool-start default')
-        # except Exception as e:
-        #     print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-        
-        #  # create_vm
-        # print(f'UPDATE={box_name} HOSTIP={self.hostip} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
-        # cmd(f'UPDATE={box_name} HOSTIP={self.hostip} BOX_URL={box_url} RC={self.rc_name} KERNEL={self.kernel} COUNT={self.vm_count} vagrant up --provider=libvirt')
-        
-        # print('\nWait reboot VMs 180s...\n')
-        # sleep(180)
-
         self.vm_dates = {
              vm:{
                 'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
@@ -177,7 +119,7 @@ class VMS:
                 } for vm in self.vms}
         print(f'VM dates is:\n{self.vm_dates}')
 
-        LibvirtManager.power_off(self.vm_dates.keys())
+        LibvirtManager.Vm.stop(self.vm_dates.keys())
 
 
 

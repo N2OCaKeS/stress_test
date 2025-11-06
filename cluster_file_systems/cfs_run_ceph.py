@@ -18,11 +18,13 @@ class Ceph:
     startvm = 'virsh --connect qemu:///system start {host}'
     controlvm_off = 'virsh --connect qemu:///system destroy {host}'
     run_test_cmd = 'sudo python3 {dir}/{file} --test-set {ts}'
+    run_test_cmd_parsec= 'sudo python3 {dir}/{file} --test-set {ts} --parsec'
 
     def __init__(self, **kwargs):
         self.vbox = kwargs['VBOX']
         self.kernel = kwargs['KERNEL']
         self.type_load_test = kwargs['TS']
+        self.parsec = kwargs.get("PARSEC")
         for key, value in kwargs.items():
             setattr(self, key, value)
         self.uzs = UploaderZC(folder_tree_id=kwargs["FTI"],
@@ -53,7 +55,7 @@ class Ceph:
             install_need_packages = "sudo apt install libgfapi0 -y"
             install_pip_req = "sudo pip3 install -r /var/tmp/req.txt"
         
-        virt_machines = VMS(rc_vbox=self.vbox, vm_count=self.vmc, kernel=self.kernel)
+        virt_machines = VMS(rc_vbox=self.vbox, vm_count=self.vmc, kernel=self.kernel, parsec=self.parsec)
         virt_machines.prepare_and_start()
         self.HOSTS = virt_machines.vm_dates
         for ind, node in enumerate(list(self.HOSTS.keys())):
@@ -138,6 +140,8 @@ class Ceph:
             report.create_report()
             
         else:
+            if self.parsec:
+                self.run_test_cmd = self.run_test_cmd_parsec
             send_remote_command(command=f'sudo chmod +x /var/tmp/fs_mark-3.3/fs_mark && {self.run_test_cmd.format(dir="/var/tmp", file="cfs_test.py", ts="fs_mark_count")}',
                                 ip=self.HOSTS["testvm1"]['ip'], 
                                 user=self.HOSTS["testvm1"]['login'], 

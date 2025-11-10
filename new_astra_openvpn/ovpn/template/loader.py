@@ -15,7 +15,7 @@ def astra_prepare_if_needed():
         return
 
     # Вариант 1.8
-    if av == "1.8":
+    if av.startswith("1.8"):
         if host != "testvm1":
             for i in range(0, 10000):
                 base = f"/home/u/openvpn/clients_keys/tester{i}"
@@ -43,7 +43,7 @@ def astra_prepare_if_needed():
             print("Конфигурация сервера не найдена в /etc/openvpn/server.conf")
 
     # Вариант 1.7
-    elif av == "1.7":
+    elif av.startswith("1.7"):
         if host != "testvm1":
             for i in range(0, 10000):
                 base = f"/home/u/openvpn/clients_keys/tester{i}"

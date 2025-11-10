@@ -4,25 +4,71 @@ sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev cpp gcc make libpdp-dev liblzma-dev python3-requests rustc cargo libcurl4-gnutls-dev strace pkg-config
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libsqlite3-dev wget libbz2-dev
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y   build-essential pkg-config \
-  zlib1g-dev libbz2-dev liblzma-dev xz-utils \
-  libssl-dev libreadline-dev libsqlite3-dev \
-  libffi-dev libncurses5-dev \
-  libgdbm-dev libgdbm-compat-dev \
-  libnss3-dev libexpat1-dev \
-  tk-dev uuid-dev \
-  curl wget ca-certificates \
-  rustc cargo \
-  strace \
-  "linux-tools-${SYS_KERNEL}" \
-  python3-requests
+zlib1g-dev libbz2-dev liblzma-dev xz-utils \
+libssl-dev libreadline-dev libsqlite3-dev \
+libffi-dev libncurses5-dev \
+libgdbm-dev libgdbm-compat-dev \
+libnss3-dev libexpat1-dev \
+tk-dev uuid-dev \
+curl wget ca-certificates \
+rustc cargo \
+strace \
+"linux-tools-${SYS_KERNEL}" \
+python3-requests
 
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra iptables tmux
 
-if [ "$HOSTNAME" = "testvm1" ]; then
+if [ "${HOSTNAME}" = "testvm1" ]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server sshpass
+
+    av="$(cat /etc/astra_version 2>/dev/null || true)"
+    if [[ -n "${av}" && -f "/etc/openvpn/server.conf" ]]; then
+        if [[ "${av}" == 1.8* ]]; then
+            bash -lc "printf '\n%s\n' 'data-ciphers kuznyechik-cbc' 'auth id-tc26-gost3411-12-512' >> /etc/openvpn/server.conf"
+        elif [[ "${av}" == 1.7* ]]; then
+            bash -lc "printf '\n%s\n' 'ncp-disable' >> /etc/openvpn/server.conf"
+        fi
+
+        if command -v astra-openvpn-server >/dev/null 2>&1; then
+            astra-openvpn-server start || true
+        fi
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload || true
+            systemctl restart iperf-server.service 2>/dev/null || \
+            systemctl start iperf-server 2>/dev/null || true
+        fi
+
+        if command -v netstat >/dev/null 2>&1; then
+            out="$(netstat -tulpn 2>/dev/null | grep 5001 || true)"
+            [[ -n "${out}" ]] && echo "${out}"
+        fi
+    else
+        [[ -z "${av}" ]] && echo "Внимание: /etc/astra_version не найден или пуст — серверный конфиг не менялся."
+        [[ ! -f "/etc/openvpn/server.conf" ]] && echo "Внимание: /etc/openvpn/server.conf не найден — нечего настраивать."
+    fi
+
 else
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
+
+    av="$(cat /etc/astra_version 2>/dev/null || true)"
+    if [[ -n "${av}" ]]; then
+        for i in $(seq 0 9999); do
+            base="/home/u/openvpn/clients_keys/tester${i}"
+            cfg="${base}/client.ovpn"
+            [[ -f "${cfg}" ]] || continue
+
+            if [[ "${av}" == 1.8* ]]; then
+                sed -i 's/grasshopper-cbc/kuznyechik-cbc/g' "${cfg}" || true
+                bash -lc "printf '\n%s\n' 'data-ciphers kuznyechik-cbc' 'auth id-tc26-gost3411-12-512' >> '${cfg}'"
+            elif [[ "${av}" == 1.7* ]]; then
+                bash -lc "printf '\n%s\n' 'ncp-disable' >> '${cfg}'"
+            fi
+        done
+    else
+        echo "Внимание: /etc/astra_version не найден или пуст — клиентские конфиги не менялись."
+    fi
 fi
+    
 
 echo "10000 65000" > /proc/sys/net/ipv4/ip_local_port_range
 
@@ -33,9 +79,9 @@ sudo wget -P /home/u/python ftp://10.177.103.10/python/*
 tar -xf Python-3.12.1.tar.xz
 cd Python-3.12.1
 ./configure --enable-optimizations
-make -j 
+make -j
 sudo make altinstall
 python3.12 -m pip install --upgrade pip
-python3.12 -m pip install "allta==1.0.20" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10 
+python3.12 -m pip install "allta==1.0.20" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10
 python3.12 -m venv venv
 

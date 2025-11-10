@@ -93,11 +93,19 @@ class Ovpn:
                 },
                 "cp tar config to etc": {
                     "command": "sudo cp -r /home/u/openvpn /etc/",
-                    "signal set": "",
+                    "signal set": "cp config",
                     "signal get": ["unpack"],
                 },
             },
+            "g_clients_group":{
+                "enable ip_forwards": {
+                    "command": "sudo sysctl -w net.ipv4.ip_forward=1",
+                    "signal set": "",
+                    "signal get": ["cp config"],                    
+                }
+            }
         }
+        
         Libvirt.execute(
             commands=provision,
             vms_dates=self.new_vms_dates,

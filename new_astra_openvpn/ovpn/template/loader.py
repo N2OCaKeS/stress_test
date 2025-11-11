@@ -6,64 +6,64 @@ from os.path import exists
 from allta import SystemCommands
 
 
-def astra_prepare_if_needed():
-    sys_cls = SystemCommands
-    av = sys_cls.check_output_command("cat /etc/astra_version")
-    host = sys_cls.check_output_command("hostname -s")
+# def astra_prepare_if_needed():
+#     sys_cls = SystemCommands
+#     av = sys_cls.check_output_command("cat /etc/astra_version")
+#     host = sys_cls.check_output_command("hostname -s")
 
-    if not av:
-        return
+#     if not av:
+#         return
 
-    # Вариант 1.8
-    if av.startswith("1.8"):
-        if host != "testvm1":
-            for i in range(0, 10000):
-                base = f"/home/u/openvpn/clients_keys/tester{i}"
-                if not exists(f"{base}/client.ovpn"):
-                    continue
-                sys_cls.cmd(f"sed -i 's/grasshopper-cbc/kuznyechik-cbc/g' {base}/client.ovpn")
-                sys_cls.cmd(
-                    "bash -lc "
-                    f"\"printf '\\n%s\\n' 'data-ciphers kuznyechik-cbc' 'auth id-tc26-gost3411-12-512' "
-                    f">> {base}/client.ovpn\""
-                )
+#     # Вариант 1.8
+#     if av.startswith("1.8"):
+#         if host != "testvm1":
+#             for i in range(0, 10000):
+#                 base = f"/home/u/openvpn/clients_keys/tester{i}"
+#                 if not exists(f"{base}/client.ovpn"):
+#                     continue
+#                 sys_cls.cmd(f"sed -i 's/grasshopper-cbc/kuznyechik-cbc/g' {base}/client.ovpn")
+#                 sys_cls.cmd(
+#                     "bash -lc "
+#                     f"\"printf '\\n%s\\n' 'data-ciphers kuznyechik-cbc' 'auth id-tc26-gost3411-12-512' "
+#                     f">> {base}/client.ovpn\""
+#                 )
 
-        if exists("/etc/openvpn/server.conf"):
-            SystemCommands.cmd(
-                "bash -lc "
-                "\"printf '\\n%s\\n' 'data-ciphers kuznyechik-cbc' 'auth id-tc26-gost3411-12-512' "
-                ">> /etc/openvpn/server.conf\""
-            )
-            SystemCommands.cmd("astra-openvpn-server start")
-            SystemCommands.cmd("systemctl daemon-reload && systemctl restart iperf-server.service")
-            out = SystemCommands.check_output_command("netstat -tulpn | grep 5001")
-            if out:
-                print(out)
-        else:
-            print("Конфигурация сервера не найдена в /etc/openvpn/server.conf")
+#         if exists("/etc/openvpn/server.conf"):
+#             SystemCommands.cmd(
+#                 "bash -lc "
+#                 "\"printf '\\n%s\\n' 'data-ciphers kuznyechik-cbc' 'auth id-tc26-gost3411-12-512' "
+#                 ">> /etc/openvpn/server.conf\""
+#             )
+#             SystemCommands.cmd("astra-openvpn-server start")
+#             SystemCommands.cmd("systemctl daemon-reload && systemctl restart iperf-server.service")
+#             out = SystemCommands.check_output_command("netstat -tulpn | grep 5001")
+#             if out:
+#                 print(out)
+#         else:
+#             print("Конфигурация сервера не найдена в /etc/openvpn/server.conf")
 
-    # Вариант 1.7
-    elif av.startswith("1.7"):
-        if host != "testvm1":
-            for i in range(0, 10000):
-                base = f"/home/u/openvpn/clients_keys/tester{i}"
-                if not exists(f"{base}/client.ovpn"):
-                    continue
-                SystemCommands.cmd(
-                    f"bash -lc \"printf '\\n%s\\n' 'ncp-disable' >> {base}/client.ovpn\""
-                )
+#     # Вариант 1.7
+#     elif av.startswith("1.7"):
+#         if host != "testvm1":
+#             for i in range(0, 10000):
+#                 base = f"/home/u/openvpn/clients_keys/tester{i}"
+#                 if not exists(f"{base}/client.ovpn"):
+#                     continue
+#                 SystemCommands.cmd(
+#                     f"bash -lc \"printf '\\n%s\\n' 'ncp-disable' >> {base}/client.ovpn\""
+#                 )
 
-        if exists("/etc/openvpn/server.conf"):
-            SystemCommands.cmd(
-                "bash -lc \"printf '\\n%s\\n' 'ncp-disable' >> /etc/openvpn/server.conf\""
-            )
-            SystemCommands.cmd("astra-openvpn-server start")
-            SystemCommands.cmd("systemctl daemon-reload && systemctl start iperf-server")
-            out = SystemCommands.check_output_command("netstat -tulpn | grep 5001")
-            if out:
-                print(out)
-        else:
-            print("Конфигурация сервера не найдена в /etc/openvpn/server.conf")
+#         if exists("/etc/openvpn/server.conf"):
+#             SystemCommands.cmd(
+#                 "bash -lc \"printf '\\n%s\\n' 'ncp-disable' >> /etc/openvpn/server.conf\""
+#             )
+#             SystemCommands.cmd("astra-openvpn-server start")
+#             SystemCommands.cmd("systemctl daemon-reload && systemctl start iperf-server")
+#             out = SystemCommands.check_output_command("netstat -tulpn | grep 5001")
+#             if out:
+#                 print(out)
+#         else:
+#             print("Конфигурация сервера не найдена в /etc/openvpn/server.conf")
 
 
 async def _run(cmd: str) -> None:
@@ -153,7 +153,8 @@ def parse_args():
 
 if __name__ == "__main__":
     try:
-        astra_prepare_if_needed()
+        # astra_prepare_if_needed()
+        pass
     except Exception as e:
         print(f"[astra-prepare] предупреждение: {e}")
 

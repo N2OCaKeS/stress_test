@@ -4,11 +4,11 @@ VERSION_OS = SystemCommands.check_output_command("cat /etc/astra_version")
 KERNEL = SystemCommands.check_output_command("uname -r")
 
 VMS_DATES = {
-    "testvm1": {"cpu": "3", "ram": "16384", "disk": "20"},
-    "testvm2": {"cpu": "3", "ram": "16384", "disk": "20"},
-    "testvm3": {"cpu": "3", "ram": "16384", "disk": "20"},
-    "testvm4": {"cpu": "3", "ram": "16384", "disk": "20"},
-    "testvm5": {"cpu": "3", "ram": "16384", "disk": "20"},
+    "testvm1": {"cpu": "6", "ram": "16384", "disk": "20"},
+    "testvm2": {"cpu": "6", "ram": "16384", "disk": "20"},
+    "testvm3": {"cpu": "6", "ram": "16384", "disk": "20"},
+    "testvm4": {"cpu": "6", "ram": "16384", "disk": "20"},
+    "testvm5": {"cpu": "6", "ram": "16384", "disk": "20"},
 }
 VMS = list(VMS_DATES.keys())
 VMS_GROUP = {

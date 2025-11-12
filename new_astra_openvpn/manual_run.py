@@ -1,5 +1,5 @@
 # from libs.libtable import Report
-# from public import public
+# from libpublic import public
 from ovpn.ovpn_vm import Ovpn
 
 rc = "1.8.1.6"
@@ -12,7 +12,7 @@ ovpn.start_test()
 
 # rp = Report()
 
-#print("RESULTS NEXT STAGE")
+# print("RESULTS NEXT STAGE")
 # rp.build()
 #rp.pass_fail()
 #rp.plot_waves()

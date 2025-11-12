@@ -79,12 +79,12 @@ class Ovpn:
                 "provision": {
                     "command": "sudo bash /home/u/env_provision.sh",
                     "signal set": "provision",
-                    "signal get": "",
+                    "signal get": ["cp config"],
                 },
                 "wget": {
                     "command": "wget ftp://10.177.103.10/openvpn/ovpn.subnet.tar.gz",
                     "signal set": "wget",
-                    "signal get": ["provision"],
+                    "signal get": "",
                 },
                 "unpack tar": {
                     "command": "tar -xzvf ovpn.subnet.tar.gz > /dev/null 2>&1 ",
@@ -96,14 +96,12 @@ class Ovpn:
                     "signal set": "cp config",
                     "signal get": ["unpack"],
                 },
-            },
-            "g_clients_group":{
                 "enable ip_forwards": {
                     "command": "sudo sysctl -w net.ipv4.ip_forward=1",
                     "signal set": "",
                     "signal get": ["cp config"],                    
-                }
-            }
+                }                
+            },
         }
         
         Libvirt.execute(
@@ -154,37 +152,31 @@ class Ovpn:
 
         run_server = {
             "testvm1": {
-                # 1) Определяем версию Astra (сохраняем в /run/astra_ver)
                 "detect-astra-version": {
                     "command": r"""sudo bash -lc 'test -f /etc/astra/build_version && cut -d. -f1,2 /etc/astra/build_version | tr -d "[:space:]" > /run/astra_ver || echo unknown > /run/astra_ver'""",
                     "signal set": "srv:ver:ready",
                     "signal get": "",
                 },
-                # 2) Правим server.conf для 1.8 (ГОСТ-шифры)
                 "serverconf-apply-gost-for-1_8": {
                     "command": r"""sudo bash -lc 'VER="$(cat /run/astra_ver 2>/dev/null)"; test -f /etc/openvpn/server.conf && [[ "$VER" == 1.8* ]] && printf "\ndata-ciphers kuznyechik-cbc\nauth id-tc26-gost3411-12-512\n" >> /etc/openvpn/server.conf || true'""",
                     "signal set": "srv:conf:gost:done",
                     "signal get": ["srv:ver:ready"],
                 },
-                # 3) Правим server.conf для 1.7 (отключаем NCP)
                 "serverconf-disable-ncp-for-1_7": {
                     "command": r"""sudo bash -lc 'VER="$(cat /run/astra_ver 2>/dev/null)"; test -f /etc/openvpn/server.conf && [[ "$VER" == 1.7* ]] && printf "\nncp-disable\n" >> /etc/openvpn/server.conf || true'""",
                     "signal set": "srv:conf:ncp:done",
                     "signal get": ["srv:conf:gost:done"],
                 },
-                # 4) Запускаем/перезапускаем OpenVPN-сервер
                 "openvpn-server-start": {
                     "command": r"""sudo bash -lc 'astra-openvpn-server start || true'""",
                     "signal set": "srv:ovpn:up",
                     "signal get": ["srv:conf:ncp:done"],
                 },
-                # 5) Включаем ip_forward
                 "enable-ip-forwarding": {
                     "command": r"""sudo bash -lc 'sysctl -w net.ipv4.ip_forward=1'""",
                     "signal set": "srv:ipfwd:on",
                     "signal get": ["srv:ovpn:up"],
                 },
-                # 6) Пишем unit-файл для iperf (UDP, bind 10.8.0.1)
                 "iperf-unit-write": {
                     "command": r"""sudo bash -lc 'cat > /etc/systemd/system/iperf-server.service <<EOF
 [Unit]
@@ -204,25 +196,21 @@ EOF'""",
                     "signal set": "srv:iperf:unit:written",
                     "signal get": ["srv:ipfwd:on"],
                 },
-                # 7) Перечитываем юниты
                 "systemd-daemon-reload": {
                     "command": r"""sudo bash -lc 'systemctl daemon-reload'""",
                     "signal set": "srv:systemd:reloaded",
                     "signal get": ["srv:iperf:unit:written"],
                 },
-                # 8) Включаем iperf-сервис в автозапуск
                 "iperf-enable-service": {
                     "command": r"""sudo bash -lc 'systemctl enable iperf-server.service || true'""",
                     "signal set": "srv:iperf:enabled",
                     "signal get": ["srv:systemd:reloaded"],
                 },
-                # 9) Стартуем/перезапускаем iperf-сервис
                 "iperf-restart-service": {
                     "command": r"""sudo bash -lc 'systemctl restart iperf-server.service'""",
                     "signal set": "srv:iperf:up",
                     "signal get": ["srv:iperf:enabled"],
                 },
-                # 10) Проверяем, что iperf слушает порт 5001
                 "iperf-check-port-5001": {
                     "command": r"""bash -lc 'netstat -tulpn 2>/dev/null | grep 5001 || echo "[WARN] iperf: порт 5001 не виден"'""",
                     "signal set": "server:ready",
@@ -245,12 +233,12 @@ EOF'""",
     def start_test(self):
         print("\n\n\n Запускаем тест \n\n\n")
 
-        client_count = 1200
+        client_count = 400
         client_per_minutes = 30
         start_client = {}
-        for idx, i in enumerate(range(2, 6)):  # 2,3,4
+        for idx, i in enumerate(range(2, 6)):
             host = f"testvm{i}"
-            client_start = idx * client_count  # 0, 1200, 2400
+            client_start = idx * client_count
 
             cmd = (
                 "sudo su -c 'ulimit -u 100000 && "

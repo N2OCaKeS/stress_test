@@ -17,7 +17,7 @@ start()
 {
   name=${1-vpn}
   addrbase=${2-192.168.99}
-  detach=${3-}  # third argument — можно передать "--no-tmux"
+  detach=${3-}
 
   ip link add $name.1 type veth peer name $name.2
   ip addr add $addrbase.1 peer $addrbase.2 dev $name.1

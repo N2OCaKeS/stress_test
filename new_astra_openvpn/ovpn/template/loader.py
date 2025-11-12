@@ -91,7 +91,6 @@ class LoaderClient:
         last_octet  = 10 + (n % 200)
         addrbase = f"172.{third_octet}.{last_octet}"
 
-        # чистим/пересоздаём ns
         await _run(f"cd /home/u && ./vpn.sh stop {ns} >/dev/null 2>&1 || true")
         await _run(f"cd /home/u && ./vpn.sh start {ns} {addrbase} --no-tmux")
         return ns
@@ -124,11 +123,37 @@ class LoaderClient:
         )
         await _run(cmd)
 
+    # async def _start_traffic_deferred(self, ns: str, idx: int) -> None:
+    #     tun = f"tun{idx}"
+    #     udp_host  = "10.8.0.1"
+    #     udp_port  = 5001
+
+    #     rate_bps  = "16mbit"    # скорость для tc
+    #     burst     = "64k"       # буфер квоты
+    #     latency   = "50ms"      # доп. задержка для TBF
+    #     pkt_bytes = 1300        # размер UDP-датаграммы (меньше PPS -> меньше нагрузка)
+
+    #     cmd = (
+    #         f"ip netns exec {ns} bash -lc '"
+    #         f"end=$((SECONDS+120)); "
+    #         f"while (( SECONDS < end )); do ip link show dev {tun} >/dev/null 2>&1 && break; sleep 0.5; done; "
+    #         f"ip link show dev {tun} >/dev/null 2>&1 || exit 0; "
+
+    #         # Ограничение скорости на egress интерфейса tun{idx}
+    #         f"tc qdisc replace dev {tun} root tbf rate {rate_bps} burst {burst} latency {latency} || true; "
+
+    #         # Льём нули «в пол» — ядро ограничит до 16 Mbit/s
+    #         f'nohup timeout 3600s sh -c "socat -u -b {pkt_bytes} /dev/zero udp:{udp_host}:{udp_port}" '
+    #         f">/dev/null 2>&1 & disown'"
+    #     )
+    #     await _run(cmd)
+
     async def _start_one_client(self, idx: int) -> None:
         ns = await self._ensure_netns(idx)
         ok = await self._start_openvpn(idx, ns)
         if ok:
             await self._start_iperf_deferred(ns, idx)
+            # await self._start_traffic_deferred(ns, idx)            
 
     async def run(self) -> None:
         period = 60.0 / float(self.per_min)

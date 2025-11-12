@@ -29,19 +29,6 @@ if [ "${HOSTNAME}" = "testvm1" ]; then
             bash -lc "printf '\n%s\n' 'ncp-disable' >> /etc/openvpn/server.conf"
         fi
 
-        if command -v astra-openvpn-server >/dev/null 2>&1; then
-            astra-openvpn-server start || true
-        fi
-        if command -v systemctl >/dev/null 2>&1; then
-            systemctl daemon-reload || true
-            systemctl restart iperf-server.service 2>/dev/null || \
-            systemctl start iperf-server 2>/dev/null || true
-        fi
-
-        if command -v netstat >/dev/null 2>&1; then
-            out="$(netstat -tulpn 2>/dev/null | grep 5001 || true)"
-            [[ -n "${out}" ]] && echo "${out}"
-        fi
     else
         [[ -z "${av}" ]] && echo "Внимание: /etc/astra_version не найден или пуст — серверный конфиг не менялся."
         [[ ! -f "/etc/openvpn/server.conf" ]] && echo "Внимание: /etc/openvpn/server.conf не найден — нечего настраивать."

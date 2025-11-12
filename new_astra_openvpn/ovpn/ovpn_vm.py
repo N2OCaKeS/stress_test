@@ -127,7 +127,7 @@ class Ovpn:
                 {
                     "path": "/etc/openvpn/server.conf",
                     "old": "CIPHER",
-                    "new": cipher[0] if VERSION_OS == "1.7" else cipher[1],
+                    "new": cipher[0] if VERSION_OS.startswith("1.7") else cipher[1],
                 }
             ]
         }

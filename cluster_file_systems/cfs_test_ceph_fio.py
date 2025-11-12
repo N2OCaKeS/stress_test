@@ -6,7 +6,7 @@ from cfs_conf import STORAGE_MOUNT_DIR
 class CephFIOTest:
 
     def __init__(self, abv):
-        self.size = "20G"
+        self.size = "5G"
         self.directory = STORAGE_MOUNT_DIR
         self.runtime = 300 # в секундах
         self.blocksize = "4k"
@@ -18,7 +18,7 @@ class CephFIOTest:
             check_output_command(command="dpkg -i /var/tmp/fio/fio_3.12-2_amd64.deb")
 
     def run_test(self):
-        com_test = f"sudo fio --directory={self.directory} --direct=1 --rw=randrw --bs={self.blocksize} --ioengine=libaio --iodepth=256 --size={self.size} --runtime={self.runtime} --numjobs=2 --time_based --group_reporting --name=iops-qateam13-job --eta-newline=1 > {self.report_file}"
+        com_test = f"fio --directory={self.directory} --rw=randrw --ioengine=libaio --name=CEPHFIO --bs={self.blocksize} --iodepth=1 --size={self.size} > {self.report_file}"
         check_output_command(command=com_test)
 
 

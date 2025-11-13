@@ -6,19 +6,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from allta_cli.utils.config import API_BASE_URL, SESSION_FILE, TOKEN_TTL_HOURS_DEFAULT
+
 import requests
 
-# ==== Утилиты вывода (опционально красиво красим, если есть click) ====
-def _echo(msg: str, *, ok: bool | None = None, verbose: bool = False):
-    if not verbose:
-        return
-    try:
-        import click
-        color = "green" if ok is True else ("red" if ok is False else None)
-        click.secho(msg, fg=color)
-    except Exception:
-        print(msg)
+from allta_cli.utils import ui
+from allta_cli.utils.config import API_BASE_URL, SESSION_FILE, TOKEN_TTL_HOURS_DEFAULT
 
 # ==== Исключения (читабельные) ====
 class AuthError(RuntimeError):
@@ -29,6 +21,23 @@ class NotAuthenticatedError(AuthError):
 
 class TokenExpiredError(AuthError):
     """Локальный токен протух по TTL."""
+
+# ==== Внутренняя утилита логирования (единый стиль) ====
+def _echo(msg: str, *, ok: bool | None = None, verbose: bool = False):
+    """
+    Единая обёртка для «болтливого» режима.
+    ok=True  -> зелёный ✓ через ui.ok
+    ok=False -> красный ✗ через ui.err
+    ok=None  -> обычный ui.echo
+    """
+    if not verbose:
+        return
+    if ok is True:
+        ui.ok(msg)
+    elif ok is False:
+        ui.err(msg)
+    else:
+        ui.echo(msg)
 
 # ==== Вспомогательные функции для хранилища ====
 def _ensure_dirs_and_perms():
@@ -74,17 +83,13 @@ def login(
     """
     Входит через /login, сохраняет файл сессии (token + iat) и возвращает токен.
     Бросает AuthError/NotAuthenticatedError при ошибках.
-
-    Параметры:
-      - login: строка для OAuth2PasswordRequestForm.username
-      - password: пароль
-      - api_base_url: базовый URL API; если None — берётся из API_BASE_URL
-      - verbose: печать человекочитаемых сообщений
     """
     base = (api_base_url or API_BASE_URL).rstrip("/")
     url = f"{base}:21500/api/auth/login"
     data = {"username": login, "password": password, "grant_type": "password"}
-    _echo(f"→ POST {url}", verbose=verbose)
+
+    if verbose:
+        ui.http(f"POST {url}")
 
     try:
         r = requests.post(url, data=data, timeout=20)
@@ -107,7 +112,7 @@ def login(
         raise AuthError("Сервер не вернул access_token.")
 
     _write_session(token)
-    _echo("✓ Успешный вход. Токен сохранён локально.", ok=True, verbose=verbose)
+    _echo("Успешный вход. Токен сохранён локально.", ok=True, verbose=verbose)
     return token
 
 
@@ -133,23 +138,23 @@ def logout(
         return
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    _echo(f"→ POST {url} (revoke)", verbose=verbose)
+
+    if verbose:
+        ui.http(f"POST {url} (revoke)")
 
     try:
         r = requests.post(url, headers=headers, timeout=15)
-
         if r.status_code not in (200, 204, 401):
             r.raise_for_status()
     except requests.RequestException as e:
-
         _delete_session_silent()
         raise AuthError(f"Ошибка при отзыве токена: {e}") from e
 
     _delete_session_silent()
     if r.status_code == 401:
-        _echo("✓ Локальная сессия удалена. Сервер считал токен недействительным (401).", ok=True, verbose=verbose)
+        _echo("Локальная сессия удалена. Сервер считал токен недействительным (401).", ok=True, verbose=verbose)
     else:
-        _echo("✓ Токен отозван на сервере и локально удалён.", ok=True, verbose=verbose)
+        _echo("Токен отозван на сервере и локально удалён.", ok=True, verbose=verbose)
 
 
 def load_token(
@@ -172,5 +177,5 @@ def load_token(
     if age_sec > ttl_h * 3600:
         raise TokenExpiredError(f"Срок действия токена истёк: более {ttl_h} ч с момента входа.")
 
-    _echo(f"✓ Токен валиден локально (возраст ~{int(age_sec/60)} мин).", ok=True, verbose=verbose)
+    _echo(f"Токен валиден локально (возраст ~{int(age_sec/60)} мин).", ok=True, verbose=verbose)
     return token

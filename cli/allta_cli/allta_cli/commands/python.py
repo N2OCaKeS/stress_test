@@ -10,12 +10,11 @@ from pathlib import Path
 from shutil import which, rmtree
 
 from allta import SystemCommands
+from allta_cli.utils import ui
 from allta_cli.utils.config import PYTHON_PATH, PYTHON_GET_COMMAND
 
 _PRIVATE_INDEX = "http://10.177.103.10:3141/root/release"
 _PRIVATE_HOST = "10.177.103.10"
-
-SEP = "─" * 60
 
 
 def _sudo() -> str:
@@ -28,10 +27,10 @@ def _sudo() -> str:
 
 
 def _run(cmd: str, fail: str) -> int:
-    print(f"$ {cmd}")
+    ui.cmd(cmd)
     rc = SystemCommands.cmd_with_returncode(command=cmd)
     if rc != 0:
-        print(f"✗ {fail} (код {rc})")
+        ui.err(f"{fail} (код {rc})")
     return rc
 
 
@@ -68,185 +67,173 @@ echo "✓ Venv активирован: {venv_dir}"
 def install_python(activate_shell: bool = False) -> int:
     """
     1) Устанавливает build-зависимости (apt)
-    2) Скачивает архива(ы) Python в PYTHON_PATH
+    2) Скачивает архив(ы) Python в PYTHON_PATH
     3) Собирает и устанавливает (make altinstall) — системно (/usr/local), если есть sudo
     4) Создаёт venv по умолчанию: ~/python/Python-<VER>/venv
     5) Устанавливает allta в этот venv
-    6) ЧИСТИТ: удаляет архивы и исходники, оставляя только venv
-    7) (опционально) заменяет процесс на bash с активированным venv
+    6) Очищает архив/исходники, оставляя только venv
+    7) (опционально) запускает интерактивный shell с активированным venv
     """
-    print(SEP)
-    print("PYTHON INSTALL (start)")
-    print(SEP)
+    with ui.section("PYTHON INSTALL (start)", "PYTHON INSTALL (end)"):
+        sudo = _sudo()
+        root = PYTHON_PATH.expanduser()
+        root.mkdir(parents=True, exist_ok=True)
 
-    sudo = _sudo()
-    root = PYTHON_PATH.expanduser()
-    root.mkdir(parents=True, exist_ok=True)
-
-    print("→ Установка зависимостей сборки (apt)…")
-    env = "DEBIAN_FRONTEND=noninteractive"
-    deps = (
-        "build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev "
-        "libffi-dev libncursesw5-dev tk-dev libgdbm-dev libnss3-dev liblzma-dev uuid-dev "
-        "xz-utils curl wget ca-certificates"
-    )
-    rc = _run(f"{sudo}{env} apt-get -y update", "apt-get update")
-    if rc != 0:
-        return rc
-    rc = _run(f"{sudo}{env} apt-get -y install {deps}", "apt-get install")
-    if rc != 0:
-        return rc
-
-    print("↓ Скачивание архива Python (wget)…")
-    rc = _run(PYTHON_GET_COMMAND, "скачивание архива Python")
-    if rc != 0:
-        return rc
-
-    archive = _find_archive(root) or _find_archive(Path("."))
-    if not archive:
-        print("✗ Не найден архив Python-*.tar.xz после скачивания.")
-        return 1
-    print(f"✓ Найден архив: {archive}")
-
-    m = re.search(r"Python-(\d+\.\d+\.\d+)", archive.name)
-    if not m:
-        print("✗ Не удалось распознать версию из имени архива.")
-        return 1
-    version = m.group(1)
-    major_minor = ".".join(version.split(".")[:2])
-
-    print("↪ Распаковка…")
-    rc = _run(
-        f"tar -xf {shlex.quote(str(archive))} -C {shlex.quote(str(root))}",
-        "распаковка архива",
-    )
-    if rc != 0:
-        return rc
-
-    src_dir = root / f"Python-{version}"
-    if not src_dir.is_dir():
-        print(f"✗ Каталог исходников не найден: {src_dir}")
-        return 1
-
-    print("⚙ ./configure …")
-    rc = _run(
-        f"bash -lc 'cd {shlex.quote(str(src_dir))} && ./configure --enable-optimizations'",
-        "./configure",
-    )
-    if rc != 0:
-        return rc
-
-    jobs = str(os.cpu_count() or 1)
-    print(f"🔨 make -j{jobs} …")
-    rc = _run(
-        f"bash -lc 'cd {shlex.quote(str(src_dir))} && make -j{jobs}'", "сборка (make)"
-    )
-    if rc != 0:
-        return rc
-
-    print("📦 make altinstall …")
-    rc = _run(
-        f"bash -lc 'cd {shlex.quote(str(src_dir))} && {sudo}make altinstall'",
-        "установка (make altinstall)",
-    )
-    if rc != 0:
-        return rc
-
-
-    py_bin = Path(f"/usr/local/bin/python{major_minor}")
-    if not py_bin.exists():
-        py_bin = _find_installed_python()
-    if not py_bin or not py_bin.exists():
-        print(
-            f"✗ Не найден установленный python{major_minor}. Смотри вывод altinstall."
+        ui.step("Установка зависимостей сборки (apt)…")
+        env = "DEBIAN_FRONTEND=noninteractive"
+        deps = (
+            "build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev "
+            "libffi-dev libncursesw5-dev tk-dev libgdbm-dev libnss3-dev liblzma-dev uuid-dev "
+            "xz-utils curl wget ca-certificates"
         )
-        return 1
-    print(f"✓ Python обнаружен: {py_bin}")
+        rc = _run(f"{sudo}{env} apt-get -y update", "apt-get update")
+        if rc != 0:
+            return rc
+        rc = _run(f"{sudo}{env} apt-get -y install {deps}", "apt-get install")
+        if rc != 0:
+            return rc
 
-    venv_dir = src_dir / "venv"
-    print(f"⚙ Создание venv: {venv_dir}")
-    rc = _run(
-        f"{shlex.quote(str(py_bin))} -m venv {shlex.quote(str(venv_dir))}",
-        "создание venv",
-    )
-    if rc != 0:
-        return rc
+        ui.step("Скачивание архива Python (wget)…")
+        rc = _run(PYTHON_GET_COMMAND, "скачивание архива Python")
+        if rc != 0:
+            return rc
 
-    pip_bin = venv_dir / "bin" / "pip"
-    if not pip_bin.exists():
-        print("✗ pip в venv не найден.")
-        return 1
+        archive = _find_archive(root) or _find_archive(Path("."))
+        if not archive:
+            ui.err("Не найден архив Python-*.tar.xz после скачивания.")
+            return 1
+        ui.ok(f"Найден архив: {archive}")
 
-    print("↓ Установка пакета allta в venv (приватный индекс)…")
-    rc = _run(
-        f"{shlex.quote(str(pip_bin))} install -i {_PRIVATE_INDEX} --trusted-host {_PRIVATE_HOST} allta",
-        "установка пакета allta",
-    )
-    if rc != 0:
-        return rc
+        m = re.search(r"Python-(\d+\.\d+\.\d+)", archive.name)
+        if not m:
+            ui.err("Не удалось распознать версию из имени архива.")
+            return 1
+        version = m.group(1)
+        major_minor = ".".join(version.split(".")[:2])
 
-    # 6) CLEANUP: удаляем архивы и исходники, но оставляем venv
-    print("🧹 Очистка: удаляем архив и исходники…")
-    try:
-        # архив
+        ui.echo("↪ Распаковка…")
+        rc = _run(
+            f"tar -xf {shlex.quote(str(archive))} -C {shlex.quote(str(root))}",
+            "распаковка архива",
+        )
+        if rc != 0:
+            return rc
+
+        src_dir = root / f"Python-{version}"
+        if not src_dir.is_dir():
+            ui.err(f"Каталог исходников не найден: {src_dir}")
+            return 1
+
+        ui.echo("⚙ ./configure …")
+        rc = _run(
+            f"bash -lc 'cd {shlex.quote(str(src_dir))} && ./configure --enable-optimizations'",
+            "./configure",
+        )
+        if rc != 0:
+            return rc
+
+        jobs = str(os.cpu_count() or 1)
+        ui.echo(f"🔨 make -j{jobs} …")
+        rc = _run(
+            f"bash -lc 'cd {shlex.quote(str(src_dir))} && make -j{jobs}'",
+            "сборка (make)",
+        )
+        if rc != 0:
+            return rc
+
+        ui.echo("📦 make altinstall …")
+        rc = _run(
+            f"bash -lc 'cd {shlex.quote(str(src_dir))} && {sudo}make altinstall'",
+            "установка (make altinstall)",
+        )
+        if rc != 0:
+            return rc
+
+        py_bin = Path(f"/usr/local/bin/python{major_minor}")
+        if not py_bin.exists():
+            py_bin = _find_installed_python()
+        if not py_bin or not py_bin.exists():
+            ui.err(f"Не найден установленный python{major_minor}. Смотри вывод altinstall.")
+            return 1
+        ui.ok(f"Python обнаружен: {py_bin}")
+
+        venv_dir = src_dir / "venv"
+        ui.echo(f"⚙ Создание venv: {venv_dir}")
+        rc = _run(
+            f"{shlex.quote(str(py_bin))} -m venv {shlex.quote(str(venv_dir))}",
+            "создание venv",
+        )
+        if rc != 0:
+            return rc
+
+        pip_bin = venv_dir / "bin" / "pip"
+        if not pip_bin.exists():
+            ui.err("pip в venv не найден.")
+            return 1
+
+        ui.step("Установка пакета allta в venv (приватный индекс)…")
+        rc = _run(
+            f"{shlex.quote(str(pip_bin))} install -i {_PRIVATE_INDEX} --trusted-host {_PRIVATE_HOST} allta",
+            "установка пакета allta",
+        )
+        if rc != 0:
+            return rc
+
+        ui.echo("🧹 Очистка: удаляем архив и исходники…")
         try:
-            archive.unlink()
-        except Exception:
-            pass
-        # удаляем всё в src_dir, КРОМЕ venv
-        for child in src_dir.iterdir():
-            if child.name == "venv":
-                continue
-            if child.is_dir():
-                rmtree(child, ignore_errors=True)
-            else:
-                try:
-                    child.unlink()
-                except Exception:
-                    pass
-        print("✓ Очистка завершена.")
-    except Exception as e:
-        print(f"⚠ Ошибка очистки: {e} (пропускаем)")
+            try:
+                archive.unlink()
+            except Exception:
+                pass
+            for child in src_dir.iterdir():
+                if child.name == "venv":
+                    continue
+                if child.is_dir():
+                    rmtree(child, ignore_errors=True)
+                else:
+                    try:
+                        child.unlink()
+                    except Exception:
+                        pass
+            ui.ok("Очистка завершена.")
+        except Exception as e:
+            ui.warn(f"Ошибка очистки: {e} (пропускаем)")
 
-    print("✓ Готово.")
-    print(SEP)
-    print("PYTHON INSTALL (end)")
-    print(SEP)
+        ui.ok("Готово.")
 
-    # 7) По запросу — сразу открыть интерактивный shell с активированным venv
-    if activate_shell:
-        _spawn_shell_with_venv(venv_dir)
+        if activate_shell:
+            _spawn_shell_with_venv(venv_dir)
 
-    return 0
+        return 0
 
 
 def create_venv(path: str | None = None, enter_shell: bool = False) -> int:
     """
     Создаёт venv:
       - если path НЕ указан: venv в текущей директории ./venv
-      - если path указан: КАТАЛОГ ДОЛЖЕН СУЩЕСТВОВАТЬ, иначе — ошибка
+      - если path указан: каталог ДОЛЖЕН существовать, иначе — ошибка
     Использует системный /usr/local/bin/python3.X (если есть), иначе python3 из PATH.
-    При успехе по умолчанию запускает интерактивный bash с активированным venv.
+    По умолчанию при успехе может запустить интерактивный bash с активированным venv.
     """
     if path:
         target = Path(path).expanduser()
         if not target.exists():
-            print(f"✗ Указанный путь не существует: {target}")
+            ui.err(f"Указанный путь не существует: {target}")
             return 1
     else:
         target = Path.cwd() / "venv"
 
     if target.exists() and target.is_dir() and any(target.iterdir()):
-        print(f"✗ Целевой каталог уже существует и не пуст: {target}")
+        ui.err(f"Целевой каталог уже существует и не пуст: {target}")
         return 1
     target.mkdir(parents=True, exist_ok=True)
 
     py_bin = _find_installed_python()
     if not py_bin:
-        print("✗ Не найден подходящий python3. Сначала выполните: allta python")
+        ui.err("Не найден подходящий python3. Сначала выполните: allta python")
         return 1
 
-    print(f"→ Использую интерпретатор: {py_bin}")
+    ui.echo(f"→ Использую интерпретатор: {py_bin}")
     rc = _run(
         f"{shlex.quote(str(py_bin))} -m venv {shlex.quote(str(target))}",
         "создание venv",
@@ -254,7 +241,7 @@ def create_venv(path: str | None = None, enter_shell: bool = False) -> int:
     if rc != 0:
         return rc
 
-    print("✓ Venv создан.")
+    ui.ok("Venv создан.")
     if enter_shell:
         _spawn_shell_with_venv(target)
 

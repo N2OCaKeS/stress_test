@@ -7,7 +7,7 @@ API_BASE_URL = str("http://allta.devos.astralinux.ru").rstrip("/")
 SESSION_FILE =  Path(Path.home() / ".config" / "allta" / "session.json")
 TOKEN_TTL_HOURS_DEFAULT = 10 * 60 * 60
 
-CONFIG_API_BASE = "http://allta.devos.astralinux.ru/api/config/v1".rstrip("/")
+CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1".rstrip("/")
 
 GIT_REPO_URL = "https://git.astralinux.ru/scm/qa/stress_test.git"
 GIT_DEST_DIR = Path(os.path.expanduser("~/git"))

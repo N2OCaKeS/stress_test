@@ -108,7 +108,7 @@ def cli(ctx: click.Context,
 
     # логин
     try:
-        print("→ POST http://allta.devos.astralinux.ru/api/auth/login")
+        print("→ POST http://allta.devos.astralinux.ru:21500/api/auth/login")
         auth_utils.login(login=user, password=pwd, verbose=True)
         click.secho("✓ Вход выполнен (shortcut -l).", fg="green")
     except auth_utils.AuthError as e:
@@ -172,7 +172,7 @@ def login_cmd(username: str | None, password: str | None,
     if not user or not pwd:
         raise click.UsageError("Нужно указать логин и пароль (позиционно или через -у/-p).")
     try:
-        print("→ POST http://allta.devos.astralinux.ru/api/auth/login")
+        print("→ POST http://allta.devos.astralinux.ru:21500/api/auth/login")
         auth_utils.login(login=user, password=pwd, verbose=True)
         click.secho("✓ Вход выполнен.", fg="green")
     except auth_utils.AuthError as e:

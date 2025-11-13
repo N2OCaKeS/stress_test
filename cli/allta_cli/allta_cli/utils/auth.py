@@ -82,7 +82,7 @@ def login(
       - verbose: печать человекочитаемых сообщений
     """
     base = (api_base_url or API_BASE_URL).rstrip("/")
-    url = f"{base}/api/auth/login"
+    url = f"{base}:21500/api/auth/login"
     data = {"username": login, "password": password, "grant_type": "password"}
     _echo(f"→ POST {url}", verbose=verbose)
 

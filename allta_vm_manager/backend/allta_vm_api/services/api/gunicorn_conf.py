@@ -11,6 +11,7 @@ bind = "0.0.0.0:8000"
 workers = 1
 worker_class = "uvicorn.workers.UvicornWorker"
 loglevel = "debug"
+wsgi_app = "app.main:app"
 
 def on_starting(server):
     """

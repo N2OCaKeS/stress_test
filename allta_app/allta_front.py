@@ -14,7 +14,7 @@ import socket
 from os import path
 from libs.zefir import ZefirResultTable
 import psycopg2
-#import asyncio
+import asyncio
 import json
 from time import sleep
 from libs.libilo import iLOConsoleCaller
@@ -43,7 +43,8 @@ from libs.liballta import (index_page,
                           AUTH_LOGIN_URL,
                           COOKIE_NAME,
                           COOKIE_SECURE,
-                          AUTH_LOGOUT_URL
+                          AUTH_LOGOUT_URL,
+                          AUTH_CHECK_TOKEN_URL
                           )
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs, annotations
 from backup.backuplibs import Backup, check_command
@@ -52,7 +53,6 @@ import requests
 import time
 import base64
 import requests
-
 
 app = Flask(__name__)
 CORS(app)
@@ -102,7 +102,6 @@ def page_not_found(e):
 
 
 def _parse_jwt_exp(access_token: str):
-    """Простейшее извлечение exp (unix seconds) из JWT без проверки подписи."""
     try:
         parts = access_token.split('.')
         if len(parts) != 3:
@@ -116,15 +115,11 @@ def _parse_jwt_exp(access_token: str):
         return None
 
 def call_auth_login(username: str, password: str):
-    """POST к внешнему auth API в формате application/x-www-form-urlencoded."""
     payload = {
         'grant_type': 'password',
         'username': username,
         'password': password,
         'scope': '',
-        # если потребуется client_id/secret — добавьте их сюда:
-        # 'client_id': 'string',
-        # 'client_secret': '********',
     }
     headers = {
         'Accept': 'application/json',
@@ -132,99 +127,118 @@ def call_auth_login(username: str, password: str):
     }
     return requests.post(AUTH_LOGIN_URL, data=payload, headers=headers, timeout=10)
 
+@app.route("/check-token", methods=["GET"])
+def check_token():
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return redirect("/login?reason=missing")
+
+    headers = {"Accept": "*/*", "Authorization": f"Bearer {token}"}
+    try:
+        r = requests.get(AUTH_CHECK_TOKEN_URL, headers=headers, timeout=5)
+        if r.status_code in (200, 204):
+            return ("", 204)
+        if r.status_code in (401, 403):
+            resp = make_response(redirect("/login?reason=expired"))
+            resp.set_cookie(COOKIE_NAME, "", max_age=0, expires=0, path="/",
+                            httponly=True, secure=COOKIE_SECURE, samesite="Lax")
+            return resp
+        try:
+            app.logger.info("Token check unexpected status %s", r.status_code)
+        except Exception:
+            pass
+    except requests.RequestException:
+        try:
+            app.logger.warning("Auth token check request failed", exc_info=True)
+        except Exception:
+            pass
+
+    return redirect("/login?reason=auth_error")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        username = (request.form.get('username') or '').strip()
-        password = request.form.get('password') or ''
+    if request.method == 'GET':
+        reason = request.args.get("reason")
+        msgs = {
+            "missing": "Сессия не найдена. Выполните вход.",
+            "expired": "Сессия истекла. Выполните вход снова.",
+            "auth_error": "Сервис авторизации недоступен. Попробуйте позже.",
+            "logout": "Вы вышли из системы."
+        }
+        return render_template('login.html', popup=msgs.get(reason))
 
-        if not username or not password:
-            return render_template('login.html', error='Укажите логин и пароль')
+    username = (request.form.get('username') or '').strip()
+    password = request.form.get('password') or ''
 
-        # Вызов внешнего auth API
+    if not username or not password:
+        return render_template('login.html', error='Укажите логин и пароль')
+
+    try:
+        resp = call_auth_login(username, password)
+    except requests.RequestException:
+        return render_template('login.html', error='Ошибка соединения с auth-сервером')
+
+    if resp is None:
+        return render_template('login.html', error='Нет ответа от auth-сервера')
+
+    if resp.status_code == 200:
         try:
-            resp = call_auth_login(username, password)
-        except requests.RequestException:
-            return render_template('login.html', error='Ошибка соединения с auth-сервером')
+            j = resp.json()
+        except Exception:
+            j = None
 
-        if resp is None:
-            return render_template('login.html', error='Нет ответа от auth-сервера')
+        if j and 'access_token' in j:
+            token = j['access_token']
 
-        # Успешный ответ от API
-        if resp.status_code == 200:
-            try:
-                j = resp.json()
-            except Exception:
-                j = None
+            exp = _parse_jwt_exp(token)
+            max_age = None
+            if exp:
+                now = int(time.time())
+                ttl = exp - now
+                if ttl > 0:
+                    max_age = int(ttl)
 
-            if j and 'access_token' in j:
-                token = j['access_token']
+            response = make_response(redirect("/"))
+            cookie_args = {
+                'httponly': True,
+                'secure': COOKIE_SECURE,
+                'samesite': 'Lax',
+                'path': '/',
+            }
+            if max_age:
+                cookie_args['max_age'] = max_age
 
-                exp = _parse_jwt_exp(token)
-                max_age = None
-                if exp:
-                    now = int(time.time())
-                    ttl = exp - now
-                    if ttl > 0:
-                        max_age = int(ttl)
+            response.set_cookie(COOKIE_NAME, token, **cookie_args)
+            return response
 
-                response = make_response(redirect(f'/{main_url}'))
-                cookie_args = {
-                    'httponly': True,
-                    'secure': COOKIE_SECURE,
-                    'samesite': 'Lax',
-                }
-                if max_age:
-                    cookie_args['max_age'] = max_age
+        try:
+            err_json = resp.json()
+            err = err_json.get('detail') or err_json.get('message') or str(err_json)
+        except Exception:
+            err = f'Неправильный ответ от auth-сервера ({resp.status_code})'
+        return render_template('login.html', error=err)
 
-                response.set_cookie(COOKIE_NAME, token, **cookie_args)
-                return response
-
-            # если в JSON нет access_token — покажем сообщение из тела
-            try:
-                err_json = resp.json()
-                err = err_json.get('detail') or err_json.get('message') or str(err_json)
-            except Exception:
-                err = f'Неправильный ответ от auth-сервера ({resp.status_code})'
-            return render_template('login.html', error=err)
-
-        # неуспешный статус (например 401)
-        if resp.status_code == 401:
-            return render_template('login.html', error='Неверный логин или пароль')
-        return render_template('login.html', error=f'Ошибка авторизации ({resp.status_code})')
-
-    # GET
-    return render_template('login.html')
+    if resp.status_code == 401:
+        return render_template('login.html', error='Неверный логин или пароль')
+    return render_template('login.html', error=f'Ошибка авторизации ({resp.status_code})')
 
 @app.route('/logout', methods=['GET'])
 def logout():
-    """
-    Прокси-логаут:
-    - читает access_token из cookie,
-    - вызывает внешний auth/logout с заголовком Authorization: Bearer <token> (если токен есть),
-    - очищает cookie и редиректит на /login.
-    """
     token = request.cookies.get(COOKIE_NAME)
-
     headers = { 'Accept': '*/*' }
     if token:
         headers['Authorization'] = f'Bearer {token}'
 
     try:
-        # внешний вызов: body пустой, как в вашем curl
-        # таймаут небольшой, чтобы не блокировать сервер долго
-        requests.post(AUTH_LOGOUT_URL, headers=headers, data='', timeout=5)
+        requests.post(AUTH_LOGOUT_URL, headers=headers, timeout=5)
     except Exception:
-        # логируем при наличии логгера, но не мешаем пользователю перейти на логин
         try:
             app.logger.warning("Auth logout request failed", exc_info=True)
         except Exception:
             pass
 
-    # Очистим cookie (max_age=0 / expires=0) и редиректим на /login
-    resp = make_response(redirect('/login'))
-    resp.set_cookie(COOKIE_NAME, '', max_age=0, expires=0, path='/')
+    resp = make_response(redirect('/login?reason=logout'))
+    resp.set_cookie(COOKIE_NAME, '', max_age=0, expires=0, path='/', httponly=True, secure=COOKIE_SECURE, samesite='Lax')
     return resp
 
 

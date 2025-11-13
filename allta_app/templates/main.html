@@ -6391,27 +6391,25 @@ $(document).ready(function() {
 </script> -->
 
 <script>
-  // Устанавливаем время простоя в секундах
-  var idleTime = 1200; // 1200 секунд
-  // Установка счетчика и обработчика событий
+  var idleTime = 1200;
   var timer;
   function resetTimer() {
     clearTimeout(timer);
     timer = setTimeout(refreshPage, idleTime * 1000);
   }
-  // Обработчики событий для сброса таймера
+
   window.onload = resetTimer;
   document.onmousemove = resetTimer;
   document.onkeypress = resetTimer;
   window.history.replaceState({}, '', '/{{ main_url }}');
-  // Функция обновления страницы
+
   function refreshPage() {
     window.location.reload();
   }
 </script>
 
 <script>
-  // Периодическая проверка наличия обновлений (раз в минуту)
+
   const CHECK_INTERVAL_MS = 60000;
   let checkTimer = setInterval(checkForUpdates, CHECK_INTERVAL_MS);
 
@@ -6449,6 +6447,49 @@ $(document).ready(function() {
   }
 </script>
 
+<script>
+  const CHECK_MINUTES = 5;
+  const CHECK_URL = '/check-token';
+
+  let checker = null;
+
+  async function checkToken() {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await fetch(CHECK_URL, {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'follow',
+        cache: 'no-store',
+        headers: { 'Accept': '*/*' },
+        signal: ctrl.signal
+      });
+
+      if (res.status === 204) return;
+      if (res.redirected || res.url.endsWith('/login') || res.status === 401 || res.status === 403) {
+        clearInterval(checker);
+        try { localStorage.removeItem('access_token'); } catch(e) {}
+        try { sessionStorage.removeItem('access_exp'); } catch(e) {}
+        window.location.href = '/login';
+      }
+    } catch (_) {
+
+      window.location.href = '/login';
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  function startChecker() {
+    if (checker) clearInterval(checker);
+    checkToken();
+    checker = setInterval(checkToken, CHECK_MINUTES * 60 * 1000);
+  }
+
+  startChecker();
+  window.addEventListener('beforeunload', () => { if (checker) clearInterval(checker); });
+</script>
 
 <!-- set reload page interval -->
 <!-- <script>

@@ -125,7 +125,6 @@ Allta_VM_Service это программный комплекс состоящи
 | :---: | :----: | ----------------------------------------------- |
 | 21501 | nginx  | Необходим как единая точка входа во все сервисы |
 
-
 #### Сервисы входящие в проект
 
 #####
@@ -134,19 +133,18 @@ Allta_VM_Service это программный комплекс состоящи
 
 |          Сервис           |                        Описание                         |                                                                           Точка входа                                                                           |
 | :-----------------------: | :-----------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-|           nginx           |     Единый прокси и точка доступа для всех сервисов     |                                              [http://allta.devos.astralinux.ru](http://allta.devos.astralinux.ru)                                               |
 | postgresql (2 контейнера) |         Базы данных для хранения данных для api         |                                                              Доступ из вне контейнеров невозможен                                                               |
-|           redis           |            Очеред для задач по управлению ВМ            | Доступ из вне контейнеров невозможен на прямую, только через [http://allta.devos.astralinux.ru/service/redis/](http://allta.devos.astralinux.ru/service/redis/) |
-|      redis comander       | Инструмент для просмотра очереди задач по управлению ВМ |                               [http://allta.devos.astralinux.ru/service/redis/](http://allta.devos.astralinux.ru/service/redis/)                                |
-|          flower           |     Система для отслеживания задач по управлению ВМ     |                               [http://allta.devos.astralinux.ru/service/flower](http://allta.devos.astralinux.ru/service/flower)                                |
+|           redis           |            Очеред для задач по управлению ВМ            | Доступ из вне контейнеров невозможен на прямую, только через [http://allta.devos.astralinux.ru:21501/service/redis/](http://allta.devos.astralinux.ru/service/redis/) |
+|      redis comander       | Инструмент для просмотра очереди задач по управлению ВМ |                               [http://allta.devos.astralinux.ru:21501/service/redis/](http://allta.devos.astralinux.ru/service/redis/)                                |
+|          flower           |     Система для отслеживания задач по управлению ВМ     |                               [http://allta.devos.astralinux.ru:21501/service/flower](http://allta.devos.astralinux.ru/service/flower)                                |
 
 ###### Самописные решения
 
 |        Сервис         |                              Описание                              |                                                                           Точка входа                                                                           |
 | :-------------------: | :----------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-|     ALLTA Server      | Сервис по управлению информацией о серверах и управления серверами |                                  [http://allta.devos.astralinux.ru/api/server/](http://allta.devos.astralinux.ru/api/server/)                                   |
-|    ALLTA VMManager    |               Сервис для управления ВМ и их создания               |                                      [http://allta.devos.astralinux.ru/api/vm/](http://allta.devos.astralinux.ru/api/vm/)                                       |
-| ALLTA VMManagerWorker |                     Воркер который создает ВМ                      | Доступ из вне контейнеров невозможен на прямую, только через [http://allta.devos.astralinux.ru/service/flower](http://allta.devos.astralinux.ru/service/flower) |
+|     ALLTA Server      | Сервис по управлению информацией о серверах и управления серверами |                                  [http://allta.devos.astralinux.ru:21501/api/server/](http://allta.devos.astralinux.ru/api/server/)                                   |
+|    ALLTA VMManager    |               Сервис для управления ВМ и их создания               |                                      [http://allta.devos.astralinux.ru:21501/api/vm/](http://allta.devos.astralinux.ru/api/vm/)                                       |
+| ALLTA VMManagerWorker |                     Воркер который создает ВМ                      | Доступ из вне контейнеров невозможен на прямую, только через [http://allta.devos.astralinux.ru:21501/service/flower](http://allta.devos.astralinux.ru/service/flower) |
 
 ###### Самописные решения (cli утилиты)
 

@@ -16,8 +16,8 @@
 
 |    Сервис    |                   Описание                   |                                         Точка входа                                          |                                      Документация                                      |
 | :----------: | :------------------------------------------: | :------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------: |
-|  ALLTA Auth  |        Единый сервис для авторизации         |   [http://allta.devos.astralinux.ru/api/auth/](http://allta.devos.astralinux.ru/api/auth/)   | [http://allta.devos.astralinux.ru/api/docs](http://allta.devos.astralinux.ru/api/docs) |
-| ALLTA Config | Сервис для получения конфигурационных файлов | [http://allta.devos.astralinux.ru/api/config/](http://allta.devos.astralinux.ru/api/config/) | [http://allta.devos.astralinux.ru/api/docs](http://allta.devos.astralinux.ru/api/docs) |
+|  ALLTA Auth  |        Единый сервис для авторизации         |   [http://allta.devos.astralinux.ru:21500/api/auth/](http://allta.devos.astralinux.ru/api/auth/)   | [http://allta.devos.astralinux.ru/api/docs](http://allta.devos.astralinux.ru/api/docs) |
+| ALLTA Config | Сервис для получения конфигурационных файлов | [http://allta.devos.astralinux.ru:21500/api/config/](http://allta.devos.astralinux.ru/api/config/) | [http://allta.devos.astralinux.ru/api/docs](http://allta.devos.astralinux.ru/api/docs) |
 
 
 

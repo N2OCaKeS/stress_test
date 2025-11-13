@@ -198,7 +198,7 @@ def login():
                 if ttl > 0:
                     max_age = int(ttl)
 
-            response = make_response(redirect("/"))
+            response = make_response(redirect(f"/{main_url}"))
             cookie_args = {
                 'httponly': True,
                 'secure': COOKIE_SECURE,

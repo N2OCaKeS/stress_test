@@ -7,11 +7,11 @@
             "EXT4": "0:41:45",
             "FAT": "1:25:52",
             "XFS": "0:41:25",
-            "unix": "1:07:58",
+            "unix": "1:07:47",
             "EXT4 parsec": "0:42:54",
             "XFS parsec": "0:40:49",
-            "unix parsec": "1:06:52",
-            "FreeIPA auth": "1:10:46",
+            "unix parsec": "1:08:44",
+            "FreeIPA auth": "1:12:30",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -22,8 +22,8 @@
             "psql vanilla": "2:22:48",
             "psql balance": "1:56:32",
             "psql kernels": "1:45:56",
-            "steal time": "2:31:47",
-            "steal time-sm": "2:17:38",
+            "steal time": "2:31:05",
+            "steal time-sm": "2:24:58",
             "Total time": "0:00:00"
         },
         "stand10": {
@@ -34,22 +34,22 @@
             "Total time": "0:00:00"
         },
         "stand11": {
-            "parsec impact-fs": "0:36:02",
-            "parsec impact-fs aud-off": "2:15:48",
-            "docker-wa": "0:45:41",
-            "FIO": "1:20:08",
-            "vPingPong": "0:57:32",
-            "vUnixBench": "2:22:18",
+            "parsec impact-fs": "0:38:42",
+            "parsec impact-fs aud-off": "0:35:59",
+            "docker-wa": "1:01:11",
+            "FIO": "1:17:51",
+            "vPingPong": "1:00:17",
+            "vUnixBench": "2:21:19",
             "psql oom": "0:38:27",
             "Total time": "0:00:00"
         },
         "stand12": {
-            "syslog-ng": "2:16:25",
+            "syslog-ng": "2:17:13",
             "apache-rp": "0:39:04",
-            "auditd-f": "0:45:07",
-            "auditd-p": "1:29:38",
-            "auditd-u": "7:34:48",
-            "digsig-cdt": "0:34:27",
+            "auditd-f": "0:46:16",
+            "auditd-p": "1:30:32",
+            "auditd-u": "7:36:10",
+            "digsig-cdt": "0:34:40",
             "Total time": "0:00:00"
         },
         "stand13": {
@@ -65,11 +65,11 @@
             "EXT4": "0:56:40",
             "FAT": "1:37:15",
             "XFS": "0:55:05",
-            "unix": "1:13:05",
-            "EXT4 parsec": "0:55:16",
-            "XFS parsec": "0:59:01",
-            "unix parsec": "1:21:20",
-            "FreeIPA auth": "1:28:50",
+            "unix": "1:20:43",
+            "EXT4 parsec": "0:54:42",
+            "XFS parsec": "0:56:12",
+            "unix parsec": "1:20:28",
+            "FreeIPA auth": "1:33:16",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -85,8 +85,8 @@
             "Total time": "0:00:00"
         },
         "stand10": {
-            "NTFS": "7:42:54",
-            "OCFS2": "1:07:39",
+            "NTFS": "7:11:05",
+            "OCFS2": "1:14:54",
             "CEPH": "3:00:28",
             "CEPH fio": "1:20:31",
             "Total time": "0:00:00"
@@ -106,7 +106,7 @@
             "apache-rp": "0:33:02",
             "auditd-f": "0:43:38",
             "auditd-p": "1:50:14",
-            "auditd-u": "6:11:55",
+            "auditd-u": "6:21:35",
             "digsig-cdt": "1:14:29",
             "Total time": "0:00:00"
         },

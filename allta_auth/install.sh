@@ -138,7 +138,7 @@ precond(){
 	sudo usermod -aG docker "$USER"
 	sudo systemctl enable docker.service
 	sudo systemctl start docker.service
-	sudo mkdir -p "$BACKUP_DIR"
+	# sudo mkdir -p "$BACKUP_DIR"
 	dir
 	creds
 	service

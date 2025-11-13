@@ -1,3 +1,60 @@
+allta_app - v2.49.8
+* Add 1.7.9.38
+
+
+
+
+
+allta_app - v2.49.7
+* Add 1.8.4.48
+
+
+
+
+
+allta_app - v2.49.6
+* Add 1.8.4.46
+
+
+
+
+
+allta_app - v2.49.5
+* Add RC in confluence
+  comment
+
+
+  
+
+allta_app - v2.49.4
+* Add 1.8.4.46
+
+
+
+
+
+allta_app - v2.49.3
+* Fix url filesystems statistics
+* Add CEPH, CEPH fio in statistics config file
+
+
+
+
+
+allta_app - v2.49.2
+* Add 1.8.4.42
+
+
+
+
+
+allta_app - v2.49.1
+* Add 1.7.9.25
+
+
+
+
+
 allta_app - v2.49.0
 * Add tests CEPH, CEPH fio
 * Add calc all statisctics

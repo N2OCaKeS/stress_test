@@ -6,6 +6,7 @@
 -  /log - получить прогресс выполнения прогона    
 -  /status - узнать статус прогона       
 -  /addrc - добавить конфигурацию новой версии релиз кандидата     
+-  /adduurc - добавить конфигурацию новой срочной версии релиз кандидата    
 -  /acs - сделать снимок для выбранного стенда    
 -  /update_stp - обновить состав тестового прогона     
 -  /add_testrun - создать тестовый прогон    
@@ -19,26 +20,26 @@
 
 ### При первом и последем RC      
 **Оперативное обновление:**    
--  /addrc 1.х.х.х <'password'>    
+-  /addrc 1.х.х.х RCx <'password'>    
 -  /add_testrun 1.х.х.х <'password'> final    
 -  /update_stp 1.х.х.х <'password'>     
 -  /acs 1.х.х.х <stand#> <'password'>     
       
 **Срочное оперативное обновление:**       
--  /adduurc 1.х.х.UU.х.x <'password'> 1.х.х.х   
+-  /adduurc 1.х.х.UU.х.x RCx <'password'> 1.х.х.х   
 -  /add_testrun 1.х.х.UU.х.x <'password'> final    
 -  /update_stp 1.х.х.UU.х.x <'password'>     
 -  /acs 1.х.х.UU.х.x <stand#> <'password'> 
      
 ### При промежуточных RC (прогоны формируются по changelog)
 **Оперативное обновление:**    
--  /addrc 1.х.х.х <'password'>    
+-  /addrc 1.х.х.х RCx <'password'>    
 -  /add_testrun 1.х.х.х <'password'> notfinal    
 -  /update_stp 1.х.х.х <'password'>     
 -  /acs 1.х.х.х <stand#> <'password'>   
       
 **Срочное оперативное обновление:**       
--  /adduurc 1.х.х.UU.х.x <'password'> 1.х.х.х   
+-  /adduurc 1.х.х.UU.х.x RCx <'password'> 1.х.х.х   
 -  /add_testrun 1.х.х.UU.х.x <'password'> notfinal    
 -  /update_stp 1.х.х.UU.х.x <'password'>     
 -  /acs 1.х.х.UU.х.x <stand#> <'password'> 

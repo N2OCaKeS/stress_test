@@ -12,6 +12,8 @@ from ovpn.vm_conf import (
     TEMPLATE_PATH,
     VERSION_OS,
 )
+
+import math
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -258,7 +260,17 @@ EOF'""",
 
         client_count = 40
         client_per_minutes = 30
-        start_client = {}
+
+        total_seconds = math.ceil((client_count / client_per_minutes) * 60) + 20        
+        start_client = {
+            "testvm1": {
+                "get stats": {
+                    "command": f"python3 collect_openvpn_snapshots.py --host 127.0.0.1 --port 7505 --interval 1 --duration {total_seconds} -o /home/u/stats.csv",
+                    "signal set": "",
+                    "signal get": "",
+                },
+            },
+        }
         for idx, i in enumerate(range(2, 6)):
             host = f"testvm{i}"
             client_start = idx * client_count

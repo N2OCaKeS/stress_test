@@ -59,7 +59,7 @@ create_cephfs(){
 create_rbd(){
     sudo ceph osd pool create rbd 128
     sudo rbd pool init rbd
-    sudo rbd create testrbd --size 4096 --image-feature layering
+    sudo rbd create testrbd --size 24576 --image-feature layering
     sudo rbd map testrbd --name client.admin
 
     sudo mkfs.ext4 -m0 /dev/rbd0

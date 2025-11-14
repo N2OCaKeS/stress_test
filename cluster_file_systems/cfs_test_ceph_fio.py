@@ -18,7 +18,7 @@ class CephFIOTest:
             check_output_command(command="dpkg -i /var/tmp/fio/fio_3.12-2_amd64.deb")
 
     def run_test(self):
-        com_test = f"fio --directory={self.directory} --rw=randrw --ioengine=libaio --name=CEPHFIO --bs={self.blocksize} --iodepth=1 --size={self.size} > {self.report_file}"
+        com_test = f"fio --directory={self.directory} --rw=randrw --ioengine=libaio --name=CEPHFIO --bs={self.blocksize} --iodepth=1 --size={self.size} --output-format=json+ > {self.report_file}"
         check_output_command(command=com_test)
 
 

@@ -44,7 +44,8 @@ from libs.liballta import (index_page,
                           COOKIE_NAME,
                           COOKIE_SECURE,
                           AUTH_LOGOUT_URL,
-                          AUTH_CHECK_TOKEN_URL
+                          AUTH_CHECK_TOKEN_URL,
+                          services_health_status
                           )
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs, annotations
 from backup.backuplibs import Backup, check_command
@@ -732,6 +733,11 @@ def testenv_switch():
         prepare_testenv_status(method='put', switch='off')
 
     return jsonify({'message': f'Set to {switch_state}'})
+
+
+@app.route('/services-health-status', methods=['GET'])
+def update_services_health_status():
+    return services_health_status()
 
 
 # if __name__ == '__main__':

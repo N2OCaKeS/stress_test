@@ -42,7 +42,8 @@ from allta_image_conf import (VENV_PATH,
                                releases_dict,
                                cz_comm,
                                allta_version,
-                               test_station_vms)
+                               test_station_vms,
+                               allta_services_list)
 from time import sleep
 from libs.zefir import ZefirTestRun
 import ctypes
@@ -1296,3 +1297,20 @@ def prepare_testenv_status(method: str, switch='off') -> str:
         with open('conf/prepare_testenv_status.conf', 'r') as r:
             status = r.read().strip()
         return status
+    
+
+
+def services_health_status(get_dict=False):
+    status_dict = {
+        i: check_output_command(f'sudo systemctl status {i} | grep Active:') for i in allta_services_list
+    }
+
+    if get_dict:
+        return status_dict
+
+    if all('active (running)' in status for status in status_dict.values()):
+        print('All services are running')
+        return 'ok'
+    else:
+        print('Some service(s) are not running')
+        return 'fail'

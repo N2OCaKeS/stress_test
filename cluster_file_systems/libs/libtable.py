@@ -5,6 +5,7 @@
 # ; Date: 2022
 # ;===========================================================
 
+import json
 import pandas
 import tarfile
 import warnings
@@ -33,14 +34,35 @@ class ReportFIO:
     
     def __init__(self, file_path=f"{REPORT_DIR_HOST}/report_fio.txt"):
         self.file_path = file_path
-
-
-    def parse_fio_file(self):
-        results = {
+        self.results = {
             'read': {'slat_avg': None, 'clat_avg': None, 'lat_avg': None, 'iops': None},
             'write': {'slat_avg': None, 'clat_avg': None, 'lat_avg': None, 'iops': None}
         }
 
+    
+    def parse_fio_json(self):
+        with open(self.file_path, 'r') as file:
+            data = json.load(file)
+
+        job = data['jobs'][0]
+        if 'read' in job:
+            read_data = job['read']
+            self.results['read']['slat_avg'] = round(read_data['slat_ns']['mean'] / 1000, 1)
+            self.results['read']['clat_avg'] = round(read_data['clat_ns']['mean'] / 1000, 1)
+            self.results['read']['lat_avg'] = round(read_data['lat_ns']['mean'] / 1000, 1)
+            self.results['read']['iops'] = round(read_data['iops'])
+
+        if 'write' in job:
+            write_data = job['write']
+            self.results['write']['slat_avg'] = round(write_data['slat_ns']['mean'] / 1000, 1)
+            self.results['write']['clat_avg'] = round(write_data['clat_ns']['mean'] / 1000, 1)
+            self.results['write']['lat_avg'] = round(write_data['lat_ns']['mean'] / 1000, 1)
+            self.results['write']['iops'] = round(write_data['iops'])
+        
+        return self.results
+
+
+    def parse_fio_file(self):
         current_section = None
 
         with open(self.file_path, 'r') as file:
@@ -51,32 +73,32 @@ class ReportFIO:
                     current_section = 'read'
                     if 'IOPS=' in line:
                         iops_part = line.split('IOPS=')[1].split(',')[0]
-                        results[current_section]['iops'] = float(iops_part)
+                        self.results[current_section]['iops'] = float(iops_part)
                 elif line.startswith('write:'):
                     current_section = 'write'
                     if 'IOPS=' in line:
                         iops_part = line.split('IOPS=')[1].split(',')[0]
-                        results[current_section]['iops'] = float(iops_part)
+                        self.results[current_section]['iops'] = float(iops_part)
                 
                 if current_section:
                     if 'slat (' in line and 'avg=' in line:
                         parts = line.split('avg=')[1].split(',')[0]
-                        results[current_section]['slat_avg'] = float(parts)
+                        self.results[current_section]['slat_avg'] = float(parts)
 
                     elif 'clat (' in line and 'avg=' in line and 'percentiles' not in line:
                         parts = line.split('avg=')[1].split(',')[0]
-                        results[current_section]['clat_avg'] = float(parts)
+                        self.results[current_section]['clat_avg'] = float(parts)
                     
                     elif line.startswith('lat (') and 'avg=' in line:
                         parts = line.split('avg=')[1].split(',')[0]
-                        results[current_section]['lat_avg'] = float(parts)
+                        self.results[current_section]['lat_avg'] = float(parts)
 
-        return results
+        return self.results
 
 
     def create_report(self):
         try:
-            results = self.parse_fio_file()
+            results = self.parse_fio_json()
             print(results)
 
             df = pandas.DataFrame(results).T

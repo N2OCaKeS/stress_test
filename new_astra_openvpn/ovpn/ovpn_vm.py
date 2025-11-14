@@ -2,7 +2,7 @@ from allta import Libvirt, LibvirtManager
 import json
 from pathlib import Path
 from time import sleep
-from vm_conf import (
+from ovpn.vm_conf import (
     VMS,
     VMS_DATES,
     VMS_GROUP,

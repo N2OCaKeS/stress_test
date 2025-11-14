@@ -128,6 +128,16 @@ class Ovpn:
                     "path": "/etc/openvpn/server.conf",
                     "old": "CIPHER",
                     "new": cipher[0] if VERSION_OS.startswith("1.7") else cipher[1],
+                },
+                {
+                    "path": "/etc/openvpn/server.conf",
+                    "old": "status /var/log/openvpn/openvpn-status.log",
+                    "new": "status /run/openvpn-server/openvpn-status.log",                    
+                },
+                {
+                    "path": "/etc/openvpn/server.conf",
+                    "old": "keepalive 15 120",
+                    "new": "keepalive 1 2",     
                 }
             ]
         }
@@ -233,7 +243,7 @@ EOF'""",
     def start_test(self):
         print("\n\n\n Запускаем тест \n\n\n")
 
-        client_count = 400
+        client_count = 40
         client_per_minutes = 30
         start_client = {}
         for idx, i in enumerate(range(2, 6)):

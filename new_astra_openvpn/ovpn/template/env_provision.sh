@@ -20,20 +20,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra iptab
 
 if [ "${HOSTNAME}" = "testvm1" ]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server sshpass
-
-    av="$(cat /etc/astra_version 2>/dev/null || true)"
-    if [[ -n "${av}" && -f "/etc/openvpn/server.conf" ]]; then
-        if [[ "${av}" == 1.8* ]]; then
-            bash -lc "printf '\n%s\n' 'data-ciphers kuznyechik-cbc' 'auth id-tc26-gost3411-12-512' >> /etc/openvpn/server.conf"
-        elif [[ "${av}" == 1.7* ]]; then
-            bash -lc "printf '\n%s\n' 'ncp-disable' >> /etc/openvpn/server.conf"
-        fi
-
-    else
-        [[ -z "${av}" ]] && echo "Внимание: /etc/astra_version не найден или пуст — серверный конфиг не менялся."
-        [[ ! -f "/etc/openvpn/server.conf" ]] && echo "Внимание: /etc/openvpn/server.conf не найден — нечего настраивать."
-    fi
-
+    echo 'management 0.0.0.0 7505' | sudo tee -a /etc/openvpn/server.conf
 else
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
 

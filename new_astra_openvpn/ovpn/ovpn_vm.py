@@ -2,7 +2,7 @@ from allta import Libvirt, LibvirtManager
 import json
 from pathlib import Path
 from time import sleep
-from ovpn.vm_conf import (
+from vm_conf import (
     VMS,
     VMS_DATES,
     VMS_GROUP,
@@ -12,6 +12,11 @@ from ovpn.vm_conf import (
     TEMPLATE_PATH,
     VERSION_OS,
 )
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import Optional, Dict, Any
+
 
 
 class Ovpn:
@@ -45,6 +50,9 @@ class Ovpn:
 
     def provision(self):
         print("\n\n\n Выполняется provision \n\n\n")
+
+        Libvirt.set_hosts(domain="stress.rbt", vms_dates=self.new_vms_dates, username=USER, password=PASSWORD)    
+
         scp_provision = {
             "g_all": [
                 {
@@ -52,6 +60,11 @@ class Ovpn:
                     "path_host": f"{TEMPLATE_PATH}/env_provision.sh",
                     "path_vm": "/home/u/",
                 },
+                {
+                    "mode": "push",
+                    "path_host": f"{TEMPLATE_PATH}/statistic.py",
+                    "path_vm": "/home/u/",
+                },                
             ],
             "g_clients_group": [
                 {
@@ -113,7 +126,7 @@ class Ovpn:
             timeout=15,
         )
 
-        Libvirt.set_hosts(domain="stress.rbt", vms_dates=self.new_vms_dates, username=USER, password=PASSWORD)
+
         print("\n\n\n Provison выполнен \n\n\n")
         # print("\n\n\n Делаем снимок  \n\n\n")
         # LibvirtManager.Snapshot.create(vms=VMS, snapshot_name="Provision")
@@ -132,7 +145,7 @@ class Ovpn:
                 {
                     "path": "/etc/openvpn/server.conf",
                     "old": "status /var/log/openvpn/openvpn-status.log",
-                    "new": "status /run/openvpn-server/openvpn-status.log",                    
+                    "new": "status /run/openvpn/openvpn-status.log",                    
                 },
                 {
                     "path": "/etc/openvpn/server.conf",
@@ -270,43 +283,17 @@ EOF'""",
 
         print("\n\n\n Тест выполнен \n\n\n")
 
-    def get_logs(self):
+    def get_result(self):
         print("\n\n\n Получаем логи \n\n\n")
         scp_pull = {
             "testvm1": [
                 {
                     "mode": "pull",
-                    "path_host": "./results/raw/openvpn/openvpn.log",
-                    "path_vm": "/var/log/openvpn/openvpn.log",
-                },
-                {
-                    "mode": "pull",
-                    "path_host": "./results/raw/iperf/iperf_server.log",
-                    "path_vm": "/var/log/iperf_server.log",
+                    "path_host": "/home/u/",
+                    "path_vm": "/home/u/stats.csv",
                 },
             ],
         }
-
-        for i in range(2, 6):
-            vm = f"testvm{i}"
-            path_log = f"./results/raw/{vm}"
-            scp_pull[vm] = [
-                {
-                    "mode": "pull",
-                    "path_host": f"{path_log}",
-                    "path_vm": "/var/log/openvpn",
-                },
-                {
-                    "mode": "pull",
-                    "path_host": f"{path_log}",
-                    "path_vm": "/var/log/iperf",
-                },
-                {
-                    "mode": "pull",
-                    "path_host": f"{path_log}",
-                    "path_vm": "/var/log/active",
-                },
-            ]
 
         Libvirt.scp(
             scp_settings=scp_pull,
@@ -316,3 +303,101 @@ EOF'""",
             password=PASSWORD,
         )
         print("\n\n\n Логи получены \n\n\n")
+
+def analyze_clients_stats(
+    csv_path: str,
+    expected_rate: float = 2.0,      # ожидаемое число подключений в секунду
+    show_plots: bool = True,         # показывать графики на экране
+    save_prefix: Optional[str] = None  # если не None — сохраняем картинки в файлы
+) -> Dict[str, Any]:
+    """
+    Анализирует CSV-файл вида:
+        seconds,clients
+        0,5
+        1,5
+        2,6
+        ...
+
+    Строит два графика:
+    1) y = фактическое кол-во клиентов, x = ожидаемое (expected_rate * seconds)
+    2) y = фактическое кол-во клиентов, x = время (seconds)
+
+    Возвращает словарь со статистиками по clients.
+    """
+
+    df = pd.read_csv(csv_path)
+
+    # базовая валидация
+    if not {"seconds", "clients"}.issubset(df.columns):
+        raise ValueError("Ожидаются колонки 'seconds' и 'clients' в CSV")
+
+    valid_clients = df.loc[df["clients"] >= 0, "clients"]
+
+    if valid_clients.empty:
+        raise ValueError("Нет валидных значений clients (все < 0 или NaN)")
+
+    df["expected_clients"] = df["seconds"] * expected_rate
+
+    stats = {
+        "count": int(valid_clients.count()),
+        "min": int(valid_clients.min()),
+        "max": int(valid_clients.max()),
+        "mean": float(valid_clients.mean()),
+        "median": float(valid_clients.median()),
+        "std": float(valid_clients.std(ddof=1)),
+        "p90": float(np.percentile(valid_clients, 90)),
+        "p95": float(np.percentile(valid_clients, 95)),
+        "p99": float(np.percentile(valid_clients, 99)),
+        "last_value": int(valid_clients.iloc[-1]),
+    }
+
+
+    x = df.loc[df["clients"] >= 0, "seconds"].to_numpy()
+    y = valid_clients.to_numpy()
+    if len(x) >= 2:
+        slope = np.polyfit(x, y, 1)[0]
+        stats["approx_growth_per_second"] = float(slope)
+    else:
+        stats["approx_growth_per_second"] = None
+
+    plt.figure()
+    plt.plot(df["expected_clients"], df["clients"])
+    plt.xlabel("Ожидаемое число клиентов (expected_rate * seconds)")
+    plt.ylabel("Фактическое число клиентов")
+    plt.title("Фактическое vs ожидаемое число клиентов")
+    plt.grid(True)
+
+    if save_prefix is not None:
+        plt.savefig(f"{save_prefix}_expected_vs_actual.png", dpi=150, bbox_inches="tight")
+
+    plt.figure()
+    plt.plot(df["seconds"], df["clients"])
+    plt.xlabel("Время, сек с начала измерений")
+    plt.ylabel("Число клиентов")
+    plt.title("Число клиентов во времени")
+    plt.grid(True)
+
+    if save_prefix is not None:
+        plt.savefig(f"{save_prefix}_clients_vs_time.png", dpi=150, bbox_inches="tight")
+
+    if show_plots:
+        plt.show()
+    else:
+        plt.close("all")
+
+    return stats
+
+
+
+
+if __name__ == "__main__":
+    stats = analyze_clients_stats(
+        csv_path="stats.csv",
+        expected_rate=2.0,                 # 2 подключения в секунду
+        show_plots=True,                   # покажет графики
+        save_prefix="clients_analysis"     # и сохранит PNG в файлы
+    )
+
+    print("Статистика по числу клиентов:")
+    for k, v in stats.items():
+        print(f"{k}: {v}")

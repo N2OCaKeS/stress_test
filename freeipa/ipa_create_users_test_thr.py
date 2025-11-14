@@ -11,7 +11,7 @@ from ipa_conf import USER_CREATE_START, USER_CREATE_MAX, USER_CREATE_STEP
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-SERVER = "virtual-station1.stress-testing.local"
+SERVER = "lowserver.stress-testing.local"
 MAX_WORKERS = os.cpu_count()
 
 client = ClientMeta(SERVER, verify_ssl=False)

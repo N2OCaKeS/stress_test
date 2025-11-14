@@ -71,7 +71,6 @@ class Public:
 
     def preset_publish(self, c_pp, c_np, release_pp=False, release_np=False):
         confluence_report = ReportToConfluence(username=self.username, password=None, token=self.token)
-
         #создать страницу confluence
         def name_page(arg):
             top_page = f'STRESS ⬝ {str(arg).split("_")[1][:3]}'
@@ -118,8 +117,7 @@ class Public:
         with open(INFO_FILENAME) as info:
             # info_lst = info.read().split('\n')
             info_dct = loads(info.read())
-
-        # TODO дописать параметры
+        
         # TODO Дописать info файл
         with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
             header_table_temp = file.read()
@@ -132,7 +130,7 @@ class Public:
                                                     arm_proc=self.stands[self.grade_stand]['cpu'],
                                                     arm_mem=self.stands[self.grade_stand]['ram'],
                                                     arm_st=self.stands[self.grade_stand]['storage'],
-                                                    lead_time=info_dct.get("lead_time"))       
+                                                    lead_time=info_dct.get("lead_time"))  
    
         with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
             rating_temp = template.read()
@@ -164,7 +162,6 @@ class Public:
     def run_publish(self):
 
         check_len_version = self.tcv.split('.')
-
         if len(check_len_version) == 4 and check_len_version[3] != 'UU':
             release_version = '.'.join(check_len_version[:3])
             rare_cpp = self.c_pp.split(' ')

@@ -34,6 +34,7 @@ TEMPLATE_PATH = f'{SCRIPT_DIR}/templates'
 USER = "u"
 PASSWORD = get_new_pass()
 
+
 REPLICA = False
 DOMAIN = "stress-testing.local"
 DC_PASSWORD = '12345678'
@@ -46,7 +47,7 @@ HOSTS = {
                 'ip': '',
               },
     'clients': {
-                'ip': '10.177.103.103',
+                'ip': '10.177.103.201',
                 },
     # 'hosts-with-clients': {
     #             'ip': ['10.177.5.184', '10.177.5.104']
@@ -58,9 +59,9 @@ MAX_USERS_AUTH = 3000
 USERS_AUTH_STEP = 500
 
 # Для Test2
-USER_CREATE_START = 10
-USER_CREATE_STEP = 10
-USER_CREATE_MAX = 100
+USER_CREATE_START = 2000
+USER_CREATE_STEP = 2000
+USER_CREATE_MAX = 10000
 
 
 '''
@@ -70,6 +71,9 @@ GRAPH_DESCRIPTIONS = {
     'proc_errors.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости числа непройденных аутентиф. и авториз. в секунду  от количества клиентов, одновременно выполняющих транзакции.<ul><li><b>OX</b>: Количество клиентов, одновременно выполняющих аутентиф. и авториз.;</li><li><b>OY</b>: Процент ошибок</li><li><b>Функция</b>: Аппроксимирующая функция точек</li></ul></p>',
     'sr_znach.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости средней задержки аутентификации и авторизации сервиса от количества клиентов, одновременно выполняющих транзакции.<ul><li><b>OX</b>: Количество клиентов, одновременно выполняющих аутентиф. и авториз.;</li><li><b>OY</b>: Средняя задержка отклика сервиса;</li><li><b>Функция</b>: Аппроксимирующая функция точек;</li></ul></p>',
     'values_last.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График зависимости почти последней задержки аутентификации и авторизации сервиса от количества клиентов, одновременно выполняющих транзакции.<ul><li><b>OX</b>: Количество клиентов, одновременно выполняющих аутентиф. и авториз.;</li><li><b>OY</b>: Задержка отклика сервиса;</li><li><b>Функция</b>: Аппроксимирующая функция точек;</li></ul></p>',
+    'average_time_per_user.png': '',
+    'total_time.png': '',
+    'successful_users.png': ''
 }
 
 """

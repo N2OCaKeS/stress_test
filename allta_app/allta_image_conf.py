@@ -560,3 +560,23 @@ annotations = {
     "Системные службы": sys_service_annotations,
     "Файловые системы": filesys_annotations
 }
+
+
+
+#################################################################################################################################################
+#Список существующих сервисов и микросервисов ALLTA
+#################################################################################################################################################
+allta_services_list = [
+    'acs.service' 
+    'allta_auth.service',
+    'allta_infocollector.service',
+    'allta.service',
+    'allta_vm.service',
+    'bot_allta.service',
+    'changelog.service',
+    'devpi.service',
+    'grafana_prometheus.service',
+    'node_exporter.service',
+    'portainer.service',
+    'statistics.service'
+]

@@ -1205,7 +1205,86 @@
           }
         </script>
 
+
+
+
+        <div class="modal fade" id="servicesHealthModal" tabindex="-1" aria-labelledby="servicesHealthModalLabel" aria-hidden="true">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="servicesHealthModalLabel">ALLTA Services Health</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body text-start">
+                
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="clear: both;"></div>
+        <br></br>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <a id="servicesHealthLink" href="#" style="margin: 0; line-height: 1.2; color: #c8c9c9; text-decoration: none;">Services Health</a>
+          <img id="healthImage" src="http://10.177.103.10:8000/static/service_ok.png" alt="health">
+        </div>
+
+        <script>
+          document.getElementById('servicesHealthLink').addEventListener('click', function(event) {
+            event.preventDefault(); 
+            console.log('Кнопка нажата');
+            fetch('/services-health-status?get_dict=True')
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error('Network response was not ok');
+                }
+                return response.json();
+              })
+              .then(data => {
+                // Формируем строку из элементов словаря
+                const statusString = Object.entries(data)
+                                          .map(([service, status]) => `${service}: ${status}`)
+                                          .join("\n");
         
+                // Обновляем содержимое модала
+                document.querySelector('#servicesHealthModal .modal-body').innerText = statusString;
+        
+                const modal = new bootstrap.Modal(document.getElementById('servicesHealthModal'));
+                modal.show();
+              })
+              .catch(error => {
+                console.error('Ошибка при получении данных:', error.message);
+                document.querySelector('#servicesHealthModal .modal-body').innerText = `Возникла ошибка при получении данных:\n ${error.message}`;
+
+                const modal = new bootstrap.Modal(document.getElementById('servicesHealthModal'));
+                modal.show();
+              });
+          });
+        </script>
+        <script>
+          function updateHealthStatus() {
+            fetch('/services-health-status') 
+              .then(response => response.json())
+              .then(data => {
+                let servicesHealthStatus = data.services_health_status;
+                let imageElement = document.getElementById("healthImage");
+        
+                if (servicesHealthStatus === "ok") {
+                  imageElement.src = "http://10.177.103.10:8000/static/service_ok.png";
+                } else if (servicesHealthStatus === "fail") {
+                  imageElement.src = "http://10.177.103.10:8000/static/service_fail.png";
+                }
+              })
+              .catch(error => console.error('Ошибка при получении статуса:', error));
+          }
+        
+          setInterval(updateHealthStatus, 60000);
+          updateHealthStatus();
+        </script>
+
         <!-- disk info
          TODO
          Реализовать удобный поиск больших Файлов
@@ -6451,7 +6530,7 @@ $(document).ready(function() {
   }
 </script>
 
-<script>
+<!--<script>
   const CHECK_MINUTES = 5;
   const CHECK_URL = '/check-token';
 
@@ -6493,7 +6572,7 @@ $(document).ready(function() {
 
   startChecker();
   window.addEventListener('beforeunload', () => { if (checker) clearInterval(checker); });
-</script>
+</script> -->
 
 <!-- set reload page interval -->
 <!-- <script>

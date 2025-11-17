@@ -128,7 +128,7 @@ class Report:
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
                                y=self.raw_table['total_time'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=34000)
+                               y_max_for_mathmodel=51000)
     
     def get_rating_average_time_per_user(self):
         return self.get_rating(x=self.raw_table['user_count'].tolist(),

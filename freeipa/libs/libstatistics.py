@@ -16,7 +16,7 @@ class FreeipaStatistics:
             'title_statistics':'FreeIPA',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':['FreeIPA auth', "FreeIPA createusers"]
+            'set_of_test_types':['FreeIPA auth', "FreeIPA create-users"]
         }
 
         headers = {

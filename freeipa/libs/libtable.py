@@ -8,7 +8,7 @@ from scipy import integrate
 from matplotlib import pyplot as plt
 from pretty_html_table import build_table
 from sklearn import preprocessing
-from ipa_conf import SCRIPT_DIR, REPORT_PATH
+from ipa_conf import SCRIPT_DIR, REPORT_PATH, USER_CREATE_MAX
 
 
 class Report:    
@@ -17,6 +17,7 @@ class Report:
         self.width = img_width
         self.height = img_height
         self.type_test = type_test
+        print(self.__class__.__name__)
         
         # create dir
         if not path.exists(REPORT_PATH):
@@ -24,6 +25,7 @@ class Report:
 
         with open(f"{REPORT_PATH}/ipa_report.txt") as file:
             raw_data = file.read().split()
+            print(raw_data)
 
         if self.type_test == "auth":
             self.user_count = [int(param) for param in raw_data[::6]]
@@ -46,11 +48,17 @@ class Report:
                                         'value_for_last_proc_delay': self.value_for_last_proc_delay,
                                         'min_znach': self.min_znach,
                                         'max_znach': self.max_znach})
-        elif self.type_test == "create_user":
+        elif self.type_test == "create-users":
+            print("TUT")
             self.user_count = [int(param) for param in raw_data[::4]]
             self.successful_users = [int(param) for param in raw_data[1::4]]
-            self.total_time = [int(param) for param in raw_data[2::4]]
-            self.average_time_per_user = [int(param) for param in raw_data[3::4]]
+            self.total_time = [float(param) for param in raw_data[2::4]]
+            self.average_time_per_user = [float(param) for param in raw_data[3::4]]
+            self.raw_table = pd.DataFrame({'user_count': self.user_count,
+                                        'successful_users': self.successful_users,
+                                        'total_time': self.total_time,
+                                        'average_time_per_user': self.average_time_per_user})
+            print(self.raw_table)
 
 
     @staticmethod
@@ -114,19 +122,19 @@ class Report:
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
                                y=self.raw_table['successful_users'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=...)
+                               y_max_for_mathmodel=USER_CREATE_MAX * 100)
     
     def get_rating_total_time(self):
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
                                y=self.raw_table['total_time'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=...)
+                               y_max_for_mathmodel=51000)
     
     def get_rating_average_time_per_user(self):
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
                                y=self.raw_table['average_time_per_user'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=...)
+                               y_max_for_mathmodel=100)
 
 
     def get_rating_proc_errors(self, weight_c):
@@ -156,9 +164,12 @@ class Report:
     def get_total_rating_create_users_test(self, 
                                            multiplier=10**(4),
                                            accuracy=2):
-        weight_successful_users = ...
-        weight_total_time = ...
-        weight_average_time_per_user = ...
+        weight_successful_users = 0.333
+        weight_total_time = 0.333
+        weight_average_time_per_user = 0.333
+        print(self.get_rating_successful_users())
+        print(self.get_rating_total_time())
+        print(self.get_rating_average_time_per_user())
         total_rating = (
             ((self.get_rating_successful_users() * weight_successful_users) ** (1)) +
             ((self.get_rating_total_time() * weight_total_time) ** (-1)) +
@@ -167,7 +178,8 @@ class Report:
         return round(total_rating * multiplier, accuracy)
 
 
-    def create_beauty_table(self, path=REPORT_PATH, table_name='ipa_auth_report_table.html'):
+    def create_beauty_table(self, path=REPORT_PATH, table_name='ipa_test_report_table.html'):
+        print("CREATE BEAUTY TABLE")
         beauty_table = build_table(self.raw_table, 'blue_light')
         with open('{}/{}'.format(path, table_name), 'w') as beauty_html_table:
             beauty_html_table.write(beauty_table)

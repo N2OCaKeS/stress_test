@@ -7,12 +7,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
 import os
 
+from ipa_conf import USER_CREATE_START, USER_CREATE_MAX, USER_CREATE_STEP
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-SERVER = "virtual-station1.stress-testing.local"
-USER_START = 1
-USER_STEP = 10
-USER_MAX = 100
+SERVER = "lowserver.stress-testing.local"
 MAX_WORKERS = os.cpu_count()
 
 client = ClientMeta(SERVER, verify_ssl=False)
@@ -20,6 +19,7 @@ client = ClientMeta(SERVER, verify_ssl=False)
 client.login("admin", "12345678")
 
 results_queue = queue.Queue()
+result_queue_error = queue.Queue()
 
 def create_user(i, client_inst):
     login = f"user{i}"
@@ -40,29 +40,31 @@ def create_user(i, client_inst):
         
         end_time = time.time()
         elapsed = end_time - start_time
-        print(f"Создан {login} за {elapsed} секунд")
+        # print(f"Создан {login} за {elapsed} секунд")
         results_queue.put((login, elapsed, True))
         
     except FreeIPAError as e:
         print(f"Ошибка создания {login}: {e}")
         results_queue.put((login, 0, False))
+        result_queue_error.put((login, e))
 
 def del_user(user_id):
     try:
         login = f"user{user_id}"
         client.user_del(login)
-        print(f"Пользователь {login} успешно удален")
+        # print(f"Пользователь {login} успешно удален")
         # return (username, True)
     except FreeIPAError as e:
         print(f"Ошибка удаления {login}: {e}")
+        result_queue_error.put((login, e))
         # return (username, False)
 
 def main():
-    for user_count in range(USER_START, USER_MAX + USER_STEP, USER_STEP):
+    for user_count in range(USER_CREATE_START, USER_CREATE_MAX + USER_CREATE_STEP, USER_CREATE_STEP):
         start_total = time.time()
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             future_to_user = {
-                executor.submit(create_user, i, client): i for i in range(USER_START, user_count)
+                executor.submit(create_user, i, client): i for i in range(user_count)
             }
             
             for future in as_completed(future_to_user):
@@ -90,9 +92,16 @@ def main():
         print(average_time_per_user)
         with open("ipa_report.txt", 'a') as report_file:
             report_file.write(f"{user_count} {successful_users} {total_time} {average_time_per_user}\n")
+
+        tmpf = open("ipa_report_error.txt", "w")
+        tmpf.close()
+        while not result_queue_error.empty():
+            login, error = result_queue_error.get()
+            with open("ipa_report_error.txt", 'a') as error_file:
+                error_file.write(f"{login}: {error}\n")
         
         print("Удаление пользователей...")
-        for user_id in range(USER_START, user_count):
+        for user_id in range(user_count):
             del_user(user_id=user_id)
        
 

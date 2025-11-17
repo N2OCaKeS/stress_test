@@ -10,7 +10,8 @@ from libs.libipa import (remote_exec,
                          upload_results_to_ftp)
 from ipa_conf import HOSTS, USER, INFO_FILENAME, REPORT_PATH
 from libs.zefir import UploaderZC
-from ipa_tests import AutentificationTest
+from ipa_tests import AutentificationTest, CreateUsersTest
+from libs.libpublic import Public
 
 
 
@@ -51,7 +52,16 @@ parser.add_argument('-sn', '--stand-num',
                     choices=['1',
                              '2',
                              '3',
-                             '4'],
+                             '4',
+                             '5',
+                             '6',
+                             '7',
+                             '8',
+                             '9',
+                             '10',
+                             '11',
+                             '12',
+                             '13'],
                     required=True,
                     help='stand num',
                     dest='STAND')
@@ -85,13 +95,20 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     required=True,
                     help='test-cycle-version',
                     dest='TCV')
+parser.add_argument('-tt', '--type-test',
+                    action='store',
+                    required=True,
+                    choices=['auth',
+                             'create-users'],
+                    help='type test',
+                    default="auth",
+                    dest='TT')
 
 args = parser.parse_args()
 
 
 if __name__ == "__main__":
     time_start_script = datetime.now()
-    print("Hello")
 
     uzs = UploaderZC(folder_tree_id=args.FTI,
                  test_cycle_name=args.TCYC,
@@ -129,7 +146,7 @@ if __name__ == "__main__":
     """
         Инициализация клиента
     """
-    # Ждем пока КД перезагрузится
+    # # Ждем пока КД перезагрузится
     while host_is_available("server") == False:
         print("\033[91mКД пока не доступен по ssh!\033[0m")
         sleep(300)
@@ -143,14 +160,6 @@ if __name__ == "__main__":
     out_rep = remote_cmd("ip a", HOSTS['clients']['ip'])
     print(out_rep)
     sleep(300)
-
-    # #     out_hostname_replica = remote_cmd("hostname", HOSTS['replica']['ip']).strip("\n")
-    # # #     print(out_hostname_replica)
-    # # # #     remote_exec(f"sudo astra-freeipa-server-crt --host {out_hostname_replica} --export --48 --pin 12345678 --push u -y", 'server')
-    # # #     # """
-    # # #     #     #TODO SCP сертификат!!!!!!!!!!!
-    # # #     # """
-    
     
     # Копируем инициализирующие скрипты по sftp и запускаем
     remote_put_file(HOSTS['clients']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
@@ -160,49 +169,71 @@ if __name__ == "__main__":
     """
         Запускаем тест
     """
+    if args.TT == "auth":
+        auth_test = AutentificationTest()
+        auth_test.create_users()
+        auth_test.run()
+        """
+            Создаем отчет
+        """
+        # TODO дописать title
+        report = Report(type_test=args.TT)
+        report.create_beauty_table()
+        report.create_graph(x=report.user_count, 
+                            y=report.sr_znach, 
+                            filename="sr_znach",
+                            title_graph="sr_znach/user_count",
+                            x_label="Количество пользователей", 
+                            y_label="Среднее время аутентификации в секундах")
+        report.create_graph(x=report.user_count,
+                            y=report.proc_errors,
+                            filename="proc_errors",
+                            title_graph="proc_errors/user_count",
+                            x_label="Количество пользователей",
+                            y_label="Процент невыполненных аутентификаций")
+        report.create_graph(x=report.user_count,
+                            y=report.value_for_last_proc_delay,
+                            filename='values_last',
+                            title_graph="value_for_last_proc_delay/user_count",
+                            x_label="Количество пользователй",
+                            y_label="Время аутентификации почти последним пользователем")
+        total_rating = report.get_total_rating()
 
-    auth_test = AutentificationTest()
-    auth_test.create_users()
-    auth_test.run()
-    # TODO Дописать info файл
-
-    """
-        Создаем отчет
-    """
-    # TODO дописать title
-    report = Report()
-    report.create_beauty_table()
-    report.create_graph(x=report.user_count, 
-                        y=report.sr_znach, 
-                        filename="sr_znach",
-                        title_graph="Тестовый график",
-                        x_label="Количество пользователей", 
-                        y_label="Среднее время аутентификации в секундах")
-    report.create_graph(x=report.user_count,
-                        y=report.proc_errors,
-                        filename="proc_errors",
-                        title_graph="Тестовый график 2",
-                        x_label="Количество пользователей",
-                        y_label="Процент невыполненных аутентификаций")
-    report.create_graph(x=report.user_count,
-                        y=report.value_for_last_proc_delay,
-                        filename='values_last',
-                        title_graph="Тестовый график 3",
-                        x_label="Количество пользователй",
-                        y_label="Время аутентификации почти последним пользователем")
-    # rating_sr_znach = report.get_rating(report.user_count, report.sr_znach, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
-    # rating_proc_errors = report.get_rating(report.user_count, report.proc_errors, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
-    # rating_last_values = report.get_rating(report.user_count, report.value_for_last_proc_delay, y_min_for_mathmodel=0, y_max_for_mathmodel=1000)
-    # total_rating = report.get_total_rating([rating_sr_znach, rating_proc_errors, rating_last_values])
-    total_rating = report.get_total_rating()
-    print(total_rating)
+    elif args.TT == "create-users":
+        create_users_test = CreateUsersTest()
+        create_users_test.run()
+        report = Report(type_test=args.TT)
+        report.create_beauty_table()
+        report.create_graph(x=report.user_count,
+                            y=report.successful_users, 
+                            filename="successful_users",
+                            title_graph="successful_users/user_count",
+                            x_label="Количество пользователей", 
+                            y_label="Количество спешно созданные пользователи ")
+        report.create_graph(x=report.user_count,
+                            y=report.total_time,
+                            filename="total_time",
+                            title_graph="total_time/user_count",
+                            x_label="Количество пользователей",
+                            y_label="Время создания всех пользователей")
+        report.create_graph(x=report.user_count,
+                            y=report.average_time_per_user,
+                            filename="average_time_per_user",
+                            title_graph="average_time_per_user/user_count",
+                            x_label="Количество пользователей",
+                            y_label="Среднее время создания пользователя")
+        total_rating = report.get_total_rating_create_users_test()
+    else:
+        report = Report()
+        total_rating = 0
+    
     put_system_info_in_file(time_start_script, INFO_FILENAME)
 
     # upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/ipa_report.txt', f'{args.TCYC}_ipa_report.txt')
 
     uzs.public = True
     uzs.total_rating = total_rating
-    #uzs.statistics = True
+    # uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
         

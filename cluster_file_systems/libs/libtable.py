@@ -50,14 +50,14 @@ class ReportFIO:
             self.results['read']['slat_avg'] = round(read_data['slat_ns']['mean'] / 1000, 1)
             self.results['read']['clat_avg'] = round(read_data['clat_ns']['mean'] / 1000, 1)
             self.results['read']['lat_avg'] = round(read_data['lat_ns']['mean'] / 1000, 1)
-            self.results['read']['iops'] = round(read_data['iops'])
+            self.results['read']['iops'] = round(read_data['iops'], 0)
 
         if 'write' in job:
             write_data = job['write']
             self.results['write']['slat_avg'] = round(write_data['slat_ns']['mean'] / 1000, 1)
             self.results['write']['clat_avg'] = round(write_data['clat_ns']['mean'] / 1000, 1)
             self.results['write']['lat_avg'] = round(write_data['lat_ns']['mean'] / 1000, 1)
-            self.results['write']['iops'] = round(write_data['iops'])
+            self.results['write']['iops'] = round(write_data['iops'], 0)
         
         return self.results
 

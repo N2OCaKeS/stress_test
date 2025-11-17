@@ -19,3 +19,5 @@ USER = "u"
 PASSWORD = "1"
 
 TEMPLATE_PATH = "/home/u/git/stress_test/new_astra_openvpn/ovpn/template"
+
+CLIENTS_TOTAL = 400

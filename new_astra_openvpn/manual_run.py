@@ -1,4 +1,4 @@
-# from libs.libtable import Report
+from libs.libtable import Report
 # from libpublic import public
 from ovpn.ovpn_vm import Ovpn
 
@@ -9,8 +9,9 @@ ovpn.build(rc, mode)
 ovpn.provision()
 ovpn.server_settings()
 ovpn.start_test()
+result = ovpn.get_result()
 
-# rp = Report()
+rp = Report()
 
 # print("RESULTS NEXT STAGE")
 # rp.build()

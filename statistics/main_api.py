@@ -375,7 +375,7 @@ def all_statistics(body: Auth):
     freeipa_stat = FreeIpaStatistics(stat_title="FreeIPA",
                                      username=body.username, 
                                      tokenconf=body.token,
-                                     set_of_test_types={'FreeIPA auth'},
+                                     set_of_test_types={'FreeIPA auth, FreeIPA create-users'},
                                      )
     try:
         freeipa_stat.create(**freeipa_stat.info_for_log)

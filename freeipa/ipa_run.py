@@ -97,7 +97,7 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     dest='TCV')
 parser.add_argument('-tt', '--type-test',
                     action='store',
-                    required=True,
+                    required=False,
                     choices=['auth',
                              'create-users'],
                     help='type test',

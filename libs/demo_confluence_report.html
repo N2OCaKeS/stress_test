@@ -1,0 +1,608 @@
+<div class="jira-confluence-report">
+    <style>
+        .jira-confluence-report {
+            font-family: Arial, sans-serif;
+        }
+
+        .jira-confluence-report h1,
+        .jira-confluence-report h2,
+        .jira-confluence-report h3,
+        .jira-confluence-report h4 {
+            color: #172B4D;
+        }
+
+        .jira-confluence-report table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 16px 0;
+        }
+
+        .jira-confluence-report table caption.report-block-title {
+            caption-side: top;
+            margin-bottom: 8px;
+        }
+
+        .jira-confluence-report table th,
+        .jira-confluence-report table td {
+            border: 1px solid #dfe1e6;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .jira-confluence-report figure {
+            margin: 16px 0;
+        }
+
+        .jira-confluence-report figure img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #dfe1e6;
+        }
+
+        .jira-confluence-report figure figcaption {
+            text-align: center;
+            color: #5e6c84;
+            margin-top: 4px;
+        }
+
+        .jira-confluence-report .gallery {
+            display: grid;
+            gap: 16px;
+        }
+
+        .jira-confluence-report .gallery.columns-1 {
+            grid-template-columns: 1fr;
+        }
+
+        .jira-confluence-report .gallery.columns-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .jira-confluence-report .gallery.columns-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .jira-confluence-report .report-block {
+            margin: 16px 0;
+        }
+
+        .jira-confluence-report .report-block-title {
+            display: block;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #0052CC;
+            margin-bottom: 8px;
+        }
+
+        .jira-confluence-report .attachment-block {
+            border: 1px dashed #dfe1e6;
+            padding: 12px;
+            background: #f7f8fa;
+        }
+
+        .jira-confluence-report .attachment-block .attachment-description {
+            color: #5e6c84;
+            margin-top: 8px;
+        }
+    </style>
+    <h1>OpenVPN Stress Demo</h1>
+    <div class="report-block">
+        <h2>Сводка</h2>
+    </div>
+    <div class="report-block">
+        <p>Эта страница показывает, как собрать отчёт из чистого Python без шаблонов.<br />Все блоки описываются через
+            методы builder&#x27;a.</p>
+    </div>
+    <div class="report-block">
+        <ol>
+            <li>Подготовка стенда</li>
+            <li>Запуск тестов</li>
+            <li>Сбор результатов</li>
+            <li>Публикация в Confluence</li>
+        </ol>
+    </div>
+    <div class="report-block">
+        <table>
+            <caption class="report-block-title">Основные метрики</caption>
+            <thead>
+                <tr>
+                    <th>Метрика</th>
+                    <th>Значение</th>
+                    <th>Комментарий</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Пропускная способность</td>
+                    <td>8.2 Гбит/с</td>
+                    <td>в пике</td>
+                </tr>
+                <tr>
+                    <td>Средняя задержка</td>
+                    <td>4.3 мс</td>
+                    <td>95-й перцентиль</td>
+                </tr>
+                <tr>
+                    <td>Ошибки</td>
+                    <td>0</td>
+                    <td>не обнаружено</td>
+                </tr>
+            </tbody>
+        </table>
+        <p><em>Значения берутся из логов testsuite.</em></p>
+    </div>
+    <div class="report-block">
+        <h2>Графики</h2>
+    </div>
+    <div class="report-block">
+        <p>Данные генерируются при каждом запуске и визуализируются встроенным макросом Confluence Chart.</p>
+    </div>
+    <div class="report-block"><span class="report-block-title">Стресс-тест: временные ряды
+            rows</span><ac:structured-macro ac:name="chart">
+            <ac:parameter ac:name="type">line</ac:parameter>
+            <ac:parameter ac:name="title">Стресс-тест: временные ряды rows</ac:parameter>
+            <ac:parameter ac:name="width">960</ac:parameter>
+            <ac:parameter ac:name="height">420</ac:parameter>
+            <ac:parameter ac:name="dataDisplay">table</ac:parameter>
+            <ac:parameter ac:name="timeSeries">false</ac:parameter>
+            <ac:parameter ac:name="xLabel">Минуты теста (мин)</ac:parameter>
+            <ac:parameter ac:name="yLabel">Пропускная способность (Гбит/с)</ac:parameter>
+            <ac:parameter ac:name="colors">#0052CC,#36B37E,#FF5630</ac:parameter>
+            <ac:parameter ac:name="dataOrientation">horizontal</ac:parameter><ac:rich-text-body>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Серия</th>
+                            <th>0</th>
+                            <th>1</th>
+                            <th>2</th>
+                            <th>3</th>
+                            <th>4</th>
+                            <th>5</th>
+                            <th>6</th>
+                            <th>7</th>
+                            <th>8</th>
+                            <th>9</th>
+                            <th>10</th>
+                            <th>11</th>
+                            <th>12</th>
+                            <th>13</th>
+                            <th>14</th>
+                            <th>15</th>
+                            <th>16</th>
+                            <th>17</th>
+                            <th>18</th>
+                            <th>19</th>
+                            <th>20</th>
+                            <th>21</th>
+                            <th>22</th>
+                            <th>23</th>
+                            <th>24</th>
+                            <th>25</th>
+                            <th>26</th>
+                            <th>27</th>
+                            <th>28</th>
+                            <th>29</th>
+                            <th>30</th>
+                            <th>31</th>
+                            <th>32</th>
+                            <th>33</th>
+                            <th>34</th>
+                            <th>35</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>test1</td>
+                            <td>8.81</td>
+                            <td>9.33</td>
+                            <td>9.59</td>
+                            <td>9.33</td>
+                            <td>9.92</td>
+                            <td>9.69</td>
+                            <td>9.05</td>
+                            <td>9.41</td>
+                            <td>8.95</td>
+                            <td>9.02</td>
+                            <td>9.27</td>
+                            <td>9.02</td>
+                            <td>8.77</td>
+                            <td>8.04</td>
+                            <td>8.89</td>
+                            <td>8.72</td>
+                            <td>8.63</td>
+                            <td>9.47</td>
+                            <td>8.82</td>
+                            <td>9.16</td>
+                            <td>9.37</td>
+                            <td>8.74</td>
+                            <td>8.49</td>
+                            <td>8.07</td>
+                            <td>8.03</td>
+                            <td>7.26</td>
+                            <td>7.88</td>
+                            <td>7.86</td>
+                            <td>8.5</td>
+                            <td>8.26</td>
+                            <td>7.95</td>
+                            <td>7.38</td>
+                            <td>6.82</td>
+                            <td>7.36</td>
+                            <td>7.73</td>
+                            <td>7.8</td>
+                        </tr>
+                        <tr>
+                            <td>test2</td>
+                            <td>7.07</td>
+                            <td>7.47</td>
+                            <td>7.3</td>
+                            <td>6.81</td>
+                            <td>6.18</td>
+                            <td>5.76</td>
+                            <td>6.34</td>
+                            <td>6.82</td>
+                            <td>7.13</td>
+                            <td>7.14</td>
+                            <td>6.64</td>
+                            <td>7.08</td>
+                            <td>7.39</td>
+                            <td>7.24</td>
+                            <td>7.05</td>
+                            <td>7.46</td>
+                            <td>6.96</td>
+                            <td>7.59</td>
+                            <td>7.26</td>
+                            <td>6.97</td>
+                            <td>7.4</td>
+                            <td>7.75</td>
+                            <td>8.41</td>
+                            <td>8.12</td>
+                            <td>7.86</td>
+                            <td>7.6</td>
+                            <td>7.02</td>
+                            <td>7.43</td>
+                            <td>8.0</td>
+                            <td>8.28</td>
+                            <td>8.02</td>
+                            <td>8.43</td>
+                            <td>7.85</td>
+                            <td>7.17</td>
+                            <td>7.34</td>
+                            <td>7.59</td>
+                        </tr>
+                        <tr>
+                            <td>test3</td>
+                            <td>6.61</td>
+                            <td>6.72</td>
+                            <td>6.54</td>
+                            <td>7.0</td>
+                            <td>6.6</td>
+                            <td>6.82</td>
+                            <td>6.74</td>
+                            <td>7.05</td>
+                            <td>6.9</td>
+                            <td>6.41</td>
+                            <td>7.07</td>
+                            <td>7.5</td>
+                            <td>8.08</td>
+                            <td>8.6</td>
+                            <td>9.3</td>
+                            <td>8.98</td>
+                            <td>8.46</td>
+                            <td>8.28</td>
+                            <td>8.98</td>
+                            <td>8.47</td>
+                            <td>9.09</td>
+                            <td>9.57</td>
+                            <td>9.88</td>
+                            <td>10.16</td>
+                            <td>9.82</td>
+                            <td>9.37</td>
+                            <td>9.68</td>
+                            <td>9.49</td>
+                            <td>10.18</td>
+                            <td>10.5</td>
+                            <td>9.94</td>
+                            <td>10.39</td>
+                            <td>10.21</td>
+                            <td>9.81</td>
+                            <td>9.24</td>
+                            <td>10.04</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </ac:rich-text-body>
+        </ac:structured-macro></div>
+    <div class="report-block"><span class="report-block-title">Стресс-тест: временные ряды
+            columns</span><ac:structured-macro ac:name="chart">
+            <ac:parameter ac:name="type">line</ac:parameter>
+            <ac:parameter ac:name="title">Стресс-тест: временные ряды columns</ac:parameter>
+            <ac:parameter ac:name="width">960</ac:parameter>
+            <ac:parameter ac:name="height">420</ac:parameter>
+            <ac:parameter ac:name="dataDisplay">table</ac:parameter>
+            <ac:parameter ac:name="timeSeries">false</ac:parameter>
+            <ac:parameter ac:name="xLabel">Минуты теста (мин)</ac:parameter>
+            <ac:parameter ac:name="yLabel">Пропускная способность (Гбит/с)</ac:parameter>
+            <ac:parameter ac:name="colors">#0052CC,#36B37E,#FF5630</ac:parameter>
+            <ac:parameter ac:name="dataOrientation">vertical</ac:parameter><ac:rich-text-body>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Минута</th>
+                            <th>test1</th>
+                            <th>test2</th>
+                            <th>test3</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>0</td>
+                            <td>8.81</td>
+                            <td>7.07</td>
+                            <td>6.61</td>
+                        </tr>
+                        <tr>
+                            <td>1</td>
+                            <td>9.33</td>
+                            <td>7.47</td>
+                            <td>6.72</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>9.59</td>
+                            <td>7.3</td>
+                            <td>6.54</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>9.33</td>
+                            <td>6.81</td>
+                            <td>7.0</td>
+                        </tr>
+                        <tr>
+                            <td>4</td>
+                            <td>9.92</td>
+                            <td>6.18</td>
+                            <td>6.6</td>
+                        </tr>
+                        <tr>
+                            <td>5</td>
+                            <td>9.69</td>
+                            <td>5.76</td>
+                            <td>6.82</td>
+                        </tr>
+                        <tr>
+                            <td>6</td>
+                            <td>9.05</td>
+                            <td>6.34</td>
+                            <td>6.74</td>
+                        </tr>
+                        <tr>
+                            <td>7</td>
+                            <td>9.41</td>
+                            <td>6.82</td>
+                            <td>7.05</td>
+                        </tr>
+                        <tr>
+                            <td>8</td>
+                            <td>8.95</td>
+                            <td>7.13</td>
+                            <td>6.9</td>
+                        </tr>
+                        <tr>
+                            <td>9</td>
+                            <td>9.02</td>
+                            <td>7.14</td>
+                            <td>6.41</td>
+                        </tr>
+                        <tr>
+                            <td>10</td>
+                            <td>9.27</td>
+                            <td>6.64</td>
+                            <td>7.07</td>
+                        </tr>
+                        <tr>
+                            <td>11</td>
+                            <td>9.02</td>
+                            <td>7.08</td>
+                            <td>7.5</td>
+                        </tr>
+                        <tr>
+                            <td>12</td>
+                            <td>8.77</td>
+                            <td>7.39</td>
+                            <td>8.08</td>
+                        </tr>
+                        <tr>
+                            <td>13</td>
+                            <td>8.04</td>
+                            <td>7.24</td>
+                            <td>8.6</td>
+                        </tr>
+                        <tr>
+                            <td>14</td>
+                            <td>8.89</td>
+                            <td>7.05</td>
+                            <td>9.3</td>
+                        </tr>
+                        <tr>
+                            <td>15</td>
+                            <td>8.72</td>
+                            <td>7.46</td>
+                            <td>8.98</td>
+                        </tr>
+                        <tr>
+                            <td>16</td>
+                            <td>8.63</td>
+                            <td>6.96</td>
+                            <td>8.46</td>
+                        </tr>
+                        <tr>
+                            <td>17</td>
+                            <td>9.47</td>
+                            <td>7.59</td>
+                            <td>8.28</td>
+                        </tr>
+                        <tr>
+                            <td>18</td>
+                            <td>8.82</td>
+                            <td>7.26</td>
+                            <td>8.98</td>
+                        </tr>
+                        <tr>
+                            <td>19</td>
+                            <td>9.16</td>
+                            <td>6.97</td>
+                            <td>8.47</td>
+                        </tr>
+                        <tr>
+                            <td>20</td>
+                            <td>9.37</td>
+                            <td>7.4</td>
+                            <td>9.09</td>
+                        </tr>
+                        <tr>
+                            <td>21</td>
+                            <td>8.74</td>
+                            <td>7.75</td>
+                            <td>9.57</td>
+                        </tr>
+                        <tr>
+                            <td>22</td>
+                            <td>8.49</td>
+                            <td>8.41</td>
+                            <td>9.88</td>
+                        </tr>
+                        <tr>
+                            <td>23</td>
+                            <td>8.07</td>
+                            <td>8.12</td>
+                            <td>10.16</td>
+                        </tr>
+                        <tr>
+                            <td>24</td>
+                            <td>8.03</td>
+                            <td>7.86</td>
+                            <td>9.82</td>
+                        </tr>
+                        <tr>
+                            <td>25</td>
+                            <td>7.26</td>
+                            <td>7.6</td>
+                            <td>9.37</td>
+                        </tr>
+                        <tr>
+                            <td>26</td>
+                            <td>7.88</td>
+                            <td>7.02</td>
+                            <td>9.68</td>
+                        </tr>
+                        <tr>
+                            <td>27</td>
+                            <td>7.86</td>
+                            <td>7.43</td>
+                            <td>9.49</td>
+                        </tr>
+                        <tr>
+                            <td>28</td>
+                            <td>8.5</td>
+                            <td>8.0</td>
+                            <td>10.18</td>
+                        </tr>
+                        <tr>
+                            <td>29</td>
+                            <td>8.26</td>
+                            <td>8.28</td>
+                            <td>10.5</td>
+                        </tr>
+                        <tr>
+                            <td>30</td>
+                            <td>7.95</td>
+                            <td>8.02</td>
+                            <td>9.94</td>
+                        </tr>
+                        <tr>
+                            <td>31</td>
+                            <td>7.38</td>
+                            <td>8.43</td>
+                            <td>10.39</td>
+                        </tr>
+                        <tr>
+                            <td>32</td>
+                            <td>6.82</td>
+                            <td>7.85</td>
+                            <td>10.21</td>
+                        </tr>
+                        <tr>
+                            <td>33</td>
+                            <td>7.36</td>
+                            <td>7.17</td>
+                            <td>9.81</td>
+                        </tr>
+                        <tr>
+                            <td>34</td>
+                            <td>7.73</td>
+                            <td>7.34</td>
+                            <td>9.24</td>
+                        </tr>
+                        <tr>
+                            <td>35</td>
+                            <td>7.8</td>
+                            <td>7.59</td>
+                            <td>10.04</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </ac:rich-text-body>
+        </ac:structured-macro></div>
+    <div class="report-block"><span class="report-block-title">Стресс-тест: усреднённые
+            показатели</span><ac:structured-macro ac:name="chart">
+            <ac:parameter ac:name="type">bar</ac:parameter>
+            <ac:parameter ac:name="title">Стресс-тест: усреднённые показатели</ac:parameter>
+            <ac:parameter ac:name="width">720</ac:parameter>
+            <ac:parameter ac:name="height">360</ac:parameter>
+            <ac:parameter ac:name="dataDisplay">table</ac:parameter>
+            <ac:parameter ac:name="timeSeries">false</ac:parameter>
+            <ac:parameter ac:name="yLabel">Средняя пропускная способность (Гбит/с)</ac:parameter>
+            <ac:parameter ac:name="colors">#0052CC,#36B37E,#FF5630</ac:parameter>
+            <ac:parameter ac:name="dataOrientation">vertical</ac:parameter><ac:rich-text-body>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Серия</th>
+                            <th>Среднее, Гбит/с</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>test1</td>
+                            <td>8.59</td>
+                        </tr>
+                        <tr>
+                            <td>test2</td>
+                            <td>7.33</td>
+                        </tr>
+                        <tr>
+                            <td>test3</td>
+                            <td>8.57</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </ac:rich-text-body>
+        </ac:structured-macro></div>
+    <div class="report-block">
+        <h2>Фото испытательного стенда и вложения</h2>
+    </div>
+    <div class="report-block">
+        <p>Скрипт автоматически прикладывает найденные файлы и фотографии. Они будут загружены вместе со страницей и
+            отображены ниже.</p>
+    </div>
+    <div class="report-block">
+        <figure class="attachment-block attachment-image"><span class="report-block-title">Без названия21</span>
+            <ac:image>
+                <ri:attachment ri:filename="Без названия21.png" />
+            </ac:image>
+        </figure>
+    </div>
+</div>

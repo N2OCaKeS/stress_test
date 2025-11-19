@@ -19,11 +19,10 @@ Allta Documentation
    modules/Decorators
    modules/GetEnv
    modules/Libvirt
-   modules/LibvirtManager   
+   modules/LibvirtManager
+   modules/JiraConfluenceReporter
    modules/SystemCommands
    modules/VBox
    modules/VBoxManager
    modules/page_template
-
-
-
+   

@@ -7,6 +7,8 @@
 тестов и вспомогательных скриптов.
 """
 
+import os
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from html import escape
 from pathlib import Path
@@ -17,38 +19,23 @@ class PageBuilder:
     Конструктор HTML-страниц для публикации в Confluence.
 
     Класс работает с привычными python-структурами данных и предоставляет
-    методы для последовательного добавления контента. Готовый результат
-    можно отрендерить в строку или сохранить в файл для предпросмотра.
+    методы для последовательного добавления контента.
+
+    Пример::
+
+        builder = PageBuilder(title="Demo")
+        builder.add_heading("Кратко")
+        builder.add_header_table(
+            [
+                {"label": "Params", "value": {"items": ["foo", "bar"]}},
+                {"label": "ARM", "value": {"stand_number": "10"}},
+            ]
+        )
+        builder.add_table({"headers": ["Metric", "Value"], "rows": [["TPS", 42]]})
+        html = builder.render()
     """
 
-    DEFAULT_STYLE = """
-    .jira-confluence-report {font-family: Arial, sans-serif;}
-    .jira-confluence-report h1,
-    .jira-confluence-report h2,
-    .jira-confluence-report h3,
-    .jira-confluence-report h4 {color: #172B4D;}
-    .jira-confluence-report table {border-collapse: collapse; width: 100%; margin: 16px 0;}
-    .jira-confluence-report table caption.report-block-title {caption-side: top; margin-bottom: 8px;}
-    .jira-confluence-report table th,
-    .jira-confluence-report table td {border: 1px solid #dfe1e6; padding: 8px; text-align: left;}
-    .jira-confluence-report figure {margin: 16px 0;}
-    .jira-confluence-report figure img {max-width: 100%; height: auto; border: 1px solid #dfe1e6;}
-    .jira-confluence-report figure figcaption {text-align: center; color: #5e6c84; margin-top: 4px;}
-    .jira-confluence-report .gallery {display: grid; gap: 16px;}
-    .jira-confluence-report .gallery figure {display: flex; flex-direction: column; align-items: center; margin-bottom: 32px;}
-    .jira-confluence-report .gallery .gallery-image-title {display: block; font-weight: 600; margin-bottom: 8px; text-align: center;}
-    .jira-confluence-report .gallery .gallery-image-caption {display: block; margin-top: 8px; text-align: center; color: #5e6c84; font-style: italic;}
-    .jira-confluence-report .gallery.columns-1 {grid-template-columns: 1fr;}
-    .jira-confluence-report .gallery.columns-2 {grid-template-columns: repeat(2, 1fr);}
-    .jira-confluence-report .gallery.columns-3 {grid-template-columns: repeat(3, 1fr);}
-    .jira-confluence-report .report-block {margin: 24px 0;}
-    .jira-confluence-report .report-block + .report-block {margin-top: 32px;}
-    .jira-confluence-report .report-block-title {display: block; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0052CC; margin-bottom: 8px;}
-    .jira-confluence-report .chart-title {font-size: 20px; font-weight: 700; margin: 0 auto 12px; color: #172B4D; text-align: center;}
-    .jira-confluence-report .attachment-block {border: 1px dashed #dfe1e6; padding: 12px; background: #f7f8fa;}
-    .jira-confluence-report .attachment-block .attachment-description {color: #5e6c84; margin-top: 8px;}
-    .jira-confluence-report .attachment-image .attachment-image-media {display: block; margin-top: 8px;}
-    """
+
 
     IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp"}
 
@@ -56,11 +43,127 @@ class PageBuilder:
         "line": "line",
         "area": "area",
         "bar": "bar",
-        "column": "bar",  # не все инстансы Confluence поддерживают column
-        "stackedbar": "stackedbar",
-        "stackedcolumn": "stackedbar",
-        "stackedarea": "stackedarea",
+        "column": "bar",
         "pie": "pie",
+    }
+
+    _ROOT_STYLE = "font-family: 'Century Gothic', 'Segoe UI', Arial, sans-serif; color: #091e42;"
+    _TITLE_STYLE = "color: #172B4D; font-size: 28px; margin: 0 0 16px 0;"
+    _HEADING_STYLE = "color: #172B4D; margin: 0 0 8px 0;"
+    _PARAGRAPH_STYLE = "margin: 8px 0; line-height: 1.5; color: #172B4D;"
+    _REPORT_BLOCK_STYLE = "margin: 0;"
+    _REPORT_BLOCK_TITLE_STYLE = (
+        "display: block; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; "
+        "color: #0052CC; margin-bottom: 8px;"
+    )
+    _TABLE_STYLE = "border-collapse: collapse; width: 100%; margin: 16px 0;"
+    _TABLE_CAPTION_STYLE = _REPORT_BLOCK_TITLE_STYLE
+    _TABLE_HEADER_CELL_STYLE = (
+        "border: 1px solid #dfe1e6; padding: 8px; text-align: left; background: #edf2ff; font-weight: 600;"
+    )
+    _TABLE_CELL_STYLE = "border: 1px solid #dfe1e6; padding: 8px; text-align: left;"
+    _CHART_TITLE_STYLE = "font-size: 20px; font-weight: 700; margin: 0 auto 12px; color: #172B4D; text-align: center;"
+    _CHART_WRAPPER_STYLE = "display: flex; justify-content: center; width: 100%;"
+    _GRID_TABLE_STYLE = "width:100%; border-collapse: separate; border-spacing: 16px 8px; margin: 8px 0;"
+    _GRID_CELL_STYLE = "vertical-align: top; text-align: center;"
+    _GALLERY_FIGURE_STYLE = "display: inline-flex; flex-direction: column; align-items: center; width: 100%;"
+    _GALLERY_TITLE_STYLE = "display: block; font-weight: 600; margin-bottom: 8px; text-align: center;"
+    _GALLERY_IMAGE_STYLE = "max-width: 100%; height: auto; border: 1px solid #dfe1e6;"
+    _GALLERY_CAPTION_STYLE = "display: block; margin-top: 8px; text-align: center; color: #5e6c84; font-style: italic;"
+    _ATTACHMENT_BLOCK_STYLE = "border: 1px dashed #dfe1e6; padding: 12px; background: #f7f8fa; margin: 16px 0;"
+    _ATTACHMENT_DESCRIPTION_STYLE = "color: #5e6c84; margin-top: 8px;"
+    _ATTACHMENT_IMAGE_MEDIA_STYLE = "display: block; margin-top: 8px;"
+    _ATTACHMENT_LINK_CONTAINER_STYLE = "margin: 0;"
+    _DETAILS_TABLE_STYLE = (
+        "width:100%;border-collapse:collapse;background:#d9e1f2;font-family:'Century Gothic','Segoe UI',sans-serif;"
+        "font-size:15px;color:#091e42;margin:16px 0;"
+    )
+    _DETAILS_KEY_STYLE = (
+        "font-weight:700;width:30%;white-space:nowrap;border:1px solid #b9c6ec;padding:10px 16px;vertical-align:top;"
+    )
+    _DETAILS_VALUE_STYLE = "border:1px solid #b9c6ec;padding:10px 16px;vertical-align:top;font-size:15px;"
+    _DETAILS_LINK_STYLE = "color:#0052CC;text-decoration:none;"
+    _DETAILS_LIST_STYLE = "margin:6px 0 0 18px;padding:0;"
+    _ARM_INFO_URL = "https://life.astralinux.ru/pages/viewpage.action?pageId=192234259"
+    _ARM_CATALOG = {
+        "1": {
+            "grade": "VM Test WorkStation",
+            "cpu": "vCPU (16 cores)",
+            "ram": "128Gb",
+            "storage": "100Gb",
+        },
+        "2": {
+            "grade": "VM Test WorkStation",
+            "cpu": "vCPU (16 cores)",
+            "ram": "128Gb",
+            "storage": "100Gb",
+        },
+        "3": {
+            "grade": "LowServer",
+            "cpu": "Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz",
+            "ram": "128Gb",
+            "storage": "nvme0n1 3.2Tb / SAS SSD 3.8Tb",
+        },
+        "4": {
+            "grade": "MiddleServer",
+            "cpu": "Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz",
+            "ram": "256Gb",
+            "storage": "nvme0n1 3.2Tb / SAS SSD 3.8Tb",
+        },
+        "5": {
+            "grade": "HighServer",
+            "cpu": "Intel(R) Xeon(R) Gold 5320 CPU @ 2.20GHz",
+            "ram": "1024Gb",
+            "storage": "nvme0n1 3.2Tb",
+        },
+        "6": {
+            "grade": "VM TestStation",
+            "cpu": "vCPU (16 cores)",
+            "ram": "128Gb",
+            "storage": "100Gb",
+        },
+        "7": {
+            "grade": "VM TestStation",
+            "cpu": "vCPU (16 cores)",
+            "ram": "128Gb",
+            "storage": "100Gb",
+        },
+        "8": {
+            "grade": "VM TestStation",
+            "cpu": "vCPU (16 cores)",
+            "ram": "128Gb",
+            "storage": "100Gb",
+        },
+        "9": {
+            "grade": "VM TestStation",
+            "cpu": "vCPU (16 cores)",
+            "ram": "128Gb",
+            "storage": "100Gb",
+        },
+        "10": {
+            "grade": "LowServer",
+            "cpu": "Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz",
+            "ram": "128Gb",
+            "storage": "nvme0n1 3.2Tb / SAS SSD 3.8Tb",
+        },
+        "11": {
+            "grade": "LowServer",
+            "cpu": "Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz",
+            "ram": "128Gb",
+            "storage": "nvme0n1 3.2Tb / SAS SSD 3.8Tb",
+        },
+        "12": {
+            "grade": "LowServer",
+            "cpu": "Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz",
+            "ram": "128Gb",
+            "storage": "nvme0n1 3.2Tb / SAS SSD 3.8Tb",
+        },
+        "13": {
+            "grade": "LowServer",
+            "cpu": "Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz",
+            "ram": "128Gb",
+            "storage": "nvme0n1 3.2Tb / SAS SSD 3.8Tb",
+        },
     }
 
     def __init__(self, title=None):
@@ -98,7 +201,7 @@ class PageBuilder:
         """
 
         level = min(max(level, 1), 6)
-        self._sections.append(f"<h{level}>{escape(text)}</h{level}>")
+        self._sections.append(f'<h{level} style="{self._HEADING_STYLE}">{escape(text)}</h{level}>')
         return self
 
     def add_paragraph(self, text):
@@ -114,7 +217,7 @@ class PageBuilder:
         """
 
         prepared = "<br/>".join(escape(chunk) for chunk in text.splitlines())
-        self._sections.append(f"<p>{prepared}</p>")
+        self._sections.append(f'<p style="{self._PARAGRAPH_STYLE}">{prepared}</p>')
         return self
 
     def add_unordered_list(self, items):
@@ -173,20 +276,25 @@ class PageBuilder:
         headers = self._normalize_headers(table_spec.get("headers"))
         rows = self._normalize_rows(table_spec.get("rows"), headers)
 
-        html_parts = ["<table>"]
+        html_parts = [f'<table style="{self._TABLE_STYLE}">']
         if title:
             html_parts.append(
-                f"<caption class=\"report-block-title\">{escape(title)}</caption>"
+                f'<caption style="{self._TABLE_CAPTION_STYLE}">{escape(title)}</caption>'
             )
         if headers:
-            header_cells = "".join(f"<th>{escape(column)}</th>" for column in headers)
+            header_cells = "".join(
+                f'<th style="{self._TABLE_HEADER_CELL_STYLE}">{escape(column)}</th>'
+                for column in headers
+            )
             html_parts.append(f"<thead><tr>{header_cells}</tr></thead>")
         if rows:
             body_rows = []
             for row in rows:
                 cells = []
                 for column in headers or row.keys():
-                    cells.append(f"<td>{escape(str(row.get(column, '')))}</td>")
+                    cells.append(
+                        f'<td style="{self._TABLE_CELL_STYLE}">{escape(str(row.get(column, "")))}</td>'
+                    )
                 body_rows.append(f"<tr>{''.join(cells)}</tr>")
             html_parts.append(f"<tbody>{''.join(body_rows)}</tbody>")
         html_parts.append("</table>")
@@ -196,6 +304,84 @@ class PageBuilder:
 
         self._sections.append("".join(html_parts))
         return self
+
+    def add_header_table(self, rows, *, defaults=None):
+        """
+        Добавляет «шапку» отчёта — таблицу ключ/значение с поддержкой ссылок и списков.
+
+        Таблица автоматически подставляет первые строки ``Astra version`` и ``Kernel``.
+        Значение версии берётся из ``/etc/astra_version`` + ``/etc/astra_license`` и
+        дополняется режимом в скобках, а версия ядра — из ``uname -r``.
+
+        Строка ``ARM`` заполняется характеристиками железа, если в ``value`` присутствует
+        ``stand_number`` (или ``link_text``/``title`` с номером в тексте). Для стенда
+        всегда используется ссылка ``https://life.astralinux.ru/pages/viewpage.action?pageId=192234259``.
+        Независимо от позиции в списке строк, ``ARM`` будет предпоследней строкой, а
+        ``Lead time`` — последней.
+
+        Args:
+            rows: Набор строк в виде словарей или кортежей ``(label, value)``.
+                Поддерживаемые варианты значений:
+
+                - строка — выводится с экранированием (``\\n`` → ``<br/>``);
+                - последовательность — выводится как маркированный список;
+                - словарь — можно комбинировать ``text``, ``link``/``href``/``url`` и
+                  ``items`` (список для bullet-пунктов).
+            defaults: Значения по умолчанию, подставляются, если в строке нет value.
+
+        Returns:
+            PageBuilder: Текущий экземпляр для чейнинга вызовов.
+
+        Пример::
+
+            builder.add_header_table(
+                [
+                    {"label": "Params", "value": {"items": ["Users: 3000"]}},
+                    {"label": "ARM", "value": {"stand_number": "10"}},
+                    {"label": "Lead time", "value": "00:12:34"},
+                ]
+            )
+        """
+
+        defaults = defaults or {}
+        prepared = self._prepare_header_rows(rows)
+        rendered_rows = []
+
+        for entry in prepared:
+            if isinstance(entry, Mapping):
+                label = entry.get("label") or entry.get("key")
+                value = entry.get("value")
+            else:
+                continue
+
+            if value is None and label in defaults:
+                value = defaults[label]
+            if label is None:
+                continue
+
+            if self._normalize_label(label) == "arm":
+                value = self._auto_fill_arm(value)
+
+            cell_html = self._render_details_value(value)
+            rendered_rows.append(
+                "<tr>"
+                f'<td style="{self._DETAILS_KEY_STYLE}">{escape(str(label))}</td>'
+                f'<td style="{self._DETAILS_VALUE_STYLE}">{cell_html}</td>'
+                "</tr>"
+            )
+
+        if not rendered_rows:
+            return self
+
+        table_html = (
+            f'<table style="{self._DETAILS_TABLE_STYLE}"><tbody>'
+            + "".join(rendered_rows)
+            + "</tbody></table>"
+        )
+        self._sections.append(table_html)
+        return self
+
+    add_details_table = add_header_table
 
     def add_attachment(self, file_path, *, title=None, description=None, display=True):
         """
@@ -220,20 +406,20 @@ class PageBuilder:
         filename = path.name or normalized
         title_text = self._coerce_optional_str(title)
         block_title = (
-            f"<div class=\"report-block-title\">{escape(title_text)}</div>"
+            f'<div style="{self._REPORT_BLOCK_TITLE_STYLE}">{escape(title_text)}</div>'
             if title_text
             else ""
         )
         if path.suffix.lower() in self.IMAGE_EXTENSIONS:
             figcaption = (
-                f"<figcaption>{escape(str(description))}</figcaption>"
+                f'<figcaption style="{self._GALLERY_CAPTION_STYLE}">{escape(str(description))}</figcaption>'
                 if description is not None
                 else ""
             )
             html = (
-                '<figure class="attachment-block attachment-image">'
+                f'<figure style="{self._ATTACHMENT_BLOCK_STYLE}">'
                 f"{block_title}"
-                "<div class=\"attachment-image-media\">"
+                f'<div style="{self._ATTACHMENT_IMAGE_MEDIA_STYLE}">'
                 "<ac:image>"
                 f'<ri:attachment ri:filename="{escape(filename)}"/>'
                 "</ac:image>"
@@ -242,17 +428,17 @@ class PageBuilder:
                 "</figure>"
             )
         else:
-            description_html = (
-                f"<p class=\"attachment-description\">{escape(str(description))}</p>"
-                if description is not None
-                else ""
-            )
+            description_html = ""
+            if description is not None:
+                description_html = (
+                    f'<p style="{self._ATTACHMENT_DESCRIPTION_STYLE}">{escape(str(description))}</p>'
+                )
             link_text = str(title_text or filename)
             link_html = self._build_attachment_link(filename, link_text)
             html = (
-                '<div class="attachment-block attachment-file">'
+                f'<div style="{self._ATTACHMENT_BLOCK_STYLE}">'
                 f"{block_title}"
-                f"<p class=\"attachment-link\">{link_html}</p>"
+                f'<p style="{self._ATTACHMENT_LINK_CONTAINER_STYLE}">{link_html}</p>'
                 f"{description_html}"
                 "</div>"
             )
@@ -284,7 +470,7 @@ class PageBuilder:
             return self
 
         columns = max(1, int(columns))
-        figure_chunks = []
+        figures = []
         for item in normalized_items:
             raw_title = item.get("title")
             heading_level = item.get("title_level")
@@ -302,7 +488,7 @@ class PageBuilder:
             body_parts = []
             if title:
                 body_parts.append(
-                    f"<{heading_tag} class=\"gallery-image-title\">{escape(title)}</{heading_tag}>"
+                    f'<{heading_tag} style="{self._GALLERY_TITLE_STYLE}">{escape(title)}</{heading_tag}>'
                 )
 
             alt_text = item.get("alt") or caption or title or ""
@@ -314,10 +500,12 @@ class PageBuilder:
                     f'<ri:attachment ri:filename="{escape(stored_path.name)}"/>'
                     "</ac:image>"
                 )
-                body_parts.append(attachment_markup)
+                body_parts.append(
+                    f'<div style="text-align:center;width:100%;">{attachment_markup}</div>'
+                )
             else:
                 body_parts.append(
-                    f'<img src="{escape(src)}" alt="{escape(alt_text)}"/>'
+                    f'<img src="{escape(src)}" alt="{escape(alt_text)}" style="{self._GALLERY_IMAGE_STYLE}"/>'
                 )
 
             if caption or description:
@@ -330,26 +518,45 @@ class PageBuilder:
                         else description_html
                     )
                 body_parts.append(
-                    f"<div class=\"gallery-image-caption\">{caption_block}</div>"
+                    f'<div style="{self._GALLERY_CAPTION_STYLE}">{caption_block}</div>'
                 )
 
-            figure_chunks.append(f"<figure>{''.join(body_parts)}</figure>")
+            figures.append(
+                f'<figure style="{self._GALLERY_FIGURE_STYLE}">{"".join(body_parts)}</figure>'
+            )
+
+        rows = [
+            figures[idx : idx + columns] for idx in range(0, len(figures), columns)
+        ]
+        table_rows = []
+        for row in rows:
+            cells = []
+            for figure_html in row:
+                cells.append(
+                    f'<td style="{self._GRID_CELL_STYLE}">{figure_html}</td>'
+                )
+            if len(row) < columns:
+                cells.extend(
+                    f'<td style="{self._GRID_CELL_STYLE}"></td>'
+                    for _ in range(columns - len(row))
+                )
+            table_rows.append("<tr>" + "".join(cells) + "</tr>")
 
         gallery = (
-            f'<div class="gallery columns-{columns}" '
-            f'style="grid-template-columns: repeat({columns}, 1fr);">'
-            f"{''.join(figure_chunks)}"
-            "</div>"
+            f'<table style="{self._GRID_TABLE_STYLE}"><tbody>'
+            + "".join(table_rows)
+            + "</tbody></table>"
         )
         self._sections.append(gallery)
         return self
 
-    def add_chart(self, chart_spec):
+    def add_chart(self, chart_spec, *, columns=1):
         """
         Встраивает макрос Confluence ``chart`` с табличными данными.
 
         Args:
-            chart_spec (Mapping[str, object]): Параметры графика. Поддерживаемые
+            chart_spec (Mapping[str, object] | Sequence[Mapping[str, object]]):
+                Параметры графика или последовательность параметров. Поддерживаемые
                 ключи:
 
                 * ``title`` — заголовок графика.
@@ -378,19 +585,261 @@ class PageBuilder:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
         """
 
-        if not isinstance(chart_spec, Mapping):
-            raise TypeError("chart_spec must be a mapping")
+        if isinstance(chart_spec, Mapping):
+            block = self._render_chart_block(chart_spec)
+            if block:
+                self._sections.append(block)
+            return self
 
+        if isinstance(chart_spec, Sequence) and not isinstance(
+            chart_spec, (str, bytes, Mapping)
+        ):
+            rendered = []
+            for entry in chart_spec:
+                if isinstance(entry, Mapping):
+                    block = self._render_chart_block(entry)
+                    if block:
+                        rendered.append(block)
+            if not rendered:
+                return self
+            columns = max(1, int(columns))
+            rows = [
+                rendered[idx : idx + columns]
+                for idx in range(0, len(rendered), columns)
+            ]
+            table_rows = []
+            for row in rows:
+                cells = [
+                    f'<td style="{self._GRID_CELL_STYLE}">{block}</td>'
+                    for block in row
+                ]
+                if len(row) < columns:
+                    cells.extend(
+                        f'<td style="{self._GRID_CELL_STYLE}"></td>'
+                        for _ in range(columns - len(row))
+                    )
+                table_rows.append("<tr>" + "".join(cells) + "</tr>")
+            grid_html = (
+                f'<table style="{self._GRID_TABLE_STYLE}"><tbody>'
+                + "".join(table_rows)
+                + "</tbody></table>"
+            )
+            self._sections.append(grid_html)
+            return self
+
+        raise TypeError(
+            "chart_spec must be a mapping or a sequence of mappings"
+        )
+
+    # ----- rendering -------------------------------------------------------
+    def render(self):
+        """
+        Возвращает итоговый HTML-код страницы.
+
+        Returns:
+            str: Полная HTML-разметка отчёта.
+        """
+
+        body = []
+        if self.title:
+            body.append(f'<h1 style="{self._TITLE_STYLE}">{escape(self.title)}</h1>\n')
+        body.extend(self._wrap_report_block(chunk) for chunk in self._sections)
+        return f'<div style="{self._ROOT_STYLE}">' + "".join(body) + "</div>"
+
+    @property
+    def attachments(self):
+        """
+        Возвращает список зарегистрированных вложений.
+
+        Returns:
+            list[Path]: Копия списка файлов, добавленных через ``add_attachment``.
+        """
+
+        return list(self._attachments)
+
+    def render_to_file(self, path):
+        """
+        Сохраняет HTML в файл для локального предпросмотра.
+
+        Args:
+            path (str | Path): Путь до файла назначения.
+
+        Returns:
+            Path: Объект ``Path`` с путём до созданного файла.
+        """
+
+        target = Path(path)
+        target.write_text(self.render(), encoding="utf-8")
+        return target
+
+    # ----- private helpers -------------------------------------------------
+    def _wrap_report_block(self, content):
+        block = f'<div style="{self._REPORT_BLOCK_STYLE}">{content}</div>'
+        return f"{block}<br/>\n"
+
+    def _prepare_header_rows(self, rows):
+        prepared = []
+        if rows is None:
+            iterable = []
+        else:
+            iterable = rows
+        for entry in iterable:
+            if isinstance(entry, Mapping):
+                prepared.append(dict(entry))
+            elif isinstance(entry, (tuple, list)) and len(entry) >= 2:
+                prepared.append({"label": entry[0], "value": entry[1]})
+        labels = {
+            self._normalize_label(item.get("label") or item.get("key"))
+            for item in prepared
+            if item.get("label") or item.get("key")
+        }
+        insert_index = 0
+        version = self._detect_astra_version()
+        if version and "astra version" not in labels:
+            prepared.insert(0, {"label": "Astra version", "value": version})
+            labels.add("astra version")
+            insert_index = 1
+        kernel = self._detect_kernel()
+        if kernel and "kernel" not in labels:
+            prepared.insert(insert_index, {"label": "Kernel", "value": kernel})
+        head_labels = {"astra version", "kernel"}
+        head_rows = []
+        arm_rows = []
+        lead_rows = []
+        other_rows = []
+        for entry in prepared:
+            normalized = self._normalize_label(entry.get("label") or entry.get("key"))
+            if normalized in head_labels:
+                head_rows.append(entry)
+            elif normalized == "arm":
+                arm_rows.append(entry)
+            elif normalized == "lead time":
+                lead_rows.append(entry)
+            else:
+                other_rows.append(entry)
+        return head_rows + other_rows + arm_rows + lead_rows
+
+    def _auto_fill_arm(self, value):
+        if isinstance(value, Mapping):
+            merged = dict(value)
+        else:
+            return value
+        hint = (
+            merged.get("stand_number")
+            or merged.get("link_text")
+            or merged.get("title")
+            or merged.get("text")
+            or ""
+        )
+        match = re.search(r"(\d+)", str(hint))
+        if not match:
+            return merged
+        server = self._ARM_CATALOG.get(match.group(1))
+        if not server:
+            return merged
+        merged.setdefault("stand_number", match.group(1))
+        merged.setdefault("link", self._ARM_INFO_URL)
+        if server.get("grade"):
+            merged["link_text"] = f"{server['grade']} ({match.group(1)})"
+        if not merged.get("items") and not merged.get("list"):
+            merged["items"] = [
+                {"label": "Processor", "value": server["cpu"]},
+                {"label": "Memory", "value": server["ram"]},
+                {"label": "Storage", "value": server["storage"]},
+            ]
+        return merged
+
+    def _detect_astra_version(self):
+        version = ""
+        mode = ""
+        try:
+            version = Path("/etc/astra_version").read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+        try:
+            license_text = Path("/etc/astra_license").read_text(encoding="utf-8")
+            match = re.search(r"DESCRIPTION=([^\n]+)", license_text)
+            if match:
+                desc = match.group(1).strip()
+                mode_match = re.search(r"\(([^)]+)\)", desc)
+                if mode_match:
+                    mode = mode_match.group(1).strip()
+                elif desc:
+                    mode = desc
+        except OSError:
+            pass
+        if version:
+            return f"{version}({mode})" if mode else version
+        return mode or None
+
+    def _detect_kernel(self):
+        try:
+            return os.uname().release
+        except OSError:
+            return None
+
+    def _render_details_value(self, value):
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return "<br/>".join(escape(chunk) for chunk in value.splitlines())
+        if isinstance(value, Mapping):
+            if "html" in value:
+                return str(value["html"])
+            parts = []
+            text = value.get("text")
+            if text:
+                parts.append("<br/>".join(escape(chunk) for chunk in str(text).splitlines()))
+            link_href = value.get("link") or value.get("href") or value.get("url")
+            if link_href:
+                link_text = value.get("link_text") or value.get("title") or link_href
+                parts.append(
+                    f'<a href="{escape(str(link_href))}" style="{self._DETAILS_LINK_STYLE}">{escape(str(link_text))}</a>'
+                )
+            items = value.get("items") or value.get("list")
+            if items:
+                parts.append(self._render_bullet_items(items))
+            return "".join(parts)
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, Mapping)):
+            return self._render_bullet_items(value)
+        return escape(str(value))
+
+    def _render_bullet_items(self, items):
+        bullets = []
+        for item in items:
+            if isinstance(item, Mapping):
+                label = item.get("label") or item.get("key") or item.get("title")
+                val = item.get("value")
+                if label is not None and val is not None:
+                    content = f"<b>{escape(str(label))}:</b> {escape(str(val))}"
+                else:
+                    content = escape(str(item.get("text") or item))
+            else:
+                content = escape(str(item))
+            bullets.append(f"<li>{content}</li>")
+        return f'<ul style="{self._DETAILS_LIST_STYLE}">' + "".join(bullets) + "</ul>"
+
+    def _render_list(self, items, ordered):
+        tag = "ol" if ordered else "ul"
+        entries = (f"<li>{escape(str(item))}</li>" for item in items)
+        return f"<{tag}>{''.join(entries)}</{tag}>"
+
+    def _normalize_label(self, label):
+        if not isinstance(label, str):
+            return ""
+        return label.strip().lower()
+
+    def _render_chart_block(self, chart_spec):
         data_rows = self._normalize_chart_data(chart_spec.get("data"))
         if not data_rows:
-            return self
+            return ""
 
         x_key = str(chart_spec.get("x_key") or next(iter(data_rows[0].keys())))
         series_keys = self._normalize_headers(chart_spec.get("series"))
         if not series_keys:
             series_keys = [key for key in data_rows[0].keys() if key != x_key]
         if not series_keys:
-            return self
+            return ""
 
         chart_type = self._normalize_chart_type(chart_spec.get("type"))
         raw_title = chart_spec.get("title")
@@ -443,7 +892,7 @@ class PageBuilder:
         if title_text:
             heading_tag = f"h{title_level}"
             block_parts.append(
-                f"<{heading_tag} class=\"chart-title\">{escape(title_text)}</{heading_tag}>"
+                f'<{heading_tag} style="{self._CHART_TITLE_STYLE}">{escape(title_text)}</{heading_tag}>'
             )
 
         macro_parts = ['<ac:structured-macro ac:name="chart">']
@@ -488,7 +937,6 @@ class PageBuilder:
                 f'<ac:parameter ac:name="dataOrientation">{escape(data_orientation)}</ac:parameter>'
             )
 
-        # остальные параметры из params
         for name, value in extra_params.items():
             macro_parts.append(
                 f'<ac:parameter ac:name="{escape(str(name))}">{escape(str(value))}</ac:parameter>'
@@ -499,66 +947,9 @@ class PageBuilder:
         macro_parts.append("</ac:rich-text-body>")
         macro_parts.append("</ac:structured-macro>")
 
-        block_parts.append("".join(macro_parts))
-        self._sections.append("".join(block_parts))
-        return self
-
-    # ----- rendering -------------------------------------------------------
-    def render(self):
-        """
-        Возвращает итоговый HTML-код страницы.
-
-        Returns:
-            str: Полная HTML-разметка отчёта.
-        """
-
-        body = []
-        if self.title:
-            body.append(f"<h1>{escape(self.title)}</h1><br/>\n")
-        body.extend(self._wrap_report_block(chunk) for chunk in self._sections)
-        return (
-            '<div class="jira-confluence-report">'
-            f"<style>{self.DEFAULT_STYLE}</style>\n"
-            f"{''.join(body)}"
-            "</div>"
-        )
-
-    @property
-    def attachments(self):
-        """
-        Возвращает список зарегистрированных вложений.
-
-        Returns:
-            list[Path]: Копия списка файлов, добавленных через ``add_attachment``.
-        """
-
-        return list(self._attachments)
-
-    def render_to_file(self, path):
-        """
-        Сохраняет HTML в файл для локального предпросмотра.
-
-        Args:
-            path (str | Path): Путь до файла назначения.
-
-        Returns:
-            Path: Объект ``Path`` с путём до созданного файла.
-        """
-
-        target = Path(path)
-        target.write_text(self.render(), encoding="utf-8")
-        return target
-
-    # ----- private helpers -------------------------------------------------
-    def _wrap_report_block(self, content):
-        block = f'<div class="report-block">{content}</div>'
-        return f"{block}<br/>\n"
-
-    def _render_list(self, items, ordered):
-        tag = "ol" if ordered else "ul"
-        entries = (f"<li>{escape(str(item))}</li>" for item in items)
-        return f"<{tag}>{''.join(entries)}</{tag}>"
-
+        macro_html = "".join(macro_parts)
+        block_parts.append(f'<div style="{self._CHART_WRAPPER_STYLE}">{macro_html}</div>')
+        return "".join(block_parts)
     def _build_attachment_link(self, filename, link_text):
         safe_filename = escape(filename)
         return (
@@ -698,11 +1089,18 @@ class PageBuilder:
             for series in series_keys:
                 cells.append(escape(str(row.get(series, ""))))
             body_rows.append(
-                "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
+                "<tr>"
+                + "".join(
+                    f'<td style="{self._TABLE_CELL_STYLE}">{cell}</td>' for cell in cells
+                )
+                + "</tr>"
             )
-        header_html = "".join(f"<th>{cell}</th>" for cell in header_cells)
+        header_html = "".join(
+            f'<th style="{self._TABLE_HEADER_CELL_STYLE}">{cell}</th>'
+            for cell in header_cells
+        )
         return (
-            "<table>"
+            f'<table style="{self._TABLE_STYLE}">'
             + "<thead><tr>"
             + header_html
             + "</tr></thead>"
@@ -726,12 +1124,19 @@ class PageBuilder:
             for row in rows:
                 cells.append(escape(str(row.get(series, ""))))
             body_rows.append(
-                "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
+                "<tr>"
+                + "".join(
+                    f'<td style="{self._TABLE_CELL_STYLE}">{cell}</td>' for cell in cells
+                )
+                + "</tr>"
             )
 
-        header_html = "".join(f"<th>{cell}</th>" for cell in header_cells)
+        header_html = "".join(
+            f'<th style="{self._TABLE_HEADER_CELL_STYLE}">{cell}</th>'
+            for cell in header_cells
+        )
         return (
-            "<table>"
+            f'<table style="{self._TABLE_STYLE}">'
             + "<thead><tr>"
             + header_html
             + "</tr></thead>"

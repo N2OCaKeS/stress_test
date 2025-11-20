@@ -103,6 +103,73 @@ def build_demo_page() -> tuple[PageBuilder, Path]:
         "Пример отчёта: таблица метрик, график, галерея и вложение.\n"
         "Каждый блок добавляется обычными python-вызовами."
     )
+    builder.add_header_table(
+        [
+            # {"label": "Astra version", "value": "1.8.4(orel)"},
+            # {"label": "Kernel", "value": "6.1.152-1-generic"},
+            {
+                "label": "Ranging",
+                "value": {
+                    "link": "https://life.astralinux.ru/pages/viewpage.action?pageId=150939635",
+                    "link_text": "подробнее",
+                    "items": [
+                        {"label": "Процент ошибок", "value": 0.25},
+                        {
+                            "label": "Сред. время аутентификации и авторизации",
+                            "value": 0.25,
+                        },
+                        {
+                            "label": "Время задержки аутент. и авториз. почти последнего пользователя",
+                            "value": 0.25,
+                        },
+                    ],
+                },
+            },
+            {
+                "label": "Test1",
+                "value": {
+                    # "link": "https://life.astralinux.ru/pages/viewpage.action?pageId=150939635",
+                    # "link_text": "подробнее",
+                    "items": [
+                        {"label": "Процент ошибок", "value": 0.25},
+                        {
+                            "label": "Сред. время аутентификации и авторизации",
+                            "value": 0.25,
+                        },
+                        {
+                            "label": "Время задержки аутент. и авториз. почти последнего пользователя",
+                            "value": 0.25,
+                        },
+                    ],
+                },
+            },
+            {
+                "label": "ARM",
+                "value": {
+                    "stand_number": "5",
+                },
+            },
+            {
+                "label": "Lead time",
+                "value": {
+                    "link": "https://life.astralinux.ru/pages/viewpage.action?pageId=150939635",
+                    "link_text": "подробнее",
+                    "items": [
+                        {"label": "Процент ошибок", "value": 0.25},
+                        {
+                            "label": "Сред. время аутентификации и авторизации",
+                            "value": 0.25,
+                        },
+                        {
+                            "label": "Время задержки аутент. и авториз. почти последнего пользователя",
+                            "value": 0.25,
+                        },
+                    ],
+                },
+            },
+        ],
+        defaults={"Lead time": "00:45:19"},
+    )
     builder.add_table(
         {
             "title": "Быстрые факты",
@@ -114,21 +181,82 @@ def build_demo_page() -> tuple[PageBuilder, Path]:
         }
     )
     builder.add_chart(
-        {
-            "title": "Пример графика",
-            "type": "line",
-            "x_key": "Минута",
-            "series": ["test1", "test2", "test3"],
-            "width": 800,
-            "height": 360,
-            "x_label": "Время",
-            "y_label": "Пропускная способность",
-            "data": [
-                {"Минута": "T+00", "test1": 8.1, "test2": 7.9, "test3": 8.4},
-                {"Минута": "T+05", "test1": 8.4, "test2": 8.0, "test3": 8.7},
-                {"Минута": "T+10", "test1": 8.0, "test2": 7.7, "test3": 8.2},
-            ],
-        }
+        [
+            {
+                "title": "Line",
+                "type": "line",
+                "x_key": "T",
+                "series": ["throughput"],
+                "width": 800,
+                "height": 360,
+                "x_label": "Время",
+                "y_label": "Пропускная способность",
+                "data": [
+                    {"T": "T+00", "throughput": 8.1},
+                    {"T": "T+05", "throughput": 8.4},
+                    {"T": "T+10", "throughput": 8.0},
+                ],
+            },
+            {
+                "title": "Area",
+                "type": "area",
+                "x_key": "T",
+                "series": ["latency"],
+                "width": 800,
+                "height": 360,
+                "x_label": "Время",
+                "y_label": "Латентность (мс)",
+                "data": [
+                    {"T": "T+00", "latency": 210},
+                    {"T": "T+05", "latency": 180},
+                    {"T": "T+10", "latency": 220},
+                ],
+            },
+            {
+                "title": "Bar",
+                "type": "bar",
+                "x_key": "Неделя",
+                "series": ["SLA"],
+                "width": 800,
+                "height": 360,
+                "x_label": "Неделя",
+                "y_label": "SLA (%)",
+                "data": [
+                    {"Неделя": "W1", "SLA": 99.2},
+                    {"Неделя": "W2", "SLA": 99.4},
+                    {"Неделя": "W3", "SLA": 99.6},
+                ],
+            },
+            {
+                "title": "Column",
+                "type": "column",
+                "x_key": "Неделя",
+                "series": ["Errors"],
+                "width": 800,
+                "height": 360,
+                "x_label": "Неделя",
+                "y_label": "Ошибки (%)",
+                "data": [
+                    {"Неделя": "W1", "Errors": 0.8},
+                    {"Неделя": "W2", "Errors": 0.6},
+                    {"Неделя": "W3", "Errors": 0.4},
+                ],
+            },
+            {
+                "title": "Pie",
+                "type": "pie",
+                "x_key": "Категория",
+                "series": ["value"],
+                "width": 800,
+                "height": 360,
+                "data": [
+                    {"Категория": "API", "value": 40},
+                    {"Категория": "UI", "value": 35},
+                    {"Категория": "DB", "value": 25},
+                ],
+            },
+        ],
+        columns=2,
     )
     builder.add_gallery(
         [
@@ -177,15 +305,18 @@ def publish_demo_page(builder: PageBuilder, preview_path: Path):
     title = config.get("title")
     if not title:
         title = input("Название страницы: ").strip() or "Demo Stress Report"
-    parent_title = _optional_input(
-        config.get("parent_title"), "Родительская страница (можно пусто): "
-    )
+    # parent_title = _optional_input(
+    #     config.get("parent_title"), "Родительская страница (можно пусто): "
+    # )
     use_token_flag = config.get("use_token")
     if use_token_flag is None:
-        use_token_flag = (
-            input("Использовать API token? [Y/n]: ").strip().lower()
-            in {"", "y", "yes", "д", "да"}
-        )
+        use_token_flag = input("Использовать API token? [Y/n]: ").strip().lower() in {
+            "",
+            "y",
+            "yes",
+            "д",
+            "да",
+        }
     token = config.get("token")
     password = config.get("password")
     if use_token_flag:
@@ -205,7 +336,7 @@ def publish_demo_page(builder: PageBuilder, preview_path: Path):
     page_id = publisher.publish(
         space=space,
         title=title,
-        parent_title=parent_title,
+        parent_title="",
         body=builder.render(),
         attachments=attachments,
         labels=["stress-demo"],
@@ -217,8 +348,8 @@ def publish_demo_page(builder: PageBuilder, preview_path: Path):
 if __name__ == "__main__":
     demo_builder, preview = build_demo_page()
     print(f"HTML сохранён в {preview.resolve()}")
-    choice = input("Отправить страницу в Confluence? [y/N]: ").strip().lower()
-    if choice in {"y", "yes", "д", "да"}:
-        publish_demo_page(demo_builder, preview)
-    else:
-        print("Публикация пропущена. Файл можно загрузить вручную в Confluence.")
+    # choice = input("Отправить страницу в Confluence? [y/N]: ").strip().lower()
+    # if choice in {"y", "yes", "д", "да"}:
+    publish_demo_page(demo_builder, preview)
+    # else:
+    # print("Публикация пропущена. Файл можно загрузить вручную в Confluence.")

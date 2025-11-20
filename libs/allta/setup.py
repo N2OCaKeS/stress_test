@@ -7,7 +7,7 @@ def readme():
 # При выпуски в релиз версия меняется автоматически на ту что была установлена в коммите
 setup(
   name='allta',
-  version='1.1.0', 
+  version='1.1.2', 
   author='team13',
   author_email='mfilippenko@astralinux.ru',
   description='Библиотеки для stress тестов',

@@ -2,13 +2,16 @@
 Инструменты для сборки HTML-страниц отчётов из чистого Python.
 
 Модуль предоставляет класс :class:`PageBuilder`, позволяющий добавлять
-заголовки, текстовые блоки, таблицы и галереи без ручного написания
-разметки. Это облегчает создание типовых страниц Confluence прямо из
-тестов и вспомогательных скриптов.
+заголовки, текстовые блоки, таблицы, галереи и графики Table Filter and
+Charts (макрос ``table-chart``) без ручного написания разметки. Это
+облегчает создание типовых страниц Confluence прямо из тестов и
+вспомогательных скриптов.
 """
 
 import os
 import re
+import secrets
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from html import escape
 from pathlib import Path
@@ -40,12 +43,20 @@ class PageBuilder:
     IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp"}
 
     SUPPORTED_CHART_TYPES = {
-        "line": "line",
-        "area": "area",
-        "bar": "bar",
-        "column": "bar",
-        "pie": "pie",
+        "line": "Line",
+        "area": "Area",
+        "bar": "Bar",
+        "column": "Column",
+        "pie": "Pie",
     }
+
+    _DEFAULT_CHART_COLORS = [
+        "#0052CC", "#FF5630", "#36B37E", "#FFAB00", "#6554C0",
+        "#FF8B00", "#00B8D9", "#172B4D", "#8777D9", "#FF7452",
+        "#2684FF", "#5243AA", "#79F2C0", "#FFC400", "#57D9A3",
+        "#FFBDAD", "#EAE6FF", "#ABF5D1", "#C0B6F2", "#FDD0B5",
+        "#1F845A", "#BF2600", "#0065FF",
+    ]
 
     _ROOT_STYLE = "font-family: 'Century Gothic', 'Segoe UI', Arial, sans-serif; color: #091e42;"
     _TITLE_STYLE = "color: #172B4D; font-size: 28px; margin: 0 0 16px 0;"
@@ -62,9 +73,20 @@ class PageBuilder:
         "border: 1px solid #dfe1e6; padding: 8px; text-align: left; background: #edf2ff; font-weight: 600;"
     )
     _TABLE_CELL_STYLE = "border: 1px solid #dfe1e6; padding: 8px; text-align: left;"
+    _TABLE_CHART_DELIMITER = "‚"
+    _TABLE_CHART_VERSION = "3"
+    _TABLE_CHART_WORKLOG = "365|5|8|y w d h m|y w d h m"
+    _TABLE_CHART_DATE_PATTERN = "d M yy 'г'."
     _CHART_TITLE_STYLE = "font-size: 20px; font-weight: 700; margin: 0 auto 12px; color: #172B4D; text-align: center;"
-    _CHART_WRAPPER_STYLE = "display: flex; justify-content: center; width: 100%;"
-    _GRID_TABLE_STYLE = "width:100%; border-collapse: separate; border-spacing: 16px 8px; margin: 8px 0;"
+    _CHART_WRAPPER_STYLE = (
+        "display: flex; justify-content: center; width: 100%; align-items: center;"
+    )
+    _CHART_DEFAULT_WIDTH = 760
+    _CHART_DEFAULT_HEIGHT = 360
+    _GRID_TABLE_STYLE = (
+        "width:100%; border-collapse: separate; border-spacing: 16px 8px; "
+        "margin: 8px 0; table-layout: fixed;"
+    )
     _GRID_CELL_STYLE = "vertical-align: top; text-align: center;"
     _GALLERY_FIGURE_STYLE = "display: inline-flex; flex-direction: column; align-items: center; width: 100%;"
     _GALLERY_TITLE_STYLE = "display: block; font-weight: 600; margin-bottom: 8px; text-align: center;"
@@ -528,16 +550,16 @@ class PageBuilder:
         rows = [
             figures[idx : idx + columns] for idx in range(0, len(figures), columns)
         ]
+        cell_width = 100 / max(1, columns)
+        cell_style = f'{self._GRID_CELL_STYLE}width:{cell_width:.4f}%;'
         table_rows = []
         for row in rows:
             cells = []
             for figure_html in row:
-                cells.append(
-                    f'<td style="{self._GRID_CELL_STYLE}">{figure_html}</td>'
-                )
+                cells.append(f'<td style="{cell_style}">{figure_html}</td>')
             if len(row) < columns:
                 cells.extend(
-                    f'<td style="{self._GRID_CELL_STYLE}"></td>'
+                    f'<td style="{cell_style}"></td>'
                     for _ in range(columns - len(row))
                 )
             table_rows.append("<tr>" + "".join(cells) + "</tr>")
@@ -552,7 +574,7 @@ class PageBuilder:
 
     def add_chart(self, chart_spec, *, columns=1):
         """
-        Встраивает макрос Confluence ``chart`` с табличными данными.
+        Встраивает макрос Table Filter and Charts ``table-chart`` с табличными данными.
 
         Args:
             chart_spec (Mapping[str, object] | Sequence[Mapping[str, object]]):
@@ -562,12 +584,15 @@ class PageBuilder:
                 * ``title`` — заголовок графика.
                 * ``title_level`` — уровень заголовка (``h3`` или ``h4``).
                 * ``type`` — тип графика (``line``, ``bar``, ``column``, ``area``,
-                  ``pie`` и другие поддерживаемые Confluence варианты).
+                  ``pie``). Значения автоматически трансформируются под макрос
+                  Table Filter and Charts.
                 * ``x_key`` — имя колонки, используемой на оси X.
                 * ``series`` — последовательность колонок для построения серий.
                 * ``width``/``height`` — размеры области графика в пикселях.
-                * ``params`` — произвольные параметры макроса ``chart``.
+                * ``params`` — произвольные параметры макроса ``table-chart``.
                 * ``data`` — список словарей с исходными значениями.
+                * ``view_table`` — если ``True``, таблица данных отображается под
+                  графиком (по умолчанию скрыта).
                 * ``x_label``/``y_label`` — подписи осей.
                 * ``x_unit``/``y_unit`` — единицы измерения, добавляемые к подписи
                   соответствующей оси.
@@ -579,7 +604,10 @@ class PageBuilder:
                   columns → vertical), если он не переопределён в ``params``.
                 * ``series_label`` — заголовок первой колонки при ориентации
                   ``rows`` (по умолчанию ``"Серия"``).
-                * ``colors`` — список цветов (HTML/HEX), назначаемых сериями.
+                * ``colors`` — список цветов (HTML/HEX), назначаемых сериями макроса.
+                * ``series_colors`` — отображение ``{series_key: color}``.
+                * ``per_category_colors`` — отображение ``{x_value: color}`` для
+                  подсветки отдельных категорий.
 
         Returns:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
@@ -603,6 +631,8 @@ class PageBuilder:
             if not rendered:
                 return self
             columns = max(1, int(columns))
+            cell_width = 100 / columns
+            cell_style = f'{self._GRID_CELL_STYLE}width:{cell_width:.4f}%;'
             rows = [
                 rendered[idx : idx + columns]
                 for idx in range(0, len(rendered), columns)
@@ -610,12 +640,12 @@ class PageBuilder:
             table_rows = []
             for row in rows:
                 cells = [
-                    f'<td style="{self._GRID_CELL_STYLE}">{block}</td>'
+                    f'<td style="{cell_style}">{block}</td>'
                     for block in row
                 ]
                 if len(row) < columns:
                     cells.extend(
-                        f'<td style="{self._GRID_CELL_STYLE}"></td>'
+                        f'<td style="{cell_style}"></td>'
                         for _ in range(columns - len(row))
                     )
                 table_rows.append("<tr>" + "".join(cells) + "</tr>")
@@ -644,6 +674,7 @@ class PageBuilder:
         if self.title:
             body.append(f'<h1 style="{self._TITLE_STYLE}">{escape(self.title)}</h1>\n')
         body.extend(self._wrap_report_block(chunk) for chunk in self._sections)
+        body.append(self._render_footer_note())
         return f'<div style="{self._ROOT_STYLE}">' + "".join(body) + "</div>"
 
     @property
@@ -676,6 +707,17 @@ class PageBuilder:
     def _wrap_report_block(self, content):
         block = f'<div style="{self._REPORT_BLOCK_STYLE}">{content}</div>'
         return f"{block}<br/>\n"
+
+    def _render_footer_note(self):
+        note_style = (
+            "margin-top:24px;font-size:12px;color:#6b778c;text-align:center;"
+            "font-style:italic;"
+        )
+        note_text = (
+            "This page is auto-generated using the allta library | "
+            "Данная страница автосгенерированна с помощью библиотеки allta"
+        )
+        return f'<p style="{note_style}">{note_text}</p>'
 
     def _prepare_header_rows(self, rows):
         prepared = []
@@ -847,8 +889,14 @@ class PageBuilder:
         title_level = self._normalize_heading_level(
             chart_spec.get("title_level"), default=3, min_level=3, max_level=4
         )
-        width = chart_spec.get("width")
-        height = chart_spec.get("height")
+        requested_width = chart_spec.get("width")
+        width_value = self._coerce_positive_int(requested_width)
+        if width_value is None:
+            width_value = self._CHART_DEFAULT_WIDTH
+        requested_height = chart_spec.get("height")
+        height_value = self._coerce_positive_int(requested_height)
+        if height_value is None:
+            height_value = self._CHART_DEFAULT_HEIGHT
         raw_params = chart_spec.get("params")
         extra_params = dict(raw_params) if isinstance(raw_params, Mapping) else {}
         x_label = self._compose_axis_label(
@@ -865,13 +913,6 @@ class PageBuilder:
         if series_orientation not in {"rows", "columns"}:
             series_orientation = "columns"
 
-        if "dataOrientation" in extra_params:
-            data_orientation = str(extra_params["dataOrientation"])
-        else:
-            data_orientation = (
-                "horizontal" if series_orientation == "rows" else "vertical"
-            )
-
         series_label = chart_spec.get("series_label")
         colors = chart_spec.get("colors")
         color_list = []
@@ -879,14 +920,53 @@ class PageBuilder:
             color_list = [colors]
         elif isinstance(colors, Iterable):
             color_list = [str(color).strip() for color in colors if str(color).strip()]
+        series_colors = chart_spec.get("series_colors")
+        if not color_list and isinstance(series_colors, Mapping):
+            mapped = [
+                str(series_colors.get(series)).strip()
+                for series in series_keys
+                if str(series_colors.get(series) or "").strip()
+            ]
+            color_list = mapped
+        per_category_colors = chart_spec.get("per_category_colors")
 
-        table_html = self._build_chart_table(
+        data_orientation = (
+            str(extra_params["dataOrientation"])
+            if "dataOrientation" in extra_params
+            else ("horizontal" if series_orientation == "rows" else "vertical")
+        )
+        if x_label and "xLabel" not in extra_params:
+            extra_params["xLabel"] = x_label
+        if y_label and "yLabel" not in extra_params:
+            extra_params["yLabel"] = y_label
+        if "timeSeries" not in extra_params:
+            extra_params["timeSeries"] = str(time_series).lower()
+        if "dataOrientation" not in extra_params:
+            extra_params["dataOrientation"] = data_orientation
+        if "width" not in extra_params:
+            extra_params["width"] = width_value
+        if "height" not in extra_params:
+            extra_params["height"] = height_value
+
+        table_html, x_values, first_column_label = self._build_chart_table(
             x_key=x_key,
             series_keys=series_keys,
             rows=data_rows,
             orientation=series_orientation,
             series_label=series_label,
         )
+
+        view_table = bool(chart_spec.get("view_table"))
+        aggregation_items = x_values if series_orientation == "rows" else series_keys
+        pie_key_items = series_keys if series_orientation == "rows" else x_values
+        aggregation_param = self._join_table_chart_values(aggregation_items)
+        pie_keys_param = self._join_table_chart_values(pie_key_items)
+        color_columns_param = self._serialize_category_colors(
+            per_category_colors, x_key, data_rows, delimiter=self._TABLE_CHART_DELIMITER
+        )
+        chart_id = extra_params.get("id")
+        if chart_id is None:
+            chart_id = self._generate_table_chart_id()
 
         block_parts = []
         if title_text:
@@ -895,60 +975,55 @@ class PageBuilder:
                 f'<{heading_tag} style="{self._CHART_TITLE_STYLE}">{escape(title_text)}</{heading_tag}>'
             )
 
-        macro_parts = ['<ac:structured-macro ac:name="chart">']
-        macro_parts.append(
-            f'<ac:parameter ac:name="type">{escape(chart_type)}</ac:parameter>'
-        )
-        if isinstance(raw_title, str):
+        macro_parts = ['<ac:structured-macro ac:name="table-chart">']
+
+        def append_param(name, value):
+            if value is None:
+                return
+            text = str(value)
+            if text == "":
+                return
             macro_parts.append(
-                f'<ac:parameter ac:name="title">{escape(raw_title)}</ac:parameter>'
-            )
-        if width:
-            macro_parts.append(
-                f'<ac:parameter ac:name="width">{escape(str(width))}</ac:parameter>'
-            )
-        if height:
-            macro_parts.append(
-                f'<ac:parameter ac:name="height">{escape(str(height))}</ac:parameter>'
-            )
-        if "dataDisplay" not in extra_params:
-            macro_parts.append(
-                '<ac:parameter ac:name="dataDisplay">table</ac:parameter>'
-            )
-        if "timeSeries" not in extra_params:
-            macro_parts.append(
-                f'<ac:parameter ac:name="timeSeries">{str(time_series).lower()}</ac:parameter>'
-            )
-        if x_label:
-            macro_parts.append(
-                f'<ac:parameter ac:name="xLabel">{escape(x_label)}</ac:parameter>'
-            )
-        if y_label:
-            macro_parts.append(
-                f'<ac:parameter ac:name="yLabel">{escape(y_label)}</ac:parameter>'
-            )
-        if color_list and "colors" not in extra_params:
-            macro_parts.append(
-                f"<ac:parameter ac:name=\"colors\">{escape(','.join(color_list))}</ac:parameter>"
+                f'<ac:parameter ac:name="{escape(str(name))}">{escape(text)}</ac:parameter>'
             )
 
-        if "dataOrientation" not in extra_params:
-            macro_parts.append(
-                f'<ac:parameter ac:name="dataOrientation">{escape(data_orientation)}</ac:parameter>'
-            )
+        bar_coloring_type = "custom" if color_columns_param else "mono"
+        default_params = [
+            ("barColoringType", bar_coloring_type),
+            ("colorColumns", color_columns_param),
+            ("hidecontrols", "true"),
+            ("showtableinline", "true" if view_table else "false"),
+            ("column", first_column_label),
+            ("aggregation", aggregation_param),
+            ("type", chart_type),
+            ("version", self._TABLE_CHART_VERSION),
+            ("colors", ",".join(color_list) if color_list else None),
+            ("isFirstTimeEnter", "true"),
+            ("datepattern", self._TABLE_CHART_DATE_PATTERN),
+            ("pieKeys", pie_keys_param),
+            ("id", chart_id),
+            ("worklog", self._TABLE_CHART_WORKLOG),
+            ("formatVersion", self._TABLE_CHART_VERSION),
+        ]
+        for name, value in default_params:
+            if name in extra_params:
+                continue
+            append_param(name, value)
 
         for name, value in extra_params.items():
-            macro_parts.append(
-                f'<ac:parameter ac:name="{escape(str(name))}">{escape(str(value))}</ac:parameter>'
-            )
+            append_param(name, value)
 
         macro_parts.append("<ac:rich-text-body>")
-        macro_parts.append(table_html)
+        table_container_style = "" if view_table else ' style="display:none;"'
+        macro_parts.append(
+            f'<div{table_container_style} data-pb-chart-table="1">{table_html}</div>'
+        )
         macro_parts.append("</ac:rich-text-body>")
         macro_parts.append("</ac:structured-macro>")
 
         macro_html = "".join(macro_parts)
-        block_parts.append(f'<div style="{self._CHART_WRAPPER_STYLE}">{macro_html}</div>')
+        wrapper_style = self._compose_chart_wrapper_style(width_value, height_value)
+        block_parts.append(f'<div style="{wrapper_style}">{macro_html}</div>')
         return "".join(block_parts)
     def _build_attachment_link(self, filename, link_text):
         safe_filename = escape(filename)
@@ -1083,6 +1158,7 @@ class PageBuilder:
             return self._build_chart_table_rows(x_key, series_keys, rows, series_label)
 
         header_cells = [escape(x_key)] + [escape(series) for series in series_keys]
+        x_values = [str(row.get(x_key, "")) for row in rows]
         body_rows = []
         for row in rows:
             cells = [escape(str(row.get(x_key, "")))]
@@ -1099,7 +1175,7 @@ class PageBuilder:
             f'<th style="{self._TABLE_HEADER_CELL_STYLE}">{cell}</th>'
             for cell in header_cells
         )
-        return (
+        table_html = (
             f'<table style="{self._TABLE_STYLE}">'
             + "<thead><tr>"
             + header_html
@@ -1108,6 +1184,7 @@ class PageBuilder:
             + "".join(body_rows)
             + "</tbody></table>"
         )
+        return table_html, x_values, x_key
 
     def _build_chart_table_rows(self, x_key, series_keys, rows, series_label):
         label = (
@@ -1115,8 +1192,8 @@ class PageBuilder:
             if isinstance(series_label, str) and series_label.strip()
             else "Серия"
         )
-        x_values = [escape(str(row.get(x_key, ""))) for row in rows]
-        header_cells = [escape(label)] + x_values
+        raw_x_values = [str(row.get(x_key, "")) for row in rows]
+        header_cells = [escape(label)] + [escape(value) for value in raw_x_values]
 
         body_rows = []
         for series in series_keys:
@@ -1135,7 +1212,7 @@ class PageBuilder:
             f'<th style="{self._TABLE_HEADER_CELL_STYLE}">{cell}</th>'
             for cell in header_cells
         )
-        return (
+        table_html = (
             f'<table style="{self._TABLE_STYLE}">'
             + "<thead><tr>"
             + header_html
@@ -1144,12 +1221,64 @@ class PageBuilder:
             + "".join(body_rows)
             + "</tbody></table>"
         )
+        return table_html, raw_x_values, label
+
+    def _compose_chart_wrapper_style(self, width, height):
+        style_parts = [self._CHART_WRAPPER_STYLE.rstrip()]
+        width_value = self._coerce_positive_int(width)
+        height_value = self._coerce_positive_int(height)
+        if width_value:
+            style_parts.append(f"max-width:{width_value}px;")
+            style_parts.append("margin:0 auto;")
+        if height_value:
+            style_parts.append(f"min-height:{height_value}px;")
+            style_parts.append(f"padding-bottom:8px;")
+        return " ".join(part for part in style_parts if part)
+
+    def _join_table_chart_values(self, values):
+        if isinstance(values, (str, bytes)) or not isinstance(values, Iterable):
+            return ""
+        tokens = []
+        for value in values:
+            text = str(value).strip()
+            if text:
+                tokens.append(text)
+        return self._TABLE_CHART_DELIMITER.join(tokens)
+
+    def _generate_table_chart_id(self):
+        timestamp = int(time.time() * 1000)
+        random_part = secrets.randbelow(10**10)
+        return f"{timestamp}_{random_part:010d}"
+
+    def _coerce_positive_int(self, value):
+        try:
+            candidate = int(value)
+        except (TypeError, ValueError):
+            return None
+        return candidate if candidate > 0 else None
 
     def _normalize_chart_type(self, raw_type):
         if not raw_type:
-            return "line"
+            return "Line"
         normalized_key = str(raw_type).strip().lower().replace("-", "").replace("_", "")
-        return self.SUPPORTED_CHART_TYPES.get(normalized_key, "line")
+        return self.SUPPORTED_CHART_TYPES.get(normalized_key, "Line")
+
+    def _serialize_category_colors(self, colors_mapping, x_key, rows, *, delimiter=";"):
+        if not isinstance(colors_mapping, Mapping):
+            return ""
+        pairs = []
+        for row in rows:
+            category = row.get(x_key)
+            if category is None:
+                continue
+            color = colors_mapping.get(category)
+            if not color:
+                continue
+            color_text = str(color).strip()
+            if not color_text:
+                continue
+            pairs.append(f"{category}:{color_text}")
+        return delimiter.join(pairs)
 
     def _compose_axis_label(self, label, unit):
         label_text = str(label).strip() if isinstance(label, str) else ""

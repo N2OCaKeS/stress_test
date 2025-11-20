@@ -3,6 +3,7 @@ PageBuilder
 
 .. note::
    Автор: команда ``allta``. Конструктор HTML-страниц для публикации в Confluence.
+   ``add_chart`` автоматически строит макрос Table Filter and Charts ``table-chart``.
 
 Использование
 -------------
@@ -139,8 +140,11 @@ PageBuilder
 ``add_chart(chart_spec, columns=1)``
 ------------------------------------------------------------------------------------------------
 
-Встраивает макрос Confluence ``chart``. ``chart_spec`` может быть словарём или списком словарей;
-для списка графики автоматически раскладываются по указанному числу колонок.
+Встраивает макрос Table Filter and Charts ``table-chart``. ``chart_spec`` может быть словарём
+или списком словарей; для списка графики автоматически раскладываются по указанному числу
+колонок. Поддерживаются параметры ``x_key``, ``series``, ``colors``/``series_colors``,
+``per_category_colors``, ``time_series``, ``series_orientation`` и ``params`` (прокидываются
+напрямую в макрос).
 
 ------------------------------------------------------------------------------------------------
 ``add_gallery`` / ``add_attachment`` / ``add_chart`` Примеры
@@ -154,8 +158,28 @@ PageBuilder
     ], columns=2)
 
     builder.add_chart([
-        {"title": "TPS", "type": "line", "x_key": "t", "series": ["s1"], "data": [{"t": "T0", "s1": 8.1}]},
-        {"title": "Errors", "type": "column", "x_key": "t", "series": ["err"], "data": [{"t": "T0", "err": 0.1}]},
+        {
+            "title": "Throughput",
+            "type": "line",
+            "x_key": "T",
+            "series": ["avg", "p95"],
+            "series_colors": {"avg": "#0052CC", "p95": "#36B37E"},
+            "data": [
+                {"T": "T+00", "avg": 8.1, "p95": 8.7},
+                {"T": "T+05", "avg": 8.3, "p95": 8.8},
+            ],
+        },
+        {
+            "title": "Errors %",
+            "type": "column",
+            "x_key": "Release",
+            "series": ["value"],
+            "per_category_colors": {"r1": "#FF5630", "r2": "#FFAB00"},
+            "data": [
+                {"Release": "r1", "value": 1.2},
+                {"Release": "r2", "value": 0.4},
+            ],
+        },
     ], columns=2)
 
 ------------------------------------------------------------------------------------------------

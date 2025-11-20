@@ -8,6 +8,14 @@ from ._vm_controller._vm.LibvirtManager import LibvirtManager
 from ._jira_confluence_reporter.confluence_publisher import ConfluencePublisher
 from ._jira_confluence_reporter.page_builder import PageBuilder
 
-__all__ = ["BaseDecorators", "ConfluencePublisher", "GetEnv", "Libvirt", "LibvirtManager", "PageBuilder", "SystemCommands", "VBoxManager", "VBox", ] # Здесь явно прописываем те функции которые будут доступны пользователю, остальной код будет скрыт но будет доступен
-
-
+__all__ = [
+    "BaseDecorators",
+    "ConfluencePublisher",
+    "GetEnv",
+    "Libvirt",
+    "LibvirtManager",
+    "PageBuilder",
+    "SystemCommands",
+    "VBoxManager",
+    "VBox",
+]  # Здесь явно прописываем те функции которые будут доступны пользователю, остальной код будет скрыт но будет доступен

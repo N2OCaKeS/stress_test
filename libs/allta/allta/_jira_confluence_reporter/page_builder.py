@@ -7,7 +7,7 @@
 тестов и вспомогательных скриптов.
 """
 
-from collections.abc import Iterable, Mapping, MutableSequence, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from html import escape
 from pathlib import Path
 
@@ -35,16 +35,19 @@ class PageBuilder:
     .jira-confluence-report figure img {max-width: 100%; height: auto; border: 1px solid #dfe1e6;}
     .jira-confluence-report figure figcaption {text-align: center; color: #5e6c84; margin-top: 4px;}
     .jira-confluence-report .gallery {display: grid; gap: 16px;}
+    .jira-confluence-report .gallery figure {display: flex; flex-direction: column; align-items: center; margin-bottom: 32px;}
+    .jira-confluence-report .gallery .gallery-image-title {display: block; font-weight: 600; margin-bottom: 8px; text-align: center;}
+    .jira-confluence-report .gallery .gallery-image-caption {display: block; margin-top: 8px; text-align: center; color: #5e6c84; font-style: italic;}
     .jira-confluence-report .gallery.columns-1 {grid-template-columns: 1fr;}
     .jira-confluence-report .gallery.columns-2 {grid-template-columns: repeat(2, 1fr);}
     .jira-confluence-report .gallery.columns-3 {grid-template-columns: repeat(3, 1fr);}
     .jira-confluence-report .report-block {margin: 24px 0;}
     .jira-confluence-report .report-block + .report-block {margin-top: 32px;}
     .jira-confluence-report .report-block-title {display: block; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0052CC; margin-bottom: 8px;}
-    .jira-confluence-report .chart-title {font-size: 20px; font-weight: 700; margin-bottom: 12px; color: #172B4D;}
+    .jira-confluence-report .chart-title {font-size: 20px; font-weight: 700; margin: 0 auto 12px; color: #172B4D; text-align: center;}
     .jira-confluence-report .attachment-block {border: 1px dashed #dfe1e6; padding: 12px; background: #f7f8fa;}
-    .jira-confluence-report .attachment-block .attachment-description {color: #5e6c84; margin-top: 8px;}    
-    .jira-confluence-report .attachment-block .attachment-description {color: #5e6c84; margin-top: 8px;}    
+    .jira-confluence-report .attachment-block .attachment-description {color: #5e6c84; margin-top: 8px;}
+    .jira-confluence-report .attachment-image .attachment-image-media {display: block; margin-top: 8px;}
     """
 
     IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp"}
@@ -64,7 +67,7 @@ class PageBuilder:
         self.title = title
         self._sections = []
         self._attachments = []
-        self._attachment_index = set()        
+        self._attachment_index = set()
 
     # ----- generic helpers -------------------------------------------------
     def add_raw_html(self, html):
@@ -209,16 +212,18 @@ class PageBuilder:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
         """
 
-        path = Path(file_path)
+        path = self._register_attachment_path(file_path)
         normalized = str(path)
-        if normalized not in self._attachment_index:
-            self._attachment_index.add(normalized)
-            self._attachments.append(path)
         if not display:
             return self
 
         filename = path.name or normalized
-        block_title = escape(title or filename)
+        title_text = self._coerce_optional_str(title)
+        block_title = (
+            f"<div class=\"report-block-title\">{escape(title_text)}</div>"
+            if title_text
+            else ""
+        )
         if path.suffix.lower() in self.IMAGE_EXTENSIONS:
             figcaption = (
                 f"<figcaption>{escape(str(description))}</figcaption>"
@@ -227,10 +232,12 @@ class PageBuilder:
             )
             html = (
                 '<figure class="attachment-block attachment-image">'
-                f"<span class=\"report-block-title\">{block_title}</span>"
+                f"{block_title}"
+                "<div class=\"attachment-image-media\">"
                 "<ac:image>"
                 f'<ri:attachment ri:filename="{escape(filename)}"/>'
                 "</ac:image>"
+                "</div>"
                 f"{figcaption}"
                 "</figure>"
             )
@@ -240,11 +247,11 @@ class PageBuilder:
                 if description is not None
                 else ""
             )
-            link_text = str(title or filename)
+            link_text = str(title_text or filename)
             link_html = self._build_attachment_link(filename, link_text)
             html = (
                 '<div class="attachment-block attachment-file">'
-                f"<span class=\"report-block-title\">{block_title}</span>"
+                f"{block_title}"
                 f"<p class=\"attachment-link\">{link_html}</p>"
                 f"{description_html}"
                 "</div>"
@@ -259,32 +266,75 @@ class PageBuilder:
         Добавляет сетку изображений (галерею).
 
         Args:
-            images (Sequence[Mapping[str, str]]): Список словарей с ключами
-                ``src`` (путь к файлу), ``caption`` и ``description``.
+            images (Sequence[Mapping[str, object]] | Mapping[str, object]): Описание
+                изображений. Можно передать список словарей с ключами ``src``,
+                ``title``, ``caption`` и ``description`` либо словарь, в котором
+                ключ является заголовком изображения, а значение — путь или
+                словарь с дополнительными параметрами. Ключ ``attachment`` можно
+                использовать, чтобы явно указать локальный файл-вложение, а
+                ``title_level`` позволяет выбрать ``h3`` или ``h4`` для заголовка.
             columns (int): Количество колонок в сетке.
 
         Returns:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
         """
 
+        normalized_items = self._normalize_gallery_items(images)
+        if not normalized_items:
+            return self
+
         columns = max(1, int(columns))
         figure_chunks = []
-        for item in images:
-            if not isinstance(item, Mapping):
-                continue
-            src = escape(item.get("src", ""))
-            if not src:
-                continue
-            caption = escape(item.get("caption", ""))
-            description = escape(item.get("description", ""))
-            figure_body = [f'<img src="{src}" alt="{caption}"/>']
+        for item in normalized_items:
+            raw_title = item.get("title")
+            heading_level = item.get("title_level")
+            level = self._normalize_heading_level(
+                heading_level, default=3, min_level=3, max_level=4
+            )
+            heading_tag = f"h{level}"
+            title = raw_title
+            caption = item.get("caption")
+            description = item.get("description")
+            src = item["src"]
+            attachment_path = item.get("attachment")
+            attachment_markup = ""
+
+            body_parts = []
+            if title:
+                body_parts.append(
+                    f"<{heading_tag} class=\"gallery-image-title\">{escape(title)}</{heading_tag}>"
+                )
+
+            alt_text = item.get("alt") or caption or title or ""
+            if attachment_path is not None:
+                stored_path = self._register_attachment_path(attachment_path)
+                alt_text = alt_text or stored_path.name
+                attachment_markup = (
+                    "<ac:image>"
+                    f'<ri:attachment ri:filename="{escape(stored_path.name)}"/>'
+                    "</ac:image>"
+                )
+                body_parts.append(attachment_markup)
+            else:
+                body_parts.append(
+                    f'<img src="{escape(src)}" alt="{escape(alt_text)}"/>'
+                )
 
             if caption or description:
-                caption_text = caption
+                caption_block = escape(caption) if caption else ""
                 if description:
-                    caption_text = f"{caption}<br/><span>{description}</span>"
-                figure_body.append(f"<figcaption>{caption_text}</figcaption>")
-            figure_chunks.append(f"<figure>{''.join(figure_body)}</figure>")
+                    description_html = f"<span>{escape(description)}</span>"
+                    caption_block = (
+                        f"{caption_block}<br/>{description_html}"
+                        if caption_block
+                        else description_html
+                    )
+                body_parts.append(
+                    f"<div class=\"gallery-image-caption\">{caption_block}</div>"
+                )
+
+            figure_chunks.append(f"<figure>{''.join(body_parts)}</figure>")
+
         gallery = (
             f'<div class="gallery columns-{columns}" '
             f'style="grid-template-columns: repeat({columns}, 1fr);">'
@@ -303,6 +353,7 @@ class PageBuilder:
                 ключи:
 
                 * ``title`` — заголовок графика.
+                * ``title_level`` — уровень заголовка (``h3`` или ``h4``).
                 * ``type`` — тип графика (``line``, ``bar``, ``column``, ``area``,
                   ``pie`` и другие поддерживаемые Confluence варианты).
                 * ``x_key`` — имя колонки, используемой на оси X.
@@ -342,7 +393,11 @@ class PageBuilder:
             return self
 
         chart_type = self._normalize_chart_type(chart_spec.get("type"))
-        title = chart_spec.get("title")
+        raw_title = chart_spec.get("title")
+        title_text = raw_title.strip() if isinstance(raw_title, str) else ""
+        title_level = self._normalize_heading_level(
+            chart_spec.get("title_level"), default=3, min_level=3, max_level=4
+        )
         width = chart_spec.get("width")
         height = chart_spec.get("height")
         raw_params = chart_spec.get("params")
@@ -385,18 +440,19 @@ class PageBuilder:
         )
 
         block_parts = []
-        if isinstance(title, str) and title.strip():
+        if title_text:
+            heading_tag = f"h{title_level}"
             block_parts.append(
-                f"<h3 class=\"chart-title\">{escape(title.strip())}</h3>"
-            )      
+                f"<{heading_tag} class=\"chart-title\">{escape(title_text)}</{heading_tag}>"
+            )
 
         macro_parts = ['<ac:structured-macro ac:name="chart">']
         macro_parts.append(
             f'<ac:parameter ac:name="type">{escape(chart_type)}</ac:parameter>'
         )
-        if isinstance(title, str):
+        if isinstance(raw_title, str):
             macro_parts.append(
-                f'<ac:parameter ac:name="title">{escape(title)}</ac:parameter>'
+                f'<ac:parameter ac:name="title">{escape(raw_title)}</ac:parameter>'
             )
         if width:
             macro_parts.append(
@@ -451,23 +507,32 @@ class PageBuilder:
     def render(self):
         """
         Возвращает итоговый HTML-код страницы.
+
+        Returns:
+            str: Полная HTML-разметка отчёта.
         """
 
         body = []
         if self.title:
-            body.append(f"<h1>{escape(self.title)}</h1>")
-        body.extend(f'<div class="report-block">{chunk}</div>' for chunk in self._sections)
+            body.append(f"<h1>{escape(self.title)}</h1><br/>\n")
+        body.extend(self._wrap_report_block(chunk) for chunk in self._sections)
         return (
             '<div class="jira-confluence-report">'
-            f"<style>{self.DEFAULT_STYLE}</style>"
+            f"<style>{self.DEFAULT_STYLE}</style>\n"
             f"{''.join(body)}"
             "</div>"
         )
+
     @property
     def attachments(self):
-        """Возвращает список зарегистрированных вложений."""
+        """
+        Возвращает список зарегистрированных вложений.
 
-        return list(self._attachments)    
+        Returns:
+            list[Path]: Копия списка файлов, добавленных через ``add_attachment``.
+        """
+
+        return list(self._attachments)
 
     def render_to_file(self, path):
         """
@@ -475,6 +540,9 @@ class PageBuilder:
 
         Args:
             path (str | Path): Путь до файла назначения.
+
+        Returns:
+            Path: Объект ``Path`` с путём до созданного файла.
         """
 
         target = Path(path)
@@ -482,11 +550,15 @@ class PageBuilder:
         return target
 
     # ----- private helpers -------------------------------------------------
+    def _wrap_report_block(self, content):
+        block = f'<div class="report-block">{content}</div>'
+        return f"{block}<br/>\n"
+
     def _render_list(self, items, ordered):
         tag = "ol" if ordered else "ul"
         entries = (f"<li>{escape(str(item))}</li>" for item in items)
         return f"<{tag}>{''.join(entries)}</{tag}>"
-    
+
     def _build_attachment_link(self, filename, link_text):
         safe_filename = escape(filename)
         return (
@@ -494,7 +566,89 @@ class PageBuilder:
             f'<ri:attachment ri:filename="{safe_filename}"/>'
             f"<ac:plain-text-link-body><![CDATA[{link_text}]]></ac:plain-text-link-body>"
             "</ac:link>"
-        )    
+        )
+
+    def _register_attachment_path(self, file_path):
+        path = Path(file_path)
+        normalized = str(path)
+        if normalized not in self._attachment_index:
+            self._attachment_index.add(normalized)
+            self._attachments.append(path)
+        return path
+
+    def _normalize_gallery_items(self, images):
+        normalized = []
+        if isinstance(images, Mapping):
+            iterator = images.items()
+        elif isinstance(images, Iterable) and not isinstance(images, (str, bytes)):
+            iterator = ((None, entry) for entry in images)
+        else:
+            return normalized
+
+        for default_title, entry in iterator:
+            parsed = self._parse_gallery_entry(entry, default_title)
+            if parsed:
+                normalized.append(parsed)
+        return normalized
+
+    def _parse_gallery_entry(self, entry, default_title):
+        attachment_path = None
+        if isinstance(entry, Mapping):
+            raw_src = entry.get("src") or entry.get("path") or entry.get("file")
+            attachment_candidate = entry.get("attachment")
+            title = self._coerce_optional_str(entry.get("title"))
+            caption = self._coerce_optional_str(entry.get("caption"))
+            description = self._coerce_optional_str(entry.get("description"))
+            alt = self._coerce_optional_str(entry.get("alt"))
+            title_level = entry.get("title_level")
+        elif isinstance(entry, (str, Path)):
+            raw_src = entry
+            attachment_candidate = None
+            title = None
+            caption = None
+            description = None
+            alt = None
+            title_level = None
+        else:
+            return None
+
+        attachment_path = self._coerce_existing_path(attachment_candidate)
+        if attachment_path is None:
+            attachment_path = self._coerce_existing_path(raw_src)
+
+        src = self._coerce_optional_str(raw_src)
+        if attachment_path is not None:
+            src = attachment_path.name
+        if not src:
+            return None
+        default_title_text = self._coerce_optional_str(default_title)
+        inferred_alt = alt or caption or title or default_title_text
+        return {
+            "src": src,
+            "title": title or default_title_text,
+            "caption": caption,
+            "description": description,
+            "alt": inferred_alt,
+            "attachment": attachment_path,
+            "title_level": title_level,
+        }
+
+    def _coerce_optional_str(self, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+        else:
+            text = str(value).strip()
+        return text or None
+
+    def _coerce_existing_path(self, value):
+        if value is None:
+            return None
+        candidate = Path(value)
+        if candidate.exists():
+            return candidate
+        return None
 
     def _normalize_headers(self, headers):
         if headers is None:
@@ -600,3 +754,10 @@ class PageBuilder:
         if unit_text and not label_text:
             return unit_text
         return label_text
+
+    def _normalize_heading_level(self, level, *, default=3, min_level=1, max_level=6):
+        try:
+            candidate = int(level)
+        except (TypeError, ValueError):
+            candidate = default
+        return min(max(candidate, min_level), max_level)

@@ -7,6 +7,7 @@
 """
 
 from pathlib import Path
+from typing import Iterable, Sequence
 
 from atlassian import Confluence
 
@@ -91,7 +92,7 @@ class ConfluencePublisher:
         return page_id
 
     # ------------------------------------------------------------------
-    def attach_files(self, *, page_id, files):
+    def attach_files(self, *, page_id, files: Iterable[Path | str]):
         """
         Прикрепляет файлы к существующей странице.
 
@@ -106,7 +107,7 @@ class ConfluencePublisher:
                 continue
             self._client.attach_file(page_id=page_id, filename=str(path))
 
-    def _ensure_labels(self, *, page_id, labels):
+    def _ensure_labels(self, *, page_id, labels: Sequence[str]):
         """
         Обновляет метки страницы, если они были переданы.
 
@@ -117,7 +118,9 @@ class ConfluencePublisher:
 
         if not labels:
             return
-        payload = [{"prefix": "global", "name": label} for label in labels if label]
+        payload: list[dict[str, str]] = [
+            {"prefix": "global", "name": label} for label in labels if label
+        ]
         if not payload:
             return
 
@@ -126,16 +129,16 @@ class ConfluencePublisher:
             set_labels(page_id, payload)
             return
 
-        # Более старые версии atlassian-python-api предоставляют только метод
-        # ``set_page_label`` с последовательным добавлением меток.
         set_label = getattr(self._client, "set_page_label", None)
         if callable(set_label):
             for label in payload:
                 set_label(page_id, label["name"])
             return
 
-        # Если публичного метода нет, вызываем REST API напрямую.
-        self._client.post(f"rest/api/content/{page_id}/label", data=payload)
+        self._client.post(
+            f"rest/api/content/{page_id}/label", 
+            data=payload,
+        )
 
     def _ensure_page(self, *, space, title, parent_title, body):
         """

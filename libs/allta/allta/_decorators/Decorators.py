@@ -10,12 +10,14 @@ class BaseDecorators:
     - trycorator: Декоратор для оборачивания функции в блок try-except.
     """
 
+    @staticmethod
     def trycorator(function):
         """
         Данный декоратор оборачивает функцию в try except
         """
 
         def wrapper(*args, **kwargs):
+            result = None
             try:
                 result = function(*args, **kwargs)
                 return result
@@ -27,6 +29,7 @@ class BaseDecorators:
 
         return wrapper
 
+    @staticmethod
     def timer(function):
         "Оборачивает функцию в таймер и выводит время выполнения функции"
 

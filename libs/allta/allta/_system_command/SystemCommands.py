@@ -14,7 +14,7 @@ class SystemCommands:
     """
 
     @staticmethod
-    def check_output_command(command: str) -> str:
+    def check_output_command(command: str):
         """
         Выполняет системную команду и возвращает её вывод.
 
@@ -32,7 +32,7 @@ class SystemCommands:
         return output if not errors else errors
 
     @staticmethod
-    def cmd_with_returncode(command: str) -> int:
+    def cmd_with_returncode(command: str):
         """
         Выполняет системную команду и возвращает её код завершения.
 
@@ -58,7 +58,7 @@ class SystemCommands:
         return subprocess.run(command, shell=True)
 
     @staticmethod
-    def check_output_command_with_returncode(command: str) -> list[int | str, str]:
+    def check_output_command_with_returncode(command: str):
         """
         Выполняет системную команду и возвращает её код возврата и вывод.
 

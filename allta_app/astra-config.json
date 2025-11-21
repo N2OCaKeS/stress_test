@@ -123,6 +123,9 @@
                     "4.7-testing.s",
                     "4.7-testing.v",
                     "4.7-testing.o",
+                    "4.7-night.s",
+                    "4.7-night.v",
+                    "4.7-night.o",
                     "4.7.0.s",
                     "4.7.0.v",
                     "4.7.0.o",
@@ -144,7 +147,10 @@
                 "4.8": [
                     "4.8-testing.s",
                     "4.8-testing.v",
-                    "4.8-testing.o"
+                    "4.8-testing.o",
+                    "4.8-night.s",
+                    "4.8-night.v",
+                    "4.8-night.o"
                 ]
             },
             {
@@ -196,6 +202,9 @@
             },
             {
                 "4.7": "_4.7"
+            },
+            {
+                "4.8": "_4.8"
             },
             {
                 "12.8": "_12.8"
@@ -640,6 +649,24 @@
                     "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.8.2.json"
                 ]
             },
+                        {
+                "4.8-night.s": [
+                    "smolensk-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8-night.v": [
+                    "voronezh-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8-night.o": [
+                    "orel-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.8.2.json"
+                ]
+            },
             {
                 "4.7.0.s": [
                     "smolensk-vanilla-gui/4.7.0.6",
@@ -738,12 +765,30 @@
             },
             {
                 "4.7-testing.v": [
-                    "voronezh-vanilla-gui/4.7.8     .4",
+                    "voronezh-vanilla-gui/4.7.8.4",
                     "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.8.json"
                 ]
             },
             {
                 "4.7-testing.o": [
+                    "orel-vanilla-gui/4.7.8.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.8.json"
+                ]
+            },
+            {
+                "4.7-night.s": [
+                    "smolensk-vanilla-gui/4.7.8.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.8.json"
+                ]
+            },
+            {
+                "4.7-night.v": [
+                    "voronezh-vanilla-gui/4.7.8.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.8.json"
+                ]
+            },
+            {
+                "4.7-night.o": [
                     "orel-vanilla-gui/4.7.8.4",
                     "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.8.json"
                 ]

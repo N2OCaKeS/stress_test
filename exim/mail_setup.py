@@ -11,13 +11,13 @@ class Exim:
         
     def get_default_config(self):
         config = {
-            'dc_eximconfig_configtype': 'local',
-            'dc_other_hostnames': 'test.local',
+            'dc_eximconfig_configtype': 'internet',
+            'dc_other_hostnames': '',
             'dc_local_interfaces': f'{self.ip_local}',
             'dc_readhost': '',
-            'dc_relay_domains': 'test.local',
+            'dc_relay_domains': '',
             'dc_minimaldns': 'false',
-            'dc_relay_nets': '10.177.103.0/24',
+            'dc_relay_nets': '',
             'dc_smarthost': '',
             'CFILEMODE': '644',
             'dc_use_split_config': 'true',
@@ -38,8 +38,6 @@ class Exim:
     def restart_service(self):
         subprocess.run(['systemctl', 'restart', 'exim4'], check=True)
         
-
-
 class Dovecot:
     def __init__(self):
         self.service_name = ""

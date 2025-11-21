@@ -11,7 +11,7 @@
             "EXT4 parsec": "0:42:54",
             "XFS parsec": "0:40:49",
             "unix parsec": "1:08:44",
-            "FreeIPA auth": "1:12:30",
+            "FreeIPA auth": "1:08:01",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -88,7 +88,7 @@
             "NTFS": "7:11:05",
             "OCFS2": "1:14:54",
             "CEPH": "3:00:28",
-            "CEPH fio": "1:20:31",
+            "CEPH fio": "2:41:58",
             "Total time": "0:00:00"
         },
         "stand11": {

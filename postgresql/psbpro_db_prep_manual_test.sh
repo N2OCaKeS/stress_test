@@ -117,3 +117,23 @@ sudo -u postgres ${BIN_PATH}/pgbench -i -h localhost -p 6000 -U $USER -s 100 $DB
 #sudo perf record -g -a &
 #PERF_PID=$!
 #echo "$PERF_PID" > /home/u/pid
+
+
+# #Backup prepare
+# sudo rm -rf /var/lib/pgpro/ent-17/data/*
+
+# sudo tar xvf /var/lib/pgpro/archive/base.tar -C /var/lib/pgpro/ent-17/data
+
+# sudo chmod -R 700 /var/lib/pgpro/ent-17/data
+# sudo chown -R postgres:postgres /var/lib/pgpro/ent-17/data
+
+# sudo touch /var/lib/pgpro/ent-17/data/recovery.signal
+# sudo chown -R postgres:postgres /var/lib/pgpro/ent-17/data/recovery.signal
+# sudo chmod -R 700 /var/lib/pgpro/ent-17/data/recovery.signal
+
+# sudo cp postgresql.conf /var/lib/pgpro/ent-17/data/postgresql.conf
+# sudo chown -R postgres:postgres /var/lib/pgpro/ent-17/data/postgresql.conf
+# sudo chmod -R 700 /var/lib/pgpro/ent-17/data/postgresql.conf
+
+# sudo systemctl start postgrespro-ent-17.service 
+# sudo systemctl status postgrespro-ent-17.service 

@@ -51,10 +51,10 @@ class Libvirt(_VirtualMashines):
         """
 
         system_commands.cmd_with_returncode(
-            f"sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar sshpass -y"
+            "sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar sshpass -y"
         )
         system_commands.cmd_with_returncode(
-            f"sudo usermod -aG kvm,libvirt,libvirt-qemu,libvirt-admin $USER"
+            "sudo usermod -aG kvm,libvirt,libvirt-qemu,libvirt-admin $USER"
         )
         return 0
 

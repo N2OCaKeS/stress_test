@@ -58,16 +58,18 @@ class PageBuilder:
         "#1F845A", "#BF2600", "#0065FF",
     ]
 
-    _ROOT_STYLE = "font-family: 'Century Gothic', 'Segoe UI', Arial, sans-serif; color: #091e42;"
-    _TITLE_STYLE = "color: #172B4D; font-size: 28px; margin: 0 0 16px 0;"
-    _HEADING_STYLE = "color: #172B4D; margin: 0 0 8px 0;"
+    _ROOT_STYLE = (
+        "font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: #091e42; "
+        "text-align: left; margin: 0; width: 100%;"
+    )
+    _TITLE_STYLE = "color: #172B4D; font-size: 28px; font-weight: 700; margin: 0 0 16px 0;"
+    _HEADING_STYLE = "color: #172B4D; margin: 0 0 8px 0; font-weight: 700;"
     _PARAGRAPH_STYLE = "margin: 8px 0; line-height: 1.5; color: #172B4D;"
     _REPORT_BLOCK_STYLE = "margin: 0;"
     _REPORT_BLOCK_TITLE_STYLE = (
-        "display: block; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; "
-        "color: #0052CC; margin-bottom: 8px;"
+        "display: block; font-weight: 700; font-size: 20px; color: #172B4D; margin: 0 0 12px 0;"
     )
-    _TABLE_STYLE = "border-collapse: collapse; width: 100%; margin: 16px 0;"
+    _TABLE_STYLE = "border-collapse: collapse; width: auto; max-width: 100%; margin: 16px 0;"
     _TABLE_CAPTION_STYLE = _REPORT_BLOCK_TITLE_STYLE
     _TABLE_HEADER_CELL_STYLE = (
         "border: 1px solid #dfe1e6; padding: 8px; text-align: left; background: #edf2ff; font-weight: 600;"
@@ -97,11 +99,12 @@ class PageBuilder:
     _ATTACHMENT_IMAGE_MEDIA_STYLE = "display: block; margin-top: 8px;"
     _ATTACHMENT_LINK_CONTAINER_STYLE = "margin: 0;"
     _DETAILS_TABLE_STYLE = (
-        "width:100%;border-collapse:collapse;background:#d9e1f2;font-family:'Century Gothic','Segoe UI',sans-serif;"
+        "width:100%;border-collapse:collapse;background:#d9e1f2;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;"
         "font-size:15px;color:#091e42;margin:16px 0;"
     )
     _DETAILS_KEY_STYLE = (
-        "font-weight:700;width:30%;white-space:nowrap;border:1px solid #b9c6ec;padding:10px 16px;vertical-align:top;"
+        "font-weight:700;width:22%;max-width:260px;white-space:nowrap;border:1px solid #b9c6ec;"
+        "padding:10px 16px;vertical-align:top;"
     )
     _DETAILS_VALUE_STYLE = "border:1px solid #b9c6ec;padding:10px 16px;vertical-align:top;font-size:15px;"
     _DETAILS_LINK_STYLE = "color:#0052CC;text-decoration:none;"
@@ -276,7 +279,8 @@ class PageBuilder:
 
         Args:
             table_spec (Mapping[str, object]): Описание таблицы. Поддерживаются
-                ключи ``title``, ``description``, ``headers`` и ``rows``.
+                ключи ``title``, ``title_level``, ``description``, ``headers`` и ``rows``.
+                ``title_level`` позволяет выбрать ``h3`` или ``h4`` для заголовка.
 
         Returns:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
@@ -290,6 +294,9 @@ class PageBuilder:
             if isinstance(table_spec.get("title"), str)
             else None
         )
+        title_level = self._normalize_heading_level(
+            table_spec.get("title_level"), default=3, min_level=3, max_level=4
+        )
         description = (
             table_spec.get("description")
             if isinstance(table_spec.get("description"), str)
@@ -298,11 +305,14 @@ class PageBuilder:
         headers = self._normalize_headers(table_spec.get("headers"))
         rows = self._normalize_rows(table_spec.get("rows"), headers)
 
-        html_parts = [f'<table style="{self._TABLE_STYLE}">']
+        html_parts = []
         if title:
+            heading_tag = f"h{title_level}"
             html_parts.append(
-                f'<caption style="{self._TABLE_CAPTION_STYLE}">{escape(title)}</caption>'
+                f'<{heading_tag} style="{self._HEADING_STYLE}">{escape(title)}</{heading_tag}>'
             )
+
+        html_parts.append(f'<table style="{self._TABLE_STYLE}">')
         if headers:
             header_cells = "".join(
                 f'<th style="{self._TABLE_HEADER_CELL_STYLE}">{escape(column)}</th>'
@@ -1232,7 +1242,7 @@ class PageBuilder:
             style_parts.append("margin:0 auto;")
         if height_value:
             style_parts.append(f"min-height:{height_value}px;")
-            style_parts.append(f"padding-bottom:8px;")
+            style_parts.append("padding-bottom:8px;")
         return " ".join(part for part in style_parts if part)
 
     def _join_table_chart_values(self, values):

@@ -15,15 +15,15 @@
             "Total time": "0:00:00"
         },
         "stand4": {
-            "postgresql": "5:45:08",
-            "postgresql-aud-off": "2:25:50",
-            "postgresql-sm": "4:59:06",
-            "psql parsec": "2:39:08",
-            "psql vanilla": "2:22:48",
-            "psql balance": "1:56:32",
-            "psql kernels": "1:45:56",
-            "steal time": "2:31:05",
-            "steal time-sm": "2:24:58",
+            "postgresql": "5:35:10",
+            "postgresql-aud-off": "2:33:59",
+            "postgresql-sm": "5:37:33",
+            "psql parsec": "2:46:18",
+            "psql vanilla": "2:33:43",
+            "psql balance": "1:58:43",
+            "psql kernels": "1:52:31",
+            "steal time": "2:42:10",
+            "steal time-sm": "2:30:51",
             "Total time": "0:00:00"
         },
         "stand10": {
@@ -37,10 +37,10 @@
             "parsec impact-fs": "0:38:42",
             "parsec impact-fs aud-off": "0:35:59",
             "docker-wa": "1:01:11",
-            "FIO": "1:17:51",
-            "vPingPong": "1:00:17",
-            "vUnixBench": "2:21:19",
-            "psql oom": "0:38:27",
+            "FIO": "1:17:47",
+            "vPingPong": "0:58:22",
+            "vUnixBench": "2:21:17",
+            "psql oom": "0:39:09",
             "Total time": "0:00:00"
         },
         "stand12": {

@@ -1306,7 +1306,7 @@ def services_health_status():
         i: check_output_command(f"sudo systemctl status {i} | grep Active: | awk '{{print$1, $2, $3}}'") for i in allta_services_list
     }
     status_dict = {
-        key: ' '.join(value.split(' ')[:3]) for key, value in status_dict_raw.items()
+        key: ' '.join(value.strip().split(' ')[:3]) for key, value in status_dict_raw.items()
     }
 
     if get_dict:

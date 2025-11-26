@@ -1306,11 +1306,11 @@ def services_health_status(get_dict=False):
     }
 
     if get_dict:
-        return status_dict
+        return jsonify(status_dict)
 
     if all('active (running)' in status for status in status_dict.values()):
         print('All services are running')
-        return 'ok'
+        return jsonify({'services_health_status': 'ok'})
     else:
         print('Some service(s) are not running')
-        return 'fail'
+        return jsonify({'services_health_status': 'fail'})

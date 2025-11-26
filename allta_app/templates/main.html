@@ -1266,19 +1266,28 @@
         </script>
         <script>
           function updateHealthStatus() {
+            console.log('Updating health status...'); 
             fetch('/services-health-status') 
-              .then(response => response.json())
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error('Network response was not ok');
+                }
+                return response.json();
+              })
               .then(data => {
+                console.log('Received data:', data);
                 let servicesHealthStatus = data.services_health_status;
                 let imageElement = document.getElementById("healthImage");
-        
+            
                 if (servicesHealthStatus === "ok") {
                   imageElement.src = "http://10.177.103.10:8000/static/service_ok.png";
                 } else if (servicesHealthStatus === "fail") {
                   imageElement.src = "http://10.177.103.10:8000/static/service_fail.png";
                 }
               })
-              .catch(error => console.error('Ошибка при получении статуса:', error));
+              .catch(error => {
+                console.error('Ошибка при получении статуса:', error);
+              });
           }
         
           setInterval(updateHealthStatus, 60000);

@@ -1313,9 +1313,9 @@ def services_health_status():
     if get_dict:
         return jsonify(status_dict)
 
-    if all('active (running)' in status for status in status_dict.values()):
-        print('All services are running')
+    if all('active (running)' in status or 'active (exited)' in status for status in status_dict.values()):
+        print('All services are running or exited successfully')
         return jsonify({'services_health_status': 'ok'})
     else:
-        print('Some service(s) are not running')
+        print('Some service(s) are not running or exited successfully')
         return jsonify({'services_health_status': 'fail'})

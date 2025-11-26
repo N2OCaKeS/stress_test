@@ -1302,8 +1302,11 @@ def prepare_testenv_status(method: str, switch='off') -> str:
 
 def services_health_status():
     get_dict = request.args.get('get_dict', False)
+    status_dict_raw = {
+        i: check_output_command(f"sudo systemctl status {i} | grep Active: | awk '{{print$1, $2, $3}}'") for i in allta_services_list
+    }
     status_dict = {
-        i: check_output_command(f'sudo systemctl status {i} | grep Active:') for i in allta_services_list
+        key: ' '.join(value.split(' ')[:3]) for key, value in status_dict_raw.items()
     }
 
     if get_dict:

@@ -567,7 +567,7 @@ annotations = {
 #Список существующих сервисов и микросервисов ALLTA
 #################################################################################################################################################
 allta_services_list = [
-    'acs.service' 
+    'acs.service', 
     'allta_auth.service',
     'allta_infocollector.service',
     'allta.service',

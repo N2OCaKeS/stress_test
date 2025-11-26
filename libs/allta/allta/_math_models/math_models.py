@@ -132,6 +132,7 @@ class MathModels:
 
         Формула: R = Σ (weight_i * y_i * sign_i), где y_i — агрегированное
         значение критерия, sign_i = 1 для позитивных, -1 для негативных.
+        Итоговый рейтинг не опускается ниже 0; при этом вклады остаются исходными.
 
         Args:
             criteria (Iterable[Criterion]): Набор критериев.
@@ -178,6 +179,8 @@ class MathModels:
             contrib = base if c.sign >= 0 else -base
             contributions[c.name] = contrib
             total += contrib
+        # Не позволяем итоговому рейтингу уходить в отрицательные значения.
+        total = max(total, 0.0)
         return total, contributions
 
     @staticmethod

@@ -1,4 +1,4 @@
-from libs.allta.allta._math_models.math_models import Criterion, MathModels
+from allta import Criterion, MathModels
 
 
 def demo_normalize():

@@ -1300,7 +1300,8 @@ def prepare_testenv_status(method: str, switch='off') -> str:
     
 
 
-def services_health_status(get_dict=False):
+def services_health_status():
+    get_dict = request.args.get('get_dict', False)
     status_dict = {
         i: check_output_command(f'sudo systemctl status {i} | grep Active:') for i in allta_services_list
     }

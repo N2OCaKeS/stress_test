@@ -7,6 +7,7 @@ import string
 import random
 from collections import deque
 import subprocess
+import re
 from os import (path, 
                 remove,  
                 setsid,
@@ -1306,7 +1307,7 @@ def services_health_status():
         i: check_output_command(f"sudo systemctl status {i} | grep Active: | awk '{{print$1, $2, $3}}'") for i in allta_services_list
     }
     status_dict = {
-        key: ' '.join(value.strip().replace('\\n', ' ').split(' ')[:3]) for key, value in status_dict_raw.items()
+        key: ' '.join(re.sub(r'\\W+', ' ', value.strip()).split(' ')[:3]) for key, value in status_dict_raw.items()
     }
 
     if get_dict:

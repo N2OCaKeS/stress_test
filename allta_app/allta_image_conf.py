@@ -85,7 +85,7 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
             'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2', 'CEPH', 'CEPH fio'],
             'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl'],
             'UnixBench':        ['unix', 'unix parsec'],
-            'FreeIPA':          ['FreeIPA auth'],
+            'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users'],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
             'Apache':           ['apache-rp'],
             'Docker/Podman/LXC':['docker-wa'],
@@ -129,6 +129,7 @@ def parent_page_list():
 #################################################################################################################################################
 branches = {
     'freeipa authentication test':'freeipa',
+    'freeipa create users test':'freeipa',
     'file system benchmark. EXT4':'file_systems',
     'file system benchmark. XFS':'file_systems',
     'postgresql benchmark':'postgresql',
@@ -191,6 +192,7 @@ tests = {
     'Parsec impact fs benchmark':'parsec impact-fs',
     'DIGSIG. Check digsig time': 'digsig-cdt',
     'freeipa authentication test':'FreeIPA auth',
+    'freeipa create users test':'FreeIPA c-users',
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
@@ -261,7 +263,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
-              'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio']
+              'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users']
 
 
 
@@ -344,7 +346,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
         Перечень тестов, разделенных по уровням защищенности и стендам
         """
         topics = {
-            'orel_stand3':      ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'FreeIPA auth', 'unix'],
+            'orel_stand3':      ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'FreeIPA auth', 'unix', 'FreeIPA c-users'],
             'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'unix parsec'],
             'orel_stand4':      ['postgresql-aud-off', 'postgresql', 'psql balance', 'steal time', 'psql kernels'],
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla', 'steal time-sm'],
@@ -367,7 +369,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
     return handler(topic=get_topic())
 
 stands_groups = {
-    'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec'],
+    'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio'],
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom'],
@@ -419,7 +421,8 @@ tests_case_zefir_key = {
     'digsig-cdt':'BT-T16391',
     'docker-wa':'BT-T16564',
     'CEPH':'BT-T17640', 
-    'CEPH fio':'BT-T17641'
+    'CEPH fio':'BT-T17641',
+    'FreeIPA c-users':'BT-T17856'
 }
 
 
@@ -446,7 +449,7 @@ testname_columns = {
                     'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm',
                     'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl',
                     'DIGSIG. Check digsig time':'DIGSIG-cdt', 'docker web-application':'Docker-WA', 'ceph benchmark':'FS_CEPH',
-                    'ceph fio benchmark':'FS_CEPH_fio'
+                    'ceph fio benchmark':'FS_CEPH_fio', 'freeipa create users test':'FreeIPA_c-users'
                     }
 
 

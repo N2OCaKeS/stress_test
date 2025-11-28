@@ -333,7 +333,7 @@ try:
                             print('Выполняется...')
                             with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
                                 w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
-                            if tests[dates_list[i][1]] == 'FreeIPA auth':
+                            if tests[dates_list[i][1]] == 'FreeIPA auth' or tests[dates_list[i][1]] == 'FreeIPA c-users':
                                 with open(f'conf/col3_body_stand1.conf', 'w') as w:
                                     w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
                                 
@@ -470,7 +470,7 @@ try:
                     print('Выполняется...')
                     with open(f'conf/col3_body_{__stand}.conf', 'w') as w:
                             w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
-                    if tests[dates_list[i][1]] == 'FreeIPA auth':
+                    if tests[dates_list[i][1]] == 'FreeIPA auth' or tests[dates_list[i][1]] == 'FreeIPA c-users':
                         with open(f'conf/col3_body_stand1.conf', 'w') as w:
                             w.write(f'{__pt_version} | {dates_list[i][0][2]} | {tests[dates_list[i][1]]}')
                     

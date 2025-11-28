@@ -170,11 +170,13 @@ parser.add_argument('-tantor-vanilla',
                     help='testlist',
                     dest='TANTOR_VANILLA')
 
-parser.add_argument('-ipa-auth ipa',
+parser.add_argument('-ipa',
                     action='store',
+                    choices=['auth',
+                             'create-users'],
                     required=False,
                     help='testlist',
-                    dest='FREEIPA_AUTH')
+                    dest='FREEIPA')
 
 parser.add_argument('-parsec-impact',
                     action='store',
@@ -271,6 +273,7 @@ lvirt_test = f'-testname {args.LVIRT}'
 ovf = f'-ovf {args.OVF}'
 ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
 ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
+freeipa_test = f'-tt {args.FREEIPA}'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
@@ -315,9 +318,9 @@ elif args.TEST == 'syslog-ng' or args.TEST == 'unix':
 elif args.TEST == 'unix parsec':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -p parsec'
-elif args.FREEIPA_AUTH:
+elif args.FREEIPA:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
-              {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {freeipa_test}'
 elif args.PARSEC_IMPACT or args.PARSEC_IMPACT_AO:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv}'
@@ -949,7 +952,7 @@ if read_status() == success:
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} balance') #{balance_host_release}')
     elif args.PSQL_OOM:
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} oom')
-    elif args.FREEIPA_AUTH:
+    elif args.FREEIPA:
         freeipa_authentication_test()
     else:    
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')

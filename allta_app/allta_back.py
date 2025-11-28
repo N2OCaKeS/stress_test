@@ -312,7 +312,8 @@ try:
                             tantor_kern = '-db-kernels tantor'
                             ram_ovf = '-ovf ram'
                             sd_ovf = '-ovf sd'
-                            ipa_auth = '-ipa-auth ipa'
+                            ipa_auth = '-ipa auth'
+                            ipa_user = '-ipa create-users'
                             parsec_impact = '-parsec-impact impact'
                             parsec_impact_ao = '-parsec-impact-ao audit-off'
                             apache_rp = '-apache rp'
@@ -373,6 +374,9 @@ try:
                             elif tests[dates_list[i][1]] == 'FreeIPA auth':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {ipa_auth} {tes}', shell=True)
+                            elif tests[dates_list[i][1]] == 'FreeIPA c-users':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {ipa_user} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'parsec impact-fs':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {parsec_impact} {tes}', shell=True)                           
@@ -445,7 +449,8 @@ try:
                     tantor_kern = '-db-kernels tantor'
                     ram_ovf = '-ovf ram'
                     sd_ovf = '-ovf sd'
-                    ipa_auth = '-ipa-auth ipa'
+                    ipa_auth = '-ipa auth'
+                    ipa_user = '-ipa create-users'
                     parsec_impact = '-parsec-impact impact'
                     parsec_impact_ao = '-parsec-impact-ao audit-off'
                     apache_rp = '-apache rp'
@@ -505,6 +510,9 @@ try:
                     elif tests[dates_list[i][1]] == 'FreeIPA auth':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {ipa_auth} {tes}', shell=True)
+                    elif tests[dates_list[i][1]] == 'FreeIPA c-users':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {ipa_user} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'parsec impact-fs':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {parsec_impact} {tes}', shell=True)

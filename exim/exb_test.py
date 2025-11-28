@@ -1,7 +1,7 @@
 import smtplib
 import threading
 import time
-from email.mime.text import MimeText
+from email.mime.text import MIMEText
 from exb_conf import MAIL_START, MAIL_MAX, MAIL_STEP, MAX_WORKERS
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -9,18 +9,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 class SMTPTest:
     def __init__(self):
         self.email_config = {
-            "server": ...,
-            "port": ...,
-            "username_to": ...,
-            "username_from": ...,
-            "password": ...,
+            "server": 'localhost',
+            "port": '25',
+            "username_to": 'test1@test.local',
+            "username_from": 'test2@test.local',
+            "password": '1',
         }
 
     def send_single_email(self):
         try:
             with smtplib.SMTP(self.email_config["server"], self.email_config["port"]) as smtp:
-                smtp.login(self.email_config["username_from"], self.email_config["password"])
-                msg = MimeText(f"Test email {i}")
+                msg = MIMEText(f"Test email {i}")
                 msg['Subject'] = f"Load Test {i}"
                 msg['From'] = self.email_config["username_from"]
                 msg['To'] = self.email_config["username_to"]

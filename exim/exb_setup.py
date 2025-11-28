@@ -1,4 +1,6 @@
 import re
+import os
+import pwd
 import subprocess
 
 class Exim:
@@ -65,4 +67,41 @@ class Dovecot:
         # master.conf
         self._add_settings_line()
         self._replace_settings(filename=self.ssl_conf_file, pattern=r'ssl .*', replacement='ssl = no')
+
+
+class CreateMailUsers:
+    def __init__(self, user_count):
+        self.user_count = user_count
+
+    def set_configuration_single_user(self, ind=0):
+        username = f"user{ind}"
+        mail_dir = f"/var/mail/{username}"
+        system_commands = [
+            ["sudo", "useradd", "-m", "-d", mail_dir, "-s", "/bin/false", username],
+            ["sudo", "usermod", "-p", "$(openssl passwd -1 '1')", username]
+        ]
+
+        for cmd in system_commands:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+        directories = [
+            mail_dir,
+            f"{mail_dir}/.Maildir",
+            f"{mail_dir}/.Maildir/cur",
+            f"{mail_dir}/.Maildir/new", 
+            f"{mail_dir}/.Maildir/tmp"
+        ]
+
+        user_info = pwd.getpwnam(username)
+        uid, gid = user_info.pw_uid, user_info.pw_gid
+
+        for directory in directories:
+            if not os.path.exists(directory):
+                os.makedirs(directory, mode=0o700)
+                os.chown(directory, uid, gid)
+
+    def set_configuration(self):
+        for ind in range(1, self.user_count + 1):
+            self.set_configuration_single_user(ind)
+
 

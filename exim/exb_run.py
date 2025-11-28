@@ -1,6 +1,6 @@
 from argparse import ArgumentParser
 
-from exb_setup import Dovecot, Exim
+from exb_setup import Dovecot, Exim, CreateMailUsers
 from exb_test import SMTPTest
 from libs.libtable import Report
 
@@ -90,10 +90,12 @@ args = parser.parse_args()
 if __name__ == "__name__":
     d = Dovecot()
     ex = Exim()
+    cu = CreateMailUsers(user_count=10)
     d.set_configuration()
     ex.write_config_file()
     ex.update_exim_config()
     ex.restart_service()
+    cu.set_configuration()
 
     test = SMTPTest()
     test.run_test()

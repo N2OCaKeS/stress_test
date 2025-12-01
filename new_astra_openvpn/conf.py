@@ -13,8 +13,8 @@ CONFLUENCE_URL = response_confluence_url.text
 GRAPH_DESCRIPTIONS = {'cgraph.png': '<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">График количества активаций клиентских туннелей на минуту теста.<ul><li><b>OX</b>: Время выполнения теста(минуты);</li><li><b>OY</b>: Количество успешно подключенных туннелей к серверу;</li></ul></p>'}
   
 # Common dirs/files
-OVPN_PATH = f"/home/u/git/stress_test/astra_openvpn"
-VENV_PATH = f"/home/u/python/Python-3.12.1/venv/bin/python3.12"
+OVPN_PATH = "/home/u/git/stress_test/astra_openvpn"
+VENV_PATH = "/home/u/python/Python-3.12.1/venv/bin/python3.12"
 REPORT_PATH = f"{OVPN_PATH}/results"
 TEMPLATE_PATH = f"{OVPN_PATH}/templates"
 
@@ -38,13 +38,3 @@ PACKAGE = (f"astra-openvpn-server_{sys_cls.check_output_command('dpkg -l | grep 
 
 
 MODIFY = ["o", "s", "v"]
-
-
-
-
-
-
-
-
-
-

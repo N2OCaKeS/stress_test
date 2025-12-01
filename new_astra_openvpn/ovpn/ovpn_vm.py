@@ -258,10 +258,10 @@ EOF'""",
     def start_test(self):
         print("\n\n\n Запускаем тест \n\n\n")
 
-        client_count = CLIENTS_TOTAL / (len(list(VMS_DATES.keys())) - 1)
+        client_count = int(CLIENTS_TOTAL / (len(list(VMS_DATES.keys())) - 1))
         client_per_minutes = 30
 
-        total_seconds = math.ceil((client_count / client_per_minutes) * 60) + 60
+        total_seconds = math.ceil((client_count / client_per_minutes) * 60) + 120
         start_client = {
             "testvm1": {
                 "get stats": {
@@ -273,7 +273,7 @@ EOF'""",
         }
         for idx, i in enumerate(range(2, 6)):
             host = f"testvm{i}"
-            client_start = idx * client_count
+            client_start = int(idx * client_count)
 
             cmd = (
                 "sudo su -c 'ulimit -u 100000 && "
@@ -293,9 +293,6 @@ EOF'""",
             password=PASSWORD,
         )
 
-        print("\n\n\n Тест выполнен \n\n\n")
-
-    def get_result(self):
         print("\n\n\n Получаем результаты \n\n\n")
         scp_pull = {
             "testvm1": [
@@ -314,11 +311,19 @@ EOF'""",
             username=USER,
             password=PASSWORD,
         )
-        print("\n\n\n Результаты получены \n\n\n")
+        print("\n\n\n Результаты получены \n\n\n")        
 
+        print("\n\n\n Тест выполнен \n\n\n")
+
+    def get_result(self):
         print("\n\n\n Обрабатываем результаты \n\n\n")
 
-        result = analyze_result(csv_path="/home/u/stats.csv", tester_start=0, tester_count=CLIENTS_TOTAL, show_plots=False)
+        result = analyze_result(
+            csv_path="/home/u/stats.csv",
+            tester_start=0,
+            tester_count=CLIENTS_TOTAL,
+        )
 
         print("\n\n\n Результаты обработаны \n\n\n")
         return result
+        

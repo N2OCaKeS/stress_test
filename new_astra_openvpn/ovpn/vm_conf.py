@@ -1,5 +1,4 @@
 from allta import SystemCommands
-
 VERSION_OS = SystemCommands.check_output_command("cat /etc/astra_version")
 KERNEL = SystemCommands.check_output_command("uname -r")
 

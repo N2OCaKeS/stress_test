@@ -1,11 +1,23 @@
 import re
-from typing import Optional, Dict, Any, Set, List
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
-import matplotlib.pyplot as plt
-
+from allta import Criterion, MathModels
 
 TESTER_RE = re.compile(r"^tester(\d+)$")
+
+
+@dataclass
+class AnalysisResult:
+    stats: Dict[str, Any]
+    stats_table: List[Dict[str, Any]]
+    chart_rows: List[Dict[str, Any]]
+    public_chart_rows: List[Dict[str, Any]]
+    ramp_end_second: float
+    tester_count: int
+    # Округлённый целочисленный итоговый рейтинг (в промилле — масштабирован до 1000 единиц)
+    total_rating: int
 
 
 def _parse_clients_field(s: str) -> Set[str]:
@@ -14,15 +26,113 @@ def _parse_clients_field(s: str) -> Set[str]:
     return {name for name in s.split("|") if name}
 
 
+def _format_time_label(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _build_chart_rows(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for _, row in df.iterrows():
+        rows.append(
+            {
+                "Время, сек": round(float(row["seconds"]), 2),
+                "Активные клиенты": int(row["active_clients"]),
+                "Ожидаемые клиенты": round(float(row["expected_clients"]), 2),
+                "Падения за секунду": int(row["drops_per_second"]),
+                "Коэффициент заполнения": round(float(row["active_over_expected"]), 3),
+            }
+        )
+    return rows
+
+
+def _build_public_chart_rows(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for _, row in df.iterrows():
+        rows.append(
+            {
+                "T": _format_time_label(float(row["seconds"])),
+                "Эталон": round(float(row["expected_clients"]), 2),
+                "Ошибки": int(row["drops_per_second"]),
+                "Активные подключения": int(row["active_clients"]),
+            }
+        )
+    return rows
+
+
+def _build_stats_table_rows(stats: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def fmt(value: Any, digits: int = 2) -> str:
+        if isinstance(value, float):
+            return f"{value:.{digits}f}"
+        return str(value)
+
+    return [
+        {
+            "Метрика": "Ожидаемое число клиентов",
+            "Значение": fmt(stats["expected_testers_total"], 0),
+        },
+        {
+            "Метрика": "Подключались за тест",
+            "Значение": fmt(stats["ever_connected_count"], 0),
+        },
+        {
+            "Метрика": "Ни разу не подключились",
+            "Значение": fmt(stats["not_connected_count"], 0),
+        },        
+        {
+            "Метрика": "Активны в конце теста",
+            "Значение": fmt(stats["active_at_end_count"], 0),
+        },
+        {
+            "Метрика": "Отключились в ходе теста",
+            "Значение": fmt(stats["disconnected_count"], 0),
+        },
+        {
+            "Метрика": "Конец набора нагрузки, сек",
+            "Значение": fmt(stats["ramp_end_second"], 2),
+        },
+        {
+            "Метрика": "Минимальный коэффициент active/expected",
+            "Значение": fmt(stats["ratio_min"], 3),
+        },
+        {
+            "Метрика": "Средний коэффициент active/expected",
+            "Значение": fmt(stats["ratio_mean"], 3),
+        },
+        {
+            "Метрика": "Медиана активных клиентов",
+            "Значение": fmt(stats["active_median"], 0),
+        },
+        {
+            "Метрика": "Среднее активных клиентов",
+            "Значение": fmt(stats["active_mean"], 2),
+        },
+        {
+            "Метрика": "Максимум активных клиентов",
+            "Значение": fmt(stats["active_max"], 0),
+        },
+        {
+            "Метрика": "Макс. отключений в секунду",
+            "Значение": fmt(stats["drops_max"], 0),
+        },
+        {
+            "Метрика": "Среднее отключений в секунду",
+            "Значение": fmt(stats["drops_mean"], 2),
+        },
+        {
+            "Метрика": "Медиана отключений в секунду",
+            "Значение": fmt(stats["drops_median"], 0),
+        },
+    ]
+
+
 def analyze_result(
     csv_path: str,
     tester_start: int,
     tester_count: int,
-    load_end_second: Optional[float] = None, 
-    show_plots: bool = True,
-    save_prefix: Optional[str] = None,
-) -> Dict[str, Any]:
-
+    load_end_second: Optional[float] = None,
+):
     df = pd.read_csv(csv_path)
 
     required_cols = {"seconds", "active_clients", "client_names"}
@@ -30,40 +140,6 @@ def analyze_result(
         raise ValueError(f"Ожидаются колонки {required_cols} в CSV")
 
     df = df.sort_values("seconds").reset_index(drop=True)
-    seconds: List[float] = df["seconds"].tolist()
-
-    clients_sets: List[Set[str]] = [_parse_clients_field(s) for s in df["client_names"]]
-
-    expected_testers: Set[str] = {
-        f"tester{i}" for i in range(tester_start, tester_start + tester_count)
-    }
-
-    ever_connected: Set[str] = set()
-    for names in clients_sets:
-        ever_connected |= (names & expected_testers)
-
-    active_last: Set[str] = clients_sets[-1] & expected_testers
-
-    disconnected: Set[str] = ever_connected - active_last
-
-    drop_counts: List[int] = [0] * len(df)
-    drop_time: Dict[str, float] = {}
-
-    for idx in range(1, len(df)):
-        prev_names = clients_sets[idx - 1]
-        curr_names = clients_sets[idx]
-
-        prev_testers = prev_names & expected_testers
-        curr_testers = curr_names & expected_testers
-
-        dropped_now = prev_testers - curr_testers
-        drop_counts[idx] = len(dropped_now)
-
-        for cn in dropped_now:
-            if cn not in drop_time:
-                drop_time[cn] = seconds[idx]
-
-    df["drops_per_second"] = drop_counts
 
     first_sec = float(df["seconds"].iloc[0])
     last_sec = float(df["seconds"].iloc[-1])
@@ -78,16 +154,35 @@ def analyze_result(
     if ramp_end_second > last_sec:
         ramp_end_second = last_sec
 
+    expected_testers: Set[str] = {
+        f"tester{i}" for i in range(tester_start, tester_start + tester_count)
+    }
+
+    # Полный набор данных для графиков.
+    seconds: List[float] = df["seconds"].tolist()
+    clients_sets_full: List[Set[str]] = [_parse_clients_field(s) for s in df["client_names"]]
+
+    drop_counts: List[int] = [0] * len(df)
+    for idx in range(1, len(df)):
+        prev_names = clients_sets_full[idx - 1]
+        curr_names = clients_sets_full[idx]
+
+        prev_testers = prev_names & expected_testers
+        curr_testers = curr_names & expected_testers
+
+        dropped_now = prev_testers - curr_testers
+        drop_counts[idx] = len(dropped_now)
+
+    df["drops_per_second"] = drop_counts
+
+    # Ожидаемые клиенты и коэффициенты считаем на всём интервале для графиков.
     expected_clients: List[float] = []
     if ramp_end_second > first_sec:
         denom = ramp_end_second - first_sec
         for t in seconds:
             if t <= ramp_end_second:
                 frac = (t - first_sec) / denom
-                if frac < 0:
-                    frac = 0.0
-                if frac > 1:
-                    frac = 1.0
+                frac = min(max(frac, 0.0), 1.0)
                 e = tester_count * frac
             else:
                 e = float(tester_count)
@@ -97,7 +192,6 @@ def analyze_result(
 
     df["expected_clients"] = expected_clients
 
-    # отношение активных к ожидаемым
     ratios: List[float] = []
     for active, expected in zip(df["active_clients"], expected_clients):
         if expected > 0:
@@ -106,114 +200,76 @@ def analyze_result(
             ratios.append(0.0)
     df["active_over_expected"] = ratios
 
-    # --------- ВАЖНО: статистику считаем ТОЛЬКО по интервалу нагрузки ---------
-    mask_load = df["seconds"] <= ramp_end_second
-    # на всякий случай, если что-то пойдёт не так — fallback на весь диапазон
-    if not mask_load.any():
-        mask_load = pd.Series([True] * len(df))
+    # Для графиков используем полный набор данных (всё время снятия).
+    df_charts = df.copy()
 
-    df_load = df[mask_load]
+    # Окно нагрузки для метрик.
+    mask_test_window = df["seconds"] <= ramp_end_second
+    if not mask_test_window.any():
+        mask_test_window = pd.Series([True] * len(df))
+    df_stats = df[mask_test_window].reset_index(drop=True)
+    clients_sets_stats: List[Set[str]] = [
+        _parse_clients_field(s) for s in df_stats["client_names"]
+    ]
 
-    active_series = df_load["active_clients"]
-    drops_series = df_load["drops_per_second"]
-    ratios_series = df_load["active_over_expected"]
+    ever_connected: Set[str] = set()
+    for names in clients_sets_stats:
+        ever_connected |= names & expected_testers
+
+    active_last: Set[str] = clients_sets_stats[-1] & expected_testers
+
+    disconnected: Set[str] = ever_connected - active_last
+
+    active_series = df_stats["active_clients"]
+    drops_series = df_stats["drops_per_second"]
+    ratios_series = df_stats["active_over_expected"]
 
     stats: Dict[str, Any] = {
-        "expected_testers_total": tester_count,
-        "ever_connected_count": len(ever_connected),
-        "active_at_end_count": len(active_last),
-        "disconnected_count": len(disconnected),
-        # "drop_time_by_tester": drop_time,
-        "ramp_end_second": ramp_end_second,
-        # коэффициент заполнения (по интервалу нагрузки)
-        "ratio_min": float(ratios_series.min()) if not ratios_series.empty else 0.0,
-        "ratio_mean": float(ratios_series.mean()) if not ratios_series.empty else 0.0,
-        # что просил руководитель (тоже только по интервалу нагрузки)
-        "active_median": float(active_series.median()) if not active_series.empty else 0.0,
-        "active_mean": float(active_series.mean()) if not active_series.empty else 0.0,
-        "active_max": int(active_series.max()) if not active_series.empty else 0,
-        "drops_max": int(drops_series.max()) if not drops_series.empty else 0,
-        "drops_mean": float(drops_series.mean()) if not drops_series.empty else 0.0,
-        "drops_median": float(drops_series.median()) if not drops_series.empty else 0.0,
+        "expected_testers_total": tester_count,  # Сколько клиентов *должно* быть создано (плановое общее число)
+        "ever_connected_count": len(ever_connected),  # Сколько уникальных клиентов хоть раз успешно подключились ОСТАВЛЯЕМ + 0,4
+        "active_at_end_count": len(active_last),  # Сколько клиентов были активны в последний момент теста
+        "disconnected_count": len(disconnected),  # Сколько клиентов отвалились к концу теста (были, но уже не активны) ОСТАВЛЯЕМ - 0,4
+        "not_connected_count": tester_count - len(ever_connected),  # Сколько клиентов так и не подключились
+        "ramp_end_second": ramp_end_second,  # Время (секунда), когда закончился этап разгона (создания новых подключений)
+        "ratio_min": (float(ratios_series.min()) if not ratios_series.empty else 0.0),  # Минимальное значение ratio (активные / ожидаемые) за время теста
+        "ratio_mean": (float(ratios_series.mean()) if not ratios_series.empty else 0.0),  # Среднее значение ratio (активные / ожидаемые)
+        "active_median": (float(active_series.median()) if not active_series.empty else 0.0),  # Медиана числа активных клиентов по времени
+        "active_mean": (float(active_series.mean()) if not active_series.empty else 0.0),  # Среднее число активных клиентов по времени
+        "active_max": (int(active_series.max()) if not active_series.empty else 0),  # Максимальное число одновременно активных клиентов
+        "drops_max": (int(drops_series.max()) if not drops_series.empty else 0),  # Максимум ошибок/дропов за единицу времени ОСТАВЛЯЕМ - 0,2
+        "drops_mean": (float(drops_series.mean()) if not drops_series.empty else 0.0),  # Среднее количество ошибок/дропов за единицу времени
+        "drops_median": (float(drops_series.median()) if not drops_series.empty else 0.0),  # Медиана количества ошибок/дропов за единицу времени
     }
 
-    # ---------- График 1: активные клиенты + падения + эталонная линия ----------
+    chart_rows = _build_chart_rows(df_charts)
+    public_chart_rows = _build_public_chart_rows(df_charts)
+    stats_table = _build_stats_table_rows(stats)
 
-    fig1, ax = plt.subplots(figsize=(10, 6))
+    criterions = [Criterion(name="ever_connected_count", values=[stats["ever_connected_count"]], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
+                  Criterion(name="disconnected_count", values=[stats["disconnected_count"]], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
+                  Criterion(name="drops_max", values=[stats["drops_max"]], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
 
-    # активные клиенты
-    ax.plot(df["seconds"], df["active_clients"], label="active_clients")
+    normalized_criteria = MathModels.normalize(criterions)
 
-    # падения (сколько клиентов отвалилось за секунду)
-    ax.plot(df["seconds"], df["drops_per_second"], label="dropped_per_second")
-
-    # эталонная линия expected_clients (зелёная)
-    ax.plot(
-        df["seconds"],
-        df["expected_clients"],
-        label="expected_clients",
-        color="green",
+    total_rating, s = MathModels.total_rating(criteria=normalized_criteria)
+    total_rating = int(round(total_rating * 1000))
+    return AnalysisResult(
+        stats=stats,
+        stats_table=stats_table,
+        chart_rows=chart_rows,
+        public_chart_rows=public_chart_rows,
+        ramp_end_second=ramp_end_second,
+        tester_count=tester_count,
+        total_rating=total_rating,
     )
-
-    # вертикальная линия конца нагрузки
-    ax.axvline(ramp_end_second, color="black", linestyle="--", label="end_of_load")
-
-    ax.set_xlabel("Время, сек с начала теста")
-    ax.set_ylabel("Количество клиентов")
-    ax.set_title("Активные клиенты и падения по секундам")
-
-    ax.set_ylim(0, tester_count)
-    ax.grid(True)
-    ax.legend(loc="best")
-
-    fig1.tight_layout()
-    if save_prefix is not None:
-        fig1.savefig(f"{save_prefix}_active_vs_drops.png", dpi=150, bbox_inches="tight")
-
-    # ---------- График 2: отношение активных к ожидаемым ----------
-
-    fig3, ax3 = plt.subplots(figsize=(10, 6))
-
-    ax3.plot(df["seconds"], df["active_over_expected"], label="active / expected")
-    ax3.axhline(1.8, linestyle="--", label="ideal = 1.8")
-    ax3.axvline(ramp_end_second, color="black", linestyle="--", label="end_of_load")
-
-    ax3.set_xlabel("Время, сек с начала теста")
-    ax3.set_ylabel("Доля от ожидаемого числа клиентов")
-    ax3.set_title("Коэффициент заполнения: active / expected")
-    ax3.set_ylim(0, 2.5)
-    ax3.grid(True)
-    ax3.legend(loc="best")
-
-    fig3.tight_layout()
-    if save_prefix is not None:
-        fig3.savefig(f"{save_prefix}_active_over_expected.png", dpi=150, bbox_inches="tight")
-
-    if show_plots:
-        plt.show()
-    else:
-        plt.close(fig1)
-        plt.close(fig3)
-
-    return stats
 
 
 # if __name__ == "__main__":
-#     stats = analyze_result(
-#         csv_path="stats.csv",
+#     analysis = analyze_result(
+#         csv_path="test_stats.csv",
 #         tester_start=0,
 #         tester_count=1600,
-#         show_plots=False,
 #     )
-
 #     print("Итоговая статистика по тестерам:")
-#     for k, v in stats.items():
+#     for k, v in analysis.stats.items():
 #         print(f"{k}: {v}")
-
-#     print("Итоговая статистика (только интервал нагрузки):")
-#     print(f"1) Медиана по активным:         {stats['active_median']:.2f}")
-#     print(f"2) Среднее по активным:         {stats['active_mean']:.2f}")
-#     print(f"3) Максимум по активным:        {stats['active_max']}")
-#     print(f"4) Максимум по ошибкам:         {stats['drops_max']}")
-#     print(f"5) Среднее по ошибкам:          {stats['drops_mean']:.2f}")
-#     print(f"6) Медиана по ошибкам:          {stats['drops_median']:.2f}")

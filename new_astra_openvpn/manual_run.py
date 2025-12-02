@@ -18,11 +18,11 @@ ovpn.server_settings()
 ovpn.start_test()
 result = ovpn.get_result()
 lead_time_text = _fmt_duration(perf_counter() - start_ts)
-ovpn_publisher(username="mfilippenko",
-                token="NjkxODE3NjQ3NTk2OuArzeedqt1U3uQzuyff1NtW/cd6",
-                title="test ovpn2",
+ovpn_publisher(username="",
+                token="ghp_XXXXXXXXXXXXXXXXXXXX",
+                title="",
                 stats=result,
-                space="~mfilippenko",
+                space="",
                 parent_title="",
                 lead_time=lead_time_text
                )

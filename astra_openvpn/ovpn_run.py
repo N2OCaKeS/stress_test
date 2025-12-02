@@ -1,16 +1,17 @@
-import subprocess
-import sys
 from os import path
 import argparse
-from ovpn_conf import VENV_PATH, BOX, VMS_COUNT, VMS_DATES
-from libs.zefir import UploaderZC
-from libs.libtests import Test_1
-from libs.libtable import Report
+import traceback
+from time import perf_counter
+from new_astra_openvpn.conf import MODIFY
+from allta import ZefirClient
+from ovpn.ovpn_vm import Ovpn
+from libs.libpublic import ovpn_publisher
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
                     choices=["ovpn"],
                     help="Choose test name.",
+                    default="ovpn",
                     dest="TEST")
 
 parser.add_argument('-u', '--username',
@@ -46,10 +47,7 @@ parser.add_argument('-cnp', '--confluence-new-page',
 
 parser.add_argument('-sn', '--stand-num',
                     action='store',
-                    choices=['1',
-                             '2',
-                             '3',
-                             '4'],
+                    choices=[str(i) for i in range(1, 14)],
                     required=True,
                     help='stand num',
                     dest='STAND')
@@ -83,60 +81,86 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     required=True,
                     help='test-cycle-version',
                     dest='TCV')
+parser.add_argument('-m', '--mode',
+                    action='store',
+                    choices=MODIFY,
+                    default='o',
+                    help='VM build mode',
+                    dest='MODE')
+parser.add_argument('-pid', '--project-id',
+                    action='store',
+                    type=int,
+                    default=11200,
+                    help='Jira/Zefir project id',
+                    dest='PID')
+parser.add_argument('-juk', '--jira-user-key',
+                    action='store',
+                    default='JIRAUSER38882',
+                    help='Jira user key for status updates',
+                    dest='USER_KEY')
 args = parser.parse_args()
     
 
+def _fmt_duration(seconds: float) -> str:
+    total_seconds = int(seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, sec = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{sec:02d}"
+
+
 if __name__ == "__main__":
 
-    uzs = UploaderZC(folder_tree_id=args.FTI,
-                     test_cycle_name=args.TCYC,
-                     test_case_name=args.TCAS,
-                     basic_auth=args.BA,
-                     test_cycle_version=args.TCV,
-                     token=args.TOKEN,
-                     username=args.USER,
-                     conf_space=args.SPACE,
-                     conf_parent_page=args.PPAGE,
-                     conf_new_page_name=args.NPAGE,
-                     grade_stand=args.STAND)
+    zefir = ZefirClient(
+        basic_auth_header=args.BA,
+        project_id=args.PID,
+        default_user_key=args.USER_KEY,
+        default_folder_tree_id=int(args.FTI),
+    )
 
-    uzs.upload_test_cycle_status('progress')
-    
-    """
-        TODO Здесь запускаем тесты
-    """
+    def _set_status(status_code: int | str):
+        try:
+            zefir.set_test_result(
+                test_cycle_name=args.TCYC,
+                test_case_name=args.TCAS,
+                status=status_code,
+                folder_tree_id=int(args.FTI),
+            )
+        except Exception as err:
+            print(f"Не удалось установить статус {status_code}: {err}")
 
-    if args.TEST == "ovpn":
+    _set_status('progress')
 
-        ovpn_test = Test_1(vbox=BOX,
-                           vm_count=VMS_COUNT,
-                           vms_dates=VMS_DATES,
-                           rc_name=args.TCV)
-        rp = Report()
+    status = 'fail'
+    start_ts = perf_counter()
+    try:
+        ovpn = Ovpn()
 
-        #load-test
-        ovpn_test.common_build()
-        ovpn_test.provision()
-        ovpn_test.start()
+        if args.TEST == "ovpn":
+            ovpn.build(rc=args.TCV, mode=args.MODE)
+            ovpn.provision()
+            ovpn.server_settings()
+            ovpn.start_test()
+            result = ovpn.get_result()
+            lead_time_text = _fmt_duration(perf_counter() - start_ts)
 
-        #results + report
-        rp.build()
-        rp.pass_fail()
-        rp.plot_waves()
-        
-        # ovpn_test.vms_destroy()
+            ovpn_publisher(username=args.USER,
+                           token=args.TOKEN,
+                           title=args.NPAGE,
+                           stats=result,
+                           space=args.SPACE,
+                           parent_title=args.PPAGE,
+                           lead_time=lead_time_text)
+            status = 'pass'
+        else:
+            print("Тест не найден")
+    except Exception as e:
+        print(f"Ошибка при выполнении теста: {e}")
+        traceback.print_exc()
+    finally:
+        _set_status(status)
 
-
-
-    else: "Тест не найден"
-    
-
-    uzs.public = True
-    uzs.statistics = False
-    uzs.upload_test_cycle_status(zefir_status='pass')
-               
-if path.isfile('libs/zefir.log'):
-    with open('libs/zefir.log', 'r') as r:
+if path.isfile('zefir.log'):
+    with open('zefir.log', 'r') as r:
         zefir_log = r.read()
         print('\n\n\nZefir-log\n')
         print(zefir_log)
@@ -145,4 +169,3 @@ if path.isfile('JIRA_ERROR.log'):
         jira_log = r.read()
         print('\n\n\nJira-log\n')
         print(jira_log)
-

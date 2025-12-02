@@ -11,7 +11,7 @@ from os import remove, path
 from libs.ovpnlib import response
 from libs.libpublic import Public
 from time import sleep, ctime
-from ovpn_conf import JIRA_URL, CONFLUENCE_URL
+from new_astra_openvpn.conf import JIRA_URL, CONFLUENCE_URL
 
 
 class UploaderZC(Public):

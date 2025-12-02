@@ -1,199 +1,118 @@
-import os
-import sys
-from libs.libreport import ReportToConfluence
-from libs.ovpnlib import info_list
-sys.path.append(os.path.join(os.getcwd(), '..'))
-from ovpn_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, RANGE, CONNECTIONS_PER_MINUTE, VMS_COUNT, GRAPH_DESCRIPTIONS, VERSION_OS
+from typing import Any, Dict, List, Tuple
+
+from allta import PageBuilder, ConfluencePublisher
+from ovpn.result import AnalysisResult
+from ovpn.vm_conf import CLIENTS_TOTAL
 
 
-class Public:
-    '''
-    Публикация результатов в confluence
-    '''
-    def __init__(self,
-                 username=None,
-                 token=None,
-                 conf_space=None,
-                 conf_parent_page=None,
-                 conf_new_page_name=None,
-                 grade_stand=None,
-                 package=None,
-                 test_cycle_version=None,
-                 storage=False,
-                 kernel_check=False,
-                 balance=False,
-                 testname="",
-                 clients=RANGE,
-                 vms_count=VMS_COUNT,
-                 spawn_rate=CONNECTIONS_PER_MINUTE,
-                 report_path=REPORT_PATH):
-    
-        self.username = username
-        self.token = token
-        self.c_space = conf_space
-        self.c_pp = conf_parent_page
-        self.c_np = conf_new_page_name
-        self.grade_stand = grade_stand
-        self.package = package
-        self.tcv = test_cycle_version
-        self.storage = storage
-        self.kernel_check = kernel_check
-        self.balance = balance
-        self.testname = testname
-        #------------INFO---------------
-        self.clients = clients
-        self.vms_count = vms_count
-        self.spawn_rate = spawn_rate
-        #-------------------------------
-        self.report_path = report_path
+def _normalize_stats(
+    stats: Any,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]], Any]:
 
-        self.stands = {
-            '1':{'grade':'low(141)',
-                 'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
-                 'ram':'32GB',
-                 'storage':'Samsung NVME 970 EVO 2Тб'},
-            '2':{'grade':'low(129)',
-                 'cpu':'Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz',
-                 'ram':'32GB',
-                 'storage':'SSD 512GB\\sdb SSD 2TB'},
-            '3':{'grade':'LowServer(150)',
-                 'cpu':'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz',
-                 'ram':'128GB',
-                 'storage':'SAS SSD 3.8Tb'},
-            '4':{'grade':'MiddleServer(151)',
-                 'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
-                 'ram':'256GB',
-                 'storage':'SAS SSD 3.8Tb'}
-        }
+    if isinstance(stats, AnalysisResult):
+        base_stats = stats.stats
+        stats_table = stats.stats_table
+        public_chart_rows = stats.public_chart_rows
+        total_rating = stats.total_rating
+        return base_stats, stats_table, public_chart_rows, total_rating
 
-        if self.storage == 'nvme':
-            self.stands['3']['storage'] = 'NVME0n1 3.2Tb'
-            self.stands['4']['storage'] = 'NVME0n1 3.2Tb'       
+    if isinstance(stats, dict):
+        base_stats = stats.get("stats", stats)
+        stats_table = stats.get("stats_table", [])
+        public_chart_rows = stats.get("public_chart_rows", [])
+        total_rating = stats.get("total_rating", None)
+        return base_stats, stats_table, public_chart_rows, total_rating
+
+    raise TypeError("ovpn_publisher expects AnalysisResult or dict with stats")
 
 
-    def preset_publish(self, c_pp, c_np, release_pp=False, release_np=False):
+def ovpn_publisher(username, token, space, parent_title, title, stats, lead_time=""):
+    preview_path = "./demo_confluence_report.html"
+    reporter = ConfluencePublisher(
+        base_url="https://life.astralinux.ru", username=username, token=token
+    )
+    builder = PageBuilder(title=title)
 
-        confluence_report = ReportToConfluence(username=self.username, password=None, token=self.token)
+    base_stats, stats_table, public_chart_rows, total_rating = _normalize_stats(stats)
+    rating_text = total_rating if total_rating not in (None, "") else "n/a"
 
+    header_table = [
+        {
+            "label": "Ranging",
+            "value": {
+                "link": "https://life.astralinux.ru/pages/viewpage.action?pageId=150939635",
+                "link_text": "Рассчет рейтинга",
+                "items": [
+                    {"label": "ever_connected_count", "value": "0,4"},
+                    {"label": "disconnected_count", "value": "0,4"},
+                    {"label": "drops_max", "value": "0,2"},
+                ],
+            },
+        },
+        {
+            "label": "Params",
+            "value": {
+                "items": [
+                    {"label": "сlient_count", "value": CLIENTS_TOTAL},
+                    {"label": "client connect per seccond", "value": "120"},
+                    {"label": "reconnect", "value": "no"},
+                ],
+            },
+        },
+        {
+            "label": "ARM",
+            "value": {
+                "stand_number": "13",
+            },
+        },
+        {
+            "label": "Lead time",
+            "value": {
+                "text": lead_time,
+            },
+        },
+    ]
 
-        #создать страницу confluence
-        def name_page(arg):
-            top_page = f'STRESS ⬝ {str(arg).split("_")[1][:3]}'
-            version_page = f'STRESS_report ⬝ {str(arg).split("_")[1]}'
-            return top_page, version_page
+    builder.add_header_table(rows=header_table)
+    builder.add_heading(text="Описание", level=2)
+    builder.add_paragraph(
+        text=f"Нагрузочный тест для отслеживание работоспособности astra-openvpn-server. По сценарию теста к впн серверу подключается {CLIENTS_TOTAL} клиентов со скоростью 120 подкл/мин"
+    )
+    builder.add_heading(text=f"Total Rating: {rating_text}", level=2)
+    table = {
+        "title": "Метрики",
+        "headers": ["Метрика", "Значение"],
+        "rows": stats_table,
+    }
+    builder.add_table(table_spec=table)
 
-        if release_pp and release_np:
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(release_np)[0],
-                                                     name_page(release_np)[1])
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(release_np)[1],
-                                                     release_pp)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     release_pp,
-                                                     release_np)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(release_np)[1],
-                                                     name_page(c_np)[1])
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(c_np)[1],
-                                                     c_pp)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     c_pp,
-                                                     c_np)
-        else:
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(c_np)[0],
-                                                     name_page(c_np)[1])
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(c_np)[1],
-                                                     c_pp)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     c_pp,
-                                                     c_np)
-        
-        info_list()
-        #генерация вступительной таблицы
-        with open(INFO_FILENAME) as info:
-            info_lst = info.read().split('\n')
+    graphics = [
+        {
+            "title": "Нагрузка",
+            "type": "line",
+            "x_key": "T",
+            "series": ["Эталон", "Ошибки", "Активные подключения"],
+            "series_colors": {
+                "throughput": "#0052CC",
+                "throughput_p95": "#36B37E",
+            },
+            "width": 800,
+            "height": 360,
+            "x_label": "Время",
+            "y_label": "Активные подключения",
+            "data": public_chart_rows,
+            "view_table": False,
+        },
+    ]
+    builder.add_chart(chart_spec=graphics, columns=1)
+    builder.render_to_file(path=preview_path)
 
-        # with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'r') as r:
-        #     rps = r.read()
-
-        # Делаем вступительную таблицу 
-        print("DEBUG: grade_stand =", self.grade_stand)
-        print("DEBUG: доступные ключи в self.stands:", self.stands.keys())
-        with open(f'{TEMPLATE_PATH}/header_table_template_ovpn.html', 'r') as file:
-            header_table_temp = file.read()
-            header_table = header_table_temp.format(av=info_lst[0],
-                                                    kernel=info_lst[1],
-                                                    package=info_lst[2],                                                    
-                                                    arm_num=self.stands[self.grade_stand]['grade'],
-                                                    arm_proc=self.stands[self.grade_stand]['cpu'],
-                                                    arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'],
-                                                    total_clients=self.clients,
-                                                    clients_nodes=self.vms_count-1, 
-                                                    spawn_rate=self.spawn_rate*(self.vms_count-1),
-                                                    cipher="grasshopper-cbc" if VERSION_OS == "1.7" else "kuznyechik-cbc")
-        with open(f"{TEMPLATE_PATH}/test_report.html", "r", encoding="UTF-8") as file:
-            test_table = file.read()
-
-        for file in os.listdir(f"{REPORT_PATH}/processed"):
-            confluence_report.attache_files(f'{REPORT_PATH}/processed/{file}',
-                                            self.c_space,
-                                            c_np)
-
-        with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
-            images_lst = []
-            img_temp = template.read()
-            for file in os.listdir(f"{REPORT_PATH}/processed"):
-                if file.endswith('png'):
-                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
-                                                    img_png=file,
-                                                    description=GRAPH_DESCRIPTIONS[file]))
-            images = '\n'.join(images_lst)
-
-
-        # создание страницы отчета
-        html_page = '\n'.join([
-            header_table,
-            '<h2 style="font-family: Century Gothic, sans-serif; font-size: 16px; font-weight: bold; ">Результаты теста</h2>',
-            test_table,
-            images])
-        
-
-        #выкладываем информацию на страницу
-        if release_pp and release_np:
-            confluence_report.update_confluence_page(self.c_space, c_np, html_page)
-            confluence_report.update_confluence_page(self.c_space, release_np, html_page)
-        else:
-            confluence_report.update_confluence_page(self.c_space, c_np, html_page)
-
-
-
-    def run_publish(self):
-
-        check_len_version = self.tcv.split('.')
-
-        if len(check_len_version) == 4 and check_len_version[3] != 'UU':
-            release_version = '.'.join(check_len_version[:3])
-            rare_cpp = self.c_pp.split(' ')
-            cpp = ' '.join([release_version if release_version in rare_cpp[i] else rare_cpp[i] for i in range(len(rare_cpp))])
-            rare_cnp = self.c_np.split('_')
-            cnp = '_'.join([release_version if release_version in rare_cnp[i] else rare_cnp[i] for i in range(len(rare_cnp))])
-
-            self.preset_publish(self.c_pp, self.c_np, release_pp=cpp, release_np=cnp)
-
-        elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
-            release_version = '.'.join(check_len_version[:5])
-            rare_cpp = self.c_pp.split(' ')
-            cpp = ' '.join([release_version if release_version in rare_cpp[i] else rare_cpp[i] for i in range(len(rare_cpp))])
-            rare_cnp = self.c_np.split('_')
-            cnp = '_'.join([release_version if release_version in rare_cnp[i] else rare_cnp[i] for i in range(len(rare_cnp))])
-
-            self.preset_publish(self.c_pp, self.c_np, release_pp=cpp, release_np=cnp)
-
-        else:
-            self.preset_publish(self.c_pp, self.c_np)
-
+    attachments = [preview_path, *builder.attachments]
+    reporter.publish(
+        space=space,
+        title=title,
+        body=builder.render(),
+        attachments=attachments,
+        parent_title=parent_title,
+    )
+    return builder, "./test/demo_confluence_report.html"

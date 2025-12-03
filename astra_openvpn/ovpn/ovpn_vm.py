@@ -241,7 +241,14 @@ EOF'""",
                     "signal set": "server:ready",
                     "signal get": ["srv:iperf:up"],
                 },
-            }
+            },
+            "g_all": {
+                "install": {
+                    "command": "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libgost-astra",
+                    "signal set": "",
+                    "signal get": ["testvm1" ,"server:ready"],
+                }
+            },
         }
 
         Libvirt.execute(

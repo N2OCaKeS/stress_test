@@ -81,13 +81,13 @@ class PageBuilder:
     _TABLE_CHART_DATE_PATTERN = "d M yy 'г'."
     _CHART_TITLE_STYLE = "font-size: 20px; font-weight: 700; margin: 0 auto 12px; color: #172B4D; text-align: center;"
     _CHART_WRAPPER_STYLE = (
-        "display: flex; justify-content: center; width: 100%; align-items: center;"
+        "display: flex; justify-content: center; align-items: center; width: 100%; max-width: 100%;"
     )
     _CHART_DEFAULT_WIDTH = 760
     _CHART_DEFAULT_HEIGHT = 360
     _GRID_TABLE_STYLE = (
-        "width:100%; border-collapse: separate; border-spacing: 16px 8px; "
-        "margin: 8px 0; table-layout: fixed;"
+        "display:inline-table; width:max-content; max-width:100%; border-collapse: separate; "
+        "border-spacing: 16px 8px; margin: 8px 0; table-layout: auto;"
     )
     _GRID_CELL_STYLE = "vertical-align: top; text-align: center;"
     _GALLERY_FIGURE_STYLE = "display: inline-flex; flex-direction: column; align-items: center; width: 100%;"
@@ -99,8 +99,8 @@ class PageBuilder:
     _ATTACHMENT_IMAGE_MEDIA_STYLE = "display: block; margin-top: 8px;"
     _ATTACHMENT_LINK_CONTAINER_STYLE = "margin: 0;"
     _DETAILS_TABLE_STYLE = (
-        "width:100%;border-collapse:collapse;background:#d9e1f2;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;"
-        "font-size:15px;color:#091e42;margin:16px 0;"
+        "width:auto;max-width:100%;border-collapse:collapse;background:#d9e1f2;"
+        "font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-size:15px;color:#091e42;margin:16px 0;"
     )
     _DETAILS_KEY_STYLE = (
         "font-weight:700;width:22%;max-width:260px;white-space:nowrap;border:1px solid #b9c6ec;"
@@ -560,8 +560,7 @@ class PageBuilder:
         rows = [
             figures[idx : idx + columns] for idx in range(0, len(figures), columns)
         ]
-        cell_width = 100 / max(1, columns)
-        cell_style = f'{self._GRID_CELL_STYLE}width:{cell_width:.4f}%;'
+        cell_style = self._GRID_CELL_STYLE
         table_rows = []
         for row in rows:
             cells = []
@@ -641,8 +640,7 @@ class PageBuilder:
             if not rendered:
                 return self
             columns = max(1, int(columns))
-            cell_width = 100 / columns
-            cell_style = f'{self._GRID_CELL_STYLE}width:{cell_width:.4f}%;'
+            cell_style = self._GRID_CELL_STYLE
             rows = [
                 rendered[idx : idx + columns]
                 for idx in range(0, len(rendered), columns)
@@ -1238,6 +1236,7 @@ class PageBuilder:
         width_value = self._coerce_positive_int(width)
         height_value = self._coerce_positive_int(height)
         if width_value:
+            style_parts.append(f"min-width:{width_value}px;")
             style_parts.append(f"max-width:{width_value}px;")
             style_parts.append("margin:0 auto;")
         if height_value:

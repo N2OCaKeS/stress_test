@@ -12,6 +12,7 @@ from .._libs._scp_command import _SCP_Command
 from .._libs._ssh_command import _SSH_Command
 from .._base_commands._reboot._reboot import _Reboot
 from .LibvirtManager import LibvirtManager
+from typing import Optional
 
 
 class _VirtInstall:
@@ -26,7 +27,7 @@ class _VirtInstall:
     Этот класс позволяет автоматизировать процесс создания и настройки ВМ с использованием Vagrant.
     """
 
-    def __init__(self, box: str, rc: str, vms_date: dict, kernel: str):
+    def __init__(self, box: str, rc: str, vms_date: dict, kernel: Optional[str] = None):
         """
         Класс для работы с Vagrant
 
@@ -49,7 +50,7 @@ class _VirtInstall:
         self.vm_path = "/vms"
         self.kernel = kernel
 
-    def _box_wrapper(self) -> tuple:
+    def _box_wrapper(self) -> tuple[str, str, str]:
         """
         Находит бокс по точному совпадению ключа self.box.
         Если не найден — возвращает дефолт для 1.7 и 1.8.
@@ -93,6 +94,9 @@ class _VirtInstall:
                         box["1.8.1.o"][1],
                         "alse17",
                     )  # В версии 1.7 отсутсвует alse18 из за чего ВМ на 1.8 не собираеются сейчас на 1.7 все отрабатывает штатно при использовании alse17
+
+        # Если бокс не найден — явно завершаем выполнение
+        raise ValueError(f"Не удалось определить бокс для '{self.box}'")
 
     @staticmethod
     def _build_vm(hostname, info, box, os_version, system_commands, vm_path):
@@ -326,9 +330,8 @@ class _VirtInstall:
                 # Собираем их в одну строку с разделителем \n
                 sources_str = "\\n".join(sources_lines)
 
-                # 3. Узнаём текущее локальное ядро (если нужно передавать в скрипт)
                 print("\n==> Парсим ядро...")
-                if self.kernel is not None:
+                if self.kernel:
                     kernel = self.kernel
                     if "-generic" in kernel:
                         suffix = "generic"
@@ -345,7 +348,7 @@ class _VirtInstall:
                     apt_kernel = f"linux-{major_minor}-{suffix}"
                     print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
 
-            def start_prepare(cmd_template=None, reboot=None):
+            def start_prepare(cmd_template: Optional[str] = None, reboot: Optional[int] = None):
                 class SafeDict(dict):
                     def __missing__(self, key):
                         # если ключа нет — возвращаем его же в фигурных скобках
@@ -355,7 +358,9 @@ class _VirtInstall:
                     futures = []
                     for host in self.vms_date:
                         if reboot is None:
-                            if self.kernel is not None:
+                            if cmd_template is None:
+                                raise ValueError("cmd_template должен быть задан при запуске без перезагрузки")
+                            if self.kernel:
                                 # собираем словарь с теми ключами, которые реально подставляем
                                 mapping = SafeDict(
                                     host=host,
@@ -532,7 +537,7 @@ class _VirtInstall:
                 start_prepare(cmds[2])
                 print("\n\n\nСтавим зависимости\n\n\n")
                 start_prepare(cmds[3])
-                if self.kernel is not None:
+                if self.kernel:
                     print("\n\n\nСтавим ядро\n\n\n")
                     start_prepare(cmds[4])
                     print("\n\n\nОбновляем grub\n\n\n")

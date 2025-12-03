@@ -5,11 +5,14 @@ from ...._decorators.Decorators import BaseDecorators
 from ..._libs._ssh_command import _SSH_Command
 from ..._libs._signals import _Signals
 
+from typing import Optional, List, Union
+
+
 class _Reboot:
     @staticmethod
     @BaseDecorators.trycorator    
     def reboot_vm(host: str, vm_dates: dict, username: str = "u", password: str = "1",
-                  timeout: int = 600, interval: int = 10, signal_get: str = None, ready_signal: str = None, sleep: int = 60) -> bool:
+                  timeout: int = 600, interval: int = 10, signal_get: Optional[Union[str, List[str]]] = None, ready_signal: Optional[str] = None, sleep: int = 60) -> bool:
         """
         Перезагружает виртуальную машину и ожидает, пока она не станет доступной по SSH.
         Перед выполнением перезагрузки, если передан signal_get, он передается в _SSH_Command.cmd,
@@ -81,7 +84,7 @@ class _Reboot:
 
     @classmethod
     def reboot_group(cls, hosts: list, vm_dates: dict, username: str = "u", password: str = "1",
-                     timeout: int = 600, interval: int = 10, signal_get: str = None, ready_signal: str = None) -> bool:
+                     timeout: int = 600, interval: int = 10, signal_get: Optional[Union[str, List[str]]] = None, ready_signal: Optional[str] = None) -> bool:
         """
         Перезагружает группу виртуальных машин параллельно и ожидает, пока все ВМ не станут доступными.
         Если передан signal_get, он передается для каждой ВМ в _SSH_Command.cmd.

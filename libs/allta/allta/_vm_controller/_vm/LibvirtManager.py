@@ -118,7 +118,7 @@ iface {bridge} inet static
     address {ip}
     netmask 255.255.255.0
     gateway 10.177.103.254
-    dns-nameservers 10.177.128.198 10.177.180.246 10.177.181.142
+    dns-nameservers 10.177.180.246 10.177.128.198
     bridge_ports {phy_if}
     bridge_stp off
     bridge_fd 0
@@ -566,7 +566,7 @@ EOF
             command: str | list,
             target: str,
             sync: bool = True,
-            block_name: str = None,
+            block_name: str | None = None,
         ):
             """Генерирует команды
 

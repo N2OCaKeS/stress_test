@@ -17,7 +17,7 @@ from ._vm._virtual_machine import _VirtualMashines
 from ._vm.LibvirtManager import LibvirtManager as libvirt_manager
 
 
-from typing import cast
+from typing import cast, Optional, Any, List
 import sys
 import threading
 
@@ -65,7 +65,7 @@ class Libvirt(_VirtualMashines):
         rc: str,
         vms,
         vms_dates: dict,
-        kernel: str = None,
+        kernel: Optional[str] = None,
         bridge: bool = False,
     ) -> dict:
         """
@@ -94,7 +94,7 @@ class Libvirt(_VirtualMashines):
             dict: Обновленный vms_dates (ИСПОЛЬЗОВАТЬ ТОЛЬКО ДЛЯ ВНУТРЕННЕЙ СЕТИ Libvirt).
         """
 
-        virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc, kernel=kernel)
+        virt = _VirtInstall(box=box, vms_date=vms_dates, rc=rc, kernel=kernel or "")
         vms_dates = virt.build(bridge=bridge)
 
         if box != "vm_station":
@@ -170,7 +170,7 @@ class Libvirt(_VirtualMashines):
         cls,
         commands: dict,
         vms_dates: dict,
-        vms_groups: dict = None,
+        vms_groups: Optional[dict] = None,
         username: str = "u",
         password: str = "1",
         timeout: int = 15,
@@ -238,7 +238,7 @@ class Libvirt(_VirtualMashines):
             int: Код завершения выполнения.
         """
 
-        def _normalize_signal_get(raw):
+        def _normalize_signal_get(raw: Any) -> Optional[List[str]]:
             if raw is None or raw == "":
                 return None
             if isinstance(raw, str):
@@ -253,7 +253,7 @@ class Libvirt(_VirtualMashines):
             host: str, task_name: str, task: dict, username: str, password: str
         ):
             sig_get = _normalize_signal_get(task.get("signal get"))
-            sig_set = task.get("signal set")
+            sig_set = cast(Optional[str], task.get("signal set"))
 
             if task_name.lower() == "reboot":
                 reboot_status = reboot.reboot_vm(
@@ -261,8 +261,8 @@ class Libvirt(_VirtualMashines):
                     vms_dates,
                     username,
                     password,
-                    signal_get=sig_get,
-                    ready_signal=sig_set,
+                    signal_get=sig_get,  # type: ignore[arg-type]
+                    ready_signal=sig_set,  # type: ignore[arg-type]
                 )
                 if not reboot_status:
                     print(f"Перезагрузка {host} не удалась.")
@@ -282,8 +282,8 @@ class Libvirt(_VirtualMashines):
                     username=username,
                     password=password,
                     vm_dates=vms_dates,
-                    signal_set=sig_set,
-                    signal_get=sig_get,  # None -> не ждём сигнал в _SSH_Command
+                    signal_set=sig_set,  # type: ignore[arg-type]
+                    signal_get=sig_get,  # None -> не ждём сигнал в _SSH_Command # type: ignore[arg-type]
                     task_name=task_name,
                     time_out=timeout,
                     nowait_timeout=nwt,
@@ -297,8 +297,8 @@ class Libvirt(_VirtualMashines):
                 username=username,
                 password=password,
                 vm_dates=vms_dates,
-                signal_set=sig_set,
-                signal_get=sig_get,
+                signal_set=sig_set,  # type: ignore[arg-type]
+                signal_get=sig_get,  # type: ignore[arg-type]
                 task_name=task_name,
                 time_out=timeout,
             )
@@ -319,8 +319,8 @@ class Libvirt(_VirtualMashines):
                                     password,
                                     signal_get=_normalize_signal_get(
                                         task.get("signal get")
-                                    ),
-                                    ready_signal=task.get("signal set"),
+                                    ),  # type: ignore[arg-type]
+                                    ready_signal=cast(Optional[str], task.get("signal set")),  # type: ignore[arg-type]
                                 )
 
                             t = threading.Thread(target=group_worker)
@@ -348,8 +348,8 @@ class Libvirt(_VirtualMashines):
                                 password,
                                 signal_get=_normalize_signal_get(
                                     task.get("signal get")
-                                ),
-                                ready_signal=task.get("signal set"),
+                                ),  # type: ignore[arg-type]
+                                ready_signal=cast(Optional[str], task.get("signal set")),  # type: ignore[arg-type]
                             )
                         )
                         threads.append(t)
@@ -373,7 +373,7 @@ class Libvirt(_VirtualMashines):
         cls,
         scp_settings: dict,
         vms_dates: dict,
-        vms_groups: dict = None,
+        vms_groups: Optional[dict] = None,
         username: str = "u",
         password: str = "1",
     ) -> int:
@@ -430,7 +430,7 @@ class Libvirt(_VirtualMashines):
         scp_command.execute(
             scp=scp_settings,
             vms_date=vms_dates,
-            groups=vms_groups,
+            groups=vms_groups or {},
             username=username,
             password=password,
         )
@@ -471,7 +471,7 @@ class Libvirt(_VirtualMashines):
         cls,
         sed_conf: dict,
         vms_dates: dict,
-        vms_groups: dict = None,
+        vms_groups: Optional[dict] = None,
         username: str = "u",
         password: str = "1",
     ):
@@ -536,7 +536,7 @@ class Libvirt(_VirtualMashines):
         sed.sed(
             sed_conf=sed_conf,
             vms_dates=vms_dates,
-            groups=vms_groups,
+            groups=vms_groups or {},
             username=username,
             password=password,
         )
@@ -547,7 +547,7 @@ class Libvirt(_VirtualMashines):
         cls,
         domain: dict,
         vms_dates: dict,
-        vms_groups: dict = None,
+        vms_groups: Optional[dict] = None,
         username: str = "u",
         password: str = "1",
     ):
@@ -593,7 +593,7 @@ class Libvirt(_VirtualMashines):
         freeipa.freeipa(
             domain=domain,
             vm_dates=vms_dates,
-            vms_groups=vms_groups,
+            vms_groups=vms_groups or {},
             ssh_user=username,
             ssh_password=password,
         )

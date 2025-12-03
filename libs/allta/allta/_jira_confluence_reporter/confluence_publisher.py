@@ -7,7 +7,7 @@
 """
 
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, Any, List, Dict, cast
 
 from atlassian import Confluence
 
@@ -118,7 +118,7 @@ class ConfluencePublisher:
 
         if not labels:
             return
-        payload: list[dict[str, str]] = [
+        payload: List[Dict[str, str]] = [
             {"prefix": "global", "name": label} for label in labels if label
         ]
         if not payload:
@@ -137,7 +137,7 @@ class ConfluencePublisher:
 
         self._client.post(
             f"rest/api/content/{page_id}/label", 
-            data=payload,
+            json=cast(Any, payload),  # Confluence API принимает список объектов label
         )
 
     def _ensure_page(self, *, space, title, parent_title, body):

@@ -253,9 +253,7 @@ def analyze_result(
                     Criterion(name="disconnected_count", values=[stats["disconnected_count"]], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
                     Criterion(name="drops_max", values=[stats["drops_max"]], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
 
-    normalized_criteria = MathModels.normalize(criterions)
-
-    total_rating, s = MathModels.total_rating(criteria=normalized_criteria)
+    total_rating, s = MathModels.total_rating(criteria=criterions)
     total_rating = int(round(total_rating))
     return AnalysisResult(
         stats=stats,

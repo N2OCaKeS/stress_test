@@ -36,7 +36,7 @@ class Ovpn:
         else:
             print("Выполняеся сборка ВМ")
             Libvirt.prepare()
-            box = f"1.8.1.{mode}" if VERSION_OS.startswith("1.8") else f"1.7.5.{mode}"
+            box = f"1.8.1.{mode}" if rc.startswith("1.8") else f"1.7.5.{mode}"
             self.new_vms_dates = Libvirt.build(
                 box=box, rc=rc, vms=VMS, vms_dates=VMS_DATES, kernel=KERNEL
             )

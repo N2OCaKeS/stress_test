@@ -60,7 +60,7 @@ sudo make altinstall
 
 python3.12 -m pip install --upgrade pip
 python3.12 -m venv venv
-cd /home/u/git/stress_test/new_astra_openvpn/
+cd /home/u/git/stress_test/astra_openvpn/
 /home/u/python/Python-3.12.1/venv/bin/python -m pip install -r req.txt
 /home/u/python/Python-3.12.1/venv/bin/python -m pip install --upgrade pip
 if [[ $? != 0 ]]; then

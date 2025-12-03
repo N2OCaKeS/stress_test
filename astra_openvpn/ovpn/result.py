@@ -256,7 +256,7 @@ def analyze_result(
     normalized_criteria = MathModels.normalize(criterions)
 
     total_rating, s = MathModels.total_rating(criteria=normalized_criteria)
-    total_rating = int(round(total_rating * 1000))
+    total_rating = int(round(total_rating))
     return AnalysisResult(
         stats=stats,
         stats_table=stats_table,

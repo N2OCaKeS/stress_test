@@ -252,6 +252,12 @@ class MathModels:
         """
 
         crit_list = list(criteria)
+        # Если в исходных значениях есть одиночный 0, поднимаем его до 1,
+        # чтобы избежать взрывного вклада после инверсии (для негативных критериев).
+        crit_list = [
+            replace(c, values=MathModels._ensure_nonzero_singleton(c.values))
+            for c in crit_list
+        ]
 
         weights_sum = sum(c.weight for c in crit_list)
         if weights_sum <= 0.9 or weights_sum > 1.0:
@@ -333,6 +339,24 @@ class MathModels:
             normalize_range=normalize_range,
         )
         return {"rating": rating, "contributions": contributions}
+
+    @staticmethod
+    def _ensure_nonzero_singleton(values: Union[float, Sequence[float], Iterable[float | int]]) -> Union[float, list[float], Sequence[float], Iterable[float | int]]:
+        """
+        Заменяет одиночный нулевой элемент на 1 для сырых значений критерия,
+        чтобы не возникало бесконечного вклада при инверсии после нормализации.
+        """
+        if isinstance(values, (int, float)):
+            return 1.0 if float(values) == 0 else values
+
+        seq = MathModels._as_sequence(values)
+        if len(seq) == 1:
+            try:
+                if float(seq[0]) == 0:
+                    return [1.0]
+            except (TypeError, ValueError):
+                return values
+        return values
 
     @staticmethod
     def _as_sequence(values: Union[float, Sequence[float], Iterable[float | int]]) -> Iterable[float]:

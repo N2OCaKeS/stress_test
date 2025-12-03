@@ -6,6 +6,55 @@
 Charts (макрос ``table-chart``) без ручного написания разметки. Это
 облегчает создание типовых страниц Confluence прямо из тестов и
 вспомогательных скриптов.
+
+Полные примеры структур, которые ожидают методы::
+
+    header_rows = [
+        {"label": "Params", "value": {"items": ["Users: 3000", "Env: prod"]}},
+        {"label": "ARM", "value": {"stand_number": "10"}},
+        {"label": "Lead time", "value": "00:12:34"},
+        {"label": "Links", "value": {"text": "Build 42", "link": "https://ci/job/42"}},
+        {"label": "Notes", "value": ["ok", "no issues"]},
+    ]
+
+    table_spec = {
+        "title": "Metrics",
+        "title_level": 3,
+        "description": "Aggr values",
+        "headers": ["Metric", "Value", "Unit"],
+        "rows": [
+            {"Metric": "TPS", "Value": 42, "Unit": "ops/s"},
+            {"Metric": "Latency p95", "Value": 120, "Unit": "ms"},
+        ],
+    }
+
+    chart_spec = {
+        "title": "Throughput",
+        "type": "line",
+        "x_key": "time",
+        "series": ["tps", "latency_p95"],
+        "x_label": "Time, s",
+        "y_label": "Value",
+        "colors": ["#0052CC", "#FF5630"],
+        "data": [
+            {"time": "00:00", "tps": 1000, "latency_p95": 80},
+            {"time": "00:30", "tps": 1200, "latency_p95": 90},
+        ],
+        "view_table": True,
+    }
+
+    gallery_items = [
+        {"title": "CPU", "src": "cpu.png", "caption": "Host CPU"},
+        {"title": "Memory", "src": "mem.png", "description": "Usage over time"},
+    ]
+
+    builder = PageBuilder(title="Demo")
+    builder.add_header_table(header_rows)
+    builder.add_table(table_spec)
+    builder.add_chart(chart_spec)
+    builder.add_gallery(gallery_items, columns=2)
+    builder.add_attachment("/tmp/raw-data.zip", title="Raw data")
+    html = builder.render()
 """
 
 import os
@@ -15,6 +64,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from html import escape
 from pathlib import Path
+import requests
 
 
 class PageBuilder:
@@ -110,6 +160,7 @@ class PageBuilder:
     _DETAILS_LINK_STYLE = "color:#0052CC;text-decoration:none;"
     _DETAILS_LIST_STYLE = "margin:6px 0 0 18px;padding:0;"
     _ARM_INFO_URL = "https://life.astralinux.ru/pages/viewpage.action?pageId=192234259"
+    _ARM_API_URL = "http://allta.devos.astralinux.ru:21501/api/server/v1/arm/"
     _ARM_CATALOG = {
         "1": {
             "grade": "VM Test WorkStation",
@@ -281,6 +332,18 @@ class PageBuilder:
             table_spec (Mapping[str, object]): Описание таблицы. Поддерживаются
                 ключи ``title``, ``title_level``, ``description``, ``headers`` и ``rows``.
                 ``title_level`` позволяет выбрать ``h3`` или ``h4`` для заголовка.
+                Пример структуры::
+
+                    table_spec = {
+                        "title": "Metrics",
+                        "title_level": 3,
+                        "description": "Aggregated values",
+                        "headers": ["Metric", "Value", "Unit"],
+                        "rows": [
+                            {"Metric": "TPS", "Value": 42, "Unit": "ops/s"},
+                            {"Metric": "Latency p95", "Value": 120, "Unit": "ms"},
+                        ],
+                    }
 
         Returns:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
@@ -364,16 +427,19 @@ class PageBuilder:
         Returns:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
 
-        Пример::
+        Пример входных данных::
 
-            builder.add_header_table(
-                [
-                    {"label": "Params", "value": {"items": ["Users: 3000"]}},
-                    {"label": "ARM", "value": {"stand_number": "10"}},
-                    {"label": "Lead time", "value": "00:12:34"},
-                ]
-            )
+            rows = [
+                {"label": "Params", "value": {"items": ["Users: 3000", "Env: prod"]}},
+                {"label": "ARM", "value": {"stand_number": "10"}},
+                {"label": "Lead time", "value": "00:12:34"},
+                {"label": "Links", "value": {"text": "Build 42", "link": "https://ci/job/42"}},
+                {"label": "Notes", "value": ["ok", "no issues"]},
+            ]
+            builder.add_header_table(rows)
         """
+
+        self._refresh_arm_catalog()
 
         defaults = defaults or {}
         prepared = self._prepare_header_rows(rows)
@@ -495,6 +561,14 @@ class PageBuilder:
 
         Returns:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
+
+        Пример::
+
+            images = [
+                {"title": "CPU", "src": "cpu.png", "caption": "Host CPU"},
+                {"title": "Memory", "src": "mem.png", "description": "Usage over time"},
+            ]
+            builder.add_gallery(images, columns=2)
         """
 
         normalized_items = self._normalize_gallery_items(images)
@@ -620,6 +694,32 @@ class PageBuilder:
 
         Returns:
             PageBuilder: Текущий экземпляр для чейнинга вызовов.
+
+        Пример единственного графика::
+
+            chart_spec = {
+                "title": "Throughput",
+                "type": "line",
+                "x_key": "time",
+                "series": ["tps", "latency_p95"],
+                "x_label": "Time, s",
+                "y_label": "Value",
+                "colors": ["#0052CC", "#FF5630"],
+                "data": [
+                    {"time": "00:00", "tps": 1000, "latency_p95": 80},
+                    {"time": "00:30", "tps": 1200, "latency_p95": 90},
+                ],
+                "view_table": True,
+            }
+            builder.add_chart(chart_spec)
+
+        Пример нескольких графиков в сетке::
+
+            charts = [
+                {"title": "TPS", "type": "line", "x_key": "t", "series": ["tps"], "data": [{"t": 1, "tps": 100}]},
+                {"title": "Latency", "type": "column", "x_key": "t", "series": ["p95"], "data": [{"t": 1, "p95": 80}]},
+            ]
+            builder.add_chart(charts, columns=2)
         """
 
         if isinstance(chart_spec, Mapping):
@@ -798,6 +898,24 @@ class PageBuilder:
                 {"label": "Storage", "value": server["storage"]},
             ]
         return merged
+
+    def _refresh_arm_catalog(self):
+        """
+        Пытается подгрузить актуальный каталог ARM из API.
+        При недоступности сервера остаётся локальный словарь.
+        """
+        try:
+            response = requests.get(self._ARM_API_URL, timeout=3)
+            if response.ok:
+                data = response.json()
+                if isinstance(data, dict) and data:
+                    self._ARM_CATALOG = data
+                else:
+                    print("ARM API вернуло пустой/некорректный ответ, используем локальные данные")
+            else:
+                print(f"ARM API недоступно (status {response.status_code}), используем локальные данные")
+        except Exception as e:
+            print(f"ARM API недоступно ({type(e).__name__}: {e}), используем локальные данные")
 
     def _detect_astra_version(self):
         version = ""

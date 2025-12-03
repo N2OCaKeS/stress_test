@@ -6,6 +6,7 @@ from allta import BaseDecorators, Libvirt, LibvirtManager
 
 vms_dates = {
     "testvm1": {
+        "ip_bridge": "10.177.103.158",        
         "cpu": "4",
         "ram": "4096",
         "disk": "100",

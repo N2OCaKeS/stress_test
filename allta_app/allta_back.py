@@ -323,6 +323,7 @@ try:
                             vunixbench = '-lvirt unixbench'
                             vpp = '-lvirt pingpong'
                             tes = f'-tes {args.TESTENV}'
+                            aovpn = '-vpn aovpncc'
                             if tests[dates_list[i][1]] == 'auditd-p':
                                 testlist = f'-aud psaud'
                             elif tests[dates_list[i][1]] == 'auditd-f':
@@ -404,6 +405,9 @@ try:
                             elif tests[dates_list[i][1]].startswith('auditd'):
                                 subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                             {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
+                            elif tests[dates_list[i][1]] == 'AOpenVPNcc':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {aovpn} {tes}', shell=True)
                             else: 
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                                 {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
@@ -460,6 +464,7 @@ try:
                     vunixbench = '-lvirt unixbench'
                     vpp = '-lvirt pingpong'
                     tes = f'-tes {args.TESTENV}'
+                    aovpn = '-vpn aovpncc'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -540,6 +545,9 @@ try:
                     elif tests[dates_list[i][1]].startswith('auditd'):
                         subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
+                    elif tests[dates_list[i][1]] == 'AOpenVPNcc':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {aovpn} {tes}', shell=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)

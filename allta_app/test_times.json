@@ -12,6 +12,7 @@
             "XFS parsec": "0:40:49",
             "unix parsec": "1:08:44",
             "FreeIPA auth": "1:08:01",
+            "FreeIPA c-users": "6:13:51",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -70,6 +71,7 @@
             "XFS parsec": "0:56:12",
             "unix parsec": "1:20:28",
             "FreeIPA auth": "1:33:16",
+            "FreeIPA c-users": "6:13:51",
             "Total time": "0:00:00"
         },
         "stand4": {

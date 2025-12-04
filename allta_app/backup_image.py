@@ -214,6 +214,12 @@ parser.add_argument('-tes',
                     help='test env status',
                     dest='TESTENV')
 
+parser.add_argument('-vpn',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='VPN')
+
 
 args = parser.parse_args()
 
@@ -274,6 +280,7 @@ ovf = f'-ovf {args.OVF}'
 ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
 ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
 freeipa_test = f'-tt {args.FREEIPA}'
+vpn = f'--test {args.VPN}'
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
@@ -309,6 +316,9 @@ elif args.TEST == 'CEPH':
 elif args.TEST == 'CEPH fio':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --test-set fio'
+elif args.TEST == 'CEPH parsec':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv} -vbox {args.RELEASE} -kernel {args.KERNEL} --parsec'
 elif args.TEST == 'syslog-ng-cwl':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -cwl'
@@ -336,6 +346,9 @@ elif args.APACHE == 'rp':
 elif args.LVIRT:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {lvirt_test}'
+elif args.VPN:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {vpn}'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

@@ -48,7 +48,10 @@ class _VirtInstall:
         self.vms_date = copy.deepcopy(vms_date)
         self.original_vms_date = copy.deepcopy(vms_date)
         self.vm_path = "/vms"
-        self.kernel = kernel
+        if kernel is None:
+            self.kernel = system_commands.check_output_command("uname -r")
+        else:
+            self.kernel = kernel
 
     def _box_wrapper(self) -> tuple[str, str, str]:
         """

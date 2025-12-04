@@ -1,6 +1,6 @@
 import subprocess
 import argparse
-from new_astra_openvpn.conf import VENV_PATH
+from conf import VENV_PATH
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-n',

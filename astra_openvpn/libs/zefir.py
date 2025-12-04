@@ -11,7 +11,7 @@ from os import remove, path
 from libs.ovpnlib import response
 from libs.libpublic import Public
 from time import sleep, ctime
-from new_astra_openvpn.conf import JIRA_URL, CONFLUENCE_URL
+from conf import JIRA_URL, CONFLUENCE_URL
 
 
 class UploaderZC(Public):
@@ -55,19 +55,19 @@ class UploaderZC(Public):
 
     def test_cycle_status_changer(self, status):
 
-        if self.public == True:
-            public = Public(username=self.UN,
-                            token=self.CT,
-                            conf_space=self.CS,
-                            conf_parent_page=self.CPP,
-                            conf_new_page_name=self.CNPN,
-                            grade_stand=self.GS,
-                            package=self.PKG,
-                            test_cycle_version=self.TCV,
-                            storage=self.storage,
-                            kernel_check=self.kernel_check,
-                            testname=self.testname)
-            public.run_publish()
+        # if self.public == True:
+        #     public = Public(username=self.UN,
+        #                     token=self.CT,
+        #                     conf_space=self.CS,
+        #                     conf_parent_page=self.CPP,
+        #                     conf_new_page_name=self.CNPN,
+        #                     grade_stand=self.GS,
+        #                     package=self.PKG,
+        #                     test_cycle_version=self.TCV,
+        #                     storage=self.storage,
+        #                     kernel_check=self.kernel_check,
+        #                     testname=self.testname)
+        #     public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,
                                test_cycle_name=self.TCYC,

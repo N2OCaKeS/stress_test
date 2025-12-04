@@ -1,17 +1,21 @@
-from os import path
 import argparse
 import traceback
+
 from time import perf_counter
-from new_astra_openvpn.conf import MODIFY
-from allta import ZefirClient
+from os import path
+
+from conf import MODIFY
 from ovpn.ovpn_vm import Ovpn
 from libs.libpublic import ovpn_publisher
+from libs.zefir import UploaderZC
+
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test",
-                    choices=["ovpn"],
+                    choices=["aovpncc"],
                     help="Choose test name.",
-                    default="ovpn",
+                    default="aovpncc",
                     dest="TEST")
 
 parser.add_argument('-u', '--username',
@@ -81,23 +85,13 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     required=True,
                     help='test-cycle-version',
                     dest='TCV')
+
 parser.add_argument('-m', '--mode',
                     action='store',
                     choices=MODIFY,
                     default='o',
                     help='VM build mode',
                     dest='MODE')
-parser.add_argument('-pid', '--project-id',
-                    action='store',
-                    type=int,
-                    default=11200,
-                    help='Jira/Zefir project id',
-                    dest='PID')
-parser.add_argument('-juk', '--jira-user-key',
-                    action='store',
-                    default='JIRAUSER38882',
-                    help='Jira user key for status updates',
-                    dest='USER_KEY')
 args = parser.parse_args()
     
 
@@ -110,27 +104,20 @@ def _fmt_duration(seconds: float) -> str:
 
 if __name__ == "__main__":
 
-    zefir = ZefirClient(
-        basic_auth_header=args.BA,
-        project_id=args.PID,
-        default_user_key=args.USER_KEY,
-        default_folder_tree_id=int(args.FTI),
-    )
-
-    def _set_status(status_code: int | str):
-        try:
-            zefir.set_test_result(
+    uzs = UploaderZC(folder_tree_id=args.FTI,
                 test_cycle_name=args.TCYC,
                 test_case_name=args.TCAS,
-                status=status_code,
-                folder_tree_id=int(args.FTI),
-            )
-        except Exception as err:
-            print(f"Не удалось установить статус {status_code}: {err}")
+                basic_auth=args.BA,
+                test_cycle_version=args.TCV,
+                token=args.TOKEN,
+                username=args.USER,
+                grade_stand=args.STAND,
+                conf_space=args.SPACE,
+                conf_parent_page=args.PPAGE,
+                conf_new_page_name=args.NPAGE)
+    uzs.upload_test_cycle_status(zefir_status='progress')
 
-    _set_status('progress')
 
-    status = 'fail'
     start_ts = perf_counter()
     try:
         ovpn = Ovpn()
@@ -150,14 +137,16 @@ if __name__ == "__main__":
                            space=args.SPACE,
                            parent_title=args.PPAGE,
                            lead_time=lead_time_text)
-            status = 'pass'
+            uzs.upload_test_cycle_status(zefir_status='pass')
         else:
             print("Тест не найден")
     except Exception as e:
         print(f"Ошибка при выполнении теста: {e}")
         traceback.print_exc()
     finally:
-        _set_status(status)
+        uzs.upload_test_cycle_status(zefir_status='fail')
+
+    uzs.statistics = False
 
 if path.isfile('zefir.log'):
     with open('zefir.log', 'r') as r:

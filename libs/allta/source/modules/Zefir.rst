@@ -2,37 +2,21 @@ Zefir
 =====
 
 .. note::
-   Клиент для Jira/Zefir без привязки к конкретному тесту. Позволяет искать прогоны/кейсы, выставлять статусы и собирать matrix-отчёты.
+   Универсальные обёртки для Jira/Zefir без привязки к конкретному тесту. Позволяют искать прогоны/кейсы, выставлять статусы и собирать matrix-отчёты.
 
 Использование
 -------------
 
 .. code-block:: python
 
-    from allta import ZefirClient, ZefirStatusAPI, ZefirResultTable, UploaderZC
+    from allta import ZefirStatusAPI, ZefirResultTable, UploaderZC
 
-    # Базовый клиент
-    client = ZefirClient(
-        basic_auth_header="Basic XXX",
-        project_id=11200,
-        default_user_key="JIRAUSER123",
-        default_folder_tree_id=2773,
-    )
-    runs = client.list_test_runs()  # список прогонов в дереве
-    result_id = client.find_test_case_result_id(
-        test_cycle_name="1.8.1.o_stand1",
-        test_case_name="vpn smoke",
-    )
-    client.set_test_result(test_result_id=result_id, status="pass")
-
-    # Совместимый слой в стиле старого zefir.py
+    # Совместимый слой в стиле example_zephir.py
     status_api = ZefirStatusAPI(
         folder_tree_id=2773,
         basic_auth="Basic XXX",
         test_cycle_name="1.8.1.o_stand1",
         test_case_name="vpn smoke",
-        project_id=11200,
-        user_key="JIRAUSER123",
     )
     status_api.upload_status("progress")
 
@@ -56,22 +40,6 @@ Zefir
     )
     uploader.upload_test_cycle_status("pass")
 
-------------------------------------------------------------------------------------------------
-``ZefirClient``
-------------------------------------------------------------------------------------------------
-
-Минимальный клиент Jira/Zefir: поиск прогонов и кейсов, обновление статусов, получение matrix-отчётов.
-
-Основные методы:
-
-- ``list_test_runs(folder_tree_id=None, query=None, max_results=400, start_at=0, archived=False)`` — ищет прогоны в дереве или по TQL.
-- ``list_test_run_items(test_run_id)`` — элементы прогона с последним результатом.
-- ``find_test_case_result_id(test_cycle_name, test_case_name, folder_tree_id=None, query=None)`` — находит id результата по именам.
-- ``set_test_result(test_result_id, status, user_key=None, execution_date=None)`` — обновляет статус результата.
-- ``fetch_matrix(tql, epic_jql=\"\", jql=\"\", ...)`` — raw matrix-данные.
-- ``matrix_to_dataframe(matrix, run_name_parser=None, status_transform=None)`` — преобразование matrix в ``pandas.DataFrame``.
-
-------------------------------------------------------------------------------------------------
 ``ZefirStatusAPI``
 ------------------------------------------------------------------------------------------------
 

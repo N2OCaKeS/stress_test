@@ -11,14 +11,15 @@ class SMTPTest:
         self.email_config = {
             "server": 'localhost',
             "port": '25',
-            "username_to": 'test1@test.local',
-            "username_from": 'test2@test.local',
-            "password": '1',
+            "username_to": 'test3@test.local',
+            "username_from": 'test0@test.local',
+            "password": "test59",
         }
 
     def send_single_email(self):
         try:
             with smtplib.SMTP(self.email_config["server"], self.email_config["port"]) as smtp:
+                smtp.login(self.email_config["username_from"], self.email_config["password"])
                 msg = MIMEText(f"Test email {i}")
                 msg['Subject'] = f"Load Test {i}"
                 msg['From'] = self.email_config["username_from"]
@@ -67,3 +68,10 @@ class SMTPTest:
                 'emails_per_second': emails_per_second
             }
             results.append(step_result)
+
+            with open("mail_report.txt", 'a') as report_file:
+                report_file.write(f"{step_result['current_mail']} {step_result['successful']} {step_result['emails_per_second']}\n")
+
+if __name__ == "__main__":
+    t = SMTPTest()
+    t.run_test()

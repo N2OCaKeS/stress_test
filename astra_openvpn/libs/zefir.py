@@ -5,16 +5,21 @@ import pandas as pd
 from datetime import datetime
 from collections import defaultdict
 from numpy import where
-from sys import exit
 from atlassian import Confluence
 from os import remove, path
-from libs.ovpnlib import response
-from libs.libpublic import Public
 from time import sleep, ctime
 from conf import JIRA_URL, CONFLUENCE_URL
 
-
-class UploaderZC(Public):
+def response():
+    try:
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
+        return jira, life
+    except Exception as e:
+        jira, life = str(type(e).__name__), str(e)
+        return jira, life
+    
+class UploaderZC():
 
     def __init__(self,
                  folder_tree_id=None,

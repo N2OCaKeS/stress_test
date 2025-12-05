@@ -122,7 +122,7 @@ if __name__ == "__main__":
     try:
         ovpn = Ovpn()
 
-        if args.TEST == "ovpn":
+        if args.TEST == "aovpncc":
             ovpn.build(rc=args.TCV, mode=args.MODE)
             ovpn.provision()
             ovpn.server_settings()

@@ -15,6 +15,21 @@ from lib import (
 
 
 class PSQLLoadTest(Test):
+
+    """
+    Класс подготовки окружения для нагрузочного тестирования PostgreSQL,
+    запуска теста и последующей очистки окружения.
+
+    Attributes:
+        checking_user (bool): Признак проверки прав пользователя.
+        checking_mode (bool): Признак проверки режима ОС.
+        host_prepare (bool): Признак подготовки хостового окружения.
+        db_prep (bool): Признак подготовки базы данных.
+        init_db (bool): Признак инициализации базы данных.
+        execute (bool): Признак выполнения теста.
+        clear_env (bool): Признак очистки окружения.
+    """
+
     def __init__(self,
                  checking_user=True,
                  checking_mode=True,
@@ -45,10 +60,12 @@ class PSQLLoadTest(Test):
 
     @staticmethod
     def status_checker(method):
-        '''
+
+        """
         Декоратор, который выводит сообщение с статусом, 
         сигнализирующем об успешности выполнения метода
-        '''
+        """
+
         @wraps(method)
         def wrapper(self, *args, **kwargs):
             print(f"Метод '{method.__name__}' вызван")
@@ -94,26 +111,29 @@ class PSQLLoadTest(Test):
     @status_checker
     def host_env_prepare(self):
         if self.h_prepare:
-            return system.check_output_command(f'sudo bash {LIBS_DIR}/h_prepare.sh')
+            return system.check_output_command(f'sudo bash {LIBS_DIR}/h_prepare.sh {self.config['results_path']}')
                 
     @status_checker
     def database_prep(self):
         if self.db_prep:
-            return system.check_output_command(f'sudo bash {LIBS_DIR}/db_prep.sh {self.config['psql_version']} {SCRIPT_DIR}')
+            return system.check_output_command(f'sudo bash {LIBS_DIR}/db_prep.sh {self.config['psql_version']} {SCRIPT_DIR} \
+                                               {self.config['cluster_port']} {self.config['shared_buffers']} \
+                                                {self.config['eff_cache_size']} {self.config['work_mem']} \
+                                                    {self.config['max_worker_ps']} {self.config['max_pl_workers']}')
 
     @status_checker
     def init_base(self):
         if self.init_bd:
-            return system.check_output_command('pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec')
+            return system.check_output_command(f'pgbench -i -h localhost --macs -p {self.config['cluster_port']} -U postgres -s 500 -F 100 test_parsec')
     
     @status_checker
     def execute_test(self):
         if self.execute:
-            cmd = f'pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j {self.config['max_connections']}\
-                  -c {self.config['max_connections']} test_parsec'
+            cmd = f'pgbench -h localhost --macs -p {self.config['cluster_port']} -U u_1 --random-seed=13 -T {self.config['t_time']} \
+                  -j {self.config['connections_count']} -c {self.config['connections_count']} test_parsec'
             results = system.check_output_command(cmd)
 
-            with open(self.config['results_path'], 'w') as w:
+            with open(f'{self.config['results_path']}/results.txt', 'w') as w:
                 w.write(results)
             
             print(results)
@@ -121,8 +141,16 @@ class PSQLLoadTest(Test):
 
             return results
 
-    @status_checker
     def cleare(self):
         if self.cleare_env:
+            try:
+                system.cmd('sudo userdel u_1 -y')
+                system.cmd(f'sudo apt-get purge -y postgresql-{self.config['psql_version']}')
+                system.cmd(f'sudo rm -r /var/lib/postgresql/{self.config['psql_version']}')
+                system.cmd(f'sudo rm -rf {self.config['results_path']}')
+                system.cmd(f'sudo rm -rf {self.config['project_path']}')
+            except Exception as e:
+                print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
+
 
 

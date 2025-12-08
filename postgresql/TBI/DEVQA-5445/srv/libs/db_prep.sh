@@ -7,7 +7,7 @@ PG_MAIN_PORT=5432
 PG_VERSION=$1
 SCRIPT_DIR=$2
 PG_SETEST_CLUSTER='setest_cl'
-PG_SETEST_PORT=6000
+PG_SETEST_PORT=$3
 
 
 
@@ -42,19 +42,19 @@ audit=/var/lib/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_audit.conf
 chown postgres.postgres /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/*
 
 #sed -i 's/ac_enable_maclabels_on_files.*/ac_enable_maclabels_on_files = true/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-sed -i 's/.*max_connections.*/max_connections = 1000/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-sed -i 's/.*shared_buffers.*/shared_buffers = 32256MB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-sed -i 's/.*effective_cache_size.*/effective_cache_size = 96768MB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/.*max_connections.*/max_connections = 5000/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/.*shared_buffers.*/shared_buffers = '"$4"'/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/.*effective_cache_size.*/effective_cache_size = '"$5"'/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*maintenance_work_mem.*/maintenance_work_mem = 2GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*checkpoint_completion_target.*/checkpoint_completion_target = 0.9/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*wal_buffers.*/wal_buffers = 16MB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*default_statistics_target.*/default_statistics_target = 100/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*random_page_cost.*/random_page_cost = 1.1/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*effective_io_concurrency.*/effective_io_concurrency = 200/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-sed -i 's/.*work_mem.*/work_mem = 41287kB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/.*work_mem.*/work_mem = '"$6"'/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*min_wal_size.*/min_wal_size = 1GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_wal_size.*/max_wal_size = 4GB/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-sed -i 's/.*max_worker_processes.*/max_worker_processes = 32/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
+sed -i 's/.*max_worker_processes.*/max_worker_processes = '"$7"'/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_workers.*/max_parallel_workers = 32/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
 sed -i 's/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = 4/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
@@ -106,14 +106,4 @@ do
   cd -
   #cd - &> /dev/null
 done
-
-
-
-
-#astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && reboot
-
-
-
-#pgbench -i -h localhost --macs -p 6000 -U postgres -s 500 -F 100 test_parsec
-#pgbench -h localhost --macs -p 6000 -U u_1 --random-seed=13 -T 30 -j 200 -c 200 test_parsec
 

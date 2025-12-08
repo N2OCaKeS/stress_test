@@ -14,7 +14,14 @@ PARAMS = {
      'project_path': 'PROJECT_PATH',
      'results_path': 'RESULTS_PATH',
      'psql_version': 'PSQL_VERSION',
-     'max_connections': 'MAX_CONNECTIONS'
+     'cluster_port': 'CLUSTER_PORT',
+     'connections_count': 'CONNECTIONS_COUNT',
+     't_time': 'TRANSACTION_TIME',
+     'shared_buffers': 'SHARED_BUFFERS',
+     'eff_cache_size': 'EFFECTIVE_CACHE_SIZE',
+     'work_mem': 'WORK_MEM',
+     'max_worker_ps': 'MAX_WORKER_PROCESSES',
+     'max_pl_workers': 'MAX_PARALLEL_WORKERS'
 }
 
 
@@ -26,21 +33,22 @@ def conf_wrapper(file_name: str):
      dates = {
           line.split('=')[0]: line.split('=')[1].strip() for line in config if '=' in line
           }
-     #print(dates)
 
      temp_dict = {
           key: dates.get(value) for key, value in PARAMS.items()
           }
-     #print(temp_dict)
+     
      return temp_dict
      
 
 
 
 class system:
+    
     """
     Класс для обращения к системе
     """
+
     @staticmethod
     def check_output_command(command: str) -> str:
         result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
@@ -62,42 +70,44 @@ class system:
 
      
 class Test(ABC):
+    
     """
-    Абстрактный конвейер\n
-    check_user: Проверка прав пользователя\n
-    check_mode: Проверка режима ОС\n
-    host_env_prepare: Подготовка окружения\n
-    database_prep: Подготовка БД\n
-    init_base: Инизиализация БД\n
-    execute_test: Запуск теста\n
-    cleare: Очистка окружения
+    Абстрактный конвейер
     """
+
     @abstractmethod
     def check_user(cls) -> str | any:
+        """Проверка прав пользователя"""
         pass
     
     @abstractmethod
     def check_mode(cls) -> str | any:
+        """Проверка режима ОС"""
         pass
 
     @abstractmethod
     def host_env_prepare(cls) -> str | any:
+        """Подготовка окружения"""
         pass
 
     @abstractmethod
     def database_prep(cls) -> str | any:
+        """Подготовка БД"""
         pass
 
     @abstractmethod
     def init_base(cls) -> str | any:
+        """Инизиализация БД"""
         pass
 
     @abstractmethod
     def execute_test(cls) -> str | any:
+        """Запуск теста"""
         pass
     
     @abstractmethod
     def cleare(cls) -> str | any:
+        """Очистка окружения"""
         pass
 
      

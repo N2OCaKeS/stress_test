@@ -11,8 +11,8 @@ class SMTPTest:
         self.email_config = {
             "server": 'localhost',
             "port": '25',
-            "username_to": 'test3@test.local',
-            "username_from": 'test0@test.local',
+            "username_to": 'test3@stress-testing.local',
+            "username_from": 'test0@stress-testing.local',
             "password": "test59",
         }
 
@@ -20,8 +20,8 @@ class SMTPTest:
         try:
             with smtplib.SMTP(self.email_config["server"], self.email_config["port"]) as smtp:
                 smtp.login(self.email_config["username_from"], self.email_config["password"])
-                msg = MIMEText(f"Test email {i}")
-                msg['Subject'] = f"Load Test {i}"
+                msg = MIMEText(f"Test email")
+                msg['Subject'] = f"Load Test"
                 msg['From'] = self.email_config["username_from"]
                 msg['To'] = self.email_config["username_to"]
                 smtp.send_message(msg)

@@ -1,0 +1,9 @@
+atlassian-python-api 
+pretty-html-table 
+pandas 
+pysnooper
+scikit-learn 
+numpy
+matplotlib
+lxml
+prettytable

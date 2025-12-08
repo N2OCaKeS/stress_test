@@ -91,10 +91,11 @@ if __name__ == "__name__":
     d = Dovecot()
     ex = Exim()
     cu = CreateMailUsers(user_count=10)
-    d.set_configuration()
     ex.write_config_file()
     ex.update_exim_config()
     ex.restart_service()
+    d.set_configuration()
+    d.restart_service()
     cu.set_configuration()
 
     test = SMTPTest()

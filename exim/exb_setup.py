@@ -6,16 +6,15 @@ import subprocess
 class Exim:
     def __init__(self):
         self.service_name = 'smtp'
-        self.service_config_dir = f'/etc/exim4/'
+        self.service_config_dir = f'/etc/exim4'
         self.config_file = f"{self.service_config_dir}/exim4.conf"
-        self.ip_local = ""
         self.update_config_file = f"{self.service_config_dir}/update-exim4.conf.conf"
         
     def get_default_config(self):
         config = {
             'dc_eximconfig_configtype': 'internet',
-            'dc_other_hostnames': '',
-            'dc_local_interfaces': f'{self.ip_local}',
+            'dc_other_hostnames': 'stress-testing.local',
+            'dc_local_interfaces': '',
             'dc_readhost': '',
             'dc_relay_domains': '',
             'dc_minimaldns': 'false',
@@ -27,6 +26,7 @@ class Exim:
             'dc_mailname_in_oh': 'true',
             'dc_localdelivery': 'maildir_home'
         }
+        
         return config
     
     def write_config_file(self):
@@ -43,12 +43,15 @@ class Exim:
 class Dovecot:
     def __init__(self):
         self.service_name = ""
-        self.service_config_dir = "/etc/dovecot/"
+        self.service_config_dir = "/etc/dovecot"
         self.config_file = f"{self.service_config_dir}/dovecot.conf"
         self.auth_config_file = f"{self.service_config_dir}/conf.d/10-auth.conf"
-        self.master_conf_file = f"{self.service_config_dir}/conf.d/master.conf"
+        self.master_conf_file = f"{self.service_config_dir}/conf.d/10-master.conf"
         self.ssl_conf_file = f"{self.service_config_dir}/conf.d/10-ssl.conf"
         self.local_ip = f""
+
+    def restart_service(self):
+        subprocess.run(['systemctl', 'restart', 'dovecot.service'], check=True)
 
     def _add_settings_line(self):
         pass
@@ -63,10 +66,23 @@ class Dovecot:
 
     def set_configuration(self):
         self._replace_settings(filename=self.auth_config_file, pattern=r'^auth_mechanisms.*', replacement='auth_mechanisms = plain')
-        self._replace_settings(filename=self.auth_config_file, pattern=r'^#disable_plaintext_auth.*', replacement='disable_plaintext_auth = no')
-        # master.conf
-        self._add_settings_line()
+        self._replace_settings(filename=self.auth_config_file, pattern=r'#?\s*disable_plaintext_auth.*', replacement='disable_plaintext_auth = no')
+        with open(self.master_conf_file, 'r') as file:
+            lines = file.readlines()
+
+        new_lines = []
+        for line in lines:
+            new_lines.append(line)
+            if 'service auth {' in line:
+                new_lines.append('  unix_listener auth-client {\n')
+                new_lines.append('    mode = 0600\n')
+                new_lines.append('    user = Debian-exim\n')
+                new_lines.append('  }\n')
+
+        with open(self.master_conf_file, 'w') as file:
+            file.writelines(new_lines)
         self._replace_settings(filename=self.ssl_conf_file, pattern=r'ssl .*', replacement='ssl = no')
+        self.restart_service()
 
 
 class CreateMailUsers:
@@ -105,3 +121,16 @@ class CreateMailUsers:
             self.set_configuration_single_user(ind)
 
 
+if __name__ == "__main__":
+    d = Dovecot()
+    ex = Exim()
+    cu = CreateMailUsers(user_count=10)
+    ex.write_config_file()
+    ex.update_exim_config()
+    ex.restart_service()
+    d.set_configuration()
+    d.restart_service()
+    cu.set_configuration()
+
+
+    

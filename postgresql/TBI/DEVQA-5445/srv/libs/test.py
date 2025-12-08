@@ -2,6 +2,7 @@ import logging
 
 from functools import wraps
 from sys import exit
+from os import linesep
 
 from srv.libs.lib import (
      SCRIPT_DIR,
@@ -71,8 +72,8 @@ class PSQLLoadTest(Test):
             print(f"Метод '{method.__name__}' вызван")
             logging.info(f"Метод '{method.__name__}' вызван")
             try:
-                result, status = method(self, *args, **kwargs)
-                if status and status != 0:
+                result, success  = method(self, *args, **kwargs)
+                if not success:
                     print(f'При выполнении метода "{method.__name__}" произошла ошибка')
                     logging.error(f'При выполнении метода "{method.__name__}" произошла ошибка')
                     logging.error(result)
@@ -91,7 +92,7 @@ class PSQLLoadTest(Test):
     @status_checker
     def check_user(self):
         if self.checking_user:
-            return system.check_output_command(f'sudo -n true')
+            return system.check_output_command('sudo -n true')
         
     @status_checker
     def check_mode(self):
@@ -106,7 +107,8 @@ class PSQLLoadTest(Test):
             }
 
             if temp_dict['mode'] != '2' or temp_dict['mac'] != 'АКТИВНО' or temp_dict['mic'] != 'АКТИВНО':
-                return temp_dict, 1
+                return temp_dict, False
+            else: return temp_dict, True
 
     @status_checker
     def host_env_prepare(self):

@@ -4,7 +4,7 @@ import subprocess
 from os import linesep
 from string import Template
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Union, Tuple
 
 
 
@@ -50,13 +50,14 @@ class system:
     """
 
     @staticmethod
-    def check_output_command(command: str) -> str:
+    def check_output_command(command: str) -> Tuple[str, bool]:
         result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, universal_newlines=True)
+                                  stderr=subprocess.PIPE, universal_newlines=True, text=True)
         output, errors = result.communicate()
         output = os.linesep.join([s for s in output.splitlines() if s])
         errors = os.linesep.join([s for s in errors.splitlines() if s])
-        return output if not errors else errors, 1
+        code = result.returncode == 0
+        return output, code if not errors else errors, code
 
     @staticmethod
     def cmd_with_returncode(command: str) -> int:

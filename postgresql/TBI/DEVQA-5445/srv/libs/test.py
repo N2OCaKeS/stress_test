@@ -137,7 +137,7 @@ class PSQLLoadTest(Test):
                 w.write(results)
             
             print(results)
-            logging.info('\n\n\End logging\n')
+            logging.info('\n\nEnd logging\n')
 
             return results
 

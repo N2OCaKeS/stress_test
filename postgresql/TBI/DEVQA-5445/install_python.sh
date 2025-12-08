@@ -22,7 +22,7 @@ done
 
 
 # install python 3.12
-tar -xf /srv/modules/Python-3.12.1.tar.xz
+tar -xf srv/modules/Python-3.12.1.tar.xz
 cd Python-3.12.1
 ./configure --enable-optimizations
 make -j 6
@@ -34,7 +34,7 @@ source venv/bin/activate
 
 # check venv
 VENV_PYTHON_VERSION=$(python3.12 --version)
-if [[ "$VENV_PYTHON_VERSION" =~ ^Python\\ 3\\.12 ]]; then
+if [[ "$VENV_PYTHON_VERSION" =~ ^Python\ 3\.12 ]]; then
     echo "✅ Python 3.12 доступен в виртуальном окружении."
 else
     echo "❌ Ошибка: Python 3.12 не найден в виртуальном окружении!"

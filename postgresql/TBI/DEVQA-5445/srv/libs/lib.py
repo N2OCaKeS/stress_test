@@ -4,6 +4,7 @@ import subprocess
 from os import linesep
 from string import Template
 from abc import ABC, abstractmethod
+from typing import Union
 
 
 
@@ -75,37 +76,37 @@ class Test(ABC):
     """
 
     @abstractmethod
-    def check_user(cls) -> str | any:
+    def check_user(cls) -> Union[str, None]:
         """Проверка прав пользователя"""
         pass
     
     @abstractmethod
-    def check_mode(cls) -> str | any:
+    def check_mode(cls) -> Union[str, None]:
         """Проверка режима ОС"""
         pass
 
     @abstractmethod
-    def host_env_prepare(cls) -> str | any:
+    def host_env_prepare(cls) -> Union[str, None]:
         """Подготовка окружения"""
         pass
 
     @abstractmethod
-    def database_prep(cls) -> str | any:
+    def database_prep(cls) -> Union[str, None]:
         """Подготовка БД"""
         pass
 
     @abstractmethod
-    def init_base(cls) -> str | any:
+    def init_base(cls) -> Union[str, None]:
         """Инизиализация БД"""
         pass
 
     @abstractmethod
-    def execute_test(cls) -> str | any:
+    def execute_test(cls) -> Union[str, None]:
         """Запуск теста"""
         pass
     
     @abstractmethod
-    def cleare(cls) -> str | any:
+    def cleare(cls) -> Union[str, None]:
         """Очистка окружения"""
         pass
 

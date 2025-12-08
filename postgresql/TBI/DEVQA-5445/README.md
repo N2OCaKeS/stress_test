@@ -30,7 +30,7 @@ sudo bash install_python.sh
 ```    
 Запускайте из основной директории с тестом   
 ```bash
-source venv/bin/activate
+source Python-3.12.1/venv/bin/activate
 sudo python3.12 run.py
 ```   
 

@@ -72,11 +72,12 @@ class PSQLLoadTest(Test):
             print(f"Метод '{method.__name__}' вызван")
             logging.info(f"Метод '{method.__name__}' вызван")
             try:
-                result, success  = method(self, *args, **kwargs)
-                if not success:
+                result, status  = method(self, *args, **kwargs)
+                if not status:
                     print(f'При выполнении метода "{method.__name__}" произошла ошибка')
                     logging.error(f'При выполнении метода "{method.__name__}" произошла ошибка')
                     logging.error(result)
+                    logging.info('End logging\n')
                     exit(1)
                 else: 
                     logging.info(result)
@@ -86,6 +87,8 @@ class PSQLLoadTest(Test):
             except Exception as e:
                 print(f'Method: {method.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
                 logging.error(f'Method: {method.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+                logging.info('End logging\n')
+                exit(1)
         return wrapper
 
 
@@ -133,7 +136,7 @@ class PSQLLoadTest(Test):
         if self.execute:
             cmd = f"pgbench -h localhost --macs -p {self.config['cluster_port']} -U u_1 --random-seed=13 -T {self.config['t_time']} \
                   -j {self.config['connections_count']} -c {self.config['connections_count']} test_parsec"
-            results = system.check_output_command(cmd)
+            results, status = system.check_output_command(cmd)
 
             with open(f"{SCRIPT_DIR}/{self.config['results_name']}", 'w') as w:
                 w.write(results)
@@ -141,7 +144,7 @@ class PSQLLoadTest(Test):
             print(results)
             logging.info('\n\nEnd logging\n')
 
-            return results
+            return results, status
 
     def cleare(self):
         if self.cleare_env:

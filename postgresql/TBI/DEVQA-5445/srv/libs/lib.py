@@ -56,8 +56,11 @@ class system:
         output, errors = result.communicate()
         output = os.linesep.join([s for s in output.splitlines() if s])
         errors = os.linesep.join([s for s in errors.splitlines() if s])
-        code = result.returncode == 0
-        return output, code if not errors else errors, code
+        if not errors:
+          return output, True
+        else:
+          return errors, False
+
 
     @staticmethod
     def cmd_with_returncode(command: str) -> int:

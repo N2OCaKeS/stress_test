@@ -18,7 +18,7 @@ test.host_prepare = False
 
 # test.checking_user = False
 # test.checking_mode = False
-# test.host_prepare = False
+test.host_prepare = False
 # test.db_prep = False
 # test.init_bd = False
 # test.execute = False

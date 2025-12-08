@@ -3,7 +3,7 @@ import logging
 from functools import wraps
 from sys import exit
 
-from lib import (
+from srv.libs.lib import (
      SCRIPT_DIR,
      CONFIG_FILE,
      LIBS_DIR,
@@ -49,7 +49,7 @@ class PSQLLoadTest(Test):
         self.config = conf_wrapper(f'{SCRIPT_DIR}/{CONFIG_FILE}')
 
         logging.basicConfig(
-            filename=f'{self.config['project_path']}/psql_test.log', 
+            filename=f"{SCRIPT_DIR}/psql_test.log", 
             level=logging.INFO, 
             filemode='a',
             format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
@@ -111,29 +111,29 @@ class PSQLLoadTest(Test):
     @status_checker
     def host_env_prepare(self):
         if self.h_prepare:
-            return system.check_output_command(f'sudo bash {LIBS_DIR}/h_prepare.sh {self.config['results_path']}')
+            return system.check_output_command(f"sudo bash {LIBS_DIR}/h_prepare.sh {SCRIPT_DIR}")
                 
     @status_checker
     def database_prep(self):
         if self.db_prep:
-            return system.check_output_command(f'sudo bash {LIBS_DIR}/db_prep.sh {self.config['psql_version']} {SCRIPT_DIR} \
+            return system.check_output_command(f"sudo bash {LIBS_DIR}/db_prep.sh {self.config['psql_version']} {SCRIPT_DIR} \
                                                {self.config['cluster_port']} {self.config['shared_buffers']} \
                                                 {self.config['eff_cache_size']} {self.config['work_mem']} \
-                                                    {self.config['max_worker_ps']} {self.config['max_pl_workers']}')
+                                                    {self.config['max_worker_ps']} {self.config['max_pl_workers']}")
 
     @status_checker
     def init_base(self):
         if self.init_bd:
-            return system.check_output_command(f'pgbench -i -h localhost --macs -p {self.config['cluster_port']} -U postgres -s 500 -F 100 test_parsec')
+            return system.check_output_command(f"pgbench -i -h localhost --macs -p {self.config['cluster_port']} -U postgres -s 500 -F 100 test_parsec")
     
     @status_checker
     def execute_test(self):
         if self.execute:
-            cmd = f'pgbench -h localhost --macs -p {self.config['cluster_port']} -U u_1 --random-seed=13 -T {self.config['t_time']} \
-                  -j {self.config['connections_count']} -c {self.config['connections_count']} test_parsec'
+            cmd = f"pgbench -h localhost --macs -p {self.config['cluster_port']} -U u_1 --random-seed=13 -T {self.config['t_time']} \
+                  -j {self.config['connections_count']} -c {self.config['connections_count']} test_parsec"
             results = system.check_output_command(cmd)
 
-            with open(f'{self.config['results_path']}/results.txt', 'w') as w:
+            with open(f"{SCRIPT_DIR}/{self.config['results_name']}", 'w') as w:
                 w.write(results)
             
             print(results)
@@ -145,10 +145,10 @@ class PSQLLoadTest(Test):
         if self.cleare_env:
             try:
                 system.cmd('sudo userdel u_1 -y')
-                system.cmd(f'sudo apt-get purge -y postgresql-{self.config['psql_version']}')
-                system.cmd(f'sudo rm -r /var/lib/postgresql/{self.config['psql_version']}')
-                system.cmd(f'sudo rm -rf {self.config['results_path']}')
-                system.cmd(f'sudo rm -rf {self.config['project_path']}')
+                system.cmd(f"sudo apt-get purge -y postgresql-{self.config['psql_version']}")
+                system.cmd(f"sudo rm -r /var/lib/postgresql/{self.config['psql_version']}")
+                system.cmd(f"sudo rm -rf {SCRIPT_DIR}/{self.config['results_name']}")
+                system.cmd(f"sudo rm -rf {SCRIPT_DIR}/psql_test.log")
             except Exception as e:
                 print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 

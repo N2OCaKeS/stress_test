@@ -11,8 +11,7 @@ LIBS_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPT_DIR = os.path.normpath(os.path.join(LIBS_DIR, '..', '..'))
 CONFIG_FILE = 'psql_test.conf'
 PARAMS = {
-     'project_path': 'PROJECT_PATH',
-     'results_path': 'RESULTS_PATH',
+     'results_name': 'RESULTS_NAME',
      'psql_version': 'PSQL_VERSION',
      'cluster_port': 'CLUSTER_PORT',
      'connections_count': 'CONNECTIONS_COUNT',

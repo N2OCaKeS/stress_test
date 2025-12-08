@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -vx
+
 RESULTS_DIR=$1
 
 # create dirs

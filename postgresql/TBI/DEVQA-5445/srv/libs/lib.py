@@ -1,5 +1,6 @@
 import os
 import subprocess
+import logging
 
 from os import linesep
 from string import Template
@@ -53,6 +54,7 @@ class system:
     def check_output_command(command: str) -> Tuple[str, bool]:
         result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, universal_newlines=True, text=True)
+        result.wait()
         output, errors = result.communicate()
         output = os.linesep.join([s for s in output.splitlines() if s])
         errors = os.linesep.join([s for s in errors.splitlines() if s])
@@ -61,6 +63,16 @@ class system:
         else:
           return errors, False
 
+    @staticmethod
+    def pgbench(command):
+         """
+              Для PGBench
+         """
+         test = subprocess.run(command,
+                               shell=True,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+         return [test.stdout.decode("utf-8"), test.stderr.decode("utf-8")]
 
     @staticmethod
     def cmd_with_returncode(command: str) -> int:

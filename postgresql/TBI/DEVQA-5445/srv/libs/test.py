@@ -42,7 +42,7 @@ class PSQLLoadTest(Test):
         
         self.checking_user = checking_user
         self.checking_mode = checking_mode
-        self.h_prepare = host_prepare
+        self.host_prepare = host_prepare
         self.db_prep = db_prep
         self.init_bd = init_bd
         self.execute = execute
@@ -53,7 +53,7 @@ class PSQLLoadTest(Test):
             filename=f"{SCRIPT_DIR}/psql_test.log", 
             level=logging.INFO, 
             filemode='a',
-            format='%(asctime)s - %(levelname)s - %(funcName)s: %(lineno)d - %(message)s',
+            format='%(asctime)s - %(levelname)s: - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S',
         )
         logging.info('\n\n\nStart logging\n')
@@ -69,24 +69,27 @@ class PSQLLoadTest(Test):
 
         @wraps(method)
         def wrapper(self, *args, **kwargs):
-            print(f"Метод '{method.__name__}' вызван")
-            logging.info(f"Метод '{method.__name__}' вызван")
+            print(f'Вызван метод "{method.__name__}"')
+            logging.info(f'Вызван метод "{method.__name__}"')
             try:
                 result, status  = method(self, *args, **kwargs)
-                if not status:
-                    print(f'При выполнении метода "{method.__name__}" произошла ошибка')
-                    logging.error(f'При выполнении метода "{method.__name__}" произошла ошибка')
+                if not result and not status:
+                    print(f'Выполнение "{method.__name__}" отменено, установлен статут False\n')
+                    logging.info(f'Выполнение "{method.__name__}" отменено, установлен статут False\n')
+                elif not status:
+                    print(f'При выполнении "{method.__name__}" произошла ошибка\n')
+                    logging.error(f'При выполнении "{method.__name__}" произошла ошибка\n')
                     logging.error(result)
                     logging.info('End logging\n')
                     exit(1)
-                else: 
+                else:   
                     logging.info(result)
-                    print(f'Метод "{method.__name__}" успешно выполнен')
-                    logging.info(f'Метод "{method.__name__}" успешно выполнен')
+                    print(f'Метод "{method.__name__}" успешно выполнен\n')
+                    logging.info(f'Метод "{method.__name__}" успешно выполнен\n')
                 return result
             except Exception as e:
-                print(f'Method: {method.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
-                logging.error(f'Method: {method.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+                print(f'\nERROR:\nMethod: {method.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
+                logging.error(f'\nERROR:\nMethod: {method.__name__}\nError is: {str(type(e).__name__)}\nMessage: {str(e)}')
                 logging.info('End logging\n')
                 exit(1)
         return wrapper
@@ -96,6 +99,7 @@ class PSQLLoadTest(Test):
     def check_user(self):
         if self.checking_user:
             return system.check_output_command('sudo -n true')
+        return False, False
         
     @status_checker
     def check_mode(self):
@@ -109,14 +113,16 @@ class PSQLLoadTest(Test):
                 key: system.check_output_command(value) for key, value in cmds.items()
             }
 
-            if temp_dict['mode'] != '2' or temp_dict['mac'] != 'АКТИВНО' or temp_dict['mic'] != 'АКТИВНО':
+            if temp_dict['mode'][0] != '2' or temp_dict['mac'][0] != 'АКТИВНО' or temp_dict['mic'][0] != 'АКТИВНО':
                 return temp_dict, False
             else: return temp_dict, True
+        return False, False
 
     @status_checker
     def host_env_prepare(self):
-        if self.h_prepare:
+        if self.host_prepare:
             return system.check_output_command(f"sudo bash {LIBS_DIR}/h_prepare.sh {SCRIPT_DIR}")
+        return False, False
                 
     @status_checker
     def database_prep(self):
@@ -125,31 +131,40 @@ class PSQLLoadTest(Test):
                                                {self.config['cluster_port']} {self.config['shared_buffers']} \
                                                 {self.config['eff_cache_size']} {self.config['work_mem']} \
                                                     {self.config['max_worker_ps']} {self.config['max_pl_workers']}")
+        return False, False
 
     @status_checker
     def init_base(self):
         if self.init_bd:
-            return system.check_output_command(f"pgbench -i -h localhost --macs -p {self.config['cluster_port']} -U postgres -s 500 -F 100 test_parsec")
+            return system.check_output_command(f"pgbench -i -h localhost --macs random -p {self.config['cluster_port']} -U postgres -s 500 -F 100 test_parsec")
+        return False, False
     
     @status_checker
     def execute_test(self):
         if self.execute:
-            cmd = f"pgbench -h localhost --macs -p {self.config['cluster_port']} -U u_1 --random-seed=13 -T {self.config['t_time']} \
+            cmd = f"pgbench -h localhost --macs random -p {self.config['cluster_port']} -U u_1 --random-seed=13 -T {self.config['t_time']} \
                   -j {self.config['connections_count']} -c {self.config['connections_count']} test_parsec"
-            results, status = system.check_output_command(cmd)
-
-            with open(f"{SCRIPT_DIR}/{self.config['results_name']}", 'w') as w:
-                w.write(results)
             
-            print(results)
-            logging.info('\n\nEnd logging\n')
+            decode = system.pgbench(cmd)
+            out = linesep.join([s for s in decode[0].splitlines() if s])
+            print(out)
+            err = linesep.join([s for s in decode[1].splitlines() if s])
+            print(err)
 
-            return results, status
+            if not out:
+                with open(f"{SCRIPT_DIR}/{self.config['results_name']}", 'w') as w:
+                    w.write(err)
+                return err, False
+            else:
+                with open(f"{SCRIPT_DIR}/{self.config['results_name']}", 'w') as w:
+                    w.write(out)
+                return out, True
+        return False, False
 
     def cleare(self):
         if self.cleare_env:
             try:
-                system.cmd('sudo userdel u_1 -y')
+                system.cmd('sudo userdel u_1')
                 system.cmd(f"sudo apt-get purge -y postgresql-{self.config['psql_version']}")
                 system.cmd(f"sudo rm -r /var/lib/postgresql/{self.config['psql_version']}")
                 system.cmd(f"sudo rm -rf {SCRIPT_DIR}/{self.config['results_name']}")

@@ -1,6 +1,5 @@
 import os
 import subprocess
-import logging
 
 from os import linesep
 from string import Template
@@ -47,7 +46,7 @@ def conf_wrapper(file_name: str):
 class system:
     
     """
-    Класс для обращения к системе
+    Обращение к системе
     """
 
     @staticmethod

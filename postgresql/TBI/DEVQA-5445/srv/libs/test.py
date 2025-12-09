@@ -127,16 +127,25 @@ class PSQLLoadTest(Test):
     @status_checker
     def database_prep(self):
         if self.db_prep:
-            return system.check_output_command(f"sudo bash {LIBS_DIR}/db_prep.sh {self.config['psql_version']} {SCRIPT_DIR} \
+            result, code = system.check_output_command(f"sudo bash {LIBS_DIR}/db_prep.sh {self.config['psql_version']} {SCRIPT_DIR} \
                                                {self.config['cluster_port']} {self.config['shared_buffers']} \
                                                 {self.config['eff_cache_size']} {self.config['work_mem']} \
-                                                    {self.config['max_worker_ps']} {self.config['max_pl_workers']}")
+                                                    {self.config['max_worker_ps']} {self.config['max_pl_workers']}", returncode=True)
+            if code:
+                return result, True
+            else:
+                return result, False
         return False, False
 
     @status_checker
     def init_base(self):
         if self.init_bd:
-            return system.check_output_command(f"pgbench -i -h localhost --macs random -p {self.config['cluster_port']} -U postgres -s 500 -F 100 test_parsec")
+            result, code = system.check_output_command(f"pgbench -i -h localhost --macs random -p {self.config['cluster_port']} -U postgres -s 500 -F 100 test_parsec",
+                                                       returncode=True)
+            if code:
+                return result, True
+            else:
+                return result, False
         return False, False
     
     @status_checker
@@ -165,7 +174,7 @@ class PSQLLoadTest(Test):
         if self.cleare_env:
             try:
                 system.cmd('sudo userdel u_1')
-                system.cmd(f"sudo apt-get purge -y postgresql-{self.config['psql_version']}")
+                system.cmd(f"sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y postgresql-{self.config['psql_version']}")
                 system.cmd(f"sudo rm -r /var/lib/postgresql/{self.config['psql_version']}")
                 system.cmd(f"sudo rm -rf {SCRIPT_DIR}/{self.config['results_name']}")
                 system.cmd(f"sudo rm -rf {SCRIPT_DIR}/psql_test.log")

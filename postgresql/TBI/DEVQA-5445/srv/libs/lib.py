@@ -50,17 +50,24 @@ class system:
     """
 
     @staticmethod
-    def check_output_command(command: str) -> Tuple[str, bool]:
+    def check_output_command(command: str, returncode=None) -> Tuple[str, bool]:
         result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, universal_newlines=True, text=True)
         result.wait()
         output, errors = result.communicate()
         output = os.linesep.join([s for s in output.splitlines() if s])
         errors = os.linesep.join([s for s in errors.splitlines() if s])
-        if not errors:
-          return output, True
+        code = result.returncode == 0
+        if returncode:
+            if not errors:
+               return output, code
+            else:
+               return errors, code
         else:
-          return errors, False
+            if not errors:
+                 return output, True
+            else:
+                 return errors, False
 
     @staticmethod
     def pgbench(command):

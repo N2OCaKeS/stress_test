@@ -1,15 +1,13 @@
-import os
 import subprocess
 
-from os import linesep
-from string import Template
+from os import linesep, path
 from abc import ABC, abstractmethod
 from typing import Union, Tuple
 
 
 
-LIBS_DIR = os.path.dirname(os.path.abspath(__file__))
-SCRIPT_DIR = os.path.normpath(os.path.join(LIBS_DIR, '..', '..'))
+LIBS_DIR = path.dirname(path.abspath(__file__))
+SCRIPT_DIR = path.normpath(path.join(LIBS_DIR, '..', '..'))
 CONFIG_FILE = 'psql_test.conf'
 PARAMS = {
      'results_name': 'RESULTS_NAME',
@@ -33,7 +31,6 @@ def conf_wrapper(file_name: str):
      dates = {
           line.split('=')[0]: line.split('=')[1].strip() for line in config if '=' in line
           }
-
      temp_dict = {
           key: dates.get(value) for key, value in PARAMS.items()
           }
@@ -55,8 +52,8 @@ class system:
                                   stderr=subprocess.PIPE, universal_newlines=True, text=True)
         result.wait()
         output, errors = result.communicate()
-        output = os.linesep.join([s for s in output.splitlines() if s])
-        errors = os.linesep.join([s for s in errors.splitlines() if s])
+        output = linesep.join([s for s in output.splitlines() if s])
+        errors = linesep.join([s for s in errors.splitlines() if s])
         code = result.returncode == 0
         if returncode:
             if not errors:
@@ -70,7 +67,7 @@ class system:
                  return errors, False
 
     @staticmethod
-    def pgbench(command):
+    def pgbench(command: str) -> Tuple[str, str]:
          """
               Для PGBench
          """

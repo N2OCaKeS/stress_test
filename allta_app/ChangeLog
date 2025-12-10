@@ -1,3 +1,10 @@
+allta_app - v2.53.1
+* Add set boot order after
+  reboot hand
+
+
+
+
 allta_app - v2.53.0
 * Add CEPH parsec test
 * Add AOpenVPNcc test

@@ -361,6 +361,7 @@ def reboot(stand):
     elif stand == "stand3" or stand == "stand4" or stand == "stand5" or stand == "stand10" \
     or stand == "stand11" or stand == "stand12" or stand == "stand13":
         ipmi = BootOrder(stand=stand)
+        ipmi.set_boot_order()
         ipmi.reset()
         return {"status": "success", "message": "ipmi reboot entered"}, 200
     else: return {"status": "success", "message": f"stand {stand} not detected"}, 404

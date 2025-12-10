@@ -11,22 +11,26 @@ class SMTPTest:
         self.email_config = {
             "server": 'localhost',
             "port": '25',
-            "username_to": 'test3@stress-testing.local',
-            "username_from": 'test0@stress-testing.local',
-            "password": "test59",
+            "username_to": 'user2@stress-testing.local',
+            "username_from": 'user1@stress-testing.local',
+            "password": "1",
         }
 
-    def send_single_email(self):
+    def send_single_email(self, i):
         try:
             with smtplib.SMTP(self.email_config["server"], self.email_config["port"]) as smtp:
-                smtp.login(self.email_config["username_from"], self.email_config["password"])
-                msg = MIMEText(f"Test email")
-                msg['Subject'] = f"Load Test"
+                # smtp.ehlo()
+                # smtp.login(self.email_config["username_from"], self.email_config["password"])
+                msg = MIMEText(f"Test email {i}")
+                msg['Subject'] = f"Load Test {i}"
                 msg['From'] = self.email_config["username_from"]
                 msg['To'] = self.email_config["username_to"]
                 smtp.send_message(msg)
+                return True, i
         except Exception as e:
             print(f"Error: {e}")
+            return False, i
+
 
     def run_test(self):
         results = []
@@ -37,10 +41,7 @@ class SMTPTest:
             
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_email = {
-                    executor.submit(
-                        self.send_single_email, 
-                        self.email_config["server"], self.email_config["port"], self.email_config["username_to"], self.email_config["username_from"], self.email_config["password"], i
-                    ): i for i in range(current_mail)
+                    executor.submit(self.send_single_email, i): i for i in range(current_mail)
                 }
 
                 for future in as_completed(future_to_email):

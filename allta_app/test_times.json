@@ -91,7 +91,8 @@
             "OCFS2": "1:14:54",
             "CEPH": "3:00:28",
             "CEPH fio": "2:41:58",
-            "Total time": "0:00:00"
+            "Total time": "0:00:00",
+            "CEPH parsec": "3:13:20"
         },
         "stand11": {
             "parsec impact-fs": "0:35:14",
@@ -101,7 +102,8 @@
             "vPingPong": "0:56:42",
             "vUnixBench": "2:20:36",
             "psql oom": "1:17:29",
-            "Total time": "0:00:00"
+            "Total time": "0:00:00",
+            "AOpenVPNcc": "0:31:14"
         },
         "stand12": {
             "syslog-ng": "1:58:30",

@@ -1,6 +1,7 @@
 import re
 import os
 import pwd
+import hashlib
 import subprocess
 
 class Exim:
@@ -92,29 +93,18 @@ class CreateMailUsers:
     def set_configuration_single_user(self, ind=0):
         username = f"user{ind}"
         mail_dir = f"/var/mail/{username}"
+
+
         system_commands = [
             ["sudo", "useradd", "-m", "-d", mail_dir, "-s", "/bin/false", username],
-            ["sudo", "usermod", "-p", "$(openssl passwd -1 '1')", username]
+            ["sudo", "usermod", "-p", f"{hashlib.md5('1'.encode()).hexdigest()}", username]
         ]
 
         for cmd in system_commands:
             result = subprocess.run(cmd, capture_output=True, text=True)
 
-        directories = [
-            mail_dir,
-            f"{mail_dir}/.Maildir",
-            f"{mail_dir}/.Maildir/cur",
-            f"{mail_dir}/.Maildir/new", 
-            f"{mail_dir}/.Maildir/tmp"
-        ]
-
         user_info = pwd.getpwnam(username)
         uid, gid = user_info.pw_uid, user_info.pw_gid
-
-        for directory in directories:
-            if not os.path.exists(directory):
-                os.makedirs(directory, mode=0o700)
-                os.chown(directory, uid, gid)
 
     def set_configuration(self):
         for ind in range(1, self.user_count + 1):

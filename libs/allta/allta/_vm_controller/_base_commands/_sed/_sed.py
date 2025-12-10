@@ -2,11 +2,12 @@ from ...._decorators.Decorators import BaseDecorators
 from ..._libs._ssh_command import _SSH_Command
 from time import sleep
 import concurrent.futures
+from typing import Optional
 
 class _Sed:
     @staticmethod
     @BaseDecorators.trycorator
-    def sed(sed_conf: dict, vms_dates: dict, groups: dict, username='u', password='1', task_name=None): # TODO Реализовать многопоточность для групп хостов
+    def sed(sed_conf: dict, vms_dates: dict, groups: Optional[dict] = None, username='u', password='1', task_name=None): # TODO Реализовать многопоточность для групп хостов
         """
         Выполняет замену текста на удалённых хостах согласно переданным настройкам, используя многопоточность.
 
@@ -45,6 +46,8 @@ class _Sed:
                 old_escaped = old_escaped.replace(delimiter, f"\\{delimiter}")
                 new_escaped = new_escaped.replace(delimiter, f"\\{delimiter}")
             return f'sudo sed -i "s{delimiter}{old_escaped}{delimiter}{new_escaped}{delimiter}g" {path}'
+
+        groups = groups or {}
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for target, configs in sed_conf.items():

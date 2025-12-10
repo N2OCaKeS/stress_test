@@ -1,6 +1,7 @@
 from ..._system_command.SystemCommands import SystemCommands
 import threading
 from .._decorator._logger import logger
+from typing import Optional
 
 
 class _SCP_Command:
@@ -117,7 +118,7 @@ class _SCP_Command:
     def execute(
         scp: dict,
         vms_date: dict,
-        groups: dict = None,
+        groups: Optional[dict] = None,
         username: str = "u",
         password: str = "1",
     ) -> dict:

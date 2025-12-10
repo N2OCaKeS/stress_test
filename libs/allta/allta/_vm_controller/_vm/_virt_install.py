@@ -12,6 +12,7 @@ from .._libs._scp_command import _SCP_Command
 from .._libs._ssh_command import _SSH_Command
 from .._base_commands._reboot._reboot import _Reboot
 from .LibvirtManager import LibvirtManager
+from typing import Optional
 
 
 class _VirtInstall:
@@ -26,7 +27,7 @@ class _VirtInstall:
     Этот класс позволяет автоматизировать процесс создания и настройки ВМ с использованием Vagrant.
     """
 
-    def __init__(self, box: str, rc: str, vms_date: dict, kernel: str):
+    def __init__(self, box: str, rc: str, vms_date: dict, kernel: Optional[str] = None):
         """
         Класс для работы с Vagrant
 
@@ -47,16 +48,19 @@ class _VirtInstall:
         self.vms_date = copy.deepcopy(vms_date)
         self.original_vms_date = copy.deepcopy(vms_date)
         self.vm_path = "/vms"
-        self.kernel = kernel
+        if kernel is None or kernel == "":
+            self.kernel = system_commands.check_output_command("uname -r")
+        else:
+            self.kernel = kernel
 
-    def _box_wrapper(self) -> tuple:
+    def _box_wrapper(self) -> tuple[str, str, str]:
         """
         Находит бокс по точному совпадению ключа self.box.
         Если не найден — возвращает дефолт для 1.7 и 1.8.
         """
         # Получаем файл
         system_commands.cmd("rm -rf test-box-config.json")
-        system_commands.cmd(f"wget ftp://10.177.103.10/boxes/test-box-config.json")
+        system_commands.cmd("wget ftp://10.177.103.10/boxes/test-box-config.json")
         with open("test-box-config.json", "r") as r:
             dates = json.load(r)
 
@@ -93,6 +97,9 @@ class _VirtInstall:
                         box["1.8.1.o"][1],
                         "alse17",
                     )  # В версии 1.7 отсутсвует alse18 из за чего ВМ на 1.8 не собираеются сейчас на 1.7 все отрабатывает штатно при использовании alse17
+
+        # Если бокс не найден — явно завершаем выполнение
+        raise ValueError(f"Не удалось определить бокс для '{self.box}'")
 
     @staticmethod
     def _build_vm(hostname, info, box, os_version, system_commands, vm_path):
@@ -163,7 +170,7 @@ class _VirtInstall:
         for vm in vms_date:
             LibvirtManager.Vm.stop(vm)
             system_commands.cmd_with_returncode(
-                f"sudo qemu-img resize '{self.vm_path}'/{vm}.qcow2 {vms_date[vm]["disk"]}G"
+                f"qemu-img resize '{self.vm_path}'/{vm}.qcow2 {vms_date[vm]["disk"]}G"
             )
             LibvirtManager.Vm.start(vm)
         sleep(90)
@@ -199,9 +206,9 @@ class _VirtInstall:
             prepare[vm_name] = {
                 "prepare: resize disk": {
                     "command": (
-                        f"sudo chmod 777 /home/u/resize_disk.sh && "
-                        f"sudo su -c '/home/u/resize_disk.sh' && "
-                        f"sudo rm /home/u/resize_disk.sh"
+                        "sudo chmod 777 /home/u/resize_disk.sh && "
+                        "sudo su -c '/home/u/resize_disk.sh' && "
+                        "sudo rm /home/u/resize_disk.sh"
                     ),
                     "signal set": "resize_disk",
                     "signal get": "",
@@ -224,14 +231,14 @@ class _VirtInstall:
     def build(self, bridge: bool = False):
         vm_path = self.vm_path
         box_name, box_url, os_version = self._box_wrapper()
-        system_commands.cmd(f"sudo mkdir {vm_path} && sudo chmod 777 {vm_path}")
+        system_commands.cmd(f"sudo mkdir -p {vm_path} && sudo chmod 777 {vm_path}")
         system_commands.cmd(
-            f"sudo virsh --connect qemu:///system pool-define-as vms dir --target {vm_path} && sudo virsh --connect qemu:///system pool-build vms && sudo virsh --connect qemu:///system pool-start vms && sudo virsh --connect qemu:///system pool-autostart vms"
+            f"virsh --connect qemu:///system pool-define-as vms dir --target {vm_path} && virsh --connect qemu:///system pool-build vms && virsh --connect qemu:///system pool-start vms && virsh --connect qemu:///system pool-autostart vms"
         )
         system_commands.cmd(
-            f"sudo rm -rf {vm_path}/{box_name}.tar.gz; sudo wget -P {vm_path} {box_url}"
+            f"rm -rf {vm_path}/{box_name}.tar.gz; wget -P {vm_path} {box_url}"
         )
-        system_commands.cmd(f"sudo tar xzf {vm_path}/{box_name}.tar.gz -C {vm_path}/")
+        system_commands.cmd(f"tar xzf {vm_path}/{box_name}.tar.gz -C {vm_path}/")
 
         # Сеть libvirt (создать если ещё нет)
 
@@ -251,11 +258,11 @@ class _VirtInstall:
 
         try:
             system_commands.check_output_command(
-                f"sudo virsh --connect qemu:///system net-create {network_path} && "
-                f"sudo virsh --connect qemu:///system net-autostart --network test"
+                f"virsh --connect qemu:///system net-create {network_path} && "
+                f"virsh --connect qemu:///system net-autostart --network test"
             )
         except Exception as e:
-            print("WARNING: Сеть test возможно уже существует.")
+            print(f"WARNING: Сеть test возможно уже существует. Ошибка: {e}")
 
         print("\n==> Создание ВМ параллельно с задержкой 10 сек...")
         start_ts = time()
@@ -302,7 +309,7 @@ class _VirtInstall:
                 hostname, ip = future.result()
                 self.vms_date[hostname]["ip_bridge"] = ip
         system_commands.cmd(
-            f"sudo rm {vm_path}/{self.box}.qcow2 {vm_path}/{self.box}.tar.gz"
+            f"rm {vm_path}/{self.box}.qcow2 {vm_path}/{self.box}.tar.gz"
         )
 
         if self.box != "vm_station":
@@ -326,9 +333,8 @@ class _VirtInstall:
                 # Собираем их в одну строку с разделителем \n
                 sources_str = "\\n".join(sources_lines)
 
-                # 3. Узнаём текущее локальное ядро (если нужно передавать в скрипт)
                 print("\n==> Парсим ядро...")
-                if self.kernel is not None:
+                if self.kernel:
                     kernel = self.kernel
                     if "-generic" in kernel:
                         suffix = "generic"
@@ -345,7 +351,7 @@ class _VirtInstall:
                     apt_kernel = f"linux-{major_minor}-{suffix}"
                     print(f"\n==> Получили ядро: {kernel}, apt_kernel {apt_kernel}...")
 
-            def start_prepare(cmd_template=None, reboot=None):
+            def start_prepare(cmd_template: Optional[str] = None, reboot: Optional[int] = None):
                 class SafeDict(dict):
                     def __missing__(self, key):
                         # если ключа нет — возвращаем его же в фигурных скобках
@@ -355,7 +361,9 @@ class _VirtInstall:
                     futures = []
                     for host in self.vms_date:
                         if reboot is None:
-                            if self.kernel is not None:
+                            if cmd_template is None:
+                                raise ValueError("cmd_template должен быть задан при запуске без перезагрузки")
+                            if self.kernel:
                                 # собираем словарь с теми ключами, которые реально подставляем
                                 mapping = SafeDict(
                                     host=host,
@@ -449,13 +457,13 @@ class _VirtInstall:
                             f"virsh --connect qemu:///system start {vm}"
                         )
                     sleep(60)
-                    print(f"\n\n\nСтавим hostname\n\n\n")
+                    print("\n\n\nСтавим hostname\n\n\n")
                     start_prepare(cmds[0])
-                    print(f"\n\n\nAtra Update\n\n\n")
+                    print("\n\n\nAtra Update\n\n\n")
                     start_prepare(cmds[2])
-                    print(f"\n\n\nСтавим зависимости\n\n\n")
+                    print("\n\n\nСтавим зависимости\n\n\n")
                     start_prepare(cmds[3])
-                    print(f"\n\nПерезагружаем ВМ\n\n\n")
+                    print("\n\nПерезагружаем ВМ\n\n\n")
                     start_prepare(reboot=1)
                     for vm in vms_list:
                         disk = f"{vm}.qcow2"
@@ -468,11 +476,11 @@ class _VirtInstall:
                     "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\treleases' | sudo tee /etc/hosts",
                     "sudo DEBIAN_FRONTEND=noninteractive apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install wget curl rsync htop gcc make perl qemu-guest-agent -y",
                 ]
-                print(f"\n\n\nСтавим hostname\n\n\n")
+                print("\n\n\nСтавим hostname\n\n\n")
                 start_prepare(cmds[0])
-                print(f"\n\n\nСтавим зависимости\n\n\n")
+                print("\n\n\nСтавим зависимости\n\n\n")
                 start_prepare(cmds[1])
-                print(f"\n\nПерезагружаем ВМ\n\n\n")
+                print("\n\nПерезагружаем ВМ\n\n\n")
                 start_prepare(reboot=1)
 
                 # Disk
@@ -508,7 +516,7 @@ class _VirtInstall:
                             self.vms_date[hostname]["ip_bridge"] = ip
 
                 # Bridge Ip
-                if bridge == True:
+                if bridge:
                     vms_dates_bridge = {}
                     for name, cfg in self.original_vms_date.items():
                         if "ip_bridge" in cfg:
@@ -524,28 +532,28 @@ class _VirtInstall:
                         self._set_ip_bridge(vms_date=vms_dates_bridge)
 
             else:
-                print(f"\n\n\nСтавим hostname\n\n\n")
+                print("\n\n\nСтавим hostname\n\n\n")
                 start_prepare(cmds[0])
-                print(f"\n\n\nСтавим репозиторий\n\n\n")
+                print("\n\n\nСтавим репозиторий\n\n\n")
                 start_prepare(cmds[1])
-                print(f"\n\n\nAtra Update\n\n\n")
+                print("\n\n\nAtra Update\n\n\n")
                 start_prepare(cmds[2])
-                print(f"\n\n\nСтавим зависимости\n\n\n")
+                print("\n\n\nСтавим зависимости\n\n\n")
                 start_prepare(cmds[3])
-                if self.kernel is not None:
-                    print(f"\n\n\nСтавим ядро\n\n\n")
+                if self.kernel:
+                    print("\n\n\nСтавим ядро\n\n\n")
                     start_prepare(cmds[4])
-                    print(f"\n\n\nОбновляем grub\n\n\n")
+                    print("\n\n\nОбновляем grub\n\n\n")
                     start_prepare(cmds[5])
                     start_prepare(cmds[6])
                     start_prepare(cmds[7])
                     start_prepare(cmds[8])
                 else:
                     print(
-                        f"\n\n\nЯдро не указано пропускаем установку ядра и обновление grub\n\n"
+                        "\n\n\nЯдро не указано пропускаем установку ядра и обновление grub\n\n"
                     )
 
-                print(f"\n\nПерезагружаем ВМ\n\n\n")
+                print("\n\nПерезагружаем ВМ\n\n\n")
                 start_prepare(reboot=1)
 
                 # Disk
@@ -581,7 +589,7 @@ class _VirtInstall:
                             self.vms_date[hostname]["ip_bridge"] = ip
 
                 # Bridge Ip
-                if bridge == True:
+                if bridge:
                     vms_dates_bridge = {}
                     for name, cfg in self.original_vms_date.items():
                         if "ip_bridge" in cfg:

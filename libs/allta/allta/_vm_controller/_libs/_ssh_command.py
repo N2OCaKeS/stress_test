@@ -1,6 +1,8 @@
 from ..._decorators.Decorators import BaseDecorators
 from ._signals import _Signals as signals
-import paramiko, threading, time, shlex
+import paramiko
+import time
+from typing import Optional, List, Union
 
 # Новый декоратор для логирования
 from .._decorator._logger import logger
@@ -26,9 +28,9 @@ class _SSH_Command:
         vm_dates: dict,
         username: str = "u",
         password: str = "1",
-        signal_set: str = None,
-        signal_get: list = None,
-        task_name: str = None,
+        signal_set: Optional[str] = None,
+        signal_get: Optional[Union[str, List[str]]] = None,
+        task_name: Optional[str] = None,
         time_out: int = 15,
     ) -> dict:
         """
@@ -109,7 +111,7 @@ class _SSH_Command:
                     "host": host,
                     "task_name": task_name or "unknown",
                     "command": command,
-                    "output": (output_stderr, f"\n\n\n", output),
+                    "output": (output_stderr, "\n\n\n", output),
                     "status": "error",
                 }
 
@@ -170,9 +172,9 @@ class _SSH_Command:
         vm_dates: dict,
         username: str = "u",
         password: str = "1",
-        signal_set: str = None,
-        signal_get: list = None,
-        task_name: str = None,
+        signal_set: Optional[str] = None,
+        signal_get: Optional[Union[str, List[str]]] = None,
+        task_name: Optional[str] = None,
         time_out: int = 15,
         nowait_timeout: int = 30,
     ) -> dict:

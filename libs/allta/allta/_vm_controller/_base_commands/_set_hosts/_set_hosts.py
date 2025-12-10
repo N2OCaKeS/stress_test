@@ -45,11 +45,11 @@ class _SetHosts:
         def process_vm(vm_name: str, vm_info: dict) -> tuple:
             # Генерация содержимого файла /etc/hosts для текущей ВМ
             lines = [
-                f"127.0.0.1\tlocalhost",
-                f"127.0.1.1\t$(hostname)",
-                f"10.177.103.10\tallta.devos.astralinux.ru\tallta",
-                f"10.177.5.111\tqa111.devos.astralinux.ru\tqa111",
-                f"10.177.43.1\treleases.devos.astralinux.ru\treleases",
+                "127.0.0.1\tlocalhost",
+                "127.0.1.1\t$(hostname)",
+                "10.177.103.10\tallta.devos.astralinux.ru\tallta",
+                "10.177.5.111\tqa111.devos.astralinux.ru\tqa111",
+                "10.177.43.1\treleases.devos.astralinux.ru\treleases",
             ]
             
 

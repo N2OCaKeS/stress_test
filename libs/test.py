@@ -1,9 +1,12 @@
-from allta import Libvirt, LibvirtManager, BaseDecorators
+from __future__ import annotations
+
 from time import sleep
 
+from allta import BaseDecorators, Libvirt, LibvirtManager
 
 vms_dates = {
     "testvm1": {
+        "ip_bridge": "10.177.103.158",        
         "cpu": "4",
         "ram": "4096",
         "disk": "100",
@@ -20,8 +23,8 @@ vms_dates = {
             },
             "disk3": {
                 "device": "/dev/vdb",  # default none
-                "fs_type": "ext4", # default none FOR BLOCK DISK if default then NOT format
-                "mount_point": "/vms" # default none, if default then not mount in vm
+                "fs_type": "ext4",  # default none FOR BLOCK DISK if default then NOT format
+                "mount_point": "/vms",  # default none, if default then not mount in vm
             },
             "disk4": {
                 "device": "/dev/vdc2",  # default none
@@ -35,19 +38,23 @@ rc = "1.8.1.6"
 
 
 class Libvirt_test:
+    @staticmethod
     def build():
         Libvirt.prepare()
         Libvirt.build(box=box, rc=rc, vms=vms, vms_dates=vms_dates, bridge=True)
 
+    @staticmethod
     def build_old():
         old = Libvirt.build(box=box, rc=rc, vms=vms, vms_dates=vms_dates, bridge=False)
         LibvirtManager.Vm.bridge(
             vms_date=old, new_vms_date=vms_dates, username="u", password="1"
         )
 
+    @staticmethod
     def check():
         Libvirt.check(vms=vms, vms_dates=vms_dates)
 
+    @staticmethod
     def execute():
         example_task1 = {
             "testvm1": {
@@ -59,6 +66,7 @@ class Libvirt_test:
         }
         Libvirt.execute(commands=example_task1, vms_dates=vms_dates)
 
+    @staticmethod
     def execute_no_wait():
         example_task1 = {
             "testvm1": {
@@ -76,6 +84,7 @@ class Libvirt_test:
         }
         Libvirt.execute(commands=example_task1, vms_dates=vms_dates)
 
+    @staticmethod
     def scp():
         scp = {
             "testvm1": [
@@ -86,6 +95,7 @@ class Libvirt_test:
 
 
 class LibvirtManager_test:
+    @staticmethod
     def additional_disk():
         return LibvirtManager.Vm.additional_disk(
             vms_dates=vms_dates, disk_path="/home/u"
@@ -93,10 +103,12 @@ class LibvirtManager_test:
 
 
 class Decorators_test:
+    @staticmethod
     @BaseDecorators.timer
     def timer():
         sleep(0.000234)
 
 
 # Libvirt_test.build()
-LibvirtManager_test.additional_disk()
+# LibvirtManager_test.additional_disk()
+

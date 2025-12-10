@@ -1,0 +1,133 @@
+import subprocess
+
+from os import linesep, path
+from abc import ABC, abstractmethod
+from typing import Union, Tuple
+
+
+
+LIBS_DIR = path.dirname(path.abspath(__file__))
+SCRIPT_DIR = path.normpath(path.join(LIBS_DIR, '..', '..'))
+CONFIG_FILE = 'psql_test.conf'
+PARAMS = {
+     'results_name': 'RESULTS_NAME',
+     'psql_version': 'PSQL_VERSION',
+     'cluster_port': 'CLUSTER_PORT',
+     'connections_count': 'CONNECTIONS_COUNT',
+     't_time': 'TRANSACTION_TIME',
+     'shared_buffers': 'SHARED_BUFFERS',
+     'eff_cache_size': 'EFFECTIVE_CACHE_SIZE',
+     'work_mem': 'WORK_MEM',
+     'max_worker_ps': 'MAX_WORKER_PROCESSES',
+     'max_pl_workers': 'MAX_PARALLEL_WORKERS'
+}
+
+
+
+def conf_wrapper(file_name: str):
+     with open(file_name, 'r') as r:
+          config = r.readlines()
+
+     dates = {
+          line.split('=')[0]: line.split('=')[1].strip() for line in config if '=' in line
+          }
+     temp_dict = {
+          key: dates.get(value) for key, value in PARAMS.items()
+          }
+     
+     return temp_dict
+     
+
+
+
+class system:
+    
+    """
+    Обращение к системе
+    """
+
+    @staticmethod
+    def check_output_command(command: str, returncode=None) -> Tuple[str, bool]:
+        result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, universal_newlines=True, text=True)
+        result.wait()
+        output, errors = result.communicate()
+        output = linesep.join([s for s in output.splitlines() if s])
+        errors = linesep.join([s for s in errors.splitlines() if s])
+        code = result.returncode == 0
+        if returncode:
+            if not errors:
+               return output, code
+            else:
+               return errors, code
+        else:
+            if not errors:
+                 return output, True
+            else:
+                 return errors, False
+
+    @staticmethod
+    def pgbench(command: str) -> Tuple[str, str]:
+         """
+              Для PGBench
+         """
+         test = subprocess.run(command,
+                               shell=True,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+         return [test.stdout.decode("utf-8"), test.stderr.decode("utf-8")]
+
+    @staticmethod
+    def cmd_with_returncode(command: str) -> int:
+        return subprocess.run(command, shell=True).returncode
+
+    @staticmethod
+    def cmd(command: str):
+        return subprocess.run(command, shell=True)
+
+
+
+     
+class Test(ABC):
+    
+    """
+    Абстрактный конвейер
+    """
+
+    @abstractmethod
+    def check_user(cls) -> Union[str, None]:
+        """Проверка прав пользователя"""
+        pass
+    
+    @abstractmethod
+    def check_mode(cls) -> Union[str, None]:
+        """Проверка режима ОС"""
+        pass
+
+    @abstractmethod
+    def host_env_prepare(cls) -> Union[str, None]:
+        """Подготовка окружения"""
+        pass
+
+    @abstractmethod
+    def database_prep(cls) -> Union[str, None]:
+        """Подготовка БД"""
+        pass
+
+    @abstractmethod
+    def init_base(cls) -> Union[str, None]:
+        """Инизиализация БД"""
+        pass
+
+    @abstractmethod
+    def execute_test(cls) -> Union[str, None]:
+        """Запуск теста"""
+        pass
+    
+    @abstractmethod
+    def cleare(cls) -> Union[str, None]:
+        """Очистка окружения"""
+        pass
+
+     
+

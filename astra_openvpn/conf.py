@@ -1,7 +1,4 @@
-from allta import SystemCommands
 import requests
-
-sys_cls = SystemCommands()
 
 jira_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-jira-url'
 confluence_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-confluence-url'

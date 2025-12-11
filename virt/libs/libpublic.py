@@ -250,7 +250,6 @@ class Public:
                 combined = file.read()
 
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            head_row = f'<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Total_rating: {total_rating}</b></h2></p>'
             head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Сводная таблица чтение/запись:</b></h3></p>'
             html_page = '\n'.join([header_table, head_row, head_row2, combined])
 

@@ -50,6 +50,7 @@ class Server:
 
             try:
                 rc_prep = Libvirt.prepare()
+                SystemCommands.cmd_with_returncode("sudo docker run -d --name node_exporter --net=host prom/node-exporter:latest")
             except Exception:
                 rc_prep = ExitCodes.UNEXPECTED
             if rc_prep != ExitCodes.OK:
@@ -61,50 +62,6 @@ class Server:
             logging.exception("%s crashed", where)
             return ExitCodes.UNEXPECTED
 
-    @staticmethod
-    def __net(phy_if: str, ip: str) -> int:
-        where = "server.net"
-        try:
-            bridge = "br0"
-
-            SystemCommands.cmd_with_returncode("sudo cp /etc/network/interfaces /etc/network/interfaces.bak || true")
-
-            cfg = f"""sudo tee /etc/network/interfaces > /dev/null <<EOF
-auto lo
-iface lo inet loopback
-
-auto {bridge}
-iface {bridge} inet static
-    address {ip}
-    netmask 255.255.255.0
-    gateway 10.177.103.254
-    dns-nameservers 10.177.128.198 10.177.180.246 10.177.181.142
-    bridge_ports {phy_if}
-    bridge_stp off
-    bridge_fd 0
-    bridge_maxwait 0
-
-iface {phy_if} inet manual
-EOF
-"""
-            rc_cfg = SystemCommands.cmd_with_returncode(cfg)
-            if rc_cfg != 0:
-                return _log_and_return(where, logging.ERROR, "write /etc/network/interfaces failed", ExitCodes.ACTION_FAILED)
-
-            cmd_if = f"sudo ifdown {phy_if} || true && sudo ifdown {bridge} || true && sudo ifup {bridge}"
-            rc_if = SystemCommands.cmd_with_returncode(cmd_if + " && sudo systemctl restart networking")
-            if rc_if != 0:
-                return _log_and_return(where, logging.ERROR, "network reconfigure failed", ExitCodes.ACTION_FAILED)
-
-            rc_libvirt = SystemCommands.cmd_with_returncode("sudo systemctl enable --now libvirtd")
-            if rc_libvirt != 0:
-                return _log_and_return(where, logging.ERROR, "libvirtd enable/start failed", ExitCodes.PRECHECK_SERVICE)
-
-            logging.info("%s: OK phy_if=%s ip=%s", where, phy_if, ip)
-            return ExitCodes.OK
-        except Exception:
-            logging.exception("%s crashed", where)
-            return ExitCodes.UNEXPECTED
 
     @staticmethod
     def server_init(phy_if: str, ip: str) -> int:
@@ -114,9 +71,6 @@ EOF
             if rc_deps != ExitCodes.OK:
                 return _log_and_return(where, logging.ERROR, f"deps failed rc={_rc_name(rc_deps)}", rc_deps)
 
-            rc_net = Server.__net(phy_if=phy_if, ip=ip)
-            if rc_net != ExitCodes.OK:
-                return _log_and_return(where, logging.ERROR, f"net failed rc={_rc_name(rc_net)}", rc_net)
 
             logging.info("%s: OK", where)
             return ExitCodes.OK

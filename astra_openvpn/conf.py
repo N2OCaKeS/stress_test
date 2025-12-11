@@ -23,7 +23,7 @@ COLORS = {
 
 VM_RESULTS_PATH = f"{REPORT_PATH}/vm_results"
 
-
+MODIFY = ["o", "s"]
 #----------INFO-----------
 
 # INFO_FILENAME = f'{REPORT_PATH}/INFO.txt'
@@ -45,4 +45,4 @@ VM_RESULTS_PATH = f"{REPORT_PATH}/vm_results"
 #     f"iperf_{IPERF_PKG}"
 # )
 
-MODIFY = ["o", "s", "v"]
+

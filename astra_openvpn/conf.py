@@ -32,9 +32,20 @@ VM_RESULTS_PATH = f"{REPORT_PATH}/vm_results"
 INFO_FILENAME = f'{REPORT_PATH}/INFO.txt'
 RC = sys_cls.check_output_command("cat /etc/astra/build_version | tr -d '[:space:]'")
 KERNEL = sys_cls.check_output_command("uname -r | tr -d '[:space:]'")
-PACKAGE = (f"astra-openvpn-server_{sys_cls.check_output_command('dpkg -l | grep astra-openvpn-server | awk \'$2 == \"astra-openvpn-server\" {print $3}\'')}, "
-           f"openvpn_{sys_cls.check_output_command('dpkg -l | grep openvpn | awk \'$2 == \"openvpn\" {print $3}\'')}, "
-           f"iperf_{sys_cls.check_output_command('dpkg -l | grep iperf | awk \'$2 == \"iperf\" {print $3}\'')}")
+ASTRA_PKG = sys_cls.check_output_command(
+    "dpkg -l | grep astra-openvpn-server | awk '$2 == \"astra-openvpn-server\" {print $3}'"
+)
+OPENVPN_PKG = sys_cls.check_output_command(
+    "dpkg -l | grep openvpn | awk '$2 == \"openvpn\" {print $3}'"
+)
+IPERF_PKG = sys_cls.check_output_command(
+    "dpkg -l | grep iperf | awk '$2 == \"iperf\" {print $3}'"
+)
 
+PACKAGE = (
+    f"astra-openvpn-server_{ASTRA_PKG}, "
+    f"openvpn_{OPENVPN_PKG}, "
+    f"iperf_{IPERF_PKG}"
+)
 
 MODIFY = ["o", "s", "v"]

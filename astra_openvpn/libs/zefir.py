@@ -8,6 +8,7 @@ from numpy import where
 from atlassian import Confluence
 from os import remove, path
 from time import sleep, ctime
+from pathlib import Path
 from conf import JIRA_URL, CONFLUENCE_URL
 
 def response():
@@ -453,27 +454,30 @@ class ZefirResultTable:
         stand_url = 'http://allta.devos.astralinux.ru/rest/api/get-stand'
         response_times = requests.get(times_url)
         response_stand = requests.get(stand_url)
+
+        templates_dir = Path("./templates")
+        templates_dir.mkdir(parents=True, exist_ok=True)
         
         if response_times.status_code == 200:
-            with open('./templates/times.html', 'wb') as tfb:
+            with open(templates_dir / 'times.html', 'wb') as tfb:
                 tfb.write(response_times.content)
         else:
-            with open('./templates/times.html', 'w') as f:
+            with open(templates_dir / 'times.html', 'w') as f:
                 err_text = f'Failed to get file from {times_url}: {response_times.status_code}'
                 f.write(html_string.format(text=err_text))
         if response_stand.status_code == 200:
-            with open('./templates/stand.html', 'wb') as sfb:
+            with open(templates_dir / 'stand.html', 'wb') as sfb:
                 sfb.write(response_stand.content)
         else:
-            with open('./templates/stand.html', 'w') as f:
+            with open(templates_dir / 'stand.html', 'w') as f:
                 err_text = f'Failed to get file from {stand_url}: {response_stand.status_code}'
                 f.write(html_string.format(text=err_text))
                 
         with open('res.html', 'r') as r:
             html_table = r.readlines()
-        with open('./templates/stand.html', 'r') as r:
+        with open(templates_dir / 'stand.html', 'r') as r:
             stand = r.read()
-        with open('./templates/times.html', 'r') as r:
+        with open(templates_dir / 'times.html', 'r') as r:
             times = r.read()
         def write_html(string):
             with open('result.html', 'a') as w:

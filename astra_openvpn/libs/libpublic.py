@@ -26,7 +26,16 @@ def _normalize_stats(
     raise TypeError("ovpn_publisher expects AnalysisResult or dict with stats")
 
 
-def ovpn_publisher(username, token, space, parent_title, title, stats, lead_time=""):
+def ovpn_publisher(
+    username,
+    token,
+    space,
+    parent_title,
+    title,
+    stats,
+    lead_time="",
+    test_cycle_version: str | None = None,
+):
     preview_path = "./demo_confluence_report.html"
     reporter = ConfluencePublisher(
         base_url="https://life.astralinux.ru", username=username, token=token
@@ -108,11 +117,12 @@ def ovpn_publisher(username, token, space, parent_title, title, stats, lead_time
     builder.render_to_file(path=preview_path)
 
     attachments = [preview_path, *builder.attachments]
-    reporter.publish(
-        space=space,
-        title=title,
-        body=builder.render(),
+    reporter.publish_results_from_params(
+        conf_space=space,
+        conf_parent_page=parent_title,
+        conf_new_page_name=title,
+        test_cycle_version=test_cycle_version,
+        body=builder,
         attachments=attachments,
-        parent_title=parent_title,
     )
     return builder, "./test/demo_confluence_report.html"

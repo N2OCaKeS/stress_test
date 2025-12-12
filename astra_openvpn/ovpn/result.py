@@ -245,7 +245,7 @@ def analyze_result(
     public_chart_rows = _build_public_chart_rows(df_charts)
     stats_table = _build_stats_table_rows(stats)
     if stats["ever_connected_count"] == 0:
-            criterions = [Criterion(name="ever_connected_count", values=[0], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
+            criterions = [Criterion(name="ever_connected_count", values=[1], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
                   Criterion(name="disconnected_count", values=[tester_count], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
                   Criterion(name="drops_max", values=[tester_count], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
     else:

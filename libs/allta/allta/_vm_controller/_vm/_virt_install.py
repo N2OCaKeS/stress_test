@@ -49,7 +49,7 @@ class _VirtInstall:
         self.original_vms_date = copy.deepcopy(vms_date)
         self.vm_path = "/vms"
         if kernel is None or kernel == "":
-            self.kernel = system_commands.check_output_command("uname -r")
+            self.kernel = None
         else:
             self.kernel = kernel
 

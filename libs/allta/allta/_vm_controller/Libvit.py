@@ -49,13 +49,77 @@ class Libvirt(_VirtualMashines):
         Returns:
             int: Код завершения выполнения команды.
         """
-
+        print("Устанавливаем и настраиваем Libvirt и зависимости...\n\n\n")
         system_commands.cmd_with_returncode(
-            "sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar sshpass -y"
+            "sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt-get install astra-kvm wget tar sshpass bridge-utils -y"
         )
         system_commands.cmd_with_returncode(
             "sudo usermod -aG kvm,libvirt,libvirt-qemu,libvirt-admin $USER"
         )
+
+        print("\n\n\nНастраиваем сеть для Libvirt...\n\n\n")
+        net = system_commands.check_output_command(
+            'ip -4 route get 8.8.8.8 | awk \'{for(i=1;i<=NF;i++){if($i=="dev") d=$(i+1); if($i=="src") s=$(i+1)}} END{print s, d}\''
+        )
+
+        ip, phy_if = net.strip().split()
+        bridge = "br0"
+        if phy_if != bridge:
+            system_commands.check_output_command(
+                "sudo cp /etc/network/interfaces /etc/network/interfaces.bak || true"
+            )
+            cfg = f"""sudo tee /etc/network/interfaces > /dev/null <<EOF
+auto lo
+iface lo inet loopback
+
+auto {bridge}
+iface {bridge} inet static
+    address {ip}
+    netmask 255.255.255.0
+    gateway 10.177.103.254
+    dns-nameservers 10.177.180.246 10.177.181.142
+    bridge_ports {phy_if}
+    bridge_stp off
+    bridge_fd 0
+    bridge_maxwait 0
+
+iface {phy_if} inet manual
+EOF
+"""
+            system_commands.cmd_with_returncode(cfg)
+            system_commands.cmd_with_returncode(
+                f"sudo ifdown {phy_if} || true && sudo ifup {bridge} && sudo systemctl restart networking"
+            )
+            # Переключаем iptables на nft
+            system_commands.cmd_with_returncode("sudo update-alternatives --set iptables /usr/sbin/iptables-nft")
+            system_commands.cmd_with_returncode("sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-nft")
+            # Настраиваем br_netfilter
+            system_commands.cmd_with_returncode("sudo modprobe br_netfilter")
+            system_commands.cmd_with_returncode("sudo sysctl -w net.bridge.bridge-nf-call-iptables=1")
+            system_commands.cmd_with_returncode("sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=1")            
+
+            print("\n\n\nУстанавливаем Docker...\n\n\n") # TODO сделать проверку на наличе докер
+            system_commands.cmd_with_returncode("sudo apt-get install docker.io -y docker-compose")
+
+            print("\n\n\nПрименяем настройки для firewall...\n\n\n")
+            # Чистим старые правила
+            system_commands.cmd_with_returncode("sudo iptables-legacy -F FORWARD || true")
+            # Разрешаем форвардинг через мост
+            system_commands.cmd_with_returncode("sudo iptables -I FORWARD 1 -i br0 -j ACCEPT")
+            system_commands.cmd_with_returncode("sudo iptables -I FORWARD 2 -o br0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT")
+            # Защищаем мост от Docker
+            system_commands.cmd_with_returncode("sudo iptables -I DOCKER-USER 1 -i br0 -j ACCEPT")
+            system_commands.cmd_with_returncode("sudo iptables -I DOCKER-USER 1 -o br0 -j ACCEPT")
+            system_commands.cmd_with_returncode("sudo systemctl disable --now firewalld")
+            system_commands.cmd_with_returncode("sudo nft flush ruleset")
+
+            print("\n\n\nИсправляю ошибку с cgroup...\n\n\n")
+            system_commands.cmd_with_returncode("echo 'cgroup_controllers = [ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuacct\" ]' | sudo tee -a /etc/libvirt/qemu.conf")
+
+            print("\n\n\nПерезапускаем сервисы...\n\n\n")
+            system_commands.cmd_with_returncode("sudo systemctl restart libvirtd")
+            system_commands.cmd_with_returncode("sudo systemctl restart docker")
+
         return 0
 
     @classmethod
@@ -103,7 +167,9 @@ class Libvirt(_VirtualMashines):
         return vms_dates
 
     @classmethod
-    def check(cls, vms: list, vms_dates: dict, ping_retries: int = 5, ping_timeout_s: int = 1):
+    def check(
+        cls, vms: list, vms_dates: dict, ping_retries: int = 5, ping_timeout_s: int = 1
+    ):
         """
         Проверяет доступность виртуальных машин через ping.
 
@@ -125,7 +191,7 @@ class Libvirt(_VirtualMashines):
                         }
                     }
             ping_retries (int): Кол-во попыток для проверки. По умолчанию 3.
-            ping_timeout_s (int): Таймауты для проверок в секундах. По умолчанию 1.                                
+            ping_timeout_s (int): Таймауты для проверок в секундах. По умолчанию 1.
 
         Returns:
             int: 0, если все машины доступны, иначе 1.
@@ -148,7 +214,9 @@ class Libvirt(_VirtualMashines):
 
             ok = False
             for _ in range(ping_retries):
-                rc = system_commands.cmd_with_returncode(f"ping -c 1 -W {ping_timeout_s} {ip}")
+                rc = system_commands.cmd_with_returncode(
+                    f"ping -c 1 -W {ping_timeout_s} {ip}"
+                )
                 if rc == 0:
                     ok = True
                     break

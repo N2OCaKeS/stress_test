@@ -171,18 +171,62 @@ class Snapshot:
     def delete_all(vms: list) -> int:
         where = "snapshot.delete_all"
         try:
-            try:
-                LibvirtManager.Snapshot.delete_all(vms=vms)
-            except Exception as e:
-                return _log_and_return(
-                    where, logging.ERROR,
-                    f"LibvirtManager.Snapshot.delete_all raised: {e}",
-                    ExitCodes.ACTION_FAILED
-                )
-            # отдельной верификации здесь нет (virsh не даёт удобного списка всех снапшотов одной командой без парсинга),
-            # но основные кейсы покрывает delete(...) в твоём пайплайне.
+            for vm in vms:
+                while True:
+                    rc, out = SystemCommands.check_output_command_with_returncode(
+                        f"virsh snapshot-list {vm} --name --all"
+                    )
+
+                    if rc != 0:
+                        return _log_and_return(
+                            where, logging.ERROR,
+                            f"virsh snapshot-list failed vm={vm}: {out}",
+                            ExitCodes.ACTION_FAILED
+                        )
+
+                    snaps = []
+                    for line in out.splitlines():
+                        s = line.strip()
+                        if s:
+                            snaps.append(s)
+
+                    if not snaps:
+                        logging.info("%s: no snapshots vm=%s", where, vm)
+                        break
+
+                    deleted_any = False
+
+                    for snap in reversed(snaps):
+                        rc_del, out_del = SystemCommands.check_output_command_with_returncode(
+                            f"virsh snapshot-delete {vm} {snap}"
+                        )
+                        if rc_del == 0:
+                            logging.info("%s: deleted vm=%s snap=%s", where, vm, snap)
+                            deleted_any = True
+                            continue
+
+                        rc_meta, out_meta = SystemCommands.check_output_command_with_returncode(
+                            f"virsh snapshot-delete {vm} {snap} --metadata"
+                        )
+                        if rc_meta == 0:
+                            logging.info("%s: deleted metadata vm=%s snap=%s", where, vm, snap)
+                            deleted_any = True
+                        else:
+                            logging.warning(
+                                "%s: delete failed vm=%s snap=%s: %s",
+                                where, vm, snap, out_del or out_meta
+                            )
+
+                    if not deleted_any:
+                        return _log_and_return(
+                            where, logging.ERROR,
+                            f"cannot delete snapshots for vm={vm}; still present: {', '.join(snaps)}",
+                            ExitCodes.ACTION_FAILED
+                        )
+
             logging.info("%s: OK vms=%s", where, ",".join(vms))
             return ExitCodes.OK
+
         except Exception:
             logging.exception("%s crashed", where)
             return ExitCodes.UNEXPECTED

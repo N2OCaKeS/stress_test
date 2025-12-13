@@ -237,7 +237,7 @@ def task_vm_base_create(self, envelope: dict) -> dict:
       2) наличие снапшотов 1.7.5.9 и 1.8.1.6 у каждой ВМ (ретраи 60/2),
          затем запись этих снапшотов в БД.
     """
-    _require(envelope, ["task_id", "operation", "server", "vms_full"])
+    _require(envelope, ["task_id", "operation", "server", "vms_full", "vm_password"])
     server = envelope["server"]
     vms_full: Dict[str, Dict] = envelope["vms_full"] or {}
     vm_password = envelope.get("vm_password")
@@ -274,7 +274,7 @@ def task_vm_base_create(self, envelope: dict) -> dict:
 
             # Вставляем ВМ в БД
             created_vm_objs: list[VirtualMachine] = []
-            enc_pwd = _CRYPTO.encrypt(vm_password) if vm_password else None
+            enc_pwd = _CRYPTO.encrypt(vm_password)
             for name, spec in vms_full.items():
                 vm_obj = VirtualMachine(
                     name=name,
@@ -283,7 +283,7 @@ def task_vm_base_create(self, envelope: dict) -> dict:
                     ip_address=str(spec["ip_bridge"]),
                     server_id=int(spec["server_id"]),
                     status="free",
-                    password_enc=enc_pwd or "",
+                    password_enc=enc_pwd,
                 )
                 db.add(vm_obj)
                 created_vm_objs.append(vm_obj)

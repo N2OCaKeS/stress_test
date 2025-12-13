@@ -78,8 +78,11 @@ class _VirtInstall:
                     os_version = "alse17"
                 elif "1.8" in self.box:
                     os_version = "alse17"
+                elif "vm_station" in self.box:
+                    os_version = "alse17"                    
                 elif "debian" in self.box:
                     os_version = "debian12"
+
                 return box_name, box_url, os_version
 
         # 2. Если не найден — дефолты

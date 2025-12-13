@@ -20,6 +20,7 @@ from ._vm.LibvirtManager import LibvirtManager as libvirt_manager
 from typing import cast, Optional, Any, List
 import sys
 import threading
+from time import sleep
 
 
 class Libvirt(_VirtualMashines):
@@ -91,35 +92,77 @@ EOF
                 f"sudo ifdown {phy_if} || true && sudo ifup {bridge} && sudo systemctl restart networking"
             )
             # Переключаем iptables на nft
-            system_commands.cmd_with_returncode("sudo update-alternatives --set iptables /usr/sbin/iptables-nft")
-            system_commands.cmd_with_returncode("sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-nft")
+            system_commands.cmd_with_returncode(
+                "sudo update-alternatives --set iptables /usr/sbin/iptables-nft"
+            )
+            system_commands.cmd_with_returncode(
+                "sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-nft"
+            )
             # Настраиваем br_netfilter
             system_commands.cmd_with_returncode("sudo modprobe br_netfilter")
-            system_commands.cmd_with_returncode("sudo sysctl -w net.bridge.bridge-nf-call-iptables=1")
-            system_commands.cmd_with_returncode("sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=1")            
-
-            print("\n\n\nУстанавливаем Docker...\n\n\n") # TODO сделать проверку на наличе докер
-            system_commands.cmd_with_returncode("sudo apt-get install docker.io -y docker-compose")
+            system_commands.cmd_with_returncode(
+                "sudo sysctl -w net.bridge.bridge-nf-call-iptables=1"
+            )
+            system_commands.cmd_with_returncode(
+                "sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=1"
+            )
+            # Чистим старые правила
+            system_commands.cmd_with_returncode(
+                "sudo iptables-legacy -F FORWARD || true"
+            )
+            # Разрешаем форвардинг через мост
+            system_commands.cmd_with_returncode(
+                "sudo iptables -I FORWARD 1 -i br0 -j ACCEPT"
+            )
+            system_commands.cmd_with_returncode(
+                "sudo iptables -I FORWARD 2 -o br0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
+            )
+            system_commands.cmd_with_returncode(
+                "sudo systemctl disable --now firewalld"
+            )
+            system_commands.cmd_with_returncode("sudo nft flush ruleset")
+            system_commands.cmd_with_returncode(
+                f"sudo ifdown {bridge} || true && sudo ifup {bridge} && sudo systemctl restart networking"
+            )
+            sleep(120)
+            print("\n\n\nПроверяем наличие Docker...\n\n\n")
+            docker_rc = system_commands.cmd_with_returncode(
+                "dpkg -l docker.io >/dev/null 2>&1"
+            )
+            compose_rc = system_commands.cmd_with_returncode(
+                "dpkg -l docker-compose >/dev/null 2>&1"
+            )
+            if docker_rc == 0 and compose_rc == 0:
+                print("Docker уже установлен, шаг установки пропущен.")
+            else:
+                print("\n\n\nУстанавливаем Docker...\n\n\n")
+                system_commands.cmd_with_returncode(
+                    "sudo apt-get install -y docker.io docker-compose"
+                )
 
             print("\n\n\nПрименяем настройки для firewall...\n\n\n")
-            # Чистим старые правила
-            system_commands.cmd_with_returncode("sudo iptables-legacy -F FORWARD || true")
-            # Разрешаем форвардинг через мост
-            system_commands.cmd_with_returncode("sudo iptables -I FORWARD 1 -i br0 -j ACCEPT")
-            system_commands.cmd_with_returncode("sudo iptables -I FORWARD 2 -o br0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT")
+
             # Защищаем мост от Docker
-            system_commands.cmd_with_returncode("sudo iptables -I DOCKER-USER 1 -i br0 -j ACCEPT")
-            system_commands.cmd_with_returncode("sudo iptables -I DOCKER-USER 1 -o br0 -j ACCEPT")
-            system_commands.cmd_with_returncode("sudo systemctl disable --now firewalld")
+            system_commands.cmd_with_returncode(
+                "sudo iptables -I DOCKER-USER 1 -i br0 -j ACCEPT"
+            )
+            system_commands.cmd_with_returncode(
+                "sudo iptables -I DOCKER-USER 1 -o br0 -j ACCEPT"
+            )
+            system_commands.cmd_with_returncode(
+                "sudo systemctl disable --now firewalld"
+            )
             system_commands.cmd_with_returncode("sudo nft flush ruleset")
+            sleep(120)
 
             print("\n\n\nИсправляю ошибку с cgroup...\n\n\n")
-            system_commands.cmd_with_returncode("echo 'cgroup_controllers = [ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuacct\" ]' | sudo tee -a /etc/libvirt/qemu.conf")
+            system_commands.cmd_with_returncode(
+                'echo \'cgroup_controllers = [ "cpu", "devices", "memory", "blkio", "cpuacct" ]\' | sudo tee -a /etc/libvirt/qemu.conf'
+            )
 
             print("\n\n\nПерезапускаем сервисы...\n\n\n")
             system_commands.cmd_with_returncode("sudo systemctl restart libvirtd")
             system_commands.cmd_with_returncode("sudo systemctl restart docker")
-
         return 0
 
     @classmethod

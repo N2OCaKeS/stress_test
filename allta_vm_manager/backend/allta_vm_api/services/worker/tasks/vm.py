@@ -34,7 +34,7 @@ class BaseTask(Task):
 
 # --- helpers -----------------------------------------------------------------
 
-async def _ping(ip: str, timeout_s: int = 1) -> bool:
+async def _ping(ip: str, timeout_s: int = 5) -> bool:
     try:
         proc = await asyncio.create_subprocess_exec(
             "ping", "-c", "1", "-W", str(timeout_s), ip,
@@ -626,9 +626,6 @@ def task_vm_stop(self, envelope: dict) -> dict:
         _fail(self, envelope, f"unexpected error: {e.__class__.__name__}", stage="unexpected",
               stdout=None, stderr=traceback.format_exc())
 
-
-from concurrent.futures import ThreadPoolExecutor
-from sqlalchemy import select
 
 @shared_task(name="task_vm_astra_update", bind=True, base=BaseTask)
 def task_vm_astra_update(self, envelope: dict) -> dict:

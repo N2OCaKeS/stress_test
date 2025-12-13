@@ -3,6 +3,12 @@
 %:
 	dh $@ --with python3 --buildsystem=pybuild
 
+override_dh_shlibdeps:
+	# Не считаем shlibs для вендорных wheel'ов (numpy/scipy/cryptography и т.п.)
+	dh_strip -Xopt/allta_vm/python
+override_dh_strip:
+	# НЕ трогаем вендорные бинарники внутри /opt (wheels)
+	dh_shlibdeps -Xsite-packages
 override_dh_auto_install:
 	dh_auto_install
 	install -d debian/allta-vm/usr/bin

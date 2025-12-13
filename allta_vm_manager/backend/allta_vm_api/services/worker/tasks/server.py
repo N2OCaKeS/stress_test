@@ -25,7 +25,7 @@ def task_server_init(self, envelope: dict) -> dict:
 
     _run_or_raise(ssh, "sudo dpkg -i /tmp/allta_cli.deb", title="install allta_cli", timeout=300)
 
-    _run_or_raise(ssh, "sudo mkdir -p /opt/allta_vm/jobs && sudo chmod -R 0776 /opt",
+    _run_or_raise(ssh, "sudo mkdir -p /opt/allta_vm/jobs && sudo chmod -R 0775 /opt",
                   title="prepare /opt/allta_vm", timeout=120)
     
     _run_or_raise(ssh, f"sudo allta-vm server init --phy-if {phy_if} --ip {ip}",

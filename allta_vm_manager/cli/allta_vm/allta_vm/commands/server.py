@@ -26,7 +26,7 @@ class Server:
             deps = (
                 "build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev "
                 "libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev libffi-dev strace "
-                "python3-requests sshpass tar wget bridge-utils "
+                "python3-requests sshpass tar wget htop bridge-utils "
             )
 
             try:
@@ -50,7 +50,7 @@ class Server:
 
             try:
                 rc_prep = Libvirt.prepare()
-                SystemCommands.cmd_with_returncode("sudo docker run -d --name node_exporter --net=host prom/node-exporter:latest")
+                SystemCommands.cmd_with_returncode("sudo chmod -R 775 /opt")
             except Exception:
                 rc_prep = ExitCodes.UNEXPECTED
             if rc_prep != ExitCodes.OK:

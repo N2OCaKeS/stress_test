@@ -140,6 +140,9 @@ class Vm:
         where = "_check_space_images_dir"
         try:
             path = "/vms"
+            if not os.path.exists(path):
+                logging.warning("%s: path %s does not exist, creating", where, path)
+                os.makedirs(path, exist_ok=True)            
             usage = shutil.disk_usage(path)
             free_gb = usage.free // (1024**3)
             logging.info("%s: free=%d GiB required=%d GiB path=%s",
@@ -312,13 +315,6 @@ class Vm:
                             'signal set': 'hostname',
                             'signal get': ''
                         },
-                        'install allta_cli':{
-                            'command': (
-                                f"wget ftp://10.177.103.10/allta_1.0.0_amd64.deb && "
-                                f"sudo dpkg -i allta_1.0.0_amd64.deb && rm allta_1.0.0_amd64.deb"
-                            ),
-                            'signal set': 'allta',
-                            'signal get': ['hostname']},  
                         'prepare': {
                             'command': (
                                 f"sudo chmod 777 /home/u/env_provision.sh && "
@@ -326,7 +322,7 @@ class Vm:
                                 f"sudo rm /home/u/env_provision.sh"
                             ),
                             'signal set': 'prepare',
-                            'signal get': ['allta']
+                            'signal get': ['hostname']
                         },
                         'confirm': {
                             'command': "(sleep 2 && sudo reboot) &",
@@ -381,6 +377,7 @@ class Vm:
                 rc_create_rc = Snapshot.create(vms=vms_list, snapshot_name=rc_ver)
                 if rc_create_rc != ExitCodes.OK:
                     return rc_create_rc
+                sleep(90)
 
             if Vm._post_expect_exists(vms_list, must_exist=True) != ExitCodes.OK:
                 return _log_and_return(where, logging.ERROR,
@@ -389,6 +386,7 @@ class Vm:
 
             logging.info("%s: OK", where)
             return ExitCodes.OK
+        
 
         except Exception:
             logging.error("%s: unhandled exception", where)

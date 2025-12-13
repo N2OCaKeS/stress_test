@@ -14,6 +14,7 @@ dns1=10.177.180.246
 dns2=10.177.128.198
 gateway="10.177.103.254"
 
+cp /etc/network/interfaces /etc/network/interfaces.bak
 cat << EOF > /etc/network/interfaces
 source /etc/network/interfaces.d/*
 
@@ -44,8 +45,8 @@ for svc in NetworkManager network-manager; do
   fi
 done
 
-sudo systemctl restart networking
-nmcli connection show
+# sudo systemctl restart networking
+# nmcli connection show
 
 echo "u  ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/u
 echo "u  ALL=(ALL:ALL) NOPASSWD:ALL" | sudo tee -a /etc/sudoers

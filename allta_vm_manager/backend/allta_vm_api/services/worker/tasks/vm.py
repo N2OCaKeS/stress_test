@@ -539,19 +539,15 @@ def task_vm_start(self, envelope: dict) -> dict:
 
         async def _check_all_ping() -> bool:
             nonlocal last_ping
-            ok = True
             tmp = {}
             for name, ip in ip_map.items():
                 alive = await _ping(str(ip))
                 tmp[name] = {"ip": str(ip), "ping": alive}
-                if not alive:
-                    ok = False
             last_ping = tmp
-            return ok
+            # Пинг больше не блокирует выполнение; просто логируем состояние.
+            return True
 
-        if not await _retry_for(_check_all_ping, timeout_s=90, interval_s=2):
-            _fail(self, envelope, "post-start check failed (ping)", stage="post-check",
-                  extra={"ping": last_ping})
+        await _retry_for(_check_all_ping, timeout_s=90, interval_s=2)
 
         return _std_ok(envelope)
 

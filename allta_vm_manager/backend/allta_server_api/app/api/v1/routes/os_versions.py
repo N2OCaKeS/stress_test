@@ -1,4 +1,8 @@
-from typing import List
+import asyncio
+import os
+from typing import List, Optional
+
+import requests
 from fastapi import (
     APIRouter,
     Depends,
@@ -6,22 +10,27 @@ from fastapi import (
     status,
 )
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_db
 from app.api.v1.schemas.os_versions import (
-    OSVersionCreate,
     OSVersionRead,
     OSVersionUpdate,
 )
 from app.api.v1.crud.os_versions import (
     get_os_version,
     get_os_versions,
-    create_os_version,
     update_os_version,
     delete_os_version,
 )
 from app.api.v1.dependencies import get_current_admin_user, get_current_user
+from app.db.session import SessionLocal
+from app.api.v1.models.os_versions import OSVersion
+
+SYNC_INTERVAL_SEC = int(os.getenv("OS_VERSIONS_SYNC_INTERVAL", "900"))
+RELEASES_URL = os.getenv(
+    "RELEASES_JSON_URL",
+    "http://allta.devos.astralinux.ru/rest/api/get-repo-path",
+)
 
 router = APIRouter(
     prefix="/os-versions",
@@ -71,31 +80,6 @@ def read_version(
 
 
 @router.post(
-    "/",
-    response_model=OSVersionRead,
-    status_code=status.HTTP_201_CREATED,
-    summary="Создать новую версию ОС (admin)",
-    dependencies=[Depends(get_current_admin_user)],
-)
-def create_version(
-    data: OSVersionCreate,
-    db: Session = Depends(get_db),
-):
-    """
-    Создает новую версию операционной системы.  
-    Доступ: только администратор.
-    """
-    try:
-        return create_os_version(db, data)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This version already exists",
-        )
-
-
-@router.patch(
     "/{version_id}",
     response_model=OSVersionRead,
     summary="Обновить существующую версию ОС (admin)",
@@ -139,3 +123,59 @@ def delete_version(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Version not found",
         )
+
+
+# -- background sync ----------------------------------------------------------
+
+def _sync_versions_once() -> int:
+    """
+    Тянет releases.json, добавляет новые версии в БД.
+
+    Returns:
+        int: сколько новых версий было добавлено.
+    """
+
+    resp = requests.get(RELEASES_URL, timeout=30)
+    resp.raise_for_status()
+    releases = resp.json()
+    if not isinstance(releases, dict):
+        return 0
+    names = {str(k) for k in releases.keys()}
+
+    with SessionLocal() as db:
+        existing = {row[0] for row in db.query(OSVersion.name).all()}
+        new_names = sorted(names - existing)
+        if not new_names:
+            return 0
+        for name in new_names:
+            db.add(OSVersion(name=name))
+        db.commit()
+        return len(new_names)
+
+
+async def _sync_loop():
+    while True:
+        try:
+            added = await asyncio.to_thread(_sync_versions_once)
+            if added:
+                print(f"[os_versions] added {added} new versions from releases.json")
+        except Exception as e:
+            print(f"[os_versions] sync error: {e}")
+        await asyncio.sleep(SYNC_INTERVAL_SEC)
+
+
+def start_os_versions_sync(app):
+    if getattr(app.state, "os_versions_sync_task", None):
+        return
+    app.state.os_versions_sync_task = asyncio.create_task(_sync_loop())
+
+
+async def stop_os_versions_sync(app):
+    task: Optional[asyncio.Task] = getattr(app.state, "os_versions_sync_task", None)
+    if not task:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass

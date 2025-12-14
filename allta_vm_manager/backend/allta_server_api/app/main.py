@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.routes.os_versions import router as os_versions_router
+from app.api.v1.routes.os_versions import (
+    router as os_versions_router,
+    start_os_versions_sync,
+    stop_os_versions_sync,
+)
 from app.api.v1.routes.manage_servers import router as manage_servers_router
 from app.api.v1.routes.control_servers import router as control_servers_router
 from app.api.v1.routes.arm_info import router as arm_router
@@ -41,3 +45,13 @@ app.include_router(os_versions_router, prefix="/v1", tags=["OS"])
 app.include_router(manage_servers_router, prefix="/v1", tags=["Server"])
 app.include_router(control_servers_router, prefix="/v1", tags=["Control"])
 app.include_router(arm_router, prefix="/v1", tags=["ARM"])
+
+
+@app.on_event("startup")
+async def _start_os_versions_sync():
+    start_os_versions_sync(app)
+
+
+@app.on_event("shutdown")
+async def _stop_os_versions_sync():
+    await stop_os_versions_sync(app)

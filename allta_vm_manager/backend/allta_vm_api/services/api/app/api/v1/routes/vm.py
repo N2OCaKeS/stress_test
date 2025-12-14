@@ -26,6 +26,7 @@ from app.utils.crypto import Crypto
 
 
 router = APIRouter(prefix="/vm", tags=["VM"])
+_CRYPTO = Crypto()
 
 PRESET_VMS: Dict[str, Dict[str, Any]] = {
     "virtual-station1": {"ip": "10.177.103.101", "cpu": 16, "ram": 131072},
@@ -231,7 +232,7 @@ async def get_vm_by_id(vm_id: int,
     password = None
     if getattr(vm, "password_enc", None):
         try:
-            password = Crypto.decrypt(vm.password_enc)
+            password = _CRYPTO.decrypt(vm.password_enc)
         except Exception:
             password = None
 
@@ -255,7 +256,7 @@ async def list_vms(db: AsyncSession = Depends(get_async_db),
         pwd = None
         if getattr(vm, "password_enc", None):
             try:
-                pwd = Crypto.decrypt(vm.password_enc)
+                pwd = _CRYPTO.decrypt(vm.password_enc)
             except Exception:
                 pwd = None
         out.append(VMRead(
@@ -455,7 +456,7 @@ async def set_vm_status(vm_id: int, data: VMStatusUpdate,
     pwd = None
     if getattr(vm, "password_enc", None):
         try:
-            pwd = Crypto.decrypt(vm.password_enc)
+            pwd = _CRYPTO.decrypt(vm.password_enc)
         except Exception:
             pwd = None
 
@@ -490,7 +491,7 @@ async def release_vm_status(vm_id: int,
     pwd = None
     if getattr(vm, "password_enc", None):
         try:
-            pwd = Crypto.decrypt(vm.password_enc)
+            pwd = _CRYPTO.decrypt(vm.password_enc)
         except Exception:
             pwd = None
 

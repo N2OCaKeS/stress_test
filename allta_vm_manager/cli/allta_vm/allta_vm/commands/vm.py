@@ -585,12 +585,7 @@ class Vm:
                         'signal get': ''
                     },
                     'update': {
-                        'command': (
-                            "if command -v astra-update >/dev/null 2>&1; "
-                            "then sudo astra-update -A -T -r; "
-                            "else sudo apt-get update && "
-                            "sudo DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade; fi"
-                        ),
+                        'command': "sudo astra-update -A -T -r",
                         'signal set': 'updated',
                         'signal get': ['repo']
                     },

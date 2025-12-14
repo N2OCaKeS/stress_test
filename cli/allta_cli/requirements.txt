@@ -1,4 +1,4 @@
---index-url=http://10.177.103.10:3141/user/dev
+--index-url=http://10.177.103.10:3141/root/release
 --trust=10.177.103.10
 click>=8.1
 requests>=2.32

@@ -3,6 +3,7 @@ import os
 import shlex
 
 API_BASE_URL = str("http://allta.devos.astralinux.ru").rstrip("/")
+VM_API_BASE = f"{API_BASE_URL}:21501/api/vm/v1".rstrip("/")
 
 SESSION_FILE =  Path(Path.home() / ".config" / "allta" / "session.json")
 TOKEN_TTL_HOURS_DEFAULT = 10 * 60 * 60

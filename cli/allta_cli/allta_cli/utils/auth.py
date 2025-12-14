@@ -48,9 +48,11 @@ def _ensure_dirs_and_perms():
     except Exception:
         pass
 
-def _write_session(token: str):
+def _write_session(token: str, login: str | None = None):
     _ensure_dirs_and_perms()
     payload = {"token": token, "iat": int(time.time())}
+    if login:
+        payload["login"] = login
     SESSION_FILE.write_text(json.dumps(payload), encoding="utf-8")
     try:
         os.chmod(SESSION_FILE, 0o600)
@@ -111,7 +113,7 @@ def login(
     if not token:
         raise AuthError("Сервер не вернул access_token.")
 
-    _write_session(token)
+    _write_session(token, login=login)
     _echo("Успешный вход. Токен сохранён локально.", ok=True, verbose=verbose)
     return token
 
@@ -179,3 +181,14 @@ def load_token(
 
     _echo(f"Токен валиден локально (возраст ~{int(age_sec/60)} мин).", ok=True, verbose=verbose)
     return token
+
+
+def current_login() -> str:
+    """
+    Возвращает логин, сохранённый при входе. Бросает NotAuthenticatedError/AuthError при проблемах.
+    """
+    data = _read_session()
+    login = data.get("login")
+    if not login:
+        raise AuthError("В сессии не найден логин. Выполните вход заново.")
+    return str(login)

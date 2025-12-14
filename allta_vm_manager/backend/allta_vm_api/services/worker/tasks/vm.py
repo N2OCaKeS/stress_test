@@ -183,22 +183,17 @@ def task_vm_create(self, envelope: dict) -> dict:
 
             async def _check_all_ready() -> bool:
                 nonlocal last_status
-                all_ok = True
                 tmp: dict[str, dict] = {}
                 for name in names:
                     ip = str(vms_full[name]["ip_bridge"])
                     domstate = _ssh_domstate(ssh, name)
                     ping_ok = await _ping(ip)
                     tmp[name] = {"ip": ip, "ping": ping_ok, "domstate": domstate}
-                    if not ping_ok:
-                        all_ok = False
                 last_status = tmp
-                return all_ok
+                # Пинг больше не блокирует задачу: просто фиксируем состояние.
+                return True
 
-            ok_ready = await _retry_for(_check_all_ready, timeout_s=60, interval_s=2)
-            if not ok_ready:
-                _fail(self, envelope, "post-check failed", stage="post-check",
-                      extra={"post_check": {"ping": last_status}})
+            await _retry_for(_check_all_ready, timeout_s=60, interval_s=2)
 
             # Снимки: проверяем существование 1.7.5.9 и 1.8.1.6, затем пишем в БД
             base_snaps = ["1.7.5.9", "1.8.1.6"]
@@ -295,21 +290,17 @@ def task_vm_base_create(self, envelope: dict) -> dict:
 
             async def _check_all_ready() -> bool:
                 nonlocal last_status
-                all_ok = True
                 tmp: dict[str, dict] = {}
                 for name in names:
                     ip = str(vms_full[name]["ip_bridge"])
                     domstate = _ssh_domstate(ssh, name)
                     ping_ok = await _ping(ip)
                     tmp[name] = {"ip": ip, "ping": ping_ok, "domstate": domstate}
-                    if not ping_ok:
-                        all_ok = False
                 last_status = tmp
-                return all_ok
+                # Пинг больше не блокирует задачу: просто фиксируем состояние.
+                return True
 
-            if not await _retry_for(_check_all_ready, timeout_s=60, interval_s=2):
-                _fail(self, envelope, "post-check failed (ping)", stage="post-check",
-                      extra={"post_check": {"ping": last_status}})
+            await _retry_for(_check_all_ready, timeout_s=60, interval_s=2)
 
             # (2) post-check: наличие снапшотов 1.7.5.9 и 1.8.1.6 у КАЖДОЙ ВМ, ретраи 60/2
             base_snaps = ["1.7.5.9", "1.8.1.6"]

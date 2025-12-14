@@ -119,6 +119,7 @@ if __name__ == "__main__":
 
 
     start_ts = perf_counter()
+    zefir_status = 'fail'
     try:
         ovpn = Ovpn()
 
@@ -130,21 +131,26 @@ if __name__ == "__main__":
             result = ovpn.get_result()
             lead_time_text = _fmt_duration(perf_counter() - start_ts)
 
-            ovpn_publisher(username=args.USER,
-                           token=args.TOKEN,
-                           title=args.NPAGE,
-                           stats=result,
-                           space=args.SPACE,
-                           parent_title=args.PPAGE,
-                           lead_time=lead_time_text)
-            uzs.upload_test_cycle_status(zefir_status='pass')
+            _, preview_path, publish_result = ovpn_publisher(
+                username=args.USER,
+                token=args.TOKEN,
+                title=args.NPAGE,
+                stats=result,
+                space=args.SPACE,
+                parent_title=args.PPAGE,
+                lead_time=lead_time_text,
+                test_cycle_version=args.TCV,
+            )
+            print(f"Отчёт отправлен в Confluence, id страниц: {publish_result}")
+            print(f"Файл предпросмотра: {preview_path}")
+            zefir_status = 'pass'
         else:
             print("Тест не найден")
     except Exception as e:
         print(f"Ошибка при выполнении теста: {e}")
         traceback.print_exc()
     finally:
-        uzs.upload_test_cycle_status(zefir_status='fail')
+        uzs.upload_test_cycle_status(zefir_status=zefir_status)
 
     uzs.statistics = False
 

@@ -117,7 +117,7 @@ def ovpn_publisher(
     builder.render_to_file(path=preview_path)
 
     attachments = [preview_path, *builder.attachments]
-    reporter.publish_results_from_params(
+    publish_result = reporter.publish_results_from_params(
         conf_space=space,
         conf_parent_page=parent_title,
         conf_new_page_name=title,
@@ -125,4 +125,4 @@ def ovpn_publisher(
         body=builder,
         attachments=attachments,
     )
-    return builder, "./test/demo_confluence_report.html"
+    return builder, preview_path, publish_result

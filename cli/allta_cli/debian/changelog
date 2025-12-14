@@ -3,3 +3,9 @@ allta (1.0.0) unstable; urgency=medium
   * Собран базовый образ.
 
  -- Filippenko Maksim <mfilippenko@astralinux.ru>  Tue, 05 Aug 2025 12:47:00 +0300
+
+allta (1.0.1) unstable; urgency=medium
+
+  * Добавлена поддержка vm_api.
+
+ -- Filippenko Maksim <mfilippenko@astralinux.ru>  Tue, 14 Dec 2025 17:00:00 +0300

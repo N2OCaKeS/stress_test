@@ -1,9 +1,9 @@
---index-url=http://10.177.103.10:3141/user/dev
+--index-url=http://10.177.103.10:3141/root/release
 --trust=10.177.103.10
 click>=8.1
 requests>=2.32
 keyring>=25.2
 cryptography>=43.0
 tqdm>=4.66
-allta
+allta==1.0.20
 

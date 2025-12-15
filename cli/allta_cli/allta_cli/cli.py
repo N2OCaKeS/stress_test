@@ -9,6 +9,7 @@ from allta_cli.commands.files import files_cmd as files_run, boxes_cmd, releases
 from allta_cli.commands.git import git_clone
 from allta_cli.commands.python import install_python, create_venv
 from allta_cli.commands import mc as mc_cmd
+from allta_cli.commands import vm as vm_api
 
 
 # --- универсальная обёртка для секций ---
@@ -34,7 +35,7 @@ class OrderedGroup(click.Group):
         order = [
             "login", "logout",
             "git", "mc", "tokens", "files",
-            "boxes", "releases",
+            "boxes", "releases", "vm",
             "python", "venv",
         ]
         existing = super().list_commands(ctx)
@@ -185,7 +186,6 @@ def git_cmd():
 def tokens_cli(token_type: str | None):
     code = tokens_run(token_type)
     sys.exit(code)
-
 @cli.command("files", short_help="Скачать JSON-файл из config-API.",
              help="Получить JSON-файл из config-API (например, releases.json).")
 @click.argument("filename", required=True, metavar="FILENAME")
@@ -257,6 +257,177 @@ def venv_cmd(venv_path: str | None):
 @cli.group("mc", short_help="Открыть MC на преднастроенных FTP.")
 def mc_group():
     """Открыть Midnight Commander на преднастроенных FTP-хостах."""
+
+
+# Подключаем группу vm напрямую, чтобы корректно работал help
+# Создаём click-группу здесь и используем функции из commands/vm.py
+@cli.group("vm", short_help="Управление виртуальными машинами.")
+def vm_group():
+    pass
+
+
+@vm_group.command("list", short_help="Показать все ВМ.")
+def vm_list_cli():
+    from allta_cli.utils import ui
+    try:
+        vms = vm_api.list_vms()
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+    if not vms:
+        ui.echo("ВМ не найдены.")
+        return
+    rows = []
+    for vm in vms:
+        rows.append([
+            vm.get("name"),
+            vm.get("ip_address"),
+            vm.get("cpu"),
+            vm.get("ram"),
+            vm.get("status"),
+            vm.get("password"),
+        ])
+    ui.table(headers=["Name", "IP", "CPU", "RAM", "Status", "Password"], rows=rows)
+
+
+@vm_group.command("create", short_help="Создать ВМ (ip range=1).")
+@click.option("--server-id", required=True, type=int, help="ID сервера.")
+@click.option("--password", required=True, help="Пароль для всех ВМ.")
+@click.option(
+    "--vm",
+    "vms",
+    multiple=True,
+    required=True,
+    metavar="NAME:IP:CPU:RAM",
+    help="Описание ВМ. Можно указать несколько. Формат: name:ip:cpu:ram",
+)
+def vm_create_cli(server_id: int, password: str, vms: tuple[str, ...]):
+    from allta_cli.utils import ui
+    try:
+        task_id = vm_api.create_vms(server_id=server_id, password=password, vm_specs=list(vms))
+        ui.ok(f"Задача поставлена: {task_id}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("status", short_help="Показать статус ВМ по имени.")
+@click.argument("name")
+def vm_status_cli(name: str):
+    from allta_cli.utils import ui
+    try:
+        info = vm_api.status_vm(name)
+        import json as _json
+        ui.echo(_json.dumps(info, ensure_ascii=False, indent=2))
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("status-set", short_help="Поставить статус равным вашему логину.")
+@click.argument("name")
+def vm_status_set_cli(name: str):
+    from allta_cli.utils import ui
+    try:
+        vm_api.status_set_vm(name)
+        ui.ok("Статус обновлён.")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("start", short_help="Старт ВМ по именам.")
+@click.option("--vms", multiple=True, required=True, metavar="VM", help="Имена ВМ")
+def vm_start_cli(vms: tuple[str, ...]):
+    from allta_cli.utils import ui
+    try:
+        task_id = vm_api.start_vms(list(vms))
+        ui.ok(f"Задача поставлена: {task_id}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("stop", short_help="Стоп ВМ по именам.")
+@click.option("--vms", multiple=True, required=True, metavar="VM", help="Имена ВМ")
+def vm_stop_cli(vms: tuple[str, ...]):
+    from allta_cli.utils import ui
+    try:
+        task_id = vm_api.stop_vms(list(vms))
+        ui.ok(f"Задача поставлена: {task_id}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("astra-update", short_help="Astra update для выбранных ВМ.")
+@click.option("--rc", required=True, help="Версия rc, напр. 1.8.1.6")
+@click.option("--vms", multiple=True, required=True, metavar="VM", help="Имена ВМ")
+def vm_astra_update_cli(rc: str, vms: tuple[str, ...]):
+    from allta_cli.utils import ui
+    try:
+        task_id = vm_api.astra_update(rc=rc, vm_names=list(vms))
+        ui.ok(f"Задача поставлена: {task_id}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("snapshots", short_help="Список снимков по имени ВМ.")
+@click.option("--vm", "vm_name", required=True, help="Имя ВМ")
+def vm_snapshots_cli(vm_name: str):
+    from allta_cli.utils import ui
+    try:
+        snaps = vm_api.list_snapshots(vm_name)
+        if not snaps:
+            ui.echo("Снимки не найдены.")
+            return
+        rows = []
+        for sn in snaps:
+            rows.append([sn.get("id"), sn.get("name")])
+        ui.table(headers=["ID", "Name"], rows=rows)
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("snapshot-create", short_help="Создать снимок для ВМ (по именам).")
+@click.option("--name", "snap_name", required=True, help="Имя снимка.")
+@click.option("--vms", multiple=True, required=True, metavar="VM", help="Имена ВМ")
+def vm_snapshot_create_cli(snap_name: str, vms: tuple[str, ...]):
+    from allta_cli.utils import ui
+    try:
+        task_id = vm_api.create_snapshot(vm_names=list(vms), snap_name=snap_name)
+        ui.ok(f"Задача поставлена: {task_id}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("snapshot-delete", short_help="Удалить снимок по именам ВМ.")
+@click.option("--name", "snap_name", required=True, help="Имя снимка.")
+@click.option("--vms", multiple=True, required=True, metavar="VM", help="Имена ВМ")
+def vm_snapshot_delete_cli(snap_name: str, vms: tuple[str, ...]):
+    from allta_cli.utils import ui
+    try:
+        task_id = vm_api.delete_snapshot(vm_names=list(vms), snap_name=snap_name)
+        ui.ok(f"Задача поставлена: {task_id}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@vm_group.command("snapshot-revert", short_help="Откатить ВМ к снимку (по именам).")
+@click.option("--name", "snap_name", required=True, help="Имя снимка.")
+@click.option("--vms", multiple=True, required=True, metavar="VM", help="Имена ВМ")
+def vm_snapshot_revert_cli(snap_name: str, vms: tuple[str, ...]):
+    from allta_cli.utils import ui
+    try:
+        task_id = vm_api.revert_snapshot(vm_names=list(vms), snap_name=snap_name)
+        ui.ok(f"Задача поставлена: {task_id}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
 
 @mc_group.command("111", short_help="MC на QA FTP.")
 def mc_qa_cli():

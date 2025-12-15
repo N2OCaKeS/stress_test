@@ -39,7 +39,7 @@ install_python() {
         tar xf "Python-$PYTHON_VERSION.tgz"
         cd "Python-$PYTHON_VERSION"
 
-        ./configure --prefix="$PYTHON_PREFIX" --enable-optimizations --with-ensurepip=install
+        ./configure --prefix="$PYTHON_PREFIX" --enable-optimizations --with-ensurepip=install --with-system-ffi=no
         make -j"$(nproc)"
         make install
     else

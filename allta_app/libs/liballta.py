@@ -1,13 +1,24 @@
+import string
+import random
+import subprocess
+import re
+import socket
+import psycopg2
+import paramiko
+import ctypes
+import threading
+import requests
+import json
+import logging
+import redfish
+import pandas as pd
+
 from flask import (render_template, 
                    request,  
                    redirect, 
                    url_for, 
                    jsonify)
-import string
-import random
 from collections import deque
-import subprocess
-import re
 from os import (path, 
                 remove,  
                 setsid,
@@ -16,45 +27,41 @@ from os import (path,
                 unlink,
                 linesep)
 from multiprocessing import Process
-#import concurrent.futures
 from tempfile import mkstemp
-import paramiko
 from paramiko import ssh_exception
-import socket
-import psycopg2
-from allta_image_conf import (VENV_PATH,
-                               stp_version,
-                               psyc,
-                               stands_ip,
-                               main_tests,
-                               brest_tests,
-                               releases,
-                               kernels,
-                               main_stands,
-                               mobile_stands,
-                               brest_stands,
-                               test_run_stands,
-                               rc_list,
-                               releases_list,
-                               repo_path,
-                               group_tests,
-                               stands_groups,
-                               JIRA_URL,
-                               releases_dict,
-                               cz_comm,
-                               allta_version,
-                               test_station_vms,
-                               allta_services_list)
 from time import sleep
-from libs.zefir import ZefirTestRun
-import ctypes
-import threading
-import requests
-import json
-import logging
-import redfish
 from datetime import datetime, timedelta
-import pandas as pd
+
+from libs.zefir import ZefirTestRun
+from allta_image_conf import (
+    VENV_PATH,
+    stp_version,
+    psyc,
+    stands_ip,
+    main_tests,
+    brest_tests,
+    releases,
+    kernels,
+    main_stands,
+    mobile_stands,
+    brest_stands,
+    test_run_stands,
+    rc_list,
+    releases_list,
+    repo_path,
+    group_tests,
+    stands_groups,
+    JIRA_URL,
+    CONFLUENCE_URL,
+    GIT_URL,
+    RELEASES_URL,
+    ASTRA_DNS,
+    releases_dict,
+    cz_comm,
+    allta_version,
+    test_station_vms,
+    allta_services_list
+)
 
 
 
@@ -1319,3 +1326,80 @@ def services_health_status():
     else:
         print('Some service(s) are not running or exited successfully')
         return jsonify({'services_health_status': 'fail'})
+    
+
+
+def response_used_astra_services():
+    dns = None
+    try:
+        available_dns = {
+            ip: subprocess.run(f'ping -c 1 {ip}', shell=True).returncode for ip in ASTRA_DNS
+        }
+        if 0 in available_dns.values():
+            print('dns pass')
+            dns = 200
+
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
+        git = requests.get(f'https://{GIT_URL}').status_code
+        releases = requests.get(f'https://{RELEASES_URL}').status_code
+        return jira, life, git, releases, dns
+    except Exception as e:
+        jira, life, git, releases, dns = str(type(e).__name__), str(e)
+        return jira, life, git, releases, dns
+    
+
+
+def available_astra_services_checker():
+    wait_time = 120 #Минут ожидания
+    requests_frequency = 180 #Периодичность обращений в секундах 
+    status = 0
+    except_counter = 0
+    while status == 0:
+        jira, life, git, releases_dev, dns = response_used_astra_services()
+        try:
+            if jira == 200 and life == 200 and git == 200 and releases_dev == 200 and dns == 200:
+                status += 1
+                logging.info('All astra services are available')
+                return True
+            else:
+                except_counter += 1
+                sleep(requests_frequency)
+                if except_counter == wait_time * 60 / requests_frequency:
+                    logging.error('Available astra services timeout')
+                    logging.error(f'Except count = {except_counter}, aborted')
+                    logging.error(f'Services status:\nJira - {jira}\nLife - {life}\nGit - {git}\n\
+                                  Releases - {releases_dev}\nDNS - {dns}')
+                    status += 1
+                    return False
+        except Exception as e:
+            except_counter += 1
+            sleep(requests_frequency)
+            if except_counter == wait_time * 60 / requests_frequency:
+                logging.error('Exception\nAvailable astra services timeout')
+                logging.error(f'Except count = {except_counter}, aborted')
+                logging.error(f'Services status:\nJira - {jira}\nLife - {life}\nGit - {git}\n\
+                                  Releases - {releases_dev}\nDNS - {dns}')
+                status += 1
+                return False
+
+
+
+def astra_services_health_status():
+    get_dict = request.args.get('get_dict', False)
+    services = ['jira', 'life', 'git', 'releases_dev', 'dns']
+    statuses = response_used_astra_services()
+    status_dict = {
+        service: 'Ok' if status == 200 else 'Fail' for service, status in zip(services, statuses)
+    }
+    
+    if get_dict:
+        return jsonify(status_dict)
+    
+    if all(x == 200 for x in response_used_astra_services()):
+        print('All astra services are available')
+        return jsonify({'astra_services_health_status': 'ok'})
+    else:
+        print('Some service(s) are not available')
+        return jsonify({'astra_services_health_status': 'fail'})
+

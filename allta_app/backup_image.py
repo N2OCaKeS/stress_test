@@ -3,14 +3,15 @@
 import subprocess
 import os
 import json
-from time import sleep, ctime
 import logging
 import socket
 import paramiko
-from paramiko import ssh_exception
 import argparse
-from allta_image_conf import *
 import pysnooper
+import psycopg2
+import threading
+
+from psycopg2 import sql
 from ansible.plugins.callback import CallbackBase
 from ansible.executor.task_queue_manager import TaskQueueManager
 from ansible.playbook.play import Play
@@ -18,11 +19,17 @@ from ansible.inventory.host import Host
 from ansible.parsing.dataloader import DataLoader
 from ansible.inventory.manager import InventoryManager
 from ansible.vars.manager import VariableManager
+from paramiko import ssh_exception
+from time import sleep, ctime
+
 from libs.zefir import ZefirResultTable, ZefirStatusAPI, response_status
-import psycopg2
-from psycopg2 import sql
-import threading
-from libs.liballta import BootOrder, comm_and_log, backup_vm_snapshot
+from allta_image_conf import *
+from libs.liballta import (
+    BootOrder, 
+    comm_and_log, 
+    backup_vm_snapshot, 
+    available_astra_services_checker
+)
 
 
 
@@ -927,36 +934,35 @@ create_remote_file('/home/u/git/stress_test/allta_app/git/gitclone.conf', '/home
 #    wr.write(args.ST)
 #create_remote_file('/home/u/git/stress_test/stand_number.conf', '/home/u/stand_number.conf')
 
-if read_status() == success:
-    write_status(in_prog)
+def remote_test_run():
     #comm_and_log('sshpass -v -p 1 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     #             u@' + stand_ip + ' sudo bash /home/u/starter.sh ' + branch + ' ' + dates_name)
-    if args.OVF == 'ram':
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
-        with open(f'/home/u/git/stress_test/allta_app/{dates_name}', 'w') as w:
-            w.write(ovf_ram_dates)
-        create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
-        create_remote_file(f'/home/u/git/stress_test/allta_app/{testenv_status}', f'/home/u/{testenv_status}')
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
-        write_status(done)
-    elif args.OVF == 'sd':
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
-        jira_send_status(FTI=args.CTI, 
-                            TCYC=args.TCYCLE, 
-                            TCAS=args.TCASE, 
-                            TCV=args.RELEASE, 
-                            status='fail')
-        comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                    u@' + stand_ip + ' sudo reboot')
-        sleep(600)
-        if check_running_system:
-            jira_send_status(FTI=args.CTI, 
-                            TCYC=args.TCYCLE, 
-                            TCAS=args.TCASE, 
-                            TCV=args.RELEASE, 
-                            status='pass')
-        write_status(done)
-    elif args.DB_KERNELS == 'psql' or args.DB_KERNELS == 'tantor':
+    # if args.OVF == 'ram':
+    #     send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
+    #     with open(f'/home/u/git/stress_test/allta_app/{dates_name}', 'w') as w:
+    #         w.write(ovf_ram_dates)
+    #     create_remote_file(f'/home/u/git/stress_test/allta_app/{dates_name}', f'/home/u/{dates_name}')
+    #     create_remote_file(f'/home/u/git/stress_test/allta_app/{testenv_status}', f'/home/u/{testenv_status}')
+    #     send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
+    #     write_status(done)
+    # elif args.OVF == 'sd':
+    #     send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
+    #     jira_send_status(FTI=args.CTI, 
+    #                         TCYC=args.TCYCLE, 
+    #                         TCAS=args.TCASE, 
+    #                         TCV=args.RELEASE, 
+    #                         status='fail')
+    #     comm_and_log('sshpass -v -p ' + password + ' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    #                 u@' + stand_ip + ' sudo reboot')
+    #     sleep(600)
+    #     if check_running_system:
+    #         jira_send_status(FTI=args.CTI, 
+    #                         TCYC=args.TCYCLE, 
+    #                         TCAS=args.TCASE, 
+    #                         TCV=args.RELEASE, 
+    #                         status='pass')
+    #     write_status(done)
+    if args.DB_KERNELS == 'psql' or args.DB_KERNELS == 'tantor':
         db_kernel_changer(8, args.DB_KERNELS, position='begin')
         db_kernel_changer(16, args.DB_KERNELS)
         db_kernel_changer(24, args.DB_KERNELS)
@@ -970,6 +976,18 @@ if read_status() == success:
     else:    
         send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
         write_status(done)
+
+
+
+if read_status() == success:
+    write_status(in_prog)
+    if available_astra_services_checker():
+        remote_test_run()
+    else:
+        logging.error('Testrun aborted, because some services not run\n')
+else:
+    logging.error(f'Testrun aborted, because status = "{read_status()}"')
+    
 
 with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Готово')

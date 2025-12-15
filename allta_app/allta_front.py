@@ -45,7 +45,8 @@ from libs.liballta import (index_page,
                           COOKIE_SECURE,
                           AUTH_LOGOUT_URL,
                           AUTH_CHECK_TOKEN_URL,
-                          services_health_status
+                          services_health_status,
+                          astra_services_health_status
                           )
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs, annotations
 from backup.backuplibs import Backup, check_command
@@ -739,6 +740,11 @@ def testenv_switch():
 @app.route('/services-health-status', methods=['GET'])
 def update_services_health_status():
     return services_health_status()
+
+
+@app.route('/astra-services-health-status', methods=['GET'])
+def update_astra_services_health_status():
+    return astra_services_health_status()
 
 
 # if __name__ == '__main__':

@@ -94,6 +94,13 @@ class ConfluencePublisher:
             self._ensure_labels(page_id=page_id, labels=labels)
         return page_id
 
+    def _log(self, message: str) -> None:
+        """
+        Простая обёртка над print для единообразного логирования.
+        """
+
+        print(f"[ConfluencePublisher] {message}")
+
     # ------------------------------------------------------------------
     def attach_files(self, *, page_id, files: Iterable[Path | str]):
         """
@@ -107,7 +114,9 @@ class ConfluencePublisher:
         for file_path in files:
             path = Path(file_path)
             if not path.exists() or not path.is_file():
+                self._log(f"[skip] Вложение не найдено: {path}")
                 continue
+            self._log(f"Прикрепляю файл {path.name} к странице {page_id}")
             self._client.attach_file(page_id=page_id, filename=str(path))
 
     def _ensure_labels(self, *, page_id, labels: Sequence[str]):
@@ -159,13 +168,20 @@ class ConfluencePublisher:
 
         if self._client.page_exists(space=space, title=title):
             page_id = self._client.get_page_id(space=space, title=title)
+            self._log(f"Обновляю страницу '{title}' ({page_id})")
             self._client.update_page(page_id=page_id, title=title, body=body)
+            if not page_id:
+                raise RuntimeError(f"Не удалось получить id страницы '{title}' для обновления")
             return page_id
 
         parent_id = (
             self._client.get_page_id(space=space, title=parent_title)
             if parent_title
             else None
+        )
+        self._log(
+            f"Создаю страницу '{title}' в пространстве '{space}'"
+            f"{f' под родителем {parent_title}' if parent_title else ''}"
         )
         result = self._client.create_page(
             space=space,
@@ -176,11 +192,14 @@ class ConfluencePublisher:
             representation="storage",
             editor="v2",
         )
-        return (
+        page_id = (
             result["id"]
             if isinstance(result, dict) and result.get("id")
             else self._client.get_page_id(space=space, title=title)
         )
+        if not page_id:
+            raise RuntimeError(f"Не удалось создать страницу '{title}' в пространстве '{space}'")
+        return page_id
 
     # ------------------------------------------------------------------
     def publish_results_from_params(
@@ -190,10 +209,10 @@ class ConfluencePublisher:
         conf_parent_page: str,
         conf_new_page_name: str,
         test_cycle_version: str | None,
-        body: "PageBuilder | str | Any",
+        body: "PageBuilder",
         attachments_dir: Path | str | None = None,
         attachments: Sequence[str | Path] | None = None,
-    ):
+    ) -> Dict[str, str | None]:
         """
         Публикует результат теста, принимая тот же набор параметров,
         что и ``Public`` в старой логике.
@@ -206,135 +225,123 @@ class ConfluencePublisher:
             body: HTML отчёта или экземпляр PageBuilder.
             attachments_dir: Каталог с артефактами отчёта.
             attachments: Дополнительные файлы.
+
+        Returns:
+            dict: Идентификаторы опубликованных страниц.
         """
 
-        html_body = self._render_body(body)
-        release_parent_title, release_page_title = self._derive_release_titles(
-            parent_title=conf_parent_page,
-            page_title=conf_new_page_name,
-            tcv=test_cycle_version,
+        self._log(
+            f"Запуск публикации '{conf_new_page_name}' в пространство '{conf_space}'"
         )
-        self._publish_stress_results(
-            space=conf_space,
-            parent_title=conf_parent_page,
-            page_title=conf_new_page_name,
-            body=html_body,
-            attachments_dir=attachments_dir,
-            attachments=attachments,
-            release_parent_title=release_parent_title,
-            release_page_title=release_page_title,
-        )
+        render_fn = getattr(body, "render", None)
+        if not callable(render_fn):
+            raise TypeError("body должен быть PageBuilder с методом render()")
+        html_body = str(render_fn())
+        self._log(f"Сформировано тело отчёта длиной {len(html_body)} символов")
 
-    def _derive_release_titles(
-        self, *, parent_title: str, page_title: str, tcv: str | None
-    ) -> tuple[str | None, str | None]:
-        release_version = self._release_version_from_tcv(tcv)
-        if not release_version:
-            return None, None
+        release_parent_title: str | None = None
+        release_page_title: str | None = None
+        release_version: str | None = None
+        if test_cycle_version:
+            parts = test_cycle_version.split(".")
+            if len(parts) == 4 and parts[3] != "UU":
+                release_version = ".".join(parts[:3])
+            elif len(parts) == 6 and parts[3] == "UU":
+                release_version = ".".join(parts[:5])
 
-        release_parent = self._replace_version_token(
-            value=parent_title,
-            release_version=release_version,
-            delimiter=" ",
-        )
-        release_page = self._replace_version_token(
-            value=page_title,
-            release_version=release_version,
-            delimiter="_",
-        )
-        return release_parent, release_page
-
-    def _release_version_from_tcv(self, tcv: str | None) -> str | None:
-        if not tcv:
-            return None
-        parts = tcv.split(".")
-        if len(parts) == 4 and parts[3] != "UU":
-            return ".".join(parts[:3])
-        if len(parts) == 6 and parts[3] == "UU":
-            return ".".join(parts[:5])
-        return None
-
-    def _replace_version_token(
-        self, *, value: str, release_version: str, delimiter: str
-    ) -> str:
-        tokens = value.split(delimiter)
-        replaced = [
-            release_version if release_version in token else token
-            for token in tokens
-        ]
-        return delimiter.join(replaced)
-
-    def _publish_stress_results(
-        self,
-        *,
-        space: str,
-        parent_title: str,
-        page_title: str,
-        body: str,
-        attachments_dir: Path | str | None,
-        attachments: Sequence[str | Path] | None,
-        release_parent_title: str | None,
-        release_page_title: str | None,
-    ):
-        attachments_list = self._collect_attachments(
-            attachments_dir, attachments
-        )
-        cur_top, cur_version = self._derive_stress_titles(page_title)
+        if release_version:
+            parent_tokens = conf_parent_page.split(" ")
+            page_tokens = conf_new_page_name.split("_")
+            release_parent_title = " ".join(
+                release_version if release_version in token else token
+                for token in parent_tokens
+            )
+            release_page_title = "_".join(
+                release_version if release_version in token else token
+                for token in page_tokens
+            )
 
         if release_page_title and release_parent_title:
-            rel_top, rel_version = self._derive_stress_titles(
-                release_page_title
-            )
-            self._ensure_container_page(space=space, title=rel_top)
-            self._ensure_container_page(
-                space=space, title=rel_version, parent_title=rel_top
-            )
-            self._ensure_container_page(
-                space=space,
-                title=release_parent_title,
-                parent_title=rel_version,
-            )
-            self.publish(
-                space=space,
-                title=release_page_title,
-                parent_title=release_parent_title,
-                body=body,
-            )
-            self._ensure_container_page(
-                space=space, title=cur_version, parent_title=rel_version
+            self._log(
+                "Обнаружена релизная версия: "
+                f"родитель '{release_parent_title}', страница '{release_page_title}'"
             )
         else:
-            self._ensure_container_page(space=space, title=cur_top)
+            self._log("Релизная версия не определена, публикуем только основную страницу")
+
+        try:
+            attachments_list: List[Path | str] = []
+            if attachments:
+                attachments_list.extend(attachments)
+            if attachments_dir:
+                directory = Path(attachments_dir)
+                if directory.exists() and directory.is_dir():
+                    for file_path in sorted(directory.iterdir()):
+                        if file_path.is_file():
+                            attachments_list.append(file_path)
+
+            if attachments_list:
+                self._log(f"Найдено вложений: {len(attachments_list)}")
+            else:
+                self._log("Вложений нет")
+
+            cur_top, cur_version = self._derive_stress_titles(conf_new_page_name)
+            release_page_id: str | None = None
+
+            if release_page_title and release_parent_title:
+                rel_top, rel_version = self._derive_stress_titles(release_page_title)
+                self._log(f"Готовлю релизное дерево страниц: {rel_top} -> {rel_version}")
+                self._ensure_container_page(space=conf_space, title=rel_top)
+                self._ensure_container_page(
+                    space=conf_space, title=rel_version, parent_title=rel_top
+                )
+                self._ensure_container_page(
+                    space=conf_space,
+                    title=release_parent_title,
+                    parent_title=rel_version,
+                )
+                release_page_id = self.publish(
+                    space=conf_space,
+                    title=release_page_title,
+                    parent_title=release_parent_title,
+                    body=html_body,
+                )
+                self._log(
+                    f"Релизная страница '{release_page_title}' опубликована (id={release_page_id})"
+                )
+                self._ensure_container_page(
+                    space=conf_space, title=cur_version, parent_title=rel_version
+                )
+            else:
+                self._ensure_container_page(space=conf_space, title=cur_top)
+                self._ensure_container_page(
+                    space=conf_space, title=cur_version, parent_title=cur_top
+                )
+
             self._ensure_container_page(
-                space=space, title=cur_version, parent_title=cur_top
+                space=conf_space, title=conf_parent_page, parent_title=cur_version
             )
+            page_id = self.publish(
+                space=conf_space,
+                title=conf_new_page_name,
+                parent_title=conf_parent_page,
+                body=html_body,
+                attachments=attachments_list or None,
+            )
+            self._log(f"Основная страница '{conf_new_page_name}' опубликована (id={page_id})")
+            if attachments_list:
+                self._log(f"К странице '{conf_new_page_name}' прикреплено файлов: {len(attachments_list)}")
+            result = {"page_id": page_id, "release_page_id": release_page_id}
+        except Exception as exc:
+            self._log(f"[ERROR] Публикация отчёта завершилась с ошибкой: {exc}")
+            raise
 
-        self._ensure_container_page(
-            space=space, title=parent_title, parent_title=cur_version
+        self._log(
+            "Публикация завершена: "
+            f"основная страница id={result['page_id']}, "
+            f"релизная страница id={result.get('release_page_id')}"
         )
-        self.publish(
-            space=space,
-            title=page_title,
-            parent_title=parent_title,
-            body=body,
-            attachments=attachments_list,
-        )
-
-    def _collect_attachments(
-        self,
-        attachments_dir: Path | str | None,
-        attachments: Sequence[str | Path] | None,
-    ) -> List[Path | str] | None:
-        files: List[Path | str] = []
-        if attachments:
-            files.extend(attachments)
-        if attachments_dir:
-            directory = Path(attachments_dir)
-            if directory.exists() and directory.is_dir():
-                for file_path in sorted(directory.iterdir()):
-                    if file_path.is_file():
-                        files.append(file_path)
-        return files or None
+        return result
 
     def _derive_stress_titles(self, page_title: str) -> tuple[str, str]:
         segments = page_title.split("_")
@@ -347,35 +354,44 @@ class ConfluencePublisher:
         self, *, space: str, title: str, parent_title: str | None = None
     ):
         if self._client.page_exists(space=space, title=title):
-            return self._client.get_page_id(space=space, title=title)
+            page_id = self._client.get_page_id(space=space, title=title)
+            self._log(f"Страница '{title}' уже существует (id={page_id})")
+            return page_id
         parent_id = (
             self._client.get_page_id(space=space, title=parent_title)
             if parent_title
             else None
         )
+        self._log(
+            f"Создаю контейнер-страницу '{title}'"
+            f"{f' под родителем {parent_title}' if parent_title else ''}"
+        )
         result = self._client.create_page(
             space=space,
             title=title,
-            body="",
+            body=self._container_body(),
             parent_id=parent_id,
             type="page",
             representation="storage",
             editor="v2",
         )
-        return (
+        page_id = (
             result["id"]
             if isinstance(result, dict) and result.get("id")
             else self._client.get_page_id(space=space, title=title)
         )
+        if not page_id:
+            raise RuntimeError(f"Не удалось создать контейнер-страницу '{title}' в пространстве '{space}'")
+        return page_id
 
-    def _render_body(self, body: Any) -> str:
+    def _container_body(self) -> str:
         """
-        Принимает либо готовый HTML, либо PageBuilder и возвращает HTML.
+        Тело страницы с макросом для отображения потомков, аналогично старой логике.
         """
 
-        if body is None:
-            return ""
-        render = getattr(body, "render", None)
-        if callable(render):
-            return str(render())
-        return str(body)
+        return (
+            "Страница создана автоматически.<br/><br/>"
+            "<ac:structured-macro ac:name=\"children\">"
+            "<ac:parameter ac:name=\"all\">true</ac:parameter>"
+            "</ac:structured-macro>"
+        )

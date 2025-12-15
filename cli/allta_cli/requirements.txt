@@ -5,5 +5,5 @@ requests>=2.32
 keyring>=25.2
 cryptography>=43.0
 tqdm>=4.66
-allta
+allta==1.0.20
 

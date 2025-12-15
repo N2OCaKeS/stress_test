@@ -23,7 +23,7 @@ statistics_conf = {
         "comparison_list": [["unix", "unix parsec"]]
     },
     "Системные службы": {
-        "set_of_test_types": ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng']
+        "set_of_test_types": ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'AOpenVPNcc']
     },
     "Файловые системы": {
         "set_of_test_types": ['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2', 'CEPH', 'CEPH fio'],

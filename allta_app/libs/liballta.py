@@ -1387,7 +1387,7 @@ def available_astra_services_checker():
 
 def astra_services_health_status():
     get_dict = request.args.get('get_dict', False)
-    services = ['jira', 'life', 'git', 'releases_dev', 'dns']
+    services = ['Jira', 'Life', 'Git', 'Releases', 'DNS']
     statuses = response_used_astra_services()
     status_dict = {
         service: 'Ok' if status == 200 else 'Fail' for service, status in zip(services, statuses)

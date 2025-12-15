@@ -13,8 +13,9 @@ def get_repo(rc):
     except KeyError:
         raise ValueError(f"Нет записи для релиза '{rc}' в releases.json")
 
-    # Собираем их в одну строку с разделителем \n
-    sources_str = "\\n".join(sources_lines)
+    # Собираем их в одну строку с настоящими переводами строк,
+    # чтобы в /etc/apt/sources.list не попадали символы "\n"
+    sources_str = "\n".join(sources_lines)
     return sources_str
 
 def load_vms_dates(info_path):
@@ -22,10 +23,6 @@ def load_vms_dates(info_path):
         json_string = f.read()
         vms_dates: dict = json.loads(json_string)
         return vms_dates
-    
-
-print(get_repo("1.8.1.UU.1.6"))
-
 
 def edit_vm(xml_path: str, cpu: str, ram_mb: str):
     """
@@ -65,4 +62,3 @@ def edit_vm(xml_path: str, cpu: str, ram_mb: str):
               method='xml',
               short_empty_elements=False)
     return xml_path + ".mod"
-

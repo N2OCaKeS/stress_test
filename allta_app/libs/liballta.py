@@ -1390,7 +1390,7 @@ def astra_services_health_status():
     services = ['Jira', 'Life', 'Git', 'Releases', 'DNS']
     statuses = response_used_astra_services()
     status_dict = {
-        service: 'Ok' if status == 200 else 'Fail' for service, status in zip(services, statuses)
+        service: 'ok' if status == 200 else 'Fail' for service, status in zip(services, statuses)
     }
     
     if get_dict:

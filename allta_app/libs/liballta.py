@@ -1360,26 +1360,26 @@ def available_astra_services_checker():
         try:
             if jira == 200 and life == 200 and git == 200 and releases_dev == 200 and dns == 200:
                 status += 1
-                logging.info('All astra services are available')
+                logging.info('\nAll astra services are available\n\n')
                 return True
             else:
                 except_counter += 1
                 sleep(requests_frequency)
                 if except_counter == wait_time * 60 / requests_frequency:
-                    logging.error('Available astra services timeout')
+                    logging.error('\n\nAvailable astra services timeout')
                     logging.error(f'Except count = {except_counter}, aborted')
                     logging.error(f'Services status:\nJira - {jira}\nLife - {life}\nGit - {git}\n\
-                                  Releases - {releases_dev}\nDNS - {dns}')
+                                  Releases - {releases_dev}\nDNS - {dns}\n\n')
                     status += 1
                     return False
         except Exception as e:
             except_counter += 1
             sleep(requests_frequency)
             if except_counter == wait_time * 60 / requests_frequency:
-                logging.error('Exception\nAvailable astra services timeout')
+                logging.error('\n\nException\nAvailable astra services timeout')
                 logging.error(f'Except count = {except_counter}, aborted')
                 logging.error(f'Services status:\nJira - {jira}\nLife - {life}\nGit - {git}\n\
-                                  Releases - {releases_dev}\nDNS - {dns}')
+                                  Releases - {releases_dev}\nDNS - {dns}\n\n')
                 status += 1
                 return False
 

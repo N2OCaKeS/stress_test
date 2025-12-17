@@ -152,7 +152,7 @@ class Ovpn:
                 {
                     "path": "/etc/openvpn/server.conf",
                     "old": "keepalive 15 120",
-                    "new": "keepalive 1 2",
+                    "new": "keepalive 3 6",
                 },
             ]
         }

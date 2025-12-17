@@ -30,36 +30,11 @@ class LoaderClient:
         return f"172.{third_octet}.{last_octet}"
 
     async def _kickoff_one_client(self, idx: int) -> None:
-        ns      = f"vpn{idx}"
-        tun     = f"tun{idx}"
         cfg_dir = f"/home/u/openvpn/clients_keys/tester{idx}"
-        addr    = self._addrbase_for(idx)
 
         if not exists(f"{cfg_dir}/client.ovpn"):
             return
-        sh = rf"""
-bash -lc '
-set -Eeuo pipefail
-cd /home/u
-
-./vpn.sh stop {ns} >/dev/null 2>&1 || true
-./vpn.sh start {ns} {addr} --no-tmux >/dev/null 2>&1
-
-ip netns exec {ns} bash -lc "
-  cd {cfg_dir}
-  nohup openvpn --config client.ovpn \
-    --dev {tun} --auth-nocache \
-    --resolv-retry 0 --connect-retry-max 1 --connect-timeout 10 \
-    --ping 10 --ping-exit 60 --remap-usr1 SIGTERM \
-    </dev/null >/dev/null 2>&1 & disown
-"
-
-ip netns exec {ns} bash -lc "
-  nohup iperf -c 10.8.0.1 -u -b 16M -t \$((60*60)) -i 5 \
-    </dev/null >/dev/null 2>&1 & disown
-"
-' </dev/null >/dev/null 2>&1 & disown
-"""
+        sh = f"""sudo bash /home/u/loader.sh {idx}"""
         await _spawn_detached(sh)
 
     async def run(self) -> None:

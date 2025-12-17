@@ -77,6 +77,11 @@ class Ovpn:
                 },
                 {
                     "mode": "push",
+                    "path_host": f"{TEMPLATE_PATH}/loader.sh",
+                    "path_vm": "/home/u/",
+                },
+                {
+                    "mode": "push",
                     "path_host": f"{TEMPLATE_PATH}/loader.py",
                     "path_vm": "/home/u/",
                 },
@@ -103,7 +108,7 @@ class Ovpn:
                     "signal get": "",
                 },
                 "unpack tar": {
-                    "command": "tar -xzvf ovpn.subnet.tar.gz > /dev/null 2>&1 ",
+                    "command": "tar -xzvf ovpn.subnet.tar.gz",
                     "signal set": "unpack",
                     "signal get": ["wget"],
                 },
@@ -152,7 +157,7 @@ class Ovpn:
                 {
                     "path": "/etc/openvpn/server.conf",
                     "old": "keepalive 15 120",
-                    "new": "keepalive 3 6",
+                    "new": "#keepalive 3 6",
                 },
             ]
         }
@@ -193,7 +198,7 @@ class Ovpn:
                     "signal get": ["srv:conf:gost:done"],
                 },
                 "openvpn-server-start": {
-                    "command": r"""sudo bash -lc 'astra-openvpn-server start || true'""",
+                    "command": r"""sudo astra-openvpn-server start && sudo astra-openvpn-server status""",
                     "signal set": "srv:ovpn:up",
                     "signal get": ["srv:conf:ncp:done"],
                 },

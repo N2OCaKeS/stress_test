@@ -11,7 +11,7 @@ if [ "${HOSTNAME}" = "testvm1" ]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server sshpass
     echo 'management 0.0.0.0 7505' | sudo tee -a /etc/openvpn/server.conf
 else
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install openvpn sshpass iperf
 
     av="$(cat /etc/astra_version 2>/dev/null || true)"
     if [[ -n "${av}" ]]; then

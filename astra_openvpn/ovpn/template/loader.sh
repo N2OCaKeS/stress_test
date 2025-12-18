@@ -9,20 +9,20 @@ oct2=$((31 + $CONNECT_NUMBER / 256))
 oct3=$(($CONNECT_NUMBER % 256))
 ip="172.${oct2}.${oct3}"
 cd /home/u
-./vpn.sh stop vpn$CONNECT_NUMBER
-./vpn.sh start vpn$CONNECT_NUMBER $ip --no-tmux
+sudo ./vpn.sh stop vpn$CONNECT_NUMBER
+sudo ./vpn.sh start vpn$CONNECT_NUMBER $ip --no-tmux
 
 # Start OpenVPN client
-ip netns exec vpn$CONNECT_NUMBER bash -lc "
+sudo ip netns exec vpn$CONNECT_NUMBER bash -lc "
   cd $client_dir
   nohup openvpn --config client.ovpn \
     --dev tun$CONNECT_NUMBER --auth-nocache \
     --resolv-retry 0 --connect-retry-max 1 --connect-timeout 10 \
-    --ping 10 --ping-exit  --remap-usr1 SIGTERM \
+    --ping 10 --remap-usr1 SIGTERM \
     & disown -a
 "
-cat $nohup
+sudo cat $nohup
 
 # Load start
-ip netns exec vpn$CONNECT_NUMBER bash -lc "nohup iperf -c 10.8.0.1 -u -b 16M -t \$((60*60)) -i 5 & disown -a"
-cat $nohup
+sudo ip netns exec vpn$CONNECT_NUMBER bash -lc "nohup iperf -c 10.8.0.1 -u -b 16M -t \$((60*60)) -i 5 & disown -a"
+sudo cat $nohup

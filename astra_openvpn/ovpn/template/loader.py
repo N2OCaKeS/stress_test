@@ -7,8 +7,6 @@ async def _spawn_detached(cmd: str) -> None:
     await asyncio.create_subprocess_shell(
         cmd,
         stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
         start_new_session=True,
     )
 
@@ -22,12 +20,6 @@ class LoaderClient:
         self.count = int(client_count)
         self.per_min = int(client_per_minutes)
         self.indices = list(range(self.start_idx, self.start_idx + self.count))
-
-    @staticmethod
-    def _addrbase_for(n: int) -> str:
-        third_octet = 31 + ((n // 200) % 100)
-        last_octet  = 10 + (n % 200)
-        return f"172.{third_octet}.{last_octet}"
 
     async def _kickoff_one_client(self, idx: int) -> None:
         cfg_dir = f"/home/u/openvpn/clients_keys/tester{idx}"

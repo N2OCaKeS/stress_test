@@ -18,11 +18,8 @@ sudo ip netns exec vpn$CONNECT_NUMBER bash -lc "
   nohup openvpn --config client.ovpn \
     --dev tun$CONNECT_NUMBER --auth-nocache \
     --resolv-retry 0 --connect-retry-max 1 --connect-timeout 10 \
-    --ping 10 --remap-usr1 SIGTERM \
+    --ping 10 --ping-exit 2 --remap-usr1 SIGTERM && \
     & disown -a
+  nohup iperf -c 10.8.0.1 -u -b 16M -t 3600 -i 5 & disown -a
 "
-sudo cat $nohup
-
-# Load start
-sudo ip netns exec vpn$CONNECT_NUMBER bash -lc "nohup iperf -c 10.8.0.1 -u -b 16M -t \$((60*60)) -i 5 & disown -a"
 sudo cat $nohup

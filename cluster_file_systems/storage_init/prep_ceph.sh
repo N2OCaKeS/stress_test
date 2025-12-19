@@ -3,6 +3,7 @@ sudo apt install ssh sshpass -y
 sudo systemctl enable --now ssh
 
 sudo apt install ceph-common -y
+sudo apt install docker.io -y
 
 # sudo adduser ceph-adm
 # useradd -m -s /bin/bash ceph-adm && echo -e "1\n1" | passwd ceph-adm
@@ -26,3 +27,5 @@ fi
 # echo "$HOSTS_ENTRIES" | sudo tee -a /etc/hosts > /dev/null
 
 sudo -u ceph-adm ssh-keygen -t rsa -N "" -f /home/ceph-adm/.ssh/id_rsa
+
+sudo sed -i 's|ExecStart=/usr/local/bin/containerd|ExecStart=/usr/bin/containerd|g' /etc/systemd/system/containerd.service && sudo systemctl daemon-reload && echo "Исправлено, ждем 10 секунд..." && sleep 10

@@ -85,7 +85,7 @@ def ovpn_publisher(
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
     builder.add_paragraph(
-        text=f"Нагрузочный тест для отслеживание работоспособности astra-openvpn-server. По сценарию теста к впн серверу подключается {CLIENTS_TOTAL} клиентов со скоростью 120 подкл/мин"
+        text=f"Нагрузочный тест для отслеживание работоспособности astra-openvpn-server. По сценарию теста к впн серверу подключается {CLIENTS_TOTAL} клиентов со скоростью 120 подкл/мин и на каждом клиенте идет трафик со скоростью 2 мбайт/сек"
     )
     builder.add_heading(text=f"Total Rating: {rating_text}", level=2)
     table = {

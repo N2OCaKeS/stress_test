@@ -273,7 +273,7 @@ EOF'""",
         client_count = int(CLIENTS_TOTAL / (len(list(VMS_DATES.keys())) - 1))
         client_per_minutes = 30
 
-        total_seconds = math.ceil((client_count / client_per_minutes) * 60) + 120
+        total_seconds = math.ceil((client_count / client_per_minutes) * 60) + 180
         start_client = {
             "testvm1": {
                 "get stats": {
@@ -288,9 +288,7 @@ EOF'""",
             client_start = int(idx * client_count)
 
             cmd = (
-                "sudo su -c 'ulimit -u 100000 && "
-                "ulimit -n 100000 && "
-                "ulimit -s 100000 && "
+                "sudo su -c 'ulimit -u 100000 && ulimit -n 100000 && ulimit -s 100000 && "
                 f"python3.12 /home/u/loader.py --client_per_minutes {client_per_minutes} "
                 f"--client_start {client_start} --client_count {client_count}'"
             )

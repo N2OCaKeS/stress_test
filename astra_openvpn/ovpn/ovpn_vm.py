@@ -139,7 +139,7 @@ class Ovpn:
         print("\n\n\n Настраиваем сеть  \n\n\n")
 
         LibvirtManager.Vm.stop(vms=VMS)
-        print(SystemCommands.check_output_command("sudo sed -i 's/<forward mode=\"nat\"\/>/<forward mode=\"none\"\/>/' \"/vms/network.xml\""))
+        print(SystemCommands.check_output_command('sudo sed -i \'s#<forward mode="nat"/>#<forward mode="none"/>#\' "/vms/network.xml"'))
         print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
         print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
 

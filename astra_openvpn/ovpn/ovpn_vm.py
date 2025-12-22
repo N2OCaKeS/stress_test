@@ -143,6 +143,7 @@ class Ovpn:
         print(SystemCommands.check_output_command("virsh --connect qemu:///system net-create /vms/network.xml"))
 
         LibvirtManager.Vm.start(vms=VMS)
+        sleep(90)
         print("\n\n\n Сеть настроена  \n\n\n")
 
     def server_settings(self):

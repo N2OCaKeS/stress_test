@@ -20,3 +20,8 @@ PASSWORD = "1"
 TEMPLATE_PATH = "/home/u/git/stress_test/astra_openvpn/ovpn/template"
 
 CLIENTS_TOTAL = 100
+
+if VERSION_OS.startswith("1.7"):
+    DEV = "eth0"
+elif VERSION_OS.startswith("1.8"):
+    DEV = "enp1s0"

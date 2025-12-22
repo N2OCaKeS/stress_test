@@ -11,7 +11,8 @@ from ovpn.vm_conf import (
     KERNEL,
     TEMPLATE_PATH,
     VERSION_OS,
-    CLIENTS_TOTAL
+    CLIENTS_TOTAL,
+    DEV
 )
 import math
 from ovpn.result import analyze_result
@@ -136,11 +137,11 @@ class Ovpn:
 
         print("\n\n\n Provison выполнен \n\n\n")
         print("\n\n\n Настраиваем сеть  \n\n\n")
+
         LibvirtManager.Vm.stop(vms=VMS)
-        
         print(SystemCommands.check_output_command("sudo sed -i 's/<forward mode=\"nat\"\/>/<forward mode=\"none\"\/>/' \"/vms/network.xml\""))
         print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
-        print(SystemCommands.check_output_command("virsh --connect qemu:///system net-create /vms/network.xml"))
+        print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
 
         LibvirtManager.Vm.start(vms=VMS)
         sleep(90)
@@ -204,10 +205,15 @@ class Ovpn:
                     "signal set": "srv:conf:ncp:done",
                     "signal get": ["srv:conf:gost:done"],
                 },
+                "set_default route": {
+                    "command": f"sudo ip route replace default via 192.168.100.1 dev {DEV}",
+                    "signal set": "srv:route:set",
+                    "signal get": ["srv:conf:ncp:done"],
+                },
                 "openvpn-server-start": {
                     "command": r"""sudo astra-openvpn-server start && sudo astra-openvpn-server status""",
                     "signal set": "srv:ovpn:up",
-                    "signal get": ["srv:conf:ncp:done"],
+                    "signal get": ["srv:route:set"],
                 },
                 "enable-ip-forwarding": {
                     "command": r"""sudo bash -lc 'sysctl -w net.ipv4.ip_forward=1'""",

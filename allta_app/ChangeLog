@@ -1,3 +1,10 @@
+allta_app - v2.54.2
+* Add FreeIPA c-users in statistics conf file
+
+
+
+
+
 allta_app - v2.54.1
 * Add comparison psql vanilla and postgresql-aud-off in statistics
 

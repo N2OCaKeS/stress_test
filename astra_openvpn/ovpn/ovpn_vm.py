@@ -31,6 +31,17 @@ class Ovpn:
             print(self.new_vms_dates)
             print("ВМ найдены, восстанавливаем")
             LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="build")
+            print("\n\n\n Настраиваем сеть  \n\n\n")
+
+            LibvirtManager.Vm.stop(vms=VMS)
+            print(SystemCommands.check_output_command('sudo sed -i \'s#<forward mode="none"/>#<forward mode="nat"/>#\' "/vms/network.xml"'))
+            print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
+            print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
+
+            LibvirtManager.Vm.start(vms=VMS)
+            sleep(90)
+            print("\n\n\n Сеть настроена  \n\n\n")
+
             # LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="Provision")
             sleep(10)
             print("ВМ восстановлены")

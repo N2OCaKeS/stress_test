@@ -198,6 +198,21 @@ class Ovpn:
         #         }
         #     }
         # }
+        sysctl = {
+            "g_all": {
+                "enable ip_forwards": {
+                    "command": "sudo sysctl -w net.ipv4.ip_forward=1",
+                    "signal set": "",
+                    "signal get": '',
+                },
+            }
+        }
+        Libvirt.execute(
+            commands=sysctl,
+            vms_dates=self.new_vms_dates,
+            vms_groups=VMS_GROUP,
+            username=USER,
+            password=PASSWORD,)
 
         run_server = {
             "testvm1": {
@@ -317,7 +332,7 @@ EOF'""",
                 f"--client_start {client_start} --client_count {client_count}'"
             )
 
-            start_client[host] = {"run_perf": {"command": cmd, "nowait": True, "nowait_timeout": 15}}
+            start_client[host] = {"run_perf": {"command": cmd, "nowait": True, "nowait_timeout": {total_seconds}}}
 
         Libvirt.execute(
             commands=start_client,

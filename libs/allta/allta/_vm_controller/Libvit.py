@@ -130,14 +130,14 @@ EOF
                 "dpkg -l docker.io >/dev/null 2>&1"
             )
             compose_rc = system_commands.cmd_with_returncode(
-                "dpkg -l docker-compose >/dev/null 2>&1"
+                "dpkg -l docker-compose-v2 >/dev/null 2>&1"
             )
             if docker_rc == 0 and compose_rc == 0:
                 print("Docker уже установлен, шаг установки пропущен.")
             else:
                 print("\n\n\nУстанавливаем Docker...\n\n\n")
                 system_commands.cmd_with_returncode(
-                    "sudo apt-get install -y docker.io docker-compose"
+                    "sudo apt-get install -y docker.io docker-compose-v2"
                 )
 
             print("\n\n\nПрименяем настройки для firewall...\n\n\n")

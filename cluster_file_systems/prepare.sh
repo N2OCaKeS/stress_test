@@ -1,5 +1,8 @@
 #!/bin/bash
 
+sudo lsof /var/lib/dpkg/lock*
+sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)
+
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
 sudo jq -r ".\"$2\"[]" releases.json > /etc/apt/sources.list
@@ -12,16 +15,27 @@ Package: *
 Pin: release l=extended
 Pin-Priority: 500
 EOF
+
+
 sudo apt update
+
+sudo lsof /var/lib/dpkg/lock*
+sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)
 
 #lvirt
 sudo apt-get install -y astra-kvm  # virt-manager libvirt-clients libvirt-daemon libvirt-dev libvirt0 -y
 sudo apt purge -y firewalld
 
+sudo lsof /var/lib/dpkg/lock*
+sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)
+
 #vagrant
 wget -r -nH --cut-dirs=2 --no-parent ftp://qa111.devos.astralinux.ru/packages/vagrant
 sudo dpkg -i vagrant_2.2.19_x86_64.deb
 sudo adduser $USER libvirt
+
+sudo lsof /var/lib/dpkg/lock*
+sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)
 
 for group in kvm libvirt libvirt-qemu libvirt-admin; do
   if test ! "$(groups | grep ${group})"; then
@@ -41,10 +55,16 @@ for plugin in vagrant-vbguest; do
   fi
 done
 
+sudo lsof /var/lib/dpkg/lock*
+sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)
+
 # create venv in script_dir
 sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo apt-get install -y libffi-dev strace 
 sudo apt-get install -y python3-requests
+
+sudo lsof /var/lib/dpkg/lock*
+sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)
 
 sudo mkdir /home/u/python
 cd /home/u/python
@@ -66,6 +86,9 @@ python3.12 -m pip install -r req.txt
 if [[ $? != 0 ]]; then
     python3.12 -m pip install -r req.txt
 fi
+
+sudo lsof /var/lib/dpkg/lock*
+sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)
 
 sudo apt-get install -y nfs-kernel-server
 

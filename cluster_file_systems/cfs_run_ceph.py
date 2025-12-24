@@ -55,6 +55,15 @@ class Ceph:
             install_need_packages = "sudo apt install libgfapi0 -y"
             install_pip_req = "sudo pip3 install -r /var/tmp/req.txt"
         
+        print("**********TEST LOCK INFO START**********")
+        print("sudo lsof /var/lib/dpkg/lock*")
+        out = check_output_command(command="sudo lsof /var/lib/dpkg/lock*")
+        print(out)
+        print("sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)")
+        out2 = check_output_command(command="sudo fuser -v /var/lib/dpkg/lock* && sudo ps aux | grep $(fuser -v /var/lib/dpkg/lock*)")
+        print(out2)
+        print("**********TEST LOCK INFO END**********")
+        
         virt_machines = VMS(rc_vbox=self.vbox, vm_count=self.vmc, kernel=self.kernel, parsec=self.parsec)
         virt_machines.prepare_and_start()
         self.HOSTS = virt_machines.vm_dates

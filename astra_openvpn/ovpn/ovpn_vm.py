@@ -156,6 +156,24 @@ class Ovpn:
 
         LibvirtManager.Vm.start(vms=VMS)
         sleep(90)
+
+        add_default_route = {
+            "g_all": {
+                "add_default_route": {
+                    "command": f"sudo ip route replace default via 192.168.100.1 dev {DEV}",
+                    "signal set": "default route added",
+                    "signal get": "",
+                },
+            }
+        }
+        Libvirt.execute(
+            commands=add_default_route,
+            vms_dates=self.new_vms_dates,
+            vms_groups=VMS_GROUP,
+            username=USER,
+            password=PASSWORD,
+            timeout=15,
+        )
         print("\n\n\n Сеть настроена  \n\n\n")
 
     def server_settings(self):
@@ -232,7 +250,7 @@ class Ovpn:
                     "signal get": ["srv:conf:gost:done"],
                 },
                 "set_default route": {
-                    "command": f"sudo ip route replace default via 192.168.100.1 dev {DEV}",
+                    "command": f"sudo ip route add default via 192.168.100.1 dev {DEV}",
                     "signal set": "srv:route:set",
                     "signal get": ["srv:conf:ncp:done"],
                 },

@@ -1,7 +1,12 @@
 #!/bin/bash
 
-: ${natiface=$(ip route show to 0/0 |
-sed -n '/^default/{s/.* dev \([^ ]*\).*/\1/p;q}')}
+natiface="$(ip route show to 0/0 | sed -n '/^default/{s/.* dev \([^ ]*\).*/\1/p;q}')"
+
+if [[ -z "$natiface" ]]; then
+  echo "ERROR: natiface is empty (default route not found?)" >&2
+  ip route show >&2
+  exit 1
+fi
 
 attach()
 {

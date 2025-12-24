@@ -15,10 +15,7 @@ sudo ./vpn.sh start vpn$CONNECT_NUMBER $ip --no-tmux
 # Start OpenVPN client
 sudo ip netns exec vpn$CONNECT_NUMBER bash -lc "
   cd $client_dir
-  nohup openvpn --config client.ovpn \
-    --dev tun$CONNECT_NUMBER --auth-nocache \
-    --resolv-retry 0 --connect-retry-max 1 --connect-timeout 10 \
-    --ping 10 --ping-exit 2 --remap-usr1 SIGTERM \
+  nohup openvpn --config client.ovpn --dev tun$CONNECT_NUMBER --auth-nocache --resolv-retry 0 --connect-retry-max 1 --connect-timeout 10 --ping 10 --ping-exit 2 --remap-usr1 SIGTERM \
     & disown -a
 "
 sudo ip netns exec vpn$CONNECT_NUMBER bash -lc "

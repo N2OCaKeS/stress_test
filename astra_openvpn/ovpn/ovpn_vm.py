@@ -237,7 +237,7 @@ class Ovpn:
                     "signal get": ["srv:conf:ncp:done"],
                 },
                 "openvpn-server-start": {
-                    "command": r"""sudo astra-openvpn-server start && sudo astra-openvpn-server status""",
+                    "command": r"""sudo astra-openvpn-server start && sudo astra-openvpn-server status && sudo astra-openvpn-server start""",
                     "signal set": "srv:ovpn:up",
                     "signal get": ["srv:route:set"],
                 },

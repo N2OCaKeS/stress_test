@@ -5,7 +5,7 @@ set -Eeuo pipefail
 CONNECT_NUMBER=$1
 client_dir=/home/u/openvpn/clients_keys/tester$CONNECT_NUMBER
 nohup=$client_dir/nohup.out
-oct2=$((331 + $CONNECT_NUMBER / 256))
+oct2=$((31 + $CONNECT_NUMBER / 256))
 oct3=$(($CONNECT_NUMBER % 256))
 ip="172.${oct2}.${oct3}"
 cd /home/u

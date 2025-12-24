@@ -164,6 +164,11 @@ class Ovpn:
                     "signal set": "default route added",
                     "signal get": "",
                 },
+                "enable ip_forwards": {
+                    "command": "sudo sysctl -w net.ipv4.ip_forward=1",
+                    "signal set": "",
+                    "signal get": '',
+                },                
             }
         }
         Libvirt.execute(
@@ -216,21 +221,6 @@ class Ovpn:
         #         }
         #     }
         # }
-        sysctl = {
-            "g_all": {
-                "enable ip_forwards": {
-                    "command": "sudo sysctl -w net.ipv4.ip_forward=1",
-                    "signal set": "",
-                    "signal get": '',
-                },
-            }
-        }
-        Libvirt.execute(
-            commands=sysctl,
-            vms_dates=self.new_vms_dates,
-            vms_groups=VMS_GROUP,
-            username=USER,
-            password=PASSWORD,)
 
         run_server = {
             "testvm1": {
@@ -250,7 +240,7 @@ class Ovpn:
                     "signal get": ["srv:conf:gost:done"],
                 },
                 "set_default route": {
-                    "command": f"sudo ip route add default via 192.168.100.1 dev {DEV}",
+                    "command": f"sudo ip route replace default via 192.168.100.1 dev {DEV}",
                     "signal set": "srv:route:set",
                     "signal get": ["srv:conf:ncp:done"],
                 },

@@ -12,7 +12,9 @@ from ovpn.vm_conf import (
     TEMPLATE_PATH,
     VERSION_OS,
     CLIENTS_TOTAL,
-    DEV
+    DEV,
+    STATS_DURATION_SECONDS,
+    STATS_EXTRA_SECONDS,
 )
 import math
 from ovpn.result import analyze_result
@@ -199,7 +201,7 @@ class Ovpn:
                 {
                     "path": "/etc/openvpn/server.conf",
                     "old": "keepalive 15 120",
-                    "new": "keepalive 3 6",
+                    "new": "keepalive 10 60",
                 },
             ]
         }
@@ -320,7 +322,11 @@ EOF'""",
         client_count = int(CLIENTS_TOTAL / (len(list(VMS_DATES.keys())) - 1))
         client_per_minutes = 30
 
-        total_seconds = math.ceil((client_count / client_per_minutes) * 60) + 180
+        ramp_seconds = math.ceil((client_count / client_per_minutes) * 60)
+        if STATS_DURATION_SECONDS and STATS_DURATION_SECONDS > 0:
+            total_seconds = int(STATS_DURATION_SECONDS)
+        else:
+            total_seconds = ramp_seconds + int(STATS_EXTRA_SECONDS)
         start_client = {
             "testvm1": {
                 "get stats": {

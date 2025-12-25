@@ -25,3 +25,8 @@ if VERSION_OS.startswith("1.7"):
     DEV = "eth0"
 elif VERSION_OS.startswith("1.8"):
     DEV = "enp1s0"
+
+# 0 means auto duration based on ramp-up time.
+STATS_DURATION_SECONDS = 0
+# Extra seconds added to auto duration.
+STATS_EXTRA_SECONDS = 180

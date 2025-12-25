@@ -53,11 +53,11 @@ class Report:
             self.user_count = [int(param) for param in raw_data[::4]]
             self.successful_users = [int(param) for param in raw_data[1::4]]
             self.total_time = [float(param) for param in raw_data[2::4]]
-            self.average_time_per_user = [float(param) for param in raw_data[3::4]]
+            self.user_per_second = [float(param) for param in raw_data[3::4]]
             self.raw_table = pd.DataFrame({'user_count': self.user_count,
                                         'successful_users': self.successful_users,
                                         'total_time': self.total_time,
-                                        'average_time_per_user': self.average_time_per_user})
+                                        'user_per_second': self.user_per_second})
             print(self.raw_table)
 
 
@@ -130,11 +130,11 @@ class Report:
                                y_min_for_mathmodel=0,
                                y_max_for_mathmodel=51000)
     
-    def get_rating_average_time_per_user(self):
+    def get_rating_user_per_second(self):
         return self.get_rating(x=self.raw_table['user_count'].tolist(),
-                               y=self.raw_table['average_time_per_user'].tolist(),
+                               y=self.raw_table['user_per_second'].tolist(),
                                y_min_for_mathmodel=0,
-                               y_max_for_mathmodel=100)
+                               y_max_for_mathmodel=6000)
 
 
     def get_rating_proc_errors(self, weight_c):
@@ -169,11 +169,11 @@ class Report:
         weight_average_time_per_user = 0.333
         print(self.get_rating_successful_users())
         print(self.get_rating_total_time())
-        print(self.get_rating_average_time_per_user())
+        print(self.get_rating_user_per_second())
         total_rating = (
             ((self.get_rating_successful_users() * weight_successful_users) ** (1)) +
             ((self.get_rating_total_time() * weight_total_time) ** (-1)) +
-            ((self.get_rating_average_time_per_user() * weight_average_time_per_user) ** (-1))
+            ((self.get_rating_user_per_second() * weight_average_time_per_user) ** (-1))
         )
         return round(total_rating * multiplier, accuracy)
 

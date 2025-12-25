@@ -342,7 +342,7 @@ EOF'""",
 
             cmd = (
                 "sudo su -c 'ulimit -u 100000 && ulimit -n 100000 && ulimit -s 100000 && "
-                f"python3.12 /home/u/loader.py --client_per_minutes {client_per_minutes} "
+                f"/home/u/python/Python-3.12.1/venv/bin/python3.12 /home/u/loader.py --client_per_minutes {client_per_minutes} "
                 f"--client_start {client_start} --client_count {client_count}'"
             )
 

@@ -1,4 +1,8 @@
 #!/bin/bash
+set -euo pipefail
+
+SYS_KERNEL="${SYS_KERNEL:-$(uname -r)}"
+HOSTNAME="${HOSTNAME:-$(hostname)}"
 
 sudo DEBIAN_FRONTEND=noninteractive apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev cpp gcc make libpdp-dev liblzma-dev python3-requests rustc cargo libcurl4-gnutls-dev strace pkg-config
@@ -36,15 +40,37 @@ fi
 echo "10000 65000" > /proc/sys/net/ipv4/ip_local_port_range
 
 #python
-sudo mkdir /home/u/python
-cd /home/u/python
-sudo wget -P /home/u/python ftp://10.177.103.10/python/*
-tar -xf Python-3.12.1.tar.xz
-cd Python-3.12.1
-./configure --enable-optimizations
-make -j
-sudo make altinstall
-python3.12 -m pip install --upgrade pip
-python3.12 -m pip install "allta==1.0.20" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10
-python3.12 -m venv venv
+PY_VERSION="3.12.1"
+PY_ROOT="/home/u/python"
+PY_TARBALL="Python-${PY_VERSION}.tar.xz"
+PY_TARBALL_URL="ftp://10.177.103.10/python/${PY_TARBALL}"
+PY_SRC_DIR="${PY_ROOT}/Python-${PY_VERSION}"
+MAKE_JOBS="${MAKE_JOBS:-$(nproc)}"
 
+sudo mkdir -p "${PY_ROOT}"
+cd "${PY_ROOT}"
+
+if [[ -f "${PY_TARBALL}" ]]; then
+    if ! xz -t "${PY_TARBALL}"; then
+        sudo rm -f "${PY_TARBALL}"
+    fi
+fi
+
+if [[ ! -f "${PY_TARBALL}" ]]; then
+    sudo wget --tries=5 --timeout=30 --retry-connrefused -O "${PY_TARBALL}" "${PY_TARBALL_URL}"
+fi
+
+xz -t "${PY_TARBALL}"
+sudo rm -rf "${PY_SRC_DIR}"
+tar -xf "${PY_TARBALL}"
+cd "${PY_SRC_DIR}"
+
+./configure --with-ensurepip=install
+make -j"${MAKE_JOBS}"
+sudo make altinstall
+/usr/local/bin/python3.12 -c "import socket, ssl, hashlib"
+
+rm -rf "${PY_SRC_DIR}/venv"
+/usr/local/bin/python3.12 -m venv "${PY_SRC_DIR}/venv"
+"${PY_SRC_DIR}/venv/bin/python" -m pip install --upgrade pip
+"${PY_SRC_DIR}/venv/bin/python" -m pip install "allta==1.0.20" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10

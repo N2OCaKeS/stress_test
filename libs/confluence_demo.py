@@ -354,13 +354,12 @@ def publish_demo_page(builder: PageBuilder, preview_path: Path):
         token=token,
         password=password,
     )
-    attachments = [preview_path, *builder.attachments]
     page_id = publisher.publish(
         space=space,
         title=title,
         parent_title="",
         body=builder.render(),
-        attachments=attachments,
+        attachments=[*builder.attachments],
         labels=["stress-demo"],
     )
     print(f"Страница опубликована: {page_id}")

@@ -779,8 +779,8 @@ class PageBuilder:
         """
 
         body = []
-        if self.title:
-            body.append(f'<h1 style="{self._TITLE_STYLE}">{escape(self.title)}</h1>\n')
+        # if self.title:
+        #     body.append(f'<h1 style="{self._TITLE_STYLE}">{escape(self.title)}</h1>\n')
         body.extend(self._wrap_report_block(chunk) for chunk in self._sections)
         body.append(self._render_footer_note())
         return f'<div style="{self._ROOT_STYLE}">' + "".join(body) + "</div>"

@@ -49,7 +49,7 @@ class _VirtInstall:
         self.original_vms_date = copy.deepcopy(vms_date)
         self.vm_path = "/vms"
         if kernel is None or kernel == "":
-            self.kernel = system_commands.check_output_command("uname -r")
+            self.kernel = None
         else:
             self.kernel = kernel
 
@@ -78,8 +78,11 @@ class _VirtInstall:
                     os_version = "alse17"
                 elif "1.8" in self.box:
                     os_version = "alse17"
+                elif "vm_station" in self.box:
+                    os_version = "alse17"                    
                 elif "debian" in self.box:
                     os_version = "debian12"
+
                 return box_name, box_url, os_version
 
         # 2. Если не найден — дефолты
@@ -312,6 +315,90 @@ class _VirtInstall:
             f"rm {vm_path}/{self.box}.qcow2 {vm_path}/{self.box}.tar.gz"
         )
 
+        if self.box == "vm_station":
+            hostname_cmd = (
+                "sudo hostnamectl set-hostname {host} && sudo timedatectl set-ntp true && "
+                "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\treleases' | sudo tee /etc/hosts"
+            )
+            update_cmd = (
+                "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive astra-update -A -T -r"
+            )
+            deps_cmd = (
+                "sudo DEBIAN_FRONTEND=noninteractive apt-get install rsync htop gcc make perl qemu-guest-agent -y"
+            )
+
+            def start_prepare_vm_station(cmd_template: Optional[str] = None, reboot: Optional[int] = None):
+                with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
+                    futures = []
+                    for host in self.vms_date:
+                        if reboot is None:
+                            if cmd_template is None:
+                                raise ValueError("cmd_template должен быть задан при запуске без перезагрузки")
+                            full_cmd = cmd_template.format(host=host)
+                            futures.append(
+                                executor.submit(
+                                    _SSH_Command.cmd,
+                                    host,
+                                    full_cmd,
+                                    self.vms_date,
+                                    "u",
+                                    "1",
+                                    task_name="prepare",
+                                )
+                            )
+                        if reboot == 1:
+                            futures.append(
+                                executor.submit(
+                                    _Reboot.reboot_vm,
+                                    host,
+                                    self.vms_date,
+                                    "u",
+                                    "1",
+                                    sleep=180,
+                                )
+                            )
+
+                for future in as_completed(futures):
+                    result = future.result()
+                    if reboot is None:
+                        h = result.get("host", "unknown")
+                        if result.get("status") == "ok":
+                            print(f"[{h}] prepare успешно выполнен")
+                        else:
+                            print(f"[{h}] prepare ошибка: {result.get('output')}")
+
+            version = ["1.7.5.9", "1.8.1.6"]
+            for vers in version:
+                print(
+                    f"\n\n\n\033[31mНастраиваем ВМ для версии ОС: {vers}\033[0m\n\n\n"
+                )
+                vms_list = list(self.vms_date.keys())
+                for vm in vms_list:
+                    disk = f"{vm}.qcow2"
+                    system_commands.cmd_with_returncode(
+                        f"virsh --connect qemu:///system destroy {vm}"
+                    )
+                    revert_snap = f"sudo qemu-img snapshot -a {vers} {vm_path}/{disk}"
+                    system_commands.cmd_with_returncode(revert_snap)
+                    system_commands.cmd_with_returncode(
+                        f"virsh --connect qemu:///system start {vm}"
+                    )
+                sleep(60)
+                print("\n\n\nСтавим hostname\n\n\n")
+                start_prepare_vm_station(hostname_cmd)
+                print("\n\n\nAtra Update\n\n\n")
+                start_prepare_vm_station(update_cmd)
+                print("\n\n\nСтавим зависимости\n\n\n")
+                start_prepare_vm_station(deps_cmd)
+                print("\n\nПерезагружаем ВМ\n\n\n")
+                start_prepare_vm_station(reboot=1)
+                for vm in vms_list:
+                    disk = f"{vm}.qcow2"
+                    system_commands.cmd(
+                        f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "{vers}_build"'
+                    )
+            return self.vms_date
+
         if self.box != "vm_station":
             print("\n==> Скачиваем releases.json...")
             if self.rc:
@@ -437,40 +524,7 @@ class _VirtInstall:
                 "grep '^GRUB_DEFAULT=' /etc/default/grub",
             ]
 
-            if self.box == "vm_station":
-                version = ["1.7.5.9", "1.8.1.6"]
-                for vers in version:
-                    print(
-                        f"\n\n\n\033[31mНастраиваем ВМ для версии ОС: {vers}\033[0m\n\n\n"
-                    )
-                    vms_list = list(self.vms_date.keys())
-                    for vm in vms_list:
-                        disk = f"{vm}.qcow2"
-                        system_commands.cmd_with_returncode(
-                            f"virsh --connect qemu:///system destroy {vm}"
-                        )
-                        revert_snap = (
-                            f"sudo qemu-img snapshot -a {vers} {vm_path}/{disk}"
-                        )
-                        system_commands.cmd_with_returncode(revert_snap)
-                        system_commands.cmd_with_returncode(
-                            f"virsh --connect qemu:///system start {vm}"
-                        )
-                    sleep(60)
-                    print("\n\n\nСтавим hostname\n\n\n")
-                    start_prepare(cmds[0])
-                    print("\n\n\nAtra Update\n\n\n")
-                    start_prepare(cmds[2])
-                    print("\n\n\nСтавим зависимости\n\n\n")
-                    start_prepare(cmds[3])
-                    print("\n\nПерезагружаем ВМ\n\n\n")
-                    start_prepare(reboot=1)
-                    for vm in vms_list:
-                        disk = f"{vm}.qcow2"
-                        system_commands.cmd(
-                            f'virsh --connect qemu:///system snapshot-create-as --domain {vm} --name "{vers}_build"'
-                        )
-            elif self.box == "debian12":
+            if self.box == "debian12":
                 cmds = [
                     "sudo hostnamectl set-hostname {host} && sudo timedatectl set-ntp true && "
                     "echo -e '127.0.0.1\tlocalhost\n127.0.0.1\t{host}\n10.177.103.10\tallta.devos.astralinux.ru\tallta\n10.177.43.1\treleases.devos.astralinux.ru\treleases' | sudo tee /etc/hosts",

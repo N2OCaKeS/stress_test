@@ -58,6 +58,12 @@ class Libvirt(_VirtualMashines):
             "sudo usermod -aG kvm,libvirt,libvirt-qemu,libvirt-admin $USER"
         )
 
+        system_commands.cmd_with_returncode(
+            r"sudo sed -i -E 's|^[[:space:]]*#?[[:space:]]*cgroup_controllers[[:space:]]*=.*|cgroup_controllers = [ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuacct\" ]|' /etc/libvirt/qemu.conf && grep -qE '^[[:space:]]*cgroup_controllers[[:space:]]*=' /etc/libvirt/qemu.conf || echo 'cgroup_controllers = [ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuacct\" ]' | sudo tee -a /etc/libvirt/qemu.conf >/dev/null"
+        )
+
+        system_commands.cmd_with_returncode("sudo systemctl restart libvirtd")
+
         print("\n\n\nНастраиваем сеть для Libvirt...\n\n\n")
         net = system_commands.check_output_command(
             'ip -4 route get 8.8.8.8 | awk \'{for(i=1;i<=NF;i++){if($i=="dev") d=$(i+1); if($i=="src") s=$(i+1)}} END{print s, d}\''

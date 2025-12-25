@@ -48,7 +48,7 @@ if [[ "$tun_ready" -ne 1 ]]; then
 fi
 
 sudo ip netns exec vpn$CONNECT_NUMBER bash -lc "
-  nohup iperf -c 10.8.0.1 -u -b 8M -t 3600 -i 5 \
+  nohup iperf -c 10.8.0.1 -u -b 16M -t 3600 -i 5 \
   & disown -a
 "
 sudo cat "$nohup" || true

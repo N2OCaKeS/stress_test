@@ -9,7 +9,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev cpp gcc make l
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libsqlite3-dev wget libbz2-dev
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config zlib1g-dev libbz2-dev liblzma-dev xz-utils libssl-dev libreadline-dev libsqlite3-dev libffi-dev libncurses5-dev libgdbm-dev libgdbm-compat-dev libnss3-dev libexpat1-dev tk-dev uuid-dev curl wget ca-certificates rustc cargo strace "linux-tools-${SYS_KERNEL}" python3-requests
 
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra iptables tmux
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iperf libgost-astra iptables
 
 if [ "${HOSTNAME}" = "testvm1" ]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y install astra-openvpn-server sshpass
@@ -40,37 +40,8 @@ fi
 echo "10000 65000" > /proc/sys/net/ipv4/ip_local_port_range
 
 #python
-PY_VERSION="3.12.1"
-PY_ROOT="/home/u/python"
-PY_TARBALL="Python-${PY_VERSION}.tar.xz"
-PY_TARBALL_URL="ftp://10.177.103.10/python/${PY_TARBALL}"
-PY_SRC_DIR="${PY_ROOT}/Python-${PY_VERSION}"
-MAKE_JOBS="${MAKE_JOBS:-$(nproc)}"
-
-sudo mkdir -p "${PY_ROOT}"
-cd "${PY_ROOT}"
-
-if [[ -f "${PY_TARBALL}" ]]; then
-    if ! xz -t "${PY_TARBALL}"; then
-        sudo rm -f "${PY_TARBALL}"
-    fi
-fi
-
-if [[ ! -f "${PY_TARBALL}" ]]; then
-    sudo wget --tries=5 --timeout=30 --retry-connrefused -O "${PY_TARBALL}" "${PY_TARBALL_URL}"
-fi
-
-xz -t "${PY_TARBALL}"
-sudo rm -rf "${PY_SRC_DIR}"
-tar -xf "${PY_TARBALL}"
-cd "${PY_SRC_DIR}"
-
-./configure --with-ensurepip=install
-make -j"${MAKE_JOBS}"
-sudo make altinstall
-/usr/local/bin/python3.12 -c "import socket, ssl, hashlib"
-
-rm -rf "${PY_SRC_DIR}/venv"
-/usr/local/bin/python3.12 -m venv "${PY_SRC_DIR}/venv"
-"${PY_SRC_DIR}/venv/bin/python" -m pip install --upgrade pip
-"${PY_SRC_DIR}/venv/bin/python" -m pip install "allta==1.0.20" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10
+wget ftp://10.177.103.10/allta_1.0.1_amd64.deb
+sudo dpkg -i allta_1.0.1_amd64.deb
+allta python
+/home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install --upgrade pip
+/home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install "allta==1.1.1" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10

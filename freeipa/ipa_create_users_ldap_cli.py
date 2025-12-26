@@ -1,6 +1,7 @@
 import uuid
 import time
 import os
+import re
 import subprocess
 
 LDAP_SERVER = "ldap://virtual-station2.stress-testing.local"
@@ -9,11 +10,32 @@ BIND_PASSWORD = "12345678"
 DOMAIN_DN = "dc=stress-testing,dc=local"
 GROUP_DN = f"cn=ipausers,cn=groups,cn=accounts,{DOMAIN_DN}"
 
-STEP_U = 4000
+STEP_U = 1000
 REPORT_FILE = "ipa_report.txt"
 ERROR_REPORT = "ipa_report_error.txt"
 
-def generate_iteration_ldif(start_id, end_id, iter_num):
+def get_admin_uid():
+
+    admin_dn = f"uid=admin,cn=users,cn=accounts,{DOMAIN_DN}"
+    cmd = [
+        "ldapsearch", "-x", "-LLL",
+        "-H", LDAP_SERVER,
+        "-D", "Directory Manager",
+        "-w", BIND_PASSWORD,
+        "-b", admin_dn,
+        "uidNumber"
+    ]
+    try:
+        result = subprocess.check_output(cmd, text=True)
+        match = re.search(r"uidNumber:\s+(\d+)", result)
+        if match:
+            return int(match.group(1))
+    except Exception as e:
+        print(f"Ошибка при получении UID админа: {e}")
+    
+    return 17001000
+
+def generate_iteration_ldif(start_id, end_id, iter_num, base_uid):
     user_filename = f"users_iter_{iter_num}.ldif"
     group_filename = f"group_iter_{iter_num}.ldif"
     
@@ -23,7 +45,7 @@ def generate_iteration_ldif(start_id, end_id, iter_num):
         
         for i in range(start_id, end_id + 1):
             username = f"test{i}"
-            uid_gid = str(17001234 + i)
+            uid_gid = str(base_uid + 10 + i)
             u_dn = f"uid={username},cn=users,cn=accounts,{DOMAIN_DN}"
             
             # Формируем запись пользователя
@@ -69,8 +91,10 @@ def run_ldapadd(filename):
     return stdout, stderr
 
 if __name__ == "__main__":
+    admin_uid_base = get_admin_uid()
+
     start_id = 1
-    end_id = 4000
+    end_id = 1000
     iteration = 1
     
     open(REPORT_FILE, 'w').close()
@@ -82,7 +106,7 @@ if __name__ == "__main__":
     while iteration <= 5:
         count = end_id - start_id + 1
         
-        u_file, g_file = generate_iteration_ldif(start_id, end_id, iteration)
+        u_file, g_file = generate_iteration_ldif(start_id, end_id, iteration, admin_uid_base)
         
         start_time = time.time()
         

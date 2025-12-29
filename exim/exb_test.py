@@ -25,8 +25,12 @@ class SMTPTest:
                 msg['Subject'] = f"Load Test {i}"
                 msg['From'] = self.email_config["username_from"]
                 msg['To'] = self.email_config["username_to"]
-                smtp.send_message(msg)
-                return True, i
+                code, message = smtp.send_message(msg)
+                if code != 250:
+                    return True, i
+                else:
+                    print(code, message)
+                    return False, i
         except Exception as e:
             print(f"Error: {e}")
             return False, i
@@ -35,6 +39,7 @@ class SMTPTest:
     def run_test(self):
         results = []
         for current_mail in range(MAIL_START, MAIL_MAX + MAIL_STEP, MAIL_STEP):
+            # sudo doveadm expunge -u user2 mailbox INBOX ALL
             start_time = time.time()
             successful_count = 0
             failed_count = 0
@@ -66,7 +71,7 @@ class SMTPTest:
                 'failed': failed_count,
                 'success_rate': success_rate,
                 'execution_time': execution_time,
-                'emails_per_second': emails_per_second
+                'emails_per_second': round(emails_per_second)
             }
             results.append(step_result)
 

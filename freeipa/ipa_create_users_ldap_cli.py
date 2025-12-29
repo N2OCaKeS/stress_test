@@ -20,7 +20,7 @@ def get_admin_uid():
     cmd = [
         "ldapsearch", "-x", "-LLL",
         "-H", LDAP_SERVER,
-        "-D", "Directory Manager",
+        "-D", admin_dn,
         "-w", BIND_PASSWORD,
         "-b", admin_dn,
         "uidNumber"

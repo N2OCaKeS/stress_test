@@ -57,9 +57,14 @@ done
 
 # test packages
 sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
-sudo apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3 nginx  
+sudo apt-get install -y libpq-dev gcc libapache2-mod-wsgi-py3   
 sudo apt-get install -y strace libcurl4-gnutls-dev  python3-requests liblzma-dev
 sudo apt-get install -y linux-tools-`uname -r`
+
+sudo mkdir /home/u/nginx
+sudo wget -P /home/u/nginx ftp://10.177.103.10/packages/nginx/*
+sudo dpkg -i /home/u/nginx/nginx*.deb
+sudo apt install -fy
 
 
 cd /home/u/git/stress_test/*/site/

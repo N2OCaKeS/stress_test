@@ -4,12 +4,15 @@ import pwd
 import hashlib
 import subprocess
 
+
 class Exim:
     def __init__(self):
         self.service_name = 'smtp'
         self.service_config_dir = f'/etc/exim4'
         self.config_file = f"{self.service_config_dir}/exim4.conf"
         self.update_config_file = f"{self.service_config_dir}/update-exim4.conf.conf"
+        self.verify_macros_file = f"{self.service_config_dir}/exim4.conf.localmacros"
+        self.acs_virify_file = f"{self.service_config_dir}/conf.d/acs/30_exim4-config_check_rcpt"
         
     def get_default_config(self):
         config = {
@@ -30,7 +33,51 @@ class Exim:
         
         return config
     
+    def _add_verify_acs(self):
+        try:
+            with open(self.acs_virify_file, 'r', encoding='utf-8') as file:
+                lines = file.readlines()
+            
+            new_lines = []
+            i = 0
+            replaced = False
+            
+            while i < len(lines):
+                if lines[i].strip() == 'acl_check_rcpt:' and not replaced:
+                    new_lines.append('acl_check_rcpt:\n')
+                    new_lines.append('deny\n')
+                    new_lines.append('    domains = +local_domains\n')
+                    new_lines.append('    message = unknown user\n')
+                    new_lines.append('    !verify = recipient\n')
+
+                    i += 6
+                    replaced = True
+                    continue
+                else:
+                    new_lines.append(lines[i])
+                    i += 1
+            
+            if replaced:
+                with open(self.acs_virify_file, 'w', encoding='utf-8') as file:
+                    file.writelines(new_lines)
+                print(f"Блок успешно заменен в файле {self.acs_virify_file}")
+                return True
+            else:
+                print(f"Блок acl_check_rcpt не найден в файле {self.acs_virify_file}")
+                return False
+                
+        except Exception as e:
+            print(f"Ошибка: {str(e)}")
+            return False
+
+
+    def _add_verify_macros(self):
+        with open(self.verify_macros_file, "w") as f:
+            f.write("CHECK_RCPT_VERIFY_RECIPIENT = yes")
+    
     def write_config_file(self):
+        self._add_verify_acs()
+        self._add_verify_macros()
         config_content = "\n".join([f"{key}='{value}'" for key, value in self.get_default_config().items()]) + "\n"
         with open(self.update_config_file, 'w') as f:
             f.write(config_content)

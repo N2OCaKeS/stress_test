@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 from numpy.exceptions import RankWarning
 from pretty_html_table import build_table
 
-from exb_conf import REPORT_PATH
+from exb_conf import REPORT_FILENAME, REPORT_PATH
 
 class Report:
     def __init__(self, report_path=REPORT_PATH, img_width=16.256, img_height=12.192):
@@ -20,12 +20,12 @@ class Report:
         if not exists(REPORT_PATH):
             os.mkdir(REPORT_PATH, mode=0o755)
 
-        with open(f"{REPORT_PATH}/mail_report.txt") as file:
+        with open(f"{REPORT_FILENAME}") as file:
             raw_data = file.read().split()
 
         self.mail_count = [int(param) for param in raw_data[::3]]
-        self.successful = [float(param) for param in raw_data[1::3]]
-        self.emails_per_second = [float(param) for param in raw_data[2::3]]
+        self.successful = [int(param) for param in raw_data[1::3]]
+        self.emails_per_second = [int(param) for param in raw_data[2::3]]
 
         self.raw_table = pd.DataFrame({'mail_count': self.mail_count,
                                         'successful': self.successful,
@@ -84,5 +84,8 @@ class Report:
                                y=self.raw_table['emails_per_second'].tolist(),
                                y_min_for_mathmodel=0,
                                y_max_for_mathmodel=...)
+    
+    def get_total_rating(self):
+        pass
 
         

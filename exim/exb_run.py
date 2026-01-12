@@ -1,8 +1,10 @@
+import os
 from argparse import ArgumentParser
 
 from exb_setup import Dovecot, Exim, CreateMailUsers
 from exb_test import SMTPTest
 from libs.libtable import Report
+from exb_conf import REPORT_PATH
 
 parser = ArgumentParser()
 parser.add_argument('-u', '--username',
@@ -87,7 +89,9 @@ parser.add_argument('-tcv', '--test-cycle-version',
 
 args = parser.parse_args()
 
-if __name__ == "__name__":
+if __name__ == "__main__":
+    if not os.path.exists(REPORT_PATH):
+        os.makedirs(REPORT_PATH, mode=0o755)
     d = Dovecot()
     ex = Exim()
     cu = CreateMailUsers(user_count=10)

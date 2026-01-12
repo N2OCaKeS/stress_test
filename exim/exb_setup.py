@@ -12,7 +12,7 @@ class Exim:
         self.config_file = f"{self.service_config_dir}/exim4.conf"
         self.update_config_file = f"{self.service_config_dir}/update-exim4.conf.conf"
         self.verify_macros_file = f"{self.service_config_dir}/exim4.conf.localmacros"
-        self.acs_virify_file = f"{self.service_config_dir}/conf.d/acs/30_exim4-config_check_rcpt"
+        self.acs_virify_file = f"{self.service_config_dir}/conf.d/acl/30_exim4-config_check_rcpt"
         
     def get_default_config(self):
         config = {

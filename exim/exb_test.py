@@ -3,8 +3,10 @@ import threading
 import time
 import socket
 from email.mime.text import MIMEText
-from exb_conf import MAIL_START, MAIL_MAX, MAIL_STEP, MAX_WORKERS
+from exb_conf import MAIL_START, MAIL_MAX, MAIL_STEP, MAX_WORKERS, REPORT_FILENAME
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from libs.libtable import Report
 
 
 class SMTPTest:
@@ -74,8 +76,8 @@ class SMTPTest:
                 execution_time = time.time() - start_time
                 emails_per_second = stats["success"] / execution_time if execution_time > 0 else 0
 
-                with open("mail_report.txt", 'a') as report_file:
-                    report_file.write(f"{current_mail} {stats['success']} {emails_per_second}")
+                with open(REPORT_FILENAME, 'a') as report_file:
+                    report_file.write(f"{current_mail} {stats['success']} {emails_per_second}\n")
 
                 print(f"\n--- Batch: {current_mail} emails ---")
                 print(f"Time: {execution_time:.2f}s | Speed: {round(emails_per_second)} msg/sec")
@@ -87,3 +89,5 @@ class SMTPTest:
 if __name__ == "__main__":
     t = SMTPTest()
     t.run_test()
+    r = Report()
+    print(r.raw_table)

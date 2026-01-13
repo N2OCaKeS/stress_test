@@ -1,184 +1,91 @@
-import os
-import re
-from json import loads
-from pathlib import Path
-from libs.libreport import ReportToConfluence, ReportToJira
-from exb_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH
+import pandas as pd
+from typing import Any, Dict, List, Tuple
+from allta import PageBuilder, ConfluencePublisher
 
-class Public:
-    '''
-    Публикация результатов в confluence
-    '''
-    def __init__(self,
-                 username=None,
-                 token=None,
-                 conf_space=None,
-                 conf_parent_page=None,
-                 conf_new_page_name=None,
-                 grade_stand=None,
-                 package=None,
-                 file_system=None,
-                 test_set=None,
-                 test_cycle_version=None,
-                 total_rating=None):
+from exb_conf import MAIL_MAX, MAIL_STEP, REPORT_FILENAME
+
+def create_table_from_report_file(filename: str = REPORT_FILENAME):
+    df = pd.read_csv(
+        filename,
+        delim_whitespace=True,
+        header=None,
+        names=["email_count", "successfully_sent_emails", "emails_sent_per_second"]
+    )
     
-        self.username=username
-        self.token=token
-        self.c_space = conf_space
-        self.c_pp = conf_parent_page
-        self.c_np = conf_new_page_name
-        self.grade_stand = grade_stand
-        self.package=package
-        self.fs=file_system
-        self.ts=test_set
-        self.tcv = test_cycle_version
-        self.total_rating = total_rating
+    table = {
+        "title": "Метрики",
+        "headers": df.columns.tolist(),
+        "rows": df.to_dict('records')
+    }
+    
+    return table
 
-        self.stands = {
-            '1':{'grade':'low(141)',
-                 'cpu':'Intel(R) Core(TM) i7-11700 CPU @ 2.50GHz',
-                 'ram':'32GB',
-                 'storage':'Samsung NVME 970 EVO 2Тб'},
-            '2':{'grade':'low(129)',
-                 'cpu':'Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz',
-                 'ram':'32GB',
-                 'storage':'SSD 512GB\\sdb SSD 2TB'},
-            '3':{'grade':'LowServer(150)',
-                 'cpu':'Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz',
-                 'ram':'128GB',
-                 'storage':'SAS SSD 3.8Tb'},
-            '4':{'grade':'MiddleServer(151)',
-                 'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
-                 'ram':'256GB',
-                 'storage':'SAS SSD 3.8Tb'},
-            '10':{'grade':'LowServer',
-                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
-                'ram':'128GB',
-                'storage':'SAS SSD 3.8Tb'},
-            '11':{'grade':'LowServer',
-                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
-                'ram':'128GB',
-                'storage':'SAS SSD 3.8Tb'},
-            '12':{'grade':'LowServer',
-                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
-                'ram':'128GB',
-                'storage':'SAS SSD 3.8Tb'},
-            '13':{'grade':'LowServer',
-                'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
-                'ram':'128GB',
-                'storage':'SAS SSD 3.8Tb'}
-        }
+def exb_publisher(
+    username,
+    token,
+    space,
+    parent_title,
+    title,
+    stats,
+    lead_time="",
+    test_cycle_version: str | None = None,
+):
+    preview_path = "report/confluence_report.html"
+    reporter = ConfluencePublisher(
+        base_url="https://life.astralinux.ru", username=username, token=token
+    )
+    builder = PageBuilder(title=title)
 
-    def preset_publish(self, c_pp, c_np, release_pp=False, release_np=False):
-        confluence_report = ReportToConfluence(username=self.username, password=None, token=self.token)
-        #создать страницу confluence
-        def name_page(arg):
-            top_page = f'STRESS ⬝ {str(arg).split("_")[1][:3]}'
-            version_page = f'STRESS_report ⬝ {str(arg).split("_")[1]}'
-            return top_page, version_page
+    header_table = [
+        {
+            "label": "Ranging",
+            "value": {
+                "link": "https://life.astralinux.ru/pages/viewpage.action?pageId=150939635",
+                "link_text": "Рассчет рейтинга",
+                "items": [
+                    {"label": "number of successfully sent emails", "value": "0,5"},
+                    {"label": "number of emails sent per second", "value": "0,5"},
+                ],
+            },
+        },
+        {
+            "label": "Params",
+            "value": {
+                "items": [
+                    {"label": "maximum number of emails", "value": MAIL_MAX},
+                ],
+            },
+        },
+        {
+            "label": "ARM",
+            "value": {
+                "stand_number": "13",
+            },
+        },
+        {
+            "label": "Lead time",
+            "value": {
+                "text": lead_time,
+            },
+        },
+    ]
 
-        if release_pp and release_np:
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(release_np)[0],
-                                                     name_page(release_np)[1])
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(release_np)[1],
-                                                     release_pp)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     release_pp,
-                                                     release_np)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(release_np)[1],
-                                                     name_page(c_np)[1])
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(c_np)[1],
-                                                     c_pp)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     c_pp,
-                                                     c_np)
-        else:
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(c_np)[0],
-                                                     name_page(c_np)[1])
-            confluence_report.create_confluence_page(self.c_space,
-                                                     name_page(c_np)[1],
-                                                     c_pp)
-            confluence_report.create_confluence_page(self.c_space,
-                                                     c_pp,
-                                                     c_np)
-        
-        #прикрепить файлы к странице confluence
-        for file in os.listdir(REPORT_PATH):
-            confluence_report.attache_files(f'{REPORT_PATH}/{file}',
-                                            self.c_space,
-                                            c_np)
-            
-        #генерация вступительной таблицы
-        with open(INFO_FILENAME) as info:
-            # info_lst = info.read().split('\n')
-            info_dct = loads(info.read())
-        
-        # TODO Дописать info файл
-        with open(f'{TEMPLATE_PATH}/header_table_template.html', 'r') as file:
-            header_table_temp = file.read()
-            header_table = header_table_temp.format(av=f"{info_dct.get('astra_version')}({info_dct.get('astra_mode')})",
-                                                    kernel=info_dct.get("kernel_version"),
-                                                    package_name='exim4-daemon-heavy',
-                                                    package_vers=info_dct.get("package_version"),
-                                                    param_service_count=...,
-                                                    arm_num=self.stands[self.grade_stand]['grade'],
-                                                    arm_proc=self.stands[self.grade_stand]['cpu'],
-                                                    arm_mem=self.stands[self.grade_stand]['ram'],
-                                                    arm_st=self.stands[self.grade_stand]['storage'],
-                                                    lead_time=info_dct.get("lead_time"))  
-   
-        with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
-            rating_temp = template.read()
-            rating = rating_temp.format(r=self.total_rating)
-        
-        with open(f"{REPORT_PATH}/report_table.html") as report_table:
-            r_table = report_table.read()
-        
-        #TODO Дописать описание графов
-        with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
-            images_lst = []
-            img_temp = template.read()
-            for file in os.listdir(REPORT_PATH):
-                if file.endswith('png'):
-                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np), 
-                                                    img_png=file,
-                                                    description=GRAPH_DESCRIPTIONS[file]))
-            images = '\n'.join(images_lst)
+    builder.add_header_table(rows=header_table)
+    builder.add_heading(text="Описание", level=2)
+    builder.add_heading(text=f"Total Rating: {rating_text}", level=2)
 
-        html_page = '\n'.join([header_table, rating, r_table, images]) 
+    table = create_table_from_report_file()
 
-        #выкладываем информацию на страницу
-        if release_pp and release_np:
-            confluence_report.update_confluence_page(self.c_space, c_np, html_page)
-            confluence_report.update_confluence_page(self.c_space, release_np, html_page)
-        else:
-            confluence_report.update_confluence_page(self.c_space, c_np, html_page)
+    builder.add_table(table_spec=table)
 
-    def run_publish(self):
+    publish_result = reporter.publish_results_from_params(
+        conf_space=space,
+        conf_parent_page=parent_title,
+        conf_new_page_name=title,
+        test_cycle_version=test_cycle_version,
+        body=builder,
+        attachments=[*builder.attachments],
+    )
+    return builder, preview_path, publish_result
 
-        check_len_version = self.tcv.split('.')
-        if len(check_len_version) == 4 and check_len_version[3] != 'UU':
-            release_version = '.'.join(check_len_version[:3])
-            rare_cpp = self.c_pp.split(' ')
-            cpp = ' '.join([release_version if release_version in rare_cpp[i] else rare_cpp[i] for i in range(len(rare_cpp))])
-            rare_cnp = self.c_np.split('_')
-            cnp = '_'.join([release_version if release_version in rare_cnp[i] else rare_cnp[i] for i in range(len(rare_cnp))])
 
-            self.preset_publish(self.c_pp, self.c_np, release_pp=cpp, release_np=cnp)
-
-        elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
-            release_version = '.'.join(check_len_version[:5])
-            rare_cpp = self.c_pp.split(' ')
-            cpp = ' '.join([release_version if release_version in rare_cpp[i] else rare_cpp[i] for i in range(len(rare_cpp))])
-            rare_cnp = self.c_np.split('_')
-            cnp = '_'.join([release_version if release_version in rare_cnp[i] else rare_cnp[i] for i in range(len(rare_cnp))])
-
-            self.preset_publish(self.c_pp, self.c_np, release_pp=cpp, release_np=cnp)
-
-        else:
-            self.preset_publish(self.c_pp, self.c_np)

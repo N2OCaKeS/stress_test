@@ -74,7 +74,7 @@ class SMTPTest:
                             stats["other_error"] += 1
 
                 execution_time = time.time() - start_time
-                emails_per_second = stats["success"] / execution_time if execution_time > 0 else 0
+                emails_per_second = round(stats["success"] / execution_time if execution_time > 0 else 0, 2)
 
                 with open(REPORT_FILENAME, 'a') as report_file:
                     report_file.write(f"{current_mail} {stats['success']} {emails_per_second}\n")

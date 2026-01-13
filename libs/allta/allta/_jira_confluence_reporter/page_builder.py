@@ -66,7 +66,7 @@ from html import escape
 from pathlib import Path
 import requests
 
-
+# TODO Сделать генерацию таблицы из файла
 class PageBuilder:
     """
     Конструктор HTML-страниц для публикации в Confluence.

@@ -52,9 +52,9 @@ def ovpn_publisher(
                 "link": "https://life.astralinux.ru/pages/viewpage.action?pageId=150939635",
                 "link_text": "Рассчет рейтинга",
                 "items": [
-                    {"label": "ever_connected_count", "value": "0,4"},
-                    {"label": "disconnected_count", "value": "0,4"},
-                    {"label": "drops_max", "value": "0,2"},
+                    {"label": "Успешно подключенные клиенты", "value": "0,4"},
+                    {"label": "Не подключенные клиенты", "value": "0,4"},
+                    {"label": "Упавшие клиенты", "value": "0,2"},
                 ],
             },
         },
@@ -116,13 +116,13 @@ def ovpn_publisher(
     builder.add_chart(chart_spec=graphics, columns=1)
     builder.render_to_file(path=preview_path)
 
-    attachments = [preview_path, *builder.attachments]
+
     publish_result = reporter.publish_results_from_params(
         conf_space=space,
         conf_parent_page=parent_title,
         conf_new_page_name=title,
         test_cycle_version=test_cycle_version,
         body=builder,
-        attachments=attachments,
+        attachments=[*builder.attachments],
     )
     return builder, preview_path, publish_result

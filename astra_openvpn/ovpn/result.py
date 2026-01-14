@@ -250,8 +250,8 @@ def analyze_result(
                   Criterion(name="drops_max", values=[tester_count], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
     else:
         criterions = [Criterion(name="ever_connected_count", values=[stats["ever_connected_count"]], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
-                    Criterion(name="disconnected_count", values=[stats["disconnected_count"]], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
-                    Criterion(name="drops_max", values=[stats["drops_max"]], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
+                    Criterion(name="not_connected_count", values=[stats["not_connected_count"]], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
+                    Criterion(name="disconnected_count", values=[stats["disconnected_count"]], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
 
     total_rating, s = MathModels.total_rating(criteria=criterions)
     total_rating = int(round(total_rating * 10))

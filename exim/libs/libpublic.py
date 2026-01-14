@@ -26,7 +26,8 @@ def exb_publisher(
     space,
     parent_title,
     title,
-    stats,
+    total_rating,
+    stand_number,
     lead_time="",
     test_cycle_version: str | None = None,
 ):
@@ -59,7 +60,7 @@ def exb_publisher(
         {
             "label": "ARM",
             "value": {
-                "stand_number": "13",
+                "stand_number": f"{stand_number}",
             },
         },
         {
@@ -72,7 +73,7 @@ def exb_publisher(
 
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
-    builder.add_heading(text=f"Total Rating: {rating_text}", level=2)
+    builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
 
     table = create_table_from_report_file()
 

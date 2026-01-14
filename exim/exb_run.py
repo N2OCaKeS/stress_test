@@ -5,6 +5,9 @@ from exb_setup import Dovecot, Exim, CreateMailUsers
 from exb_test import SMTPTest
 from libs.libtable import Report
 from exb_conf import REPORT_PATH
+from libs.libpublic import exb_publisher
+from libs.zefir import UploaderZC
+
 
 parser = ArgumentParser()
 parser.add_argument('-u', '--username',
@@ -90,19 +93,43 @@ parser.add_argument('-tcv', '--test-cycle-version',
 args = parser.parse_args()
 
 if __name__ == "__main__":
+    uzs = UploaderZC(folder_tree_id=args.FTI,
+                 test_cycle_name=args.TCYC,
+                 test_case_name=args.TCAS,
+                 basic_auth=args.BA,
+                 test_cycle_version=args.TCV,
+                 token=args.TOKEN,
+                 username=args.USER,
+                 conf_space=args.SPACE,
+                 conf_parent_page=args.PPAGE,
+                 conf_new_page_name=args.NPAGE,
+                 grade_stand=args.STAND,
+                 test_set=args.TS)
+    
+    uzs.upload_test_cycle_status('progress')
     if not os.path.exists(REPORT_PATH):
         os.makedirs(REPORT_PATH, mode=0o755)
     d = Dovecot()
     ex = Exim()
     cu = CreateMailUsers(user_count=10)
-    ex.write_config_file()
-    ex.update_exim_config()
-    ex.restart_service()
-    d.set_configuration()
-    d.restart_service()
-    cu.set_configuration()
+    for ins in [ex, d, cu]:
+        ins.set_configuration()
 
     test = SMTPTest()
     test.run_test()
 
     report = Report()
+    total_rating = report.get_total_rating()
+    publisher = exb_publisher(
+        username=args.USER,
+        token=args.TOKEN,
+        space=args.SPACE,
+        parent_title=args.PPAGE,
+        title=args.NPAGE,
+        total_rating=total_rating,
+        stand_number=args.STAND,
+        lead_time="",
+        test_cycle_version=args.TCV,
+    )
+
+    uzs.upload_test_cycle_status(zefir_status='pass')

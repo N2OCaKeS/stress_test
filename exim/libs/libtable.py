@@ -18,9 +18,6 @@ class Report:
         self.report_path = report_path
         self.width = img_width
         self.height = img_height
-        
-        if not exists(REPORT_PATH):
-            os.mkdir(REPORT_PATH, mode=0o755)
 
         with open(f"{REPORT_FILENAME}") as file:
             raw_data = file.read().split()
@@ -30,8 +27,8 @@ class Report:
         self.emails_per_second = [float(param) for param in raw_data[2::3]]
 
         self.raw_table = pd.DataFrame({'mail_count': self.mail_count,
-                                        'successful': self.successful,
-                                        'emails_per_second': self.emails_per_second})
+                                       'successful': self.successful,
+                                       'emails_per_second': self.emails_per_second})
         
     @staticmethod
     def cm_to_inch(value):
@@ -89,8 +86,8 @@ class Report:
     
     def get_total_rating(self):
         criterions = [
-            Criterion(name="ever_connected_count", values=self.raw_table['successful'].tolist(), weight=0.5, sign=1, lower_bound=0, upper_bound=...),
-            Criterion(name="disconnected_count", values=self.raw_table["emails_per_second"].tolist(), weight=0.5, sign=1, lower_bound=0, upper_bound=...),
+            Criterion(name="successful", values=self.raw_table['successful'].tolist(), weight=0.3, sign=1, lower_bound=0, upper_bound=10000),
+            Criterion(name="emails_per_second", values=self.raw_table["emails_per_second"].tolist(), weight=0.8, sign=1, lower_bound=0, upper_bound=4000),
         ]
 
         total_rating, s = MathModels.total_rating(criteria=criterions)

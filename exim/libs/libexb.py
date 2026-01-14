@@ -1,3 +1,4 @@
+import requests
 import subprocess
 from os import linesep
 from os.path import exists
@@ -69,3 +70,12 @@ def info_list():
 
         with open(INFO_FILENAME, 'a+') as info:
             info.writelines(info_lst)
+
+def response():
+    try:
+        jira = requests.get(f'https://{JIRA_URL}').status_code
+        life = requests.get(f'https://{CONFLUENCE_URL}').status_code
+        return jira, life
+    except Exception as e:
+        jira, life = str(type(e).__name__), str(e)
+        return jira, life

@@ -84,7 +84,21 @@ class SMTPTest:
                 for cat, count in stats.items():
                     if count > 0:
                         print(f"  - {cat}: {count}")
-                
+
+# TODO
+class IMAPTest:
+    def __init__(self):
+        self.config = {
+            "server": 'localhost',
+            "port": '143',
+        }
+
+    def imap_worker(self, idx):
+        username = f"user{idx}@stress-testing.local"
+
+    def run_test(self):
+        pass
+
 
 if __name__ == "__main__":
     t = SMTPTest()

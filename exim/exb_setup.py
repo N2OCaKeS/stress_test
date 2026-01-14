@@ -87,6 +87,11 @@ class Exim:
 
     def restart_service(self):
         subprocess.run(['systemctl', 'restart', 'exim4'], check=True)
+
+    def set_configuration(self):
+        self.write_config_file()
+        self.update_exim_config()
+        self.restart_service()
         
 class Dovecot:
     def __init__(self):
@@ -162,12 +167,9 @@ if __name__ == "__main__":
     d = Dovecot()
     ex = Exim()
     cu = CreateMailUsers(user_count=10)
-    ex.write_config_file()
-    ex.update_exim_config()
-    ex.restart_service()
-    d.set_configuration()
-    d.restart_service()
-    cu.set_configuration()
+    for ins in [ex, d, cu]:
+        ins.set_configuration()
+
 
 
     

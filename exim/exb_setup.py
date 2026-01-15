@@ -166,7 +166,7 @@ class CreateMailUsers:
 if __name__ == "__main__":
     d = Dovecot()
     ex = Exim()
-    cu = CreateMailUsers(user_count=10)
+    cu = CreateMailUsers(user_count=500)
     for ins in [ex, d, cu]:
         ins.set_configuration()
 

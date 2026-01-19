@@ -28,5 +28,8 @@ statistics_conf = {
     "Файловые системы": {
         "set_of_test_types": ['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2', 'CEPH', 'CEPH fio'],
         "comparison_list": [['EXT4', 'XFS'], ['EXT4', 'EXT4 parsec']]
+    },
+    "Docker": {
+        "set_of_test_types": ['docker-wa']
     }
 }

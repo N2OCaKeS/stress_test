@@ -3,11 +3,12 @@ import smtplib
 import threading
 import time
 import socket
+
 from email.mime.text import MIMEText
-from exb_conf import MAIL_START, MAIL_MAX, MAIL_STEP, MAX_WORKERS, REPORT_FILENAME, MAIL_USERS_QTY_START, MAIL_USERS_QTY_MAX, MAIL_USERS_QTY_STEP
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from libs.libtable import Report
+from exb_conf import MAIL_START, MAIL_MAX, MAIL_STEP, MAX_WORKERS, REPORT_FILENAME, MAIL_USERS_QTY_START, MAIL_USERS_QTY_MAX, MAIL_USERS_QTY_STEP
 
 
 class SMTPTest:
@@ -91,24 +92,26 @@ class IMAPTest:
     def __init__(self):
         self.config = {
             "server": 'localhost',
-            "port": '143',
+            "imap_port": '143',
+            "smtp_port": '25',
+            "username_from": 'user0@stress-testing.local',
         }
 
     def prepare_create_emails_for_all_users(self, users_qty):
-        for user_idx in range(users_qty):
+        for user_idx in range(1, users_qty + 1):
             for email_idx in range(50):
-                with smtplib.SMTP(self.email_config["server"], self.email_config["port"], timeout=5) as smtp:
+                with smtplib.SMTP(self.config["server"], self.config["smtp_port"], timeout=30) as smtp:
                     msg = MIMEText(f"Test email {email_idx} for user{user_idx}")
                     msg['Subject'] = f"Load Test {email_idx} for user{user_idx}"
-                    msg['From'] = self.email_config["username_from"]
-                    msg['To'] = self.email_config["username_to"]
+                    msg['From'] = self.config["username_from"]
+                    msg['To'] = f"user{user_idx}@stress-testing.local"
                     errors = smtp.send_message(msg)
 
     def delete_emails_from_all_users(self, users_qty):
-        for user_idx in range(users_qty):
-            imap = imaplib.IMAP4(self.config["server"], self.config["port"])
+        for user_idx in range(1, users_qty + 1):
+            imap = imaplib.IMAP4(self.config["server"], self.config["imap_port"])
             username = f"user{user_idx}"
-            imap.login(username, "1")
+            imap.login(username, "Testing_FOR_stress-testing_team13")
             imap.select("INBOX")
             status, data = imap.search(None, "ALL")
             mail_ids = data[0].split()
@@ -118,28 +121,58 @@ class IMAPTest:
             imap.logout()
 
     def imap_worker(self, idx):
-        username = f"user{idx}"
-        imap = imaplib.IMAP4(self.config["server"], self.config["port"])
-        imap.login(username, "1")
-        imap.select("INBOX")
-        status, data = imap.fetch("1:*", "(RFC822)")
-        imap.logout()
-        return status
+        result = {"user": idx, "success": False, "latency": 0, "error": None}
+        try:
+            username = f"user{idx}"
+            imap = imaplib.IMAP4(self.config["server"], self.config["imap_port"])
+            imap.login(username, "Testing_FOR_stress-testing_team13")
+            imap.select("INBOX")
+            start_fetch = time.perf_counter()
+            status, data = imap.fetch("1:*", "(UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODYSTRUCTURE)")
+            fetch_time = time.perf_counter() - start_fetch
+            imap.logout()
+
+            result.update({
+                    "success": status == "OK",
+                    "latency": fetch_time
+                })
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
 
     def run_test(self):
-        start_time = time.time()
         for users in range(MAIL_USERS_QTY_START, MAIL_USERS_QTY_MAX + MAIL_USERS_QTY_STEP, MAIL_USERS_QTY_STEP):
             self.prepare_create_emails_for_all_users(users_qty=users)
+
+            batch_start = time.perf_counter()
+            results = []
+            
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    future_to_email = {
-                        executor.submit(self.imap_worker(), i): i for i in range(users)
-                    }
-                    for future in as_completed(future_to_email):
-                        status = future.result()
+                futures = [executor.submit(self.imap_worker, i) for i in range(1, users + 1)]
+                for future in as_completed(futures):
+                    res = future.result()
+                    results.append(res)
+
+            successful_latencies = [r["latency"] for r in results if r["success"]]
+            if successful_latencies:
+                avg_latency = sum(successful_latencies) / len(successful_latencies)
+            else:
+                avg_latency = -1
+
+            batch_duration = time.perf_counter() - batch_start
+            success_count = sum(1 for r in results if r["success"])
+            error_count = users - success_count
+
+            if batch_duration > 0:
+                throughput = success_count / batch_duration
+            else:
+                throughput = 0.0
+
+            with open(REPORT_FILENAME, 'a') as report_file:
+                report_file.write(f"{users} {success_count} {error_count} {avg_latency:.4f} {throughput:.2f}\n")
 
             self.delete_emails_from_all_users(users_qty=users)
-
-        execution_time = time.time() - start_time
 
 
 if __name__ == "__main__":
@@ -149,3 +182,5 @@ if __name__ == "__main__":
     # print(r.raw_table)
     imp = IMAPTest()
     imp.run_test()
+    # imp.prepare_create_emails_for_all_users(users_qty=10)
+    # imp.delete_emails_from_all_users(users_qty=10)

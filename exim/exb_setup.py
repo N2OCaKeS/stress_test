@@ -148,12 +148,12 @@ class CreateMailUsers:
 
 
         system_commands = [
-            ["sudo", "useradd", "-m", "-d", mail_dir, "-s", "/bin/false", username],
-            ["sudo", "usermod", "-p", f"{hashlib.md5('1'.encode()).hexdigest()}", username]
+            f"sudo useradd -m -d {mail_dir} -s /bin/bash {username}",
+            f"echo '{username}:Testing_FOR_stress-testing_team13' | chpasswd"
         ]
 
         for cmd in system_commands:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, shell=True, text=True)
 
         user_info = pwd.getpwnam(username)
         uid, gid = user_info.pw_uid, user_info.pw_gid

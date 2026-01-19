@@ -95,7 +95,7 @@ class Test:
             else: psql_version = PG_VERSION
 
             if psql_version == 15:
-                latency_average = re.findall(r'(\d+\.\d+)', out)[3]
+                latency_average = re.findall(r'latency\saverage\s=\s(\d+\.\d+)', out)[0]
             elif self.tantor == True:
                 latency_average = re.findall(r'(\d+\.\d+)', out)[2]
             elif psql_version == 11:

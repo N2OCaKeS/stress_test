@@ -3,6 +3,7 @@ import smtplib
 import threading
 import time
 import socket
+import numpy as np
 
 from email.mime.text import MIMEText
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -99,7 +100,7 @@ class IMAPTest:
 
     def prepare_create_emails_for_all_users(self, users_qty):
         for user_idx in range(1, users_qty + 1):
-            for email_idx in range(50):
+            for email_idx in range(15):
                 with smtplib.SMTP(self.config["server"], self.config["smtp_port"], timeout=30) as smtp:
                     msg = MIMEText(f"Test email {email_idx} for user{user_idx}")
                     msg['Subject'] = f"Load Test {email_idx} for user{user_idx}"
@@ -129,7 +130,7 @@ class IMAPTest:
             imap.select("INBOX")
             start_fetch = time.perf_counter()
             status, data = imap.fetch("1:*", "(UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODYSTRUCTURE)")
-            fetch_time = time.perf_counter() - start_fetch
+            fetch_time = (time.perf_counter() - start_fetch) * 1000  # in milliseconds
             imap.logout()
 
             result.update({
@@ -155,8 +156,9 @@ class IMAPTest:
                     results.append(res)
 
             successful_latencies = [r["latency"] for r in results if r["success"]]
+            print(successful_latencies)
             if successful_latencies:
-                avg_latency = sum(successful_latencies) / len(successful_latencies)
+                avg_latency = np.median(successful_latencies)
             else:
                 avg_latency = -1
 

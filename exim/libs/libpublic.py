@@ -2,14 +2,18 @@ import pandas as pd
 from typing import Any, Dict, List, Tuple
 from allta import PageBuilder, ConfluencePublisher
 
-from exb_conf import MAIL_MAX, MAIL_STEP, REPORT_FILENAME
+from exb_conf import MAIL_MAX, MAIL_STEP, REPORT_FILENAME, MAIL_USERS_QTY_MAX, MAIL_USERS_QTY_STEP
 
-def create_table_from_report_file(filename: str = REPORT_FILENAME):
+def create_table_from_report_file(filename: str = REPORT_FILENAME, type_test: str = "smtp"):
+    if type_test == "smtp":
+        names = ["email_count", "successfully_sent_emails", "emails_sent_per_second"]
+    elif type_test == "imap":
+        names = ["user_count", "successful_count", "error_count", "avg_latency", "throughput"]
     df = pd.read_csv(
         filename,
         delim_whitespace=True,
         header=None,
-        names=["email_count", "successfully_sent_emails", "emails_sent_per_second"]
+        names=names
     )
     
     table = {
@@ -29,6 +33,7 @@ def exb_publisher(
     total_rating,
     stand_number,
     lead_time="",
+    type_test: str = "smtp",
     test_cycle_version: str | None = None,
 ):
     preview_path = "report/confluence_report.html"
@@ -36,6 +41,19 @@ def exb_publisher(
         base_url="https://life.astralinux.ru", username=username, token=token
     )
     builder = PageBuilder(title=title)
+
+    # TODO Добавить в шапку параметры второго сценария
+    if type_test == "smtp":
+        labels = ...
+        params = {
+            "MAIL_MAX": MAIL_MAX,
+            "MAIL_STEP": MAIL_STEP,
+        }
+    elif type_test == "imap":
+        params = {
+            "USER_COUNT": MAIL_USERS_QTY_MAX,
+            "MAIL_STEP": MAIL_USERS_QTY_STEP,
+        }
 
     header_table = [
         {

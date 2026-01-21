@@ -2,11 +2,12 @@ import os
 from argparse import ArgumentParser
 
 from exb_setup import Dovecot, Exim, CreateMailUsers
-from exb_test import SMTPTest
+from exb_test import SMTPTest, IMAPTest
 from libs.libtable import Report
-from exb_conf import REPORT_PATH
+
 from libs.libpublic import exb_publisher
 from libs.zefir import UploaderZC
+from exb_conf import REPORT_PATH, MAIL_USERS_QTY_MAX
 
 
 parser = ArgumentParser()
@@ -90,36 +91,55 @@ parser.add_argument('-tcv', '--test-cycle-version',
                     help='test-cycle-version',
                     dest='TCV')
 
+parser.add_argument('-tt', '--type-test',
+                    action='store',
+                    choices=['smtp', 'imap'],
+                    required=False,
+                    default='smtp',
+                    help='type-test',
+                    dest='TT')
+
 args = parser.parse_args()
 
 if __name__ == "__main__":
+    # Работа с Zefir
     uzs = UploaderZC(folder_tree_id=args.FTI,
-                 test_cycle_name=args.TCYC,
-                 test_case_name=args.TCAS,
-                 basic_auth=args.BA,
-                 test_cycle_version=args.TCV,
-                 token=args.TOKEN,
-                 username=args.USER,
-                 conf_space=args.SPACE,
-                 conf_parent_page=args.PPAGE,
-                 conf_new_page_name=args.NPAGE,
-                 grade_stand=args.STAND,
-                 test_set=args.TS)
+                     test_cycle_name=args.TCYC,
+                     test_case_name=args.TCAS,
+                     basic_auth=args.BA,
+                     test_cycle_version=args.TCV,
+                     token=args.TOKEN,
+                     username=args.USER,
+                     conf_space=args.SPACE,
+                     conf_parent_page=args.PPAGE,
+                     conf_new_page_name=args.NPAGE,
+                     grade_stand=args.STAND)
     
+    # Смена статуса в Zefir
     uzs.upload_test_cycle_status('progress')
+
+    # Создание директории для отчетов
     if not os.path.exists(REPORT_PATH):
         os.makedirs(REPORT_PATH, mode=0o755)
+
+    # Настройка почтовых сервисов + создание пользователей
     d = Dovecot()
     ex = Exim()
-    cu = CreateMailUsers(user_count=10)
+    cu = CreateMailUsers(user_count=MAIL_USERS_QTY_MAX)
     for ins in [ex, d, cu]:
         ins.set_configuration()
 
-    test = SMTPTest()
+    # Запуск теста
+    if args.TT == 'smtp':
+        test = SMTPTest()
+    elif args.TT == 'imap':
+        test = IMAPTest()
     test.run_test()
 
-    report = Report()
+    # Обработка результатов и публикация отчета в Confluence
+    report = Report(type_test=args.TT)
     total_rating = report.get_total_rating()
+
     publisher = exb_publisher(
         username=args.USER,
         token=args.TOKEN,
@@ -130,6 +150,8 @@ if __name__ == "__main__":
         stand_number=args.STAND,
         lead_time="",
         test_cycle_version=args.TCV,
+        type_test=args.TT,
     )
 
+    # Смена статуса в Zefir
     uzs.upload_test_cycle_status(zefir_status='pass')

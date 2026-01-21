@@ -19,8 +19,7 @@ MAIL_USERS_QTY_STEP = 100
 
 MAX_WORKERS = 10
 
-REPORT_PATH = ""
-
+N_PREP_MAIL = 15
 
 SCRIPT_DIR = '/home/u/git/stress_test/exim'
 LOG_FILENAME = 'exb_log'

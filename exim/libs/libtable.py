@@ -49,7 +49,6 @@ class Report:
         fig.savefig(f'{REPORT_PATH}/{filename}.png')
 
 
-    # TODO поменять критерии в зависимости от сценария теста
     def get_total_rating(self):
         if self.type_test == "smtp":
             criterions = [

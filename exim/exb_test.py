@@ -99,14 +99,30 @@ class IMAPTest:
         }
 
     def prepare_create_emails_for_all_users(self, users_qty):
-        for user_idx in range(1, users_qty + 1):
-            for email_idx in range(15):
+        def send_email(user_idx, email_idx):
+            try:
                 with smtplib.SMTP(self.config["server"], self.config["smtp_port"], timeout=30) as smtp:
                     msg = MIMEText(f"Test email {email_idx} for user{user_idx}")
                     msg['Subject'] = f"Load Test {email_idx} for user{user_idx}"
                     msg['From'] = self.config["username_from"]
                     msg['To'] = f"user{user_idx}@stress-testing.local"
                     errors = smtp.send_message(msg)
+                    return True
+            except Exception as e:
+                print(f"Ошибка при отправке письма пользователю {user_idx}: {e}")
+                return False
+        
+        tasks = []
+        for user_idx in range(1, users_qty + 1):
+            for email_idx in range(15):
+                tasks.append((user_idx, email_idx))
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(send_email, user_idx, email_idx) for user_idx, email_idx in tasks]
+            results = [f.result() for f in as_completed(futures)]
+
+        successful = sum(results)
+        print(f"Отправлено {successful}/{len(tasks)} писем успешно")
 
     def delete_emails_from_all_users(self, users_qty):
         for user_idx in range(1, users_qty + 1):

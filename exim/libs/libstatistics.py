@@ -9,14 +9,14 @@ class EXBStatistics:
         
         self.username = username
         self.token = token
-        self.url = 'http://allta.devos.astralinux.ru:7777/filesystems-statistics'
+        self.url = 'http://allta.devos.astralinux.ru:7777/base-statistics'
 
     def update_statistics(self):
         data = {
-            'title_statistics':'Файловые системы',
+            'title_statistics':'Почтовые системы',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':['exb'],
+            'set_of_test_types':['exim4', 'dovecot'],
         }
 
         headers = {

@@ -42,14 +42,21 @@ def exb_publisher(
     )
     builder = PageBuilder(title=title)
 
-    # TODO Добавить в шапку параметры второго сценария
     if type_test == "smtp":
-        labels = ...
+        labels = [
+            {"label": "number of successfully users get emails", "value": "0,3"},
+            {"label": "average latency, ms", "value": "0,3"},
+            {"label": "throughput, operations/sec", "value": "0,3"},
+        ]
         params = {
             "MAIL_MAX": MAIL_MAX,
             "MAIL_STEP": MAIL_STEP,
         }
     elif type_test == "imap":
+        labels = [
+            {"label": "number of successfully", "value": "0,5"},
+            {"label": "number of emails sent per second", "value": "0,5"},
+        ]
         params = {
             "USER_COUNT": MAIL_USERS_QTY_MAX,
             "MAIL_STEP": MAIL_USERS_QTY_STEP,
@@ -61,10 +68,7 @@ def exb_publisher(
             "value": {
                 "link": "https://life.astralinux.ru/pages/viewpage.action?pageId=150939635",
                 "link_text": "Рассчет рейтинга",
-                "items": [
-                    {"label": "number of successfully sent emails", "value": "0,5"},
-                    {"label": "number of emails sent per second", "value": "0,5"},
-                ],
+                "items": labels,
             },
         },
         {

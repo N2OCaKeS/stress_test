@@ -3,7 +3,7 @@
 allta==1.0.9
 atlassian-python-api 
 pretty-html-table 
-pandas 
+pandas == 2.2.3 
 pysnooper
 scikit-learn 
 requests

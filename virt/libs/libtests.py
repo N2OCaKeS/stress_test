@@ -587,7 +587,180 @@ class FlexibleIOTester(CreateVM):
                 return results_file
         [cmd(f'rm -r {results_dir}/{file}') for file in __cleared()]
         
+class LargeFio(CreateVM):
+    def __init__(self,
+                 rc_vbox=None,
+                 testdir=None,
+                 vm_count=1,
+                 kernel=None,
+                 vcpu=None,
+                 ram=None,
+                 mode='o',
+                 ):
+        super().__init__(rc_vbox=rc_vbox,
+                         testdir=testdir,
+                         vm_count=vm_count or 1,
+                         kernel=kernel,
+                         vcpu=vcpu,
+                         ram=ram,
+                         mode=mode)
+        self.vm_count = vm_count
+        self.vms = [f'testvm{number}' for number in range(1, self.vm_count + 1)]
+        self.rc_vbox = rc_vbox
+        self.user = 'u'
+        self.password = '1'
+        self.check_vm_ip = "virsh domifaddr {} | awk '{{print $4}}' | tail -n 2"
+        self.destroy = 'virsh destroy {}'
+        self.undefine = 'virsh undefine {}'
+        self.fb_cmd = 'sudo apt-get install -fy'
+        self.disk = '/dev/sda'
+        if str(rc_vbox).startswith('1.7'):
+            self.fio_version = FIOVERS_17x
+        elif str(rc_vbox).startswith('1.8'):
+            self.fio_version = FIOVERS_18x
+        else: 
+            self.fio_version = FIOVERS_18x
 
+
+    def start_test(self):
+        self.vm_dates = {
+            vm: {
+                'ip': check_output_command(self.check_vm_ip.format(vm)).split('/')[0],
+                'login': f'{self.user}',
+                'password': f'{self.password}'
+            } for vm in self.vms
+        }
+        add_disk_path = "/vms/largefio"
+        print(f'VM dates is:\n{self.vm_dates}')
+        
+        print(f'Preparing large fio disk at {add_disk_path}')
+        print(check_output_command(f"sudo parted -s {self.disk} mklabel gpt"))
+        print(check_output_command(f"sudo parted -s {self.disk} mkpart primary ext4 0% 100%"))
+        print(check_output_command(f"sudo partprobe {self.disk}"))
+        print(check_output_command("sudo udevadm settle"))
+        print(check_output_command(f"sudo mkfs.ext4 -F {self.disk}1")     )
+        print(check_output_command(f"sudo mkdir {add_disk_path}"))
+        print(check_output_command(f"sudo mount {self.disk}1 {add_disk_path}"))
+        print(check_output_command(f"sudo chmod 777 {add_disk_path}"))
+        
+        print(f'Creating large fio disk image in {add_disk_path}')
+        print(check_output_command(f"sudo virsh --connect qemu:///system pool-define-as fio dir --target {add_disk_path}"))
+        print(check_output_command("sudo virsh --connect qemu:///system pool-build fio"))
+        print(check_output_command("sudo virsh --connect qemu:///system pool-start fio"))
+        print(check_output_command("sudo virsh --connect qemu:///system pool-autostart fio"))
+        print(check_output_command("sudo virsh --connect qemu:///system pool-refresh fio"))
+        print(check_output_command(f"qemu-img create -f qcow2 -o cluster_size=65536,lazy_refcounts=off,preallocation=metadata {add_disk_path}/largefio.qcow2 1T"))
+        print(check_output_command(f"virsh attach-disk {self.vms[0]} {add_disk_path}/largefio.qcow2 vdb --type disk --sourcetype file --targetbus virtio --driver qemu --subdriver qcow2 --cache none --io native --live"))
+        print('Disk attached, preparing inside VM')
+        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdb bs=16M oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command='sudo uname -r > /home/u/kernel.txt && sudo chmod 777 /home/u/kernel.txt', ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+
+        print('Install fio package')
+        if self.fio_version == FIOVERS_17x:
+            create_remote_file(local_file_path=f'{FIO_PATH}/{self.fio_version}', 
+                                remote_file_path=f'/home/{self.user}/{self.fio_version}', 
+                                ip=self.vm_dates['testvm1']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+            
+            send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                                ip=self.vm_dates['testvm1']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+
+            send_remote_command(command=self.fb_cmd,
+                                ip=self.vm_dates['testvm1']['ip'], 
+                                user=self.user, 
+                                password=self.password) 
+
+            send_remote_command(command=f'sudo dpkg -i /home/{self.user}/{self.fio_version}',
+                                ip=self.vm_dates['testvm1']['ip'], 
+                                user=self.user, 
+                                password=self.password)
+        else:
+            send_remote_command(command='sudo apt-get install fio -y',
+                            ip=self.vm_dates['testvm1']['ip'], 
+                            user=self.user, 
+                            password=self.password) 
+
+        print('Send load script')
+        create_remote_file(local_file_path=f"{FIO_PATH}/largefio.sh", remote_file_path="/home/u/largefio.sh", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo chmod +x /home/u/largefio.sh", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        print('Start load script')
+        send_remote_command(command="sudo /home/u/largefio.sh read vdb > /home/u/largefio_read.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo /home/u/largefio.sh write vdb > /home/u/largefio_write.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo chmod 777 /home/u/largefio_write.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo chmod 777 /home/u/largefio_read.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)        
+
+    def results_processing(self):        
+        print('Get results')
+        local_read = f"{self.testdir}/largefio_read.txt"
+        local_write = f"{self.testdir}/largefio_write.txt"
+        get_remote_file(remote_file_path="/home/u/largefio_read.txt", local_file_path=local_read, ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file(remote_file_path="/home/u/largefio_write.txt", local_file_path=local_write, ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file(remote_file_path='/home/av.txt',
+                        local_file_path=f'{self.testdir}/{VM_INFONAME}',
+                        ip=self.vm_dates['testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password)
+        get_remote_file(remote_file_path='/home/u/kernel.txt',
+                        local_file_path=f'{self.testdir}/{VM_KERNEL}',
+                        ip=self.vm_dates['testvm1']['ip'], 
+                        user=self.user, 
+                        password=self.password)
+
+        def _parse_results(path):
+            entries = []
+            with open(path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) < 2:
+                        continue
+                    size, value = parts[0], parts[1]
+                    try:
+                        value_num = float(value)
+                    except ValueError:
+                        continue
+                    entries.append((size, value_num))
+            return entries
+
+        read_entries = _parse_results(local_read)
+        write_entries = _parse_results(local_write)
+
+        df_read = pd.DataFrame(read_entries, columns=['size', 'read_iops'])
+        df_write = pd.DataFrame(write_entries, columns=['size', 'write_iops'])
+        df_read["order"] = range(len(df_read))
+        df_combined = pd.merge(df_read, df_write, on='size', how='outer', sort=False)
+        df_combined = df_combined.sort_values("order").drop(columns=["order"])
+
+        df_combined.to_html(f"{TEMPLATE_PATH}/largefio_results.html", index=False)
+
+        print('LargeFio read results:')
+        print(df_read)
+        print('LargeFio write results:')
+        print(df_write)
+        print('Combined read/write results:')
+        print(df_combined)
+
+        # Clean raw txt copies once converted to html
+        try:
+            os.remove(local_read)
+            os.remove(local_write)
+        except FileNotFoundError:
+            pass
+        
+
+
+    def vms_destroy(self):
+        try:
+            [
+                cmd(self.destroy.format(vm_name)) for vm_name in self.vms
+            ]
+            [
+                cmd(self.undefine.format(vm_name)) for vm_name in self.vms
+            ]
+        except Exception as e:
+            print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
 
 class UnixBench(CreateVM):
     def __init__(self, 
@@ -813,4 +986,3 @@ class PingPong(CreateVM):
             cmd('rm -rf .vagrant')
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')
-

@@ -224,6 +224,27 @@ elif args.TESTNAME == 'fio':
     #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 
+elif args.TESTNAME == 'fio_large':
+    fio_large_test = FlexibleIOTester(rc_vbox=args.VBOX,
+                                      vm_count=1,
+                                      testdir=REPORT_PATH,
+                                      iodepth=IO_DEPTH_128,
+                                      kernel=str(args.TCYC).split('_')[2],
+                                      vcpu=FIO_vCPU,
+                                      ram=FIO_RAM,
+                                      vm_num=1,
+                                      )
+
+    fio_large_test.prepare_vms()
+    fio_large_test.start_test()
+    fio_large_test.vms_destroy()
+    fio_large_test.results_processing()
+
+    info_list()
+    uzs.public = True
+    #uzs.statistics = True
+    uzs.upload_test_cycle_status(zefir_status='pass')
+
 elif args.TESTNAME == 'unixbench':
     unixbench_test = UnixBench(rc_vbox=args.VBOX,
                                vm_count=1,

@@ -4,7 +4,7 @@ atlassian-python-api
 locust
 requests
 numpy
-pandas
+pandas == 2.2.3
 scipy
 scikit-learn
 matplotlib

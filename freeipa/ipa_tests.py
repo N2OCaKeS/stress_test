@@ -50,8 +50,8 @@ class AutentificationTest():
         
 class CreateUsersTest():
     def run(self):
-        remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_create_users_test_thr.py', 'ipa_create_users_test_thr.py')
-        remote_exec(f"venv/bin/python3 ipa_create_users_test_thr.py", 'server')
+        remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_create_users_ldap_cli.py', 'ipa_create_users_ldap_cli.py')
+        remote_exec(f"sudo python3 ipa_create_users_ldap_cli.py", 'server')
         Results.get_results(host='server')
 
 

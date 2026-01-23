@@ -1,6 +1,6 @@
 atlassian-python-api 
-pretty-html-table 
-pandas 
+pretty-html-table
+pandas==2.2.3  
 pysnooper
 scikit-learn 
 numpy

@@ -3,7 +3,7 @@ import os
 import pwd
 import hashlib
 import subprocess
-
+from exb_conf import MAIL_USERS_QTY_MAX
 
 class Exim:
     def __init__(self):
@@ -166,7 +166,7 @@ class CreateMailUsers:
 if __name__ == "__main__":
     d = Dovecot()
     ex = Exim()
-    cu = CreateMailUsers(user_count=500)
+    cu = CreateMailUsers(user_count=MAIL_USERS_QTY_MAX)
     for ins in [ex, d, cu]:
         ins.set_configuration()
 

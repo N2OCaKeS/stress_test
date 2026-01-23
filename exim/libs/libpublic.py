@@ -48,19 +48,20 @@ def exb_publisher(
             {"label": "average latency, ms", "value": "0,3"},
             {"label": "throughput, operations/sec", "value": "0,3"},
         ]
-        params = {
-            "MAIL_MAX": MAIL_MAX,
-            "MAIL_STEP": MAIL_STEP,
-        }
+        params = [
+            {"label": "MAIL_MAX", "value": MAIL_MAX},
+            {"label": "MAIL_STEP", "value": MAIL_STEP}
+            ]
+    # TODO
     elif type_test == "imap":
         labels = [
             {"label": "number of successfully", "value": "0,5"},
             {"label": "number of emails sent per second", "value": "0,5"},
         ]
-        params = {
-            "USER_COUNT": MAIL_USERS_QTY_MAX,
-            "MAIL_STEP": MAIL_USERS_QTY_STEP,
-        }
+        params = [
+            {"label": "USER_COUNT", "value": MAIL_USERS_QTY_MAX},
+            {"label": "MAIL_STEP", "value": MAIL_USERS_QTY_STEP},
+        ]
 
     header_table = [
         {
@@ -74,9 +75,7 @@ def exb_publisher(
         {
             "label": "Params",
             "value": {
-                "items": [
-                    {"label": "maximum number of emails", "value": MAIL_MAX},
-                ],
+                "items": params,
             },
         },
         {
@@ -97,10 +96,11 @@ def exb_publisher(
     builder.add_heading(text="Описание", level=2)
     builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
 
-    table = create_table_from_report_file()
+    table = create_table_from_report_file(type_test=type_test)
 
     builder.add_table(table_spec=table)
 
+    # TODO
     publish_result = reporter.publish_results_from_params(
         conf_space=space,
         conf_parent_page=parent_title,

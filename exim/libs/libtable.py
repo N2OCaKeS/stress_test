@@ -29,7 +29,7 @@ class Report:
             self.avg_latency = [float(param) for param in raw_data[3::5]]
             self.throughput = [float(param) for param in raw_data[4::5]]
             self.raw_table = pd.DataFrame({'user_count': self.user_count,
-                                           'successful_count': self.successful,
+                                           'successful_count': self.successful_count,
                                            'error_count': self.error_count,
                                            'avg_latency': self.avg_latency,
                                            'throughput': self.throughput})
@@ -57,9 +57,9 @@ class Report:
             ]
         elif self.type_test == "imap":
             criterions = [
-                Criterion(name="successful_count", values=self.raw_table['successful_count'].tolist(), weight=0.333, sign=1, lower_bound=0, upper_bound=...),
-                Criterion(name="avg_latency", values=self.raw_table["avg_latency"].tolist(), weight=0.333, sign=-1, lower_bound=0, upper_bound=...),
-                Criterion(name="throughput", values=self.raw_table["throughput"].tolist(), weight=0.333, sign=1, lower_bound=0, upper_bound=...),
+                Criterion(name="successful_count", values=self.raw_table['successful_count'].tolist(), weight=0.333, sign=1, lower_bound=0, upper_bound=25000),
+                Criterion(name="avg_latency", values=self.raw_table["avg_latency"].tolist(), weight=0.333, sign=-1, lower_bound=0, upper_bound=300),
+                Criterion(name="throughput", values=self.raw_table["throughput"].tolist(), weight=0.333, sign=1, lower_bound=0, upper_bound=8000),
             ]
         total_rating, s = MathModels.total_rating(criteria=criterions)
         return total_rating

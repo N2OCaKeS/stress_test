@@ -35,8 +35,8 @@ vms_dates = {
 vms = list(vms_dates.keys())
 box = "1.8.1.o"
 rc = "1.8.1.6"
-Libvirt.prepare()
-Libvirt.build(box=box, rc=rc, vms=vms, vms_dates=vms_dates, bridge=True)
+# Libvirt.prepare()
+# Libvirt.build(box=box, rc=rc, vms=vms, vms_dates=vms_dates, bridge=True)
 
 class Libvirt_test:
     @staticmethod
@@ -114,7 +114,7 @@ class MathTest:
     HIGH_CRITERIONS = [
         Criterion(
             name="ever_not_connected_count",
-            values=[278],
+            values=[400],
             weight=0.4,
             sign=1,
             lower_bound=0,
@@ -122,7 +122,7 @@ class MathTest:
         ),
         Criterion(
             name="disconnected_count",
-            values=[244],
+            values=[1],
             weight=0.4,
             sign=-1,
             lower_bound=0,
@@ -130,7 +130,7 @@ class MathTest:
         ),
         Criterion(
             name="drops_max",
-            values=[12],
+            values=[1],
             weight=0.2,
             sign=-1,
             lower_bound=0,
@@ -141,7 +141,7 @@ class MathTest:
     LOW_CRITERIONS = [
         Criterion(
             name="ever_connected_count",
-            values=[400],
+            values=[100],
             weight=0.5,
             sign=1,
             lower_bound=0,
@@ -149,7 +149,7 @@ class MathTest:
         ),
         Criterion(
             name="disconnected_count",
-            values=[364],
+            values=[300],
             weight=0.3,
             sign=-1,
             lower_bound=0,
@@ -157,7 +157,7 @@ class MathTest:
         ),
         Criterion(
             name="drops_max",
-            values=[8],
+            values=[300],
             weight=0.2,
             sign=-1,
             lower_bound=0,
@@ -205,3 +205,4 @@ class MathTest:
         print(approximated_values)
 
 
+MathTest.total_rating()

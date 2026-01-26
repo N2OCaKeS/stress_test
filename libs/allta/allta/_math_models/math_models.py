@@ -252,12 +252,6 @@ class MathModels:
         """
 
         crit_list = list(criteria)
-        # Если в исходных значениях есть одиночный 0, поднимаем его до 1,
-        # чтобы избежать взрывного вклада после инверсии (для негативных критериев).
-        crit_list = [
-            replace(c, values=MathModels._ensure_nonzero_singleton(c.values))
-            for c in crit_list
-        ]
 
         weights_sum = sum(c.weight for c in crit_list)
         if weights_sum <= 0.9 or weights_sum > 1.0:
@@ -304,9 +298,12 @@ class MathModels:
             base = safe_y + epsilon
 
             if c.sign >= 0:
-                contrib = base / c.weight
+                # положительный критерий: больше — лучше
+                contrib = c.weight * base
             else:
-                contrib = 1.0 / (c.weight * base)
+                # отрицательный критерий: меньше — лучше
+                contrib = c.weight / base
+
             contributions[c.name] = contrib
             total += contrib
 

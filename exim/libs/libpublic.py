@@ -11,7 +11,7 @@ def create_table_from_report_file(filename: str = REPORT_FILENAME, type_test: st
         names = ["user_count", "successful_count", "error_count", "avg_latency", "throughput"]
     df = pd.read_csv(
         filename,
-        delim_whitespace=True,
+        sep='\\s+',
         header=None,
         names=names
     )
@@ -95,12 +95,13 @@ def exb_publisher(
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
     builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
-
+    
     table = create_table_from_report_file(type_test=type_test)
 
     builder.add_table(table_spec=table)
 
-    # TODO
+    builder.add_attachment(file_path=REPORT_FILENAME, description="Report file")
+
     publish_result = reporter.publish_results_from_params(
         conf_space=space,
         conf_parent_page=parent_title,

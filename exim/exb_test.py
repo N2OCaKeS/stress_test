@@ -4,7 +4,6 @@ import threading
 import time
 import socket
 import numpy as np
-
 from email.mime.text import MIMEText
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -172,7 +171,7 @@ class IMAPTest:
                     results.append(res)
 
             successful_latencies = [r["latency"] for r in results if r["success"]]
-            print(successful_latencies)
+            # print(successful_latencies)
             if successful_latencies:
                 avg_latency = np.median(successful_latencies)
             else:

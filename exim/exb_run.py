@@ -1,10 +1,11 @@
 import os
 from argparse import ArgumentParser
-
+from datetime import datetime
 from exb_setup import Dovecot, Exim, CreateMailUsers
 from exb_test import SMTPTest, IMAPTest
 from libs.libtable import Report
 
+from libs.libexb import get_duration
 from libs.libpublic import exb_publisher
 from libs.zefir import UploaderZC
 from exb_conf import REPORT_PATH, MAIL_USERS_QTY_MAX
@@ -102,6 +103,8 @@ parser.add_argument('-tt', '--type-test',
 args = parser.parse_args()
 
 if __name__ == "__main__":
+    time_start_script = datetime.now()
+
     # Работа с Zefir
     uzs = UploaderZC(folder_tree_id=args.FTI,
                      test_cycle_name=args.TCYC,
@@ -130,15 +133,21 @@ if __name__ == "__main__":
         ins.set_configuration()
 
     # Запуск теста
-    if args.TT == 'smtp':
-        test = SMTPTest()
-    elif args.TT == 'imap':
-        test = IMAPTest()
-    test.run_test()
+    test_options = {
+        'smtp': SMTPTest,
+        'imap': IMAPTest
+    }
+    if args.TT in test_options:
+        test = test_options[args.TT]()
+        test.run_test()
+    else:
+        raise ValueError(f"Unsupported test type: {args.TT}")
 
     # Обработка результатов и публикация отчета в Confluence
     report = Report(type_test=args.TT)
     total_rating = report.get_total_rating()
+
+    lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
 
     publisher = exb_publisher(
         username=args.USER,
@@ -148,7 +157,7 @@ if __name__ == "__main__":
         title=args.NPAGE,
         total_rating=total_rating,
         stand_number=args.STAND,
-        lead_time="",
+        lead_time=lead_time,
         test_cycle_version=args.TCV,
         type_test=args.TT,
     )

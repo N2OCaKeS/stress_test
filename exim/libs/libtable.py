@@ -48,13 +48,14 @@ class Report:
         ax.grid(True)
         fig.savefig(f'{REPORT_PATH}/{filename}.png')
 
-
+    # TODO weight !!!!!
     def get_total_rating(self):
         if self.type_test == "smtp":
             criterions = [
-                Criterion(name="successful", values=self.raw_table['successful'].tolist(), weight=0.3, sign=1, lower_bound=0, upper_bound=10000),
+                Criterion(name="successful", values=self.raw_table['successful'].tolist(), weight=0.2, sign=1, lower_bound=0, upper_bound=10000),
                 Criterion(name="emails_per_second", values=self.raw_table["emails_per_second"].tolist(), weight=0.8, sign=1, lower_bound=0, upper_bound=4000),
             ]
+
         elif self.type_test == "imap":
             criterions = [
                 Criterion(name="successful_count", values=self.raw_table['successful_count'].tolist(), weight=0.333, sign=1, lower_bound=0, upper_bound=25000),

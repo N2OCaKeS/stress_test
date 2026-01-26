@@ -135,15 +135,21 @@ EOF
             docker_rc = system_commands.cmd_with_returncode(
                 "dpkg -l docker.io >/dev/null 2>&1"
             )
+            if system_commands.check_output_command("cat /etc/astra_version").startswith("1.8"):
+                docker = "docker-compose-v2"
+            elif system_commands.check_output_command("cat /etc/astra_version").startswith("1.7"):
+                docker = "docker-compose"                
             compose_rc = system_commands.cmd_with_returncode(
-                "dpkg -l docker-compose-v2 >/dev/null 2>&1"
+                f"dpkg -l {docker} >/dev/null 2>&1"
             )
             if docker_rc == 0 and compose_rc == 0:
                 print("Docker уже установлен, шаг установки пропущен.")
             else:
                 print("\n\n\nУстанавливаем Docker...\n\n\n")
+                
+
                 system_commands.cmd_with_returncode(
-                    "sudo apt-get install -y docker.io docker-compose-v2"
+                    f"sudo apt-get install -y docker.io {docker}"
                 )
 
             print("\n\n\nПрименяем настройки для firewall...\n\n\n")

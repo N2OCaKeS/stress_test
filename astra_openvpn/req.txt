@@ -5,4 +5,4 @@ matplotlib
 numpy
 pandas == 2.2.3
 atlassian-python-api
-allta==1.1.2
+allta==1.1.1

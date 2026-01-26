@@ -54,7 +54,7 @@ def ovpn_publisher(
                 "items": [
                     {"label": "Успешно подключенные клиенты", "value": "0,4"},
                     {"label": "Не подключенные клиенты", "value": "0,4"},
-                    {"label": "Упавшие клиенты", "value": "0,2"},
+                    {"label": "Отключившиеся клиенты", "value": "0,2"},
                 ],
             },
         },
@@ -71,7 +71,7 @@ def ovpn_publisher(
         {
             "label": "ARM",
             "value": {
-                "stand_number": "13",
+                "stand_number": "11",
             },
         },
         {

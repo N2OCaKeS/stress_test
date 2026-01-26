@@ -246,8 +246,8 @@ def analyze_result(
     stats_table = _build_stats_table_rows(stats)
     if stats["ever_connected_count"] == 0:
             criterions = [Criterion(name="ever_connected_count", values=[1], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
-                  Criterion(name="disconnected_count", values=[tester_count], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
-                  Criterion(name="drops_max", values=[tester_count], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
+                  Criterion(name="not_connected_count", values=[tester_count], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
+                  Criterion(name="disconnected_count", values=[tester_count], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
     else:
         criterions = [Criterion(name="ever_connected_count", values=[stats["ever_connected_count"]], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
                     Criterion(name="not_connected_count", values=[stats["not_connected_count"]], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),

@@ -39,3 +39,8 @@ def create_vms_test_env(mode='o',
 
     LibvirtManager.Snapshot.create(VMS, snapshot_name='snap2')
 
+
+
+
+
+create_vms_test_env()

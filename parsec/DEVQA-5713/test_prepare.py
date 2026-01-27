@@ -1,7 +1,7 @@
 from time import sleep
 
 
-def create_vms_test_env(mode='s',
+def create_vms_test_env(mode='o',
                         user='u',
                         key=None):
     """
@@ -26,7 +26,7 @@ def create_vms_test_env(mode='s',
     provider = Libvirt()
 
     provider.prepare()
-    vm_date = provider.build(f'1.8.1.{mode}', '1.8.4.48', VMS, VMS_DATES, kernel='6.1.152-1-generic')
+    vm_date = provider.build(f'xfs.1.8.1.{mode}', '1.8.4.48', VMS, VMS_DATES, kernel='6.1.152-1-generic')
     sleep(90)
     LibvirtManager.Vm.bridge(vms_date=vm_date, new_vms_date=VMS_DATES, username="u", password="1")
     LibvirtManager.Snapshot.create(VMS, snapshot_name='snap1')
@@ -39,4 +39,3 @@ def create_vms_test_env(mode='s',
 
     LibvirtManager.Snapshot.create(VMS, snapshot_name='snap2')
 
-    

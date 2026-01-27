@@ -124,5 +124,6 @@ def ovpn_publisher(
         test_cycle_version=test_cycle_version,
         body=builder,
         attachments=[*builder.attachments],
+        create_tree=True,
     )
     return builder, preview_path, publish_result

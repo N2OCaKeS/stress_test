@@ -24,5 +24,8 @@ ovpn_publisher(username="",
                 stats=result,
                 space="",
                 parent_title="",
-                lead_time=lead_time_text
+                lead_time=lead_time_text,
+                test_cycle_version=rc
                )
+
+

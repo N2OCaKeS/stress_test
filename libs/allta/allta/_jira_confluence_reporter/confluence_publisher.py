@@ -4,10 +4,60 @@
 Основной класс :class:`ConfluencePublisher` инкапсулирует клиент
 ``atlassian.Confluence`` и предоставляет высокоуровневые методы для
 создания страниц, обновления содержимого и загрузки вложений.
+
+-------------------------------------------------------------------------------
+Особенности реализации
+-------------------------------------------------------------------------------
+
+1) Версионное дерево страниц
+----------------------------
+При наличии ``test_cycle_version`` и включённом ``create_tree=True`` создаётся дерево:
+
+STRESS <global>
+  └─ STRESS_REPORT <detailed>
+      ├─ STRESS_REPORT <more>
+      │    └─ STRESS_REPORT <more> <parent>
+      │         └─ STRESS_REPORT <more> <page>
+      └─ STRESS_REPORT <detailed> <parent>
+            └─ STRESS_REPORT <detailed> <page>
+
+Где:
+- global   = первые 2 числовых сегмента версии (например, 1.8)
+- detailed = первые 3 числовых сегмента версии (например, 1.8.4 или 1.7.5 для 1.7.5.UU.2)
+- more     = полная версия как есть (например, 1.8.4.46 или 1.7.5.UU.2)
+
+2) Обход ограничения Confluence по уникальности заголовков
+----------------------------------------------------------
+Confluence не позволяет иметь две страницы с одинаковым title в одном space.
+Чтобы можно было создавать "одинаково названные" страницы под разными родителями,
+используется добавление НЕвидимого суффикса к title.
+
+Пользователь видит одинаковые названия, но Confluence получает разные заголовки.
+
+3) Правило включения имени родителя в "скрытый" токен
+-----------------------------------------------------
+В токен, который влияет на уникальный скрытый суффикс, имя ближайшего родителя
+добавляется ТОЛЬКО если версия "трёхчастная" и чисто числовая, например:
+1.7.8 / 1.3.5 / 1.6.7
+
+Для 1.8 или 1.8.4.46 родитель в токен НЕ добавляется по этому правилу.
+
+4) Переименование страниц и вложений в detailed-ветке
+-----------------------------------------------------
+Если ``conf_new_page_name`` содержит full-версию (more), то для публикации
+в detailed-ветке это вхождение заменяется на detailed-версию.
+
+То же для вложений: если имя файла содержит full-версию, создаётся временная копия
+с заменённым именем, и прикрепляется уже она (чтобы Confluence видел другое имя).
 """
 
+from __future__ import annotations
+
+import hashlib
+import shutil
+import tempfile
 from pathlib import Path
-from typing import Iterable, Sequence, Any, List, Dict, cast, TYPE_CHECKING
+from typing import Iterable, Sequence, Any, List, Dict, cast, TYPE_CHECKING, Optional, Tuple
 
 if TYPE_CHECKING:  # for type hints only
     from .page_builder import PageBuilder
@@ -19,98 +69,319 @@ class ConfluencePublisher:
     """
     Публикует HTML-страницы и файлы вложений в Confluence.
 
-    Класс создаёт либо обновляет страницу, прикрепляет указанные файлы и
-    задаёт метки. Таким образом тестам достаточно предоставить готовое
-    тело страницы, не заботясь о низкоуровневых вызовах REST API.
+    Класс создаёт либо обновляет страницу, прикрепляет указанные файлы и,
+    при необходимости, создаёт контейнерные страницы-узлы для формирования
+    дерева отчётов.
     """
+
+    # --- Невидимые символы для "скрытых" суффиксов ---
+    _ZWSP: str = "\u200B"  # zero-width space: 0
+    _ZWNJ: str = "\u200C"  # zero-width non-joiner: 1
+    _WJ: str = "\u2060"    # word joiner: рамка суффикса
 
     def __init__(
         self,
         *,
-        base_url,
-        username,
-        password=None,
-        token=None,
-    ):
+        base_url: str,
+        username: str,
+        password: str | None = None,
+        token: str | None = None,
+    ) -> None:
         """
         Создаёт подключение к Confluence.
 
         Args:
-            base_url (str): Базовый URL экземпляра Confluence.
-            username (str): Имя пользователя.
-            password (str | None): Пароль пользователя.
-            token (str | None): API token, если используется.
+            base_url (str):
+                Базовый URL экземпляра Confluence. Если не начинается с ``http``,
+                будет дополнен как ``https://<base_url>``.
+            username (str):
+                Имя пользователя.
+            password (str | None):
+                Пароль пользователя.
+            token (str | None):
+                API token, если используется.
 
         Raises:
-            ValueError: Если не указаны пароль и токен одновременно.
+            ValueError:
+                Если не указаны пароль и токен одновременно.
         """
-
         if not base_url.startswith("http"):
             base_url = f"https://{base_url}"
-        auth_kwargs = {"url": base_url, "username": username}
+        auth_kwargs: Dict[str, Any] = {"url": base_url, "username": username}
         if password:
             auth_kwargs["password"] = password
         elif token:
             auth_kwargs["token"] = token
         else:
             raise ValueError("Either password or token must be provided")
-        self._client = Confluence(**auth_kwargs)
+        self._client: Confluence = Confluence(**auth_kwargs)
+
+    # ------------------------------------------------------------------
+    def _log(self, message: str) -> None:
+        """
+        Простая обёртка над print для единообразного логирования.
+
+        Args:
+            message (str): Сообщение для вывода.
+        """
+        print(f"[ConfluencePublisher] {message}")
+
+    def _normalize(self, s: str | None) -> str | None:
+        """
+        Нормализует строку: приводит к ``str``, делает ``strip()``, превращает пустую в ``None``.
+
+        Args:
+            s (str | None): Входная строка или ``None``.
+
+        Returns:
+            str | None: Нормализованная строка или ``None``.
+        """
+        if s is None:
+            return None
+        t = str(s).strip()
+        return t or None
+
+    # ------------------------------------------------------------------
+    # Скрытые суффиксы: делаем title уникальным, но визуально не меняем.
+    # ------------------------------------------------------------------
+    def _zw_bits(self, b: bytes) -> str:
+        """
+        Преобразует байты в строку из zero-width символов.
+
+        Правило:
+            - бит 0 -> ZWSP
+            - бит 1 -> ZWNJ
+
+        Args:
+            b (bytes): Байты.
+
+        Returns:
+            str: Строка из zero-width символов.
+        """
+        out: List[str] = []
+        for byte in b:
+            for i in range(8):
+                bit = (byte >> (7 - i)) & 1
+                out.append(self._ZWNJ if bit else self._ZWSP)
+        return "".join(out)
+
+    def _hidden_suffix(self, token: str) -> str:
+        """
+        Формирует невидимый суффикс на основе token (sha1 -> первые 6 байт -> bits).
+
+        Args:
+            token (str): Строка-токен, определяющая уникальность.
+
+        Returns:
+            str: Невидимый суффикс (рамка WJ + bits + WJ).
+        """
+        digest: bytes = hashlib.sha1(token.encode("utf-8")).digest()[:6]  # 48 бит достаточно
+        return f"{self._WJ}{self._zw_bits(digest)}{self._WJ}"
+
+    def _with_hidden_suffix(self, visible_title: str, token: str) -> str:
+        """
+        Возвращает "effective title": видимый заголовок + невидимый суффикс.
+
+        Args:
+            visible_title (str): Заголовок, который будет "виден" пользователю.
+            token (str): Токен для генерации суффикса.
+
+        Returns:
+            str: Заголовок для сохранения в Confluence (unique).
+
+        Raises:
+            ValueError: Если visible_title пустой.
+        """
+        v = self._normalize(visible_title)
+        if not v:
+            raise ValueError("title не должен быть пустым")
+        return v + self._hidden_suffix(token)
+
+    def _is_three_part_numeric_version(self, version: str) -> bool:
+        """
+        Проверяет, является ли версия вида X.Y.Z, где X,Y,Z - числа.
+
+        Args:
+            version (str): Строка версии.
+
+        Returns:
+            bool: True/False.
+        """
+        parts = [p for p in version.split(".") if p]
+        if len(parts) != 3:
+            return False
+        return all(part.isdigit() for part in parts)
+
+    def _token(
+        self,
+        *,
+        kind: str,
+        version: str,
+        parent_title: str | None,
+        visible_title: str,
+    ) -> str:
+        """
+        Собирает токен, влияющий на уникальность скрытого суффикса.
+
+        Правила:
+        - kind: "STRESS" для global-страниц, "STRESS_REPORT" для остальных.
+        - version: версия узла (global/detailed/more или "nover" при выключенном дереве).
+        - parent_title добавляется ТОЛЬКО если:
+            * parent_title задан
+            * version - трёхчастная и чисто числовая (например 1.8.4)
+
+        Args:
+            kind (str): Тип страницы ("STRESS" / "STRESS_REPORT").
+            version (str): Версия-ключ (например "1.8", "1.8.4", "1.8.4.46", "1.7.5.UU.2", "nover").
+            parent_title (str | None): Ближайший родитель (видимый).
+            visible_title (str): Видимый заголовок страницы.
+
+        Returns:
+            str: Token.
+        """
+        base = f"{kind}|{version}|{visible_title}"
+        if parent_title and self._is_three_part_numeric_version(version):
+            base += f"|P={parent_title}"
+        return base
+
+    # ------------------------------------------------------------------
+    # Confluence helpers: поиск/создание по exact title
+    # ------------------------------------------------------------------
+    def _get_page_id_by_exact_title(self, *, space: str, title: str) -> str | None:
+        """
+        Получает page_id по точному title.
+
+        Важно:
+            Мы используем exact title, т.к. effective_title включает невидимые символы.
+
+        Args:
+            space (str): Пространство Confluence.
+            title (str): Точный заголовок страницы.
+
+        Returns:
+            str | None: Идентификатор страницы или None.
+        """
+        try:
+            pid = self._client.get_page_id(space=space, title=title)
+            return str(pid) if pid else None
+        except Exception:
+            return None
+
+    def _ensure_page_by_effective_title(
+        self,
+        *,
+        space: str,
+        effective_title: str,
+        body: str,
+        parent_id: str | None,
+        update_if_exists: bool,
+    ) -> str:
+        """
+        Создаёт или обновляет страницу по effective_title.
+
+        Args:
+            space (str): Пространство Confluence.
+            effective_title (str): Точный заголовок, который будет сохранён в Confluence
+                (может содержать невидимый суффикс).
+            body (str): Тело страницы (Storage format).
+            parent_id (str | None): ID родительской страницы (или None).
+            update_if_exists (bool): Если True — обновляет существующую страницу.
+                Если False — при существовании просто возвращает её id.
+
+        Returns:
+            str: page_id созданной/обновлённой страницы.
+
+        Raises:
+            RuntimeError: Если не удалось создать страницу.
+        """
+        existing = self._get_page_id_by_exact_title(space=space, title=effective_title)
+        if existing:
+            if update_if_exists:
+                self._log(f"Обновляю страницу '{effective_title}' (id={existing})")
+                self._client.update_page(page_id=existing, title=effective_title, body=body)
+            else:
+                self._log(f"Страница '{effective_title}' уже существует (id={existing}), пропускаю")
+            return existing
+
+        self._log(
+            f"Создаю страницу '{effective_title}' в пространстве '{space}'"
+            f"{f' под parent_id={parent_id}' if parent_id else ''}"
+        )
+        result = self._client.create_page(
+            space=space,
+            title=effective_title,
+            body=body,
+            parent_id=parent_id,
+            type="page",
+            representation="storage",
+            editor="v2",
+        )
+        page_id = (
+            result["id"]
+            if isinstance(result, dict) and result.get("id")
+            else self._get_page_id_by_exact_title(space=space, title=effective_title)
+        )
+        if not page_id:
+            raise RuntimeError(f"Не удалось создать страницу '{effective_title}' в пространстве '{space}'")
+        return str(page_id)
 
     # ------------------------------------------------------------------
     def publish(
         self,
         *,
-        space,
-        title,
-        body,
-        parent_title=None,
-        attachments=None,
-        labels=None,
-    ):
+        space: str,
+        title: str,
+        body: str,
+        parent_id: str | None = None,
+        attachments: Sequence[str | Path] | None = None,
+        labels: Sequence[str] | None = None,
+        _effective_title: str | None = None,
+    ) -> str:
         """
         Создаёт или обновляет страницу и при необходимости загружает вложения.
 
         Args:
             space (str): Пространство Confluence.
-            title (str): Название страницы.
+            title (str): Видимый заголовок страницы (для логов/смыслового имени).
             body (str): Тело страницы в формате Storage.
-            parent_title (str | None): Родительская страница, если нужна иерархия.
+            parent_id (str | None): ID родительской страницы. Если None — создастся на корне space.
             attachments (Sequence[str | Path] | None): Пути к файлам для прикрепления.
             labels (Sequence[str] | None): Метки страницы.
+            _effective_title (str | None): Внутренний параметр. Если передан — используется как
+                точный title в Confluence (может содержать невидимые суффиксы).
+                Если не передан — используется `title` как есть.
 
         Returns:
             str: Идентификатор созданной или обновлённой страницы.
         """
+        effective_title = _effective_title or title
 
-        page_id = self._ensure_page(
+        page_id = self._ensure_page_by_effective_title(
             space=space,
-            title=title,
-            parent_title=parent_title,
+            effective_title=effective_title,
             body=body,
+            parent_id=str(parent_id) if parent_id else None,
+            update_if_exists=True,
         )
+
         if attachments:
             self.attach_files(page_id=page_id, files=attachments)
         if labels:
             self._ensure_labels(page_id=page_id, labels=labels)
         return page_id
 
-    def _log(self, message: str) -> None:
-        """
-        Простая обёртка над print для единообразного логирования.
-        """
-
-        print(f"[ConfluencePublisher] {message}")
-
     # ------------------------------------------------------------------
-    def attach_files(self, *, page_id, files: Iterable[Path | str]):
+    def attach_files(self, *, page_id: str, files: Iterable[Path | str]) -> None:
         """
         Прикрепляет файлы к существующей странице.
 
         Args:
             page_id (str): Идентификатор страницы.
-            files (Sequence[str | Path]): Коллекция путей до файлов.
-        """
+            files (Iterable[Path | str]): Коллекция путей до файлов.
 
+        Returns:
+            None
+        """
         for file_path in files:
             path = Path(file_path)
             if not path.exists() or not path.is_file():
@@ -119,15 +390,17 @@ class ConfluencePublisher:
             self._log(f"Прикрепляю файл {path.name} к странице {page_id}")
             self._client.attach_file(page_id=page_id, filename=str(path))
 
-    def _ensure_labels(self, *, page_id, labels: Sequence[str]):
+    def _ensure_labels(self, *, page_id: str, labels: Sequence[str]) -> None:
         """
-        Обновляет метки страницы, если они были переданы.
+        Обновляет метки страницы.
 
         Args:
             page_id (str): Идентификатор страницы.
             labels (Sequence[str]): Список меток.
-        """
 
+        Returns:
+            None
+        """
         if not labels:
             return
         payload: List[Dict[str, str]] = [
@@ -148,250 +421,376 @@ class ConfluencePublisher:
             return
 
         self._client.post(
-            f"rest/api/content/{page_id}/label", 
-            json=cast(Any, payload),  # Confluence API принимает список объектов label
+            f"rest/api/content/{page_id}/label",
+            json=cast(Any, payload),
         )
-
-    def _ensure_page(self, *, space, title, parent_title, body):
-        """
-        Создаёт страницу или обновляет существующую.
-
-        Args:
-            space (str): Пространство Confluence.
-            title (str): Название страницы.
-            parent_title (str | None): Родительская страница.
-            body (str): HTML в формате Storage.
-
-        Returns:
-            str: Идентификатор страницы.
-        """
-
-        if self._client.page_exists(space=space, title=title):
-            page_id = self._client.get_page_id(space=space, title=title)
-            self._log(f"Обновляю страницу '{title}' ({page_id})")
-            self._client.update_page(page_id=page_id, title=title, body=body)
-            if not page_id:
-                raise RuntimeError(f"Не удалось получить id страницы '{title}' для обновления")
-            return page_id
-
-        parent_id = (
-            self._client.get_page_id(space=space, title=parent_title)
-            if parent_title
-            else None
-        )
-        self._log(
-            f"Создаю страницу '{title}' в пространстве '{space}'"
-            f"{f' под родителем {parent_title}' if parent_title else ''}"
-        )
-        result = self._client.create_page(
-            space=space,
-            title=title,
-            body=body,
-            parent_id=parent_id,
-            type="page",
-            representation="storage",
-            editor="v2",
-        )
-        page_id = (
-            result["id"]
-            if isinstance(result, dict) and result.get("id")
-            else self._client.get_page_id(space=space, title=title)
-        )
-        if not page_id:
-            raise RuntimeError(f"Не удалось создать страницу '{title}' в пространстве '{space}'")
-        return page_id
 
     # ------------------------------------------------------------------
-    def publish_results_from_params(
-        self,
-        *,
-        conf_space: str,
-        conf_parent_page: str,
-        conf_new_page_name: str,
-        test_cycle_version: str | None,
-        body: "PageBuilder",
-        attachments_dir: Path | str | None = None,
-        attachments: Sequence[str | Path] | None = None,
-    ) -> Dict[str, str | None]:
-        """
-        Публикует результат теста, принимая тот же набор параметров,
-        что и ``Public`` в старой логике.
-
-        Args:
-            conf_space: Пространство Confluence.
-            conf_parent_page: Родительская страница (``c_pp``).
-            conf_new_page_name: Итоговая страница (``c_np``).
-            test_cycle_version: Значение ``-tcv`` для вычисления релизной страницы.
-            body: HTML отчёта или экземпляр PageBuilder.
-            attachments_dir: Каталог с артефактами отчёта.
-            attachments: Дополнительные файлы.
-
-        Returns:
-            dict: Идентификаторы опубликованных страниц.
-        """
-
-        self._log(
-            f"Запуск публикации '{conf_new_page_name}' в пространство '{conf_space}'"
-        )
-        render_fn = getattr(body, "render", None)
-        if not callable(render_fn):
-            raise TypeError("body должен быть PageBuilder с методом render()")
-        html_body = str(render_fn())
-        self._log(f"Сформировано тело отчёта длиной {len(html_body)} символов")
-
-        release_parent_title: str | None = None
-        release_page_title: str | None = None
-        release_version: str | None = None
-        if test_cycle_version:
-            parts = test_cycle_version.split(".")
-            if len(parts) == 4 and parts[3] != "UU":
-                release_version = ".".join(parts[:3])
-            elif len(parts) == 6 and parts[3] == "UU":
-                release_version = ".".join(parts[:5])
-
-        if release_version:
-            parent_tokens = conf_parent_page.split(" ")
-            page_tokens = conf_new_page_name.split("_")
-            release_parent_title = " ".join(
-                release_version if release_version in token else token
-                for token in parent_tokens
-            )
-            release_page_title = "_".join(
-                release_version if release_version in token else token
-                for token in page_tokens
-            )
-
-        if release_page_title and release_parent_title:
-            self._log(
-                "Обнаружена релизная версия: "
-                f"родитель '{release_parent_title}', страница '{release_page_title}'"
-            )
-        else:
-            self._log("Релизная версия не определена, публикуем только основную страницу")
-
-        try:
-            attachments_list: List[Path | str] = []
-            if attachments:
-                attachments_list.extend(attachments)
-            if attachments_dir:
-                directory = Path(attachments_dir)
-                if directory.exists() and directory.is_dir():
-                    for file_path in sorted(directory.iterdir()):
-                        if file_path.is_file():
-                            attachments_list.append(file_path)
-
-            if attachments_list:
-                self._log(f"Найдено вложений: {len(attachments_list)}")
-            else:
-                self._log("Вложений нет")
-
-            cur_top, cur_version = self._derive_stress_titles(conf_new_page_name)
-            release_page_id: str | None = None
-
-            if release_page_title and release_parent_title:
-                rel_top, rel_version = self._derive_stress_titles(release_page_title)
-                self._log(f"Готовлю релизное дерево страниц: {rel_top} -> {rel_version}")
-                self._ensure_container_page(space=conf_space, title=rel_top)
-                self._ensure_container_page(
-                    space=conf_space, title=rel_version, parent_title=rel_top
-                )
-                self._ensure_container_page(
-                    space=conf_space,
-                    title=release_parent_title,
-                    parent_title=rel_version,
-                )
-                release_page_id = self.publish(
-                    space=conf_space,
-                    title=release_page_title,
-                    parent_title=release_parent_title,
-                    body=html_body,
-                )
-                self._log(
-                    f"Релизная страница '{release_page_title}' опубликована (id={release_page_id})"
-                )
-                self._ensure_container_page(
-                    space=conf_space, title=cur_version, parent_title=rel_version
-                )
-            else:
-                self._ensure_container_page(space=conf_space, title=cur_top)
-                self._ensure_container_page(
-                    space=conf_space, title=cur_version, parent_title=cur_top
-                )
-
-            self._ensure_container_page(
-                space=conf_space, title=conf_parent_page, parent_title=cur_version
-            )
-            page_id = self.publish(
-                space=conf_space,
-                title=conf_new_page_name,
-                parent_title=conf_parent_page,
-                body=html_body,
-                attachments=attachments_list or None,
-            )
-            self._log(f"Основная страница '{conf_new_page_name}' опубликована (id={page_id})")
-            if attachments_list:
-                self._log(f"К странице '{conf_new_page_name}' прикреплено файлов: {len(attachments_list)}")
-            result = {"page_id": page_id, "release_page_id": release_page_id}
-        except Exception as exc:
-            self._log(f"[ERROR] Публикация отчёта завершилась с ошибкой: {exc}")
-            raise
-
-        self._log(
-            "Публикация завершена: "
-            f"основная страница id={result['page_id']}, "
-            f"релизная страница id={result.get('release_page_id')}"
-        )
-        return result
-
-    def _derive_stress_titles(self, page_title: str) -> tuple[str, str]:
-        segments = page_title.split("_")
-        version_segment = segments[1] if len(segments) > 1 else page_title
-        top_page = f"STRESS ⬝ {version_segment[:3]}"
-        version_page = f"STRESS_report ⬝ {version_segment}"
-        return top_page, version_page
-
-    def _ensure_container_page(
-        self, *, space: str, title: str, parent_title: str | None = None
-    ):
-        if self._client.page_exists(space=space, title=title):
-            page_id = self._client.get_page_id(space=space, title=title)
-            self._log(f"Страница '{title}' уже существует (id={page_id})")
-            return page_id
-        parent_id = (
-            self._client.get_page_id(space=space, title=parent_title)
-            if parent_title
-            else None
-        )
-        self._log(
-            f"Создаю контейнер-страницу '{title}'"
-            f"{f' под родителем {parent_title}' if parent_title else ''}"
-        )
-        result = self._client.create_page(
-            space=space,
-            title=title,
-            body=self._container_body(),
-            parent_id=parent_id,
-            type="page",
-            representation="storage",
-            editor="v2",
-        )
-        page_id = (
-            result["id"]
-            if isinstance(result, dict) and result.get("id")
-            else self._client.get_page_id(space=space, title=title)
-        )
-        if not page_id:
-            raise RuntimeError(f"Не удалось создать контейнер-страницу '{title}' в пространстве '{space}'")
-        return page_id
-
     def _container_body(self) -> str:
         """
-        Тело страницы с макросом для отображения потомков, аналогично старой логике.
-        """
+        Возвращает тело контейнерной страницы.
 
+        Returns:
+            str: Storage-HTML с макросом children.
+        """
         return (
             "Страница создана автоматически.<br/><br/>"
             "<ac:structured-macro ac:name=\"children\">"
             "<ac:parameter ac:name=\"all\">true</ac:parameter>"
             "</ac:structured-macro>"
         )
+
+    def _ensure_container_page(
+        self,
+        *,
+        space: str,
+        effective_title: str,
+        parent_id: str | None,
+    ) -> str:
+        """
+        Создаёт контейнер-страницу (если её нет). Если есть — ничего не меняет.
+
+        Args:
+            space (str): Пространство Confluence.
+            effective_title (str): Точный title для Confluence (может содержать невидимые символы).
+            parent_id (str | None): ID родителя или None.
+
+        Returns:
+            str: page_id контейнера.
+
+        Raises:
+            RuntimeError: Если не удалось создать контейнер.
+        """
+        existing = self._get_page_id_by_exact_title(space=space, title=effective_title)
+        if existing:
+            self._log(f"Контейнер '{effective_title}' уже существует (id={existing})")
+            return existing
+
+        self._log(
+            f"Создаю контейнер-страницу '{effective_title}'"
+            f"{f' под parent_id={parent_id}' if parent_id else ''}"
+        )
+        return self._ensure_page_by_effective_title(
+            space=space,
+            effective_title=effective_title,
+            body=self._container_body(),
+            parent_id=parent_id,
+            update_if_exists=False,
+        )
+
+    # ------------------------------------------------------------------
+    def _parse_versions(self, test_cycle_version: str | None) -> Tuple[str, str, str] | None:
+        """
+        Парсит версии для построения дерева.
+
+        Правила под твою реальность:
+        - версии всегда начинаются с цифр: 1.7.5.UU.2 (а не 1.7.UU.*)
+        - global = первые 2 сегмента (1.8)
+        - detailed = первые 3 сегмента (1.8.4 / 1.7.5)
+        - more = полная версия как есть (1.8.4.46 / 1.7.5.UU.2)
+
+        Args:
+            test_cycle_version (str | None): Строка версии тестового цикла.
+
+        Returns:
+            tuple[str, str, str] | None:
+                (global, detailed, more) или None, если версия отсутствует/не распознана.
+        """
+        tcv = self._normalize(test_cycle_version)
+        if not tcv:
+            return None
+
+        parts = [p.strip() for p in tcv.split(".") if p.strip()]
+        if len(parts) < 2:
+            return None
+
+        global_v = ".".join(parts[:2])
+        detailed_v = ".".join(parts[:3]) if len(parts) >= 3 else ".".join(parts)
+        more_v = ".".join(parts)
+        return global_v, detailed_v, more_v
+
+    def _rewrite_title_version(self, title: str, *, from_v: str, to_v: str) -> str:
+        """
+        Если title содержит from_v, заменяет на to_v.
+
+        Используется для формирования названия страницы в detailed-ветке:
+        пример:
+            apache-rp_1.8.4.46_smolensk... -> apache-rp_1.8.4_smolensk...
+
+        Args:
+            title (str): Исходный заголовок.
+            from_v (str): Что заменяем.
+            to_v (str): На что заменяем.
+
+        Returns:
+            str: Новый заголовок (или исходный, если замена не требовалась).
+        """
+        if not from_v or not to_v or from_v == to_v:
+            return title
+        return title.replace(from_v, to_v)
+
+    def _prepare_attachments_for_version(
+        self,
+        *,
+        files: Sequence[Path | str],
+        from_version: str,
+        to_version: str,
+        tmpdir: Path,
+    ) -> List[Path]:
+        """
+        Подготавливает список вложений для ветки с другой версией.
+
+        Если имя файла содержит from_version — создаёт временную копию файла
+        в tmpdir с заменой from_version -> to_version и возвращает путь до копии.
+        Иначе возвращает исходный путь.
+
+        Это нужно, чтобы Confluence видел разные имена вложений в ветках detailed/more.
+
+        Args:
+            files (Sequence[Path | str]): Вложения (пути).
+            from_version (str): Полная версия (more).
+            to_version (str): Версия для ветки detailed.
+            tmpdir (Path): Временный каталог.
+
+        Returns:
+            list[Path]: Список путей к файлам (оригиналы и/или временные копии).
+        """
+        out: List[Path] = []
+        for f in files:
+            p = Path(f)
+            if not p.exists() or not p.is_file():
+                continue
+            name = p.name
+            if from_version and (from_version in name) and (to_version != from_version):
+                new_name = name.replace(from_version, to_version)
+                dst = tmpdir / new_name
+                shutil.copy2(p, dst)
+                out.append(dst)
+            else:
+                out.append(p)
+        return out
+
+    # ------------------------------------------------------------------
+    def publish_results_from_params(
+        self,
+        *,
+        conf_space: str,
+        conf_parent_page: str | None,
+        conf_new_page_name: str,
+        test_cycle_version: str | None,
+        body: "PageBuilder",
+        attachments_dir: Path | str | None = None,
+        attachments: Sequence[str | Path] | None = None,
+        create_tree: bool = True,
+    ) -> Dict[str, str | None]:
+        """
+        Публикует результат теста, строя дерево версий и публикуя страницы.
+
+        Args:
+            conf_space (str):
+                Пространство Confluence (space key).
+            conf_parent_page (str | None):
+                Ближайшая родительская страница (видимое имя), например "Системные службы".
+                Может быть None/пустой — тогда страница публикуется прямо в версионный узел.
+            conf_new_page_name (str):
+                Итоговая страница отчёта (видимое имя). Обычно содержит версию в имени.
+            test_cycle_version (str | None):
+                Версия тестового цикла, например:
+                    1.8.4.46
+                    1.7.5.UU.2
+                Если не задана — дерево не строится, публикуется упрощённо.
+            body (PageBuilder):
+                Экземпляр PageBuilder с методом render(), который отдаёт HTML в Storage формате.
+            attachments_dir (Path | str | None):
+                Каталог с артефактами отчёта (все файлы из каталога будут прикреплены).
+            attachments (Sequence[str | Path] | None):
+                Дополнительные файлы для прикрепления.
+            create_tree (bool):
+                Если True — создаёт дерево версий (global/detailed/more) и публикует
+                в ветках more и detailed.
+                Если False — не создаёт версионные контейнеры, публикует только:
+                    - parent (если задан) как контейнер с макросом children
+                    - страницу отчёта под parent (или на корне space если parent не задан)
+
+        Returns:
+            dict[str, str | None]:
+                {
+                    "page_id": id страницы в ветке more (основная),
+                    "release_page_id": id страницы в ветке detailed (копия) или None
+                }
+
+        Raises:
+            TypeError:
+                Если body не имеет render().
+            ValueError:
+                Если conf_new_page_name пуст.
+        """
+        space = conf_space
+        parent_visible = self._normalize(conf_parent_page)
+        page_visible = self._normalize(conf_new_page_name)
+        if not page_visible:
+            raise ValueError("conf_new_page_name не должен быть пустым")
+
+        self._log(f"Запуск публикации '{page_visible}' в пространство '{space}'")
+
+        render_fn = getattr(body, "render", None)
+        if not callable(render_fn):
+            raise TypeError("body должен быть PageBuilder с методом render()")
+        html_body = str(render_fn())
+        self._log(f"Сформировано тело отчёта длиной {len(html_body)} символов")
+
+        attachments_list: List[Path | str] = []
+        if attachments:
+            attachments_list.extend(list(attachments))
+        if attachments_dir:
+            directory = Path(attachments_dir)
+            if directory.exists() and directory.is_dir():
+                for fp in sorted(directory.iterdir()):
+                    if fp.is_file():
+                        attachments_list.append(fp)
+
+        if attachments_list:
+            self._log(f"Найдено вложений: {len(attachments_list)}")
+        else:
+            self._log("Вложений нет")
+
+        versions = self._parse_versions(test_cycle_version)
+
+        # --- create_tree=False или нет версии: только parent (если есть) и страница ---
+        if (not create_tree) or (not versions):
+            if not versions:
+                self._log("test_cycle_version не задан/не распознан: публикую без версионного дерева")
+            else:
+                self._log("create_tree=False: пропускаю создание версионного дерева")
+
+            parent_id: str | None = None
+            if parent_visible:
+                token_parent = self._token(
+                    kind="STRESS_REPORT",
+                    version="nover",
+                    parent_title=None,
+                    visible_title=parent_visible,
+                )
+                eff_parent = self._with_hidden_suffix(parent_visible, token_parent)
+                parent_id = self._ensure_container_page(
+                    space=space,
+                    effective_title=eff_parent,
+                    parent_id=None,
+                )
+
+            token_page = self._token(
+                kind="STRESS_REPORT",
+                version="nover",
+                parent_title=parent_visible,
+                visible_title=page_visible,
+            )
+            eff_page = self._with_hidden_suffix(page_visible, token_page)
+
+            page_id = self.publish(
+                space=space,
+                title=page_visible,
+                _effective_title=eff_page,
+                parent_id=parent_id,
+                body=html_body,
+                attachments=attachments_list or None,
+            )
+            self._log(f"Страница '{page_visible}' опубликована (id={page_id})")
+            return {"page_id": page_id, "release_page_id": None}
+
+        # --- Полное дерево ---
+        global_v, detailed_v, more_v = versions
+        self._log(f"Версии: global='{global_v}', detailed='{detailed_v}', more='{more_v}'")
+
+        with tempfile.TemporaryDirectory(prefix="conf_pub_") as td:
+            tmpdir = Path(td)
+
+            # 1) global: STRESS
+            token_global = self._token(kind="STRESS", version=global_v, parent_title=None, visible_title=global_v)
+            eff_global = self._with_hidden_suffix(global_v, token_global)
+            global_id = self._ensure_container_page(space=space, effective_title=eff_global, parent_id=None)
+
+            # 2) detailed: STRESS_REPORT
+            token_detailed = self._token(kind="STRESS_REPORT", version=detailed_v, parent_title=None, visible_title=detailed_v)
+            eff_detailed = self._with_hidden_suffix(detailed_v, token_detailed)
+            detailed_id = self._ensure_container_page(space=space, effective_title=eff_detailed, parent_id=global_id)
+
+            # 3) more: STRESS_REPORT
+            token_more = self._token(kind="STRESS_REPORT", version=more_v, parent_title=None, visible_title=more_v)
+            eff_more = self._with_hidden_suffix(more_v, token_more)
+            more_id = self._ensure_container_page(space=space, effective_title=eff_more, parent_id=detailed_id)
+
+            # --- Ветка more: parent под more -> page под parent ---
+            if parent_visible:
+                token_more_parent = self._token(
+                    kind="STRESS_REPORT",
+                    version=more_v,
+                    parent_title=parent_visible,
+                    visible_title=parent_visible,
+                )
+                eff_more_parent = self._with_hidden_suffix(parent_visible, token_more_parent)
+                more_parent_id = self._ensure_container_page(space=space, effective_title=eff_more_parent, parent_id=more_id)
+            else:
+                more_parent_id = more_id
+
+            token_more_page = self._token(
+                kind="STRESS_REPORT",
+                version=more_v,
+                parent_title=parent_visible,
+                visible_title=page_visible,
+            )
+            eff_more_page = self._with_hidden_suffix(page_visible, token_more_page)
+
+            page_id_more = self.publish(
+                space=space,
+                title=page_visible,
+                _effective_title=eff_more_page,
+                parent_id=more_parent_id,
+                body=html_body,
+                attachments=attachments_list or None,
+            )
+            self._log(f"Основная страница (more) '{page_visible}' опубликована (id={page_id_more})")
+
+            # --- Ветка detailed: parent под detailed -> page под parent ---
+            if parent_visible:
+                token_det_parent = self._token(
+                    kind="STRESS_REPORT",
+                    version=detailed_v,
+                    parent_title=parent_visible,
+                    visible_title=parent_visible,
+                )
+                eff_det_parent = self._with_hidden_suffix(parent_visible, token_det_parent)
+                detailed_parent_id = self._ensure_container_page(space=space, effective_title=eff_det_parent, parent_id=detailed_id)
+            else:
+                detailed_parent_id = detailed_id
+
+            # Меняем имя страницы для detailed-ветки только если full TCV присутствует в названии
+            release_page_visible = self._rewrite_title_version(page_visible, from_v=more_v, to_v=detailed_v)
+
+            token_det_page = self._token(
+                kind="STRESS_REPORT",
+                version=detailed_v,
+                parent_title=parent_visible,
+                visible_title=release_page_visible,
+            )
+            eff_det_page = self._with_hidden_suffix(release_page_visible, token_det_page)
+
+            det_attachments: List[Path] | None = None
+            if attachments_list:
+                det_attachments = self._prepare_attachments_for_version(
+                    files=attachments_list,
+                    from_version=more_v,
+                    to_version=detailed_v,
+                    tmpdir=tmpdir,
+                )
+
+            release_page_id = self.publish(
+                space=space,
+                title=release_page_visible,
+                _effective_title=eff_det_page,
+                parent_id=detailed_parent_id,
+                body=html_body,
+                attachments=det_attachments or None,
+            )
+            self._log(f"Релизная страница (detailed) '{release_page_visible}' опубликована (id={release_page_id})")
+
+            return {"page_id": page_id_more, "release_page_id": release_page_id}

@@ -674,7 +674,7 @@ class LargeFio(CreateVM):
             "print \"    <target dev=\\\"\" dev \"\\\" bus=\\\"virtio\\\"/>\";"
             "print \"  </disk>\""
             "}"
-            "{print}' /tmp/testvm1.xml > /tmp/testvm1.new2.xml"
+            "{print}' /tmp/testvm1.new.xml > /tmp/testvm1.new2.xml"
         ))        
         print(check_output_command("sudo virsh define /tmp/testvm1.new2.xml"))
         print(check_output_command("sudo virsh start testvm1"))

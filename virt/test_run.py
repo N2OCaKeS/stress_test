@@ -1,4 +1,4 @@
-from libs.libtests import StealTime, FlexibleIOTester, UnixBench, PingPong
+from libs.libtests import StealTime, FlexibleIOTester, UnixBench, PingPong, LargeFio
 from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU, IO_DEPTH_1, \
                       IO_DEPTH_128, FIO_RAM, FIO_vCPU, UB_RAM, UB_vCPU, PP_vCPU, \
                       PP_RAM
@@ -225,7 +225,7 @@ elif args.TESTNAME == 'fio':
     uzs.upload_test_cycle_status(zefir_status='pass')
 
 elif args.TESTNAME == 'fio_large':
-    fio_large_test = FlexibleIOTester(rc_vbox=args.VBOX,
+    fio_large_test = LargeFio(rc_vbox=args.VBOX,
                                       vm_count=1,
                                       testdir=REPORT_PATH,
                                       iodepth=IO_DEPTH_128,

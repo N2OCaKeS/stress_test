@@ -1,6 +1,5 @@
 import os
 from libs.libreport import ReportToConfluence
-from allta import MathModels
 from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH, VM_INFONAME, VM_KERNEL, \
                       IO_DEPTH_1, IO_DEPTH_128, FILE_SIZE, UB_RESULTS, UB_RESULT_HTML, VM_RESULTS_PATH
 
@@ -222,7 +221,7 @@ class Public:
             html_page = '\n'.join([header_table, head_row, head_row2, low_depth, head_row3, high_depth])
 
         elif self.testname == 'fio_large':
-            #генерация вступительной таблицы
+            # генерация вступительной таблицы (как у тебя)
             with open(INFO_FILENAME) as info:
                 info_lst = info.read().split('\n')
 
@@ -234,24 +233,31 @@ class Public:
 
             with open(f'{TEMPLATE_PATH}/header_table_template_fio_large.html', 'r') as file:
                 header_table_temp = file.read()
-                header_table = header_table_temp.format(av=info_lst[0],
-                                                        kernel=info_lst[1],
-                                                        vm_av=vm_info,
-                                                        vm_kernel=vm_kernel,
-                                                        iodepth='128',
-                                                        numjobs_runtime='1 / 10s (time_based)',
-                                                        test_sizes='64G, 128G, 256G, 512G, 1T',
-                arm_num=self.stands[self.grade_stand]['grade'],
-                arm_proc=self.stands[self.grade_stand]['cpu'],
-                arm_mem=self.stands[self.grade_stand]['ram'],
-                arm_st=self.stands[self.grade_stand]['storage'])
+                header_table = header_table_temp.format(
+                    av=info_lst[0],
+                    kernel=info_lst[1],
+                    vm_av=vm_info,
+                    vm_kernel=vm_kernel,
+                    iodepth='128',
+                    numjobs_runtime='1 / 10s (time_based)',
+                    test_sizes='64G, 128G, 256G, 512G, 1T',
+                    arm_num=self.stands[self.grade_stand]['grade'],
+                    arm_proc=self.stands[self.grade_stand]['cpu'],
+                    arm_mem=self.stands[self.grade_stand]['ram'],
+                    arm_st=self.stands[self.grade_stand]['storage']
+                )
 
-            with open(f'{TEMPLATE_PATH}/largefio_results.html', 'r') as file:
-                combined = file.read()
+            with open(f'{TEMPLATE_PATH}/largefio_read_results.html', 'r') as file:
+                read_table = file.read()
+
+            with open(f'{TEMPLATE_PATH}/largefio_write_results.html', 'r') as file:
+                write_table = file.read()
 
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Сводная таблица чтение/запись:</b></h3></p>'
-            html_page = '\n'.join([header_table, head_row, head_row2, combined])
+            head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Чтение (64k vs 1M):</b></h3></p>'
+            head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Запись (64k vs 1M):</b></h3></p>'
+
+            html_page = '\n'.join([header_table, head_row, head_row2, read_table, head_row3, write_table])
 
         elif self.testname == 'unixbench':
             #генерация вступительной таблицы

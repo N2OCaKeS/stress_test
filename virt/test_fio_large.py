@@ -4,7 +4,7 @@ from libs.libpublic import Public
 from libs.virtlib import info_list
 from virt_conf import REPORT_PATH
 from allta import SystemCommands
-TEST_CYCLE_VERSION = "1.7.5"
+TEST_CYCLE_VERSION = "1.8.5.39"
 CONF_PARENT_PAGE = f"STRESS {TEST_CYCLE_VERSION} fio_large"
 CONF_NEW_PAGE_NAME = f"stress_{TEST_CYCLE_VERSION}_fio_large"
 KERNEL = SystemCommands.check_output_command("unamer -r")

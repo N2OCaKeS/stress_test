@@ -649,8 +649,26 @@ class LargeFio(CreateVM):
         print(check_output_command("sudo virsh --connect qemu:///system pool-start fio"))
         print(check_output_command("sudo virsh --connect qemu:///system pool-autostart fio"))
         print(check_output_command("sudo virsh --connect qemu:///system pool-refresh fio"))
-        print(check_output_command(f"qemu-img create -f qcow2 -o cluster_size=65536,lazy_refcounts=off,preallocation=metadata {add_disk_path}/largefio.qcow2 1T"))
-        print(check_output_command(f"virsh attach-disk {self.vms[0]} {add_disk_path}/largefio.qcow2 vdb --type disk --sourcetype file --targetbus virtio --driver qemu --subdriver qcow2 --cache none --io native --live"))
+        print(check_output_command(f"qemu-img create -f qcow2 -o cluster_size=1M,extended_l2=on,lazy_refcounts=on {add_disk_path}/largefio.qcow2 1T"))
+
+
+        print(check_output_command("sudo virsh destroy testvm1"))
+        print(check_output_command("sudo virsh dumpxml  testvm1 > /tmp/testvm1.xml"))
+        print(check_output_command(
+            "awk -v img='/vms/largefio/largefio.qcow2' -v dev='vdb' "
+            "'/</devices>/{"
+            "print \"  <disk type=\\\"file\\\" device=\\\"disk\\\">\";"
+            "print \"    <driver name=\\\"qemu\\\" type=\\\"qcow2\\\" cache=\\\"none\\\" io=\\\"native\\\" discard=\\\"unmap\\\"/>\";"
+            "print \"    <source file=\\\"\" img \"\\\"/>\";"
+            "print \"    <target dev=\\\"\" dev \"\\\" bus=\\\"virtio\\\"/>\";"
+            "print \"  </disk>\""
+            "}"
+            "{print}' /tmp/testvm1.xml > /tmp/testvm1.new.xml"
+        ))
+        print(check_output_command("sudo virsh define /tmp/testvm1.new.xml"))
+        print(check_output_command("sudo virsh start testvm1"))
+        sleep(60)
+        # print(check_output_command(f"virsh attach-disk {self.vms[0]} {add_disk_path}/largefio.qcow2 vdb --type disk --sourcetype file --targetbus virtio --driver qemu --subdriver qcow2 --cache none --io native --live"))
         print('Disk attached, preparing inside VM')
         send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdb bs=16M oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         send_remote_command(command='sudo uname -r > /home/u/kernel.txt && sudo chmod 777 /home/u/kernel.txt', ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)

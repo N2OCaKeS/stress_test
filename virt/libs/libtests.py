@@ -681,8 +681,8 @@ class LargeFio(CreateVM):
         sleep(60)
         # print(check_output_command(f"virsh attach-disk {self.vms[0]} {add_disk_path}/largefio.qcow2 vdb --type disk --sourcetype file --targetbus virtio --driver qemu --subdriver qcow2 --cache none --io native --live"))
         print('Disk attached, preparing inside VM')
-        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdb bs=1G oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
-        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdc bs=1G oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)        
+        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdb bs=1G count=1024 oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdc bs=1G count=1024 oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)        
         send_remote_command(command='sudo uname -r > /home/u/kernel.txt && sudo chmod 777 /home/u/kernel.txt', ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
 
         print('Install fio package')
@@ -739,8 +739,8 @@ class LargeFio(CreateVM):
         get_remote_file("/home/u/largefio_read1M.txt",   local_read_1m,   ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         get_remote_file("/home/u/largefio_write1M.txt",  local_write_1m,  ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
 
-        get_remote_file('/home/av.txt',      f'{self.testdir}/{VM_INFONAME}', ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
-        get_remote_file('/home/u/kernel.txt', f'{self.testdir}/{VM_KERNEL}',  ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file('/home/av.txt',       f'{self.testdir}/{VM_INFONAME}', ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file('/home/u/kernel.txt', f'{self.testdir}/{VM_KERNEL}',   ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
 
         # --- парсим READ 64k ---
         read_64k = []
@@ -798,7 +798,6 @@ class LargeFio(CreateVM):
                     continue
                 write_1m.append((size, val))
 
-        # --- делаем 2 таблицы: READ и WRITE ---
         df_read_64k  = pd.DataFrame(read_64k,  columns=["size", "64k"])
         df_read_1m   = pd.DataFrame(read_1m,   columns=["size", "1M"])
         df_write_64k = pd.DataFrame(write_64k, columns=["size", "64k"])
@@ -806,6 +805,16 @@ class LargeFio(CreateVM):
 
         df_read  = pd.merge(df_read_64k,  df_read_1m,  on="size", how="outer", sort=False)
         df_write = pd.merge(df_write_64k, df_write_1m, on="size", how="outer", sort=False)
+
+        for df in (df_read, df_write):
+            df.sort_values(
+                by="size",
+                key=lambda s: s.astype(str).str.upper().apply(
+                    lambda x: float(x[:-1]) * (1024 if x.endswith("T") else 1)
+                ),
+                inplace=True
+            )
+            df.reset_index(drop=True, inplace=True)
 
         # --- сохраняем HTML ---
         df_read.to_html(f"{TEMPLATE_PATH}/largefio_read_results.html", index=False)
@@ -822,9 +831,6 @@ class LargeFio(CreateVM):
                 os.remove(p)
             except FileNotFoundError:
                 pass
-
-        
-
 
     def vms_destroy(self):
         try:

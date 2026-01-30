@@ -661,6 +661,7 @@ class LargeFio(CreateVM):
             "print \"    <driver name=\\\"qemu\\\" type=\\\"qcow2\\\" cache=\\\"none\\\" io=\\\"native\\\" discard=\\\"unmap\\\"/>\";"
             "print \"    <source file=\\\"\" img \"\\\"/>\";"
             "print \"    <target dev=\\\"\" dev \"\\\" bus=\\\"virtio\\\"/>\";"
+            "print \"    <serial>largefio-cluster-1M</serial>\";"
             "print \"  </disk>\""
             "}"
             "{print}' /tmp/testvm1.xml > /tmp/testvm1.new.xml"
@@ -672,6 +673,7 @@ class LargeFio(CreateVM):
             "print \"    <driver name=\\\"qemu\\\" type=\\\"qcow2\\\" cache=\\\"none\\\" io=\\\"native\\\" discard=\\\"unmap\\\"/>\";"
             "print \"    <source file=\\\"\" img \"\\\"/>\";"
             "print \"    <target dev=\\\"\" dev \"\\\" bus=\\\"virtio\\\"/>\";"
+            "print \"    <serial>largefio-cluster-64K</serial>\";"            
             "print \"  </disk>\""
             "}"
             "{print}' /tmp/testvm1.new.xml > /tmp/testvm1.new2.xml"
@@ -717,6 +719,7 @@ class LargeFio(CreateVM):
         create_remote_file(local_file_path=f"{FIO_PATH}/largefio.sh", remote_file_path="/home/u/largefio.sh", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         send_remote_command(command="sudo chmod +x /home/u/largefio.sh", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         print('Start load script')
+
         send_remote_command(command="sudo /home/u/largefio.sh read vdb > /home/u/largefio_read1M.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         send_remote_command(command="sudo /home/u/largefio.sh write vdb > /home/u/largefio_write1M.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         send_remote_command(command="sudo chmod 777 /home/u/largefio_write1M.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)

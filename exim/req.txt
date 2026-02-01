@@ -1,0 +1,12 @@
+atlassian-python-api
+pretty-html-table
+pandas == 2.2.3
+scikit-learn
+requests
+numpy
+matplotlib
+lxml
+prettytable
+bs4
+setuptools
+pysnooper

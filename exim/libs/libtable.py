@@ -58,12 +58,14 @@ class Report:
 
         elif self.type_test == "imap":
             criterions = [
-                Criterion(name="successful_count", values=self.raw_table['successful_count'].tolist(), weight=0.333, sign=1, lower_bound=0, upper_bound=25000),
-                Criterion(name="avg_latency", values=self.raw_table["avg_latency"].tolist(), weight=0.333, sign=-1, lower_bound=0, upper_bound=300),
-                Criterion(name="throughput", values=self.raw_table["throughput"].tolist(), weight=0.333, sign=1, lower_bound=0, upper_bound=8000),
+                Criterion(name="successful_count", values=self.raw_table['successful_count'].tolist(), weight=0.2, sign=1, lower_bound=0, upper_bound=25000),
+                Criterion(name="avg_latency", values=self.raw_table["avg_latency"].tolist(), weight=0.4, sign=-1, lower_bound=0, upper_bound=300),
+                Criterion(name="throughput", values=self.raw_table["throughput"].tolist(), weight=0.4, sign=1, lower_bound=0, upper_bound=8000),
             ]
         total_rating, s = MathModels.total_rating(criteria=criterions)
         return total_rating
+    
+
 
 
         

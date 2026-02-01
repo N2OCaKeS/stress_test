@@ -1,9 +1,12 @@
-atlassian-python-api 
+atlassian-python-api
 pretty-html-table
-pandas==2.2.3  
-pysnooper
-scikit-learn 
+pandas == 2.2.3
+scikit-learn
+requests
 numpy
 matplotlib
 lxml
 prettytable
+bs4
+setuptools
+pysnooper

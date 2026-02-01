@@ -9,7 +9,7 @@ import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
-from libs.libpublic import Public
+# from libs.libpublic import Public
 from libs.libstatistics import EXBStatistics
 from time import sleep, ctime
 from libs.libexb import response
@@ -17,7 +17,7 @@ from exb_conf import JIRA_URL, CONFLUENCE_URL
 
 
 
-class UploaderZC(Public, EXBStatistics):
+class UploaderZC(EXBStatistics):
 
     def __init__(self,
                  folder_tree_id=None,

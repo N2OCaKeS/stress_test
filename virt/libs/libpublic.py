@@ -1,6 +1,6 @@
 import os
 from libs.libreport import ReportToConfluence
-from allta import MathModels
+#from allta import MathModels
 from virt_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, LOW, HIGH, VM_INFONAME, VM_KERNEL, \
                       IO_DEPTH_1, IO_DEPTH_128, FILE_SIZE, UB_RESULTS, UB_RESULT_HTML, VM_RESULTS_PATH
 

@@ -228,11 +228,9 @@ elif args.TESTNAME == 'fio_large':
     fio_large_test = LargeFio(rc_vbox=args.VBOX,
                                       vm_count=1,
                                       testdir=REPORT_PATH,
-                                      iodepth=IO_DEPTH_128,
                                       kernel=str(args.TCYC).split('_')[2],
                                       vcpu=FIO_vCPU,
                                       ram=FIO_RAM,
-                                      vm_num=1,
                                       )
 
     fio_large_test.prepare_vms()

@@ -16,7 +16,7 @@ from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x
                       LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML, UB_RESULTS, \
                       VM_RESULTS_PATH
 from time import sleep
-from allta import Libvirt
+from allta import Libvirt, Criterion, MathModels
 
 
 
@@ -818,6 +818,29 @@ class LargeFio(CreateVM):
                 inplace=True
             )
             df.reset_index(drop=True, inplace=True)
+        size_key = "1T"
+        read_1t_1m = df_read.loc[
+            df_read["size"].astype(str).str.upper() == size_key, "1M"
+        ].dropna().tolist()
+        write_1t_1m = df_write.loc[
+            df_write["size"].astype(str).str.upper() == size_key, "1M"
+        ].dropna().tolist()
+
+        if not read_1t_1m or not write_1t_1m:
+            print(
+                "LargeFio warning: missing 1T results for 1M cluster "
+                f"(read={len(read_1t_1m)}, write={len(write_1t_1m)})."
+            )
+
+        criterions = [
+            Criterion(name="read 1mb 1t", values=read_1t_1m, weight=0.5, lower_bound=0, upper_bound=200000, sign=1),
+            Criterion(name="write 1mb 1t", values=write_1t_1m, weight=0.5, lower_bound=0, upper_bound=200000, sign=1),
+        ]
+        total_rating, _ = MathModels.total_rating(criteria=criterions)
+        print (f"LargeFio total rating: {total_rating}")
+        with open(f'{TEMPLATE_PATH}/largefio_total_rating.txt', 'w') as w:
+            w.write(str(total_rating))
+
 
         # --- сохраняем HTML ---
         df_read.to_html(f"{TEMPLATE_PATH}/largefio_read_results.html", index=False)

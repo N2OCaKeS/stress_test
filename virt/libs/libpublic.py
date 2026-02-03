@@ -254,10 +254,14 @@ class Public:
                 write_table = file.read()
 
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            #создание страницы отчета
+            with open(f'{TEMPLATE_PATH}/largefio_total_rating.txt', 'r') as file:
+                result = file.read()
+            results = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Score: {result}</b></h3></p>'
             head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Чтение (64k vs 1M):</b></h3></p>'
             head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Запись (64k vs 1M):</b></h3></p>'
 
-            html_page = '\n'.join([header_table, head_row, head_row2, read_table, head_row3, write_table])
+            html_page = '\n'.join([header_table, head_row, results, head_row2, read_table, head_row3, write_table])
 
         elif self.testname == 'unixbench':
             #генерация вступительной таблицы

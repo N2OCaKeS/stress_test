@@ -837,7 +837,8 @@ class LargeFio(CreateVM):
             Criterion(name="write 1mb 1t", values=write_1t_1m, weight=0.5, lower_bound=0, upper_bound=200000, sign=1),
         ]
         total_rating, _ = MathModels.total_rating(criteria=criterions)
-        print (f"LargeFio total rating: {total_rating}")
+        total_rating_display = round(total_rating * 1000)
+        print(f"LargeFio total rating: {total_rating_display}")
         with open(f'{TEMPLATE_PATH}/largefio_total_rating.txt', 'w') as w:
             w.write(str(total_rating))
 

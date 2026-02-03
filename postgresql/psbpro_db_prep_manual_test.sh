@@ -172,6 +172,12 @@ sudo -u postgres ${BIN_PATH}/pgbench -i -h localhost -p 6000 -U $USER -s 100 $DB
 # SELECT 1;
 # COMMIT;
 
+
+# psql -U postgres -d test -p 6000
+# CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+# SELECT * FROM pg_stat_statements LIMIT 100;
+
+
 # Запуск теста (pgbench)
 # Запускаем 100 параллельных сессий, которые постоянно шлют запросы:
 

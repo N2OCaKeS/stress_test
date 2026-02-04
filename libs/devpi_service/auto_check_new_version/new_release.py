@@ -7,9 +7,9 @@ import configparser
 import json
 import base64
 
-DEVPI_INDEX_URL = 'http://localhost:3141/root/release'
+DEVPI_INDEX_URL = 'http://10.177.103.10:3141/root/release'
 PACKAGE_NAME = 'allta'
-BASE_VERSION = os.getenv('DEVPI_BASE_VERSION', '1.0.0')
+BASE_VERSION = os.getenv('DEVPI_BASE_VERSION', '0.0.1')
 
 def cmd(command, cwd=None, env=None):
     subprocess.run(command, shell=True, check=True, cwd=cwd, env=env)

@@ -257,7 +257,7 @@ class Public:
             #создание страницы отчета
             with open(f'{TEMPLATE_PATH}/largefio_total_rating.txt', 'r') as file:
                 result = file.read()
-            results = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Score: {result}</b></h3></p>'
+            results = f'<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Total rating: {result}</b></h3></p>'
             head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Чтение (64k vs 1M):</b></h3></p>'
             head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Запись (64k vs 1M):</b></h3></p>'
 

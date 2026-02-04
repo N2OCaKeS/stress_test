@@ -4,7 +4,7 @@ import os
 import re
 import subprocess
 
-LDAP_SERVER = "ldap://virtual-station2.stress-testing.local"
+LDAP_SERVER = "ldap:/lowserver.stress-testing.local"
 BIND_DN = "cn=directory manager"
 BIND_PASSWORD = "12345678"
 DOMAIN_DN = "dc=stress-testing,dc=local"

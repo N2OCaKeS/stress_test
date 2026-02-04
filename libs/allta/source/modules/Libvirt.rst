@@ -1,8 +1,7 @@
 Libvirt
 =====================
 
-
-Модуль ``Libvirt`` содержит класс, для сборки с помощью virt-install и отправки команд на VM на основе libvirt.
+Модуль ``Libvirt`` содержит класс для сборки и управления виртуальными машинами через libvirt/virt-install, а также для выполнения команд, копирования файлов и базовой настройки внутри ВМ.
 
 .. note:: 
     Автор: ``mfilippenko``
@@ -11,7 +10,9 @@ Libvirt
 ``prepare``
 ------------------------------------------------------------------------------------------------
 
-Выполняет установку всех зависимостей.
+Выполняет подготовку окружения для работы с Libvirt и virt-install.
+Устанавливает зависимости, настраивает мост и перезапускает сервисы.
+Требует прав ``sudo`` и может изменить сетевые настройки хоста.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Возвращает аргументы:
@@ -35,23 +36,33 @@ ________________________________________________________________________________
 ``build``
 ------------------------------------------------------------------------------------------------
 
-Создает виртуальные машины на основе qcow образов.
+Создает виртуальные машины на основе qcow образов и настраивает базовое окружение внутри ВМ.
+После сборки заполняет ``ip_bridge`` в ``vms_dates`` и возвращает обновленный словарь.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Принимаемые аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``box``: str - Информация о том какой vagrant box необходимо использовать
-* ``rc``: str - Версия ос на котором развертывается ВМ
-* ``vms_dates``: dict - Список ВМ, с побробной информацией
-* ``kernel``: str, optional - То какое ядро необходимо установить (полный вывод ``uname -r``), если не задано то оставит ядро по умолчанию 
-* ``bridge``: bool, optional, default=False - Необходимо ли пробросить ВМ в подсеть 103 и установить ей ip адрес, по умолчанию игнорирует существующие записи
+* ``box``: str - имя бокса (например ``1.7.5.o``, ``1.8.1.o``, ``debian12``, ``vm_station``)
+* ``rc``: str - версия ОС для выбора репозиториев и обновлений (например ``1.8.1.6``)
+* ``vms``: list - список имен ВМ (должны совпадать с ключами ``vms_dates``)
+* ``vms_dates``: dict - описание ВМ (см. структуру ниже)
+* ``kernel``: str, optional - полное имя ядра (``uname -r``). Если задано, будет установлено и прописано в grub
+* ``bridge``: bool, optional, default=False - использовать ``ip_bridge`` из ``vms_dates`` для настройки моста
+
+Минимальная структура ``vms_dates``:
+
+* ``cpu``: str|int - количество vCPU
+* ``ram``: str|int - память в MB
+* ``disk``: str|int, optional - размер диска в GB (будет расширен, если больше минимального значения)
+* ``ip_bridge``: str, optional - IP для моста, используется если ``bridge=True``
+* ``host-port``: str|int, optional - порт SSH (по умолчанию 22)
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Возвращает аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``dict`` - Обновленный vms_dates (ИСПОЛЬЗОВАТЬ ТОЛЬКО ДЛЯ ВНУТРЕННЕЙ СЕТИ Libvirt).
+* ``dict`` - обновленный ``vms_dates`` (заполнен ``ip_bridge``)
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -61,26 +72,78 @@ ________________________________________________________________________________
 
     from allta import Libvirt
 
-    box = '1.7.5.s'
-    rc = '1.7.5'
-    kernel = '5.10.190-1-generic'
     vms_dates = {
-        'hostname1': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'10.177.103.200', # Заполняется автоматически через внутреннюю сеть libvirt можно указать вручную для проброса в 103 подсеть(Необходимо передать bridge=True иначе игнорируется)
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
-            'disk': '200' # Размер диска для ВМ в гигабайтах
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',  # Используется при bridge=True
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
+            # Доп. диски можно хранить рядом (используются LibvirtManager.Vm.additional_disk)
+            'additional_disks': {
+                'disk1': {
+                    'size': '100',
+                    'mount_point': '/home/testuser2',
+                    'fs_type': 'ext4',
+                },
+                'disk2': {
+                    'size': '100',
+                    'mount_point': '/home/testuser3',
+                    'fs_type': 'ntfs',
+                },
+                'disk3': {
+                    'device': '/dev/vdb',
+                    'fs_type': 'ext4',
+                    'mount_point': '/vms',
+                },
+                'disk4': {
+                    'device': '/dev/vdc2',
+                },
+            },
         },
-        'hostname2': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
     }
+    vms = list(vms_dates.keys())
 
-    vms_dates = Libvirt.build(box=box, rc=rc, vms_dates=vms_dates, kernel=kernel, bridge=True)
+    Libvirt.prepare()
+    vms_dates = Libvirt.build(
+        box='1.8.1.o',
+        rc='1.8.1.6',
+        vms=vms,
+        vms_dates=vms_dates,
+        bridge=True,
+    )
+
+.. code-block:: python
+
+    from allta import Libvirt
+
+    vms_dates = {
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '120',
+        },
+    }
+    vms = ['testvm1']
+    kernel = '5.10.190-1-generic'
+
+    vms_dates = Libvirt.build(
+        box='1.7.5.o',
+        rc='1.7.5',
+        vms=vms,
+        vms_dates=vms_dates,
+        kernel=kernel,
+        bridge=True,
+    )
 
 _______________________________________________________________________________________________
 
@@ -88,22 +151,23 @@ ________________________________________________________________________________
 ``check``
 ------------------------------------------------------------------------------------------------
 
-Проверяет доступность ВМ с помощью ping.
+Проверяет доступность ВМ с помощью ping по адресу ``ip_bridge``.
+Если хотя бы одна ВМ недоступна, завершает выполнение через ``sys.exit(1)``.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Принимаемые аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``vms``: list - Список ВМ
-* ``vms_dates``: dict - Список ВМ, с побробной информацией
-* ``ping_retries``: int, optional, default=5 - Кол-во попыток проверки
-* ``ping_timeout_s``: int, optional, default=1 - Таймаут 1 проверки
+* ``vms``: list - список ВМ
+* ``vms_dates``: dict - список ВМ с информацией (ключ ``ip_bridge`` обязателен)
+* ``ping_retries``: int, optional, default=5 - количество попыток проверки
+* ``ping_timeout_s``: int, optional, default=1 - таймаут одной проверки в секундах
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Возвращает аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``int`` - Если хотя бы 1 ВМ не доступна sys.exit(1), если все хорошо то 0
+* ``int`` - 0 если все ВМ доступны
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -113,22 +177,23 @@ ________________________________________________________________________________
 
     from allta import Libvirt
 
-    vms = ['hostname1', 'hostname2']
+    vms = ['testvm1', 'testvm2']
     vms_dates = {
-        'hostname1': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
         },
-        'hostname2': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
     }
-
 
     Libvirt.check(vms=vms, vms_dates=vms_dates, ping_retries=5, ping_timeout_s=2)
 
@@ -139,17 +204,55 @@ ________________________________________________________________________________
 ------------------------------------------------------------------------------------------------
 
 Выполнение задач через ssh на ВМ или группе ВМ.
+Поддерживаются сигналы, асинхронный режим (``nowait``) и специальная задача ``reboot``.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Принимаемые аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``commands``: dict - задачи которые необходимо выполнить на ВМ
-* ``vms_dates``: dict - список ВМ, с побробной информацией
-* ``vms_groups``: dict, optional, default = None - список групп ВМ
-* ``username``: str, optional, default = 'u' - имя пользователя от кого подключиться по ssh и выполнить задачи
-* ``password``: str, optional, default = '1' - пароль пользователя 
-* ``timeout``: int, optional, default = 15 - время ожидания сигнала в минутах
+* ``commands``: dict - задачи для выполнения
+* ``vms_dates``: dict - список ВМ, с подробной информацией
+* ``vms_groups``: dict, optional, default=None - список групп ВМ
+* ``username``: str, optional, default='u' - имя пользователя от кого подключиться по ssh и выполнить задачи
+* ``password``: str, optional, default='1' - пароль пользователя
+* ``timeout``: int, optional, default=15 - время ожидания сигнала в минутах
+
+Структура ``commands``:
+
+.. code-block:: python
+
+    commands = {
+        'hostname1': {
+            'task1': {
+                'command': 'echo 1',
+                'signal set': 'ready',
+                'signal get': '',
+            },
+            'reboot': {  # специальная задача
+                'signal set': 'rebooted',
+                'signal get': ['ready'],
+            },
+            'perf': {  # асинхронная задача
+                'command': 'sudo perf record -g -a',
+                'signal get': 'ready',
+                'nowait': True,
+                'nowait_timeout': 30,
+            },
+        },
+        'g_group1': {
+            'task2': {
+                'command': 'uname -a',
+                'signal set': '',
+                'signal get': ['hostname1', 'ready'],
+            },
+        },
+    }
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Возвращает аргументы:
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+* ``int`` - код завершения выполнения
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -159,60 +262,88 @@ ________________________________________________________________________________
 
     from allta import Libvirt
 
-    commands = {
-            'hostname1':{
-                'task1':{
-                    'command':"",
-                    'signal set': 'test',
-                    'signal get': ''
-                },
-                'interective_task2': {
-                    "command": "sudo perf record -g -a", # Interective task
-                    "signal get": "1",
-                    "nowait": True,  # default = False
-                    "nowait_timeout": 15,  # default = 30 sec                
-                }
+    vms_dates = {
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
+        },
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
+    }
 
+    commands = {
+        'testvm1': {
+            'prepare_task': {
+                'command': 'sudo apt-get install iperf -y',
+                'signal set': 'iperf_installed',
             },
-            'g_group1':{
-                'task2':{
-                    'command':"",
-                    'signal set': '',
-                    'signal get': ['test']
-                },
-                'task2':{
-                    'command':"",
-                    'signal set': '', # Если не надо ставить оставить пустым
-                    'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
-                },
-                'reboot':{ # Перезагрузит ВМ
-                    'signal set': '', 
-                    'signal get': ['hostname1' ,'test'] # Ищет для конкретного хоста
-                },
-            }
-        }  
+            'perf_record': {
+                'command': 'sudo perf record -g -a',
+                'signal get': 'iperf_installed',
+                'nowait': True,
+                'nowait_timeout': 15,
+            },
+            'reboot': {
+                'signal set': 'rebooted',
+                'signal get': ['iperf_installed'],
+            },
+        },
+    }
+
+    Libvirt.execute(commands=commands, vms_dates=vms_dates, timeout=30)
+
+.. code-block:: python
+
+    from allta import Libvirt
 
     vms_dates = {
-        'hostname1': {
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
         },
-        'hostname2': {
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
     }
 
     vms_groups = {
-        'group1':['hostname1', 'hostname2'],
-        }
-    username = 'u'
-    password='1'
+        'group1': ['testvm1', 'testvm2'],
+    }
 
-    Libvirt.execute(commands=commands, vms_dates=vms_dates, vms_groups=vms_groups, 
-                            username=username, password,password, timeout=60)
+    commands = {
+        'g_group1': {
+            'set_hosts': {
+                'command': 'echo "127.0.0.1 localhost" | sudo tee -a /etc/hosts',
+                'signal set': 'hosts_ready',
+                'signal get': '',
+            },
+            'run_tests': {
+                'command': 'uname -a',
+                'signal get': ['testvm1', 'hosts_ready'],
+            },
+            'reboot': {
+                'signal set': 'group_rebooted',
+                'signal get': ['hosts_ready'],
+            },
+        }
+    }
+
+    Libvirt.execute(commands=commands, vms_dates=vms_dates, vms_groups=vms_groups, timeout=30)
 
 _______________________________________________________________________________________________
 
@@ -227,10 +358,16 @@ ________________________________________________________________________________
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 * ``scp_settings``: dict - настройки для копирования файлов
-* ``vms_dates``: dict - список ВМ, с побробной информацией
-* ``vms_groups``: dict, optional, default = None - список групп ВМ
-* ``username``: str, optional, default = 'u' - имя пользователя от кого подключиться по scp
-* ``password``: str, optional, default = '1' - пароль пользователя 
+* ``vms_dates``: dict - список ВМ, с подробной информацией
+* ``vms_groups``: dict, optional, default=None - список групп ВМ
+* ``username``: str, optional, default='u' - имя пользователя от кого подключиться по ssh
+* ``password``: str, optional, default='1' - пароль пользователя
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Возвращает аргументы:
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+* ``int`` - код завершения выполнения
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -240,45 +377,50 @@ ________________________________________________________________________________
 
     from allta import Libvirt
 
+    vms_dates = {
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
+        },
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
+    }
+
     scp_settings = {
-        'hostname1': [
+        'testvm1': [
             {
-            'mode': 'pull', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-            'path_host': './test', 
-            'path_vm': '/tmp/test'
+                'mode': 'push',  # push - отправить на ВМ; pull - получить из ВМ
+                'path_host': './test.py',
+                'path_vm': '/home/u/test.py',
+            },
+            {
+                'mode': 'pull',
+                'path_host': './logs',
+                'path_vm': '/var/log/syslog',
             },
         ],
-        'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+        'g_group1': [  # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
             {
-            'mode': 'pull', # Режимы: push - отправить на ВМ; pull - получить из ВМ
-            'path_host': './test', 
-            'path_vm': '/tmp/test'
+                'mode': 'push',
+                'path_host': './assets',
+                'path_vm': '/home/u/assets',
             },
-        ],                       
-    }
-    vms_dates = {
-        'hostname1': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
-        },
-        'hostname2': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+        ],
     }
 
     vms_groups = {
-        'group1':['hostname1', 'hostname2'],
-        }
-    username = 'u'
-    password='1'
+        'group1': ['testvm1', 'testvm2'],
+    }
 
-    Libvirt.scp(scp_settings=scp_settings, vms_dates=vms_dates, vms_groups=vms_groups, 
-                        username=username, password=password)
+    Libvirt.scp(scp_settings=scp_settings, vms_dates=vms_dates, vms_groups=vms_groups)
 
 _______________________________________________________________________________________________
 
@@ -286,16 +428,17 @@ ________________________________________________________________________________
 ``set_hosts``
 ------------------------------------------------------------------------------------------------
 
-Настраивает файл /etc/hosts на всех указанных виртуальных машинах добавляя в него все ВМ, так же добавляет все ВМ в /etc/hosts на хосте.
+Настраивает файл /etc/hosts на всех указанных виртуальных машинах, так же добавляет все ВМ в /etc/hosts на хосте.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Принимаемые аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``vms_dates``: dict - список ВМ, с побробной информацией
-* ``username``: str, optional, default = 'u' - имя пользователя от кого подключиться по ssh
-* ``password``: str, optional, default = '1' - пароль пользователя 
-* ``domain``: str, optional - домен для формирования FQDN.
+* ``domain``: str - домен для формирования FQDN
+* ``vms_dates``: dict - список ВМ, с подробной информацией
+* ``username``: str, optional, default='u' - имя пользователя от кого подключиться по ssh
+* ``password``: str, optional, default='1' - пароль пользователя
+
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -306,22 +449,23 @@ ________________________________________________________________________________
 
     domain = 'stress.rbt'
     vms_dates = {
-        'hostname1': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
         },
-        'hostname2': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
     }
 
-
-    Libvirt.set_hosts(domain=domain, vms_dates=vms_dates)     
+    Libvirt.set_hosts(domain=domain, vms_dates=vms_dates)
 
 _______________________________________________________________________________________________
 
@@ -336,10 +480,16 @@ ________________________________________________________________________________
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 * ``sed_conf``: dict - список с необходимыми заменами
-* ``vms_dates``: dict - список ВМ, с побробной информацией
-* ``vms_groups``: dict, optional, default = None - список групп ВМ
-* ``username``: str, optional, default = 'u' - имя пользователя от кого подключиться по scp
-* ``password``: str, optional, default = '1' - пароль пользователя 
+* ``vms_dates``: dict - список ВМ, с подробной информацией
+* ``vms_groups``: dict, optional, default=None - список групп ВМ
+* ``username``: str, optional, default='u' - имя пользователя от кого подключиться по ssh
+* ``password``: str, optional, default='1' - пароль пользователя
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Возвращает аргументы:
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+* ``int`` - код завершения выполнения
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -349,45 +499,50 @@ ________________________________________________________________________________
 
     from allta import Libvirt
 
+    vms_dates = {
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
+        },
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
+    }
+
     sed_conf = {
-        'hostname1':[                
-            {   
+        'testvm1': [
+            {
                 'path': '/etc/ssh/sshd.conf',
                 'old': 'PermitRootLogin = yes',
-                'new': 'PermitRootLogin = no'
-            },                  
-        ],
-        'g_group1':[ # Если выполнять на группе хостов необходимо указать в виде g_<groupname>      
-            {   
+                'new': 'PermitRootLogin = no',
+            },
+            {
                 'path': '/etc/ssh/sshd.conf',
-                'old': '#Port = 22',
-                'new': 'Port = 21547'
-            },  
-        ],                       
-    }
-    vms_dates = {
-        'hostname1': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
-        },
-        'hostname2': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+                'old': '#Port 22',
+                'new': 'Port 2222',
+            },
+        ],
+        'g_group1': [
+            {
+                'path': '/etc/sysctl.conf',
+                'old': 'net.ipv4.ip_forward=0',
+                'new': 'net.ipv4.ip_forward=1',
+            },
+        ],
     }
 
     vms_groups = {
-        'group1':['hostname1', 'hostname2'],
-        }
-    username = 'u'
-    password='1'
+        'group1': ['testvm1', 'testvm2'],
+    }
 
-    Libvirt.sed(sed_conf=sed_conf, vms_dates=vms_dates, vms_groups=vms_groups, 
-                        username=username, password=password)
+    Libvirt.sed(sed_conf=sed_conf, vms_dates=vms_dates, vms_groups=vms_groups)
 
 _______________________________________________________________________________________________
 
@@ -395,19 +550,23 @@ ________________________________________________________________________________
 ``freeipa``
 ------------------------------------------------------------------------------------------------
 
-Развертывает домен freeipa, а имененно:
-1 контроллер домена
-Неограниченное кол-во клиентов
+Развертывает домен freeipa: 1 контроллер домена и неограниченное количество клиентов.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Принимаемые аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-* ``domain``: dict - описание настройки для домена
-* ``vms_dates``: dict - список ВМ, с побробной информацией
-* ``vms_groups``: dict, optional, default = None - список групп ВМ
-* ``username``: str, optional, default = 'u' - имя пользователя от кого подключиться по scp
-* ``password``: str, optional, default = '1' - пароль пользователя 
+* ``domain``: dict - описание настройки домена
+* ``vms_dates``: dict - список ВМ, с подробной информацией
+* ``vms_groups``: dict, optional, default=None - список групп ВМ
+* ``username``: str, optional, default='u' - имя пользователя от кого подключиться по ssh
+* ``password``: str, optional, default='1' - пароль пользователя
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Возвращает аргументы:
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+* ``int`` - код завершения выполнения
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -420,39 +579,38 @@ ________________________________________________________________________________
     domain = {
         'settings': {
             'domain': 'example.com',
-            'admin_password': 'secret'
+            'admin_password': 'secret',
         },
         'domain': {
-            'host': 'domain'
+            'host': 'domain',
         },
         'client': {
-            'host': 'database'  # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
-        }
+            'host': 'database',  # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
+        },
     }
 
     vms_dates = {
-        'hostname1': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
+        'domain': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.160',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
         },
-        'hostname2': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+        'database': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.161',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
     }
 
     vms_groups = {
-        'group1':['hostname1', 'hostname2'],
-        }
-    username = 'u'
-    password='1'
+        'group1': ['domain', 'database'],
+    }
 
-    Libvirt.freeipa(domain=domain, vms_dates=vms_dates, vms_groups=vms_groups, 
-                            username=username, password=password)
+    Libvirt.freeipa(domain=domain, vms_dates=vms_dates, vms_groups=vms_groups)
 
 _______________________________________________________________________________________________
 
@@ -460,17 +618,17 @@ ________________________________________________________________________________
 ``apt``
 ------------------------------------------------------------------------------------------------
 
-Функция управляющая пакетами, в настоящий момент реализован функционал: install, reinstall remove
+Функция управляющая пакетами: install, reinstall, remove.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Принимаемые аргументы:
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 * ``apt_structure``: dict - список пакетов с которыми будут проведены действия на хостах
-* ``vms_dates``: dict - список ВМ, с побробной информацией
-* ``vms_groups``: dict, optional, default = None - список групп ВМ
-* ``username``: str, optional, default = 'u' - имя пользователя от кого подключиться по scp
-* ``password``: str, optional, default = '1' - пароль пользователя 
+* ``vms_dates``: dict - список ВМ, с подробной информацией
+* ``vms_groups``: dict, optional, default=None - список групп ВМ
+* ``username``: str, optional, default='u' - имя пользователя от кого подключиться по ssh
+* ``password``: str, optional, default='1' - пароль пользователя
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Примеры использования
@@ -480,39 +638,54 @@ ________________________________________________________________________________
 
     from allta import Libvirt
 
-    apt_structure = {
-        'database' = ['package'],
-        'g_group1' = ['package'] # На группе хостов необходимо указать в виде g_<groupname>
-    }    
     vms_dates = {
-        'hostname1': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
         },
-        'hostname2': {
-            'host-port':'22', # порт ssh
-            'ip_bridge':'', # Заполняется автоматически через внутреннюю сеть libvirt
-            'cpu': '2', # Кол-во cpu для ВМ
-            'ram': '2048' # Кол-во ram для ВМ в MB!!!!            
-        },        
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
     }
 
     vms_groups = {
-        'group1':['hostname1', 'hostname2'],
-        }
-    username = 'u'
-    password='1'    
+        'group1': ['testvm1', 'testvm2'],
+    }
 
-    Libvirt.apt.install(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
-                                username=username, password=password) # Установка пакетов
-                                
-    Libvirt.apt.reinstall(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
-                                username=username, password=password) # Переустановка пакетов     
+    apt_structure = {
+        'testvm1': ['package1', 'package2'],
+        'g_group1': ['package3'],  # На группе хостов необходимо указать в виде g_<groupname>
+    }
 
-    Libvirt.apt.remove(apt_structure=apt_structure, vms_dates=vms_dates, vms_groups=vms_groups, .
-                                username=username, password=password) # Удаление пакетов                                                             
+    Libvirt.apt.install(
+        apt_structure=apt_structure,
+        vms_dates=vms_dates,
+        vms_groups=vms_groups,
+        username='u',
+        password='1',
+    )
+
+    Libvirt.apt.reinstall(
+        apt_structure=apt_structure,
+        vms_dates=vms_dates,
+        vms_groups=vms_groups,
+        username='u',
+        password='1',
+    )
+
+    Libvirt.apt.remove(
+        apt_structure=apt_structure,
+        vms_dates=vms_dates,
+        vms_groups=vms_groups,
+        username='u',
+        password='1',
+    )
 
 _______________________________________________________________________________________________
-                                

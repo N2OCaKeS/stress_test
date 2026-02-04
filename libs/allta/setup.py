@@ -6,7 +6,7 @@ def readme():
 
 setup(
   name='allta',
-  version='1.1.3', 
+  version='1.1.4', 
   author='team13',
   author_email='mfilippenko@astralinux.ru',
   description='Библиотеки для stress тестов',
@@ -17,7 +17,7 @@ setup(
   install_requires=['paramiko', 'requests', 'pytz', 'atlassian-python-api', 'scikit-learn', 'numpy', 'pandas', 'matplotlib'],
   classifiers=[],
   keywords='astralinux stresstest vm',
-  python_requires='>=3.12',
+  python_requires='>=3.11',
   package_data={
     "allta": ["**/*.sh"],
   },

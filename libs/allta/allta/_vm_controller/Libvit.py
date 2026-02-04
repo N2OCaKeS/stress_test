@@ -182,13 +182,13 @@ EOF
         cls,
         box: str,
         rc: str,
-        vms,
+        vms: list,
         vms_dates: dict,
         kernel: Optional[str] = None,
         bridge: bool = False,
     ) -> dict:
         """
-        Создаёт и настраивает виртуальные машины на основе Vagrantfile.
+        Создаёт и настраивает виртуальные машины на основе virt-install и заданных параметров.
 
         Args:
 
@@ -196,9 +196,9 @@ EOF
             vms (list): Список имён виртуальных машин.
 
                 vms = ['hostname1', 'hostname2']
-            rc (str, optional): Версия операционной системы. Если не указан, не используется.
+            rc (str): Версия операционной системы. Если не указан, не используется.
             prepare_path (str, optional): Путь к файлу подготовки окружения. Если не указан, не используется.
-            vms_date (dict): Полная информация о виртуальных машинах.
+            vms_dates (dict): Полная информация о виртуальных машинах.
 
                 vm_dates = {
                     'hostname':{

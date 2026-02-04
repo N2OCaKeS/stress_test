@@ -217,11 +217,11 @@ if __name__ == "__main__":
                             x_label="Количество пользователей",
                             y_label="Время создания всех пользователей")
         report.create_graph(x=report.user_count,
-                            y=report.average_time_per_user,
-                            filename="average_time_per_user",
-                            title_graph="average_time_per_user/user_count",
+                            y=report.user_per_second,
+                            filename="user_per_second",
+                            title_graph="user_per_second",
                             x_label="Количество пользователей",
-                            y_label="Среднее время создания пользователя")
+                            y_label="users/sec")
         total_rating = report.get_total_rating_create_users_test()
     else:
         report = Report()

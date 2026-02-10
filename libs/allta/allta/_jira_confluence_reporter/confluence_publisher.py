@@ -57,7 +57,7 @@ import hashlib
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Iterable, Sequence, Any, List, Dict, cast, TYPE_CHECKING, Optional, Tuple
+from typing import Iterable, Sequence, Any, List, Dict, cast, TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:  # for type hints only
     from .page_builder import PageBuilder

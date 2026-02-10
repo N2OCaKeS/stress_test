@@ -20,7 +20,7 @@ Allta Documentation
    modules/GetEnv
    modules/Libvirt
    modules/LibvirtManager
-   modules/ConfluencePublisher.rst
+   modules/PageBuilder.rst
    modules/SystemCommands
    modules/VBox
    modules/VBoxManager

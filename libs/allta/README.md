@@ -73,6 +73,7 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
     ```python
     from pathlib import Path
     from allta import ConfluencePublisher, Libvirt, LibvirtManager, PageBuilder
+    from pathlib import Path
 
     vms_dates = {
         "testvm1_server": {
@@ -118,50 +119,73 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
     password = "1"
     new_password = "12345"
 
-    # Установка необходимых для сборки зависимостей
-    Libvirt.prepare()
+    vms_data_path = "vms_dates.txt"
 
-    # Сборка ВМ и получение ip адресов для ВМ без проброса в 103 подсеть
-    actual_vms_dates = Libvirt.build(box=box, rc=rc, vms=vms, vms_dates=vms_dates, bridge=True)
-    
-    # Проверка доступности ВМ
-    Libvirt.check(vms=vms, vms_dates=actual_vms_dates)
+    if Path("vms_data_path").is_file():
+        # Загружаем сохраненные данные о ВМ
+        vms_dates = LibvirtManager.Vm.load_vms_data(save_path=vms_data_path)
 
-    change_pass = {
-        "g_all": {
-            "prepare_task": {
-                "command": f"yes {new_password} | sudo passwd {user_name}",
+        # Откатываем снимок для ВМ
+        LibvirtManager.Snapshot.revert(vms=vms, snapshot_name="prepare")
+
+        # Ждем включения
+        sleep(90)
+
+        # Проверка доступности ВМ
+        Libvirt.check(vms=vms, vms_dates=actual_vms_dates)
+
+    else:
+        # Установка необходимых для сборки зависимостей
+        Libvirt.prepare()
+
+        # Сборка ВМ и получение ip адресов для ВМ без проброса в 103 подсеть
+        actual_vms_dates = Libvirt.build(box=box, rc=rc, vms=vms, vms_dates=vms_dates, bridge=True)
+        
+        # Проверка доступности ВМ
+        Libvirt.check(vms=vms, vms_dates=actual_vms_dates)
+
+        change_pass = {
+            "g_all": {
+                "prepare_task": {
+                    "command": f"yes {new_password} | sudo passwd {user_name}",
+                }
             }
         }
-    }
+        # Выполнение команды на ВМ
+        Libvirt.execute(commands=change_pass, vms_dates=actual_vms_dates, vms_groups = groups, username = user_name, password = password)
 
-    Libvirt.execute(commands=change_pass, vms_dates=actual_vms_dates, vms_groups = groups, username = user_name, password = password)
+        scp_prepare = {
+            "testvm1_server": [
+                {"mode": "push", "path_host": "/test/path/prepare_server.sh", "path_vm": "/home/u/prepare.sh"}
+            ],
+            "testvm2_client": [
+                {"mode": "push", "path_host": "/test/path/prepare_client.sh", "path_vm": "/home/u/prepare.sh"},
+                {"mode": "push", "path_host": "/test/path/test.py.sh", "path_vm": "/home/u/test.py"}            
+            ],
 
-    scp_prepare = {
-        "testvm1_server": [
-            {"mode": "push", "path_host": "/test/path/prepare_server.sh", "path_vm": "/home/u/prepare.sh"}
-        ],
-        "testvm2_client": [
-            {"mode": "push", "path_host": "/test/path/prepare_client.sh", "path_vm": "/home/u/prepare.sh"},
-            {"mode": "push", "path_host": "/test/path/test.py.sh", "path_vm": "/home/u/test.py"}            
-        ],
+        }
+        # Отправка файлов на ВМ
+        Libvirt.scp(scp_settings=scp_prepare, vms_dates=actual_vms_dates, vms_groups = groups, username = user_name, password = new_password)
 
-    }
-
-    Libvirt.scp(scp_settings=scp_prepare, vms_dates=actual_vms_dates, vms_groups = groups, username = user_name, password = new_password)
-
-    run_prepare = {
-        "g_all": {
-            "run_prepare": {
-                "command": "sudo bash /home/u/prepare.sh",
-                "signal set": "prepare",
-            },
-            "reboot": {
-                "signal get": "prepare"
+        run_prepare = {
+            "g_all": {
+                "run_prepare": {
+                    "command": "sudo bash /home/u/prepare.sh",
+                    "signal set": "prepare",
+                },
+                "reboot": {
+                    "signal get": "prepare"
+                }
             }
         }
-    }
-    Libvirt.execute(commands=run_prepare, vms_dates=actual_vms_dates, vms_groups = groups, username = user_name, password = new_password)
+        # Выполнение команды на ВМ
+        Libvirt.execute(commands=run_prepare, vms_dates=actual_vms_dates, vms_groups = groups, username = user_name, password = new_password)
+
+        # Создание снимка ВМ после сборки
+        LibvirtManager.Snapshot.create(vms=vms, snapshot_name="prepare")
+
+        # Сохранение данных о ВМ для перезапусков теста без новой сборки ВМ и сокращения времени на отладку
+        LibvirtManager.Vm.save_vms_data(vms_dates=vms_dates, save_path=vms_data_path)
 
     # Настройка /etc/hosts
     Libvirt.set_hosts(domain="test.domain", vms_dates=actual_vms_dates , username=user_name, password=new_password)
@@ -195,7 +219,11 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
             {"mode": "pull", "path_host": "/test/path/result2.csv", "path_vm": "/home/u/result2.csv"},       
         ]
     }
+    # Получение файлов с ВМ
     Libvirt.scp(scp_settings=get_result, vms_dates=actual_vms_dates, vms_groups=groups, username=user_name, password=new_password)
+
+    # Выключение ВМ
+    LibvirtManager.Vm.stop(vms=vms)
 
     LibvirtManager.Vm.stop(vms=vms)
 

@@ -221,7 +221,6 @@ class Public:
             html_page = '\n'.join([header_table, head_row, head_row2, low_depth, head_row3, high_depth])
 
         elif self.testname == 'fio_large':
-            # генерация вступительной таблицы (как у тебя)
             with open(INFO_FILENAME) as info:
                 info_lst = info.read().split('\n')
 

@@ -70,8 +70,8 @@
             "EXT4 parsec": "0:56:04",
             "XFS parsec": "0:55:59",
             "unix parsec": "1:21:38",
-            "FreeIPA auth": "1:27:02",
-            "FreeIPA c-users": "6:15:41",
+            "FreeIPA auth": "1:33:14",
+            "FreeIPA c-users": "1:20:20",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -82,8 +82,8 @@
             "psql vanilla": "2:58:49",
             "psql balance": "2:20:02",
             "psql kernels": "2:17:25",
-            "steal time": "2:53:30",
-            "steal time-sm": "2:46:27",
+            "steal time": "2:53:34",
+            "steal time-sm": "2:45:21",
             "Total time": "0:00:00"
         },
         "stand10": {
@@ -95,12 +95,12 @@
             "CEPH parsec": "1:37:48"
         },
         "stand11": {
-            "parsec impact-fs": "0:37:55",
-            "parsec impact-fs aud-off": "0:37:49",
-            "docker-wa": "0:55:28",
-            "FIO": "1:23:18",
-            "vPingPong": "0:59:33",
-            "vUnixBench": "2:22:42",
+            "parsec impact-fs": "0:36:27",
+            "parsec impact-fs aud-off": "0:36:05",
+            "docker-wa": "1:00:25",
+            "FIO": "1:22:09",
+            "vPingPong": "0:57:50",
+            "vUnixBench": "2:23:56",
             "psql oom": "1:04:24",
             "Total time": "0:00:00",
             "AOpenVPNcc": "1:17:56"
@@ -111,7 +111,7 @@
             "auditd-f": "0:45:04",
             "auditd-p": "1:48:50",
             "auditd-u": "6:06:14",
-            "digsig-cdt": "1:04:44",
+            "digsig-cdt": "1:18:07",
             "Total time": "0:00:00"
         },
         "stand13": {

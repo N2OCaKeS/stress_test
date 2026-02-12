@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  # =========================
+  # INIT TLS: CA (один раз) + server key/cert (каждый рестарт init)
+  # =========================
+  docker-registry-cert-init:
+    build:
+      context: ./init_cert
+      dockerfile: Dockerfile
+    image: docker-registry-cert-init:latest
+    container_name: docker-registry-cert-init
+    restart: "no"
+    env_file:
+      - $CRED_PATH/env.docker_registry_cert_init      
+    volumes:
+      - allta_docker_registry_cert:/tls
+    networks:
+      docker_registry:
+
+
+
+  # =========================
+  # INIT AUTH: htpasswd (создаёт если нет, не перетирает)
+  # =========================
+  docker-registry-auth-init:
+    build:
+      context: ./init_htpasswd
+      dockerfile: Dockerfile
+    image: docker-registry-auth-init:latest
+    container_name: docker-registry-auth-init
+    restart: "no"
+    env_file:
+      - $CRED_PATH/env.docker_registry_auth_init
+    volumes:
+      - allta_docker_registry_auth:/auth
+    networks:
+      docker_registry:
+
+
+  # =========================
+  # DOCKER REGISTRY
+  # =========================
+  docker-registry:
+    build:
+      context: ./docker_registry
+      dockerfile: Dockerfile
+    image: docker-registry:latest
+    container_name: docker-registry
+    restart: always
+    ports:
+      - "21503:5000"
+    depends_on:
+      docker-registry-cert-init:
+        condition: service_completed_successfully
+      docker-registry-auth-init:
+        condition: service_completed_successfully
+    volumes:
+      - allta_docker_registry_data:/var/lib/registry
+      - allta_docker_registry_cert:/tls:ro
+      - allta_docker_registry_auth:/auth:ro
+    env_file:
+      - $CRED_PATH/env.docker_registry
+
+    healthcheck:
+      test: ["CMD-SHELL", "/tmp/check-registry.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      docker_registry:
+
+
+  # =========================
+  # WEB UI (joxit/docker-registry-ui)
+  # =========================
+  docker-registry-ui:
+    build:
+      context: ./docker_registry_ui
+      dockerfile: Dockerfile
+    image: docker-registry-ui:latest
+    container_name: docker-registry-ui
+    restart: always
+    ports:
+      - "21502:80"
+    depends_on:
+      docker-registry:
+        condition: service_healthy
+    env_file:
+      - $CRED_PATH/env.docker_registry_ui
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:80/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      docker_registry:
+
+
+volumes:
+  allta_docker_registry_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${DOCKER_REGISTRY_PATH}
+      o: bind
+
+
+  allta_docker_registry_cert:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${DOCKER_REGISTRY_CERT}
+      o: bind
+
+
+  allta_docker_registry_auth:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${DOCKER_REGISTRY_AUTH}
+      o: bind
+
+networks:
+  docker_registry:
+    driver: bridge

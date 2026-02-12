@@ -1,0 +1,8 @@
+prom/node-exporter:latest
+prom/prometheus:latest
+prom/prometheus:v3.0.0
+nginx
+nginx:alpine
+nginx:latest
+grafana/grafana-oss
+grafana/grafana-oss:latest

@@ -25,36 +25,36 @@
 
 1. Перейти в каталог проекта:
 
-```bash
-cd docker_registry
-```
+   ```bash
+   cd docker_registry
+   ```
 
 2. Подготовить окружение и systemd unit:
 
-```bash
-sudo ./install.sh precond
-```
+   ```bash
+   sudo ./install.sh precond
+   ```
 
-Если текущий пользователь ранее не состоял в группе `docker`, перелогиньтесь в shell-сессии перед запуском Docker-команд без `sudo`.
+   Если текущий пользователь ранее не состоял в группе `docker`, перелогиньтесь в shell-сессии перед запуском Docker-команд без `sudo`.
 
 3. Отредактировать env-файлы:
 
-```bash
-cd /var/allta_services/config
-ls -1 env.docker_registry*
-```
+   ```bash
+   cd /var/allta_services/config
+   ls -1 env.docker_registry*
+   ```
 
 4. Запустить сервис:
 
-```bash
-sudo systemctl start docker_registry.service
-```
+   ```bash
+   sudo systemctl start docker_registry.service
+   ```
 
 5. (Опционально) включить автозапуск:
 
-```bash
-sudo systemctl enable docker_registry.service
-```
+   ```bash
+   sudo systemctl enable docker_registry.service
+   ```
 
 ## Конфигурация
 

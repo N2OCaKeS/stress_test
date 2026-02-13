@@ -19,7 +19,7 @@
 - установленный Docker Engine
 - установленный `docker-compose` (CLI-команда `docker-compose`)
 
-Примечание: `install.sh precond` включает/запускает `docker.service` и добавляет текущего пользователя в группу `docker`, но не устанавливает сам `docker-compose`.
+Примечание: `install.sh precond` включает/запускает `docker.service` и добавляет текущего пользователя в группу `docker`.
 
 ## Быстрый старт
 
@@ -149,17 +149,17 @@ docker exec -it docker-registry /tmp/check-registry.sh
 
 1. Логин:
 
-```bash
-docker login <host>:21503
-```
+   ```bash
+   docker login <host>:21503
+   ```
 
 2. Публикация образа:
 
-```bash
-docker pull nginx:latest
-docker tag nginx:latest <host>:21503/nginx:latest
-docker push <host>:21503/nginx:latest
-```
+   ```bash
+   docker pull nginx:latest
+   docker tag nginx:latest <host>:21503/nginx:latest
+   docker push <host>:21503/nginx:latest
+   ```
 
 3. Загрузка:
 
@@ -203,21 +203,21 @@ cd utils
 
 1. Обновить код:
 
-```bash
-git pull
-```
+   ```bash
+   git pull
+   ```
 
 2. При изменениях в compose/контейнерах перезапустить сервис:
 
-```bash
-sudo systemctl restart docker_registry.service
-```
+   ```bash
+   sudo systemctl restart docker_registry.service
+   ```
 
 3. При появлении новых env-переменных:
 
-```bash
-sudo ./install.sh precond
-cd /var/allta_services/config
-# дополнить нужные env-файлы вручную
-sudo systemctl restart docker_registry.service
-```
+   ```bash
+   sudo ./install.sh precond
+   cd /var/allta_services/config
+   # дополнить нужные env-файлы вручную
+   sudo systemctl restart docker_registry.service
+   ```

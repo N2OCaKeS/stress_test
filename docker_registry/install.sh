@@ -140,7 +140,7 @@ remove(){
 precond(){
 	exports
 	sudo apt-get update
-	# sudo apt-get install -y docker-compose docker wget curl
+	sudo apt-get install -y docker-compose docker wget curl
 	sudo usermod -aG docker "$USER"
 	sudo systemctl enable docker.service
 	sudo systemctl start docker.service

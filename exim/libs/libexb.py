@@ -2,7 +2,7 @@ import requests
 import subprocess
 from os import linesep
 from os.path import exists
-from exb_conf import INFO_FILENAME
+from exb_conf import INFO_FILENAME, JIRA_URL, CONFLUENCE_URL
 
 
 def check_output_command(command, out=None):

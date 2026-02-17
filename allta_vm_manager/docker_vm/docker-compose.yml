@@ -9,6 +9,8 @@ services:
     container_name: vmmanager-vm-nginx
     ports:
       - "21501:80"
+    extra_hosts:
+      - "${ALLTA_EXTERNAL_HOST}:host-gateway"
     networks:
       vmmanager_network:
     depends_on:
@@ -42,6 +44,8 @@ services:
     depends_on:
       vmmanager-server-db:
         condition: service_healthy
+    extra_hosts:
+      - "${ALLTA_EXTERNAL_HOST}:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/server/health"]
       interval: 5s
@@ -89,6 +93,8 @@ services:
         condition: service_healthy
       vmmanager-vm-db:
         condition: service_healthy
+    extra_hosts:
+      - "${ALLTA_EXTERNAL_HOST}:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/vm/health"]
       interval: 5s
@@ -203,8 +209,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
-
-
 volumes:
   allta_server_api:
     driver: local

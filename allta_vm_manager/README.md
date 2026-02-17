@@ -59,6 +59,21 @@ Allta_VM_Service это программный комплекс состоящи
    sudo systemctl start allta_vm.service
    ```
 
+## Авторизация (RBAC)
+
+- VM/Server API теперь используют профиль из `GET /api/auth/v1/integrations/whoami`
+  (с fallback на legacy `GET /api/auth/verify`).
+- Для операций управления серверами требуется право `server.manage`
+  (env: `SERVER_MANAGE_PERMISSION`, по умолчанию `server.manage`).
+- Для операций управления ВМ требуется право `vm.manage`
+  (env: `VM_MANAGE_PERMISSION`, по умолчанию `vm.manage`).
+- Пользователи без этих прав имеют только read-only доступ к конфигурации и статусам VM/Server.
+  Пароли в ответах для них маскируются/скрываются, остальные операции запрещены (403).
+- `GET /service/flower/*` теперь авторизуется через `allta_auth` endpoint
+  `GET /api/auth/v1/integrations/basic/verify?permission=vm.manage`.
+- `GET /service/redis/*` теперь авторизуется через `allta_auth` endpoint
+  `GET /api/auth/v1/integrations/basic/verify?permission=server.manage`.
+
 ## Обновление проекта
 
 ### Если был обновлен код без добавления новых переменных в env

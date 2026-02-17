@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.api.v1.dependencies import get_current_admin_user
 
 
 router = APIRouter(
@@ -91,13 +93,9 @@ _ARM_CATALOG = {
 
 @router.get(
     "/",
-    summary="Публичный список ARM конфигураций",
+    summary="Список ARM конфигураций (только управление серверами)",
+    dependencies=[Depends(get_current_admin_user)],
 )
 def list_arm_catalog():
-    """
-    Возвращает полный каталог ARM в виде JSON-объекта.
-
-    Endpoint публичный (без авторизации) — можно дернуть из внешней библиотеки,
-    чтобы получить отображение ``{arm_id: {grade, cpu, ram, storage}}``.
-    """
+    """Возвращает полный каталог ARM (доступ только с правом server.manage)."""
     return _ARM_CATALOG

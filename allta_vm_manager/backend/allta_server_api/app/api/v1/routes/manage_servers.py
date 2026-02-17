@@ -23,11 +23,30 @@ from app.api.v1.dependencies import (
     AuthVerifyResponse,
 )
 from app.api.v1.models.physical_servers import PhysicalServer
+from app.utils.config import settings
 
 router = APIRouter(
     prefix="/manage",
     tags=["Server"],
 )
+
+
+def _can_manage_servers(user: AuthVerifyResponse) -> bool:
+    return user.has_permission(settings.SERVER_MANAGE_PERMISSION)
+
+
+def _can_see_server_passwords(user: AuthVerifyResponse) -> bool:
+    return user.has_permission(settings.SERVER_MANAGE_PERMISSION) or user.has_permission(
+        settings.VM_MANAGE_PERMISSION
+    )
+
+
+def _to_server_read(server: PhysicalServer, *, reveal_passwords: bool) -> PhysicalServerRead:
+    payload = PhysicalServerRead.model_validate(server).model_dump()
+    if not reveal_passwords:
+        payload["server_password"] = "***hidden***"
+        payload["admin_panel_pass"] = "***hidden***"
+    return PhysicalServerRead(**payload)
 
 
 @router.get(
@@ -37,13 +56,18 @@ router = APIRouter(
 )
 def list_servers(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: AuthVerifyResponse = Depends(get_current_user),
 ):
     """
     Возвращает список всех зарегистрированных физических серверов.  
     Доступ: любой аутентифицированный пользователь.
     """
-    return get_physical_servers(db)
+    servers = get_physical_servers(db)
+    reveal_passwords = _can_see_server_passwords(current_user)
+    return [
+        _to_server_read(server, reveal_passwords=reveal_passwords)
+        for server in servers
+    ]
 
 
 @router.get(
@@ -55,6 +79,7 @@ def list_servers(
 def get_server(
     server_id: int,
     db: Session = Depends(get_db),
+    current_user: AuthVerifyResponse = Depends(get_current_user),
 ):
     """
     Возвращает информацию о сервере по его ID.  
@@ -62,7 +87,10 @@ def get_server(
     """
     try:
         srv = get_physical_server(db, server_id)
-        return srv
+        return _to_server_read(
+            srv,
+            reveal_passwords=_can_see_server_passwords(current_user),
+        )
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -139,20 +167,15 @@ def update_status(
     server_id: int,
     status_in: PhysicalServerStatusUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
     """
-    Изменяет статус сервера.  
-    Доступ: администратор может установить любой статус.  
-    Обычный пользователь может установить только свой логин в качестве статуса.
+    Изменяет статус сервера.
+    Доступ: только пользователи с правом управления серверами.
     """
     server = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
     if not server:
         raise HTTPException(404, detail="Server not found")
-
-    if not current_user.is_admin:
-        if status_in.status.lower() != current_user.login.lower():
-            raise HTTPException(403, detail="Not allowed to set this status")
 
     server.status = status_in.status
     db.commit()
@@ -168,16 +191,12 @@ def update_status(
 )
 def release_status(
     server_id: int,
-    current_user: AuthVerifyResponse = Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """
-    Освобождает сервер (возвращает его в статус `free`).  
-
-    - Если сервер уже свободен, возвращает его без изменений.  
-    - Если сервер находится в фиксированном статусе, снять его может только админ.  
-    - Если сервер занят конкретным пользователем, он может освободить его сам,  
-      в остальных случаях это может сделать только админ.
+    Освобождает сервер (возвращает его в статус `free`).
+    Доступ: только пользователи с правом управления серверами.
     """
     srv = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
     if not srv:
@@ -189,12 +208,8 @@ def release_status(
         return srv
 
     if curr in {s.value for s in FixedServerStatus}:
-        if not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin required to change this status")
         srv.status = FixedServerStatus.free.value
     else:
-        if curr != current_user.login and not current_user.is_admin:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cannot release status held by another user")
         srv.status = FixedServerStatus.free.value
 
     db.commit()

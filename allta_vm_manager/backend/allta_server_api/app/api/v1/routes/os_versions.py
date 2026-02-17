@@ -22,7 +22,7 @@ from app.api.v1.crud.os_versions import (
     update_os_version,
     delete_os_version,
 )
-from app.api.v1.dependencies import get_current_admin_user, get_current_user
+from app.api.v1.dependencies import get_current_admin_user
 from app.db.session import SessionLocal
 from app.api.v1.models.os_versions import OSVersion
 
@@ -41,17 +41,17 @@ router = APIRouter(
 @router.get(
     "/",
     response_model=List[OSVersionRead],
-    summary="Список версий ОС",
+    summary="Список версий ОС (только управление серверами)",
+    dependencies=[Depends(get_current_admin_user)],
 )
 def list_versions(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
 ):
     """
-    Возвращает список всех доступных версий операционных систем.  
-    Доступ: любой аутентифицированный пользователь.
+    Возвращает список всех доступных версий операционных систем.
+    Доступ: только пользователи с правом управления серверами.
     """
     return get_os_versions(db, skip=skip, limit=limit)
 
@@ -59,16 +59,16 @@ def list_versions(
 @router.get(
     "/{version_id}",
     response_model=OSVersionRead,
-    summary="Получить версию ОС по ID",
+    summary="Получить версию ОС по ID (только управление серверами)",
+    dependencies=[Depends(get_current_admin_user)],
 )
 def read_version(
     version_id: int,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
 ):
     """
-    Возвращает данные о версии ОС по её уникальному идентификатору.  
-    Доступ: любой аутентифицированный пользователь.
+    Возвращает данные о версии ОС по её уникальному идентификатору.
+    Доступ: только пользователи с правом управления серверами.
     """
     obj = get_os_version(db, version_id)
     if not obj:

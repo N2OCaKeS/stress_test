@@ -4,33 +4,13 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.api.v1.crud.physical_servers import get_physical_server
 from app.api.v1.schemas.physical_servers import PhysicalServerRead
-from app.api.v1.dependencies import get_current_user, AuthVerifyResponse
+from app.api.v1.dependencies import AuthVerifyResponse, get_current_admin_user
 from app.utils.server_power import ServerPowerService
 
 router = APIRouter(
     prefix="/control",
     tags=["Control"],
 )
-
-
-def _check_power_permission(
-    server,
-    current_user: AuthVerifyResponse
-):
-    """
-    Проверка прав управления питанием сервера:
-    - Администратор имеет полный доступ.
-    - Обычный пользователь может управлять сервером только если:
-      • сервер свободен (status == "free"), или
-      • сервер занят именно этим пользователем (status == login).
-    """
-    if current_user.is_admin:
-        return
-    if server.status not in ("free", current_user.login):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required"
-        )
 
 
 @router.post(
@@ -41,17 +21,15 @@ def _check_power_permission(
 def power_on_server(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: AuthVerifyResponse = Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
     """
-    Включает указанный физический сервер.  
-    Доступ: администратор или пользователь, занявший сервер, либо если сервер свободен.
+    Включает указанный физический сервер.
+    Доступ: только пользователи с правом управления серверами.
     """
     server = get_physical_server(db, server_id)
     if not server:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
-
-    _check_power_permission(server, current_user)
 
     ServerPowerService(server=server)
     ServerPowerService.power_on()
@@ -67,17 +45,15 @@ def power_on_server(
 def power_off_server(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: AuthVerifyResponse = Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
     """
-    Выключает указанный физический сервер.  
-    Доступ: администратор или пользователь, занявший сервер, либо если сервер свободен.
+    Выключает указанный физический сервер.
+    Доступ: только пользователи с правом управления серверами.
     """
     server = get_physical_server(db, server_id)
     if not server:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
-
-    _check_power_permission(server, current_user)
 
     ServerPowerService(server=server)
     ServerPowerService.power_off()    
@@ -93,17 +69,15 @@ def power_off_server(
 def reboot_server(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: AuthVerifyResponse = Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
     """
-    Перезагружает указанный физический сервер.  
-    Доступ: администратор или пользователь, занявший сервер, либо если сервер свободен.
+    Перезагружает указанный физический сервер.
+    Доступ: только пользователи с правом управления серверами.
     """
     server = get_physical_server(db, server_id)
     if not server:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
-
-    _check_power_permission(server, current_user)
 
     ServerPowerService(server=server)
     ServerPowerService.set_boot_order()

@@ -227,6 +227,7 @@ exports(){
     export FILE_PATH="/var/allta_services"
 	export BASE_PATH=$FILE_PATH/volumes
 	export CRED_PATH=$FILE_PATH/config
+	export ALLTA_EXTERNAL_HOST="allta.devos.astralinux.ru"
 	export SERVER_DB_PATH=$BASE_PATH/allta_server_db_data
 	export VM_DB_PATH=$BASE_PATH/allta_vm_db_data
 	export SERVER_API_DATA_PATH=$BASE_PATH/allta_server_api_data

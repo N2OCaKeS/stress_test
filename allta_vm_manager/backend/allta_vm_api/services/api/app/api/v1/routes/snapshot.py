@@ -18,18 +18,23 @@ from app.api.v1.schemas.vm_snapshot import (
 )
 from app.api.v1.schemas.vm import ServerTaskInfo
 from app.api.v1.dependencies import (
-    get_current_user,
+    AuthVerifyResponse,
     get_current_admin_user,
     get_token,
 )
 from app.utils.server_api import get_physical_server_from_remote
 from app.utils.redis_queue import enqueue_task
+from app.utils.config import settings
 
 router = APIRouter(prefix="/snapshot", tags=["Snapshot"])
 
 
 def _uuid_task() -> str:
     return str(uuid4())
+
+
+def _can_manage_vms(user: AuthVerifyResponse) -> bool:
+    return user.has_permission(settings.VM_MANAGE_PERMISSION)
 
 
 def _server_task_info_from_api(srv, server_id: int) -> ServerTaskInfo:
@@ -94,7 +99,7 @@ async def list_snapshots(
     vm_id: Optional[int] = Query(default=None),
     vm_name: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_async_db),
-    _user=Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
     """
     Вернуть все снимки указанной ВМ (по id или name; ровно один параметр).
@@ -128,7 +133,7 @@ async def list_snapshots(
 async def create_snapshots(
     sel: SnapshotSelection,
     db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
+    user: AuthVerifyResponse = Depends(get_current_admin_user),
     token: str = Depends(get_token),
 ):
     """
@@ -193,7 +198,7 @@ async def create_snapshots(
     # права + уникальность имени снимка на каждой ВМ
     conflicts: List[int] = []
     for vm in vms:
-        if not _can_user_touch_vm(vm, user.login, getattr(user, "is_admin", False)):
+        if not _can_user_touch_vm(vm, user.login, _can_manage_vms(user)):
             raise HTTPException(status_code=403, detail=f"Forbidden for VM id={vm.id}")
         if await _snapshot_exists(db, vm.id, snapshot_name):
             conflicts.append(vm.id)
@@ -234,7 +239,7 @@ async def create_snapshots(
 async def delete_snapshots(
     sel: SnapshotSelection,
     db: AsyncSession = Depends(get_async_db),
-    _user=Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
     token: str = Depends(get_token),
 ):
     """
@@ -334,7 +339,7 @@ async def delete_snapshots(
 async def revert_snapshots(
     sel: SnapshotSelection,
     db: AsyncSession = Depends(get_async_db),
-    user=Depends(get_current_user),
+    user: AuthVerifyResponse = Depends(get_current_admin_user),
     token: str = Depends(get_token),
 ):
     """
@@ -399,7 +404,7 @@ async def revert_snapshots(
     # права + наличие снимка
     missing_on: List[int] = []
     for vm in vms:
-        if not _can_user_touch_vm(vm, user.login, getattr(user, "is_admin", False)):
+        if not _can_user_touch_vm(vm, user.login, _can_manage_vms(user)):
             raise HTTPException(status_code=403, detail=f"Forbidden for VM id={vm.id}")
         if not await _snapshot_exists(db, vm.id, snapshot_name):
             missing_on.append(vm.id)

@@ -15,7 +15,12 @@ from app.api.v1.schemas.vm import (
     VMDeleteRequest, AstraUpdateRequest, CreateDefaultVMsRequest,
     TaskEnvelope, TaskOperation, ServerTaskInfo, VMSpec, normalize_status,
 )
-from app.api.v1.dependencies import get_current_user, get_current_admin_user, get_token
+from app.api.v1.dependencies import (
+    AuthVerifyResponse,
+    get_current_admin_user,
+    get_current_user,
+    get_token,
+)
 from app.utils.vm_helper import (
     ensure_server_ready_for_vms_hub, get_ip_range, get_range_bounds,
     ip_in_range, is_ip_free, is_name_free,
@@ -23,6 +28,7 @@ from app.utils.vm_helper import (
 from app.utils.server_api import get_physical_server_from_remote, get_os_versions
 from app.utils.redis_queue import enqueue_task
 from app.utils.crypto import Crypto
+from app.utils.config import settings
 
 
 router = APIRouter(prefix="/vm", tags=["VM"])
@@ -41,6 +47,21 @@ PRESET_NAMES: Set[str] = set(PRESET_VMS.keys())
 
 def _uuid_task() -> str:
     return str(uuid.uuid4())
+
+
+def _can_see_vm_passwords(user: AuthVerifyResponse) -> bool:
+    return user.has_permission(settings.VM_MANAGE_PERMISSION) or user.has_permission(
+        settings.SERVER_MANAGE_PERMISSION
+    )
+
+
+def _decrypted_vm_password(vm: VirtualMachine, *, reveal_password: bool) -> Optional[str]:
+    if not reveal_password or not getattr(vm, "password_enc", None):
+        return None
+    try:
+        return _CRYPTO.decrypt(vm.password_enc)
+    except Exception:
+        return None
 
 
 def _server_task_info_from_api(srv, server_id: int) -> ServerTaskInfo:
@@ -161,7 +182,7 @@ async def create(
     payload: BatchVMCreateRequest,
     db: AsyncSession = Depends(get_async_db),
     token: str = Depends(get_token),
-    _user=Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
     # сервер готов
     ok, reason, _ = await ensure_server_ready_for_vms_hub(payload.server_id, token)
@@ -196,7 +217,7 @@ async def create_default_vms(
     server_id: int,
     body: CreateDefaultVMsRequest,
     token: str = Depends(get_token),
-    _user=Depends(get_current_user),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
     srv = await get_physical_server_from_remote(server_id, token)
 
@@ -223,18 +244,16 @@ async def create_default_vms(
             summary="Получить ВМ по id (пароль расшифрован, если сохранён)")
 async def get_vm_by_id(vm_id: int,
                        db: AsyncSession = Depends(get_async_db),
-                       _user=Depends(get_current_user)):
+                       user: AuthVerifyResponse = Depends(get_current_user)):
     res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
     vm = res.scalar_one_or_none()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
 
-    password = None
-    if getattr(vm, "password_enc", None):
-        try:
-            password = _CRYPTO.decrypt(vm.password_enc)
-        except Exception:
-            password = None
+    password = _decrypted_vm_password(
+        vm,
+        reveal_password=_can_see_vm_passwords(user),
+    )
 
     return VMRead(
         id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
@@ -246,19 +265,15 @@ async def get_vm_by_id(vm_id: int,
 @router.get("/", response_model=List[VMRead],
             summary="Список ВМ (пароли расшифрованы, если сохранены)")
 async def list_vms(db: AsyncSession = Depends(get_async_db),
-                   _user=Depends(get_current_user),
+                   user: AuthVerifyResponse = Depends(get_current_user),
                    skip: int = Query(0, ge=0),
                    limit: int = Query(100, gt=0, le=1000)):
     res = await db.execute(select(VirtualMachine).offset(skip).limit(limit))
     rows = res.scalars().all()
     out: List[VMRead] = []
+    reveal_passwords = _can_see_vm_passwords(user)
     for vm in rows:
-        pwd = None
-        if getattr(vm, "password_enc", None):
-            try:
-                pwd = _CRYPTO.decrypt(vm.password_enc)
-            except Exception:
-                pwd = None
+        pwd = _decrypted_vm_password(vm, reveal_password=reveal_passwords)
         out.append(VMRead(
             id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
             ip_address=str(vm.ip_address), server_id=vm.server_id,
@@ -272,7 +287,7 @@ async def list_vms(db: AsyncSession = Depends(get_async_db),
                summary="Удалить ВМ (ставит задачу; БД очищает воркер)")
 async def delete_vms(payload: VMDeleteRequest,
                      db: AsyncSession = Depends(get_async_db),
-                     _user=Depends(get_current_user),
+                     _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                      token: str = Depends(get_token)):
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
     server_id = vms[0].server_id
@@ -294,7 +309,7 @@ async def delete_vms(payload: VMDeleteRequest,
               summary="Обновить ресурсы ВМ (ставит задачу; БД обновляет воркер)")
 async def batch_update_vms(payload: BatchVMUpdateRequest,
                            db: AsyncSession = Depends(get_async_db),
-                           _user=Depends(get_current_user),
+                           _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                            token: str = Depends(get_token)):
     if not payload.vms:
         raise HTTPException(status_code=400, detail="Empty payload")
@@ -329,7 +344,7 @@ async def batch_update_vms(payload: BatchVMUpdateRequest,
 @router.post("/start", status_code=status.HTTP_202_ACCEPTED, summary="Старт ВМ (ставит задачу)")
 async def power_start_vms(payload: VMDeleteRequest,
                           db: AsyncSession = Depends(get_async_db),
-                          _user=Depends(get_current_user),
+                          _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                           token: str = Depends(get_token)):
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
     server_id = vms[0].server_id
@@ -350,7 +365,7 @@ async def power_start_vms(payload: VMDeleteRequest,
 @router.post("/stop", status_code=status.HTTP_202_ACCEPTED, summary="Стоп ВМ (ставит задачу)")
 async def power_stop_vms(payload: VMDeleteRequest,
                          db: AsyncSession = Depends(get_async_db),
-                         _user=Depends(get_current_user),
+                         _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                          token: str = Depends(get_token)):
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
     server_id = vms[0].server_id
@@ -372,7 +387,7 @@ async def power_stop_vms(payload: VMDeleteRequest,
              summary="Обновление Astra Linux (ставит задачу)")
 async def astra_update(payload: AstraUpdateRequest,
                        db: AsyncSession = Depends(get_async_db),
-                       _user=Depends(get_current_user),
+                       _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                        token: str = Depends(get_token)):
     # 1) валидируем RC по внешнему API
     versions = await get_os_versions(token)
@@ -438,27 +453,20 @@ async def astra_update(payload: AstraUpdateRequest,
               summary="Установить статус ВМ (fixed или логин).")
 async def set_vm_status(vm_id: int, data: VMStatusUpdate,
                         db: AsyncSession = Depends(get_async_db),
-                        user=Depends(get_current_user)):
+                        user: AuthVerifyResponse = Depends(get_current_admin_user)):
     res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
     vm = res.scalar_one_or_none()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
 
-    new_status = normalize_status(data.status)
-    if not getattr(user, "is_admin", False):
-        if new_status not in ("free", user.login):
-            raise HTTPException(status_code=403, detail="Not allowed to set this status")
-
-    vm.status = new_status
+    vm.status = normalize_status(data.status)
     await db.commit()
     await db.refresh(vm)
 
-    pwd = None
-    if getattr(vm, "password_enc", None):
-        try:
-            pwd = _CRYPTO.decrypt(vm.password_enc)
-        except Exception:
-            pwd = None
+    pwd = _decrypted_vm_password(
+        vm,
+        reveal_password=_can_see_vm_passwords(user),
+    )
 
     return VMRead(
         id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
@@ -471,7 +479,7 @@ async def set_vm_status(vm_id: int, data: VMStatusUpdate,
              summary="Сбросить статус ВМ в 'free'.")
 async def release_vm_status(vm_id: int,
                             db: AsyncSession = Depends(get_async_db),
-                            user=Depends(get_current_user)):
+                            user: AuthVerifyResponse = Depends(get_current_admin_user)):
     res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
     vm = res.scalar_one_or_none()
     if not vm:
@@ -479,21 +487,15 @@ async def release_vm_status(vm_id: int,
 
     curr = (vm.status or "").strip()
     if curr != "free":
-        if curr in {"run test", "debug test"} and not getattr(user, "is_admin", False):
-            raise HTTPException(status_code=403, detail="Admin required to release fixed status")
-        if curr not in {"run test", "debug test"} and curr != user.login and not getattr(user, "is_admin", False):
-            raise HTTPException(status_code=403, detail="Cannot release status held by another user")
         vm.status = "free"
 
     await db.commit()
     await db.refresh(vm)
 
-    pwd = None
-    if getattr(vm, "password_enc", None):
-        try:
-            pwd = _CRYPTO.decrypt(vm.password_enc)
-        except Exception:
-            pwd = None
+    pwd = _decrypted_vm_password(
+        vm,
+        reveal_password=_can_see_vm_passwords(user),
+    )
 
     return VMRead(
         id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,

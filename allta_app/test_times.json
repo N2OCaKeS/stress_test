@@ -45,6 +45,7 @@
             "Dovecot-IMAP": "2:22:13",
             "Exim4-SMTP": "2:28:13",
             "AOpenVPNcc": "1:17:56",
+            "FIO_large": "1:17:47",
             "Total time": "0:00:00"
         },
         "stand12": {
@@ -107,6 +108,7 @@
             "psql oom": "1:04:24",
             "Dovecot-IMAP": "2:22:13",
             "Exim4-SMTP": "2:28:13",
+            "FIO_large": "1:21:28",
             "Total time": "0:00:00",
             "AOpenVPNcc": "1:17:56"
         },

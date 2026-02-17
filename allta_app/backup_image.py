@@ -227,6 +227,14 @@ parser.add_argument('-vpn',
                     help='testlist',
                     dest='VPN')
 
+parser.add_argument('-mail',
+                    action='store',
+                    choices=['imap',
+                             'smtp'],
+                    required=False,
+                    help='testlist',
+                    dest='MAIL')
+
 
 args = parser.parse_args()
 
@@ -288,6 +296,8 @@ ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
 ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
 freeipa_test = f'-tt {args.FREEIPA}'
 vpn = f'--test {args.VPN}'
+mail = f'-tt {args.MAIL}'
+
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql}'
@@ -356,6 +366,9 @@ elif args.LVIRT:
 elif args.VPN:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {vpn}'
+elif args.MAIL:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {mail}'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

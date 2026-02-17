@@ -314,6 +314,8 @@ try:
                             sd_ovf = '-ovf sd'
                             ipa_auth = '-ipa auth'
                             ipa_user = '-ipa create-users'
+                            dovecot = '-mail imap'
+                            exim = '-mail smtp'
                             parsec_impact = '-parsec-impact impact'
                             parsec_impact_ao = '-parsec-impact-ao audit-off'
                             apache_rp = '-apache rp'
@@ -408,6 +410,12 @@ try:
                             elif tests[dates_list[i][1]] == 'AOpenVPNcc':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {aovpn} {tes}', shell=True)
+                            elif tests[dates_list[i][1]] == 'Dovecot-IMAP':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {dovecot} {tes}', shell=True)
+                            elif tests[dates_list[i][1]] == 'Exim4-SMTP':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {exim} {tes}', shell=True)
                             else: 
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                                 {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
@@ -455,6 +463,8 @@ try:
                     sd_ovf = '-ovf sd'
                     ipa_auth = '-ipa auth'
                     ipa_user = '-ipa create-users'
+                    dovecot = '-mail imap'
+                    exim = '-mail smtp'
                     parsec_impact = '-parsec-impact impact'
                     parsec_impact_ao = '-parsec-impact-ao audit-off'
                     apache_rp = '-apache rp'
@@ -543,11 +553,17 @@ try:
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {vpp} {tes}', shell=True)  
                     elif tests[dates_list[i][1]].startswith('auditd'):
-                        subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
+                                subprocess.run(f'./backup_image.py {testlist} {sn} {rs} {test} {mode} {kn} \
                                         {stand} {tcyc} {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'AOpenVPNcc':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {aovpn} {tes}', shell=True)
+                    elif tests[dates_list[i][1]] == 'Dovecot-IMAP':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {dovecot} {tes}', shell=True)
+                    elif tests[dates_list[i][1]] == 'Exim4-SMTP':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {exim} {tes}', shell=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)

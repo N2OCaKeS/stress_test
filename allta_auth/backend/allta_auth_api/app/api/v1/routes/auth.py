@@ -1,4 +1,3 @@
-from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Security
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -8,8 +7,13 @@ from app.db.session import get_db
 from app.api.v1.crud.user import get_user_by_login
 from app.utils.security import verify_password
 from app.api.v1.crud.token import create_active_token, revoke_token
+from app.api.v1.crud.api_token import revoke_api_token_by_jti
 from app.api.v1.schemas.token import TokenOut
-from app.api.v1.dependencies import get_current_user, oauth2_scheme
+from app.api.v1.dependencies import (
+    get_current_user,
+    get_token,
+    extract_jti_from_token,
+)
 from app.utils.config import settings
 from app.api.v1.schemas.user import UserRead
 
@@ -52,7 +56,7 @@ def login(
         httponly=True,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         samesite="lax",
-        secure=False,
+        secure=settings.COOKIE_SECURE,
     )
     return TokenOut(access_token=jwt_token, token_type="bearer")
 
@@ -64,13 +68,15 @@ def login(
 )
 def logout(
     response: Response,
-    token: str = Depends(oauth2_scheme),
+    token: str = Depends(get_token),
     db: Session = Depends(get_db),
 ):
     """
     Отзывает текущий access token и удаляет cookie `access_token`.
     """
-    revoke_token(db, token)
+    jti = extract_jti_from_token(token)
+    revoke_token(db, jti)
+    revoke_api_token_by_jti(db, jti)
     response.delete_cookie("access_token")
 
 

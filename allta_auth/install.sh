@@ -50,6 +50,10 @@ exports(){
     export FILE_PATH="/var/allta_services"
 	export BASE_PATH=$FILE_PATH/volumes
 	export CRED_PATH=$FILE_PATH/config
+	export REGISTRY_KEYS_PATH=$FILE_PATH/secrets
+	export ALLTA_EXTERNAL_HOST="allta.devos.astralinux.ru"
+	export REGISTRY_CERT_SUBJECT="/CN=allta.devos.astralinux.ru"
+	export REGISTRY_CERT_DAYS="3650"
 	export CONFIG_API_TOKENS_PATH="/home/u/tokens.json"
 	export AUTH_DB_PATH=$BASE_PATH/allta_auth_db_data
 	export CONFIG_API_DATA_PATH=$BASE_PATH/allta_config_api_data	
@@ -60,6 +64,7 @@ dir(){
 	sudo mkdir -p "$BASE_PATH"
 	sudo mkdir -p "$AUTH_DB_PATH"
 	sudo mkdir -p "$CONFIG_API_DATA_PATH"
+	sudo mkdir -p "$REGISTRY_KEYS_PATH"
 }
 
 creds(){
@@ -123,6 +128,7 @@ remove(){
 
 	sudo rm -rf $AUTH_DB_PATH 
     sudo rm -rf $CONFIG_API_DATA_PATH
+	sudo rm -rf $REGISTRY_KEYS_PATH
 	sudo rm $CRED_PATH/env.allta_auth_api 
 	sudo rm $CRED_PATH/env.allta_auth_db 
 	sudo rm $CRED_PATH/env.allta_config_api
@@ -134,7 +140,7 @@ remove(){
 precond(){
 	exports
 	sudo apt-get update
-	sudo apt-get install -y docker-compose docker wget curl
+	# sudo apt-get install -y docker-compose docker wget curl
 	sudo usermod -aG docker "$USER"
 	sudo systemctl enable docker.service
 	sudo systemctl start docker.service

@@ -32,6 +32,36 @@ bearer_scheme = HTTPBearer(
 )
 
 
+def decode_jwt_payload(token: str, verify_exp: bool = True) -> dict:
+    options = None if verify_exp else {"verify_exp": False}
+    return jwt.decode(
+        token,
+        settings.SECRET_KEY,
+        algorithms=[settings.ALGORITHM],
+        options=options,
+    )
+
+
+def extract_jti_from_token(token: str) -> str:
+    try:
+        payload = decode_jwt_payload(token, verify_exp=False)
+    except JWTError:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    jti = payload.get("jti")
+    if not jti:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="Token does not contain jti",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return jti
+
+
 def get_token(
     request: Request,
     oauth2_token: Optional[str] = Depends(oauth2_scheme),
@@ -58,10 +88,7 @@ def get_token(
     )
 
 
-def get_current_user(
-    token: str = Depends(get_token),
-    db: Session = Depends(get_db),
-) -> User:
+def resolve_user_from_token(token: str, db: Session) -> User:
     """
     1) Пробуем декодировать стандартный JWT (с exp и проверкой срока).
     2) Если Pydantic жалуется на отсутствие exp — считаем это бессрочным API-токеном:
@@ -70,22 +97,13 @@ def get_current_user(
     """
     # --- ПЕРВЫЙ СЛУЧАЙ: обычный токен с exp ---
     try:
-        payload = jwt.decode(
-            token,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
-        )
+        payload = decode_jwt_payload(token, verify_exp=True)
         data = TokenData(**payload)  # тут Pydantic проверит наличие jti, user_id, exp
     except ValidationError:
         # payload не соответствует TokenData (например, нет exp) — считаем API-токеном
         try:
             # декодируем без проверки срока
-            payload = jwt.decode(
-                token,
-                settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM],
-                options={"verify_exp": False},
-            )
+            payload = decode_jwt_payload(token, verify_exp=False)
         except JWTError:
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED,
@@ -147,11 +165,18 @@ def get_current_user(
     return user
 
 
+def get_current_user(
+    token: str = Depends(get_token),
+    db: Session = Depends(get_db),
+) -> User:
+    return resolve_user_from_token(token, db)
+
+
 def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
     """
-    Проверяем, что у user.is_admin = True
+    Проверяем, что у пользователя admin-роль.
     """
-    if not current_user.is_admin:
+    if not current_user.is_admin_effective():
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required",

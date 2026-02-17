@@ -2,17 +2,38 @@
 
 from typing import List, Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
+from app.api.v1.models.access_control import GROUP_GUEST, ROLE_USER, Group, Role
 from app.api.v1.models.user import User
 from app.api.v1.schemas.user import UserCreate, UserUpdate
 from app.utils.security import get_password_hash
 
 from app.api.v1.crud.token import revoke_all_tokens_for_user
 from app.api.v1.crud.api_token import revoke_all_api_tokens_for_user
+
+
+def _get_role_or_400(db: Session, role_name: str) -> Role:
+    role = db.query(Role).filter(Role.name == role_name).first()
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Role '{role_name}' not found",
+        )
+    return role
+
+
+def _resolve_role_name_for_create(user_in: UserCreate) -> str:
+    return user_in.role or ROLE_USER
+
+
+def _ensure_default_guest_group(db: Session, user: User) -> None:
+    guest_group = db.query(Group).filter(Group.name == GROUP_GUEST).first()
+    if guest_group and guest_group not in user.groups:
+        user.groups.append(guest_group)
 
 
 def get_user(db: Session, user_id: int) -> Optional[User]:
@@ -35,12 +56,15 @@ def create_user(db: Session, user_in: UserCreate) -> User:
     """
     Создаёт пользователя. Если логин уже занят — возвращает HTTP 400.
     """
+    role_name = _resolve_role_name_for_create(user_in)
+    role = _get_role_or_400(db, role_name)
     hashed = get_password_hash(user_in.password)
     db_user = User(
         login=user_in.login,
         password_hash=hashed,
-        is_admin=user_in.is_admin,
+        role_id=role.id,
     )
+    _ensure_default_guest_group(db, db_user)
     db.add(db_user)
     try:
         db.commit()
@@ -63,8 +87,11 @@ def update_user(db: Session, user_id: int, user_in: UserUpdate) -> Optional[User
     # меняем поля
     if user_in.password:
         user.password_hash = get_password_hash(user_in.password)
-    if user_in.is_admin is not None:
-        user.is_admin = user_in.is_admin
+
+    if user_in.role is not None:
+        role = _get_role_or_400(db, user_in.role)
+        user.role_id = role.id
+        user.role = role
 
     db.add(user)
     db.commit()

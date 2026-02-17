@@ -10,6 +10,7 @@ from app.db.session import Base
 import app.api.v1.models.user
 import app.api.v1.models.token
 import app.api.v1.models.api_token
+import app.api.v1.models.access_control
 import os
 
 # this is the Alembic Config object, which provides

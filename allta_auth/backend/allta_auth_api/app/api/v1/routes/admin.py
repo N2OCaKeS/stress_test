@@ -121,14 +121,15 @@ def admin_reset_user_password(
 @router.post(
     "/tokens/revoke-all",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Отозвать все токены в системе (admin)",
+    summary="Отозвать все обычные access-токены в системе (admin)",
 )
 def admin_revoke_all_tokens_global(
     db: Session = Depends(get_db),
     _admin=Security(get_current_admin_user, scopes=[]),
 ):
     """
-    Отозвать **все** токены во всей системе.  
+    Отозвать **все обычные JWT access-токены** во всей системе.  
+    Бессрочные API-токены этим endpoint не затрагиваются.
     Доступ: только администратор.
     """
     revoke_all_tokens_global(db)
@@ -137,7 +138,7 @@ def admin_revoke_all_tokens_global(
 @router.post(
     "/{user_id}/tokens/revoke",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Отозвать токены пользователя (admin)",
+    summary="Отозвать обычные access-токены пользователя (admin)",
 )
 def admin_revoke_user_tokens(
     user_id: int,
@@ -145,7 +146,8 @@ def admin_revoke_user_tokens(
     _admin=Security(get_current_admin_user, scopes=[]),
 ):
     """
-    Отозвать все токены конкретного пользователя по ID.  
+    Отозвать все обычные JWT access-токены конкретного пользователя по ID.  
+    Бессрочные API-токены этим endpoint не затрагиваются.
     Доступ: только администратор.
     """
     revoke_all_tokens(db, user_id)

@@ -10,6 +10,7 @@ from app.api.v1.crud.api_token import (
     create_api_token,
     revoke_api_token,
 )
+from app.api.v1.crud.user import get_user
 from app.db.session import get_db
 from app.utils.config import settings
 
@@ -33,7 +34,7 @@ def list_tokens(
     Получить список бессрочных JWT-токенов пользователя.  
     Доступ: администратор или сам пользователь.
     """
-    if not current_user.is_admin and current_user.id != user_id:
+    if not current_user.is_admin_effective() and current_user.id != user_id:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail="Нет доступа к токенам другого пользователя",
@@ -72,6 +73,11 @@ def issue_token(
     Создать новый бессрочный JWT-токен для пользователя.  
     Доступ: только администратор.
     """
+    if not get_user(db, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
     return create_api_token(db, user_id)
 
 
@@ -90,7 +96,7 @@ def revoke_token(
     Отозвать ранее выданный бессрочный JWT-токен по ID.  
     Доступ: только администратор.
     """
-    success = revoke_api_token(db, token_id)
+    success = revoke_api_token(db, token_id, user_id=user_id)
     if not success:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,

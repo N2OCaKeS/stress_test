@@ -1,19 +1,37 @@
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, field_validator
+
+RoleName = str
+
 
 class UserBase(BaseModel):
     login: str = Field(..., example="alice")
-    is_admin: bool = Field(False, example=True)
+    role: RoleName = Field("user", example="user")
 
-class UserCreate(UserBase):
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, value: Any) -> str:
+        if value is None:
+            return "user"
+        if isinstance(value, str):
+            return value
+        role_name = getattr(value, "name", None)
+        if isinstance(role_name, str):
+            return role_name
+        return str(value)
+
+
+class UserCreate(BaseModel):
+    login: str = Field(..., example="alice")
     password: str = Field(..., example="StrongP@ssw0rd!")
+    role: Optional[RoleName] = Field("user", example="guest")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "login": "bob",
                 "password": "Secret123!",
-                "is_admin": False
+                "role": "user"
             }
         }
 
@@ -25,13 +43,13 @@ class UserRead(UserBase):
 
 class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, example="NewPass456!")
-    is_admin: Optional[bool] = Field(None, example=True)
+    role: Optional[RoleName] = Field(None, example="guest")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "password": "AnotherPass!",
-                "is_admin": True
+                "role": "admin",
             }
         }
 

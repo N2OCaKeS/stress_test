@@ -40,7 +40,23 @@ def on_starting(server):
     # 3) Seed default users
     db = SessionLocal()
     try:
-        if get_user_count(db) == 0:
-            create_user(db, UserCreate(login=os.getenv("BASE_ADMIN_USERNAME", 'admin'),  password=os.getenv("BASE_ADMIN_PASSWORD", 'admin'),  is_admin=True))
+        if settings.SEED_DEFAULT_ADMIN and get_user_count(db) == 0:
+            payload = {
+                "login": settings.BASE_ADMIN_USERNAME,
+                "password": settings.BASE_ADMIN_PASSWORD,
+            }
+            # Keep compatibility with both schema variants:
+            # new RBAC uses "role", legacy schema uses "is_admin".
+            fields = getattr(UserCreate, "model_fields", None)
+            if fields is None:
+                fields = getattr(UserCreate, "__fields__", {})
+            if "role" in fields:
+                payload["role"] = "admin"
+            elif "is_admin" in fields:
+                payload["is_admin"] = True
+            create_user(
+                db,
+                UserCreate(**payload),
+            )
     finally:
         db.close()

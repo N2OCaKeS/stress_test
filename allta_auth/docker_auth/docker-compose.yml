@@ -1,5 +1,23 @@
 version: '3.8'
 services:
+  authservice-auth-init:
+    build:
+      context: ./allta_auth_api/allta_auth_init
+      dockerfile: Dockerfile
+    image: authservice-auth-init:latest
+    container_name: authservice-auth_init
+    restart: "no"
+    environment:
+      REGISTRY_KEYS_DIR: /registry-keys
+      REGISTRY_KEY_FILE: /registry-keys/registry_signing.key
+      REGISTRY_CERT_FILE: /registry-keys/auth-registry.crt
+      REGISTRY_CERT_SUBJECT: ${REGISTRY_CERT_SUBJECT}
+      REGISTRY_CERT_DAYS: ${REGISTRY_CERT_DAYS}
+    volumes:
+      - ${REGISTRY_KEYS_PATH}:/registry-keys
+    networks:
+      - authservice_network
+
   #  NGINX
   authservice-nginx:
     build:
@@ -37,6 +55,8 @@ services:
     env_file:
       - $CRED_PATH/env.authservice_auth_api
     depends_on:
+      authservice-auth-init:
+        condition: service_completed_successfully
       authservice-auth-db:
         condition: service_healthy
     healthcheck:
@@ -46,7 +66,9 @@ services:
       retries: 5
     networks:
       - authservice_network
-      - authservice_auth_api     
+      - authservice_auth_api
+    volumes:
+      - ${REGISTRY_KEYS_PATH}:/run/secrets/registry:ro
 
   authservice-auth-db:
     build:
@@ -79,6 +101,8 @@ services:
     depends_on:
       authservice-auth-api:
         condition: service_healthy
+    extra_hosts:
+      - "${ALLTA_EXTERNAL_HOST}:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/config/health"]
       interval: 10s

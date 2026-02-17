@@ -6,7 +6,7 @@ from app.utils.config import settings
 
 engine = create_engine(
     settings.DATABASE_URL,
-    echo=True,
+    echo=settings.SQL_ECHO,
 )
 
 SessionLocal = sessionmaker(

@@ -3,7 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.user import router as user_router
 from app.api.v1.routes.admin import router as admin_router
+from app.api.v1.routes.access_control import router as access_control_router
 from app.api.v1.routes.api_token import router as api_token
+from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.heal_checker import router as health
 
 app = FastAPI(title="Allta Auth API",
@@ -40,4 +42,6 @@ app.include_router(health, prefix="", tags=["Health"])
 app.include_router(auth_router, prefix="", tags=["Auth"])
 app.include_router(user_router, prefix="/v1", tags=["User"])
 app.include_router(admin_router, prefix="/v1", tags=["Admin"])
+app.include_router(access_control_router, prefix="/v1", tags=["Admin"])
 app.include_router(api_token, prefix="/v1", tags=["Api key"])
+app.include_router(integrations_router, prefix="/v1", tags=["Integrations"])

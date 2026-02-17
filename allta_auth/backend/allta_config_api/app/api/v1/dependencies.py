@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -6,19 +6,35 @@ from fastapi.security import (
     OAuth2PasswordBearer,
     HTTPBearer,
     HTTPAuthorizationCredentials,
-    APIKeyCookie
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.utils.config import settings
 
 # ------------------------------
 # Модель ответа Auth-сервиса
 # ------------------------------
+class IntegrationCapabilities(BaseModel):
+    docker_pull: bool = True
+    docker_push: bool = False
+    portainer_access: bool = False
+    devpi_read: bool = True
+    devpi_write: bool = False
+
+
 class AuthVerifyResponse(BaseModel):
     login: str
-    is_admin: bool
     id: int
+    role: str = "user"
+    permissions: list[str] = Field(default_factory=list)
+    capabilities: IntegrationCapabilities = Field(default_factory=IntegrationCapabilities)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
+
+    def has_permission(self, permission: str) -> bool:
+        return "*" in self.permissions or permission in self.permissions
 
 
 # -----------------------------------
@@ -71,13 +87,18 @@ def get_current_user(
     token: str = Depends(get_token),
 ) -> AuthVerifyResponse:
     """
-    Проверяем токен в Auth-сервисе (/verify).
+    Проверяем токен в Auth-сервисе через integrations/whoami.
     """
-    url = f"{settings.AUTH_API_URL}/verify"
+    url = f"{settings.AUTH_API_URL}/v1/integrations/whoami"
     headers = {"Authorization": f"Bearer {token}"}
     try:
         resp = httpx.get(url, headers=headers, timeout=5.0)
         resp.raise_for_status()
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Auth service is unreachable",
+        )
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN):
             raise HTTPException(
@@ -93,11 +114,23 @@ def get_current_user(
     return AuthVerifyResponse(**resp.json())
 
 
+def require_permission(permission: str) -> Callable:
+    def _checker(user: AuthVerifyResponse = Depends(get_current_user)) -> AuthVerifyResponse:
+        if not user.has_permission(permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions: '{permission}' required",
+            )
+        return user
+
+    return _checker
+
+
 def get_current_admin_user(
     user: AuthVerifyResponse = Depends(get_current_user)
 ) -> AuthVerifyResponse:
     """
-    Проверяем, что у пользователя is_admin = True.
+    Проверяем, что у пользователя role=admin.
     """
     if not user.is_admin:
         raise HTTPException(

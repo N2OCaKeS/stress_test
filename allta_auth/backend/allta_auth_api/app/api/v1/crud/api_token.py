@@ -41,8 +41,25 @@ def create_api_token(db: Session, user_id: int) -> dict:
     }
 
 
-def revoke_api_token(db: Session, token_id: int) -> bool:
-    obj = db.query(APIToken).filter(APIToken.id == token_id).first()
+def revoke_api_token(
+    db: Session,
+    token_id: int,
+    user_id: Optional[int] = None,
+) -> bool:
+    query = db.query(APIToken).filter(APIToken.id == token_id)
+    if user_id is not None:
+        query = query.filter(APIToken.user_id == user_id)
+
+    obj = query.first()
+    if not obj:
+        return False
+    obj.revoked = True
+    db.commit()
+    return True
+
+
+def revoke_api_token_by_jti(db: Session, jti: str) -> bool:
+    obj = db.query(APIToken).filter(APIToken.jti == jti).first()
     if not obj:
         return False
     obj.revoked = True
@@ -65,5 +82,11 @@ def revoke_all_api_tokens_for_user(db: Session, user_id: int) -> int:
         .filter(APIToken.user_id == user_id)
         .delete(synchronize_session=False)
     )
+    db.commit()
+    return deleted
+
+
+def revoke_all_api_tokens_global(db: Session) -> int:
+    deleted = db.query(APIToken).delete(synchronize_session=False)
     db.commit()
     return deleted

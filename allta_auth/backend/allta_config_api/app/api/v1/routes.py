@@ -5,7 +5,11 @@ from fastapi import (
     HTTPException, status, Path
 )
 from fastapi.responses import FileResponse, JSONResponse
-from app.api.v1.dependencies import get_current_user, get_current_admin_user
+from app.api.v1.dependencies import (
+    get_current_user,
+    get_current_admin_user,
+    require_permission,
+)
 from app.api.v1.dependencies import AuthVerifyResponse
 from app.utils.config import settings
 router = APIRouter()
@@ -156,13 +160,13 @@ def delete_file(
 # ---- НОВЫЙ эндпоинт: получить токены (авторизованные) ----
 @router.get(
     "/tokens",
-    summary="Get tokens file content (auth required)",
+    summary="Get tokens file content (requires permission)",
 )
 def get_tokens(
-    user: AuthVerifyResponse = Depends(get_current_user),
+    user: AuthVerifyResponse = Depends(require_permission(settings.TOKENS_READ_PERMISSION)),
 ):
     """
-    Возвращает содержимое файла tokens.json ТОЛЬКО авторизованным пользователям.
+    Возвращает содержимое файла tokens.json только при наличии права.
     """
     if not os.path.exists(settings.TOKENS_PATH):
         raise HTTPException(

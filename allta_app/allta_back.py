@@ -322,6 +322,7 @@ try:
                             steal_time = '-lvirt stealtime'
                             steal_time_sm = '-lvirt stealtime_sm'
                             fio = '-lvirt fio'
+                            fio_large = '-lvirt fio_large'
                             vunixbench = '-lvirt unixbench'
                             vpp = '-lvirt pingpong'
                             tes = f'-tes {args.TESTENV}'
@@ -398,6 +399,9 @@ try:
                             elif tests[dates_list[i][1]] == 'FIO':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {fio} {tes}', shell=True)  
+                            elif tests[dates_list[i][1]] == 'FIO_large':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {fio_large} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'vUnixBench':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {vunixbench} {tes}', shell=True) 
@@ -471,6 +475,7 @@ try:
                     steal_time = '-lvirt stealtime'
                     steal_time_sm = '-lvirt stealtime_sm'
                     fio = '-lvirt fio'
+                    fio_large = '-lvirt fio_large'
                     vunixbench = '-lvirt unixbench'
                     vpp = '-lvirt pingpong'
                     tes = f'-tes {args.TESTENV}'
@@ -546,6 +551,9 @@ try:
                     elif tests[dates_list[i][1]] == 'FIO':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {fio} {tes}', shell=True) 
+                    elif tests[dates_list[i][1]] == 'FIO_large':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {fio_large} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'vUnixBench':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {vunixbench} {tes}', shell=True)

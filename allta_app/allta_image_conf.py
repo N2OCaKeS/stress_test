@@ -92,7 +92,8 @@ modes = {
 tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance',
                                  'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
             'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
-            'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl', 'AOpenVPNcc'],
+            'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl', 'AOpenVPNcc',
+                                 'Dovecot-IMAP', 'Exim4-SMTP'],
             'UnixBench':        ['unix', 'unix parsec'],
             'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users'],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
@@ -182,7 +183,9 @@ branches = {
     'Virt UnixBench':'virt',
     'vPingPong':'virt',
     'docker web-application':'docker',
-    'astra openvpn client connections':'astra_openvpn'
+    'astra openvpn client connections':'astra_openvpn',
+    'dovecot benchmark':'exim',
+    'exim benchmark':'exim'
 }
 
 
@@ -244,7 +247,9 @@ tests = {
     'Virt UnixBench':'vUnixBench',
     'vPingPong':'vPingPong',
     'docker web-application':'docker-wa',
-    'astra openvpn client connections':'AOpenVPNcc'
+    'astra openvpn client connections':'AOpenVPNcc',
+    'dovecot benchmark':'Dovecot-IMAP',
+    'exim benchmark':'Exim4-SMTP'
 }
 
 
@@ -276,7 +281,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
-              'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc']
+              'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP']
 
 
 
@@ -365,7 +370,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla', 'steal time-sm'],
             'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio'],
             'smolensk_stand10': ['CEPH parsec'],
-            'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc'],
+            'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
             'orel_stand12':     ['syslog-ng'],
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
@@ -385,7 +390,7 @@ stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
-    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc'],
+    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
     'stand13_group':['syslog-ng-cwl']
 }
@@ -437,7 +442,9 @@ tests_case_zefir_key = {
     'CEPH fio':'BT-T17641',
     'FreeIPA c-users':'BT-T17856',
     'CEPH parsec':'BT-T18198',
-    'AOpenVPNcc':'BT-T18201'
+    'AOpenVPNcc':'BT-T18201',
+    'Dovecot-IMAP':'BT-T18555',
+    'Exim4-SMTP':'BT-T18554'
 }
 
 
@@ -465,7 +472,8 @@ testname_columns = {
                     'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl',
                     'DIGSIG. Check digsig time':'DIGSIG-cdt', 'docker web-application':'Docker-WA', 'ceph benchmark':'FS_CEPH',
                     'ceph fio benchmark':'FS_CEPH_fio', 'freeipa create users test':'FreeIPA_c-users',
-                    'ceph parsec benchmark':'FS_CEPH_parsec', 'astra openvpn client connections':'AOpenVPNcc'
+                    'ceph parsec benchmark':'FS_CEPH_parsec', 'astra openvpn client connections':'AOpenVPNcc',
+                    'dovecot benchmark':'Dovecot-IMAP', 'exim benchmark':'Exim4-SMTP'
                     }
 
 

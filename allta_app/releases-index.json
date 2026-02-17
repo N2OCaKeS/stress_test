@@ -1,5 +1,5 @@
 {
-  "date": "2026-02-11 10:38:08.093199",
+  "date": "2026-02-16 09:43:19.708456",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -10593,6 +10593,80 @@
             }
           ],
           "path": "frozen/1.7/1.7.9/1.7.9.41",
+          "is_main_symlinked": false
+        },
+        "1.7.9.46": {
+          "astra_lists_commit": "ab8fd734d9bc14ee549399cdbae643829170bdde",
+          "version": {
+            "arch": 1,
+            "family": 7,
+            "release": 9,
+            "special": null,
+            "special_version": null,
+            "build": 46,
+            "real_family": 7,
+            "major_family": "1.7",
+            "release_family": "1.7.9",
+            "comparable_tuple": [
+              1,
+              7,
+              9,
+              "",
+              0,
+              46
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.9/1.7.9.46/iso/base-1.7.9.46-13.02.26_23.11.iso",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.9/1.7.9.46/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0026-02-13T23:11:00",
+              "device": null,
+              "hashsums": {
+                "gost": "dc0275a97c2d0e46dc51c0d986275c40301b3582668d627938f5c339496e9b49",
+                "md5": "2aaa3ef115a90e73d8e2d96c6ec313e7"
+              },
+              "changelog": "frozen/1.7/1.7.9/1.7.9.46/sources/changelogs/changelog-base-1.7.9.46.html",
+              "release_notes": "frozen/1.7/1.7.9/1.7.9.46/sources/release-notes/release-notes-base-1.7.9.46.html"
+            },
+            {
+              "path": "frozen/1.7/1.7.9/1.7.9.46/iso/installation-1.7.9.46-13.02.26_23.11.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.7/1.7.9/1.7.9.46/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "0026-02-13T23:11:00",
+              "device": null,
+              "hashsums": {
+                "gost": "f8a950f5f3b0fd63de8878a4f027a53ee64994fecbef82a30121f201f3602c67",
+                "md5": "cbb175318ce5ade2943ec4306a3d3bf3"
+              },
+              "changelog": "frozen/1.7/1.7.9/1.7.9.46/sources/changelogs/changelog-installation-1.7.9.46.html",
+              "release_notes": "frozen/1.7/1.7.9/1.7.9.46/sources/release-notes/release-notes-installation-1.7.9.46.html"
+            },
+            {
+              "path": "frozen/1.7/1.7.9/1.7.9.46/iso/main_update-1.7.9.46-13.02.26_23.11.iso",
+              "type": "main_update",
+              "mount_point": "frozen/1.7/1.7.9/1.7.9.46/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "0026-02-13T23:11:00",
+              "device": null,
+              "hashsums": {
+                "gost": "ba739fc0c0b35d7de2e38c051df8b3640c869aa4b06d5b4bf7367159010217a7",
+                "md5": "4ccc26dcee96312535f8613e0e1f8da5"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/1.7/1.7.9/1.7.9.46",
           "is_main_symlinked": false
         },
         "1.7.9.EXT1.1": {

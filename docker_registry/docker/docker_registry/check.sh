@@ -8,13 +8,15 @@ echo
 
 echo "[diag] Files:"
 ls -la /tls 2>/dev/null || echo "  (no /tls mounted)"
-ls -la /auth 2>/dev/null || echo "  (no /auth mounted)"
+ls -la /run/secrets/registry 2>/dev/null || echo "  (no /run/secrets/registry mounted)"
 echo
 
 echo "[diag] Presence checks:"
-test -s /tls/tls.crt && echo "  OK: /tls/tls.crt" || echo "  FAIL: /tls/tls.crt missing/empty"
-test -s /tls/tls.key && echo "  OK: /tls/tls.key" || echo "  FAIL: /tls/tls.key missing/empty"
-test -s /auth/htpasswd && echo "  OK: /auth/htpasswd" || echo "  FAIL: /auth/htpasswd missing/empty"
+test -s /tls/tls.crt && echo "  OK: /tls/tls.crt" || echo "  WARN: /tls/tls.crt missing/empty"
+test -s /tls/tls.key && echo "  OK: /tls/tls.key" || echo "  WARN: /tls/tls.key missing/empty"
+test -s /run/secrets/registry/auth-registry.crt \
+  && echo "  OK: /run/secrets/registry/auth-registry.crt" \
+  || echo "  WARN: /run/secrets/registry/auth-registry.crt missing/empty"
 echo
 
 echo "[diag] wget output (server response):"

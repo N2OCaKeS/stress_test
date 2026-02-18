@@ -7,9 +7,9 @@
 Состав:
 
 - `docker-registry-cert-init` - инициализация CA и TLS-сертификата registry
-- `docker-registry-auth-init` - инициализация `htpasswd`-аутентификации
-- `docker-registry` - сам registry (`registry:2`) с TLS и basic auth
+- `docker-registry` - сам registry (`registry:2`) с TLS и token auth через `allta_auth`
 - `docker-registry-ui` - web UI (`joxit/docker-registry-ui`)
+- `docker-registry-ui-gateway` - nginx-gateway для UI с авторизацией через `allta_auth`
 
 Оркестрация выполняется через `docker/docker-compose.yml`, а lifecycle через `install.sh`.
 
@@ -61,7 +61,6 @@
 После `precond` шаблоны env копируются в `/var/allta_services/config`:
 
 - `env.docker_registry`
-- `env.docker_registry_auth_init`
 - `env.docker_registry_cert_init`
 - `env.docker_registry_ui`
 
@@ -73,32 +72,36 @@
 - `CA_DAYS` - срок жизни CA
 - `CERT_DAYS` - срок жизни серверного сертификата
 
-`env.docker_registry_auth_init`:
-
-- `REGISTRY_USER` - логин для доступа к registry
-- `REGISTRY_PASS` - пароль для доступа к registry
-
-`htpasswd` создается один раз и не перезаписывается при последующих стартах. После смены `REGISTRY_USER/REGISTRY_PASS` удалите `/var/allta_services/volumes/docker_registry_auth/htpasswd` или выполните `sudo ./install.sh reinstall`.
-
 `env.docker_registry`:
 
 - `REGISTRY_HTTP_ADDR` - адрес, на котором слушает registry внутри контейнера
 - `REGISTRY_HTTP_TLS_CERTIFICATE` / `REGISTRY_HTTP_TLS_KEY` - пути до TLS-файлов
-- `REGISTRY_AUTH_*` - настройки `htpasswd`-аутентификации
+- `REGISTRY_AUTH=token`
+- `REGISTRY_AUTH_TOKEN_REALM` - endpoint выдачи токена (`allta_auth`)
+- `REGISTRY_AUTH_TOKEN_SERVICE` - service для токена (должен совпадать с `REGISTRY_TOKEN_SERVICE` в `allta_auth`)
+- `REGISTRY_AUTH_TOKEN_ISSUER` - issuer токена (должен совпадать с `REGISTRY_TOKEN_ISSUER` в `allta_auth`)
+- `REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE` - сертификат с публичным ключом подписи токена (из `${REGISTRY_KEYS_PATH}/auth-registry.crt`)
 - `REGISTRY_STORAGE_DELETE_ENABLED=true` - разрешение удаления образов/тегов
 
 `env.docker_registry_ui`:
 
 - `NGINX_PROXY_PASS_URL=https://docker-registry:5000` - прокси на registry
 - `PULL_URL=<host>:21503` - адрес pull/push для клиентов
-- `SINGLE_REGISTRY`, `DELETE_IMAGES`, `REGISTRY_TITLE` - параметры UI
+- `SINGLE_REGISTRY`, `REGISTRY_TITLE` - параметры UI
+- `DELETE_IMAGES=false` - удаление образов через UI отключено
 
 ## Порты и точки входа
 
 - Registry API: `https://<host>:21503/v2/`
-- Web UI: `http://<host>:21502/`
+- Web UI: `http://<host>:21502/` (доступ только после авторизации в `allta_auth`)
 
-Ожидаемое поведение для `https://<host>:21503/v2/` без логина: HTTP `401 Unauthorized` (это нормальная проверка доступности).
+Ожидаемое поведение:
+
+- `https://<host>:21503/v2/` без логина: HTTP `401 Unauthorized` (нормальная проверка доступности).
+- `http://<host>:21502/` без логина: редирект на OAuth-логин `allta_auth`, после входа возврат в UI.
+- Доступ в UI определяется `required_permission` OAuth-клиента `allta-docker-ui` в `allta_auth`.
+- Если `required_permission` пустой, войти может любой авторизованный пользователь.
+- Удаление образов через UI запрещено.
 
 ## Команды управления
 
@@ -107,7 +110,7 @@
 - `sudo ./install.sh precond` - подготовка каталогов/конфигов + генерация systemd unit
 - `sudo ./install.sh start` - `docker-compose up --build -d`
 - `sudo ./install.sh stop` - `docker-compose down`
-- `sudo ./install.sh reinstall` - `down -v` + удаление данных registry/cert/auth + пересоздание каталогов
+- `sudo ./install.sh reinstall` - `down -v` + удаление данных registry/cert + пересоздание каталогов
 - `sudo ./install.sh remove` - полное удаление: контейнеров, локальных image, systemd unit, env-файлов и данных
 
 Команды через systemd:
@@ -123,7 +126,7 @@ sudo systemctl stop docker_registry.service
 - `/var/allta_services/config` - env-файлы проекта
 - `/var/allta_services/volumes/docker_registry_data` - данные registry
 - `/var/allta_services/volumes/docker_registry_cert` - CA и TLS-сертификаты
-- `/var/allta_services/volumes/docker_registry_auth` - `htpasswd`
+- `/var/allta_services/secrets` - ключи подписи/проверки токенов (`auth-registry.crt`, `registry_signing.key`)
 
 ## Проверка работоспособности
 
@@ -163,9 +166,9 @@ docker exec -it docker-registry /tmp/check-registry.sh
 
 3. Загрузка:
 
-```bash
-docker pull <host>:21503/nginx:latest
-```
+   ```bash
+   docker pull allta.devos.astralinux.ru:21503/nginx:latest
+   ```
 
 Примечание: используется self-signed CA. Для production-клиентов добавьте `ca.crt` в доверенные сертификаты Docker на клиентских хостах.
 

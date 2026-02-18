@@ -52,20 +52,22 @@ exports(){
     export FILE_PATH="/var/allta_services"
 	export BASE_PATH=$FILE_PATH/volumes
 	export CRED_PATH=$FILE_PATH/config
+	export DOCKER_REGISTRY_KEYS_PATH=$FILE_PATH/secrets
+	export REGISTRY_KEYS_PATH=$DOCKER_REGISTRY_KEYS_PATH
+	export ALLTA_EXTERNAL_HOST="allta.devos.astralinux.ru"
 
-	export DOCKER_REGISTRY_PATH=$BASE_PATH/docker_registry_data
+	export DOCKER_REGISTRY_PATH="/home/partimag/docker_registry_data"
 	export DOCKER_REGISTRY_CERT=$BASE_PATH/docker_registry_cert
-	export DOCKER_REGISTRY_AUTH=$BASE_PATH/docker_registry_auth
 }
 
 dir(){
     sudo mkdir -p "$FILE_PATH"    
 	sudo mkdir -p "$BASE_PATH"
 	sudo mkdir -p "$CRED_PATH"
+	sudo mkdir -p "$DOCKER_REGISTRY_KEYS_PATH"
 
 	sudo mkdir -p "$DOCKER_REGISTRY_PATH"
 	sudo mkdir -p "$DOCKER_REGISTRY_CERT"
-	sudo mkdir -p "$DOCKER_REGISTRY_AUTH"
 }
 
 creds(){
@@ -101,7 +103,7 @@ reinstall(){
 	exports
 	cd "$COMPOSE_DIR"
 	docker-compose --file docker-compose.yml down -v
-	sudo rm -rf $DOCKER_REGISTRY_PATH $DOCKER_REGISTRY_CERT $DOCKER_REGISTRY_AUTH
+	sudo rm -rf "$DOCKER_REGISTRY_PATH" "$DOCKER_REGISTRY_CERT"
 	dir
 	# docker-compose --file docker-compose.yml up --build -d
 }
@@ -117,9 +119,9 @@ remove(){
 
 	local -a IMAGES=(
 		"docker-registry-cert-init:latest"
-		"docker-registry-auth-init:latest"
 		"docker-registry:latest"
 		"docker-registry-ui:latest"
+		"docker-registry-ui-gateway:latest"
 	)
 
 	for img in "${IMAGES[@]}"; do
@@ -127,10 +129,10 @@ remove(){
 		docker image rm "$img" || docker image rm -f "$img" || echo "пропускаю: $img"
 	done
 
-	sudo rm -rf $DOCKER_REGISTRY_PATH $DOCKER_REGISTRY_CERT $DOCKER_REGISTRY_AUTH
-	sudo rm $CRED_PATH/env.docker_registry
-	sudo rm $CRED_PATH/env.docker_registry_cert_init
-	sudo rm $CRED_PATH/env.docker_registry_auth_init
+	sudo rm -rf "$DOCKER_REGISTRY_PATH" "$DOCKER_REGISTRY_CERT"
+	sudo rm -f "$CRED_PATH/env.docker_registry"
+	sudo rm -f "$CRED_PATH/env.docker_registry_cert_init"
+	sudo rm -f "$CRED_PATH/env.docker_registry_ui"
 
     sudo rmdir --ignore-fail-on-non-empty $CRED_PATH
     sudo rmdir --ignore-fail-on-non-empty $BASE_PATH
@@ -144,7 +146,6 @@ precond(){
 	sudo usermod -aG docker "$USER"
 	sudo systemctl enable docker.service
 	sudo systemctl start docker.service
-	# sudo mkdir -p "$BACKUP_DIR"
 	dir
 	creds
 	service

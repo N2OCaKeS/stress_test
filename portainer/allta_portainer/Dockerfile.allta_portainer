@@ -1,4 +1,19 @@
-FROM portainer/portainer-ce:latest
+FROM portainer/portainer-ce:latest AS portainer
+
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates curl jq tini
+
+COPY --from=portainer /portainer /portainer
+COPY --from=portainer /public /public
+COPY --from=portainer /mustache-templates /mustache-templates
+COPY --from=portainer /metadata.json /metadata.json
+COPY --from=portainer /portainer.svg /portainer.svg
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8000
 EXPOSE 9000
+EXPOSE 9443
+
+ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]

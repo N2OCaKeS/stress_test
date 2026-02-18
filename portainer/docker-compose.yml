@@ -8,9 +8,15 @@ services:
     image: allta-portainer:latest
     container_name: allta_portainer
     restart: always   
+  
+    env_file:
+      - ${CRED_PATH}/env.portainer
+    extra_hosts:
+      - "allta.devos.astralinux.ru:host-gateway"
     volumes:
       - allta_portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${OAUTH_CLIENT_SECRETS_PATH}:/run/secrets/oauth_clients:ro
     ports:
       - 9443:9443
 

@@ -4,6 +4,21 @@ set -euo pipefail
 # Путь до папки с вашим docker-compose.yml
 export COMPOSE_DIR="$(pwd)"
 export SERIVE_NAME="portainer.service"
+
+creds(){
+	sudo mkdir -p "$CRED_PATH"
+	shopt -s nullglob
+	for src in "$COMPOSE_DIR/env"/example/*; do
+		[ -f "$src" ] || continue
+		fname=$(basename -- "$src")
+		if [[ "$fname" == example.* ]]; then
+			newname="${fname#example.}"
+		else
+			newname="${fname//example/}"
+		fi
+		sudo cp -n -- "$src" "$CRED_PATH/$newname"
+	done
+}
 usage() {
   cat <<'EOF'
 Usage: ./manage.sh <command>
@@ -45,18 +60,28 @@ EOF
 }
 
 exports(){
-	export BASE_PATH="/var/allta_services/volumes"
-	export PORTAINER_PATH=$BASE_PATH/allta_portainer_data
+	# Allow override via environment, but provide sane defaults.
+	export FILE_PATH="${FILE_PATH:-/var/allta_services}"
+	export BASE_PATH="${BASE_PATH:-$FILE_PATH/volumes}"
+	export CRED_PATH="${CRED_PATH:-$FILE_PATH/config}"
+	export PORTAINER_PATH="${PORTAINER_PATH:-$BASE_PATH/allta_portainer_data}"
+	export OAUTH_CLIENT_SECRETS_PATH="${OAUTH_CLIENT_SECRETS_PATH:-$FILE_PATH/secrets/oauth_clients}"
 }
 
 dir(){
 	sudo mkdir -p "$BASE_PATH"
 	sudo mkdir -p "$PORTAINER_PATH"
+	sudo mkdir -p "$OAUTH_CLIENT_SECRETS_PATH"
+	sudo mkdir -p "$CRED_PATH"
 }
 
 start(){
 	exports
 	cd "$COMPOSE_DIR"
+	if [ ! -f "$CRED_PATH/env.portainer" ]; then
+		echo "Missing $CRED_PATH/env.portainer. Run './install.sh precond' and edit the env file first."
+		exit 1
+	fi
 	docker-compose --file docker-compose.yml up --build -d
 }
 
@@ -103,6 +128,7 @@ precond(){
 	sudo usermod -aG docker "$USER"
 	dir
 	service
+	creds
 }
 
 # -------- dispatcher ----------

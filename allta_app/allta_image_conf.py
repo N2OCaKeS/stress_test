@@ -535,13 +535,15 @@ known_bugs = {
     "Parsec": {
         "BT-61530": "https://jira.astralinux.ru/browse/BT-61530",
         "BT-52579": "https://jira.astralinux.ru/browse/BT-52579",
-        "BT-69978": "https://jira.astralinux.ru/browse/BT-69978"
+        "BT-69978": "https://jira.astralinux.ru/browse/BT-69978",
+        "BT-92428": "https://jira.astralinux.ru/browse/BT-92428"
     },
     "Apache": {
         "BT-64331": "https://jira.astralinux.ru/browse/BT-64331"
     },
     "FreeIPA": {
-        "BT-66518": "https://jira.astralinux.ru/browse/BT-66518"
+        "BT-66518": "https://jira.astralinux.ru/browse/BT-66518",
+        "BT-91580": "https://jira.astralinux.ru/browse/BT-91580"
     }
 }
 

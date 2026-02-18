@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = _access_token_expire_minutes()
     COOKIE_SECURE: bool = _as_bool("COOKIE_SECURE", False)
-    SQL_ECHO: bool = _as_bool("SQL_ECHO", True)
+    SQL_ECHO: bool = _as_bool("SQL_ECHO", False)
 
     # Docker Registry integration
     REGISTRY_ALLOW_ANON_PULL: bool = _as_bool("REGISTRY_ALLOW_ANON_PULL", True)
@@ -60,9 +60,24 @@ class Settings(BaseSettings):
     REGISTRY_TOKEN_PRIVATE_KEY_PATH: str | None = (
         getenv("REGISTRY_TOKEN_PRIVATE_KEY_PATH") or None
     )
+    REGISTRY_TOKEN_CERT_PATH: str | None = (
+        getenv("REGISTRY_TOKEN_CERT_PATH", "/run/secrets/registry/auth-registry.crt")
+        or None
+    )
 
-    # Generic integrations (Portainer/DevPI via reverse proxy checks)
+    # Generic integrations (reverse proxy checks + OAuth2)
     DEVPI_WRITE_REQUIRES_ADMIN: bool = _as_bool("DEVPI_WRITE_REQUIRES_ADMIN", True)
+
+    OAUTH_ISSUER: str = getenv("OAUTH_ISSUER", "allta-auth")
+    OAUTH_DEFAULT_SCOPE: str = getenv("OAUTH_DEFAULT_SCOPE", "profile")
+    OAUTH_CODE_EXPIRE_SECONDS: int = _as_int("OAUTH_CODE_EXPIRE_SECONDS", 120)
+    OAUTH_TOKEN_EXPIRE_SECONDS: int = _as_int("OAUTH_TOKEN_EXPIRE_SECONDS", 300)
+    OAUTH_BOOTSTRAP_CLIENTS_ENABLED: bool = _as_bool("OAUTH_BOOTSTRAP_CLIENTS_ENABLED", True)
+    OAUTH_CLIENT_SECRETS_DIR: str = getenv(
+        "OAUTH_CLIENT_SECRETS_DIR",
+        "/run/secrets/registry/oauth_clients",
+    )
+    ALLTA_EXTERNAL_HOST: str = getenv("ALLTA_EXTERNAL_HOST", "allta.devos.astralinux.ru")
 
     # Bootstrapping
     SEED_DEFAULT_ADMIN: bool = _as_bool("SEED_DEFAULT_ADMIN", True)

@@ -21,7 +21,7 @@ from app.api.v1.dependencies import (
 
 router = APIRouter(
     prefix="/admin",
-    tags=["Admin"],
+    tags=["Пользователи (админ)"],
 )
 
 # ——— админский блок ———

@@ -7,6 +7,8 @@ from app.utils.config import settings
 engine = create_engine(
     settings.DATABASE_URL,
     echo=settings.SQL_ECHO,
+    pool_pre_ping=True,
+    pool_recycle=1800,
 )
 
 SessionLocal = sessionmaker(

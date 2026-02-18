@@ -17,7 +17,7 @@ from app.api.v1.dependencies import (
 from app.utils.config import settings
 from app.api.v1.schemas.user import UserRead
 
-router = APIRouter(prefix="", tags=["Auth"])
+router = APIRouter(prefix="", tags=["Авторизация"])
 
 
 @router.post(

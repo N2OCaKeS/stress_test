@@ -5,7 +5,8 @@ from sqlalchemy_utils import database_exists, create_database
 from alembic.config import Config as AlembicConfig
 from alembic import command
 from app.utils.config import settings
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, engine
+from app.api.v1.crud.oauth_client import ensure_bootstrap_oauth_clients
 from app.api.v1.crud.user import get_user_count, create_user
 from app.api.v1.schemas.user import UserCreate
 
@@ -58,5 +59,13 @@ def on_starting(server):
                 db,
                 UserCreate(**payload),
             )
+        ensure_bootstrap_oauth_clients(db)
     finally:
         db.close()
+    # Avoid sharing master-process DB connections with forked workers.
+    engine.dispose()
+
+
+def post_fork(server, worker):
+    # Ensure each worker initializes its own fresh DB pool/connections.
+    engine.dispose()

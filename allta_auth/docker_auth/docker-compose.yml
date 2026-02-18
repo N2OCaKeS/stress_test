@@ -13,6 +13,8 @@ services:
       REGISTRY_CERT_FILE: /registry-keys/auth-registry.crt
       REGISTRY_CERT_SUBJECT: ${REGISTRY_CERT_SUBJECT}
       REGISTRY_CERT_DAYS: ${REGISTRY_CERT_DAYS}
+      OAUTH_CLIENT_SECRETS_DIR: /registry-keys/oauth_clients
+      OAUTH_SECRETS_ENV_FILE: /registry-keys/oauth_clients/clients.env
     volumes:
       - ${REGISTRY_KEYS_PATH}:/registry-keys
     networks:
@@ -54,6 +56,10 @@ services:
     restart: always
     env_file:
       - $CRED_PATH/env.authservice_auth_api
+    environment:
+      SQL_ECHO: ${AUTH_SQL_ECHO}
+      ALLTA_EXTERNAL_HOST: ${ALLTA_EXTERNAL_HOST}
+      OAUTH_CLIENT_SECRETS_DIR: /run/secrets/registry/oauth_clients
     depends_on:
       authservice-auth-init:
         condition: service_completed_successfully

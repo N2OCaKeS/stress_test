@@ -1,0 +1,61 @@
+# Example: Redis Commander behind oauth2-proxy + Allta Auth OAuth
+#
+# Expected upstream services in docker network:
+# - redis-commander:8081
+# - redis-oauth2-proxy:4180
+#
+# oauth2-proxy should use:
+#   --provider=generic-oauth
+#   Authorization URL: /api/auth/v1/integrations/oauth/authorize
+#   Token URL:         /api/auth/v1/integrations/oauth/token
+#   UserInfo URL:      /api/auth/v1/integrations/oauth/userinfo
+#   Redirect URL:      https://allta.devos.astralinux.ru/redis/oauth2/callback
+#
+# NOTE: this file has extension .conf.example and is not loaded automatically.
+
+upstream redis_commander_upstream {
+    server redis-commander:8081;
+}
+
+upstream redis_oauth2_proxy_upstream {
+    server redis-oauth2-proxy:4180;
+}
+
+location /redis/oauth2/ {
+    proxy_pass http://redis_oauth2_proxy_upstream/oauth2/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location = /_auth/redis {
+    internal;
+    proxy_pass http://redis_oauth2_proxy_upstream/oauth2/auth;
+    proxy_set_header Host $host;
+    proxy_set_header X-Original-URI $request_uri;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Content-Length "";
+    proxy_pass_request_body off;
+}
+
+location @redis_oauth2_signin {
+    return 302 /redis/oauth2/start?rd=$scheme://$http_host$request_uri;
+}
+
+location /redis/ {
+    auth_request /_auth/redis;
+    error_page 401 = @redis_oauth2_signin;
+
+    auth_request_set $auth_user $upstream_http_x_auth_request_preferred_username;
+    proxy_set_header X-Auth-User $auth_user;
+
+    rewrite ^/redis/?(.*)$ /$1 break;
+    proxy_pass http://redis_commander_upstream;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}

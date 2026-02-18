@@ -1,0 +1,65 @@
+# Example: Flower behind oauth2-proxy + Allta Auth OAuth
+#
+# Expected upstream services in docker network:
+# - flower:5555
+# - flower-oauth2-proxy:4180
+#
+# oauth2-proxy minimal args:
+#   --provider=generic-oauth
+#   --login-url=https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/authorize
+#   --redeem-url=https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/token
+#   --profile-url=https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/userinfo
+#   --validate-url=https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/userinfo
+#   --scope=profile
+#   --client-id=<client_id from /admin/oauth/clients>
+#   --client-secret=<client_secret>
+#   --redirect-url=https://allta.devos.astralinux.ru/flower/oauth2/callback
+#
+# NOTE: this file has extension .conf.example and is not loaded automatically.
+
+upstream flower_upstream {
+    server flower:5555;
+}
+
+upstream flower_oauth2_proxy_upstream {
+    server flower-oauth2-proxy:4180;
+}
+
+location /flower/oauth2/ {
+    proxy_pass http://flower_oauth2_proxy_upstream/oauth2/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location = /_auth/flower {
+    internal;
+    proxy_pass http://flower_oauth2_proxy_upstream/oauth2/auth;
+    proxy_set_header Host $host;
+    proxy_set_header X-Original-URI $request_uri;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Content-Length "";
+    proxy_pass_request_body off;
+}
+
+location @flower_oauth2_signin {
+    return 302 /flower/oauth2/start?rd=$scheme://$http_host$request_uri;
+}
+
+location /flower/ {
+    auth_request /_auth/flower;
+    error_page 401 = @flower_oauth2_signin;
+
+    auth_request_set $auth_user $upstream_http_x_auth_request_preferred_username;
+    proxy_set_header X-Auth-User $auth_user;
+
+    rewrite ^/flower/?(.*)$ /$1 break;
+    proxy_pass http://flower_upstream;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}

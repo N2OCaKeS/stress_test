@@ -10,7 +10,7 @@ from app.api.v1.dependencies import get_current_user
 
 router = APIRouter(
     prefix="/user",
-    tags=["User"],
+    tags=["Пользователь"],
 )
 
 

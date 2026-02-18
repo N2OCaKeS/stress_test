@@ -72,11 +72,33 @@ auth:
     # rootcertbundle: /certs/auth-registry-ca.pem
 ```
 
-### Portainer и другие сервисы
+### OAuth и интеграции сервисов
 
 - Проверка bearer/cookie токена: `GET /api/auth/v1/integrations/whoami`
 - Проверка Basic/Bearer для reverse-proxy интеграций: `GET /api/auth/v1/integrations/basic/verify`
-- Проверка доступа в Portainer: `GET /api/auth/v1/integrations/portainer/authorize`
+- Общий OAuth2 для любых сервисов:
+  - Authorization URL: `GET /api/auth/v1/integrations/oauth/authorize`
+  - Access Token URL: `POST /api/auth/v1/integrations/oauth/token`
+  - UserInfo URL: `GET /api/auth/v1/integrations/oauth/userinfo`
+  - `authorize` возвращает встроенную страницу входа в черно-оранжевой теме, заголовок берется из `display_name` OAuth-клиента.
+  - Поддерживаются client auth варианты `client_secret_basic` и `client_secret_post`.
+- OAuth-клиенты управляются из БД:
+  - `GET/POST /api/auth/v1/admin/oauth/clients/`
+  - `PATCH/DELETE /api/auth/v1/admin/oauth/clients/{oauth_client_id}`
+- Для каждого OAuth-клиента можно задать:
+  - список разрешенных `redirect_uri_prefixes`
+  - `required_permission` (если задано, пользователь без этого права не пройдет логин)
+  - `display_name` для заголовка страницы входа
+- При инициализации автоматически создаются клиенты:
+  - `allta-redis` (право `redis.commander`)
+  - `allta-docs` (право `docs.api`)
+  - `allta-flower` (право `flower`)
+  - `allta-docker-ui` (право `docker`, URL `allta.devos.astralinux.ru:21502`)
+  - `allta-devpi` (право `devpi`, URL `allta.devos.astralinux.ru:3141`)
+- Секреты OAuth-клиентов генерируются init-контейнером автоматически и сохраняются:
+  - `${REGISTRY_KEYS_PATH}/oauth_clients/<client_id>.secret`
+  - `${REGISTRY_KEYS_PATH}/oauth_clients/clients.env`
+  Эти файлы можно монтировать в другие compose-проекты как `read_only`.
 - Проверка доступа для управления инфраструктурой:
   - `GET /api/auth/v1/integrations/basic/verify?permission=server.manage`
   - `GET /api/auth/v1/integrations/basic/verify?permission=vm.manage`
@@ -84,6 +106,20 @@ auth:
   - `X-Auth-User`
   - `X-Auth-User-Id`
   - `X-Auth-Role`
+
+Пример настроек для любого OAuth-сервиса:
+- `Client ID`: из записи OAuth-клиента в БД
+- `Client Secret`: из `clients.env` или `<client_id>.secret`
+- `Authorization URL`: `https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/authorize`
+- `Access Token URL`: `https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/token`
+- `Resource URL`: `https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/userinfo`
+- `User identifier`: `preferred_username` (или `login`)
+- `Scopes`: `profile`
+
+Для Flower/Redis Commander за Nginx рекомендуется схема `nginx + oauth2-proxy`.
+Готовые шаблоны:
+- `allta_auth/docker_auth/allta_nginx/template/services/30-flower-oauth2-proxy.conf.example`
+- `allta_auth/docker_auth/allta_nginx/template/services/31-redis-commander-oauth2-proxy.conf.example`
 
 ### DevPI
 
@@ -98,9 +134,10 @@ auth:
 ## RBAC
 
 В сервисе добавлены таблицы:
-- `permissions` (права, например: `docker`, `portainer`, `devpi`, `config.tokens`, `server.manage`, `vm.manage`)
+- `permissions` (права, например: `docker`, `portainer`, `devpi`, `config.tokens`, `server.manage`, `vm.manage`, `flower`, `redis.commander`, `docs.api`)
 - `roles` и `role_permissions`
 - `groups`, `group_permissions`, `user_groups`
+- `oauth_clients` (OAuth-клиенты интеграций)
 
 По умолчанию:
 - роль `admin` имеет все права
@@ -117,7 +154,9 @@ auth:
 - `GET/POST/PATCH /api/auth/v1/admin/access/groups`
 - `POST/DELETE /api/auth/v1/admin/access/groups/{group_id}/permissions/{permission_id}`
 - `POST/DELETE /api/auth/v1/admin/access/groups/{group_id}/users/{user_id}`
+- `GET/POST/PATCH/DELETE /api/auth/v1/admin/oauth/clients/*`
 
 ## Совместимость
 
 Существующие endpoints `/api/auth/login`, `/api/auth/logout`, `/api/auth/verify`, `/api/auth/v1/user/*`, `/api/auth/v1/admin/*` сохранены.
+Старые `.../integrations/portainer/oauth/*` удалены, используйте `.../integrations/oauth/*`.

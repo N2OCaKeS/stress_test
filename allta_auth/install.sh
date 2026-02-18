@@ -51,9 +51,11 @@ exports(){
 	export BASE_PATH=$FILE_PATH/volumes
 	export CRED_PATH=$FILE_PATH/config
 	export REGISTRY_KEYS_PATH=$FILE_PATH/secrets
+	export OAUTH_CLIENT_SECRETS_PATH=$REGISTRY_KEYS_PATH/oauth_clients
 	export ALLTA_EXTERNAL_HOST="allta.devos.astralinux.ru"
 	export REGISTRY_CERT_SUBJECT="/CN=allta.devos.astralinux.ru"
 	export REGISTRY_CERT_DAYS="3650"
+	export AUTH_SQL_ECHO="false"
 	export CONFIG_API_TOKENS_PATH="/home/u/tokens.json"
 	export AUTH_DB_PATH=$BASE_PATH/allta_auth_db_data
 	export CONFIG_API_DATA_PATH=$BASE_PATH/allta_config_api_data	
@@ -65,6 +67,7 @@ dir(){
 	sudo mkdir -p "$AUTH_DB_PATH"
 	sudo mkdir -p "$CONFIG_API_DATA_PATH"
 	sudo mkdir -p "$REGISTRY_KEYS_PATH"
+	sudo mkdir -p "$OAUTH_CLIENT_SECRETS_PATH"
 }
 
 creds(){
@@ -139,7 +142,7 @@ remove(){
 
 precond(){
 	exports
-	sudo apt-get update
+	# sudo apt-get update
 	# sudo apt-get install -y docker-compose docker wget curl
 	sudo usermod -aG docker "$USER"
 	sudo systemctl enable docker.service

@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 router = APIRouter(
     prefix="",
-    tags=["Health"],
+    tags=["Служебные"],
 )
 
 @router.get("/health")

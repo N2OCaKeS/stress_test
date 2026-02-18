@@ -20,7 +20,7 @@ from app.db.session import get_db
 
 router = APIRouter(
     prefix="/admin/access",
-    tags=["Admin"],
+    tags=[],
 )
 
 
@@ -43,7 +43,12 @@ def _group_to_read(group) -> GroupRead:
     )
 
 
-@router.get("/permissions", response_model=List[PermissionRead], summary="Список прав (admin)")
+@router.get(
+    "/permissions",
+    response_model=List[PermissionRead],
+    summary="Список прав (admin)",
+    tags=["Роли и права"],
+)
 def admin_list_permissions(
     db: Session = Depends(get_db),
     _admin=Security(get_current_admin_user, scopes=[]),
@@ -56,6 +61,7 @@ def admin_list_permissions(
     response_model=PermissionRead,
     status_code=status.HTTP_201_CREATED,
     summary="Создать право (admin)",
+    tags=["Роли и права"],
 )
 def admin_create_permission(
     body: PermissionCreate,
@@ -65,7 +71,12 @@ def admin_create_permission(
     return ac.create_permission(db, body.code, body.description)
 
 
-@router.get("/roles", response_model=List[RoleRead], summary="Список ролей (admin)")
+@router.get(
+    "/roles",
+    response_model=List[RoleRead],
+    summary="Список ролей (admin)",
+    tags=["Роли и права"],
+)
 def admin_list_roles(
     db: Session = Depends(get_db),
     _admin=Security(get_current_admin_user, scopes=[]),
@@ -78,6 +89,7 @@ def admin_list_roles(
     response_model=RoleRead,
     status_code=status.HTTP_201_CREATED,
     summary="Создать роль (admin)",
+    tags=["Роли и права"],
 )
 def admin_create_role(
     body: RoleCreate,
@@ -87,7 +99,12 @@ def admin_create_role(
     return _role_to_read(ac.create_role(db, body.name, body.description))
 
 
-@router.patch("/roles/{role_id}", response_model=RoleRead, summary="Обновить роль (admin)")
+@router.patch(
+    "/roles/{role_id}",
+    response_model=RoleRead,
+    summary="Обновить роль (admin)",
+    tags=["Роли и права"],
+)
 def admin_update_role(
     role_id: int,
     body: RoleUpdate,
@@ -104,6 +121,7 @@ def admin_update_role(
     "/roles/{role_id}/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Назначить право роли (admin)",
+    tags=["Роли и права"],
 )
 def admin_add_permission_to_role(
     role_id: int,
@@ -124,6 +142,7 @@ def admin_add_permission_to_role(
     "/roles/{role_id}/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Отозвать право у роли (admin)",
+    tags=["Роли и права"],
 )
 def admin_remove_permission_from_role(
     role_id: int,
@@ -140,7 +159,12 @@ def admin_remove_permission_from_role(
     ac.remove_permission_from_role(db, role, permission)
 
 
-@router.get("/groups", response_model=List[GroupRead], summary="Список групп (admin)")
+@router.get(
+    "/groups",
+    response_model=List[GroupRead],
+    summary="Список групп (admin)",
+    tags=["Группы"],
+)
 def admin_list_groups(
     db: Session = Depends(get_db),
     _admin=Security(get_current_admin_user, scopes=[]),
@@ -153,6 +177,7 @@ def admin_list_groups(
     response_model=GroupRead,
     status_code=status.HTTP_201_CREATED,
     summary="Создать группу (admin)",
+    tags=["Группы"],
 )
 def admin_create_group(
     body: GroupCreate,
@@ -162,7 +187,12 @@ def admin_create_group(
     return _group_to_read(ac.create_group(db, body.name, body.description))
 
 
-@router.patch("/groups/{group_id}", response_model=GroupRead, summary="Обновить группу (admin)")
+@router.patch(
+    "/groups/{group_id}",
+    response_model=GroupRead,
+    summary="Обновить группу (admin)",
+    tags=["Группы"],
+)
 def admin_update_group(
     group_id: int,
     body: GroupUpdate,
@@ -179,6 +209,7 @@ def admin_update_group(
     "/groups/{group_id}/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Назначить право группе (admin)",
+    tags=["Группы"],
 )
 def admin_add_permission_to_group(
     group_id: int,
@@ -199,6 +230,7 @@ def admin_add_permission_to_group(
     "/groups/{group_id}/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Отозвать право у группы (admin)",
+    tags=["Группы"],
 )
 def admin_remove_permission_from_group(
     group_id: int,
@@ -219,6 +251,7 @@ def admin_remove_permission_from_group(
     "/groups/{group_id}/users/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Добавить пользователя в группу (admin)",
+    tags=["Группы"],
 )
 def admin_add_user_to_group(
     group_id: int,
@@ -239,6 +272,7 @@ def admin_add_user_to_group(
     "/groups/{group_id}/users/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить пользователя из группы (admin)",
+    tags=["Группы"],
 )
 def admin_remove_user_from_group(
     group_id: int,

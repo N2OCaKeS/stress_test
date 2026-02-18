@@ -465,6 +465,12 @@ def mc_qa_cli():
         rc = mc_cmd.mc_qa()
         sys.exit(rc)
 
+@mc_group.command("10", short_help="MC на ftp://10.177.103.10/.")
+def mc_10_cli():
+    with ui.section("MC • 10.177.103.10"):
+        rc = mc_cmd.mc_10()
+        sys.exit(rc)
+
 @mc_group.command("ci", short_help="MC на CI FTP.")
 def mc_ci_cli():
     with ui.section("MC • CI"):

@@ -8,7 +8,7 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError, ContentTooShortError
 
 from allta_cli.utils import ui
-from allta_cli.utils.config_api import files as fetch_file, ConfigApiError
+from allta_cli.utils.config_api import files as fetch_file, ConfigApiError, ConfigApiFileNotFound
 from allta_cli.utils.auth import AuthError, TokenExpiredError, NotAuthenticatedError
 
 
@@ -16,6 +16,49 @@ def _dump_json_like(filename: str, data: dict) -> None:
     ui.header(f"{filename} (начало)")
     print(json.dumps(data, ensure_ascii=False, indent=2))
     ui.footer(f"{filename} (конец)")
+
+
+def _print_not_found_payload(payload: object) -> None:
+    """
+    Печатает тело ответа при 404 от config-API.
+    Предпочтительно показывает 'info' как таблицу.
+    """
+    if not isinstance(payload, dict):
+        ui.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    detail = payload.get("detail")
+    if isinstance(detail, str) and detail.strip():
+        ui.err(detail.strip())
+    else:
+        ui.err("Файл не найден (HTTP 404).")
+
+    info = payload.get("info")
+    if not isinstance(info, list) or not info:
+        return
+
+    items = [x for x in info if isinstance(x, dict)]
+    if not items:
+        return
+
+    preferred_keys = ["filename", "description", "uploaded_by"]
+    keys: list[str] = []
+    for k in preferred_keys:
+        if any(k in it for it in items):
+            keys.append(k)
+    other_keys = sorted({k for it in items for k in it.keys()} - set(keys))
+    keys.extend(other_keys)
+
+    label = {
+        "filename": "Filename",
+        "description": "Description",
+        "uploaded_by": "Uploaded By",
+    }
+    headers = [label.get(k, k) for k in keys]
+    rows = [[it.get(k, "") for k in keys] for it in items]
+
+    ui.echo("Доступные файлы:")
+    ui.table(headers=headers, rows=rows)
 
 
 def _fetch_json_from_ftp(url: str, timeout: int = 20) -> dict:
@@ -76,6 +119,9 @@ def files_cmd(filename: str) -> int:
 
     try:
         data = fetch_file(filename)
+    except ConfigApiFileNotFound as e:
+        _print_not_found_payload(e.payload)
+        return 1
     except (NotAuthenticatedError, TokenExpiredError, AuthError, ConfigApiError) as e:
         ui.err(f"{e}")
         return 1

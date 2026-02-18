@@ -49,6 +49,9 @@ _OAUTH_AUDIENCE = "allta-oauth"
 _OAUTH_CODE_TYPE = "oauth_code"
 _OAUTH_ACCESS_TYPE = "oauth_access"
 _OAUTH_NGINX_STATE_TYPE = "oauth_nginx_state"
+_OAUTH_NGINX_CONTEXT_TYPE = "oauth_nginx_context"
+_OAUTH_NGINX_CONTEXT_COOKIE = "allta_oauth_nginx_ctx"
+_OAUTH_NGINX_CONTEXT_COOKIE_PATH = "/api/auth/v1/integrations/oauth/nginx"
 
 
 def _decode_basic_credentials(encoded_credentials: str) -> tuple[str, str]:
@@ -800,6 +803,120 @@ def _build_oauth_nginx_state(
     return jwt.encode(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def _build_oauth_nginx_context(
+    *,
+    client_id: str,
+    redirect_uri: str,
+    rd: str,
+    scope: str,
+) -> str:
+    now = datetime.now(timezone.utc)
+    expires_in = max(settings.OAUTH_NGINX_CONTEXT_EXPIRE_SECONDS, 120)
+    claims = {
+        "iss": settings.OAUTH_ISSUER,
+        "aud": _OAUTH_AUDIENCE,
+        "sub": client_id,
+        "iat": int(now.timestamp()),
+        "nbf": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
+        "jti": str(uuid4()),
+        "typ": _OAUTH_NGINX_CONTEXT_TYPE,
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "rd": rd,
+        "scope": scope,
+    }
+    return jwt.encode(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def _decode_oauth_nginx_context(context_token: str) -> dict | None:
+    try:
+        claims = jwt.decode(
+            context_token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            audience=_OAUTH_AUDIENCE,
+        )
+    except JWTError:
+        return None
+    if claims.get("typ") != _OAUTH_NGINX_CONTEXT_TYPE:
+        return None
+    return claims
+
+
+def _set_oauth_nginx_context_cookie(
+    response: Response,
+    *,
+    client_id: str,
+    redirect_uri: str,
+    rd: str,
+    scope: str,
+) -> None:
+    context_token = _build_oauth_nginx_context(
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        rd=rd,
+        scope=scope,
+    )
+    response.set_cookie(
+        key=_OAUTH_NGINX_CONTEXT_COOKIE,
+        value=context_token,
+        httponly=True,
+        max_age=max(settings.OAUTH_NGINX_CONTEXT_EXPIRE_SECONDS, 120),
+        samesite="lax",
+        secure=settings.COOKIE_SECURE,
+        path=_OAUTH_NGINX_CONTEXT_COOKIE_PATH,
+    )
+
+
+def _clear_oauth_nginx_context_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=_OAUTH_NGINX_CONTEXT_COOKIE,
+        path=_OAUTH_NGINX_CONTEXT_COOKIE_PATH,
+    )
+
+
+def _start_oauth_nginx_flow_redirect(
+    *,
+    client_id: str,
+    redirect_uri: str,
+    rd: str,
+    scope: str,
+) -> RedirectResponse:
+    start_url = _append_query_params(
+        "/api/auth/v1/integrations/oauth/nginx/start",
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        rd=rd,
+        scope=scope,
+    )
+    return RedirectResponse(url=start_url, status_code=status.HTTP_302_FOUND)
+
+
+def _recover_oauth_nginx_context_from_cookie(request: Request) -> dict | None:
+    context_token = request.cookies.get(_OAUTH_NGINX_CONTEXT_COOKIE)
+    if not context_token:
+        return None
+
+    claims = _decode_oauth_nginx_context(context_token)
+    if not claims:
+        return None
+
+    client_id = str(claims.get("client_id") or "").strip()
+    redirect_uri = str(claims.get("redirect_uri") or "").strip()
+    rd = str(claims.get("rd") or "").strip()
+    scope = str(claims.get("scope") or settings.OAUTH_DEFAULT_SCOPE).strip()
+    if not client_id or not redirect_uri or not rd:
+        return None
+
+    return {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "rd": rd,
+        "scope": scope or settings.OAUTH_DEFAULT_SCOPE,
+    }
+
+
 def _decode_oauth_nginx_state(state: str) -> dict:
     try:
         claims = jwt.decode(
@@ -1031,7 +1148,15 @@ def oauth_nginx_start(
         scope=requested_scope,
         state=state,
     )
-    return RedirectResponse(url=authorize_url, status_code=status.HTTP_302_FOUND)
+    response = RedirectResponse(url=authorize_url, status_code=status.HTTP_302_FOUND)
+    _set_oauth_nginx_context_cookie(
+        response,
+        client_id=oauth_client.client_id,
+        redirect_uri=redirect_uri,
+        rd=rd,
+        scope=requested_scope,
+    )
+    return response
 
 
 @router.get(
@@ -1040,14 +1165,34 @@ def oauth_nginx_start(
     tags=["Интеграции: OAuth"],
 )
 def oauth_nginx_callback(
+    request: Request,
     code: str = Query(...),
     state: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    state_claims = _decode_oauth_nginx_state(state)
+    recovered_from_context = False
+    recovered_context: dict | None = None
+
+    try:
+        state_claims = _decode_oauth_nginx_state(state)
+    except HTTPException as exc:
+        if (
+            exc.status_code == status.HTTP_400_BAD_REQUEST
+            and str(exc.detail) == "Invalid or expired OAuth nginx state"
+        ):
+            recovered_context = _recover_oauth_nginx_context_from_cookie(request)
+            if not recovered_context:
+                raise
+            state_claims = recovered_context
+            recovered_from_context = True
+        else:
+            raise
+
     client_id = str(state_claims.get("client_id") or "").strip()
     redirect_uri = str(state_claims.get("redirect_uri") or "").strip()
     rd = str(state_claims.get("rd") or "").strip()
+    recovered_scope = str(state_claims.get("scope") or settings.OAUTH_DEFAULT_SCOPE).strip()
+    recovered_scope = recovered_scope or settings.OAUTH_DEFAULT_SCOPE
 
     if not client_id or not redirect_uri or not rd:
         raise HTTPException(
@@ -1074,17 +1219,35 @@ def oauth_nginx_callback(
             detail="redirect_uri is not allowed",
         )
 
-    code_claims = _decode_oauth_code(code)
-    if str(code_claims.get("client_id") or "") != client_id:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="Authorization code client mismatch",
-        )
-    if str(code_claims.get("redirect_uri") or "") != redirect_uri:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="Authorization code redirect URI mismatch",
-        )
+    try:
+        code_claims = _decode_oauth_code(code)
+        if str(code_claims.get("client_id") or "") != client_id:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Authorization code client mismatch",
+            )
+        if str(code_claims.get("redirect_uri") or "") != redirect_uri:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Authorization code redirect URI mismatch",
+            )
+    except HTTPException:
+        if recovered_from_context:
+            restart_response = _start_oauth_nginx_flow_redirect(
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                rd=rd,
+                scope=recovered_scope,
+            )
+            _set_oauth_nginx_context_cookie(
+                restart_response,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                rd=rd,
+                scope=recovered_scope,
+            )
+            return restart_response
+        raise
 
     raw_user_id = code_claims.get("user_id")
     try:
@@ -1119,6 +1282,7 @@ def oauth_nginx_callback(
         samesite="lax",
         secure=settings.COOKIE_SECURE,
     )
+    _clear_oauth_nginx_context_cookie(response)
     return response
 
 

@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     OAUTH_ISSUER: str = getenv("OAUTH_ISSUER", "allta-auth")
     OAUTH_DEFAULT_SCOPE: str = getenv("OAUTH_DEFAULT_SCOPE", "profile")
     OAUTH_CODE_EXPIRE_SECONDS: int = _as_int("OAUTH_CODE_EXPIRE_SECONDS", 120)
+    OAUTH_NGINX_CONTEXT_EXPIRE_SECONDS: int = _as_int(
+        "OAUTH_NGINX_CONTEXT_EXPIRE_SECONDS",
+        1800,
+    )
     OAUTH_TOKEN_EXPIRE_SECONDS: int = _as_int("OAUTH_TOKEN_EXPIRE_SECONDS", 300)
     OAUTH_BOOTSTRAP_CLIENTS_ENABLED: bool = _as_bool("OAUTH_BOOTSTRAP_CLIENTS_ENABLED", True)
     OAUTH_CLIENT_SECRETS_DIR: str = getenv(

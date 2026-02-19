@@ -55,14 +55,16 @@ class Report:
                 Criterion(name="successful", values=self.raw_table['successful'].tolist(), weight=0.2, sign=1, lower_bound=0, upper_bound=10000),
                 Criterion(name="emails_per_second", values=self.raw_table["emails_per_second"].tolist(), weight=0.8, sign=1, lower_bound=0, upper_bound=4000),
             ]
-
+            total_rating, s = MathModels.total_rating(criteria=criterions)
+            total_rating *=10000
         elif self.type_test == "imap":
             criterions = [
                 Criterion(name="successful_count", values=self.raw_table['successful_count'].tolist(), weight=0.2, sign=1, lower_bound=0, upper_bound=25000),
                 Criterion(name="avg_latency", values=self.raw_table["avg_latency"].tolist(), weight=0.4, sign=-1, lower_bound=0, upper_bound=300),
                 Criterion(name="throughput", values=self.raw_table["throughput"].tolist(), weight=0.4, sign=1, lower_bound=0, upper_bound=8000),
             ]
-        total_rating, s = MathModels.total_rating(criteria=criterions)
+            total_rating, s = MathModels.total_rating(criteria=criterions)
+            total_rating *=10 
         return total_rating
     
 

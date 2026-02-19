@@ -1,7 +1,7 @@
 allta_app - v2.56.1
 * Add BT-91580, BT-92428
-
-
+* Add Exim4-SMTP, Dovecot-IMAP,
+  FIO_large in statistics_conf
 
 
 

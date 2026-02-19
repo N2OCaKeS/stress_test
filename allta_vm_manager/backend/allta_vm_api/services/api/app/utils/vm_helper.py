@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from ipaddress import ip_address, IPv4Address, IPv6Address
-from typing import Optional, Tuple
+from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

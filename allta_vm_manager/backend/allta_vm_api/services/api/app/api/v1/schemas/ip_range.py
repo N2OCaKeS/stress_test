@@ -1,10 +1,11 @@
 from typing import Optional
-from pydantic import BaseModel, Field, IPvAnyAddress
+
+from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress
 
 class IPRangeBase(BaseModel):
-    name: str = Field(..., example="VM Subnet")
-    ip_start: IPvAnyAddress = Field(..., example="10.0.0.10")
-    ip_end: IPvAnyAddress = Field(..., example="10.0.0.250")
+    name: str = Field(..., examples=["VM Subnet"])
+    ip_start: IPvAnyAddress = Field(..., examples=["10.0.0.10"])
+    ip_end: IPvAnyAddress = Field(..., examples=["10.0.0.250"])
 
 class IPRangeCreate(IPRangeBase):
     pass
@@ -17,5 +18,4 @@ class IPRangeUpdate(BaseModel):
 
 class IPRangeRead(IPRangeBase):
     id: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,19 +38,45 @@ def _can_manage_vms(user: AuthVerifyResponse) -> bool:
 
 
 def _server_task_info_from_api(srv, server_id: int) -> ServerTaskInfo:
+    ip = str(getattr(srv, "ip_address", "") or getattr(srv, "admin_panel_ip", "")).strip()
+    username = str(
+        getattr(srv, "server_user", None) or getattr(srv, "admin_panel_user", None) or ""
+    ).strip()
+    password = str(
+        getattr(srv, "server_password", None) or getattr(srv, "admin_panel_pass", None) or ""
+    )
+    phy_if_raw = str(getattr(srv, "phy_if", None) or getattr(srv, "phys_iface", None) or "").strip()
+
+    if not ip:
+        raise HTTPException(status_code=502, detail="Remote server has no IP field")
+    if not username or not password:
+        raise HTTPException(status_code=502, detail="Remote server has no credentials")
+
     return ServerTaskInfo(
         id=server_id,
-        ip=str(getattr(srv, "ip_address", "") or getattr(srv, "admin_panel_ip", "")),
-        username=getattr(srv, "server_user", None) or getattr(srv, "admin_panel_user", None),
-        password=getattr(srv, "server_password", None) or getattr(srv, "admin_panel_pass", None),
-        phy_if=getattr(srv, "phy_if", None) or getattr(srv, "phys_iface", None),
+        ip=ip,
+        username=username,
+        password=password,
+        phy_if=phy_if_raw or None,
     )
+
+
+def _vm_id(vm: VirtualMachine) -> int:
+    return cast(int, vm.id)
+
+
+def _vm_name(vm: VirtualMachine) -> str:
+    return cast(str, vm.name)
+
+
+def _vm_server_id(vm: VirtualMachine) -> int:
+    return cast(int, vm.server_id)
 
 
 def _ensure_same_server(vms: List[VirtualMachine]) -> int:
     if not vms:
         raise HTTPException(status_code=404, detail="No VMs selected")
-    sids = {vm.server_id for vm in vms}
+    sids = {_vm_server_id(vm) for vm in vms}
     if len(sids) != 1:
         raise HTTPException(
             status_code=400,
@@ -80,7 +106,7 @@ async def _resolve_vms_by_ids_names(
         res = await db.execute(select(VirtualMachine).where(clauses[0]))
     else:
         res = await db.execute(select(VirtualMachine).where(clauses[0] | clauses[1]))
-    return res.scalars().all()
+    return list(res.scalars().all())
 
 
 async def _snapshot_exists(db: AsyncSession, vm_id: int, name: str) -> bool:
@@ -118,7 +144,7 @@ async def list_snapshots(
             raise HTTPException(status_code=404, detail=f"VM name='{vm_name}' not found")
 
     res = await db.execute(
-        select(VMSnapshot).where(VMSnapshot.vm_id == vm.id).order_by(VMSnapshot.id.desc())
+        select(VMSnapshot).where(VMSnapshot.vm_id == _vm_id(vm)).order_by(VMSnapshot.id.desc())
     )
     snapshots = res.scalars().all()
 
@@ -154,7 +180,7 @@ async def create_snapshots(
     if ids:
         res = await db.execute(select(VirtualMachine).where(VirtualMachine.id.in_(ids)))
         found = res.scalars().all()
-        vms_by_id = {vm.id: vm for vm in found}
+        vms_by_id = {_vm_id(vm): vm for vm in found}
         miss = [vid for vid in ids if vid not in vms_by_id]
         if miss:
             raise HTTPException(status_code=404, detail={"missing_ids": miss})
@@ -163,7 +189,7 @@ async def create_snapshots(
     if names:
         res = await db.execute(select(VirtualMachine).where(VirtualMachine.name.in_(names)))
         found = res.scalars().all()
-        vms_by_name = {vm.name: vm for vm in found}
+        vms_by_name = {_vm_name(vm): vm for vm in found}
         miss = [nm for nm in names if nm not in vms_by_name]
         if miss:
             raise HTTPException(status_code=404, detail={"missing_names": miss})
@@ -179,7 +205,7 @@ async def create_snapshots(
     for nm in names:
         vm = vms_by_name.get(nm)
         if vm:
-            refs.setdefault(vm.id, []).append(f"name:{nm}")
+            refs.setdefault(_vm_id(vm), []).append(f"name:{nm}")
     dup = {k: v for k, v in refs.items() if len(v) > 1}
     if dup:
         raise HTTPException(
@@ -192,16 +218,17 @@ async def create_snapshots(
     unique: Dict[int, VirtualMachine] = {}
     unique.update(vms_by_id)
     for vm in vms_by_name.values():
-        unique.setdefault(vm.id, vm)
+        unique.setdefault(_vm_id(vm), vm)
     vms = list(unique.values())
 
     # права + уникальность имени снимка на каждой ВМ
     conflicts: List[int] = []
     for vm in vms:
         if not _can_user_touch_vm(vm, user.login, _can_manage_vms(user)):
-            raise HTTPException(status_code=403, detail=f"Forbidden for VM id={vm.id}")
-        if await _snapshot_exists(db, vm.id, snapshot_name):
-            conflicts.append(vm.id)
+            raise HTTPException(status_code=403, detail=f"Forbidden for VM id={_vm_id(vm)}")
+        vm_id = _vm_id(vm)
+        if await _snapshot_exists(db, vm_id, snapshot_name):
+            conflicts.append(vm_id)
     if conflicts:
         raise HTTPException(
             status_code=409,
@@ -222,7 +249,7 @@ async def create_snapshots(
         task_id=task_id,
         operation=SnapshotTaskOperation.create,
         server=_server_task_info_from_api(srv, server_id),
-        vms={vm.name: vm.id for vm in vms},
+        vms={_vm_name(vm): _vm_id(vm) for vm in vms},
         snapshot_name=snapshot_name,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
     )
@@ -259,7 +286,7 @@ async def delete_snapshots(
     if ids:
         res = await db.execute(select(VirtualMachine).where(VirtualMachine.id.in_(ids)))
         found = res.scalars().all()
-        vms_by_id = {vm.id: vm for vm in found}
+        vms_by_id = {_vm_id(vm): vm for vm in found}
         miss = [vid for vid in ids if vid not in vms_by_id]
         if miss:
             raise HTTPException(status_code=404, detail={"missing_ids": miss})
@@ -268,7 +295,7 @@ async def delete_snapshots(
     if names:
         res = await db.execute(select(VirtualMachine).where(VirtualMachine.name.in_(names)))
         found = res.scalars().all()
-        vms_by_name = {vm.name: vm for vm in found}
+        vms_by_name = {_vm_name(vm): vm for vm in found}
         miss = [nm for nm in names if nm not in vms_by_name]
         if miss:
             raise HTTPException(status_code=404, detail={"missing_names": miss})
@@ -284,7 +311,7 @@ async def delete_snapshots(
     for nm in names:
         vm = vms_by_name.get(nm)
         if vm:
-            refs.setdefault(vm.id, []).append(f"name:{nm}")
+            refs.setdefault(_vm_id(vm), []).append(f"name:{nm}")
     dup = {k: v for k, v in refs.items() if len(v) > 1}
     if dup:
         raise HTTPException(
@@ -297,14 +324,15 @@ async def delete_snapshots(
     unique: Dict[int, VirtualMachine] = {}
     unique.update(vms_by_id)
     for vm in vms_by_name.values():
-        unique.setdefault(vm.id, vm)
+        unique.setdefault(_vm_id(vm), vm)
     vms = list(unique.values())
 
     # наличие снимка у каждой ВМ
     missing_on: List[int] = []
     for vm in vms:
-        if not await _snapshot_exists(db, vm.id, snapshot_name):
-            missing_on.append(vm.id)
+        vm_id = _vm_id(vm)
+        if not await _snapshot_exists(db, vm_id, snapshot_name):
+            missing_on.append(vm_id)
     if missing_on:
         raise HTTPException(
             status_code=404,
@@ -323,7 +351,7 @@ async def delete_snapshots(
         task_id=task_id,
         operation=SnapshotTaskOperation.delete,
         server=_server_task_info_from_api(srv, server_id),
-        vms={vm.name: vm.id for vm in vms},
+        vms={_vm_name(vm): _vm_id(vm) for vm in vms},
         snapshot_name=snapshot_name,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
     )
@@ -360,7 +388,7 @@ async def revert_snapshots(
     if ids:
         res = await db.execute(select(VirtualMachine).where(VirtualMachine.id.in_(ids)))
         found = res.scalars().all()
-        vms_by_id = {vm.id: vm for vm in found}
+        vms_by_id = {_vm_id(vm): vm for vm in found}
         miss = [vid for vid in ids if vid not in vms_by_id]
         if miss:
             raise HTTPException(status_code=404, detail={"missing_ids": miss})
@@ -369,7 +397,7 @@ async def revert_snapshots(
     if names:
         res = await db.execute(select(VirtualMachine).where(VirtualMachine.name.in_(names)))
         found = res.scalars().all()
-        vms_by_name = {vm.name: vm for vm in found}
+        vms_by_name = {_vm_name(vm): vm for vm in found}
         miss = [nm for nm in names if nm not in vms_by_name]
         if miss:
             raise HTTPException(status_code=404, detail={"missing_names": miss})
@@ -385,7 +413,7 @@ async def revert_snapshots(
     for nm in names:
         vm = vms_by_name.get(nm)
         if vm:
-            refs.setdefault(vm.id, []).append(f"name:{nm}")
+            refs.setdefault(_vm_id(vm), []).append(f"name:{nm}")
     dup = {k: v for k, v in refs.items() if len(v) > 1}
     if dup:
         raise HTTPException(
@@ -398,16 +426,17 @@ async def revert_snapshots(
     unique: Dict[int, VirtualMachine] = {}
     unique.update(vms_by_id)
     for vm in vms_by_name.values():
-        unique.setdefault(vm.id, vm)
+        unique.setdefault(_vm_id(vm), vm)
     vms = list(unique.values())
 
     # права + наличие снимка
     missing_on: List[int] = []
     for vm in vms:
         if not _can_user_touch_vm(vm, user.login, _can_manage_vms(user)):
-            raise HTTPException(status_code=403, detail=f"Forbidden for VM id={vm.id}")
-        if not await _snapshot_exists(db, vm.id, snapshot_name):
-            missing_on.append(vm.id)
+            raise HTTPException(status_code=403, detail=f"Forbidden for VM id={_vm_id(vm)}")
+        vm_id = _vm_id(vm)
+        if not await _snapshot_exists(db, vm_id, snapshot_name):
+            missing_on.append(vm_id)
     if missing_on:
         raise HTTPException(
             status_code=404,
@@ -426,7 +455,7 @@ async def revert_snapshots(
         task_id=task_id,
         operation=SnapshotTaskOperation.revert,
         server=_server_task_info_from_api(srv, server_id),
-        vms={vm.name: vm.id for vm in vms},
+        vms={_vm_name(vm): _vm_id(vm) for vm in vms},
         snapshot_name=snapshot_name,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
     )

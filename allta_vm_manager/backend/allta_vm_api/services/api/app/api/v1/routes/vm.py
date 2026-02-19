@@ -1,6 +1,7 @@
 # app/api/v1/routes/vm.py
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Set
+from ipaddress import ip_address
+from typing import Any, Dict, List, Optional, Set, cast
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -56,22 +57,73 @@ def _can_see_vm_passwords(user: AuthVerifyResponse) -> bool:
 
 
 def _decrypted_vm_password(vm: VirtualMachine, *, reveal_password: bool) -> Optional[str]:
-    if not reveal_password or not getattr(vm, "password_enc", None):
+    token = cast(Optional[str], getattr(vm, "password_enc", None))
+    if not reveal_password or not token:
         return None
     try:
-        return _CRYPTO.decrypt(vm.password_enc)
+        return _CRYPTO.decrypt(token)
     except Exception:
         return None
 
 
 def _server_task_info_from_api(srv, server_id: int) -> ServerTaskInfo:
-    # важно: теперь всегда передаём server_id
+    ip = str(getattr(srv, "ip_address", "") or getattr(srv, "admin_panel_ip", "")).strip()
+    username = str(
+        getattr(srv, "server_user", None) or getattr(srv, "admin_panel_user", None) or ""
+    ).strip()
+    password = str(
+        getattr(srv, "server_password", None) or getattr(srv, "admin_panel_pass", None) or ""
+    )
+    phy_if_raw = str(getattr(srv, "phy_if", None) or getattr(srv, "phys_iface", None) or "").strip()
+
+    if not ip:
+        raise HTTPException(status_code=502, detail="Remote server has no IP field")
+    if not username or not password:
+        raise HTTPException(status_code=502, detail="Remote server has no credentials")
+
     return ServerTaskInfo(
         id=server_id,
-        ip=str(getattr(srv, "ip_address", "")),
-        username=getattr(srv, "server_user", None),
-        password=getattr(srv, "server_password", None),
-        phy_if=getattr(srv, "phy_if", None),
+        ip=ip,
+        username=username,
+        password=password,
+        phy_if=phy_if_raw or None,
+    )
+
+
+def _vm_id(vm: VirtualMachine) -> int:
+    return cast(int, vm.id)
+
+
+def _vm_name(vm: VirtualMachine) -> str:
+    return cast(str, vm.name)
+
+
+def _vm_cpu(vm: VirtualMachine) -> int:
+    return cast(int, vm.cpu)
+
+
+def _vm_ram(vm: VirtualMachine) -> int:
+    return cast(int, vm.ram)
+
+
+def _vm_server_id(vm: VirtualMachine) -> int:
+    return cast(int, vm.server_id)
+
+
+def _vm_status(vm: VirtualMachine) -> Optional[str]:
+    return cast(Optional[str], vm.status)
+
+
+def _vm_to_read(vm: VirtualMachine, *, password: Optional[str]) -> VMRead:
+    return VMRead(
+        id=_vm_id(vm),
+        name=_vm_name(vm),
+        cpu=_vm_cpu(vm),
+        ram=_vm_ram(vm),
+        ip_address=ip_address(str(cast(Any, vm.ip_address))),
+        server_id=_vm_server_id(vm),
+        status=_vm_status(vm),
+        password=password,
     )
 
 
@@ -107,18 +159,20 @@ async def _assert_single_server_for_vms(
         raise HTTPException(status_code=400, detail="Provide ids or names")
 
     clauses = []
-    if ids:   clauses.append(VirtualMachine.id.in_(ids))
-    if names: clauses.append(VirtualMachine.name.in_(names))
+    if ids:
+        clauses.append(VirtualMachine.id.in_(ids))
+    if names:
+        clauses.append(VirtualMachine.name.in_(names))
 
     res = await db.execute(
         select(VirtualMachine).where(clauses[0]) if len(clauses) == 1
         else select(VirtualMachine).where((clauses[0]) | (clauses[1]))
     )
-    vms = res.scalars().all()
+    vms = list(res.scalars().all())
     if not vms:
         raise HTTPException(status_code=404, detail="No VMs found")
 
-    server_ids = {vm.server_id for vm in vms}
+    server_ids = {_vm_server_id(vm) for vm in vms}
     if len(server_ids) != 1:
         raise HTTPException(
             status_code=400,
@@ -165,7 +219,7 @@ async def _build_vms_full_for_create(
         vms_full[name] = VMSpec(
             cpu=item.cpu,
             ram=item.ram,
-            ip_bridge=ip_str,
+            ip_bridge=ip_address(ip_str),
             server_id=payload.server_id,
         )
 
@@ -223,7 +277,7 @@ async def create_default_vms(
 
     vms_full: Dict[str, VMSpec] = {
         name: VMSpec(cpu=int(cfg["cpu"]), ram=int(cfg["ram"]),
-                     ip_bridge=str(cfg["ip"]), server_id=server_id)
+                     ip_bridge=ip_address(str(cfg["ip"])), server_id=server_id)
         for name, cfg in PRESET_VMS.items()
     }
 
@@ -255,11 +309,7 @@ async def get_vm_by_id(vm_id: int,
         reveal_password=_can_see_vm_passwords(user),
     )
 
-    return VMRead(
-        id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
-        ip_address=str(vm.ip_address), server_id=vm.server_id,
-        status=vm.status, password=password,
-    )
+    return _vm_to_read(vm, password=password)
 
 
 @router.get("/", response_model=List[VMRead],
@@ -274,11 +324,7 @@ async def list_vms(db: AsyncSession = Depends(get_async_db),
     reveal_passwords = _can_see_vm_passwords(user)
     for vm in rows:
         pwd = _decrypted_vm_password(vm, reveal_password=reveal_passwords)
-        out.append(VMRead(
-            id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
-            ip_address=str(vm.ip_address), server_id=vm.server_id,
-            status=vm.status, password=pwd,
-        ))
+        out.append(_vm_to_read(vm, password=pwd))
     return out
 
 
@@ -290,7 +336,7 @@ async def delete_vms(payload: VMDeleteRequest,
                      _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                      token: str = Depends(get_token)):
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
-    server_id = vms[0].server_id
+    server_id = _vm_server_id(vms[0])
     srv = await get_physical_server_from_remote(server_id, token)
 
     task_id = _uuid_task()
@@ -298,7 +344,7 @@ async def delete_vms(payload: VMDeleteRequest,
         task_id=task_id,
         operation=TaskOperation.vm_delete,
         server=_server_task_info_from_api(srv, server_id),
-        vm_names=[vm.name for vm in vms],
+        vm_names=[_vm_name(vm) for vm in vms],
     )
     await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
@@ -316,18 +362,18 @@ async def batch_update_vms(payload: BatchVMUpdateRequest,
 
     # берём существующие ВМ по именам и валидируем единый сервер
     vms = await _assert_single_server_for_vms(db, names=list(payload.vms.keys()))
-    server_id = vms[0].server_id
+    server_id = _vm_server_id(vms[0])
     srv = await get_physical_server_from_remote(server_id, token)
 
     # собираем единообразный vms_full (только изменённые поля подставляем, остальные – из БД)
-    current_by_name = {vm.name: vm for vm in vms}
+    current_by_name = {_vm_name(vm): vm for vm in vms}
     vms_full: Dict[str, VMSpec] = {}
     for name, patch in payload.vms.items():
         vm = current_by_name[name]
-        cpu = patch.cpu if patch.cpu is not None else vm.cpu
-        ram = patch.ram if patch.ram is not None else vm.ram
+        cpu = patch.cpu if patch.cpu is not None else _vm_cpu(vm)
+        ram = patch.ram if patch.ram is not None else _vm_ram(vm)
         vms_full[name] = VMSpec(cpu=cpu, ram=ram,
-                                ip_bridge=str(vm.ip_address), server_id=vm.server_id)
+                                ip_bridge=ip_address(str(cast(Any, vm.ip_address))), server_id=_vm_server_id(vm))
 
     task_id = _uuid_task()
     env = _env(
@@ -347,7 +393,7 @@ async def power_start_vms(payload: VMDeleteRequest,
                           _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                           token: str = Depends(get_token)):
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
-    server_id = vms[0].server_id
+    server_id = _vm_server_id(vms[0])
     srv = await get_physical_server_from_remote(server_id, token)
 
     task_id = _uuid_task()
@@ -355,7 +401,7 @@ async def power_start_vms(payload: VMDeleteRequest,
         task_id=task_id,
         operation=TaskOperation.vm_start,
         server=_server_task_info_from_api(srv, server_id),
-        vm_names=[vm.name for vm in vms],
+        vm_names=[_vm_name(vm) for vm in vms],
     )
     await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
@@ -368,7 +414,7 @@ async def power_stop_vms(payload: VMDeleteRequest,
                          _admin: AuthVerifyResponse = Depends(get_current_admin_user),
                          token: str = Depends(get_token)):
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
-    server_id = vms[0].server_id
+    server_id = _vm_server_id(vms[0])
     srv = await get_physical_server_from_remote(server_id, token)
 
     task_id = _uuid_task()
@@ -376,7 +422,7 @@ async def power_stop_vms(payload: VMDeleteRequest,
         task_id=task_id,
         operation=TaskOperation.vm_stop,
         server=_server_task_info_from_api(srv, server_id),
-        vm_names=[vm.name for vm in vms],
+        vm_names=[_vm_name(vm) for vm in vms],
     )
     await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}
@@ -400,12 +446,12 @@ async def astra_update(payload: AstraUpdateRequest,
 
     # 2) валидируем, что все ВМ на одном сервере
     vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
-    server_id = vms[0].server_id
+    server_id = _vm_server_id(vms[0])
     srv = await get_physical_server_from_remote(server_id, token)
 
     # 3) NEW: если хотя бы у одной ВМ уже есть снимок с таким RC — ошибка
-    vm_ids = [vm.id for vm in vms]
-    by_id = {vm.id: vm.name for vm in vms}
+    vm_ids = [_vm_id(vm) for vm in vms]
+    by_id = {_vm_id(vm): _vm_name(vm) for vm in vms}
     res = await db.execute(
         select(VMSnapshot.vm_id).where(
             VMSnapshot.name == payload.rc,
@@ -425,9 +471,14 @@ async def astra_update(payload: AstraUpdateRequest,
         )
 
     # 4) собираем vms_full для воркера
-    vm_names = [vm.name for vm in vms]
+    vm_names = [_vm_name(vm) for vm in vms]
     vms_full: Dict[str, VMSpec] = {
-        vm.name: VMSpec(cpu=vm.cpu, ram=vm.ram, ip_bridge=str(vm.ip_address), server_id=vm.server_id)
+        _vm_name(vm): VMSpec(
+            cpu=_vm_cpu(vm),
+            ram=_vm_ram(vm),
+            ip_bridge=ip_address(str(cast(Any, vm.ip_address))),
+            server_id=_vm_server_id(vm),
+        )
         for vm in vms
     }
 
@@ -459,7 +510,7 @@ async def set_vm_status(vm_id: int, data: VMStatusUpdate,
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
 
-    vm.status = normalize_status(data.status)
+    setattr(vm, "status", normalize_status(data.status))
     await db.commit()
     await db.refresh(vm)
 
@@ -468,11 +519,7 @@ async def set_vm_status(vm_id: int, data: VMStatusUpdate,
         reveal_password=_can_see_vm_passwords(user),
     )
 
-    return VMRead(
-        id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
-        ip_address=str(vm.ip_address), server_id=vm.server_id,
-        status=vm.status, password=pwd,
-    )
+    return _vm_to_read(vm, password=pwd)
 
 
 @router.post("/{vm_id}/release", response_model=VMRead,
@@ -485,9 +532,9 @@ async def release_vm_status(vm_id: int,
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
 
-    curr = (vm.status or "").strip()
+    curr = (_vm_status(vm) or "").strip()
     if curr != "free":
-        vm.status = "free"
+        setattr(vm, "status", "free")
 
     await db.commit()
     await db.refresh(vm)
@@ -497,8 +544,4 @@ async def release_vm_status(vm_id: int,
         reveal_password=_can_see_vm_passwords(user),
     )
 
-    return VMRead(
-        id=vm.id, name=vm.name, cpu=vm.cpu, ram=vm.ram,
-        ip_address=str(vm.ip_address), server_id=vm.server_id,
-        status=vm.status, password=pwd,
-    )
+    return _vm_to_read(vm, password=pwd)

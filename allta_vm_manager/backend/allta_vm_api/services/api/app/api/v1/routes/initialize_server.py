@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from ipaddress import ip_address
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.dependencies import get_current_admin_user, get_token
@@ -10,11 +13,10 @@ from app.utils.config import settings
 from app.utils.server_api import (
     get_physical_server_from_remote,
     set_server_status,
-    clear_server_status,
 )
 from app.utils.redis_queue import enqueue_task
 from app.api.v1.schemas.task_payload import TaskEnvelope, ServerTaskInfo
-from app.api.v1.crud.vm_read import get_vms
+from app.api.v1.models.vm import VirtualMachine
 from app.db.session import get_async_db
 from app.api.v1.crud.vm_snapshot import list_snapshots, delete_snapshot
 
@@ -30,7 +32,7 @@ VMS_HUB_STATUS = settings.VMS_HUB_STATUS
 async def prepare_vms_hub(
     server_id: int,
     token: str = Depends(get_token),
-    admin=Depends(get_current_admin_user),
+    _admin=Depends(get_current_admin_user),
 ):
     """
     Подготавливает сервер как VMS hub:
@@ -50,48 +52,40 @@ async def prepare_vms_hub(
 
     updated = await set_server_status(server_id, VMS_HUB_STATUS, token)
 
-    ip = getattr(server, "ip_address", None)
-    if not ip:
+    ip_raw = (server.ip_address or server.admin_panel_ip).strip()
+    if not ip_raw:
         raise HTTPException(
             status_code=502,
             detail="Remote server has no IP field (admin_panel_ip/ip_address).",
         )
 
-    username = getattr(server, "server_user", None) or getattr(
-        server, "admin_panel_user", None
-    )
-    password = getattr(server, "server_password", None) or getattr(
-        server, "admin_panel_pass", None
-    )
-    if not username or password is None:
+    username = (server.server_user or server.admin_panel_user).strip()
+    password = server.server_password or server.admin_panel_pass
+    if not username or not password:
         raise HTTPException(
             status_code=502,
             detail="Remote server has no credentials (server_user/server_password or admin_panel_user/admin_panel_pass).",
         )
 
-    phys_iface = getattr(server, "phys_iface", None) or getattr(server, "phy_if", None)
+    phys_iface = server.phy_if.strip()
     if not phys_iface:
         raise HTTPException(
             status_code=502,
-            detail="Remote server has no physical interface field (phys_iface/phy_if).",
+            detail="Remote server has no physical interface field (phy_if).",
         )
 
     server_info = ServerTaskInfo(
-        id=getattr(server, "id", server_id),
-        name=getattr(server, "name", None),
-        ip=str(ip),
+        ip=ip_address(ip_raw),
         username=username,
         password=password,
-        phy_if=str(phys_iface),
+        phy_if=phys_iface,
     )
     task_id = str(uuid.uuid4())
     envelope = TaskEnvelope(
         task_id=task_id,
         operation="server.init",
         server=server_info,
-        vms=None,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
-        extra=None,
     )
     await enqueue_task(envelope.model_dump(mode="json"))
 
@@ -110,7 +104,7 @@ async def prepare_vms_hub(
 async def rm_vms_hub(
     server_id: int,
     token: str = Depends(get_token),
-    admin=Depends(get_current_admin_user),
+    _admin=Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """
@@ -130,35 +124,55 @@ async def rm_vms_hub(
 
     updated = await set_server_status(server_id, "free", token)
 
-    vms_to_remove = await get_vms(db) 
-    vms_on_server = [vm for vm in vms_to_remove if vm.server_id == server_id]
+    vm_rows = await db.execute(
+        select(VirtualMachine).where(VirtualMachine.server_id == server_id)
+    )
+    vms_on_server = vm_rows.scalars().all()
 
     if vms_on_server:
         for vm in vms_on_server:
-            snapshots = await list_snapshots(db, vm_id=vm.id)
-            for snapshot in snapshots[0]:
-                await delete_snapshot(db, snapshot_id=snapshot.id)
-            await delete_vm(db, vm.id)
+            vm_id = cast(int, vm.id)
+            snapshots, _ = await list_snapshots(db, vm_id=vm_id, limit=10_000)
+            for snapshot in snapshots:
+                await delete_snapshot(db, snapshot_id=cast(int, snapshot.id))
+            await db.delete(vm)
+        await db.commit()
 
-    ip = getattr(server, "ip_address", None)
-    username = getattr(server, "server_user", None) 
-    password = getattr(server, "server_password", None) 
-    phys_iface = getattr(server, "phy_if", None) 
+    ip_raw = (server.ip_address or server.admin_panel_ip).strip()
+    if not ip_raw:
+        raise HTTPException(
+            status_code=502,
+            detail="Remote server has no IP field (admin_panel_ip/ip_address).",
+        )
+
+    username = (server.server_user or server.admin_panel_user).strip()
+    password = server.server_password or server.admin_panel_pass
+    if not username or not password:
+        raise HTTPException(
+            status_code=502,
+            detail="Remote server has no credentials (server_user/server_password or admin_panel_user/admin_panel_pass).",
+        )
+
+    phys_iface = server.phy_if.strip()
+    if not phys_iface:
+        raise HTTPException(
+            status_code=502,
+            detail="Remote server has no physical interface field (phy_if).",
+        )
 
     server_info = ServerTaskInfo(
-        ip=str(ip),
+        ip=ip_address(ip_raw),
         username=username,
         password=password,
-        phy_if=phys_iface
+        phy_if=phys_iface,
     )
 
     task_id = str(uuid.uuid4())
     envelope = TaskEnvelope(
         task_id=task_id,
-        operation="server.remove", 
+        operation="server.remove",
         server=server_info,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
-        extra=None,
     )
     await enqueue_task(envelope.model_dump(mode="json"))
 

@@ -15,7 +15,7 @@ statistics_conf = {
         "comparison_kernel_list": ['postgresql']
     },
     "Qemu/KVM/Libvirt": {
-        "set_of_test_types": ["FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm"],
+        "set_of_test_types": ["FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm", "FIO_large"],
         "comparison_list": [["steal time", "steal time-sm"]]
     },
     "UnixBench": {
@@ -23,7 +23,7 @@ statistics_conf = {
         "comparison_list": [["unix", "unix parsec"]]
     },
     "Системные службы": {
-        "set_of_test_types": ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'AOpenVPNcc']
+        "set_of_test_types": ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP']
     },
     "Файловые системы": {
         "set_of_test_types": ['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2', 'CEPH', 'CEPH fio'],

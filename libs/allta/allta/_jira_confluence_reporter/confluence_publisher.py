@@ -13,18 +13,21 @@
 ----------------------------
 При наличии ``test_cycle_version`` и включённом ``create_tree=True`` создаётся дерево:
 
-STRESS <global>
-  └─ STRESS_REPORT <detailed>
-      ├─ STRESS_REPORT <more>
-      │    └─ STRESS_REPORT <more> <parent>
-      │         └─ STRESS_REPORT <more> <page>
-      └─ STRESS_REPORT <detailed> <parent>
-            └─ STRESS_REPORT <detailed> <page>
+STRESS ⬝ <global>
+  └─ STRESS_report ⬝ <branch>
+       ├─ STRESS_report ⬝ <full>
+       │    └─ STRESS_report <full> ⬝ <parent>
+       └─ STRESS_report <branch> ⬝ <parent>
+
+Где ``<branch>`` — "релизная" версия ветки, а ``<full>`` — полная версия прогона.
+Страница ``STRESS_report <branch> ⬝ <parent>`` всегда обновляется и хранит последний прогон ветки.
 
 Где:
-- global   = первые 2 числовых сегмента версии (например, 1.8)
-- detailed = первые 3 числовых сегмента версии (например, 1.8.4 или 1.7.5 для 1.7.5.UU.2)
-- more     = полная версия как есть (например, 1.8.4.46 или 1.7.5.UU.2)
+- global = первые 2 числовых сегмента версии (например, 1.8)
+- branch:
+    * для numeric веток: первые 3 сегмента (например, 1.7.8 для 1.7.8.15)
+    * для UU-веток: первые 5 сегментов (например, 1.7.9.UU.1 для 1.7.9.UU.1.2)
+- full = полная версия как есть (например, 1.7.8.15 / 1.7.9.UU.1.2)
 
 2) Обход ограничения Confluence по уникальности заголовков
 ----------------------------------------------------------
@@ -42,13 +45,11 @@ Confluence не позволяет иметь две страницы с оди�
 
 Для 1.8 или 1.8.4.46 родитель в токен НЕ добавляется по этому правилу.
 
-4) Переименование страниц и вложений в detailed-ветке
------------------------------------------------------
-Если ``conf_new_page_name`` содержит full-версию (more), то для публикации
-в detailed-ветке это вхождение заменяется на detailed-версию.
-
-То же для вложений: если имя файла содержит full-версию, создаётся временная копия
-с заменённым именем, и прикрепляется уже она (чтобы Confluence видел другое имя).
+4) Переименование вложений в branch-ветке
+----------------------------------------
+Если имя вложения содержит full-версию, для страницы
+``STRESS_report <branch> ⬝ <parent>`` создаётся временная копия
+с заменой ``full -> branch``.
 """
 
 from __future__ import annotations
@@ -225,7 +226,7 @@ class ConfluencePublisher:
 
         Правила:
         - kind: "STRESS" для global-страниц, "STRESS_REPORT" для остальных.
-        - version: версия узла (global/detailed/more или "nover" при выключенном дереве).
+        - version: версия узла (global/branch/full или "nover" при выключенном дереве).
         - parent_title добавляется ТОЛЬКО если:
             * parent_title задан
             * version - трёхчастная и чисто числовая (например 1.8.4)
@@ -483,18 +484,19 @@ class ConfluencePublisher:
         """
         Парсит версии для построения дерева.
 
-        Правила под твою реальность:
-        - версии всегда начинаются с цифр: 1.7.5.UU.2 (а не 1.7.UU.*)
-        - global = первые 2 сегмента (1.8)
-        - detailed = первые 3 сегмента (1.8.4 / 1.7.5)
-        - more = полная версия как есть (1.8.4.46 / 1.7.5.UU.2)
+        Правила:
+        - global = первые 2 сегмента;
+        - branch:
+            * для numeric-версий: первые 3 сегмента;
+            * для UU-ветки (``X.Y.Z.UU.K...``): первые 5 сегментов;
+        - full = полная версия.
 
         Args:
             test_cycle_version (str | None): Строка версии тестового цикла.
 
         Returns:
             tuple[str, str, str] | None:
-                (global, detailed, more) или None, если версия отсутствует/не распознана.
+                (global, branch, full) или None, если версия отсутствует/не распознана.
         """
         tcv = self._normalize(test_cycle_version)
         if not tcv:
@@ -505,29 +507,148 @@ class ConfluencePublisher:
             return None
 
         global_v = ".".join(parts[:2])
-        detailed_v = ".".join(parts[:3]) if len(parts) >= 3 else ".".join(parts)
-        more_v = ".".join(parts)
-        return global_v, detailed_v, more_v
+        full_v = ".".join(parts)
 
-    def _rewrite_title_version(self, title: str, *, from_v: str, to_v: str) -> str:
+        if len(parts) >= 5 and parts[3].upper() == "UU":
+            branch_v = ".".join(parts[:5])
+        elif len(parts) >= 3:
+            branch_v = ".".join(parts[:3])
+        else:
+            branch_v = ".".join(parts)
+
+        return global_v, branch_v, full_v
+
+    def _tree_page_names(self, *, global_v: str, branch_v: str, full_v: str) -> Tuple[str, str, str]:
         """
-        Если title содержит from_v, заменяет на to_v.
-
-        Используется для формирования названия страницы в detailed-ветке:
-        пример:
-            apache-rp_1.8.4.46_smolensk... -> apache-rp_1.8.4_smolensk...
-
-        Args:
-            title (str): Исходный заголовок.
-            from_v (str): Что заменяем.
-            to_v (str): На что заменяем.
+        Формирует видимые названия контейнерных страниц версионного дерева.
 
         Returns:
-            str: Новый заголовок (или исходный, если замена не требовалась).
+            tuple[str, str, str]:
+                (global_title, branch_title, full_title)
         """
-        if not from_v or not to_v or from_v == to_v:
-            return title
-        return title.replace(from_v, to_v)
+        return (
+            f"STRESS ⬝ {global_v}",
+            f"STRESS_report ⬝ {branch_v}",
+            f"STRESS_report ⬝ {full_v}",
+        )
+
+    def _report_page_title(self, *, version: str, parent_visible: str | None) -> str:
+        """
+        Формирует видимый заголовок страницы с отчётом.
+        """
+        if parent_visible:
+            return f"STRESS_report {version} ⬝ {parent_visible}"
+        return f"STRESS_report {version}"
+
+    @classmethod
+    def preview_hierarchy(
+        cls,
+        *,
+        test_cycle_versions: str | Sequence[str],
+        conf_parent_page: str | None = None,
+    ) -> str:
+        """
+        Возвращает текстовый предпросмотр иерархии страниц без публикации в Confluence.
+
+        Args:
+            test_cycle_versions (str | Sequence[str]):
+                Одна версия или список версий, например:
+                ``"1.7.9.UU.1.1"`` или ``["1.7.9.UU.1.1", "1.7.9.UU.1.2"]``.
+            conf_parent_page (str | None):
+                Название каталога/группы тестов (например ``"Системные службы"``).
+
+        Returns:
+            str: Дерево страниц в виде многострочного текста.
+        """
+        helper = object.__new__(cls)
+
+        if isinstance(test_cycle_versions, str):
+            raw_versions: List[str] = [test_cycle_versions]
+        else:
+            raw_versions = [str(v) for v in test_cycle_versions]
+
+        parent_visible = helper._normalize(conf_parent_page)
+
+        # dict[global_title][branch_title] -> данные ветки
+        tree: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        invalid_versions: List[str] = []
+
+        for raw in raw_versions:
+            parsed = helper._parse_versions(raw)
+            if not parsed:
+                invalid_versions.append(str(raw))
+                continue
+
+            global_v, branch_v, full_v = parsed
+            global_title, branch_title, full_title = helper._tree_page_names(
+                global_v=global_v,
+                branch_v=branch_v,
+                full_v=full_v,
+            )
+            full_page_title = helper._report_page_title(version=full_v, parent_visible=parent_visible)
+            branch_page_title = helper._report_page_title(version=branch_v, parent_visible=parent_visible)
+
+            global_node = tree.setdefault(global_title, {})
+            branch_node = global_node.setdefault(
+                branch_title,
+                {
+                    "full_nodes": {},
+                    "branch_page_title": branch_page_title,
+                    "last_full_version": full_v,
+                },
+            )
+            branch_node["last_full_version"] = full_v
+
+            if full_v != branch_v:
+                branch_node["full_nodes"].setdefault(full_title, full_page_title)
+
+        lines: List[str] = []
+        global_items = list(tree.items())
+
+        for global_idx, (global_title, branches) in enumerate(global_items):
+            lines.append(global_title)
+            branch_items = list(branches.items())
+
+            for branch_idx, (branch_title, branch_node) in enumerate(branch_items):
+                branch_is_last = branch_idx == len(branch_items) - 1
+                branch_prefix = "└─ " if branch_is_last else "├─ "
+                lines.append(f"{branch_prefix}{branch_title}")
+
+                branch_indent = "   " if branch_is_last else "│  "
+                full_items = list(branch_node["full_nodes"].items())
+                branch_page_title = str(branch_node["branch_page_title"])
+                last_full_version = str(branch_node["last_full_version"])
+                branch_version = branch_title.split("⬝", 1)[1].strip() if "⬝" in branch_title else branch_title
+                branch_page_note = ""
+                if last_full_version != branch_version:
+                    branch_page_note = f" (перезаписывается последней версией: {last_full_version})"
+                else:
+                    branch_page_note = " (перезаписывается)"
+
+                child_count = len(full_items) + 1  # + branch page
+
+                for full_idx, (full_title, full_page_title) in enumerate(full_items):
+                    child_is_last = full_idx == child_count - 1
+                    child_prefix = "└─ " if child_is_last else "├─ "
+                    lines.append(f"{branch_indent}{child_prefix}{full_title}")
+
+                    full_indent = branch_indent + ("   " if child_is_last else "│  ")
+                    lines.append(f"{full_indent}└─ {full_page_title}")
+
+                branch_page_prefix = "└─ "
+                lines.append(f"{branch_indent}{branch_page_prefix}{branch_page_title}{branch_page_note}")
+
+            if global_idx != len(global_items) - 1:
+                lines.append("")
+
+        if invalid_versions:
+            if lines:
+                lines.append("")
+            lines.append("[skip] Нераспознанные версии:")
+            for v in invalid_versions:
+                lines.append(f"- {v}")
+
+        return "\n".join(lines) if lines else "Нечего строить: версии не распознаны."
 
     def _prepare_attachments_for_version(
         self,
@@ -544,12 +665,12 @@ class ConfluencePublisher:
         в tmpdir с заменой from_version -> to_version и возвращает путь до копии.
         Иначе возвращает исходный путь.
 
-        Это нужно, чтобы Confluence видел разные имена вложений в ветках detailed/more.
+        Это нужно, чтобы Confluence видел разные имена вложений для full/branch страниц.
 
         Args:
             files (Sequence[Path | str]): Вложения (пути).
-            from_version (str): Полная версия (more).
-            to_version (str): Версия для ветки detailed.
+            from_version (str): Полная версия (full).
+            to_version (str): Версия для ветки branch.
             tmpdir (Path): Временный каталог.
 
         Returns:
@@ -606,8 +727,9 @@ class ConfluencePublisher:
             attachments (Sequence[str | Path] | None):
                 Дополнительные файлы для прикрепления.
             create_tree (bool):
-                Если True — создаёт дерево версий (global/detailed/more) и публикует
-                в ветках more и detailed.
+                Если True — создаёт дерево версий (global/branch/full) и публикует:
+                    - page_id: страница конкретного прогона (full)
+                    - release_page_id: "последняя" страница ветки (branch), которая перезаписывается
                 Если False — не создаёт версионные контейнеры, публикует только:
                     - parent (если задан) как контейнер с макросом children
                     - страницу отчёта под parent (или на корне space если parent не задан)
@@ -615,8 +737,8 @@ class ConfluencePublisher:
         Returns:
             dict[str, str | None]:
                 {
-                    "page_id": id страницы в ветке more (основная),
-                    "release_page_id": id страницы в ветке detailed (копия) или None
+                    "page_id": id страницы full-версии (основная),
+                    "release_page_id": id страницы branch-версии (перезаписываемая) или None
                 }
 
         Raises:
@@ -698,99 +820,100 @@ class ConfluencePublisher:
             return {"page_id": page_id, "release_page_id": None}
 
         # --- Полное дерево ---
-        global_v, detailed_v, more_v = versions
-        self._log(f"Версии: global='{global_v}', detailed='{detailed_v}', more='{more_v}'")
+        global_v, branch_v, full_v = versions
+        self._log(f"Версии: global='{global_v}', branch='{branch_v}', full='{full_v}'")
+        global_title, branch_title, full_title = self._tree_page_names(
+            global_v=global_v,
+            branch_v=branch_v,
+            full_v=full_v,
+        )
 
         with tempfile.TemporaryDirectory(prefix="conf_pub_") as td:
             tmpdir = Path(td)
 
             # 1) global: STRESS
-            token_global = self._token(kind="STRESS", version=global_v, parent_title=None, visible_title=global_v)
-            eff_global = self._with_hidden_suffix(global_v, token_global)
+            token_global = self._token(
+                kind="STRESS",
+                version=global_v,
+                parent_title=None,
+                visible_title=global_title,
+            )
+            eff_global = self._with_hidden_suffix(global_title, token_global)
             global_id = self._ensure_container_page(space=space, effective_title=eff_global, parent_id=None)
 
-            # 2) detailed: STRESS_REPORT
-            token_detailed = self._token(kind="STRESS_REPORT", version=detailed_v, parent_title=None, visible_title=detailed_v)
-            eff_detailed = self._with_hidden_suffix(detailed_v, token_detailed)
-            detailed_id = self._ensure_container_page(space=space, effective_title=eff_detailed, parent_id=global_id)
-
-            # 3) more: STRESS_REPORT
-            token_more = self._token(kind="STRESS_REPORT", version=more_v, parent_title=None, visible_title=more_v)
-            eff_more = self._with_hidden_suffix(more_v, token_more)
-            more_id = self._ensure_container_page(space=space, effective_title=eff_more, parent_id=detailed_id)
-
-            # --- Ветка more: parent под more -> page под parent ---
-            if parent_visible:
-                token_more_parent = self._token(
-                    kind="STRESS_REPORT",
-                    version=more_v,
-                    parent_title=parent_visible,
-                    visible_title=parent_visible,
-                )
-                eff_more_parent = self._with_hidden_suffix(parent_visible, token_more_parent)
-                more_parent_id = self._ensure_container_page(space=space, effective_title=eff_more_parent, parent_id=more_id)
-            else:
-                more_parent_id = more_id
-
-            token_more_page = self._token(
+            # 2) branch: STRESS_REPORT
+            token_branch = self._token(
                 kind="STRESS_REPORT",
-                version=more_v,
-                parent_title=parent_visible,
-                visible_title=page_visible,
+                version=branch_v,
+                parent_title=global_title,
+                visible_title=branch_title,
             )
-            eff_more_page = self._with_hidden_suffix(page_visible, token_more_page)
+            eff_branch = self._with_hidden_suffix(branch_title, token_branch)
+            branch_id = self._ensure_container_page(space=space, effective_title=eff_branch, parent_id=global_id)
 
-            page_id_more = self.publish(
+            # 3) full: STRESS_REPORT (под branch, если full отличается)
+            full_parent_id = branch_id
+            full_parent_title = branch_title
+            if full_v != branch_v:
+                token_full = self._token(
+                    kind="STRESS_REPORT",
+                    version=full_v,
+                    parent_title=branch_title,
+                    visible_title=full_title,
+                )
+                eff_full = self._with_hidden_suffix(full_title, token_full)
+                full_parent_id = self._ensure_container_page(space=space, effective_title=eff_full, parent_id=branch_id)
+                full_parent_title = full_title
+
+            # 4) Страница конкретного прогона: STRESS_report <full> ⬝ <parent>
+            report_full_title = self._report_page_title(version=full_v, parent_visible=parent_visible)
+            token_full_page = self._token(
+                kind="STRESS_REPORT",
+                version=full_v,
+                parent_title=full_parent_title,
+                visible_title=report_full_title,
+            )
+            eff_full_page = self._with_hidden_suffix(report_full_title, token_full_page)
+
+            page_id_full = self.publish(
                 space=space,
-                title=page_visible,
-                _effective_title=eff_more_page,
-                parent_id=more_parent_id,
+                title=report_full_title,
+                _effective_title=eff_full_page,
+                parent_id=full_parent_id,
                 body=html_body,
                 attachments=attachments_list or None,
             )
-            self._log(f"Основная страница (more) '{page_visible}' опубликована (id={page_id_more})")
+            self._log(f"Страница full-версии '{report_full_title}' опубликована (id={page_id_full})")
 
-            # --- Ветка detailed: parent под detailed -> page под parent ---
-            if parent_visible:
-                token_det_parent = self._token(
-                    kind="STRESS_REPORT",
-                    version=detailed_v,
-                    parent_title=parent_visible,
-                    visible_title=parent_visible,
-                )
-                eff_det_parent = self._with_hidden_suffix(parent_visible, token_det_parent)
-                detailed_parent_id = self._ensure_container_page(space=space, effective_title=eff_det_parent, parent_id=detailed_id)
-            else:
-                detailed_parent_id = detailed_id
-
-            # Меняем имя страницы для detailed-ветки только если full TCV присутствует в названии
-            release_page_visible = self._rewrite_title_version(page_visible, from_v=more_v, to_v=detailed_v)
-
-            token_det_page = self._token(
+            # 5) Страница "последний прогон ветки": STRESS_report <branch> ⬝ <parent>
+            report_branch_title = self._report_page_title(version=branch_v, parent_visible=parent_visible)
+            token_branch_page = self._token(
                 kind="STRESS_REPORT",
-                version=detailed_v,
-                parent_title=parent_visible,
-                visible_title=release_page_visible,
+                version=branch_v,
+                parent_title=branch_title,
+                visible_title=report_branch_title,
             )
-            eff_det_page = self._with_hidden_suffix(release_page_visible, token_det_page)
+            eff_branch_page = self._with_hidden_suffix(report_branch_title, token_branch_page)
 
-            det_attachments: List[Path] | None = None
+            branch_attachments: List[Path | str] | None = None
             if attachments_list:
-                det_attachments = self._prepare_attachments_for_version(
+                branch_attachments = self._prepare_attachments_for_version(
                     files=attachments_list,
-                    from_version=more_v,
-                    to_version=detailed_v,
+                    from_version=full_v,
+                    to_version=branch_v,
                     tmpdir=tmpdir,
                 )
 
             release_page_id = self.publish(
                 space=space,
-                title=release_page_visible,
-                _effective_title=eff_det_page,
-                parent_id=detailed_parent_id,
+                title=report_branch_title,
+                _effective_title=eff_branch_page,
+                parent_id=branch_id,
                 body=html_body,
-                attachments=det_attachments or None,
+                attachments=branch_attachments or None,
             )
-            self._log(f"Релизная страница (detailed) '{release_page_visible}' опубликована (id={release_page_id})")
+            self._log(
+                f"Страница branch-версии '{report_branch_title}' опубликована/обновлена (id={release_page_id})"
+            )
 
-            return {"page_id": page_id_more, "release_page_id": release_page_id}
+            return {"page_id": page_id_full, "release_page_id": release_page_id}

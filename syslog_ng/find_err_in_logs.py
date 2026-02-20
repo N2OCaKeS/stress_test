@@ -16,7 +16,7 @@ from datetime import datetime
 report_error_log = dict()
 root_path = '/var/log'
 all_files = []
-blask_list_files = ["installer", "apt", "dpkg"]
+blask_list_files = ["installer", "apt", "dpkg", "auth"]
 
 def sort_by_datetime(time_start_test, line_with_error):
     """

@@ -6,7 +6,7 @@ from allta import Libvirt, LibvirtManager, SystemCommands
 from pathlib import Path
 from time import sleep
 
-from conf import USERNAME, PASSWORD, VM_OS_INFO_PATH
+from net_conf import USERNAME, PASSWORD, VM_OS_INFO_PATH
 
 
 class CreateVM:
@@ -14,7 +14,7 @@ class CreateVM:
         self,
         rc_name: str = "",
         testdir: str = "",
-        kernel: str = SystemCommands.check_output_command("uname -r"),
+        kernel: str = "",
         vm_count: int = 0,
         vcpu: int = 0,
         ram: int = 0,
@@ -36,10 +36,10 @@ class CreateVM:
 
         self.testdir = testdir
 
-    def build(self):
+    def prepare_vms(self):
         print("Проверяем существование ВМ")
         if Path(self.vms_date_save_path).is_file:
-            print("ВМ существуют, восстанавливаем в исходное состояние")
+            print("ВМ существуют, восстанавливаем в состояние выполненного provison")
             self.vms_data = LibvirtManager.Vm.load_vms_data(
                 save_path=self.vms_date_save_path
             )
@@ -47,7 +47,7 @@ class CreateVM:
             self.vms_group = {
                 "all": self.vms,
             }
-            LibvirtManager.Snapshot.revert(vms=self.vms, snapshot_name="build")
+            LibvirtManager.Snapshot.revert(vms=self.vms, snapshot_name="provision")
             print("Ожидаем 90 секунд для включения ВМ")
             sleep(90)
             print("ВМ успешно восстановлены продолжаем тест")
@@ -82,61 +82,68 @@ class CreateVM:
                 vms_dates=VMS_DATES, save_path=self.vms_date_save_path
             )
 
-        provision_path = "/home/u/provision.sh"
-        scp_provision = {
-            "g_all": [  # Если выполнять на группе хостов необходимо указать в виде g_<groupname>
-                {
-                    "mode": "push",  # Режимы: push - отправить на ВМ; pull - получить из ВМ
-                    "path_host": f"{self.testdir}/provision/provision.sh",
-                    "path_vm": provision_path,
-                },
-            ]
-        }
-        self.provider.scp(
-            scp_settings=scp_provision,
-            vms_dates=self.vms_data,
-            vms_groups=self.vms_group,
-            username=USERNAME,
-            password=PASSWORD,
-        )
-
-        execute_provision = {
-            "g_all": {
-                "chmod_provision": {
-                    'command': f"sudo chmod +x {provision_path}",
-                    'signal set': '1'
-                },
-                "run_provision": {
-                    'command': f"sudo bash {provision_path}",
-                    'signal set': '2',
-                    'signal get': '1',
-                },
-                "reboot": {
-                    'command':"",
-                    'signal get': '2',
-                },
+            provision_path = "/home/u/provision.sh"
+            scp_provision = {
+                "g_all": [
+                    {
+                        "mode": "push",
+                        "path_host": f"{self.testdir}/provision/provision.sh",
+                        "path_vm": provision_path,
+                    },
+                ]
             }
-        }
-        self.provider.execute(
-            commands=execute_provision,
-            vms_dates=self.vms_data,
-            vms_groups=self.vms_group,
-            username=USERNAME,
-            password=PASSWORD,
-        )
+            self.provider.scp(
+                scp_settings=scp_provision,
+                vms_dates=self.vms_data,
+                vms_groups=self.vms_group,
+                username=USERNAME,
+                password=PASSWORD,
+            )
+
+            execute_provision = {
+                "g_all": {
+                    "chmod_provision": {
+                        "command": f"sudo chmod +x {provision_path}",
+                        "signal set": "1",
+                    },
+                    "run_provision": {
+                        "command": f"sudo bash {provision_path}",
+                        "signal set": "2",
+                        "signal get": "1",
+                    },
+                    "reboot": {
+                        "command": "",
+                        "signal get": "2",
+                    },
+                }
+            }
+            self.provider.execute(
+                commands=execute_provision,
+                vms_dates=self.vms_data,
+                vms_groups=self.vms_group,
+                username=USERNAME,
+                password=PASSWORD,
+            )
+
+            # Disable 2 down string to prod (slowed test)
+            LibvirtManager.Vm.stop(self.vms)
+            LibvirtManager.Snapshot.create(vms=self.vms, snapshot_name="provision")
 
     def vms_destroy(self):
         print("Выключаем ВМ:")
         LibvirtManager.Vm.stop(vms=self.vms)
 
-class KernelLoad(CreateVM): # In vm work allta_cli!
+
+class KernelLoad(CreateVM):  # In vm work allta_cli!
     def start_test(self):
+        print ("test run")
         pass
+
     def results_processing(self):
 
         # Get vm params (av, kernel), params create in provision
-        scp_vm_params= {
-            "testvm1": [  
+        scp_vm_params = {
+            "testvm1": [
                 {
                     "mode": "pull",
                     "path_host": VM_OS_INFO_PATH,
@@ -151,4 +158,5 @@ class KernelLoad(CreateVM): # In vm work allta_cli!
             username=USERNAME,
             password=PASSWORD,
         )
+        print ("results gets")
         pass

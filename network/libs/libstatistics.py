@@ -2,7 +2,7 @@ import requests
 import json
 
 
-class VirtStatistics: 
+class NetworkStatistics: 
     def __init__(self,
                  username,
                  token):

@@ -1,8 +1,6 @@
-from libs.libtests import StealTime, FlexibleIOTester, UnixBench, PingPong, LargeFio
-from virt_conf import LOW, HIGH, REPORT_PATH, ST_RAM, ST_vCPU, IO_DEPTH_1, \
-                      IO_DEPTH_128, FIO_RAM, FIO_vCPU, UB_RAM, UB_vCPU, PP_vCPU, \
-                      PP_RAM
-from libs.virtlib import info_list
+from libs.libtests import KernelLoad
+from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM
+
 from libs.zefir import UploaderZC
 import argparse
 
@@ -106,176 +104,19 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 
 
 #Start test
-if args.TESTNAME == 'stealtime':
-    st_no_errors = True
-    low_load_test = StealTime(rc_vbox=args.VBOX,
-                              vm_count=LOW,
-                              testdir=REPORT_PATH,
-                              load_type='low',
-                              kernel=str(args.TCYC).split('_')[2],
-                              vcpu=ST_vCPU,
-                              ram=ST_RAM)
+if args.TESTNAME == 'kernel_network':
+    kernel_network = KernelLoad(rc_name=args.TCV,
+                                testdir=BASE_PATH,
+                                vm_count=KERNEL_NET_VM_COUNT,
+                                vcpu=KERNEL_NET_VCPU,
+                                ram=KERNEL_NET_RAM)
 
-    high_load_test = StealTime(rc_vbox=args.VBOX,
-                               vm_count=HIGH,
-                               testdir=REPORT_PATH,
-                               load_type='high',
-                               kernel=str(args.TCYC).split('_')[2],
-                               vcpu=ST_vCPU,
-                               ram=ST_RAM)
-
-    low_load_test.prepare_vms()
-    low_load_test.start_test()
-    low_load_test.vms_destroy()
-    if low_load_test.results_processing() == LOW:
-        print('Low load test successfully done')
-    else: 
-        uzs.upload_test_cycle_status(zefir_status='fail')
-        st_no_errors = False
-
-    high_load_test.prepare_vms()
-    high_load_test.start_test()
-    high_load_test.vms_destroy()
-    if high_load_test.results_processing() == HIGH:
-        print('High load test successfully done')
-    else: 
-        uzs.upload_test_cycle_status(zefir_status='fail')
-        st_no_errors = False
-
-    info_list()
-    uzs.public = True
-    #uzs.statistics = True
-    if st_no_errors:
-        uzs.upload_test_cycle_status(zefir_status='pass')
-
-elif args.TESTNAME == 'stealtime_sm':
-    st_no_errors = True
-    low_load_test = StealTime(rc_vbox=args.VBOX,
-                              vm_count=LOW,
-                              testdir=REPORT_PATH,
-                              load_type='low',
-                              kernel=str(args.TCYC).split('_')[2],
-                              vcpu=ST_vCPU,
-                              ram=ST_RAM,
-                              mode='s')
-
-    high_load_test = StealTime(rc_vbox=args.VBOX,
-                               vm_count=HIGH,
-                               testdir=REPORT_PATH,
-                               load_type='high',
-                               kernel=str(args.TCYC).split('_')[2],
-                               vcpu=ST_vCPU,
-                               ram=ST_RAM,
-                               mode='s')
-
-    low_load_test.prepare_vms()
-    low_load_test.start_test()
-    low_load_test.vms_destroy()
-    if low_load_test.results_processing() == LOW:
-        print('Low load test successfully done')
-    else: 
-        uzs.upload_test_cycle_status(zefir_status='fail')
-        st_no_errors = False
-
-    high_load_test.prepare_vms()
-    high_load_test.start_test()
-    high_load_test.vms_destroy()
-    if high_load_test.results_processing() == HIGH:
-        print('High load test successfully done')
-    else: 
-        uzs.upload_test_cycle_status(zefir_status='fail')
-        st_no_errors = False
-
-    info_list()
-    uzs.public = True
-    #uzs.statistics = True
-    if st_no_errors:
-        uzs.upload_test_cycle_status(zefir_status='pass')
-
-elif args.TESTNAME == 'fio':
-    low_depth_test = FlexibleIOTester(rc_vbox=args.VBOX,
-                                      vm_count=2,
-                                      testdir=REPORT_PATH,
-                                      iodepth=IO_DEPTH_1,
-                                      kernel=str(args.TCYC).split('_')[2],
-                                      vcpu=FIO_vCPU,
-                                      ram=FIO_RAM,
-                                      vm_num=1)
-    
-    high_depth_test = FlexibleIOTester(rc_vbox=args.VBOX,
-                                       vm_count=2,
-                                       testdir=REPORT_PATH,
-                                       iodepth=IO_DEPTH_128,
-                                       kernel=str(args.TCYC).split('_')[2],
-                                       vcpu=FIO_vCPU,
-                                       ram=FIO_RAM,
-                                       vm_num=2)
-
-    low_depth_test.prepare_vms()
-    low_depth_test.start_test()
-    low_depth_test.results_processing()
-
-    high_depth_test.start_test()
-    high_depth_test.vms_destroy()
-    high_depth_test.results_processing()
+    kernel_network.prepare_vms()
+    kernel_network.start_test()
+    kernel_network.vms_destroy()
+    kernel_network.results_processing()
 
     info_list()
     uzs.public = True
     #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
-
-elif args.TESTNAME == 'fio_large':
-    fio_large_test = LargeFio(rc_vbox=args.VBOX,
-                                      vm_count=1,
-                                      testdir=REPORT_PATH,
-                                      kernel=str(args.TCYC).split('_')[2],
-                                      vcpu=FIO_vCPU,
-                                      ram=FIO_RAM,
-                                      )
-
-    fio_large_test.prepare_vms()
-    fio_large_test.start_test()
-    fio_large_test.vms_destroy()
-    fio_large_test.results_processing()
-
-    info_list()
-    uzs.public = True
-    #uzs.statistics = True
-    uzs.upload_test_cycle_status(zefir_status='pass')
-
-elif args.TESTNAME == 'unixbench':
-    unixbench_test = UnixBench(rc_vbox=args.VBOX,
-                               vm_count=1,
-                               testdir=REPORT_PATH,
-                               kernel=str(args.TCYC).split('_')[2],
-                               vcpu=UB_vCPU,
-                               ram=UB_RAM,
-                               vm_num=1)
-
-    unixbench_test.prepare_vms()
-    unixbench_test.start_test()
-    unixbench_test.vms_destroy()
-    unixbench_test.results_processing()
-   
-    info_list()
-    uzs.public = True
-    #uzs.statistics = True
-    uzs.upload_test_cycle_status(zefir_status='pass')
-
-elif args.TESTNAME == 'pingpong':
-    pingpong_test = PingPong(rc_vbox=args.VBOX,
-                             vm_count=1,
-                             testdir=REPORT_PATH,
-                             kernel=str(args.TCYC).split('_')[2],
-                             vcpu=PP_vCPU,
-                             ram=PP_RAM)
-    
-    pingpong_test.prepare_vms()
-    pingpong_test.start_test()
-    pingpong_test.vms_destroy()
-
-    info_list()
-    uzs.public = True
-    #uzs.statistics = True
-    uzs.upload_test_cycle_status(zefir_status='pass')
-

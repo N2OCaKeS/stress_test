@@ -9,7 +9,7 @@ def _fmt_duration(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{sec:02d}"
 
 start_ts = perf_counter()
-rc = "1.8.4.46"
+rc = "1.8.1.6"
 mode = "o"
 ovpn = Ovpn()
 ovpn.build(rc, mode)

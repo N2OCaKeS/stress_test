@@ -65,7 +65,7 @@ class Report:
             ]
             total_rating, s = MathModels.total_rating(criteria=criterions)
             total_rating *=10 
-        return total_rating
+        return round(total_rating)
     
 
 

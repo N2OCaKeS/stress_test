@@ -151,7 +151,17 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         # Подготовка к выполнению теста
         print("\n\n\nПодготовка завершена\n\n\n")
 
+        print("\n\n\n Настраиваем сеть  \n\n\n")
 
+        LibvirtManager.Vm.stop(vms=self.vms)
+        print(SystemCommands.check_output_command('sudo sed -i \'s#<forward mode="nat"/>#<forward mode="none"/>#\' "/vms/network.xml"'))
+        print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
+        print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
+
+        LibvirtManager.Vm.start(vms=self.vms)
+        sleep(90)
+
+        print("\n\n\n Сеть настроена  \n\n\n")
 
         params = ["off init_on_free", "on init_on_free"]
         for par in params:

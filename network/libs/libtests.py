@@ -38,7 +38,7 @@ class CreateVM:
 
     def prepare_vms(self):
         print("Проверяем существование ВМ")
-        if Path(self.vms_date_save_path).is_file:
+        if Path(self.vms_date_save_path).is_file():
             print("ВМ существуют, восстанавливаем в состояние выполненного provison")
             self.vms_data = LibvirtManager.Vm.load_vms_data(
                 save_path=self.vms_date_save_path

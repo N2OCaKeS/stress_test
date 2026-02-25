@@ -1,4 +1,4 @@
-from allta import Libvirt, LibvirtManager, SystemCommands
+from allta import Libvirt, LibvirtManager
 
 # Uncomment if use Total rating
 # from allta import Criterion, MathModels
@@ -6,7 +6,7 @@ from allta import Libvirt, LibvirtManager, SystemCommands
 from pathlib import Path
 from time import sleep
 
-from net_conf import USERNAME, PASSWORD, VM_OS_INFO_PATH
+from net_conf import USERNAME, PASSWORD, VM_OS_INFO_PATH, BASE_PATH
 
 
 class CreateVM:
@@ -29,7 +29,7 @@ class CreateVM:
         self.vcpu = vcpu
         self.ram = ram
 
-        self.vms_date_save_path = "vms_date.json"
+        self.vms_date_save_path = f"{BASE_PATH}/vms_dates.json"
         self.vms_data = {}
         self.vms = []
         self.vms_group = {}

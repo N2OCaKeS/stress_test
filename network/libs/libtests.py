@@ -6,7 +6,13 @@ from allta import Libvirt, LibvirtManager, SystemCommands
 from pathlib import Path
 from time import sleep
 
-from net_conf import USERNAME, PASSWORD, VM_OS_INFO_PATH, BASE_PATH
+from net_conf import (USERNAME, 
+                      PASSWORD, 
+                      VM_OS_INFO_PATH, 
+                      BASE_PATH,
+                      IOF_OFF_PATH,
+                      IOF_ON_PATH,
+                      ITERATIONS)
 
 
 class CreateVM:
@@ -146,6 +152,11 @@ class CreateVM:
 
 class NetworkLoad(CreateVM):  # In vm work allta_cli!
     def start_test(self):
+        """
+        testvm1 - server
+        testvm2 - client
+        """
+        
         print ("\n\n\nНачинаем выполнение теста\n\n\n")
         print ("\n\n\nВыполнение подготовки к тесту\n\n\n")
         # Подготовка к выполнению теста
@@ -163,49 +174,77 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
 
         print("\n\n\n Сеть настроена  \n\n\n")
 
-        params = ["on init_on_free", "off init_on_free"]
-        for par in params:
-            print(f"\n\n\nЗапускаем тест c {par}")
-            if par == "off init_on_free":
-                disable_init_on_free = {
-                    "g_all": {
-                        "disable init_on_free": {
-                            "command": "f",
-                            "signal set": "1",
-                        },
-                        "reboot": {
-                            "command": "",
-                            "signal get": "1",
-                        },
-                    }
-                }
-                self.provider.execute(
-                    commands=disable_init_on_free,
-                    vms_dates=self.vms_data,
-                    vms_groups=self.vms_group,
-                    username=USERNAME,
-                    password=PASSWORD,
-                )
+        start_iperf_server = {
+            'testvm1': {
+                'start_iperf_server': {
+                    'command': f'iperf -s', # надо удержать канал
+                    'signal set': '',
+                },
+            },
+        }
+
+        init_on_free_off = {
+            'testvm1': {
+                'init_on_free_off': {
+                    'command': """sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=off"/' /etc/default/grub""",
+                    'signal set': 'sed command',
+                },
+                'reboot': {
+                    'command': 'sudo reboot',
+                    'signal get': 'sed command',
+                },
+            },
+        }
+
+        iperf_load_iof_on = {
+            'testvm2': {
+                'iperf_load': {
+                    'command': f'iperf -c {self.vms_data['testvm1']['ip_bridge']} >> {IOF_ON_PATH}',
+                    'signal set': '',
+                },
+            },
+        }
+
+        iperf_load_iof_off = {
+            'testvm2': {
+                'iperf_load': {
+                    'command': f'iperf -c {self.vms_data['testvm1']['ip_bridge']} >> {IOF_OFF_PATH}',
+                    'signal set': '',
+                },
+            },
+        }
+
+        
+        print(f"\n\n\nЗапускаем тест c init_on_free=on")
+        self.provider.execute(commands=start_iperf_server, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        for i in range(ITERATIONS):
+            self.provider.execute(commands=iperf_load_iof_on, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        
+        print(f"\n\n\nЗапускаем тест c init_on_free=off")
+        self.provider.execute(commands=init_on_free_off, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        sleep(90)
+        for i in range(ITERATIONS):
+            self.provider.execute(commands=iperf_load_iof_off, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+                
 
             
-            scp_get_result = {
-                "testvm1": [
-                    {
-                        "mode": "pull",
-                        "path_host": "/home/u", 
-                        "path_vm": "/home/u/", # TODO Настроить получение результатов
-                    },
-                ]
-            }
-            self.provider.scp(
-                scp_settings=scp_get_result,
-                vms_dates=self.vms_data,
-                vms_groups=self.vms_group,
-                username=USERNAME,
-                password=PASSWORD,
-            )            
+        scp_get_result = {
+            "testvm2": [
+                {
+                    "mode": "pull",
+                    "path_host": BASE_PATH + IOF_ON_PATH, 
+                    "path_vm": IOF_ON_PATH, 
+                },
+                {
+                    "mode": "pull",
+                    "path_host": BASE_PATH + IOF_OFF_PATH, 
+                    "path_vm": IOF_OFF_PATH, 
+                },
+            ]
+        }
+        self.provider.scp(scp_settings=scp_get_result, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)            
 
-            print(f"\n\n\nТест с параметром {par} завершен")
+        print(f"\n\n\nТест завершен")
 
 
         

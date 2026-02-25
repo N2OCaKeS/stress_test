@@ -26,3 +26,8 @@ VM_KERNEL = f'{VM_OS_INFO_PATH}/kernel.txt'
 KERNEL_NET_VM_COUNT = 2
 KERNEL_NET_VCPU = 8
 KERNEL_NET_RAM = 16384
+
+# Load params
+IOF_OFF_PATH = '/home/u/results_iof_off.txt'
+IOF_ON_PATH = '/home/u/results_iof_on.txt'
+ITERATIONS = 10

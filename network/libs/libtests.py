@@ -51,7 +51,9 @@ class CreateVM:
             LibvirtManager.Vm.start(vms=self.vms)
             print("\n\n\nОжидаем 90 секунд для включения ВМ\n\n\n")
             sleep(90)
+            self.provider.check(vms=self.vms, vms_dates=self.vms_data)
             print("\n\n\nВМ успешно восстановлены продолжаем тест\n\n\n")
+            return 0
 
         else:
             print("\n\n\nВМ не найдены, создаем\n\n\n")

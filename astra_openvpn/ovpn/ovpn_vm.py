@@ -263,7 +263,7 @@ Description=iperf server
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/iperf -s -u -B 10.8.0.1 -i 1 -y C
+ExecStart=/usr/bin/iperf -s -u -B 10.8.0.1 -i 5 -y C
 StandardOutput=file:/var/log/iperf_server.log
 StandardError=inherit
 Restart=always

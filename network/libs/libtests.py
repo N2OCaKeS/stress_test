@@ -163,13 +163,13 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
 
         print("\n\n\n Сеть настроена  \n\n\n")
 
-        params = ["off init_on_free", "on init_on_free"]
+        params = ["on init_on_free", "off init_on_free"]
         for par in params:
             print(f"\n\n\nЗапускаем тест c {par}")
-            if par == "on init_on_free":
-                enable_init_on_free = {
+            if par == "off init_on_free":
+                disable_init_on_free = {
                     "g_all": {
-                        "enable init_on_free": {
+                        "disable init_on_free": {
                             "command": "f",
                             "signal set": "1",
                         },
@@ -180,7 +180,7 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
                     }
                 }
                 self.provider.execute(
-                    commands=enable_init_on_free,
+                    commands=disable_init_on_free,
                     vms_dates=self.vms_data,
                     vms_groups=self.vms_group,
                     username=USERNAME,

@@ -1,4 +1,4 @@
-from allta import Libvirt, LibvirtManager
+from allta import Libvirt, LibvirtManager, SystemCommands
 
 # Uncomment if use Total rating
 # from allta import Criterion, MathModels
@@ -20,7 +20,7 @@ class CreateVM:
         ram: int = 0,
     ):
 
-        self.provider = Libvirt
+        self.provider = Libvirt()
 
         self.rc_name = rc_name
         self.kernel = kernel
@@ -37,9 +37,9 @@ class CreateVM:
         self.testdir = testdir
 
     def prepare_vms(self):
-        print("Проверяем существование ВМ")
+        print("\n\n\nПроверяем существование ВМ\n\n\n")
         if Path(self.vms_date_save_path).is_file():
-            print("ВМ существуют, восстанавливаем в состояние выполненного provison")
+            print("\n\n\nВМ существуют, восстанавливаем в состояние выполненного provison\n\n\n")
             self.vms_data = LibvirtManager.Vm.load_vms_data(
                 save_path=self.vms_date_save_path
             )
@@ -48,12 +48,13 @@ class CreateVM:
                 "all": self.vms,
             }
             LibvirtManager.Snapshot.revert(vms=self.vms, snapshot_name="provision")
-            print("Ожидаем 90 секунд для включения ВМ")
+            LibvirtManager.Vm.start(vms=self.vms)
+            print("\n\n\nОжидаем 90 секунд для включения ВМ\n\n\n")
             sleep(90)
-            print("ВМ успешно восстановлены продолжаем тест")
+            print("\n\n\nВМ успешно восстановлены продолжаем тест\n\n\n")
 
         else:
-            print("ВМ не найдены, создаем новые")
+            print("\n\n\nВМ не найдены, создаем\n\n\n")
             self.vms = [f"testvm{i}" for i in range(1, int(self.vm_count) + 1)]
             VMS_DATES = {
                 testvm: {"host-port": "22", "cpu": str(self.vcpu), "ram": str(self.ram)}
@@ -74,7 +75,11 @@ class CreateVM:
                         VMS_DATES,
                         kernel=self.kernel,
                     )
+            print("\n\n\nВм созданы\n\n\n")
+            print("\n\n\nПроверям доступность ВМ\n\n\n")
             self.provider.check(self.vms, self.vms_data)
+            print("\n\n\nВМ доступны\n\n\n")
+            print("\n\n\nВыполняем provision\n\n\n")
             self.vms_group = {
                 "all": self.vms,
             }
@@ -124,20 +129,76 @@ class CreateVM:
                 username=USERNAME,
                 password=PASSWORD,
             )
+            print("\n\n\nProvision выполнен")
 
-            # Disable 2 down string to prod (slowed test)
+            # Disable 6 down string to prod (slowed test)
+            print("\n\n\nДелаем снимок для быстрого дебага\n\n\n")
             LibvirtManager.Vm.stop(self.vms)
             LibvirtManager.Snapshot.create(vms=self.vms, snapshot_name="provision")
+            LibvirtManager.Vm.start(self.vms)
+            sleep(90)
+            print("\n\n\nСнимок создан, ВМ созданы и к выполнению теста готовы\n\n\n")
 
     def vms_destroy(self):
-        print("Выключаем ВМ:")
+        print("\n\n\nВыключаем ВМ:\n\n\n")
         LibvirtManager.Vm.stop(vms=self.vms)
 
 
-class KernelLoad(CreateVM):  # In vm work allta_cli!
+class NetworkLoad(CreateVM):  # In vm work allta_cli!
     def start_test(self):
-        print ("test run")
-        pass
+        print ("\n\n\nНачинаем выполнение теста\n\n\n")
+        print ("\n\n\nВыполнение подготовки к тесту\n\n\n")
+        # Подготовка к выполнению теста
+        print("\n\n\nПодготовка завершена\n\n\n")
+
+
+
+        params = ["off init_on_free", "on init_on_free"]
+        for par in params:
+            print(f"\n\n\nЗапускаем тест c {par}")
+            if par == "on init_on_free":
+                enable_init_on_free = {
+                    "g_all": {
+                        "enable init_on_free": {
+                            "command": "f",
+                            "signal set": "1",
+                        },
+                        "reboot": {
+                            "command": "",
+                            "signal get": "1",
+                        },
+                    }
+                }
+                self.provider.execute(
+                    commands=enable_init_on_free,
+                    vms_dates=self.vms_data,
+                    vms_groups=self.vms_group,
+                    username=USERNAME,
+                    password=PASSWORD,
+                )
+
+            
+            scp_get_result = {
+                "testvm1": [
+                    {
+                        "mode": "pull",
+                        "path_host": "/home/u", 
+                        "path_vm": "/home/u/", # TODO Настроить получение результатов
+                    },
+                ]
+            }
+            self.provider.scp(
+                scp_settings=scp_get_result,
+                vms_dates=self.vms_data,
+                vms_groups=self.vms_group,
+                username=USERNAME,
+                password=PASSWORD,
+            )            
+
+            print(f"\n\n\nТест с параметром {par} завершен")
+
+
+        
 
     def results_processing(self):
 
@@ -147,8 +208,13 @@ class KernelLoad(CreateVM):  # In vm work allta_cli!
                 {
                     "mode": "pull",
                     "path_host": VM_OS_INFO_PATH,
-                    "path_vm": "/home/u/",
+                    "path_vm": "/home/u/av.txt",
                 },
+                {
+                    "mode": "pull",
+                    "path_host": VM_OS_INFO_PATH,
+                    "path_vm": "/home/u/kernel.txt",
+                },                
             ]
         }
         self.provider.scp(

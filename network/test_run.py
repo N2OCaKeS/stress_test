@@ -1,4 +1,4 @@
-from libs.libtests import KernelLoad
+from libs.libtests import NetworkLoad
 from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM
 
 from libs.zefir import UploaderZC
@@ -105,7 +105,7 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 
 #Start test
 if args.TESTNAME == 'kernel_network':
-    kernel_network = KernelLoad(rc_name=args.TCV,
+    kernel_network = NetworkLoad(rc_name=args.TCV,
                                 testdir=BASE_PATH,
                                 vm_count=KERNEL_NET_VM_COUNT,
                                 vcpu=KERNEL_NET_VCPU,

@@ -317,29 +317,16 @@ EOF'""",
         print()
 
     def start_test(self):
-        if self.new_vms_dates == {}:
-            self.new_vms_dates = VMS_DATES
         print("\n\n\n Запускаем тест \n\n\n")
 
-        client_hosts = list(VMS_GROUP.get("clients_group", []))
-        if not client_hosts:
-            raise RuntimeError("В группе clients_group нет клиентских ВМ")
-
-        client_vm_count = len(client_hosts)
-        base_client_count, extra_clients = divmod(CLIENTS_TOTAL, client_vm_count)
-        max_client_count = base_client_count + (1 if extra_clients else 0)
+        client_count = int(CLIENTS_TOTAL / (len(list(VMS_DATES.keys())) - 1))
         client_per_minutes = 30
 
-        ramp_seconds = math.ceil((max_client_count / client_per_minutes) * 60)
+        ramp_seconds = math.ceil((client_count / client_per_minutes) * 60)
         if STATS_DURATION_SECONDS and STATS_DURATION_SECONDS > 0:
             total_seconds = int(STATS_DURATION_SECONDS)
         else:
             total_seconds = ramp_seconds + int(STATS_EXTRA_SECONDS)
-
-        print(
-            f"Клиентов всего: {CLIENTS_TOTAL}; клиентских ВМ: {client_vm_count}; "
-            f"распределение: {base_client_count} + {extra_clients} ВМ с +1 клиентом"
-        )
         start_client = {
             "testvm1": {
                 "get stats": {
@@ -349,20 +336,17 @@ EOF'""",
                 },
             },
         }
-        client_start = 0
-        for idx, host in enumerate(client_hosts):
-            host_client_count = base_client_count + (1 if idx < extra_clients else 0)
-            if host_client_count <= 0:
-                continue
+        for idx, i in enumerate(range(2, 6)):
+            host = f"testvm{i}"
+            client_start = int(idx * client_count)
 
             cmd = (
                 "sudo su -c 'ulimit -u 100000 && ulimit -n 100000 && ulimit -s 100000 && "
                 f"/home/u/python/Python-3.12.1/venv/bin/python3.12 /home/u/loader.py --client_per_minutes {client_per_minutes} "
-                f"--client_start {client_start} --client_count {host_client_count}'"
+                f"--client_start {client_start} --client_count {client_count}'"
             )
 
             start_client[host] = {"run_perf": {"command": cmd, "nowait": True, "nowait_timeout": total_seconds}}
-            client_start += host_client_count
 
         Libvirt.execute(
             commands=start_client,

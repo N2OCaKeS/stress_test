@@ -217,6 +217,19 @@ ________________________________________________________________________________
 * ``password``: str, optional, default='1' - пароль пользователя
 * ``timeout``: int, optional, default=15 - время ожидания сигнала в минутах
 
+Параметры задачи для ``nowait``:
+
+* ``nowait``: bool, optional, default=False - выполнять задачу в режиме no-wait
+* ``nowait_mode``: str, optional, default='terminate' - режим no-wait
+  * ``terminate``: команда запускается под ``timeout`` и принудительно завершается по ``nowait_timeout`` секунд
+  * ``continue``: команда сразу отвязывается от SSH-сессии и продолжает выполняться в фоне
+* ``nowait_timeout``: int, optional, default=30 - таймаут в секундах для режима ``terminate``
+
+Особенности сигналов:
+
+* Для задач с ``nowait=True`` и заданным ``signal set`` сигнал устанавливается через 10 секунд после успешного старта команды.
+* Для обычных задач (без ``nowait``) ``signal set`` устанавливается после завершения команды.
+
 Структура ``commands``:
 
 .. code-block:: python
@@ -235,8 +248,16 @@ ________________________________________________________________________________
             'perf': {  # асинхронная задача
                 'command': 'sudo perf record -g -a',
                 'signal get': 'ready',
+                'signal set': 'perf_started',
                 'nowait': True,
+                'nowait_mode': 'terminate',
                 'nowait_timeout': 30,
+            },
+            'iperf_server': {  # фоновая задача, не зависит от SSH-сессии
+                'command': 'iperf -s',
+                'nowait': True,
+                'nowait_mode': 'continue',
+                'signal set': 'iperf_started',
             },
         },
         'g_group1': {
@@ -288,12 +309,54 @@ ________________________________________________________________________________
             'perf_record': {
                 'command': 'sudo perf record -g -a',
                 'signal get': 'iperf_installed',
+                'signal set': 'perf_started',
                 'nowait': True,
+                'nowait_mode': 'terminate',
                 'nowait_timeout': 15,
             },
             'reboot': {
                 'signal set': 'rebooted',
                 'signal get': ['iperf_installed'],
+            },
+        },
+    }
+
+    Libvirt.execute(commands=commands, vms_dates=vms_dates, timeout=30)
+
+.. code-block:: python
+
+    from allta import Libvirt
+
+    vms_dates = {
+        'testvm1': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.158',
+            'cpu': '4',
+            'ram': '4096',
+            'disk': '100',
+        },
+        'testvm2': {
+            'host-port': '22',
+            'ip_bridge': '10.177.103.159',
+            'cpu': '2',
+            'ram': '2048',
+            'disk': '80',
+        },
+    }
+
+    commands = {
+        'testvm1': {
+            'start_iperf_server': {
+                'command': 'iperf -s',
+                'signal set': 'iperf_server_started',
+                'nowait': True,
+                'nowait_mode': 'continue',
+            },
+        },
+        'testvm2': {
+            'run_iperf_client': {
+                'command': 'iperf -c 10.177.103.158 -t 60',
+                'signal get': 'iperf_server_started',
             },
         },
     }

@@ -193,16 +193,17 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
     run_test = {
         "testvm1_server": {
                 "test_task": {
-                    "command": "sudo perf record -g -a &",
+                    "command": "sudo perf record -g -a",
                     "signal set": "server_start",
                     "nowait": True,  # default = False
+                    "nowait_mode": "terminate",  # terminate|continue, default = terminate
                     "nowait_timeout": 3,  # default = 30 sec
                 },
         },
         "testvm2_client": {
                 "test_start_1_parametr": {
                     "command": "test.py 1",
-                    "signal get": "server_start_1_param",
+                    "signal get": "server_start",  # в nowait сигнал ставится через +10 секунд от старта команды
                     "signal set": "load_start_1",
                 },
                 "test_start_2_parametr": {
@@ -212,6 +213,26 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
                 }, 
         }
     }
+
+    # Отдельный пример для nowait_mode=continue:
+    # сервис запускается в фоне и не зависит от закрытия SSH-сессии
+    run_background = {
+        "testvm1_server": {
+                "iperf_server": {
+                    "command": "iperf -s",
+                    "signal set": "iperf_server_started",
+                    "nowait": True,
+                    "nowait_mode": "continue",
+                },
+        },
+        "testvm2_client": {
+                "load_test": {
+                    "command": "iperf -c testvm1_server -t 60",
+                    "signal get": "iperf_server_started",
+                }
+        }
+    }
+    Libvirt.execute(commands=run_background, vms_dates=actual_vms_dates, vms_groups=groups, username=user_name, password=new_password)
 
     get_result = {
         "testvm2_client": [

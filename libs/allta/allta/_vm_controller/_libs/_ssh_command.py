@@ -3,6 +3,7 @@ from ._signals import _Signals as signals
 import paramiko
 import time
 import shlex
+import uuid
 from typing import Optional, List, Union
 
 # Новый декоратор для логирования
@@ -225,13 +226,21 @@ class _SSH_Command:
                 mode = "terminate"
 
             if mode == "continue":
-                ts = int(time.time())
-                log_path = f"/tmp/allta_nowait_{host}_{ts}.log"
-                unit_seed = f"allta_nowait_{host}_{ts}"
+                run_id = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+                task_seed = task_name or "task"
+                task_tag = "".join(
+                    ch if ch.isalnum() else "_" for ch in task_seed
+                )[:24] or "task"
+                host_tag = "".join(
+                    ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_"
+                    for ch in host
+                )[:24] or "host"
+                unit_seed = f"allta_nowait_{host_tag}_{task_tag}_{run_id}"
+                log_path = f"/tmp/{unit_seed}.log"
                 unit_name = "".join(
                     ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_"
                     for ch in unit_seed
-                )
+                )[:120]
 
                 cmd_with_log = f"{command} > {shlex.quote(log_path)} 2>&1"
                 launch_script = f"""
@@ -315,6 +324,21 @@ echo "__ALLTA_LOG=$log_path"
                     # Ставим сигнал после старта команды (через 10 секунд).
                     signals.set_delayed(host, signal_set, delay_sec=10)
 
+                # Сразу читаем текущий фрагмент VM-лога и передаем его в лог задачи на хосте.
+                log_snapshot = ""
+                try:
+                    snapshot_cmd = (
+                        f"if [ -f {shlex.quote(log_from_marker)} ]; then "
+                        f"head -c 65536 {shlex.quote(log_from_marker)}; "
+                        "fi"
+                    )
+                    _, snap_stdout, _ = ssh.exec_command(snapshot_cmd)
+                    log_snapshot = snap_stdout.read().decode(errors="ignore")
+                except Exception as snapshot_error:
+                    log_snapshot = (
+                        f"Не удалось прочитать snapshot VM-лога: {snapshot_error}"
+                    )
+
                 if mode_used == "systemd":
                     print(
                         f"[{host}] Continue-mode: команда запущена через systemd (unit={unit}, PID={pid}, log={log_from_marker})."
@@ -328,6 +352,12 @@ echo "__ALLTA_LOG=$log_path"
 
                 if err_raw:
                     output = f"{output}\n{err_raw}"
+
+                snapshot_text = log_snapshot if log_snapshot else "<empty>"
+                output = (
+                    f"{output}\nVM_LOG_PATH: {log_from_marker}\n"
+                    f"VM_LOG_SNAPSHOT:\n{snapshot_text}"
+                )
 
                 return {
                     "host": host,

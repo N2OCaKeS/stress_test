@@ -1,8 +1,12 @@
-from libs.libtests import NetworkLoad
-from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM
+import argparse
+from datetime import datetime
 
 from libs.zefir import UploaderZC
-import argparse
+from libs.libnet import get_duration
+from libs.libtests import NetworkLoad
+from libs.libpublic import net_publisher
+
+from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM
 
 
 parser = argparse.ArgumentParser()
@@ -105,6 +109,8 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 
 #Start test
 if args.TESTNAME == 'kernel_network':
+    time_start_script = datetime.now()
+    
     kernel_network = NetworkLoad(rc_name=args.TCV,
                                 testdir=BASE_PATH,
                                 vm_count=KERNEL_NET_VM_COUNT,
@@ -117,6 +123,19 @@ if args.TESTNAME == 'kernel_network':
     kernel_network.results_processing()
 
     info_list()
+
+    lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
+    publisher = net_publisher(
+        username=args.USER,
+        token=args.TOKEN,
+        space=args.SPACE,
+        parent_title=args.PPAGE,
+        title=args.NPAGE,
+        stand_number=args.STAND,
+        lead_time=lead_time,
+        test_cycle_version=args.TCV,
+    )
+
     uzs.public = True
     #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')

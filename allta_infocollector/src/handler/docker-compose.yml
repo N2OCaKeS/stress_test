@@ -2,7 +2,7 @@ version: '3.7'
 
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: allta.devos.astralinux.ru:21503/prom/prometheus:latest
     ports:
       - "9090:9090"
     volumes:
@@ -20,7 +20,7 @@ services:
       - --web.enable-admin-api
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: allta.devos.astralinux.ru:21503/grafana/grafana-oss:latest
     ports:
       - 3000:3000
     networks:
@@ -36,7 +36,7 @@ services:
       - GF_LOG_LEVEL=warn 
 
   nginx:
-    image: nginx:latest
+    image: allta.devos.astralinux.ru:21503/nginx:latest
     ports:
       - "18180:18180"
     volumes:

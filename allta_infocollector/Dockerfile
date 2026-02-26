@@ -1,4 +1,5 @@
-FROM python:3.12
+#FROM python:3.12
+FROM allta.devos.astralinux.ru:21503/python:3.12
 
 WORKDIR /app
 COPY . /app

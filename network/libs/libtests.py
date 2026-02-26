@@ -186,14 +186,18 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
 
         
         init_on_free_off = {
-            'testvm1': {
+            'g_all': {
                 'init_on_free_off': {
                     'command': """sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=off"/' /etc/default/grub""",
                     'signal set': 'sed command',
                 },
-                'reboot': {
-                    'command': 'sudo reboot',
+                'init_on_free_off': {
+                    'command': 'sudo update-grub',
                     'signal get': 'sed command',
+                    'signal set': 'update',
+                },
+                'reboot': {
+                    'signal get': 'update',
                 },
             },
         }
@@ -201,10 +205,10 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         iperf_load_iof_on = {
             'testvm1': {
                 'start_iperf_server': {
-                    'command': f'iperf -s',
+                    'command': 'iperf -s',
                     'signal set': 'start server',
                     'nowait': True,
-                    'nowait_timeout': 300
+                    'nowait_mode': 'continue'
                 },
             },
             'testvm2': {
@@ -224,10 +228,10 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         iperf_load_iof_off = {
             'testvm1': {
                 'start_iperf_server': {
-                    'command': f'iperf -s',
+                    'command': 'iperf -s',
                     'signal set': 'start server',
                     'nowait': True,
-                    'nowait_timeout': 300
+                    'nowait_mode': 'continue'
                 },
             },
             'testvm2': {
@@ -253,7 +257,6 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         print(f"\n\n\nЗапускаем тест c init_on_free=off")
         print('Отключение опции init_on_free')
         self.provider.execute(commands=init_on_free_off, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
-        sleep(90)
         print(f'Итерация №{i}')
         for i in range(ITERATIONS):
             self.provider.execute(commands=iperf_load_iof_off, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
@@ -367,6 +370,7 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         with open(IOF_RESULTS, 'w') as w:
             w.write(json.dumps(iof_results_dict))
 
+        print('\n\nЗабираем данные о ОС с ВМ\n')
         # Get vm params (av, kernel), params create in provision
         scp_vm_params = {
             "testvm1": [

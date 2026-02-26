@@ -36,6 +36,7 @@ Allta
    "1.1.2", "mfilippenko", "Исправлены ошибки с математической моделью"      
    "1.1.3", "mfilippenko", "Доработан модуль JiraConfluenceReporter, для удобной отладки отчетов в личном пространстве"      
    "1.1.4", "mfilippenko", "Обновлена документация"        
+   "1.1.5", "mfilippenko", "В Libvirt.execute() добавлен nowait_mode (terminate/continue), для nowait сигнал устанавливается через 10 секунд после старта команды"
 .. Тут необходимо указывать новую версию автора и описание 
 
 
@@ -235,4 +236,3 @@ Allta
    .. code-block:: bash
 
       git merge dev_libs -m  allta_lib v1.0.0
-

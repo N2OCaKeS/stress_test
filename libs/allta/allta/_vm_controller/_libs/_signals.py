@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 
 class _Signals():
     """
@@ -13,7 +14,9 @@ class _Signals():
     Этот класс используется для синхронизации выполнения задач между различными процессами.
     """
 
-    @staticmethod        
+    _lock = threading.Lock()
+
+    @staticmethod
     def set(host: str, set_signal: str):
         """
         Устанавливает сигнал, добавляя запись host 1 в файл.
@@ -28,8 +31,30 @@ class _Signals():
         if not os.path.exists(signal_dir):
             os.makedirs(signal_dir)
         
-        with open(signal_file_path, 'a') as file:
-            file.write(f'{host} 1\n')
+        with _Signals._lock:
+            with open(signal_file_path, 'a') as file:
+                file.write(f'{host} 1\n')
+
+    @staticmethod
+    def set_delayed(host: str, set_signal: str, delay_sec: int = 10):
+        """
+        Устанавливает сигнал с задержкой в отдельном потоке.
+
+        Args:
+            host (str): Имя хоста.
+            set_signal (str): Имя сигнала (файла), который будет создан.
+            delay_sec (int, optional): Задержка в секундах до установки сигнала.
+        """
+        delay = max(0, int(delay_sec))
+
+        def _worker():
+            if delay:
+                time.sleep(delay)
+            _Signals.set(host, set_signal)
+
+        thread = threading.Thread(target=_worker)
+        thread.start()
+        return thread
 
     @staticmethod  
     def get(get_signal: list, timeout_min: int = 15):

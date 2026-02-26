@@ -2,6 +2,8 @@ from ..._decorators.Decorators import BaseDecorators
 from ._signals import _Signals as signals
 import paramiko
 import time
+import shlex
+import uuid
 from typing import Optional, List, Union
 
 # Новый декоратор для логирования
@@ -177,12 +179,13 @@ class _SSH_Command:
         task_name: Optional[str] = None,
         time_out: int = 15,
         nowait_timeout: int = 30,
+        nowait_mode: str = "terminate",
     ) -> dict:
         ssh = None
-        chan = None
         try:
-            # --- ждём сигнал, если надо (как в cmd) ---
             if signal_get:
+                if isinstance(signal_get, str):
+                    signal_get = [signal_get]
                 if len(signal_get) == 1:
                     signal_get = [host, signal_get[0]]
                 elif not signal_get[0]:
@@ -199,7 +202,6 @@ class _SSH_Command:
                         "status": "error",
                     }
 
-            # --- подключаемся и запускаем команду БЕЗ обёрток ---
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(
@@ -210,81 +212,210 @@ class _SSH_Command:
                 timeout=10,
             )
 
-            stdin, stdout, stderr = ssh.exec_command(command)
-            chan = stdout.channel
-            # делаем чтение неблокирующим
-            chan.settimeout(0.0)
+            try:
+                nowait_timeout = int(nowait_timeout)
+            except Exception:
+                nowait_timeout = 30
+            nowait_timeout = max(0, nowait_timeout)
 
-            end_ts = time.time() + max(0, int(nowait_timeout))
-            out_buf, err_buf = [], []
+            mode = (nowait_mode or "terminate").strip().lower()
+            if mode not in ("terminate", "continue"):
+                print(
+                    f"[{host}] Неизвестный nowait_mode='{nowait_mode}', использую 'terminate'."
+                )
+                mode = "terminate"
 
-            def _drain():
-                # Читай ИЗ КАНАЛА, не из stdout/stderr-обёрток
-                while chan.recv_ready():
-                    out_buf.append(chan.recv(4096).decode(errors="ignore"))
-                while chan.recv_stderr_ready():
-                    err_buf.append(chan.recv_stderr(4096).decode(errors="ignore"))
+            if mode == "continue":
+                run_id = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+                task_seed = task_name or "task"
+                task_tag = "".join(
+                    ch if ch.isalnum() else "_" for ch in task_seed
+                )[:24] or "task"
+                host_tag = "".join(
+                    ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_"
+                    for ch in host
+                )[:24] or "host"
+                unit_seed = f"allta_nowait_{host_tag}_{task_tag}_{run_id}"
+                log_path = f"/tmp/{unit_seed}.log"
+                unit_name = "".join(
+                    ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_"
+                    for ch in unit_seed
+                )[:120]
 
-            # ждём до nowait_timeout
-            while time.time() < end_ts:
-                _drain()
-                if chan.exit_status_ready():
-                    _drain()
-                    exit_status = chan.recv_exit_status()
-                    output_stdout = "".join(out_buf)
-                    output_stderr = "".join(err_buf)
-                    output = output_stdout + ("\n" + output_stderr if output_stderr else "")
+                cmd_with_log = f"{command} > {shlex.quote(log_path)} 2>&1"
+                launch_script = f"""
+log_path={shlex.quote(log_path)}
+unit_name={shlex.quote(unit_name)}
+mode=""
+pid=""
+unit=""
 
-                    if exit_status != 0:
-                        print(
-                            f"[{host}] Ошибка при выполнении '{command}': ОШИБКА:\n{output_stderr}\n\n\n"
-                            f" ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n\n{output}\n\n\n (exit status: {exit_status})"
-                        )
-                        return {
-                            "host": host,
-                            "task_name": task_name or "unknown",
-                            "command": command,
-                            "output": (output_stderr, "\n\n\n", output),
-                            "status": "error",
-                        }
+if command -v systemd-run >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+  if sudo -n true >/dev/null 2>&1; then
+    if sudo -n systemd-run --unit "$unit_name" --collect --quiet /bin/bash -lc {shlex.quote(cmd_with_log)} >/dev/null 2>&1; then
+      sleep 1
+      pid="$(sudo -n systemctl show "$unit_name" -p MainPID --value 2>/dev/null | tr -d '[:space:]')"
+      if [ -n "$pid" ] && [ "$pid" != "0" ] && sudo -n kill -0 "$pid" >/dev/null 2>&1; then
+        mode="systemd"
+        unit="$unit_name"
+      fi
+    fi
+  fi
+fi
 
-                    print(f"[{host}] Команда закончила выполнение: {command}")
-                    if signal_set:
-                        signals.set(host, signal_set)
+if [ -z "$mode" ]; then
+  if command -v setsid >/dev/null 2>&1; then
+    nohup setsid bash -lc {shlex.quote(command)} < /dev/null > "$log_path" 2>&1 &
+  else
+    nohup bash -lc {shlex.quote(command)} < /dev/null > "$log_path" 2>&1 &
+  fi
+  pid="$!"
+  sleep 1
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    mode="nohup"
+  else
+    echo "__ALLTA_ERROR=background_start_failed"
+    echo "__ALLTA_LOG=$log_path"
+    exit 1
+  fi
+fi
+
+echo "__ALLTA_MODE=$mode"
+echo "__ALLTA_PID=$pid"
+echo "__ALLTA_UNIT=$unit"
+echo "__ALLTA_LOG=$log_path"
+"""
+                wrapped = f"bash -lc {shlex.quote(launch_script)}"
+                _, stdout, stderr = ssh.exec_command(wrapped)
+                out_raw = stdout.read().decode(errors="ignore")
+                err_raw = stderr.read().decode(errors="ignore").strip()
+
+                markers = {}
+                for line in out_raw.splitlines():
+                    if line.startswith("__ALLTA_") and "=" in line:
+                        key, value = line.split("=", 1)
+                        markers[key.strip()] = value.strip()
+
+                mode_used = markers.get("__ALLTA_MODE", "")
+                pid = markers.get("__ALLTA_PID", "")
+                unit = markers.get("__ALLTA_UNIT", "")
+                log_from_marker = markers.get("__ALLTA_LOG", log_path)
+                marker_error = markers.get("__ALLTA_ERROR", "")
+
+                if marker_error or not mode_used or not pid:
+                    error_msg = (
+                        "Не удалось надёжно запустить фоновый процесс. "
+                        f"Проверьте лог: {log_from_marker}"
+                    )
+                    if marker_error:
+                        error_msg = f"{error_msg} (reason={marker_error})"
+                    if err_raw:
+                        error_msg = f"{error_msg}\n{err_raw}"
+                    print(f"[{host}] {error_msg}")
                     return {
                         "host": host,
                         "task_name": task_name or "unknown",
                         "command": command,
-                        "output": output,
-                        "status": "ok",
+                        "output": error_msg,
+                        "status": "error",
                     }
 
-                time.sleep(0.1)
+                if signal_set:
+                    # Ставим сигнал после старта команды (через 10 секунд).
+                    signals.set_delayed(host, signal_set, delay_sec=10)
 
-            # не успела завершиться к таймауту — дочитываем, закрываем SSH, ставим сигнал
-            _drain()
-            output = "".join(out_buf) + ("\n" + "".join(err_buf) if err_buf else "")
+                # Сразу читаем текущий фрагмент VM-лога и передаем его в лог задачи на хосте.
+                log_snapshot = ""
+                try:
+                    snapshot_cmd = (
+                        f"if [ -f {shlex.quote(log_from_marker)} ]; then "
+                        f"head -c 65536 {shlex.quote(log_from_marker)}; "
+                        "fi"
+                    )
+                    _, snap_stdout, _ = ssh.exec_command(snapshot_cmd)
+                    log_snapshot = snap_stdout.read().decode(errors="ignore")
+                except Exception as snapshot_error:
+                    log_snapshot = (
+                        f"Не удалось прочитать snapshot VM-лога: {snapshot_error}"
+                    )
 
-            try:
-                if chan and not chan.closed:
-                    chan.close()
-            except Exception:
-                pass
-            try:
-                ssh.close()
-            except Exception:
-                pass
+                if mode_used == "systemd":
+                    print(
+                        f"[{host}] Continue-mode: команда запущена через systemd (unit={unit}, PID={pid}, log={log_from_marker})."
+                    )
+                    output = f"mode=systemd, unit={unit}, PID={pid}, log={log_from_marker}"
+                else:
+                    print(
+                        f"[{host}] Continue-mode: команда отвязана через nohup/setsid (PID={pid}, log={log_from_marker})."
+                    )
+                    output = f"mode=nohup, PID={pid}, log={log_from_marker}"
+
+                if err_raw:
+                    output = f"{output}\n{err_raw}"
+
+                snapshot_text = log_snapshot if log_snapshot else "<empty>"
+                output = (
+                    f"{output}\nVM_LOG_PATH: {log_from_marker}\n"
+                    f"VM_LOG_SNAPSHOT:\n{snapshot_text}"
+                )
+
+                return {
+                    "host": host,
+                    "task_name": task_name or "unknown",
+                    "command": command,
+                    "output": output,
+                    "status": "ok",
+                }
+
+            wrapped = (
+                f"timeout --signal=TERM --kill-after=5s {nowait_timeout}s "
+                f"bash -lc {shlex.quote(command)}"
+            )
+            _, stdout, stderr = ssh.exec_command(wrapped)
 
             if signal_set:
-                signals.set(host, signal_set)
+                # Ставим сигнал после старта команды (через 10 секунд).
+                signals.set_delayed(host, signal_set, delay_sec=10)
 
-            print(f"[{host}] Детач: ssh закрыт через {nowait_timeout}s, команда продолжит выполняться на хосте.")
+            output_stdout = stdout.read().decode(errors="ignore")
+            output_stderr = stderr.read().decode(errors="ignore")
+            exit_status = stdout.channel.recv_exit_status()
+            output = output_stdout + ("\n" + output_stderr if output_stderr else "")
+
+            if exit_status == 0:
+                print(f"[{host}] Команда закончила выполнение: {command}")
+                return {
+                    "host": host,
+                    "task_name": task_name or "unknown",
+                    "command": command,
+                    "output": output,
+                    "status": "ok",
+                }
+
+            if exit_status in (124, 137):
+                timeout_msg = (
+                    f"Команда принудительно завершена по nowait_timeout={nowait_timeout}s."
+                )
+                print(f"[{host}] {timeout_msg}")
+                output = f"{output}\n{timeout_msg}".strip()
+                return {
+                    "host": host,
+                    "task_name": task_name or "unknown",
+                    "command": command,
+                    "output": output,
+                    "status": "ok",
+                }
+
+            print(
+                f"[{host}] Ошибка при выполнении '{command}': ОШИБКА:\n{output_stderr}\n\n\n "
+                f"ПОЛНЫЙ ВЫВОД КОМАНДЫ С ОШИБКОЙ\n\n\n{output}\n\n\n (exit status: {exit_status})"
+            )
             return {
                 "host": host,
                 "task_name": task_name or "unknown",
                 "command": command,
-                "output": output,  # может быть пустым — это ок
-                "status": "ok",
+                "output": (output_stderr, "\n\n\n", output),
+                "status": "error",
             }
 
         except paramiko.AuthenticationException:

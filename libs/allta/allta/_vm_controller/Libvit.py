@@ -317,6 +317,7 @@ EOF
                                 "command": "sudo perf record -g -a", # Interective task, автоматически закончиться спустя указанное время
                                 "signal get": "1",
                                 "nowait": True,  # default = False
+                                "nowait_mode": "terminate",  # terminate|continue, default = terminate
                                 "nowait_timeout": 15,  # default = 30 sec
                             }
                         },
@@ -394,10 +395,13 @@ EOF
             # per-task nowait
             if bool(task.get("nowait", False)):
                 nwt = task.get("nowait_timeout", 30)
+                nwm = str(task.get("nowait_mode", "terminate")).strip().lower()
                 try:
                     nwt = int(nwt)
                 except Exception:
                     nwt = 30
+                if nwm not in ("terminate", "continue"):
+                    nwm = "terminate"
 
                 ssh_command.cmd_detach(
                     host=host,
@@ -410,6 +414,7 @@ EOF
                     task_name=task_name,
                     time_out=timeout,
                     nowait_timeout=nwt,
+                    nowait_mode=nwm,
                 )
                 return
 

@@ -16,28 +16,29 @@
             "Total time": "0:00:00"
         },
         "stand4": {
-            "postgresql": "4:11:44",
-            "postgresql-aud-off": "2:21:25",
-            "postgresql-sm": "5:37:33",
-            "psql parsec": "2:46:18",
-            "psql vanilla": "2:33:43",
-            "psql balance": "1:51:32",
-            "psql kernels": "1:39:21",
+            "postgresql": "5:05:47",
+            "postgresql-aud-off": "2:26:52",
+            "postgresql-sm": "5:09:06",
+            "psql parsec": "2:38:27",
+            "psql vanilla": "2:23:00",
+            "psql balance": "1:59:42",
+            "psql kernels": "1:48:56",
             "steal time": "2:27:28",
-            "steal time-sm": "2:30:51",
+            "steal time-sm": "2:16:49",
             "Total time": "0:00:00"
         },
         "stand10": {
-            "NTFS": "7:19:58",
-            "OCFS2": "1:20:13",
-            "CEPH": "2:08:05",
-            "CEPH fio": "1 day, 18:42:18",
-            "Total time": "0:00:00"
+            "NTFS": "7:43:09",
+            "OCFS2": "1:46:47",
+            "CEPH": "2:38:42",
+            "CEPH fio": "2:18:35",
+            "Total time": "0:00:00",
+            "CEPH parsec": "4:09:20"
         },
         "stand11": {
             "parsec impact-fs": "0:36:07",
             "parsec impact-fs aud-off": "0:35:31",
-            "docker-wa": "0:59:20",
+            "docker-wa": "0:58:14",
             "FIO": "1:16:36",
             "vPingPong": "0:58:22",
             "vUnixBench": "2:19:24",
@@ -49,7 +50,7 @@
             "Total time": "0:00:00"
         },
         "stand12": {
-            "syslog-ng": "2:58:56",
+            "syslog-ng": "2:19:12",
             "apache-rp": "0:38:45",
             "auditd-f": "0:44:49",
             "auditd-p": "1:30:01",

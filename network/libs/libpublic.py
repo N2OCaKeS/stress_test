@@ -1,12 +1,13 @@
 # from allta import PageBuilder, ConfluencePublisher Uncomment to work
 
+import json
 import pandas as pd
 from typing import Any, Dict, List, Tuple
 from allta import PageBuilder, ConfluencePublisher
 
-from net_conf import REPORT_FILENAME
+from net_conf import IOF_RESULTS
 
-def exb_publisher(
+def net_publisher(
         username,
         token,
         space,
@@ -24,8 +25,8 @@ def exb_publisher(
 
     # TODO
     params = [
-        {"label": "...", "value": ...},
-        {"label": "...", "value": ...},
+        {"label": "...", "value": "..."},
+        {"label": "...", "value": "..."},
     ]
 
     header_table = [
@@ -52,18 +53,14 @@ def exb_publisher(
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
 
-    # TODO
-    init_on_free_on = 0
-    init_on_free_off = 0
-    diff = 0
+    with open(IOF_RESULTS, 'r') as f:
+        iof_results_dict = json.load(f)
 
     builder.add_table({
         "title": "Результаты тестирования",
-        "headers": ["Метрика", "Значение"],
-        "rows": [["init_on_free=on MBytes/sec", init_on_free_on], ["init_on_free=off MBytes/sec", init_on_free_off],["Diff %", diff]],
+        "headers": ["init_on_free=on MBytes/sec (mean)", "init_on_free=off MBytes/sec (mean)", "Difference %"],
+        "rows": [[iof_results_dict['init_on_free_ON'], iof_results_dict['init_on_free_OFF'], iof_results_dict['difference']]],
     })
-
-    builder.add_attachment(file_path=REPORT_FILENAME, description="Report file")
 
     publish_result = reporter.publish_results_from_params(
         conf_space=space,

@@ -62,7 +62,7 @@ class UploaderZC(NetworkStatistics):
                                basic_auth=self.BA)
 
         if self.statistics == True:
-            statistics = VirtStatistics(username=self.UN, 
+            statistics = NetworkStatistics(username=self.UN, 
                                         token=self.CT)
             statistics.update_statistics()
 

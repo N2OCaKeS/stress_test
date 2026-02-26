@@ -10,12 +10,12 @@ from sys import exit
 from atlassian import Confluence
 from os import remove, path
 from libs.libnet import response
-from libs.libstatistics import VirtStatistics
+from libs.libstatistics import NetworkStatistics
 from time import sleep, ctime
 from net_conf import JIRA_URL, CONFLUENCE_URL
 
 
-class UploaderZC(VirtStatistics):
+class UploaderZC(NetworkStatistics):
 
     def __init__(self,
                  folder_tree_id=None,

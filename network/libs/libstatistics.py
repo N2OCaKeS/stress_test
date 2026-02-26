@@ -9,15 +9,14 @@ class NetworkStatistics:
         
         self.username = username
         self.token = token
-        self.url = 'http://allta.devos.astralinux.ru:7777/virt-statistics'
+        self.url = 'http://allta.devos.astralinux.ru:7777/network-statistics'
 
     def update_statistics(self):
         data = {
-            'title_statistics':'Qemu/KVM/Libvirt',
+            'title_statistics':'Network',
             'username':self.username,
             'token':self.token,
-            'set_of_test_types':["FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm"],
-            'comparison_list':[["steal time", "steal time-sm"]]
+            'set_of_test_types':[""],
         }
 
         headers = {

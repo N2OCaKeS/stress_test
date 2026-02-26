@@ -89,6 +89,13 @@ def status_set_vm(name: str) -> None:
     payload = {"status": login}
     _request("PATCH", f"/vm/{vm_id}/status", json=payload, timeout=20)
 
+def status_free_vm(name: str) -> None:
+    vm = get_vm_by_name(name)
+    vm_id = vm.get("id")
+    if not vm_id:
+        raise VMError("Не удалось определить id ВМ.")
+    _request("POST", f"/vm/{vm_id}/release", json={}, timeout=20)
+
 
 def astra_update(rc: str, vm_names: List[str]) -> str:
     payload = {

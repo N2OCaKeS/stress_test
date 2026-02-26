@@ -34,7 +34,7 @@ class OrderedGroup(click.Group):
     def list_commands(self, ctx):
         order = [
             "login", "logout",
-            "git", "mc", "tokens", "files",
+            "git", "mc", "tokens", "files", "file",
             "boxes", "releases", "vm",
             "python", "venv",
         ]
@@ -194,6 +194,14 @@ def files_cli(filename: str):
     code = files_run(filename)
     sys.exit(code)
 
+@cli.command("file", short_help="Скачать JSON-файл из config-API (алиас).",
+             help="Алиас для команды allta files.")
+@click.argument("filename", required=True, metavar="FILENAME")
+@with_section("FILES")
+def file_cli(filename: str):
+    code = files_run(filename)
+    sys.exit(code)
+
 @cli.command("login", short_help="Авторизоваться.",
              help="Авторизоваться (позиционные аргументы или флаги -u/-p).")
 @click.argument("username", required=False, metavar="[USERNAME]")
@@ -313,12 +321,23 @@ def vm_create_cli(server_id: int, password: str, vms: tuple[str, ...]):
 
 @vm_group.command("status", short_help="Показать статус ВМ по имени.")
 @click.argument("name")
-def vm_status_cli(name: str):
+@click.option("--json", "json_output", is_flag=True, help="Вывести ответ в JSON (как раньше).")
+def vm_status_cli(name: str, json_output: bool):
     from allta_cli.utils import ui
     try:
         info = vm_api.status_vm(name)
-        import json as _json
-        ui.echo(_json.dumps(info, ensure_ascii=False, indent=2))
+        if json_output:
+            import json as _json
+            ui.echo(_json.dumps(info, ensure_ascii=False, indent=2))
+            return
+        ui.table(
+            headers=["Name", "Status", "Password"],
+            rows=[[
+                info.get("name") or "",
+                info.get("status") or "",
+                info.get("password") or "",
+            ]],
+        )
     except Exception as e:
         ui.err(f"Ошибка: {e}")
         sys.exit(1)
@@ -331,6 +350,17 @@ def vm_status_set_cli(name: str):
     try:
         vm_api.status_set_vm(name)
         ui.ok("Статус обновлён.")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+@vm_group.command("status-free", short_help="Освободить ВМ (сделать свободной).")
+@click.argument("name")
+def vm_status_free_cli(name: str):
+    from allta_cli.utils import ui
+    try:
+        vm_api.status_free_vm(name)
+        ui.ok("ВМ освобождена.")
     except Exception as e:
         ui.err(f"Ошибка: {e}")
         sys.exit(1)
@@ -433,6 +463,12 @@ def vm_snapshot_revert_cli(snap_name: str, vms: tuple[str, ...]):
 def mc_qa_cli():
     with ui.section("MC • QA"):
         rc = mc_cmd.mc_qa()
+        sys.exit(rc)
+
+@mc_group.command("10", short_help="MC на ftp://10.177.103.10/.")
+def mc_10_cli():
+    with ui.section("MC • 10.177.103.10"):
+        rc = mc_cmd.mc_10()
         sys.exit(rc)
 
 @mc_group.command("ci", short_help="MC на CI FTP.")

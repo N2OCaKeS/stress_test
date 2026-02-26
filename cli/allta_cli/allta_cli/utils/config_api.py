@@ -18,6 +18,20 @@ class TokenKeyNotFound(ConfigApiError):
     """Запрошенный ключ токена отсутствует в tokens.json."""
 
 
+class ConfigApiFileNotFound(ConfigApiError):
+    """Config-API вернул 404 для файла, содержит тело ответа сервера."""
+
+    def __init__(self, filename: str, payload: Any):
+        self.filename = filename
+        self.payload = payload
+        detail = None
+        if isinstance(payload, dict):
+            d = payload.get("detail")
+            if isinstance(d, str) and d.strip():
+                detail = d.strip()
+        super().__init__(detail or f"File '{filename}' not found")
+
+
 def _auth_headers() -> Dict[str, str]:
     token = load_token(verbose=False)
     return {
@@ -71,8 +85,25 @@ def files(filename: str) -> Any:
 
     try:
         r = requests.get(url, headers=_auth_headers(), timeout=30)
-        r.raise_for_status()
     except requests.RequestException as e:
+        raise ConfigApiError(f"Не удалось получить файл '{filename}': {e}") from e
+
+    if r.status_code == 404:
+        try:
+            payload = r.json()
+        except ValueError:
+            payload = {"detail": (r.text or "").strip() or f"File '{filename}' not found"}
+        raise ConfigApiFileNotFound(filename=filename, payload=payload)
+
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        try:
+            payload = r.json()
+            if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
+                raise ConfigApiError(f"HTTP {r.status_code}: {payload['detail']}")
+        except ValueError:
+            pass
         raise ConfigApiError(f"Не удалось получить файл '{filename}': {e}") from e
 
     try:

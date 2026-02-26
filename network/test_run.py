@@ -136,6 +136,6 @@ if args.TESTNAME == 'kernel_network':
         test_cycle_version=args.TCV,
     )
 
-    uzs.public = True
+    # uzs.public = True
     #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')

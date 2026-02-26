@@ -10,13 +10,12 @@ from sys import exit
 from atlassian import Confluence
 from os import remove, path
 from libs.libnet import response
-from libs.libpublic import Public
 from libs.libstatistics import VirtStatistics
 from time import sleep, ctime
 from net_conf import JIRA_URL, CONFLUENCE_URL
 
 
-class UploaderZC(Public, VirtStatistics):
+class UploaderZC(VirtStatistics):
 
     def __init__(self,
                  folder_tree_id=None,
@@ -56,20 +55,6 @@ class UploaderZC(Public, VirtStatistics):
         self.testname = testname
 
     def test_cycle_status_changer(self, status):
-
-        if self.public == True:
-            public = Public(username=self.UN,
-                            token=self.CT,
-                            conf_space=self.CS,
-                            conf_parent_page=self.CPP,
-                            conf_new_page_name=self.CNPN,
-                            grade_stand=self.GS,
-                            package=self.PKG,
-                            test_cycle_version=self.TCV,
-                            storage=self.storage,
-                            kernel_check=self.kernel_check,
-                            testname=self.testname)
-            public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,
                                test_cycle_name=self.TCYC,

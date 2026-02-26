@@ -12,7 +12,7 @@ services:
       - infocollector
 
   nginx:
-    image: nginx:latest
+    image: allta.devos.astralinux.ru:21503/nginx:latest
     ports:
       - "18181:18181"
     volumes:

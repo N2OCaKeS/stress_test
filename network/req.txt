@@ -1,1 +1,3 @@
 requests
+numpy
+atlassian-python-api

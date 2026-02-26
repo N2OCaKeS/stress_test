@@ -28,6 +28,9 @@ KERNEL_NET_VCPU = 8
 KERNEL_NET_RAM = 16384
 
 # Load params
-IOF_OFF_PATH = '/home/u/results_iof_off.txt'
-IOF_ON_PATH = '/home/u/results_iof_on.txt'
+IOF_RESULTS = 'iof_results.json'
+IOF_OFF_NAME = 'results_iof_off.txt'
+IOF_ON_NAME = 'results_iof_on.txt'
+IOF_OFF_PATH = f'/home/u/{IOF_OFF_NAME}'
+IOF_ON_PATH = f'/home/u/{IOF_ON_NAME}'
 ITERATIONS = 10

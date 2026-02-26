@@ -6,3 +6,14 @@ nginx:alpine
 nginx:latest
 grafana/grafana-oss
 grafana/grafana-oss:latest
+debian:latest
+python:3.12
+postgres:15
+redis:7
+python:3.11
+redis:7-alpine
+portainer/portainer-ce:latest
+postgres:16.9-alpine
+swaggerapi/swagger-ui
+rediscommander/redis-commander:latest
+mher/flower:latest

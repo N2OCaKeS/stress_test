@@ -9,11 +9,11 @@ import warnings
 from sys import exit
 from atlassian import Confluence
 from os import remove, path
-from libs.virtlib import response
+from libs.libnet import response
 from libs.libpublic import Public
 from libs.libstatistics import VirtStatistics
 from time import sleep, ctime
-from virt_conf import JIRA_URL, CONFLUENCE_URL
+from net_conf import JIRA_URL, CONFLUENCE_URL
 
 
 class UploaderZC(Public, VirtStatistics):

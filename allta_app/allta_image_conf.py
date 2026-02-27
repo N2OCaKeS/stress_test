@@ -99,7 +99,8 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
             'Apache':           ['apache-rp'],
             'Docker/Podman/LXC':['docker-wa'],
-            'Qemu/KVM/Libvirt': ['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong', 'FIO_large']}
+            'Qemu/KVM/Libvirt': ['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong', 'FIO_large'],
+            'Network':          ['InitOnFree']}
 
 def parent_page_list():
     parent_page_list = {
@@ -186,7 +187,8 @@ branches = {
     'docker web-application':'docker',
     'astra openvpn client connections':'astra_openvpn',
     'dovecot benchmark':'exim',
-    'exim benchmark':'exim'
+    'exim benchmark':'exim',
+    'Network benchmark. Init_on_free':'network'
 }
 
 
@@ -251,7 +253,8 @@ tests = {
     'docker web-application':'docker-wa',
     'astra openvpn client connections':'AOpenVPNcc',
     'dovecot benchmark':'Dovecot-IMAP',
-    'exim benchmark':'Exim4-SMTP'
+    'exim benchmark':'Exim4-SMTP',
+    'Network benchmark. Init_on_free':'InitOnFree'
 }
 
 
@@ -284,7 +287,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO_large']
+              'FIO_large', 'InitOnFree']
 
 
 
@@ -375,7 +378,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand10': ['CEPH parsec'],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO_large'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
-            'orel_stand12':     ['syslog-ng'],
+            'orel_stand12':     ['syslog-ng', 'InitOnFree'],
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
             'orel_stand13':     ['syslog-ng-cwl'],
             'smolensk_stand13': []
@@ -395,7 +398,7 @@ stands_groups = {
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
                      'FIO_large'],
-    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
+    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'InitOnFree'],
     'stand13_group':['syslog-ng-cwl']
 }
 
@@ -449,7 +452,8 @@ tests_case_zefir_key = {
     'AOpenVPNcc':'BT-T18201',
     'Dovecot-IMAP':'BT-T18555',
     'Exim4-SMTP':'BT-T18554',
-    'FIO_large':'BT-T18278'
+    'FIO_large':'BT-T18278',
+    'InitOnFree':'BT-T18909'
 }
 
 
@@ -478,7 +482,8 @@ testname_columns = {
                     'DIGSIG. Check digsig time':'DIGSIG-cdt', 'docker web-application':'Docker-WA', 'ceph benchmark':'FS_CEPH',
                     'ceph fio benchmark':'FS_CEPH_fio', 'freeipa create users test':'FreeIPA_c-users',
                     'ceph parsec benchmark':'FS_CEPH_parsec', 'astra openvpn client connections':'AOpenVPNcc',
-                    'dovecot benchmark':'Dovecot-IMAP', 'exim benchmark':'Exim4-SMTP', 'Large FIO benchmark':'FIO_large'
+                    'dovecot benchmark':'Dovecot-IMAP', 'exim benchmark':'Exim4-SMTP', 'Large FIO benchmark':'FIO_large',
+                    'Network benchmark. Init_on_free':'InitOnFree'
                     }
 
 
@@ -612,5 +617,6 @@ allta_services_list = [
     'grafana_prometheus.service',
     'node_exporter.service',
     'portainer.service',
-    'statistics.service'
+    'statistics.service',
+    'docker_registry.service'
 ]

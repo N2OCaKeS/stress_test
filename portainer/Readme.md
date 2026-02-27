@@ -8,6 +8,10 @@
 - создаёт администратора (если его ещё нет) из env
 - (опционально) создаёт базового пользователя из env
 - настраивает OAuth авторизацию (Generic OAuth) под `allta_auth`
+- создаёт/синхронизирует RBAC-доступ для OAuth-пользователей:
+  - добавляет regular users в команду `PORTAINER_RBAC_TEAM_NAME`
+  - выдаёт этой команде доступ к endpoint с ролью `PORTAINER_RBAC_ENDPOINT_ROLE_ID`
+  - (опционально) периодически пересинхронизирует новых OAuth-пользователей через `PORTAINER_RBAC_SYNC_INTERVAL_SECONDS`
 
 Переменные берутся из env-файла, который подключается в `docker-compose.yml` через `env_file`.
 По умолчанию это: `${CRED_PATH}/env.portainer` (обычно `/var/allta_services/config/env.portainer`).

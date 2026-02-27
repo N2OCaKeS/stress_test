@@ -24,12 +24,66 @@ is_true() {
   [ "$(to_bool_json "${1:-}")" = "true" ]
 }
 
+is_positive_int() {
+  case "${1:-}" in
+    ''|*[!0-9]*) return 1 ;;
+    *) [ "$1" -gt 0 ] ;;
+  esac
+}
+
 json_int_or_zero() {
   # Keep JSON numeric types stable for jq --argjson.
   case "${1:-}" in
     ''|null) echo 0 ;;
     *) echo "$1" ;;
   esac
+}
+
+login_admin_jwt() {
+  login_payload="$(jq -nc --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')"
+  curl -fsS -X POST "$PORTAINER_API_URL/api/auth" \
+    -H 'Content-Type: application/json' \
+    -d "$login_payload" | jq -r '.jwt // empty' || true
+}
+
+sync_endpoint_team_access() {
+  _jwt="$1"
+  _endpoint_id="$2"
+  _team_id="$3"
+  _role_id="$4"
+
+  endpoint_json="$(curl -fsS "$PORTAINER_API_URL/api/endpoints/${_endpoint_id}" -H "Authorization: Bearer ${_jwt}" 2>/dev/null || echo '')"
+  [ -n "$endpoint_json" ] || return 0
+
+  endpoint_patched="$(echo "$endpoint_json" | jq --arg tid "$_team_id" --argjson role_id "$(json_int_or_zero "$_role_id")" '
+    .TeamAccessPolicies = (.TeamAccessPolicies // {})
+    | .TeamAccessPolicies[$tid] = {"RoleId": ($role_id|tonumber)}
+  ' 2>/dev/null || echo '')"
+  [ -n "$endpoint_patched" ] || return 0
+
+  curl -fsS -X PUT "$PORTAINER_API_URL/api/endpoints/${_endpoint_id}" \
+    -H "Authorization: Bearer ${_jwt}" \
+    -H 'Content-Type: application/json' \
+    -d "$endpoint_patched" >/dev/null 2>&1 || true
+}
+
+sync_standard_users_to_team() {
+  _jwt="$1"
+  _team_id="$2"
+  _team_name="$3"
+
+  users_json="$(curl -fsS "$PORTAINER_API_URL/api/users" -H "Authorization: Bearer ${_jwt}" 2>/dev/null || echo '[]')"
+  added=0
+  for uid in $(echo "$users_json" | jq -r '.[] | select(.Role==2) | .Id' 2>/dev/null || true); do
+    membership_payload="$(jq -nc --argjson uid "$uid" --argjson tid "$(json_int_or_zero "$_team_id")" '{UserID:$uid,TeamID:$tid,Role:2}')"
+    curl -fsS -X POST "$PORTAINER_API_URL/api/team_memberships" \
+      -H "Authorization: Bearer ${_jwt}" \
+      -H 'Content-Type: application/json' \
+      -d "$membership_payload" >/dev/null 2>&1 || true
+    added=$((added + 1))
+  done
+
+  log "User sync done for team '${_team_name}' (attempted=${added})."
 }
 
 "$PORTAINER_BIN" "$@" &
@@ -96,6 +150,8 @@ RBAC_TEAM_NAME="${PORTAINER_RBAC_TEAM_NAME:-portainer}"
 RBAC_SYNC_USERS="${PORTAINER_RBAC_SYNC_USERS:-true}"
 RBAC_SYNC_CONTAINERS="${PORTAINER_RBAC_SYNC_CONTAINERS:-true}"
 RBAC_ENDPOINT_NAME="${PORTAINER_RBAC_ENDPOINT_NAME:-local}"
+RBAC_ENDPOINT_ROLE_ID="${PORTAINER_RBAC_ENDPOINT_ROLE_ID:-1}"
+RBAC_SYNC_INTERVAL_SECONDS="${PORTAINER_RBAC_SYNC_INTERVAL_SECONDS:-15}"
 
 team_id=""
 if is_true "$RBAC_ENABLED"; then
@@ -207,34 +263,12 @@ if is_true "$RBAC_ENABLED" && [ -n "$team_id" ] && [ "$team_id" != "null" ] && [
 
   if [ -n "$endpoint_id" ]; then
     # Ensure team has access to the environment.
-    endpoint_json="$(curl -fsS "$PORTAINER_API_URL/api/endpoints/${endpoint_id}" -H "Authorization: Bearer $jwt" 2>/dev/null || echo '')"
-    if [ -n "$endpoint_json" ]; then
-      endpoint_patched="$(echo "$endpoint_json" | jq --arg tid "$team_id" '
-        .TeamAccessPolicies = (.TeamAccessPolicies // {})
-        | .TeamAccessPolicies[$tid] = {"RoleId": 1}
-      ' 2>/dev/null || echo '')"
-      if [ -n "$endpoint_patched" ]; then
-        curl -fsS -X PUT "$PORTAINER_API_URL/api/endpoints/${endpoint_id}" \
-          -H "Authorization: Bearer $jwt" \
-          -H 'Content-Type: application/json' \
-          -d "$endpoint_patched" >/dev/null 2>&1 || true
-      fi
-    fi
+    sync_endpoint_team_access "$jwt" "$endpoint_id" "$team_id" "$RBAC_ENDPOINT_ROLE_ID"
 
     # Ensure existing regular users are members of the default team (for already-created OAuth users).
     if is_true "$RBAC_SYNC_USERS"; then
       log "Syncing users into team '${RBAC_TEAM_NAME}' (id=${team_id})."
-      users_json="$(curl -fsS "$PORTAINER_API_URL/api/users" -H "Authorization: Bearer $jwt" 2>/dev/null || echo '[]')"
-      added=0
-      for uid in $(echo "$users_json" | jq -r '.[] | select(.Role==2) | .Id' 2>/dev/null || true); do
-        membership_payload="$(jq -nc --argjson uid "$uid" --argjson tid "$(json_int_or_zero "$team_id")" '{UserID:$uid,TeamID:$tid,Role:2}')"
-        curl -fsS -X POST "$PORTAINER_API_URL/api/team_memberships" \
-          -H "Authorization: Bearer $jwt" \
-          -H 'Content-Type: application/json' \
-          -d "$membership_payload" >/dev/null 2>&1 || true
-        added=$((added + 1))
-      done
-      log "User sync done (attempted=${added})."
+      sync_standard_users_to_team "$jwt" "$team_id" "$RBAC_TEAM_NAME"
     fi
 
     # Ensure regular users can see/manage existing containers created outside Portainer by creating resource controls.
@@ -286,6 +320,26 @@ if is_true "$RBAC_ENABLED" && [ -n "$team_id" ] && [ "$team_id" != "null" ] && [
         updated=$((updated + 1))
       done
       log "Container access sync done (created=${created}, updated=${updated})."
+    fi
+
+    # Keep syncing new OAuth-created users after startup so they get endpoint access automatically.
+    if is_true "$RBAC_SYNC_USERS" && is_positive_int "$RBAC_SYNC_INTERVAL_SECONDS"; then
+      log "Starting periodic RBAC sync every ${RBAC_SYNC_INTERVAL_SECONDS}s."
+      (
+        while kill -0 "$PORTAINER_PID" 2>/dev/null; do
+          sleep "$RBAC_SYNC_INTERVAL_SECONDS"
+          kill -0 "$PORTAINER_PID" 2>/dev/null || exit 0
+
+          loop_jwt="$(login_admin_jwt)"
+          if [ -z "$loop_jwt" ]; then
+            log "Periodic RBAC sync skipped: admin login failed."
+            continue
+          fi
+
+          sync_endpoint_team_access "$loop_jwt" "$endpoint_id" "$team_id" "$RBAC_ENDPOINT_ROLE_ID"
+          sync_standard_users_to_team "$loop_jwt" "$team_id" "$RBAC_TEAM_NAME"
+        done
+      ) &
     fi
   fi
 fi

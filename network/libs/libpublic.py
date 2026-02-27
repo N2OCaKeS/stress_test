@@ -5,7 +5,7 @@ import pandas as pd
 from typing import Any, Dict, List, Tuple
 from allta import PageBuilder, ConfluencePublisher
 
-from net_conf import IOF_RESULTS
+from net_conf import IOF_RESULTS, VM_INFONAME, VM_KERNEL, KERNEL_NET_RAM, KERNEL_NET_VCPU, ITERATIONS
 
 def net_publisher(
         username,
@@ -23,13 +23,26 @@ def net_publisher(
     )
     builder = PageBuilder(title=title)
 
-    # TODO
+    with open(VM_INFONAME) as vm_info_av_file:
+        vm_info_av = vm_info_av_file.read()
+    with open(VM_KERNEL) as vm_info_kernel_file:
+        vm_info_kernel = vm_info_kernel_file.read()
+
     params = [
-        {"label": "...", "value": "..."},
-        {"label": "...", "value": "..."},
+        {"label": "VCPU", "value": KERNEL_NET_VCPU},
+        {"label": "RAM", "value": KERNEL_NET_RAM},
+        {"label": "Test iterations", "value": ITERATIONS},
     ]
 
     header_table = [
+        {
+            "label": "VM Astra Version",
+            "value": vm_info_av
+        },
+        {
+            "lavel": "VM Kernel",
+            "value": vm_info_kernel
+        },
         {
             "label": "Params",
             "value": {
@@ -52,6 +65,7 @@ def net_publisher(
 
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
+    builder.add_paragraph(text="В тесте производится оценка сетевой производительности с помощью iperf при разных значениях параметра ядра init_on_free.\nСравниваются результаты в базовом состоянии (до изменения параметра) и после установки init_on_free=off.")
 
     with open(IOF_RESULTS, 'r') as f:
         iof_results_dict = json.load(f)

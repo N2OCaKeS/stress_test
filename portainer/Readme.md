@@ -6,6 +6,11 @@
 
 Контейнер `allta-portainer` при старте автоматически:
 - создаёт администратора (если его ещё нет) из env
+- если пароль администратора из env не проходит текущую политику:
+  - создаёт admin с временным сильным паролем
+  - временно снижает `InternalAuthSettings.RequiredPasswordLength`
+  - ставит пароль из `PORTAINER_ADMIN_PASSWORD`
+  - возвращает длину политики к `PORTAINER_INTERNAL_REQUIRED_PASSWORD_LENGTH`
 - (опционально) создаёт базового пользователя из env
 - настраивает OAuth авторизацию (Generic OAuth) под `allta_auth`
 - создаёт/синхронизирует RBAC-доступ для OAuth-пользователей:

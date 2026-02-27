@@ -40,10 +40,84 @@ json_int_or_zero() {
 }
 
 login_admin_jwt() {
-  login_payload="$(jq -nc --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')"
+  login_payload="$(jq -nc --arg u "$1" --arg p "$2" '{username:$u,password:$p}')"
   curl -fsS -X POST "$PORTAINER_API_URL/api/auth" \
     -H 'Content-Type: application/json' \
     -d "$login_payload" | jq -r '.jwt // empty' || true
+}
+
+generate_bootstrap_password() {
+  tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24
+}
+
+set_required_password_length() {
+  _jwt="$1"
+  _required_length="$2"
+
+  if ! is_positive_int "$_required_length"; then
+    return 1
+  fi
+
+  settings_json="$(curl -fsS "$PORTAINER_API_URL/api/settings" -H "Authorization: Bearer ${_jwt}" 2>/dev/null || echo '')"
+  [ -n "$settings_json" ] || return 1
+
+  settings_patched="$(echo "$settings_json" | jq --argjson required_length "$(json_int_or_zero "$_required_length")" '
+    .InternalAuthSettings = (.InternalAuthSettings // {})
+    | .InternalAuthSettings.RequiredPasswordLength = ($required_length|tonumber)
+  ' 2>/dev/null || echo '')"
+  [ -n "$settings_patched" ] || return 1
+
+  curl -fsS -X PUT "$PORTAINER_API_URL/api/settings" \
+    -H "Authorization: Bearer ${_jwt}" \
+    -H 'Content-Type: application/json' \
+    -d "$settings_patched" >/dev/null 2>&1
+}
+
+lookup_user_id_by_username() {
+  _jwt="$1"
+  _username="$2"
+  curl -fsS "$PORTAINER_API_URL/api/users" -H "Authorization: Bearer ${_jwt}" 2>/dev/null | jq -r --arg username "$_username" '.[] | select(.Username==$username) | .Id' | head -n 1 || true
+}
+
+set_user_password() {
+  _jwt="$1"
+  _user_id="$2"
+  _new_password="$3"
+
+  user_json="$(curl -fsS "$PORTAINER_API_URL/api/users/${_user_id}" -H "Authorization: Bearer ${_jwt}" 2>/dev/null || echo '')"
+  [ -n "$user_json" ] || return 1
+
+  username="$(echo "$user_json" | jq -r '.Username // empty')"
+  role="$(echo "$user_json" | jq -r '(.Role // 1)')"
+  use_cache="$(echo "$user_json" | jq -r '(.UseCache // false)')"
+  [ -n "$username" ] || return 1
+
+  user_payload="$(jq -nc \
+    --arg username "$username" \
+    --arg new_password "$_new_password" \
+    --argjson role "$role" \
+    --argjson use_cache "$(to_bool_json "$use_cache")" \
+    '{Username:$username,Role:$role,UseCache:$use_cache,NewPassword:$new_password}')"
+
+  curl -fsS -X PUT "$PORTAINER_API_URL/api/users/${_user_id}" \
+    -H "Authorization: Bearer ${_jwt}" \
+    -H 'Content-Type: application/json' \
+    -d "$user_payload" >/dev/null 2>&1
+}
+
+create_admin_user() {
+  _username="$1"
+  _password="$2"
+  admin_payload="$(jq -nc --arg u "$_username" --arg p "$_password" '{username:$u,password:$p}')"
+  ADMIN_INIT_LAST_CODE="$(curl -sS -o /tmp/portainer-admin-init.out -w '%{http_code}' \
+    -X POST "$PORTAINER_API_URL/api/users/admin/init" \
+    -H 'Content-Type: application/json' \
+    -d "$admin_payload" || true)"
+
+  case "$ADMIN_INIT_LAST_CODE" in
+    200|201|204) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 sync_endpoint_team_access() {
@@ -138,6 +212,7 @@ fi
 
 ADMIN_USERNAME="${PORTAINER_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${PORTAINER_ADMIN_PASSWORD:-}"
+FINAL_REQUIRED_PASSWORD_LENGTH="${PORTAINER_INTERNAL_REQUIRED_PASSWORD_LENGTH:-12}"
 
 if [ -z "$ADMIN_PASSWORD" ]; then
   log "PORTAINER_ADMIN_PASSWORD is empty; skipping admin/user/oauth bootstrap."
@@ -145,21 +220,63 @@ if [ -z "$ADMIN_PASSWORD" ]; then
   exit $?
 fi
 
+if ! is_positive_int "$FINAL_REQUIRED_PASSWORD_LENGTH"; then
+  log "Invalid PORTAINER_INTERNAL_REQUIRED_PASSWORD_LENGTH='${FINAL_REQUIRED_PASSWORD_LENGTH}', using 12."
+  FINAL_REQUIRED_PASSWORD_LENGTH=12
+fi
+
 admin_check_code="$(curl -sS -o /dev/null -w '%{http_code}' "$PORTAINER_API_URL/api/users/admin/check" || true)"
 if [ "$admin_check_code" != "204" ]; then
   log "Initializing admin user '${ADMIN_USERNAME}'."
-  admin_payload="$(jq -nc --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')"
-  curl -fsS -X POST "$PORTAINER_API_URL/api/users/admin/init" \
-    -H 'Content-Type: application/json' \
-    -d "$admin_payload" >/dev/null || true
+  if ! create_admin_user "$ADMIN_USERNAME" "$ADMIN_PASSWORD"; then
+    desired_password_length="${#ADMIN_PASSWORD}"
+    if ! is_positive_int "$desired_password_length"; then
+      log "Invalid desired admin password length; cannot bootstrap."
+      wait "$PORTAINER_PID"
+      exit 1
+    fi
+
+    bootstrap_password="$(generate_bootstrap_password)"
+    log "Admin init with env password failed (http=${ADMIN_INIT_LAST_CODE}); bootstrapping with generated temporary password."
+    if ! create_admin_user "$ADMIN_USERNAME" "$bootstrap_password"; then
+      log "Admin bootstrap failed (http=${ADMIN_INIT_LAST_CODE})."
+      wait "$PORTAINER_PID"
+      exit 1
+    fi
+
+    bootstrap_jwt="$(login_admin_jwt "$ADMIN_USERNAME" "$bootstrap_password")"
+    if [ -z "$bootstrap_jwt" ]; then
+      log "Failed to log in with temporary bootstrap admin password."
+      wait "$PORTAINER_PID"
+      exit 1
+    fi
+
+    log "Setting temporary password length requirement to ${desired_password_length} for initial admin password setup."
+    set_required_password_length "$bootstrap_jwt" "$desired_password_length" || true
+
+    admin_user_id="$(lookup_user_id_by_username "$bootstrap_jwt" "$ADMIN_USERNAME")"
+    if [ -z "$admin_user_id" ] || [ "$admin_user_id" = "null" ]; then
+      log "Unable to resolve admin user id for '${ADMIN_USERNAME}'."
+      wait "$PORTAINER_PID"
+      exit 1
+    fi
+
+    if ! set_user_password "$bootstrap_jwt" "$admin_user_id" "$ADMIN_PASSWORD"; then
+      log "Failed to apply PORTAINER_ADMIN_PASSWORD from env."
+      wait "$PORTAINER_PID"
+      exit 1
+    fi
+
+    if [ "$desired_password_length" != "$FINAL_REQUIRED_PASSWORD_LENGTH" ]; then
+      log "Restoring password length requirement to ${FINAL_REQUIRED_PASSWORD_LENGTH}."
+      set_required_password_length "$bootstrap_jwt" "$FINAL_REQUIRED_PASSWORD_LENGTH" || true
+    fi
+  fi
 else
   log "Admin user already exists."
 fi
 
-login_payload="$(jq -nc --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')"
-jwt="$(curl -fsS -X POST "$PORTAINER_API_URL/api/auth" \
-  -H 'Content-Type: application/json' \
-  -d "$login_payload" | jq -r '.jwt // empty' || true)"
+jwt="$(login_admin_jwt "$ADMIN_USERNAME" "$ADMIN_PASSWORD")"
 
 if [ -z "$jwt" ]; then
   log "Failed to log in as '${ADMIN_USERNAME}'. Check PORTAINER_ADMIN_USERNAME/PORTAINER_ADMIN_PASSWORD."
@@ -353,7 +470,7 @@ if is_true "$RBAC_ENABLED" && [ -n "$team_id" ] && [ "$team_id" != "null" ] && [
           sleep "$RBAC_SYNC_INTERVAL_SECONDS"
           kill -0 "$PORTAINER_PID" 2>/dev/null || exit 0
 
-          loop_jwt="$(login_admin_jwt)"
+          loop_jwt="$(login_admin_jwt "$ADMIN_USERNAME" "$ADMIN_PASSWORD")"
           if [ -z "$loop_jwt" ]; then
             log "Periodic RBAC sync skipped: admin login failed."
             continue

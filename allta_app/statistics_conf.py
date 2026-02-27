@@ -31,5 +31,8 @@ statistics_conf = {
     },
     "Docker": {
         "set_of_test_types": ['docker-wa']
+    },
+    "Network": {
+        "set_of_test_types": ['InitOnFree']
     }
 }

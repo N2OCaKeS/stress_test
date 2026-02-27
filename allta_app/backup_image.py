@@ -235,6 +235,12 @@ parser.add_argument('-mail',
                     help='testlist',
                     dest='MAIL')
 
+parser.add_argument('-network',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='NETWORK')
+
 
 args = parser.parse_args()
 
@@ -291,6 +297,7 @@ psql_parsec = '-parsec parsec'
 psql_vanilla = '-psql_van pv'
 tantor_vanilla = '-tantor_van tv'
 lvirt_test = f'-testname {args.LVIRT}'
+network_test = f'-testname {args.NETWORK}'
 ovf = f'-ovf {args.OVF}'
 ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
 ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot'
@@ -369,6 +376,9 @@ elif args.VPN:
 elif args.MAIL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {mail}'
+elif args.NETWORK:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {network_test}'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

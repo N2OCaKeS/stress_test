@@ -11,7 +11,10 @@
 - создаёт/синхронизирует RBAC-доступ для OAuth-пользователей:
   - добавляет regular users в команду `PORTAINER_RBAC_TEAM_NAME`
   - выдаёт этой команде доступ к endpoint с ролью `PORTAINER_RBAC_ENDPOINT_ROLE_ID`
+  - опционально повышает regular users до глобального admin через `PORTAINER_RBAC_PROMOTE_USERS_TO_ADMIN`
   - (опционально) периодически пересинхронизирует новых OAuth-пользователей через `PORTAINER_RBAC_SYNC_INTERVAL_SECONDS`
+
+Примечание по Portainer CE: при наличии external stacks (контейнеры, поднятые вне Portainer stack manager) у regular users может не открываться Dashboard из-за server-side panic в `/api/docker/{endpointId}/dashboard`. Для обхода включите `PORTAINER_RBAC_PROMOTE_USERS_TO_ADMIN=true` или запускайте эти приложения как Portainer stacks.
 
 Переменные берутся из env-файла, который подключается в `docker-compose.yml` через `env_file`.
 По умолчанию это: `${CRED_PATH}/env.portainer` (обычно `/var/allta_services/config/env.portainer`).

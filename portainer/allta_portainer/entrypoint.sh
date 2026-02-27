@@ -71,19 +71,41 @@ sync_standard_users_to_team() {
   _jwt="$1"
   _team_id="$2"
   _team_name="$3"
+  _promote_to_admin="$4"
 
   users_json="$(curl -fsS "$PORTAINER_API_URL/api/users" -H "Authorization: Bearer ${_jwt}" 2>/dev/null || echo '[]')"
   added=0
-  for uid in $(echo "$users_json" | jq -r '.[] | select(.Role==2) | .Id' 2>/dev/null || true); do
+  promoted=0
+  for user_json in $(echo "$users_json" | jq -c '.[] | select(.Role==2)' 2>/dev/null || true); do
+    uid="$(echo "$user_json" | jq -r '.Id')"
+    username="$(echo "$user_json" | jq -r '.Username')"
+    use_cache="$(echo "$user_json" | jq -r '(.UseCache // false)')"
     membership_payload="$(jq -nc --argjson uid "$uid" --argjson tid "$(json_int_or_zero "$_team_id")" '{UserID:$uid,TeamID:$tid,Role:2}')"
     curl -fsS -X POST "$PORTAINER_API_URL/api/team_memberships" \
       -H "Authorization: Bearer ${_jwt}" \
       -H 'Content-Type: application/json' \
       -d "$membership_payload" >/dev/null 2>&1 || true
     added=$((added + 1))
+
+    if is_true "$_promote_to_admin"; then
+      user_payload="$(jq -nc \
+        --arg username "$username" \
+        --argjson role 1 \
+        --argjson use_cache "$(to_bool_json "$use_cache")" \
+        '{Username:$username,Role:$role,UseCache:$use_cache}')"
+      curl -fsS -X PUT "$PORTAINER_API_URL/api/users/${uid}" \
+        -H "Authorization: Bearer ${_jwt}" \
+        -H 'Content-Type: application/json' \
+        -d "$user_payload" >/dev/null 2>&1 || true
+      promoted=$((promoted + 1))
+    fi
   done
 
-  log "User sync done for team '${_team_name}' (attempted=${added})."
+  if is_true "$_promote_to_admin"; then
+    log "User sync done for team '${_team_name}' (attempted=${added}, promoted_to_admin=${promoted})."
+  else
+    log "User sync done for team '${_team_name}' (attempted=${added})."
+  fi
 }
 
 "$PORTAINER_BIN" "$@" &
@@ -152,6 +174,7 @@ RBAC_SYNC_CONTAINERS="${PORTAINER_RBAC_SYNC_CONTAINERS:-true}"
 RBAC_ENDPOINT_NAME="${PORTAINER_RBAC_ENDPOINT_NAME:-local}"
 RBAC_ENDPOINT_ROLE_ID="${PORTAINER_RBAC_ENDPOINT_ROLE_ID:-1}"
 RBAC_SYNC_INTERVAL_SECONDS="${PORTAINER_RBAC_SYNC_INTERVAL_SECONDS:-15}"
+RBAC_PROMOTE_USERS_TO_ADMIN="${PORTAINER_RBAC_PROMOTE_USERS_TO_ADMIN:-true}"
 
 team_id=""
 if is_true "$RBAC_ENABLED"; then
@@ -268,7 +291,7 @@ if is_true "$RBAC_ENABLED" && [ -n "$team_id" ] && [ "$team_id" != "null" ] && [
     # Ensure existing regular users are members of the default team (for already-created OAuth users).
     if is_true "$RBAC_SYNC_USERS"; then
       log "Syncing users into team '${RBAC_TEAM_NAME}' (id=${team_id})."
-      sync_standard_users_to_team "$jwt" "$team_id" "$RBAC_TEAM_NAME"
+      sync_standard_users_to_team "$jwt" "$team_id" "$RBAC_TEAM_NAME" "$RBAC_PROMOTE_USERS_TO_ADMIN"
     fi
 
     # Ensure regular users can see/manage existing containers created outside Portainer by creating resource controls.
@@ -337,7 +360,7 @@ if is_true "$RBAC_ENABLED" && [ -n "$team_id" ] && [ "$team_id" != "null" ] && [
           fi
 
           sync_endpoint_team_access "$loop_jwt" "$endpoint_id" "$team_id" "$RBAC_ENDPOINT_ROLE_ID"
-          sync_standard_users_to_team "$loop_jwt" "$team_id" "$RBAC_TEAM_NAME"
+          sync_standard_users_to_team "$loop_jwt" "$team_id" "$RBAC_TEAM_NAME" "$RBAC_PROMOTE_USERS_TO_ADMIN"
         done
       ) &
     fi

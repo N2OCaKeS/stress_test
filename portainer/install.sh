@@ -61,11 +61,11 @@ EOF
 
 exports(){
 	# Allow override via environment, but provide sane defaults.
-	export FILE_PATH="${FILE_PATH:-/var/allta_services}"
-	export BASE_PATH="${BASE_PATH:-$FILE_PATH/volumes}"
-	export CRED_PATH="${CRED_PATH:-$FILE_PATH/config}"
-	export PORTAINER_PATH="${PORTAINER_PATH:-$BASE_PATH/allta_portainer_data}"
-	export OAUTH_CLIENT_SECRETS_PATH="${OAUTH_CLIENT_SECRETS_PATH:-$FILE_PATH/secrets/oauth_clients}"
+	export FILE_PATH=/var/allta_services
+	export BASE_PATH=$FILE_PATH/volumes
+	export CRED_PATH=$FILE_PATH/config
+	export PORTAINER_PATH=$BASE_PATH/allta_portainer_data
+	export OAUTH_CLIENT_SECRETS_PATH=$FILE_PATH/secrets/oauth_clients
 }
 
 dir(){
@@ -123,8 +123,8 @@ remove(){
 
 precond(){
 	exports
-	sudo apt-get update
-	sudo apt-get install -y docker-compose docker wget curl
+	# sudo apt-get update
+	# sudo apt-get install -y docker-compose docker wget curl
 	sudo usermod -aG docker "$USER"
 	dir
 	service

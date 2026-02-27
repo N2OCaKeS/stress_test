@@ -108,7 +108,7 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 
 
 #Start test
-if args.TESTNAME == 'kernel_network':
+if args.TESTNAME == 'iof':
     time_start_script = datetime.now()
     
     kernel_network = NetworkLoad(rc_name=args.TCV,
@@ -122,7 +122,6 @@ if args.TESTNAME == 'kernel_network':
     kernel_network.vms_destroy()
     kernel_network.results_processing()
 
-    info_list()
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
     publisher = net_publisher(

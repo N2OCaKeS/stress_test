@@ -50,7 +50,8 @@ class ManageVM:
         VMS_DATES = { # Полный список ВМ
             testvm: {'host-port': '22',
                      'cpu': str(self.vcpu),
-                     'ram': str(self.ram)}
+                     'ram': str(self.ram),
+                     'disk': '20'}
             for testvm in VMS
         }
 

@@ -65,6 +65,15 @@ git checkout $1
 #Настраиваем окружение и запускаем тест
 cd $1
 #sed -i '2i export DEBIAN_FRONTEND=noninteractive' prepare.sh
+echo sudo mkdir /etc/docker >> prepare.sh
+cat << 'EOF' >> prepare.sh
+cat << EOF > /etc/docker/daemon.json
+{
+  "insecure-registries": ["allta.devos.astralinux.ru:21503"]
+}
+EOF
+EOF
+
 echo curl http://10.177.103.10:18181/rest/api/dashboard/$localhost/full >> prepare.sh
 echo sed -i \'s/.*cgroup_controllers.*/cgroup_controllers = [ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuacct\" ]/g\' /etc/libvirt/qemu.conf >> prepare.sh
 echo sudo systemctl restart libvirtd >> prepare.sh

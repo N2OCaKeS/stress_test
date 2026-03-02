@@ -396,8 +396,7 @@ stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
-    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-                     'FIO_large'],
+    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO_large'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'InitOnFree'],
     'stand13_group':['syslog-ng-cwl']
 }

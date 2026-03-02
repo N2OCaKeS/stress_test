@@ -1,7 +1,7 @@
 import argparse
+from allta import UploaderZC
 from datetime import datetime
 
-from libs.zefir import UploaderZC
 from libs.libnet import get_duration
 from libs.libtests import Sigmentation_fault
 from libs.libpublic import net_publisher
@@ -111,16 +111,16 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 if args.TESTNAME == 'iof':
     time_start_script = datetime.now()
     
-    kernel_network = Sigmentation_fault(rc_name=args.TCV,
+    sigmentation_fault = Sigmentation_fault(rc_name=args.TCV,
                                 testdir=BASE_PATH,
                                 vm_count=SEGMENTATION_FAULT_VM_COUNT,
                                 vcpu=SEGMENTATION_FAULT_VCPU,
                                 ram=SEGMENTATION_FAULT_RAM)
 
-    kernel_network.prepare_vms()
-    kernel_network.start_test()
-    kernel_network.vms_destroy()
-    kernel_network.results_processing()
+    sigmentation_fault.prepare_vms()
+    sigmentation_fault.start_test()
+    sigmentation_fault.vms_destroy()
+    sigmentation_fault.results_processing()
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
@@ -135,6 +135,4 @@ if args.TESTNAME == 'iof':
         test_cycle_version=args.TCV,
     )
 
-    # uzs.public = True
-    #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')

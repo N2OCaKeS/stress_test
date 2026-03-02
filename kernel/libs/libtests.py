@@ -180,7 +180,7 @@ class Sigmentation_fault(CreateVM):
         print("\n\n\nПодготовка завершена\n\n\n")
 
         print("\n\n\nЗапускаем тест\n\n\n")
-
+        
         print("\n\n\nТест завершен\n\n\n")
 
     def results_processing(self):
@@ -211,5 +211,5 @@ class Sigmentation_fault(CreateVM):
             username=USERNAME,
             password=PASSWORD,
         )
-        print("results gets")
+        print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         pass

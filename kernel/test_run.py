@@ -4,7 +4,7 @@ from datetime import datetime
 
 from libs.libnet import get_duration
 from libs.libtests import Sigmentation_fault
-from libs.libpublic import net_publisher
+from libs.libpublic import kernel_publisher
 
 from kernel_conf import BASE_PATH, SEGMENTATION_FAULT_VM_COUNT, SEGMENTATION_FAULT_VCPU, SEGMENTATION_FAULT_RAM
 
@@ -124,7 +124,7 @@ if args.TESTNAME == 'iof':
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
-    publisher = net_publisher(
+    publisher = kernel_publisher(
         username=args.USER,
         token=args.TOKEN,
         space=args.SPACE,

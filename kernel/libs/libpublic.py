@@ -5,7 +5,7 @@ from allta import PageBuilder, ConfluencePublisher
 
 from kernel.kernel_conf import IOF_RESULTS, VM_INFONAME, VM_KERNEL, SEGMENTATION_FAULT_RAM, SEGMENTATION_FAULT_VCPU, ITERATIONS
 
-def net_publisher(
+def kernel_publisher(
         username,
         token,
         space,

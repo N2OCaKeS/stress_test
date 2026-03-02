@@ -8,17 +8,17 @@ from pathlib import Path
 from time import sleep
 from os import path
 
-from kernel.kernel_conf import (
+from kernel_conf import (
     USERNAME,
     PASSWORD,
     VM_OS_INFO_PATH,
     BASE_PATH,
-    IOF_OFF_PATH,
-    IOF_ON_PATH,
-    IOF_ON_NAME,
-    IOF_OFF_NAME,
-    ITERATIONS,
-    IOF_RESULTS,
+    # IOF_OFF_PATH,
+    # IOF_ON_PATH,
+    # IOF_ON_NAME,
+    # IOF_OFF_NAME,
+    # ITERATIONS,
+    # IOF_RESULTS,
 )
 
 
@@ -82,7 +82,7 @@ class CreateVM:
                 self.provider.prepare()
                 if VERSION_OS == "1.7":
                     self.vms_data = self.provider.build(
-                        box="xfs.1.7.5.o",
+                        box="1.7.5.o",
                         rc=self.rc_name,
                         vms=self.vms,
                         vms_dates=VMS_DATES,
@@ -90,7 +90,7 @@ class CreateVM:
                     )
                 elif VERSION_OS == "1.8":
                     self.vms_data = self.provider.build(
-                        box="xfs.1.8.1.o",
+                        box="1.8.1.o",
                         rc=self.rc_name,
                         vms=self.vms,
                         vms_dates=VMS_DATES,
@@ -170,8 +170,7 @@ class CreateVM:
 class Sigmentation_fault(CreateVM):
     def start_test(self):
         """
-        testvm1 - server
-        testvm2 - client
+        testvm1 - ВМ для теста
         """
 
         print("\n\n\nНачинаем выполнение теста\n\n\n")

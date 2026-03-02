@@ -81,15 +81,19 @@ class CreateVM:
                 self.provider.prepare()
                 if VERSION_OS == "1.7":
                     self.vms_data = self.provider.build(
-                        "xfs.1.7.5.o", self.rc_name, self.vms, VMS_DATES
+                        box="xfs.1.7.5.o", 
+                        rc=self.rc_name,
+                        vms=self.vms, 
+                        vms_dates=VMS_DATES, 
+                        kernel=self.kernel
                     )
                 elif VERSION_OS == "1.8":
                     self.vms_data = self.provider.build(
-                        "xfs.1.8.1.o",
-                        self.rc_name,
-                        self.vms,
-                        VMS_DATES,
-                        kernel=self.kernel,
+                        box="xfs.1.8.1.o",
+                        rc=self.rc_name,
+                        vms=self.vms,
+                        vms_dates=VMS_DATES,
+                        kernel=self.kernel
                     )
             print("\n\n\nВм созданы\n\n\n")
             print("\n\n\nПроверям доступность ВМ\n\n\n")
@@ -191,7 +195,7 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
                     'command': """sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=off"/' /etc/default/grub""",
                     'signal set': 'sed command',
                 },
-                'init_on_free_off': {
+                'update grub': {
                     'command': 'sudo update-grub',
                     'signal get': 'sed command',
                     'signal set': 'update',

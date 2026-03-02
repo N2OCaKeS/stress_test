@@ -16,7 +16,7 @@ from virt_conf import VM_INFONAME, VM_KERNEL, BLOCK_SIZE, FILE_SIZE, FIOVERS_17x
                       LOW_COPIES, HIGH_COPIES, REPORT_PATH, UB_RESULT_HTML, UB_RESULTS, \
                       VM_RESULTS_PATH
 from time import sleep
-from allta import Libvirt
+from allta import Libvirt, Criterion, MathModels
 
 
 
@@ -62,7 +62,8 @@ class CreateVM:
         VMS_DATES = { # Полный список ВМ
             testvm: {'host-port': '22',
                      'cpu': str(self.vcpu),
-                     'ram': str(self.ram)}
+                     'ram': str(self.ram),
+                     'disk': '20'}
             for testvm in VMS
         }
 
@@ -649,10 +650,42 @@ class LargeFio(CreateVM):
         print(check_output_command("sudo virsh --connect qemu:///system pool-start fio"))
         print(check_output_command("sudo virsh --connect qemu:///system pool-autostart fio"))
         print(check_output_command("sudo virsh --connect qemu:///system pool-refresh fio"))
-        print(check_output_command(f"qemu-img create -f qcow2 -o cluster_size=65536,lazy_refcounts=off,preallocation=metadata {add_disk_path}/largefio.qcow2 1T"))
-        print(check_output_command(f"virsh attach-disk {self.vms[0]} {add_disk_path}/largefio.qcow2 vdb --type disk --sourcetype file --targetbus virtio --driver qemu --subdriver qcow2 --cache none --io native --live"))
+        print(check_output_command(f"qemu-img create -f qcow2 -o cluster_size=1M,extended_l2=on,lazy_refcounts=on {add_disk_path}/largefio1M.qcow2 1T"))
+        print(check_output_command(f"qemu-img create -f qcow2 -o cluster_size=64k,extended_l2=on,lazy_refcounts=on {add_disk_path}/largefio64k.qcow2 1T"))
+
+        print(check_output_command("sudo virsh destroy testvm1"))
+        print(check_output_command("sudo virsh dumpxml  testvm1 > /tmp/testvm1.xml"))
+        print(check_output_command(
+            f"awk -v img='{add_disk_path}/largefio1M.qcow2' -v dev='vdb' "
+            "'/<\\/devices>/{"
+            "print \"  <disk type=\\\"file\\\" device=\\\"disk\\\">\";"
+            "print \"    <driver name=\\\"qemu\\\" type=\\\"qcow2\\\" cache=\\\"none\\\" io=\\\"native\\\" discard=\\\"unmap\\\"/>\";"
+            "print \"    <source file=\\\"\" img \"\\\"/>\";"
+            "print \"    <target dev=\\\"\" dev \"\\\" bus=\\\"virtio\\\"/>\";"
+            "print \"    <serial>largefio-cluster-1M</serial>\";"
+            "print \"  </disk>\""
+            "}"
+            "{print}' /tmp/testvm1.xml > /tmp/testvm1.new.xml"
+        ))
+        print(check_output_command(
+            f"awk -v img='{add_disk_path}/largefio64k.qcow2' -v dev='vdc' "
+            "'/<\\/devices>/{"
+            "print \"  <disk type=\\\"file\\\" device=\\\"disk\\\">\";"
+            "print \"    <driver name=\\\"qemu\\\" type=\\\"qcow2\\\" cache=\\\"none\\\" io=\\\"native\\\" discard=\\\"unmap\\\"/>\";"
+            "print \"    <source file=\\\"\" img \"\\\"/>\";"
+            "print \"    <target dev=\\\"\" dev \"\\\" bus=\\\"virtio\\\"/>\";"
+            "print \"    <serial>largefio-cluster-64K</serial>\";"            
+            "print \"  </disk>\""
+            "}"
+            "{print}' /tmp/testvm1.new.xml > /tmp/testvm1.new2.xml"
+        ))        
+        print(check_output_command("sudo virsh define /tmp/testvm1.new2.xml"))
+        print(check_output_command("sudo virsh start testvm1"))
+        sleep(60)
+        # print(check_output_command(f"virsh attach-disk {self.vms[0]} {add_disk_path}/largefio.qcow2 vdb --type disk --sourcetype file --targetbus virtio --driver qemu --subdriver qcow2 --cache none --io native --live"))
         print('Disk attached, preparing inside VM')
-        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdb bs=16M oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdb bs=1G count=1024 oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo dd if=/dev/urandom of=/dev/vdc bs=1G count=1024 oflag=direct status=progress", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)        
         send_remote_command(command='sudo uname -r > /home/u/kernel.txt && sudo chmod 777 /home/u/kernel.txt', ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
 
         print('Install fio package')
@@ -687,69 +720,145 @@ class LargeFio(CreateVM):
         create_remote_file(local_file_path=f"{FIO_PATH}/largefio.sh", remote_file_path="/home/u/largefio.sh", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         send_remote_command(command="sudo chmod +x /home/u/largefio.sh", ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
         print('Start load script')
-        send_remote_command(command="sudo /home/u/largefio.sh read vdb > /home/u/largefio_read.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
-        send_remote_command(command="sudo /home/u/largefio.sh write vdb > /home/u/largefio_write.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
-        send_remote_command(command="sudo chmod 777 /home/u/largefio_write.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
-        send_remote_command(command="sudo chmod 777 /home/u/largefio_read.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)        
 
-    def results_processing(self):        
+        send_remote_command(command="sudo /home/u/largefio.sh read vdb > /home/u/largefio_read1M.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo /home/u/largefio.sh write vdb > /home/u/largefio_write1M.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo chmod 777 /home/u/largefio_write1M.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo chmod 777 /home/u/largefio_read1M.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)    
+        send_remote_command(command="sudo /home/u/largefio.sh read vdc > /home/u/largefio_read64k.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo /home/u/largefio.sh write vdc > /home/u/largefio_write64k.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo chmod 777 /home/u/largefio_write64k.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        send_remote_command(command="sudo chmod 777 /home/u/largefio_read64k.txt" , ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)            
+    
+    def results_processing(self):
         print('Get results')
-        local_read = f"{self.testdir}/largefio_read.txt"
-        local_write = f"{self.testdir}/largefio_write.txt"
-        get_remote_file(remote_file_path="/home/u/largefio_read.txt", local_file_path=local_read, ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
-        get_remote_file(remote_file_path="/home/u/largefio_write.txt", local_file_path=local_write, ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
-        get_remote_file(remote_file_path='/home/av.txt',
-                        local_file_path=f'{self.testdir}/{VM_INFONAME}',
-                        ip=self.vm_dates['testvm1']['ip'], 
-                        user=self.user, 
-                        password=self.password)
-        get_remote_file(remote_file_path='/home/u/kernel.txt',
-                        local_file_path=f'{self.testdir}/{VM_KERNEL}',
-                        ip=self.vm_dates['testvm1']['ip'], 
-                        user=self.user, 
-                        password=self.password)
 
-        def _parse_results(path):
-            entries = []
-            with open(path, 'r') as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) < 2:
-                        continue
-                    size, value = parts[0], parts[1]
-                    try:
-                        value_num = float(value)
-                    except ValueError:
-                        continue
-                    entries.append((size, value_num))
-            return entries
+        local_read_64k  = f"{self.testdir}/largefio_read_64k.txt"
+        local_write_64k = f"{self.testdir}/largefio_write_64k.txt"
+        local_read_1m   = f"{self.testdir}/largefio_read_1M.txt"
+        local_write_1m  = f"{self.testdir}/largefio_write_1M.txt"
 
-        read_entries = _parse_results(local_read)
-        write_entries = _parse_results(local_write)
+        get_remote_file("/home/u/largefio_read64k.txt",  local_read_64k,  ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file("/home/u/largefio_write64k.txt", local_write_64k, ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file("/home/u/largefio_read1M.txt",   local_read_1m,   ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file("/home/u/largefio_write1M.txt",  local_write_1m,  ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
 
-        df_read = pd.DataFrame(read_entries, columns=['size', 'read_iops'])
-        df_write = pd.DataFrame(write_entries, columns=['size', 'write_iops'])
-        df_read["order"] = range(len(df_read))
-        df_combined = pd.merge(df_read, df_write, on='size', how='outer', sort=False)
-        df_combined = df_combined.sort_values("order").drop(columns=["order"])
+        get_remote_file('/home/av.txt',       f'{self.testdir}/{VM_INFONAME}', ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
+        get_remote_file('/home/u/kernel.txt', f'{self.testdir}/{VM_KERNEL}',   ip=self.vm_dates['testvm1']['ip'], user=self.user, password=self.password)
 
-        df_combined.to_html(f"{TEMPLATE_PATH}/largefio_results.html", index=False)
+        # --- парсим READ 64k ---
+        read_64k = []
+        with open(local_read_64k, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 2:
+                    continue
+                size = parts[0]
+                try:
+                    val = float(parts[1])
+                except ValueError:
+                    continue
+                read_64k.append((size, val))
 
-        print('LargeFio read results:')
+        # --- парсим READ 1M ---
+        read_1m = []
+        with open(local_read_1m, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 2:
+                    continue
+                size = parts[0]
+                try:
+                    val = float(parts[1])
+                except ValueError:
+                    continue
+                read_1m.append((size, val))
+
+        # --- парсим WRITE 64k ---
+        write_64k = []
+        with open(local_write_64k, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 2:
+                    continue
+                size = parts[0]
+                try:
+                    val = float(parts[1])
+                except ValueError:
+                    continue
+                write_64k.append((size, val))
+
+        # --- парсим WRITE 1M ---
+        write_1m = []
+        with open(local_write_1m, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 2:
+                    continue
+                size = parts[0]
+                try:
+                    val = float(parts[1])
+                except ValueError:
+                    continue
+                write_1m.append((size, val))
+
+        df_read_64k  = pd.DataFrame(read_64k,  columns=["size", "64k"])
+        df_read_1m   = pd.DataFrame(read_1m,   columns=["size", "1M"])
+        df_write_64k = pd.DataFrame(write_64k, columns=["size", "64k"])
+        df_write_1m  = pd.DataFrame(write_1m,  columns=["size", "1M"])
+
+        df_read  = pd.merge(df_read_64k,  df_read_1m,  on="size", how="outer", sort=False)
+        df_write = pd.merge(df_write_64k, df_write_1m, on="size", how="outer", sort=False)
+
+        for df in (df_read, df_write):
+            df.sort_values(
+                by="size",
+                key=lambda s: s.astype(str).str.upper().apply(
+                    lambda x: float(x[:-1]) * (1024 if x.endswith("T") else 1)
+                ),
+                inplace=True
+            )
+            df.reset_index(drop=True, inplace=True)
+        size_key = "1T"
+        read_1t_1m = df_read.loc[
+            df_read["size"].astype(str).str.upper() == size_key, "1M"
+        ].dropna().tolist()
+        write_1t_1m = df_write.loc[
+            df_write["size"].astype(str).str.upper() == size_key, "1M"
+        ].dropna().tolist()
+
+        if not read_1t_1m or not write_1t_1m:
+            print(
+                "LargeFio warning: missing 1T results for 1M cluster "
+                f"(read={len(read_1t_1m)}, write={len(write_1t_1m)})."
+            )
+
+        criterions = [
+            Criterion(name="read 1mb 1t", values=read_1t_1m, weight=0.5, lower_bound=0, upper_bound=200000, sign=1),
+            Criterion(name="write 1mb 1t", values=write_1t_1m, weight=0.5, lower_bound=0, upper_bound=200000, sign=1),
+        ]
+        total_rating, _ = MathModels.total_rating(criteria=criterions)
+        total_rating_display = round(total_rating * 1000)
+        print(f"LargeFio total rating: {total_rating_display}")
+        with open(f'{TEMPLATE_PATH}/largefio_total_rating.txt', 'w') as w:
+            w.write(str(total_rating))
+
+
+        # --- сохраняем HTML ---
+        df_read.to_html(f"{TEMPLATE_PATH}/largefio_read_results.html", index=False)
+        df_write.to_html(f"{TEMPLATE_PATH}/largefio_write_results.html", index=False)
+
+        print("READ table:")
         print(df_read)
-        print('LargeFio write results:')
+        print("WRITE table:")
         print(df_write)
-        print('Combined read/write results:')
-        print(df_combined)
 
         # Clean raw txt copies once converted to html
-        try:
-            os.remove(local_read)
-            os.remove(local_write)
-        except FileNotFoundError:
-            pass
-        
-
+        for p in (local_read_64k, local_write_64k, local_read_1m, local_write_1m):
+            try:
+                os.remove(p)
+            except FileNotFoundError:
+                pass
 
     def vms_destroy(self):
         try:

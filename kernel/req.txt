@@ -1,0 +1,4 @@
+requests
+numpy
+atlassian-python-api
+pandas==2.2.3

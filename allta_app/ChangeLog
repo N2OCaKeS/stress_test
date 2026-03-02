@@ -1,8 +1,8 @@
 allta_app - v2.56.0
 * Add InitOnFree test
-
-
-
+* Add FIO_large test
+* Add daemon.json in
+  starter
 
 
 allta_app - v2.55.2

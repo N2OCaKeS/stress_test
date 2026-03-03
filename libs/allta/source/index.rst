@@ -24,5 +24,6 @@ Allta Documentation
    modules/SystemCommands
    modules/VBox
    modules/VBoxManager
-   modules/page_template
+   modules/Zefir
+   .. modules/page_template
    

@@ -37,6 +37,7 @@ Allta
    "1.1.3", "mfilippenko", "Доработан модуль JiraConfluenceReporter, для удобной отладки отчетов в личном пространстве"      
    "1.1.4", "mfilippenko", "Обновлена документация"        
    "1.1.5", "mfilippenko", "В Libvirt.execute() добавлен nowait_mode (terminate/continue), для nowait сигнал устанавливается через 10 секунд после старта команды"
+   "1.1.6", "mfilippenko", "Добавлен модуль Zefir"
 .. Тут необходимо указывать новую версию автора и описание 
 
 

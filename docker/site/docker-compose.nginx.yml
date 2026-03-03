@@ -19,7 +19,7 @@ services:
         ipv4_address: 172.24.0.3
         
   nginx:
-    image: nginx
+    image: allta.devos.astralinux.ru:21503/nginx:latest
     container_name: nginx
     volumes:
     - ./web_app/static:/app/web_app/static

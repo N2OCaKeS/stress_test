@@ -171,8 +171,115 @@ class Sigmentation_fault(CreateVM):
 
         print("\n\n\nНачинаем выполнение теста\n\n\n")
         print("\n\n\nВыполнение подготовки к тесту\n\n\n")
+        """
+            1) dd if=/dev/zero of=xfs.file bs=1M count=384
+            2) mkfs.xfs -f xfs.file
+            3) mkdir xfs.mnt
+            4) mount -t xfs xfs.file xfs.mnt
+            5) fill.c ... gcc -o fill fill.c
+        """
         # Подготовка к выполнению теста
+        init_on_free_on = {
+            'testvm1': {
+                'init_on_free_off': {
+                    'command': """sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=1 transparent_hugepage=never"/' /etc/default/grub""",
+                    'signal set': 'sed command',
+                },
+                'update grub': {
+                    'command': 'sudo update-grub',
+                    'signal get': 'sed command',
+                    'signal set': 'update',
+                },
+                'reboot': {
+                    'signal get': 'update',
+                },
+            },
+        }
+
+        xfs_create = {
+            'testvm1': {
+                'dd': {
+                    'command': 'dd if=/dev/zero of=xfs.file bs=1M count=384',
+                    'signal set': 'dd xfsfile'
+                },
+                'mkfs_xfs': {
+                    'command': 'mkfs.xfs -f xfs.file',
+                    'signal get': 'dd xfsfile',
+                    'signal set': 'mkfs xfs',
+                },
+                'mkdir': {
+                    'command': 'mkdir xfs.mnt',
+                    'signal get': 'mkfs xfs',
+                    'signal set': 'mkdir xfs'
+                },
+                'mount': {
+                    'command': 'mount -t xfs xfs.file xfs.mnt',
+                    'signal get': 'mkdir xfs',
+                    'signal set': 'mount xfs'
+                },
+            }
+        }
+
+        xfs_fill_out_file = {
+            'testvm1': {
+                'dd': {
+                    'command': "dd if=/dev/zero bs=4096 count=100 | tr '\0' '\1' > xfs.mnt/test_file",
+                    'signal set': 'xfs fillout'
+                }
+            }
+        }
+
+        scp_test_files = {
+            "testvm1": [
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/fill', 
+                    "path_vm": ..., 
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/test1', 
+                    "path_vm": ..., 
+                },
+            ]
+        }
+
+        start_test1 = {
+            'testvm1': {
+                'test1': {
+                    'command': './test1 > test1_output.txt',
+                    'signal set': 'test1 start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 180
+                }
+            }
+        }
+
+        start_fill = {
+            'testvm1': {
+                'fill': {
+                    'command': './fill >> fill_output.txt',
+                    'signal set': 'fill start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 180
+                }
+            }
+        }
+
+        print('Включение опции init_on_free')
+        self.provider.execute(commands=init_on_free_on, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print('Подготовка xfs')
+        self.provider.execute(commands=xfs_create, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        self.provider.execute(commands=xfs_fill_out_file, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("Перенос тестовых файлов")
+        self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)         
         print("\n\n\nПодготовка завершена\n\n\n")
+
+
 
         print("\n\n\nЗапускаем тест\n\n\n")
         

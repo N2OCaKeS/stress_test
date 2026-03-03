@@ -3,7 +3,7 @@ allta_app - v2.56.0
 * Add FIO_large test
 * Add daemon.json in
   starter
-
+* Add Docker Registry UI link
 
 allta_app - v2.55.2
 * Add 1.7.10.52

@@ -241,7 +241,7 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
             'testvm2': {
                 'wait_server': {
                     'command': 'sleep 5',
-                    'signal get': 'start server',
+                    'signal get': ["testvm1", 'start server'],
                     'signal set': 'sleep',
                 },
                 'iperf_load': {

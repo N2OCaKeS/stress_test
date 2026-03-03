@@ -1,12 +1,8 @@
-import re
-import json
-import numpy as np
-
-from allta import Libvirt, LibvirtManager, SystemCommands
+from allta import Libvirt, LibvirtManager
 
 from pathlib import Path
 from time import sleep
-from os import path
+
 
 from kernel_conf import (
     USERNAME,

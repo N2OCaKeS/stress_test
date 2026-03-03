@@ -59,6 +59,17 @@ def initialization_freeipa_server():
     file_hosts = open("/etc/hosts", "w")
     file_hosts.writelines(temp)
     file_hosts.close()
+
+    """
+        Установка либы для создания пользователей
+    """
+    # if int(check_output_command("python3 --version").split()[1].split(".")[1]) >= 11:
+    #     cmd("sudo pip3 install python-freeipa --break-system-packages")
+    # else:
+    #     cmd("sudo pip3 install python-freeipa")
+    cmd("sudo python3 -m venv venv")
+    cmd("venv/bin/pip3 install python-freeipa requests-gssapi gssapi")
+    
     """
         Инициализация домена
     """    
@@ -69,15 +80,6 @@ def initialization_freeipa_server():
     file_hosts = open("/etc/hosts", "a")
     file_hosts.write("10.177.103.10\tallta.devos.astralinux.ru\n")
     file_hosts.close()
-    """
-        Установка либы для создания пользователей
-    """
-    # if int(check_output_command("python3 --version").split()[1].split(".")[1]) >= 11:
-    #     cmd("sudo pip3 install python-freeipa --break-system-packages")
-    # else:
-    #     cmd("sudo pip3 install python-freeipa")
-    cmd("sudo python3 -m venv venv")
-    cmd("venv/bin/pip3 install python-freeipa requests-gssapi gssapi")
     """
         Перезапуск контроллера домена
     """

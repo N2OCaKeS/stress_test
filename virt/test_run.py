@@ -235,8 +235,8 @@ elif args.TESTNAME == 'fio_large':
 
     fio_large_test.prepare_vms()
     fio_large_test.start_test()
-    fio_large_test.vms_destroy()
     fio_large_test.results_processing()
+    fio_large_test.vms_destroy()
 
     info_list()
     uzs.public = True

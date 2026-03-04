@@ -346,7 +346,7 @@ EOF'""",
                 f"--client_start {client_start} --client_count {client_count}'"
             )
 
-            start_client[host] = {"run_perf": {"command": cmd, "nowait": True, "nowait_timeout": total_seconds}}
+            start_client[host] = {"run_perf": {"command": cmd, "nowait": True, "nowait_mode": "terminate", "nowait_timeout": total_seconds}}
 
         Libvirt.execute(
             commands=start_client,

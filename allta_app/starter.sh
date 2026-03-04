@@ -73,6 +73,7 @@ cat << INTERNAL_EOF > /etc/docker/daemon.json
 }
 INTERNAL_EOF
 EOF
+echo sudo systemctl restart docker >> prepare.sh
 
 echo curl http://10.177.103.10:18181/rest/api/dashboard/$localhost/full >> prepare.sh
 echo sed -i \'s/.*cgroup_controllers.*/cgroup_controllers = [ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuacct\" ]/g\' /etc/libvirt/qemu.conf >> prepare.sh

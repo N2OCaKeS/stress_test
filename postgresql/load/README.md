@@ -20,6 +20,11 @@ sudo perf script | perl libstackcollapse-perf.pl | perl libflamegraph.pl > 150_2
 
 
 #### Отключение модуля parsec (поможет исключить его влияние на системные процессы):
+Подготовка режима
+```bash
+sudo astra-modeswitch set 0
+sudo reboot
+```
 Создать файл `/etc/modprobe.d/parsec.conf` с содержимым `install parsec /bin/false`:
 ```bash
 echo install parsec /bin/false | sudo tee /etc/modprobe.d/parsec.conf
@@ -34,5 +39,30 @@ sudo reboot
 Проверка корректности отключения модуля:
 ```bash
 lsmod | grep parsec
+```
+
+
+
+#### Включение модуля parsec:
+Удалить файл `/etc/modprobe.d/parsec.conf` с содержимым `install parsec /bin/false`:
+```bash
+sudo rm /etc/modprobe.d/parsec.conf
+```
+
+Выполнить пересоздание `initd`:
+```bash
+sudo update-initramfs -u -k all
+sudo reboot
+```
+
+Проверка корректности включения модуля:
+```bash
+lsmod | grep parsec
+```
+
+Подготовка режима
+```bash
+sudo astra-modeswitch set 2 && sudo astra-mac-control enable && sudo astra-mic-control enable
+sudo reboot
 ```
 

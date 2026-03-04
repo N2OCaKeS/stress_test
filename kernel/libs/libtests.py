@@ -1,14 +1,18 @@
-from allta import Libvirt, LibvirtManager
+import json
 
-from pathlib import Path
 from time import sleep
+from pathlib import Path
 
+from allta import Libvirt, LibvirtManager
 
 from kernel_conf import (
     USERNAME,
     PASSWORD,
     VM_OS_INFO_PATH,
     BASE_PATH,
+    VM_TEST1_OUTPUT,
+    VM_TEST2_OUTPUT,
+    RESULTS_FILE
     # IOF_OFF_PATH,
     # IOF_ON_PATH,
     # IOF_ON_NAME,
@@ -224,7 +228,6 @@ class Sigmentation_fault(CreateVM):
             'testvm1': {
                 'dd': {
                     'command': "dd if=/dev/zero bs=4096 count=100 | tr '\0' '\1' > xfs.mnt/test_file",
-                    'signal set': 'xfs fillout'
                 }
             }
         }
@@ -233,33 +236,49 @@ class Sigmentation_fault(CreateVM):
             "testvm1": [
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/fill', 
-                    "path_vm": ..., 
+                    "path_host": f'{BASE_PATH}/fill.c', 
+                    "path_vm": '/home/u/fill.c', 
                 },
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/test1', 
-                    "path_vm": ..., 
+                    "path_host": f'{BASE_PATH}/test1.c', 
+                    "path_vm": '/home/u/test1.c', 
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/test2.c',
+                    "path_vm": '/home/u/test2.c'
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/fill.py',
+                    "path_vm": '/home/u/fill.py'
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/test1.py',
+                    "path_vm": '/home/u/test1.py'
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/test2.py',
+                    "path_vm": '/home/u/test2.py'
                 },
             ]
         }
 
-        start_test1 = {
+        start_test1_and_fill = {
             'testvm1': {
                 'test1': {
                     'command': './test1 > test1_output.txt',
                     'signal set': 'test1 start',
                     'nowait': True,
                     'nowait_mode': 'terminate',
-                    'nowait_timeout': 180
-                }
-            }
-        }
-
-        start_fill = {
-            'testvm1': {
+                    'nowait_timeout': 190
+                },
                 'fill': {
-                    'command': './fill >> fill_output.txt',
+                    'command': 'python3 fill.py',
+                    'signal get': 'test1 start',
                     'signal set': 'fill start',
                     'nowait': True,
                     'nowait_mode': 'terminate',
@@ -267,6 +286,27 @@ class Sigmentation_fault(CreateVM):
                 }
             }
         }
+
+        start_test2_and_fill = {
+            'testvm1': {
+                'test1': {
+                    'command': 'python3 test2.py',
+                    'signal set': 'test2 start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 310
+                },
+                'fill': {
+                    'command': 'python3 fill.py',
+                    'signal get': 'test2 start',
+                    'signal set': 'fill start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 300
+                }
+            }
+        }
+
 
         print('Включение опции init_on_free')
         self.provider.execute(commands=init_on_free_on, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
@@ -278,18 +318,13 @@ class Sigmentation_fault(CreateVM):
         print("Перенос тестовых файлов")
         self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)         
         print("\n\n\nПодготовка завершена\n\n\n")
-
-
-
         print("\n\n\nЗапускаем тест\n\n\n")
-        
+
+        self.provider.execute(commands=start_test1_and_fill, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        self.provider.execute(commands=start_test2_and_fill, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         print("\n\n\nТест завершен\n\n\n")
 
     def results_processing(self):
-
-        print("\n\n\nОбработка результатов\n\n\n")
-        # Обработка результатов
-        print("\n\n\n Результаты обработаны\n\n\n")
 
         print("\n\n\nЗабираем данные о ОС с ВМ\n\n\n")
         scp_vm_params = {
@@ -304,6 +339,16 @@ class Sigmentation_fault(CreateVM):
                     "path_host": VM_OS_INFO_PATH,
                     "path_vm": "/home/u/kernel.txt",
                 },
+                {
+                    "mode": "pull",
+                    "path_host": VM_TEST1_OUTPUT,
+                    "path_vm": "/home/u/test1_output.txt"
+                },
+                {
+                    "mode": "pull",
+                    "path_hots": VM_TEST2_OUTPUT,
+                    "path_vm": "/home/u/test2_output.txt"
+                }
             ]
         }
         self.provider.scp(
@@ -314,4 +359,31 @@ class Sigmentation_fault(CreateVM):
             password=PASSWORD,
         )
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
-        pass
+        print("\n\n\nОбработка результатов\n\n\n")
+        # Обработка результатов
+        
+        status_test1_bug = False
+        with open(VM_TEST1_OUTPUT, 'r') as test1_file:
+            test1_output = test1_file.readlines()
+            for line in test1_output:
+                if "Got invalid value on page" in line:
+                    status_test1_bug = True
+                    break
+
+        status_test2_bug = False
+        with open(VM_TEST2_OUTPUT, 'r') as test2_file:
+            test2_output = test2_file.readlines()
+            for line in test2_output:
+                if "Ошибка сегментирования" in line:
+                    status_test2_bug = True
+                    break
+        
+        result = {
+            'status_test1': status_test1_bug,
+            'status_test2': status_test2_bug
+        }
+        with open(RESULTS_FILE, 'w') as result_file:
+            result_file.write(json.dumps(result))
+
+        print("\n\n\n Результаты обработаны\n\n\n")
+            

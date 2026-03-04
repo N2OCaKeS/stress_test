@@ -29,6 +29,10 @@ else:
 VM_INFONAME = f'{VM_OS_INFO_PATH}/av.txt'
 VM_KERNEL = f'{VM_OS_INFO_PATH}/kernel.txt'
 
+VM_TEST1_OUTPUT = f'{BASE_PATH}/test1_output.txt'
+VM_TEST2_OUTPUT = f'{BASE_PATH}/test2_output.txt'
+RESULTS_FILE = 'results.json'
+
 # Test Params
 
 # Kernel Network

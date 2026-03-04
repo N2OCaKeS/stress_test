@@ -10,6 +10,8 @@ ConfluencePublisher
 * Публикация HTML (Confluence Storage format) на страницу Confluence: создание/обновление.
 * Прикрепление вложений к странице.
 * Добавление меток (labels).
+* Автоматические повторы публикации при временных ошибках: по умолчанию каждые ``180`` секунд
+  в течение ``1800`` секунд.
 * (Опционально) построение версионного дерева страниц на основе ``test_cycle_version``:
 
   * ``global``: ``X.Y`` (например, ``1.8``)
@@ -35,6 +37,8 @@ ConfluencePublisher
         base_url="https://wiki.example.org",
         username="bot",
         token="SECRET",
+        publish_retry_interval=180,
+        publish_retry_timeout=1800,
     )
 
     page_id = publisher.publish(
@@ -92,9 +96,9 @@ ConfluencePublisher
       └─ STRESS_REPORT 1.8.4
           ├─ STRESS_REPORT 1.8.4.46
           │   └─ STRESS_REPORT 1.8.4.46 tea
-          │       └─ STRESS_REPORT 1.8.4.46 <page>
+          │       └─ <page>
           └─ STRESS_REPORT 1.8.4 tea
-              └─ STRESS_REPORT 1.8.4 <page>
+              └─ <page>
 
 При публикации в ветку ``detailed`` имя страницы автоматически корректируется:
 
@@ -141,7 +145,7 @@ API
 ---
 
 ------------------------------------------------------------------------------------------------
-``__init__(*, base_url: str, username: str, password: str | None = None, token: str | None = None) -> None``
+``__init__(*, base_url: str, username: str, password: str | None = None, token: str | None = None, publish_retry_interval: int = 180, publish_retry_timeout: int = 1800) -> None``
 ------------------------------------------------------------------------------------------------
 
 Создаёт клиент Confluence. Требует либо пароль, либо токен API.
@@ -151,9 +155,12 @@ API
   - **username** (*str*): имя пользователя.
   - **password** (*str | None*): пароль (если используется).
   - **token** (*str | None*): API token (если используется).
+  - **publish_retry_interval** (*int*): интервал между повторами публикации в секундах.
+  - **publish_retry_timeout** (*int*): общий таймаут повторов публикации в секундах.
 
 :Исключения:
   - **ValueError**: если не задан ни ``password``, ни ``token``.
+  - **ValueError**: если параметры ретраев заданы некорректно.
 
 ------------------------------------------------------------------------------------------------
 ``publish(*, space: str, title: str, body: str, parent_id: str | None = None, attachments: Sequence[str | Path] | None = None, labels: Sequence[str] | None = None, _effective_title: str | None = None) -> str``
@@ -195,6 +202,10 @@ API
 
 * основную страницу в ветке ``more`` (полная версия)
 * "релизную" копию в ветке ``detailed`` (``X.Y.Z``), если версия распознана
+
+Если задан ``conf_parent_page``, то в каждой версии сначала создаётся контейнер
+``STRESS_report <version> ⬝ <conf_parent_page>`` с children-макросом, а уже под ним
+публикуется ``conf_new_page_name``.
 
 :Параметры:
   - **conf_space** (*str*): space key.

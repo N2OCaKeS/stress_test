@@ -306,6 +306,7 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
 3. Создайте клиент `ConfluencePublisher` с `base_url`, `username` и `token` (или `password`).
 4. Вызовите `publish_results_from_params(...)`:
    - `create_tree=True` публикует отчет в дерево версий (`global -> detailed -> more`) и возвращает `page_id` + `release_page_id`.
+   - если задан `conf_parent_page`, под каждой версией создаётся контейнер `STRESS_report <version> ⬝ <conf_parent_page>` с макросом `children`, а сам отчет публикуется дочерней страницей `conf_new_page_name`.
    - `create_tree=False` публикует только одну страницу под `conf_parent_page` (или в корень space).
 5. Передавайте в `body` именно объект `PageBuilder` (метод сам вызовет `render()` внутри).
 
@@ -462,6 +463,8 @@ publisher = ConfluencePublisher(
     base_url="confluence.company.local",
     username="ci-bot",
     token="<confluence_token>",
+    publish_retry_interval=180,
+    publish_retry_timeout=1800,
 )
 result = publisher.publish_results_from_params(
     conf_space="STRESS",

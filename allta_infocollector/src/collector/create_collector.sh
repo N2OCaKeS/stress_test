@@ -8,7 +8,7 @@ version: '3.7'
 
 services:
   node_exporter:
-    image: prom/node-exporter:latest
+    image: allta.devos.astralinux.ru:21503/prom/node-exporter:latest
     network_mode: host
 #    ports:
 #      - "9100:9100"

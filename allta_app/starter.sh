@@ -67,11 +67,11 @@ cd $1
 #sed -i '2i export DEBIAN_FRONTEND=noninteractive' prepare.sh
 echo sudo mkdir /etc/docker >> prepare.sh
 cat << 'EOF' >> prepare.sh
-cat << EOF > /etc/docker/daemon.json
+cat << INTERNAL_EOF > /etc/docker/daemon.json
 {
   "insecure-registries": ["allta.devos.astralinux.ru:21503"]
 }
-EOF
+INTERNAL_EOF
 EOF
 
 echo curl http://10.177.103.10:18181/rest/api/dashboard/$localhost/full >> prepare.sh

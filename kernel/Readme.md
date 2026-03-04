@@ -23,3 +23,25 @@
 - при создании нагрузки на подсистему памяти воспроизводится чтение нулей из `mmap`-страниц вместо реальных данных;
 - в сценарии с исполнением кода из затронутых страниц процесс аварийно завершается с `segmentation fault`;
 - завершение процесса-генератора нагрузки по `OOM Killer` возможно, но не является обязательным признаком ошибки.
+
+#### Зависимости
+
+Python-зависимости проекта:
+
+- `requests`
+- `numpy`
+- `atlassian-python-api`
+- `pandas==2.2.3`
+
+#### Проведение тестирования
+
+Тестирование проводится в автоматическом режиме с помощью оркестратора ALLTA.
+
+- [ALLTA](https://life.astralinux.ru/pages/viewpage.action?pageId=253888776&src=contextnavpagetreemode)
+
+#### Обработка результатов
+
+Результаты обрабатываются и выкладываются в пространстве нагрузочного тестирования confluence с помощью орекстратора ALLTA в автоматическом режиме.
+
+- [Пространство](https://life.astralinux.ru/pages/viewpage.action?pageId=140673304&src=contextnavpagetreemode)
+- [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)

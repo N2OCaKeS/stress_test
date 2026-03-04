@@ -1,7 +1,7 @@
 import argparse
 from datetime import datetime
 
-from libs.zefir import UploaderZC
+from allta import UploaderZC
 from libs.libnet import get_duration
 from libs.libtests import NetworkLoad
 from libs.libpublic import net_publisher
@@ -98,12 +98,12 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 basic_auth=args.BA,
                 test_cycle_version=args.TCV,
                 token=args.TOKEN,
-                username=args.USER,
-                grade_stand=args.STAND,
-                conf_space=args.SPACE,
-                conf_parent_page=args.PPAGE,
-                conf_new_page_name=args.NPAGE,
-                testname=args.TESTNAME)
+                username=args.USER)
+                # grade_stand=args.STAND,
+                # conf_space=args.SPACE,
+                # conf_parent_page=args.PPAGE,
+                # conf_new_page_name=args.NPAGE,
+                # testname=args.TESTNAME)
 uzs.upload_test_cycle_status(zefir_status='progress')
 
 

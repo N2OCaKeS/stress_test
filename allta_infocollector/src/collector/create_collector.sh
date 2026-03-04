@@ -56,5 +56,6 @@ sudo systemctl enable node_exporter.service
 sudo systemctl daemon-reload
 sudo systemctl start node_exporter.service
 sudo systemctl status node_exporter.service
+sudo systemctl restart docker.service
 
 

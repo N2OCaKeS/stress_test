@@ -43,20 +43,22 @@ def exb_publisher(
     builder = PageBuilder(title=title)
 
     if type_test == "smtp":
+        description = "Тестирование отправки электронной почты через SMTP. MTA - Exim4."
         labels = [
-            {"label": "number of successfully users get emails", "value": "0,3"},
-            {"label": "average latency, ms", "value": "0,3"},
-            {"label": "throughput, operations/sec", "value": "0,3"},
+            {"label": "number of successfully users get emails", "value": "0,2"},
+            {"label": "average latency, ms", "value": "0,4"},
+            {"label": "throughput, operations/sec", "value": "0,4"},
         ]
         params = [
             {"label": "MAIL_MAX", "value": MAIL_MAX},
             {"label": "MAIL_STEP", "value": MAIL_STEP}
             ]
-    # TODO
+
     elif type_test == "imap":
+        description = "Тестирование чтения электронной почты через IMAP. MDA - Dovecot."
         labels = [
-            {"label": "number of successfully", "value": "0,5"},
-            {"label": "number of emails sent per second", "value": "0,5"},
+            {"label": "number of successfully", "value": "0,2"},
+            {"label": "number of emails sent per second", "value": "0,8"},
         ]
         params = [
             {"label": "USER_COUNT", "value": MAIL_USERS_QTY_MAX},
@@ -94,6 +96,7 @@ def exb_publisher(
 
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
+    builder.add_paragraph(text=description)
     builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
     
     table = create_table_from_report_file(type_test=type_test)

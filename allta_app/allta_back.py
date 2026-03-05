@@ -328,6 +328,7 @@ try:
                             tes = f'-tes {args.TESTENV}'
                             aovpn = '-vpn aovpncc'
                             iof = '-network iof'
+                            seg = '-kernel segfault'
                             if tests[dates_list[i][1]] == 'auditd-p':
                                 testlist = f'-aud psaud'
                             elif tests[dates_list[i][1]] == 'auditd-f':
@@ -424,6 +425,9 @@ try:
                             elif tests[dates_list[i][1]] == 'InitOnFree':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {iof} {tes}', shell=True) 
+                            elif tests[dates_list[i][1]] == 'segmentation fault':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)                                 
                             else: 
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                                 {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
@@ -580,6 +584,9 @@ try:
                     elif tests[dates_list[i][1]] == 'InitOnFree':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {iof} {tes}', shell=True)
+                    elif tests[dates_list[i][1]] == 'segmentation fault':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)                           
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
@@ -622,4 +629,3 @@ except Exception as e:
     total_end_time = datetime.datetime.now().replace(microsecond=0)
     bot_results(f'Затрачено времени: {total_end_time - total_start_time}')
     busy_status_control(__stand, 'testrun fail')
-

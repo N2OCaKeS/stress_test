@@ -57,6 +57,7 @@
             "auditd-u": "7:46:19",
             "digsig-cdt": "0:32:57",
             "InitOnFree": "1:30:01",
+            "segment fault": "1:30:01",
             "Total time": "0:00:00"
         },
         "stand13": {
@@ -122,6 +123,7 @@
             "auditd-u": "6:06:14",
             "digsig-cdt": "1:22:19",
             "InitOnFree": "1:30:01",
+            "segment fault": "1:30:01",
             "Total time": "0:00:00"
         },
         "stand13": {

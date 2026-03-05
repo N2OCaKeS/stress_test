@@ -93,7 +93,7 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
                                  'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
             'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
             'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl', 'AOpenVPNcc',
-                                 'Dovecot-IMAP', 'Exim4-SMTP'],
+                                 'Dovecot-IMAP', 'Exim4-SMTP',  'Segmentation-fault'],
             'UnixBench':        ['unix', 'unix parsec'],
             'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users'],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
@@ -188,7 +188,8 @@ branches = {
     'astra openvpn client connections':'astra_openvpn',
     'dovecot benchmark':'exim',
     'exim benchmark':'exim',
-    'Network benchmark. Init_on_free':'network'
+    'Network benchmark. Init_on_free':'network',
+    'segmentation_fault':'kernel'
 }
 
 
@@ -254,7 +255,8 @@ tests = {
     'astra openvpn client connections':'AOpenVPNcc',
     'dovecot benchmark':'Dovecot-IMAP',
     'exim benchmark':'Exim4-SMTP',
-    'Network benchmark. Init_on_free':'InitOnFree'
+    'Network benchmark. Init_on_free':'InitOnFree',
+    'segmentation_fault':'segment fault'
 }
 
 
@@ -287,7 +289,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO large', 'InitOnFree']
+              'FIO large', 'InitOnFree', 'segment fault']
 
 
 
@@ -378,7 +380,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand10': ['CEPH parsec'],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
-            'orel_stand12':     ['syslog-ng', 'InitOnFree'],
+            'orel_stand12':     ['syslog-ng', 'InitOnFree', 'segment fault'],
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp'],
             'orel_stand13':     ['syslog-ng-cwl'],
             'smolensk_stand13': []
@@ -396,8 +398,10 @@ stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
+
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
-    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'InitOnFree'],
+    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'InitOnFree', 'segment fault'],
+
     'stand13_group':['syslog-ng-cwl']
 }
 
@@ -452,7 +456,8 @@ tests_case_zefir_key = {
     'Dovecot-IMAP':'BT-T18555',
     'Exim4-SMTP':'BT-T18554',
     'FIO large':'BT-T18278',
-    'InitOnFree':'BT-T18909'
+    'InitOnFree':'BT-T18909',
+    'segment fault':'BT-T18927'
 }
 
 
@@ -482,7 +487,7 @@ testname_columns = {
                     'ceph fio benchmark':'FS_CEPH_fio', 'freeipa create users test':'FreeIPA_c-users',
                     'ceph parsec benchmark':'FS_CEPH_parsec', 'astra openvpn client connections':'AOpenVPNcc',
                     'dovecot benchmark':'Dovecot-IMAP', 'exim benchmark':'Exim4-SMTP', 'Large FIO benchmark':'FIO_large',
-                    'Network benchmark. Init_on_free':'InitOnFree'
+                    'Network benchmark. Init_on_free':'InitOnFree', 'segmentation_fault':'segment fault'
                     }
 
 

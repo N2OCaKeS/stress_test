@@ -240,14 +240,14 @@ class ConfluencePublisher:
 
     def _with_hidden_suffix(self, visible_title: str, token: str) -> str:
         """
-        Возвращает "effective title": видимый заголовок + невидимый суффикс.
+        Возвращает effective title без добавления невидимого суффикса.
 
         Args:
             visible_title (str): Заголовок, который будет "виден" пользователю.
-            token (str): Токен для генерации суффикса.
+            token (str): Не используется (оставлен для обратной совместимости сигнатуры).
 
         Returns:
-            str: Заголовок для сохранения в Confluence (unique).
+            str: Заголовок для сохранения в Confluence.
 
         Raises:
             ValueError: Если visible_title пустой.
@@ -255,7 +255,7 @@ class ConfluencePublisher:
         v = self._normalize(visible_title)
         if not v:
             raise ValueError("title не должен быть пустым")
-        return v + self._hidden_suffix(token)
+        return v
 
     def _is_three_part_numeric_version(self, version: str) -> bool:
         """
@@ -620,12 +620,33 @@ class ConfluencePublisher:
             f"STRESS_report ⬝ {full_v}",
         )
 
+    def _normalize_parent_group_title(self, parent_visible: str | None) -> str | None:
+        """
+        Нормализует имя группы отчётов для ``conf_parent_page``.
+
+        Поддерживает оба формата:
+        - короткий: ``Системные службы``
+        - полный заголовок контейнера: ``STRESS_report <version> ⬝ Системные службы``
+        """
+        parent = self._normalize(parent_visible)
+        if not parent:
+            return None
+
+        left, sep, right = parent.partition("⬝")
+        left_norm = left.strip().lower()
+        if sep and (left_norm == "stress_report" or left_norm.startswith("stress_report ")):
+            tail = self._normalize(right)
+            if tail:
+                return tail
+        return parent
+
     def _report_page_title(self, *, version: str, parent_visible: str | None) -> str:
         """
         Формирует видимый заголовок страницы с отчётом.
         """
-        if parent_visible:
-            return f"STRESS_report {version} ⬝ {parent_visible}"
+        group_title = self._normalize_parent_group_title(parent_visible)
+        if group_title:
+            return f"STRESS_report {version} ⬝ {group_title}"
         return f"STRESS_report {version}"
 
     def _versioned_page_name(self, *, page_name: str, from_version: str, to_version: str) -> str:

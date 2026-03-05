@@ -103,7 +103,7 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 
 
 #Start test
-if args.TESTNAME == 'iof':
+if args.TESTNAME == 'segfault':
     time_start_script = datetime.now()
     
     sigmentation_fault = Sigmentation_fault(rc_name=args.TCV,

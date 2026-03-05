@@ -3,7 +3,7 @@
 import json
 from allta import PageBuilder, ConfluencePublisher
 
-from kernel.kernel_conf import IOF_RESULTS, VM_INFONAME, VM_KERNEL, SEGMENTATION_FAULT_RAM, SEGMENTATION_FAULT_VCPU, ITERATIONS
+from kernel_conf import VM_INFONAME, VM_KERNEL, SEGMENTATION_FAULT_RAM, SEGMENTATION_FAULT_VCPU, RESULTS_FILE
 
 def kernel_publisher(
         username,
@@ -29,7 +29,6 @@ def kernel_publisher(
     params = [
         {"label": "VCPU", "value": SEGMENTATION_FAULT_VCPU},
         {"label": "RAM", "value": SEGMENTATION_FAULT_RAM},
-        {"label": "Test iterations", "value": ITERATIONS},
     ]
 
     header_table = [
@@ -63,15 +62,17 @@ def kernel_publisher(
 
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
-    builder.add_paragraph(text="В тесте производится оценка сетевой производительности с помощью iperf при разных значениях параметра ядра init_on_free.\nСравниваются результаты в базовом состоянии (до изменения параметра) и после установки init_on_free=off.")
+    builder.add_paragraph(
+        text="Регрессионный тест на воспроизведение ошибки ядра Linux, при которой приложение может получить нулевые значения из корректно отображённых в память страниц файла.\nСбой проявляется при работе с mmap: вместо фактического содержимого страницы процесс читает нули. Если затронуты страницы с исполняемым кодом, это может приводить к аварийному завершению процесса."
+    )
 
-    with open(IOF_RESULTS, 'r') as f:
-        iof_results_dict = json.load(f)
+    with open(RESULTS_FILE, 'r') as f:
+        results_dict = json.load(f)
 
     builder.add_table({
         "title": "Результаты тестирования",
-        "headers": ["init_on_free=on MBytes/sec (mean)", "init_on_free=off MBytes/sec (mean)", "Difference %"],
-        "rows": [[iof_results_dict['init_on_free_ON'], iof_results_dict['init_on_free_OFF'], iof_results_dict['difference']]],
+        "headers": ["Наличие проблемы (Test 1)", "Наличие проблемы (Test 2)"],
+        "rows": [[results_dict['status_test1'], results_dict['status_test2']]],
     })
 
     publish_result = reporter.publish_results_from_params(

@@ -43,7 +43,7 @@ def exb_publisher(
     builder = PageBuilder(title=title)
 
     if type_test == "smtp":
-        description = "Тестирование отправки электронной почты через SMTP. MTA - Exim4."
+        description = "Нагрузочное тестирование отправки электронной почты через SMTP. MTA - Exim4.\n"
         labels = [
             {"label": "number of successfully users get emails", "value": "0,2"},
             {"label": "average latency, ms", "value": "0,4"},
@@ -55,7 +55,7 @@ def exb_publisher(
             ]
 
     elif type_test == "imap":
-        description = "Тестирование чтения электронной почты через IMAP. MDA - Dovecot."
+        description = "Нагрузочное тестирование чтения электронной почты через IMAP. MDA - Dovecot.\n"
         labels = [
             {"label": "number of successfully", "value": "0,2"},
             {"label": "number of emails sent per second", "value": "0,8"},

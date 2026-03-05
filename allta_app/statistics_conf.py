@@ -36,4 +36,3 @@ statistics_conf = {
         "set_of_test_types": ['InitOnFree']
     }
 }
-# TODO 'segment fault'

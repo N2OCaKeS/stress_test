@@ -425,7 +425,7 @@ try:
                             elif tests[dates_list[i][1]] == 'InitOnFree':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {iof} {tes}', shell=True) 
-                            elif tests[dates_list[i][1]] == 'segmentation fault':
+                            elif tests[dates_list[i][1]] == 'SegFault':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)                                 
                             else: 
@@ -489,6 +489,7 @@ try:
                     tes = f'-tes {args.TESTENV}'
                     aovpn = '-vpn aovpncc'
                     iof = '-network iof'
+                    seg = '-kernel segfault'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -584,7 +585,7 @@ try:
                     elif tests[dates_list[i][1]] == 'InitOnFree':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {iof} {tes}', shell=True)
-                    elif tests[dates_list[i][1]] == 'segmentation fault':
+                    elif tests[dates_list[i][1]] == 'SegFault':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)                           
                     else: 

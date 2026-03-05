@@ -841,7 +841,7 @@ class LargeFio(CreateVM):
         total_rating_display = round(total_rating * 1000)
         print(f"LargeFio total rating: {total_rating_display}")
         with open(f'{TEMPLATE_PATH}/largefio_total_rating.txt', 'w') as w:
-            w.write(str(total_rating))
+            w.write(str(total_rating_display))
 
 
         # --- сохраняем HTML ---

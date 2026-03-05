@@ -15,7 +15,7 @@ statistics_conf = {
         "comparison_kernel_list": ['postgresql']
     },
     "Qemu/KVM/Libvirt": {
-        "set_of_test_types": ["FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm", "FIO_large"],
+        "set_of_test_types": ["FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm", "FIO large"],
         "comparison_list": [["steal time", "steal time-sm"]]
     },
     "UnixBench": {

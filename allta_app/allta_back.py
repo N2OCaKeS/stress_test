@@ -400,7 +400,7 @@ try:
                             elif tests[dates_list[i][1]] == 'FIO':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {fio} {tes}', shell=True)  
-                            elif tests[dates_list[i][1]] == 'FIO_large':
+                            elif tests[dates_list[i][1]] == 'FIO large':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {fio_large} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'vUnixBench':
@@ -556,7 +556,7 @@ try:
                     elif tests[dates_list[i][1]] == 'FIO':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {fio} {tes}', shell=True) 
-                    elif tests[dates_list[i][1]] == 'FIO_large':
+                    elif tests[dates_list[i][1]] == 'FIO large':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {fio_large} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'vUnixBench':

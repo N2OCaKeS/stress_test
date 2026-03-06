@@ -22,10 +22,25 @@ from numpy import where
 
 jira_url_api = "http://allta.devos.astralinux.ru/rest/api/get-jira-url"
 confluence_url_api = "http://allta.devos.astralinux.ru/rest/api/get-confluence-url"
-response_jira_url = requests.get(jira_url_api)
-response_confluence_url = requests.get(confluence_url_api)
-JIRA_URL = response_jira_url.text
-CONFLUENCE_URL = response_confluence_url.text
+JIRA_URL: str | None = None
+CONFLUENCE_URL: str | None = None
+
+
+def _ensure_urls() -> tuple[str, str]:
+    global JIRA_URL, CONFLUENCE_URL
+
+    if JIRA_URL and CONFLUENCE_URL:
+        return JIRA_URL, CONFLUENCE_URL
+
+    response_jira_url = requests.get(jira_url_api, timeout=10)
+    response_confluence_url = requests.get(confluence_url_api, timeout=10)
+    response_jira_url.raise_for_status()
+    response_confluence_url.raise_for_status()
+
+    # API может возвращать URL в кавычках/с переводом строки.
+    JIRA_URL = response_jira_url.text.strip().strip('"')
+    CONFLUENCE_URL = response_confluence_url.text.strip().strip('"')
+    return JIRA_URL, CONFLUENCE_URL
 
 
 def _get_duration(duration: int | float) -> str:
@@ -37,8 +52,9 @@ def _get_duration(duration: int | float) -> str:
 
 def _response() -> tuple[int | str, int | str]:
     try:
-        jira = requests.get(f"https://{JIRA_URL}").status_code
-        life = requests.get(f"https://{CONFLUENCE_URL}").status_code
+        jira_url, confluence_url = _ensure_urls()
+        jira = requests.get(f"https://{jira_url}", timeout=10).status_code
+        life = requests.get(f"https://{confluence_url}", timeout=10).status_code
         return jira, life
     except Exception as e:
         jira, life = str(type(e).__name__), str(e)
@@ -214,14 +230,15 @@ class _ZefirStatusAPI:
         self.__test_case_name = test_case_name
         self.__result_code = result_code
 
+        jira_url, _ = _ensure_urls()
         self.headers = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0",
-            "authority": JIRA_URL,
+            "authority": jira_url,
             "Authorization": self.__basic,
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
             "Accept-Encoding": "gzip, deflate, br",
-            "Referer": f"https://{JIRA_URL}/secure/Tests.jspa",
+            "Referer": f"https://{jira_url}/secure/Tests.jspa",
             "X-Requested-With": "XMLHttpRequest",
             "jira-project-id": "11200",
             "Connection": "keep-alive",
@@ -240,7 +257,8 @@ class _ZefirStatusAPI:
     def test_case_dates(
         self, test_cycle_id: int | str
     ) -> tuple[list[Any], list[Any], list[Any]]:
-        self.url_test_cycle = f"""https://{JIRA_URL}/rest/tests/1.0/testrun/{test_cycle_id}/testrunitems?fields=id,
+        jira_url, _ = _ensure_urls()
+        self.url_test_cycle = f"""https://{jira_url}/rest/tests/1.0/testrun/{test_cycle_id}/testrunitems?fields=id,
                             index,issueCount,$lastTestResult
                         """
         self.response_test_cycle = requests.get(
@@ -272,19 +290,20 @@ class _ZefirStatusAPI:
     "-------------------------------------------------------------------------------------------------------------------------------"
 
     def upload_status(self, result_status: int) -> None:
-        url = f"https://{JIRA_URL}/rest/tests/1.0/testresult"
+        jira_url, _ = _ensure_urls()
+        url = f"https://{jira_url}/rest/tests/1.0/testresult"
         headers1 = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0",
-            "authority": JIRA_URL,
+            "authority": jira_url,
             "Authorization": self.__basic,
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
             "Accept-Encoding": "gzip, deflate, br",
-            "Referer": f"https://{JIRA_URL}/secure/Tests.jspa",
+            "Referer": f"https://{jira_url}/secure/Tests.jspa",
             "X-Requested-With": "XMLHttpRequest",
             "Content-Type": "application/json;charset=utf-8",
             "jira-project-id": "11200",
-            "Origin": f"https://{JIRA_URL}",
+            "Origin": f"https://{jira_url}",
             "Connection": "keep-alive",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
@@ -317,7 +336,8 @@ class _ZefirStatusAPI:
         print(response.status_code)
 
     def dates_test_cycle(self) -> list[dict[str, Any]]:
-        url_list_test_cycles = f"""https://{JIRA_URL}/rest/tests/1.0/testrun/search?fields=id,key,name,folderId,iterationId,
+        jira_url, _ = _ensure_urls()
+        url_list_test_cycles = f"""https://{jira_url}/rest/tests/1.0/testrun/search?fields=id,key,name,folderId,iterationId,
                                 projectVersionId,environmentId,userKeys,environmentIds,plannedStartDate,plannedEndDate,executionTime,
                                 estimatedTime,testResultStatuses,testCaseCount,issueCount,status(id,name,i18nKey,color),
                                 customFieldValues,createdOn,createdBy,updatedOn,updatedBy,
@@ -437,7 +457,8 @@ class _ZefirResultTable:
             filter_url = f"%27%2Fstress_test%27,%27%2Fstress_test%2F{pt_version}%27"
 
         # Делаем get запрос в jira
-        matrix_url = f"""https://{JIRA_URL}/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
+        jira_url, confluence_url = _ensure_urls()
+        matrix_url = f"""https://{jira_url}/rest/tests/1.0/reports/testresults/matrix/testrun?displayUnit=COUNT&epicJQL=&jql=&
                         period=MONTH&projectId=11200&scorecardOption=EXECUTION_RESULTS&tql=testResult.projectId+IN+(11200)+AND+testRun.
                         folderName+IN+({filter_url})&traceabilityCustomTreeDisplayOption=
                         CONDENSED&traceabilityMatrixOption=COVERAGE_TEST_CASES&traceabilityReportOption=COVERAGE_TEST_CASES&traceability
@@ -445,7 +466,7 @@ class _ZefirResultTable:
                         """
         headers = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0",
-            "authority": JIRA_URL,
+            "authority": jira_url,
             "Authorization": self.__basic,
             "accept": "application/json, text/plain, */*",
         }
@@ -678,7 +699,7 @@ class _ZefirResultTable:
 
         # Выкладываем на лайф
         confluence = Confluence(
-            url=f"https://{CONFLUENCE_URL}",
+            url=f"https://{confluence_url}",
             username=self.__username,
             token=self.__token,
         )

@@ -22,7 +22,9 @@ EOF
 
 
 
-if test "$(grep 1.8 /etc/astra_version)"; then
+#if test "$(grep 1.8 /etc/astra_version)"; then
+### С 1.7.10 используется docker-compose-v2
+if grep -q '1.8' /etc/astra_version || grep -qE '^(1\.7\.[1-9][0-9]+)$' /etc/astra_version; then
   COMPOSE_CMD="docker compose"
   COMPOSE_VERS="docker-compose-v2"
 else

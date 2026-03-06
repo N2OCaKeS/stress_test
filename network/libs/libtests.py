@@ -206,19 +206,20 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
             },
         }
 
-        iperf_load_iof_on = {
+        iperf_start = {
             'testvm1': {
                 'start_iperf_server': {
                     'command': 'iperf -s',
-                    'signal set': 'start server',
                     'nowait': True,
                     'nowait_mode': 'continue'
                 },
             },
+        }
+
+        iperf_load_iof_on = {
             'testvm2': {
                 'wait_server': {
                     'command': 'sleep 5',
-                    'signal get': ['testvm1', 'start server'],
                     'signal set': 'sleep',
                 },
                 'iperf_load': {
@@ -230,18 +231,9 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         }
 
         iperf_load_iof_off = {
-            'testvm1': {
-                'start_iperf_server': {
-                    'command': 'iperf -s',
-                    'signal set': 'start server',
-                    'nowait': True,
-                    'nowait_mode': 'continue'
-                },
-            },
             'testvm2': {
                 'wait_server': {
                     'command': 'sleep 5',
-                    'signal get': ["testvm1", 'start server'],
                     'signal set': 'sleep',
                 },
                 'iperf_load': {
@@ -253,15 +245,18 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         }
 
         
-        print(f"\n\n\nЗапускаем тест c init_on_free=on")
+        print("\n\n\nЗапускаем тест c init_on_free=on")
+
+        self.provider.execute(commands=iperf_start, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         for i in range(ITERATIONS):
             print(f'Итерация №{i}')
             self.provider.execute(commands=iperf_load_iof_on, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         
-        print(f"\n\n\nЗапускаем тест c init_on_free=off")
+        print("\n\n\nЗапускаем тест c init_on_free=off")
         print('Отключение опции init_on_free')
         self.provider.execute(commands=init_on_free_off, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
-        print(f'Итерация №{i}')
+        self.provider.execute(commands=iperf_start, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)        
+        print('Итерация №{i}')
         for i in range(ITERATIONS):
             self.provider.execute(commands=iperf_load_iof_off, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
                 

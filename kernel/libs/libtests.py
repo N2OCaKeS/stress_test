@@ -186,7 +186,7 @@ class Sigmentation_fault(CreateVM):
         init_on_free_on = {
             'testvm1': {
                 'init_on_free_off': {
-                    'command': """sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=1 transparent_hugepage=never"/' /etc/default/grub""",
+                    'command': r"""sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=1 transparent_hugepage=never"/' /etc/default/grub""",
                     'signal set': 'sed command',
                 },
                 'update grub': {
@@ -207,7 +207,7 @@ class Sigmentation_fault(CreateVM):
                     'signal set': 'dd xfsfile'
                 },
                 'mkfs_xfs': {
-                    'command': 'mkfs.xfs -f xfs.file',
+                    'command': 'sudo mkfs.xfs -f xfs.file',
                     'signal get': 'dd xfsfile',
                     'signal set': 'mkfs xfs',
                 },
@@ -217,7 +217,7 @@ class Sigmentation_fault(CreateVM):
                     'signal set': 'mkdir xfs'
                 },
                 'mount': {
-                    'command': 'mount -t xfs xfs.file xfs.mnt',
+                    'command': 'sudo mount -t xfs xfs.file xfs.mnt',
                     'signal get': 'mkdir xfs',
                     'signal set': 'mount xfs'
                 },
@@ -226,8 +226,8 @@ class Sigmentation_fault(CreateVM):
 
         xfs_fill_out_file = {
             'testvm1': {
-                'dd': {
-                    'command': "dd if=/dev/zero bs=4096 count=100 | tr '\0' '\1' > xfs.mnt/test_file",
+                'dd_test_file': {
+                    'command': "sudo bash -c \"dd if=/dev/zero bs=4096 count=100 | tr '\0' '\1' > /home/u/xfs.mnt/test_file\"",
                 }
             }
         }
@@ -269,8 +269,13 @@ class Sigmentation_fault(CreateVM):
 
         start_test1_and_fill = {
             'testvm1': {
+                'compile_test1': {
+                    'command': 'gcc -o /home/u/test1 /home/u/test1.c',
+                    'signal set': 'compile test1'
+                },
                 'test1': {
-                    'command': './test1 > test1_output.txt',
+                    'command': '/home/u/test1 > /home/u/test1_output.txt',
+                    'signal get': 'compile test1',
                     'signal set': 'test1 start',
                     'nowait': True,
                     'nowait_mode': 'terminate',
@@ -290,14 +295,14 @@ class Sigmentation_fault(CreateVM):
         start_test2_and_fill = {
             'testvm1': {
                 'test1': {
-                    'command': 'python3 test2.py',
+                    'command': 'sudo python3 test2.py',
                     'signal set': 'test2 start',
                     'nowait': True,
                     'nowait_mode': 'terminate',
                     'nowait_timeout': 310
                 },
                 'fill': {
-                    'command': 'python3 fill.py',
+                    'command': 'sudo python3 fill.py',
                     'signal get': 'test2 start',
                     'signal set': 'fill start',
                     'nowait': True,

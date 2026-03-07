@@ -119,8 +119,8 @@ if args.TESTNAME == 'iof':
 
     kernel_network.prepare_vms()
     kernel_network.start_test()
-    kernel_network.vms_destroy()
     kernel_network.results_processing()
+    kernel_network.vms_destroy()    
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())

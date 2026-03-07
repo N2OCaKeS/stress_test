@@ -192,7 +192,7 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         init_on_free_off = {
             'g_all': {
                 'init_on_free_off': {
-                    'command': """sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=off"/' /etc/default/grub""",
+                    'command': r"""sudo sed -i -E 's/^(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*)"/\1 init_on_free=off"/' /etc/default/grub""",
                     'signal set': 'sed command',
                 },
                 'update grub': {

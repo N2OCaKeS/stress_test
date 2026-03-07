@@ -12,6 +12,9 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 from os import path, remove
+from pathlib import Path
+from shutil import rmtree
+from tempfile import mkdtemp
 from time import ctime, sleep
 from typing import Any
 
@@ -607,7 +610,16 @@ class _ZefirResultTable:
             + [x for x in self.new_tab.columns[4:].sort_values() if x in self.new_tab]
         ]
         self.new_tab = self.new_tab.T
-        self.new_tab.to_html("res.html", header=False)
+        runtime_dir = Path(mkdtemp(prefix="allta_zefir_"))
+        templates_dir = runtime_dir / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+
+        res_html_path = runtime_dir / "res.html"
+        result_html_path = runtime_dir / "result.html"
+        times_template_path = templates_dir / "times.html"
+        stand_template_path = templates_dir / "stand.html"
+
+        self.new_tab.to_html(res_html_path, header=False)
 
         # Создаем новую html страницу
         html_string = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>{text}</b></h3></p>'
@@ -617,33 +629,33 @@ class _ZefirResultTable:
         response_stand = requests.get(stand_url)
 
         if response_times.status_code == 200:
-            with open("./templates/times.html", "wb") as tfb:
+            with open(times_template_path, "wb") as tfb:
                 tfb.write(response_times.content)
         else:
-            with open("./templates/times.html", "w") as f:
+            with open(times_template_path, "w", encoding="utf-8") as f:
                 err_text = (
                     f"Failed to get file from {times_url}: {response_times.status_code}"
                 )
                 f.write(html_string.format(text=err_text))
         if response_stand.status_code == 200:
-            with open("./templates/stand.html", "wb") as sfb:
+            with open(stand_template_path, "wb") as sfb:
                 sfb.write(response_stand.content)
         else:
-            with open("./templates/stand.html", "w") as f:
+            with open(stand_template_path, "w", encoding="utf-8") as f:
                 err_text = (
                     f"Failed to get file from {stand_url}: {response_stand.status_code}"
                 )
                 f.write(html_string.format(text=err_text))
 
-        with open("res.html", "r") as r:
+        with open(res_html_path, "r", encoding="utf-8") as r:
             html_table = r.readlines()
-        with open("./templates/stand.html", "r") as r:
+        with open(stand_template_path, "r", encoding="utf-8") as r:
             stand = r.read()
-        with open("./templates/times.html", "r") as r:
+        with open(times_template_path, "r", encoding="utf-8") as r:
             times = r.read()
 
         def write_html(string: str) -> None:
-            with open("result.html", "a") as w:
+            with open(result_html_path, "a", encoding="utf-8") as w:
                 w.write(string)
 
         write_html(
@@ -704,7 +716,7 @@ class _ZefirResultTable:
             token=self.__token,
         )
 
-        with open("result.html", "r") as r:
+        with open(result_html_path, "r", encoding="utf-8") as r:
             table = r.read()
         # print(table)
 
@@ -781,10 +793,7 @@ class _ZefirResultTable:
             table,
         )
 
-        if path.isfile("res.html"):
-            remove("res.html")
-        if path.isfile("result.html"):
-            remove("result.html")
+        rmtree(runtime_dir, ignore_errors=True)
         # with open('result_file_path.txt', 'r') as r:
         #    rfp = r.read()
         # if path.isfile(rfp):

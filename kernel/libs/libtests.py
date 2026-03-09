@@ -369,7 +369,7 @@ class Sigmentation_fault(CreateVM):
                 },
                 {
                     "mode": "pull",
-                    "path_hots": VM_TEST2_OUTPUT,
+                    "path_host": VM_TEST2_OUTPUT,
                     "path_vm": "/home/u/test2_output.txt"
                 }
             ]

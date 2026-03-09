@@ -310,7 +310,7 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
                 return 'NaN'
 
          # Обработка результатов
-        print(f"\n\n\nОбработка результатов")
+        print("\n\n\nОбработка результатов")
 
         if path.exists(f'{BASE_PATH}/{IOF_ON_NAME}'):
             with open(f'{BASE_PATH}/{IOF_ON_NAME}') as r:
@@ -375,12 +375,12 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
             "testvm1": [
                 {
                     "mode": "pull",
-                    "path_host": VM_OS_INFO_PATH,
+                    "path_host": VM_OS_INFO_PATH + "/av.txt",
                     "path_vm": "/home/u/av.txt",
                 },
                 {
                     "mode": "pull",
-                    "path_host": VM_OS_INFO_PATH,
+                    "path_host": VM_OS_INFO_PATH + "/kernel.txt",
                     "path_vm": "/home/u/kernel.txt",
                 },                
             ]

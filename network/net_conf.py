@@ -22,10 +22,7 @@ PASSWORD = "1"
 # Base params
 # Create dir if not created
 VM_OS_INFO_PATH = f"{BASE_PATH}/vm_info"
-if Path(VM_OS_INFO_PATH).is_dir:
-    pass
-else:
-    os.mkdir(VM_OS_INFO_PATH, mode=777)
+Path(VM_OS_INFO_PATH).mkdir(mode=0o777, exist_ok=True)
 VM_INFONAME = f'{VM_OS_INFO_PATH}/av.txt'
 VM_KERNEL = f'{VM_OS_INFO_PATH}/kernel.txt'
 

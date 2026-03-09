@@ -221,16 +221,22 @@ class Sigmentation_fault(CreateVM):
                     'signal get': 'mkdir xfs',
                     'signal set': 'mount xfs'
                 },
-            }
-        }
-
-        xfs_fill_out_file = {
-            'testvm1': {
                 'dd_test_file': {
-                    'command': "sudo bash -c \"dd if=/dev/zero bs=4096 count=100 | tr '\0' '\1' > /home/u/xfs.mnt/test_file\"",
+                    'command': "dd if=/dev/zero bs=4096 count=100 | tr '\\0' '\\1' | sudo tee /home/u/xfs.mnt/test_file",
+                    'signal get': 'mount xfs',
+                    'signal set': 'dd testfile'
                 }
             }
         }
+
+        # xfs_fill_out_file = {
+        #     'testvm1': {
+        #         'dd_test_file': {
+        #             'command': "sudo bash -c \"dd if=/dev/zero bs=4096 count=100 | tr '\0' '\1' > /home/u/xfs.mnt/test_file\"",
+        #             'signal set': 'dd testfile'
+        #         }
+        #     }
+        # }
 
         scp_test_files = {
             "testvm1": [
@@ -254,11 +260,11 @@ class Sigmentation_fault(CreateVM):
                     "path_host": f'{BASE_PATH}/fill.py',
                     "path_vm": '/home/u/fill.py'
                 },
-                {
-                    "mode": "push",
-                    "path_host": f'{BASE_PATH}/test1.py',
-                    "path_vm": '/home/u/test1.py'
-                },
+                # {
+                #     "mode": "push",
+                #     "path_host": f'{BASE_PATH}/test1.py',
+                #     "path_vm": '/home/u/test1.py'
+                # },
                 {
                     "mode": "push",
                     "path_host": f'{BASE_PATH}/test2.py',
@@ -312,13 +318,23 @@ class Sigmentation_fault(CreateVM):
             }
         }
 
+        chown_test2_output = {
+            'testvm1': {
+                'chown': {
+                    'command': 'sudo chown u:u /home/u/test2_output.txt',
+                    'signal set': 'chown test2 output',
+                }
+            }
+        }
+
 
         print('Включение опции init_on_free')
         self.provider.execute(commands=init_on_free_on, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
         print('Подготовка xfs')
         self.provider.execute(commands=xfs_create, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
-        self.provider.execute(commands=xfs_fill_out_file, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        # self.provider.execute(commands=xfs_fill_out_file, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
 
         print("Перенос тестовых файлов")
         self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)         
@@ -327,10 +343,12 @@ class Sigmentation_fault(CreateVM):
 
         self.provider.execute(commands=start_test1_and_fill, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         self.provider.execute(commands=start_test2_and_fill, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        self.provider.execute(commands=chown_test2_output, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         print("\n\n\nТест завершен\n\n\n")
 
     def results_processing(self):
 
+        sleep(120)
         print("\n\n\nЗабираем данные о ОС с ВМ\n\n\n")
         scp_vm_params = {
             "testvm1": [

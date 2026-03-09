@@ -290,6 +290,7 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
         body=builder,
         attachments=builder.attachments,
         create_tree=True,  # global -> detailed -> more
+        debug=False,
     )
     print(publish_result)  # {"page_id": "...", "release_page_id": "..."}
     ```
@@ -306,8 +307,10 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
 3. Создайте клиент `ConfluencePublisher` с `base_url`, `username` и `token` (или `password`).
 4. Вызовите `publish_results_from_params(...)`:
    - `create_tree=True` публикует отчет в дерево версий (`global -> detailed -> more`) и возвращает `page_id` + `release_page_id`.
+   - `debug=False` (по умолчанию): корень дерева берётся из зашитого `root parent page id` библиотеки.
+   - `debug=True`: корень дерева определяется автоматически как homepage указанного `conf_space` (удобно для personal space).
    - если задан `conf_parent_page`, под каждой версией создаётся контейнер `STRESS_report <version> ⬝ <conf_parent_page>` с макросом `children`, а сам отчет публикуется дочерней страницей `conf_new_page_name`.
-   - `create_tree=False` публикует только одну страницу под `conf_parent_page` (или в корень space).
+   - `create_tree=False` публикует только одну страницу под `conf_parent_page` (или под корневой parent текущего режима, если `conf_parent_page` не задан).
 5. Передавайте в `body` именно объект `PageBuilder` (метод сам вызовет `render()` внутри).
 
 Максимально подробный пример (используются все публичные методы `PageBuilder`):
@@ -475,6 +478,7 @@ result = publisher.publish_results_from_params(
     attachments=builder.attachments,  # @property attachments
     attachments_dir=artifacts_dir,  # дополнительные файлы из каталога
     create_tree=True,
+    debug=False,
 )
 print(result)
 ```

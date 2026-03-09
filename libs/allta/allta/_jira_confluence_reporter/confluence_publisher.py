@@ -62,6 +62,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Iterable, Sequence, Any, List, Dict, cast, TYPE_CHECKING, Tuple, Callable, TypeVar
+from urllib.parse import quote
 
 if TYPE_CHECKING:  # for type hints only
     from .page_builder import PageBuilder
@@ -84,6 +85,10 @@ class ConfluencePublisher:
     _ZWSP: str = "\u200B"  # zero-width space: 0
     _ZWNJ: str = "\u200C"  # zero-width non-joiner: 1
     _WJ: str = "\u2060"    # word joiner: рамка суффикса
+
+    # Корневой контейнер для production-публикации (debug=False).
+    # Внешним параметром не переопределяется.
+    _DEFAULT_ROOT_PARENT_PAGE_ID: str = "488389814"
 
     def __init__(
         self,
@@ -329,6 +334,46 @@ class ConfluencePublisher:
             action=f"Поиск страницы '{title}' в пространстве '{space}'",
             func=_fetch_page_id,
         )
+
+    def _get_space_homepage_id(self, *, space: str) -> str | None:
+        """
+        Возвращает id домашней страницы space.
+
+        Используется в debug-режиме как корень дерева публикации.
+        """
+        space_key = quote(space, safe="")
+
+        def _fetch_homepage_id() -> str | None:
+            payload = self._client.get(f"rest/api/space/{space_key}?expand=homepage")
+            if isinstance(payload, dict):
+                homepage = payload.get("homepage")
+                if isinstance(homepage, dict) and homepage.get("id"):
+                    return str(homepage["id"])
+            return None
+
+        return self._retry_confluence_call(
+            action=f"Получение homepage для space '{space}'",
+            func=_fetch_homepage_id,
+        )
+
+    def _resolve_publish_root_parent_id(self, *, space: str, debug: bool) -> str:
+        """
+        Определяет корневой parent_id для публикации.
+
+        - debug=True: корень = homepage указанного space (обычно personal space).
+        - debug=False: корень = зашитый production parent page id.
+        """
+        if debug:
+            homepage_id = self._get_space_homepage_id(space=space)
+            if not homepage_id:
+                raise ValueError(
+                    f"Не удалось определить homepage для space '{space}' в debug-режиме."
+                )
+            return homepage_id
+
+        if not self._DEFAULT_ROOT_PARENT_PAGE_ID.isdigit():
+            raise ValueError("_DEFAULT_ROOT_PARENT_PAGE_ID должен содержать только цифры.")
+        return self._DEFAULT_ROOT_PARENT_PAGE_ID
 
     def _ensure_page_by_effective_title(
         self,
@@ -838,6 +883,7 @@ class ConfluencePublisher:
         attachments_dir: Path | str | None = None,
         attachments: Sequence[str | Path] | None = None,
         create_tree: bool = True,
+        debug: bool = False,
     ) -> Dict[str, str | None]:
         """
         Публикует результат теста, строя дерево версий и публикуя страницы.
@@ -867,7 +913,12 @@ class ConfluencePublisher:
                     - release_page_id: "последняя" страница ветки (branch), которая перезаписывается
                 Если False — не создаёт версионные контейнеры, публикует только:
                     - parent (если задан) как контейнер с макросом children
-                    - страницу отчёта под parent (или на корне space если parent не задан)
+                    - страницу отчёта под parent (или на корневом parent библиотеки если parent не задан)
+            debug (bool):
+                Режим публикации:
+                    - True: корень дерева определяется автоматически как homepage указанного ``conf_space``
+                      (удобно для personal space).
+                    - False: используется зашитый root parent page id библиотеки.
 
         Returns:
             dict[str, str | None]:
@@ -887,6 +938,14 @@ class ConfluencePublisher:
         page_visible = self._normalize(conf_new_page_name)
         if not page_visible:
             raise ValueError("conf_new_page_name не должен быть пустым")
+
+        root_parent_id = self._resolve_publish_root_parent_id(
+            space=space,
+            debug=debug,
+        )
+        self._log(
+            f"Базовый родитель для дерева: page_id={root_parent_id} (debug={'on' if debug else 'off'})"
+        )
 
         self._log(f"Запуск публикации '{page_visible}' в пространство '{space}'")
 
@@ -920,7 +979,7 @@ class ConfluencePublisher:
             else:
                 self._log("create_tree=False: пропускаю создание версионного дерева")
 
-            parent_id: str | None = None
+            parent_id: str | None = root_parent_id
             if parent_visible:
                 token_parent = self._token(
                     kind="STRESS_REPORT",
@@ -932,7 +991,7 @@ class ConfluencePublisher:
                 parent_id = self._ensure_container_page(
                     space=space,
                     effective_title=eff_parent,
-                    parent_id=None,
+                    parent_id=root_parent_id,
                 )
 
             token_page = self._token(
@@ -974,7 +1033,11 @@ class ConfluencePublisher:
                 visible_title=global_title,
             )
             eff_global = self._with_hidden_suffix(global_title, token_global)
-            global_id = self._ensure_container_page(space=space, effective_title=eff_global, parent_id=None)
+            global_id = self._ensure_container_page(
+                space=space,
+                effective_title=eff_global,
+                parent_id=root_parent_id,
+            )
 
             # 2) branch: STRESS_REPORT
             token_branch = self._token(

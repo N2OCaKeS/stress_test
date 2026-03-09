@@ -536,6 +536,8 @@ ConfluencePublisher
 * ``attachments``: Sequence[str|Path]|None — дополнительные вложения
   Можно передать ``builder.attachments`` (список, собранный из add_attachment/add_gallery).
 * ``create_tree``: bool — строить версионное дерево (default True)
+* ``debug``: bool — режим публикации:
+  ``False`` — под зашитым root parent библиотеки, ``True`` — под homepage ``conf_space``
 
 Поведение:
 
@@ -578,6 +580,7 @@ ConfluencePublisher
         body=builder,
         attachments_dir="/tmp/report",
         create_tree=True,
+        debug=False,
     )
 
     print(result)

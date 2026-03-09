@@ -65,6 +65,7 @@ ConfluencePublisher
         body=builder,
         attachments=[*builder.attachments],
         create_tree=True,
+        debug=False,
     )
 
     # publish_result == {"page_id": "...", "release_page_id": "..."}
@@ -76,7 +77,14 @@ ConfluencePublisher
 Будет опубликовано только:
 
 * контейнер ``conf_parent_page`` (если задан) — с макросом ``children``
-* страница отчёта под ``conf_parent_page`` (если задан), иначе в корень space
+* страница отчёта под ``conf_parent_page`` (если задан), иначе под корневой parent режима
+
+Режимы публикации
+-----------------
+
+* ``debug=False`` (по умолчанию): используется зашитый в библиотеке root parent page id.
+* ``debug=True``: root parent определяется автоматически как homepage указанного ``conf_space``
+  (подходит для personal space).
 
 Структура создаваемых страниц при ``create_tree=True``
 ------------------------------------------------------
@@ -195,7 +203,7 @@ API
   - **files** (*Iterable[Path | str]*): список/итератор путей к файлам.
 
 ------------------------------------------------------------------------------------------------
-``publish_results_from_params(*, conf_space: str, conf_parent_page: str | None, conf_new_page_name: str, test_cycle_version: str | None, body: PageBuilder, attachments_dir: Path | str | None = None, attachments: Sequence[str | Path] | None = None, create_tree: bool = True) -> dict[str, str | None]``
+``publish_results_from_params(*, conf_space: str, conf_parent_page: str | None, conf_new_page_name: str, test_cycle_version: str | None, body: PageBuilder, attachments_dir: Path | str | None = None, attachments: Sequence[str | Path] | None = None, create_tree: bool = True, debug: bool = False) -> dict[str, str | None]``
 ------------------------------------------------------------------------------------------------
 
 Публикует результат теста, создавая версионное дерево (если включено) и публикуя:
@@ -216,6 +224,8 @@ API
   - **attachments_dir** (*Path | str | None*): каталог вложений (все файлы будут прикреплены).
   - **attachments** (*Sequence[str | Path] | None*): дополнительные вложения.
   - **create_tree** (*bool*): создавать ли версионное дерево страниц.
+  - **debug** (*bool*): режим публикации. ``False`` — под зашитым root parent page id,
+    ``True`` — под homepage указанного ``conf_space``.
 
 :Возвращает:
   - *dict[str, str | None]*:

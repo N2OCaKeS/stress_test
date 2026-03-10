@@ -17,10 +17,12 @@ STRESS ⬝ <global>
   └─ STRESS_report ⬝ <branch>
        ├─ STRESS_report ⬝ <full>
        │    └─ STRESS_report <full> ⬝ <parent>
+       │         └─ <page>
        └─ STRESS_report <branch> ⬝ <parent>
+            └─ <page>
 
 Где ``<branch>`` — "релизная" версия ветки, а ``<full>`` — полная версия прогона.
-Страница ``STRESS_report <branch> ⬝ <parent>`` всегда обновляется и хранит последний прогон ветки.
+Контейнер ``STRESS_report <branch> ⬝ <parent>`` всегда обновляется и хранит последний прогон ветки.
 
 Где:
 - global = первые 2 числовых сегмента версии (например, 1.8)
@@ -48,7 +50,7 @@ Confluence не позволяет иметь две страницы с оди�
 4) Переименование вложений в branch-ветке
 ----------------------------------------
 Если имя вложения содержит full-версию, для страницы
-``STRESS_report <branch> ⬝ <parent>`` создаётся временная копия
+``<page>`` в branch-ветке создаётся временная копия
 с заменой ``full -> branch``.
 """
 
@@ -57,13 +59,17 @@ from __future__ import annotations
 import hashlib
 import shutil
 import tempfile
+import time
 from pathlib import Path
-from typing import Iterable, Sequence, Any, List, Dict, cast, TYPE_CHECKING, Tuple
+from typing import Iterable, Sequence, Any, List, Dict, cast, TYPE_CHECKING, Tuple, Callable, TypeVar
+from urllib.parse import quote
 
 if TYPE_CHECKING:  # for type hints only
     from .page_builder import PageBuilder
 
 from atlassian import Confluence
+
+T = TypeVar("T")
 
 
 class ConfluencePublisher:
@@ -80,6 +86,10 @@ class ConfluencePublisher:
     _ZWNJ: str = "\u200C"  # zero-width non-joiner: 1
     _WJ: str = "\u2060"    # word joiner: рамка суффикса
 
+    # Корневой контейнер для production-публикации (debug=False).
+    # Внешним параметром не переопределяется.
+    _DEFAULT_ROOT_PARENT_PAGE_ID: str = "488389814"
+
     def __init__(
         self,
         *,
@@ -87,6 +97,8 @@ class ConfluencePublisher:
         username: str,
         password: str | None = None,
         token: str | None = None,
+        publish_retry_interval: int = 180,
+        publish_retry_timeout: int = 1800,
     ) -> None:
         """
         Создаёт подключение к Confluence.
@@ -101,11 +113,20 @@ class ConfluencePublisher:
                 Пароль пользователя.
             token (str | None):
                 API token, если используется.
+            publish_retry_interval (int):
+                Интервал между повторами публикации в секундах.
+            publish_retry_timeout (int):
+                Общий таймаут повторов публикации в секундах.
 
         Raises:
             ValueError:
                 Если не указаны пароль и токен одновременно.
+                Если параметры ретраев заданы некорректно.
         """
+        if publish_retry_interval <= 0:
+            raise ValueError("publish_retry_interval must be greater than 0")
+        if publish_retry_timeout < 0:
+            raise ValueError("publish_retry_timeout must be greater than or equal to 0")
         if not base_url.startswith("http"):
             base_url = f"https://{base_url}"
         auth_kwargs: Dict[str, Any] = {"url": base_url, "username": username}
@@ -116,6 +137,8 @@ class ConfluencePublisher:
         else:
             raise ValueError("Either password or token must be provided")
         self._client: Confluence = Confluence(**auth_kwargs)
+        self._publish_retry_interval = publish_retry_interval
+        self._publish_retry_timeout = publish_retry_timeout
 
     # ------------------------------------------------------------------
     def _log(self, message: str) -> None:
@@ -126,6 +149,47 @@ class ConfluencePublisher:
             message (str): Сообщение для вывода.
         """
         print(f"[ConfluencePublisher] {message}")
+
+    def _retry_confluence_call(self, *, action: str, func: Callable[[], T]) -> T:
+        """
+        Выполняет вызов Confluence API с повторами при временных ошибках.
+
+        Первая попытка выполняется сразу. При ошибке вызов повторяется через
+        ``publish_retry_interval`` секунд, пока не истечёт
+        ``publish_retry_timeout``.
+
+        Args:
+            action (str): Краткое описание действия для логов.
+            func (Callable[[], T]): Функция, выполняющая один вызов.
+
+        Returns:
+            T: Результат func().
+
+        Raises:
+            Exception: Последняя ошибка func(), если таймаут исчерпан.
+        """
+        deadline = time.monotonic() + self._publish_retry_timeout
+        attempt = 1
+
+        while True:
+            try:
+                return func()
+            except Exception as exc:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._log(
+                        f"{action}: попытка {attempt} завершилась ошибкой, "
+                        f"таймаут повторов {self._publish_retry_timeout} сек исчерпан: {exc!r}"
+                    )
+                    raise
+
+                sleep_for = min(float(self._publish_retry_interval), max(remaining, 0.0))
+                self._log(
+                    f"{action}: попытка {attempt} завершилась ошибкой: {exc!r}. "
+                    f"Повтор через {int(sleep_for)} сек, осталось {int(max(remaining, 0.0))} сек"
+                )
+                time.sleep(sleep_for)
+                attempt += 1
 
     def _normalize(self, s: str | None) -> str | None:
         """
@@ -181,14 +245,14 @@ class ConfluencePublisher:
 
     def _with_hidden_suffix(self, visible_title: str, token: str) -> str:
         """
-        Возвращает "effective title": видимый заголовок + невидимый суффикс.
+        Возвращает effective title без добавления невидимого суффикса.
 
         Args:
             visible_title (str): Заголовок, который будет "виден" пользователю.
-            token (str): Токен для генерации суффикса.
+            token (str): Не используется (оставлен для обратной совместимости сигнатуры).
 
         Returns:
-            str: Заголовок для сохранения в Confluence (unique).
+            str: Заголовок для сохранения в Confluence.
 
         Raises:
             ValueError: Если visible_title пустой.
@@ -196,7 +260,7 @@ class ConfluencePublisher:
         v = self._normalize(visible_title)
         if not v:
             raise ValueError("title не должен быть пустым")
-        return v + self._hidden_suffix(token)
+        return v
 
     def _is_three_part_numeric_version(self, version: str) -> bool:
         """
@@ -262,11 +326,54 @@ class ConfluencePublisher:
         Returns:
             str | None: Идентификатор страницы или None.
         """
-        try:
+        def _fetch_page_id() -> str | None:
             pid = self._client.get_page_id(space=space, title=title)
             return str(pid) if pid else None
-        except Exception:
+
+        return self._retry_confluence_call(
+            action=f"Поиск страницы '{title}' в пространстве '{space}'",
+            func=_fetch_page_id,
+        )
+
+    def _get_space_homepage_id(self, *, space: str) -> str | None:
+        """
+        Возвращает id домашней страницы space.
+
+        Используется в debug-режиме как корень дерева публикации.
+        """
+        space_key = quote(space, safe="")
+
+        def _fetch_homepage_id() -> str | None:
+            payload = self._client.get(f"rest/api/space/{space_key}?expand=homepage")
+            if isinstance(payload, dict):
+                homepage = payload.get("homepage")
+                if isinstance(homepage, dict) and homepage.get("id"):
+                    return str(homepage["id"])
             return None
+
+        return self._retry_confluence_call(
+            action=f"Получение homepage для space '{space}'",
+            func=_fetch_homepage_id,
+        )
+
+    def _resolve_publish_root_parent_id(self, *, space: str, debug: bool) -> str:
+        """
+        Определяет корневой parent_id для публикации.
+
+        - debug=True: корень = homepage указанного space (обычно personal space).
+        - debug=False: корень = зашитый production parent page id.
+        """
+        if debug:
+            homepage_id = self._get_space_homepage_id(space=space)
+            if not homepage_id:
+                raise ValueError(
+                    f"Не удалось определить homepage для space '{space}' в debug-режиме."
+                )
+            return homepage_id
+
+        if not self._DEFAULT_ROOT_PARENT_PAGE_ID.isdigit():
+            raise ValueError("_DEFAULT_ROOT_PARENT_PAGE_ID должен содержать только цифры.")
+        return self._DEFAULT_ROOT_PARENT_PAGE_ID
 
     def _ensure_page_by_effective_title(
         self,
@@ -299,7 +406,14 @@ class ConfluencePublisher:
         if existing:
             if update_if_exists:
                 self._log(f"Обновляю страницу '{effective_title}' (id={existing})")
-                self._client.update_page(page_id=existing, title=effective_title, body=body)
+                self._retry_confluence_call(
+                    action=f"Обновление страницы '{effective_title}' (id={existing})",
+                    func=lambda: self._client.update_page(
+                        page_id=existing,
+                        title=effective_title,
+                        body=body,
+                    ),
+                )
             else:
                 self._log(f"Страница '{effective_title}' уже существует (id={existing}), пропускаю")
             return existing
@@ -308,23 +422,31 @@ class ConfluencePublisher:
             f"Создаю страницу '{effective_title}' в пространстве '{space}'"
             f"{f' под parent_id={parent_id}' if parent_id else ''}"
         )
-        result = self._client.create_page(
-            space=space,
-            title=effective_title,
-            body=body,
-            parent_id=parent_id,
-            type="page",
-            representation="storage",
-            editor="v2",
+        def _create_page() -> str:
+            result = self._client.create_page(
+                space=space,
+                title=effective_title,
+                body=body,
+                parent_id=parent_id,
+                type="page",
+                representation="storage",
+                editor="v2",
+            )
+            page_id = (
+                result["id"]
+                if isinstance(result, dict) and result.get("id")
+                else self._get_page_id_by_exact_title(space=space, title=effective_title)
+            )
+            if not page_id:
+                raise RuntimeError(
+                    f"Не удалось создать страницу '{effective_title}' в пространстве '{space}'"
+                )
+            return str(page_id)
+
+        return self._retry_confluence_call(
+            action=f"Создание страницы '{effective_title}' в пространстве '{space}'",
+            func=_create_page,
         )
-        page_id = (
-            result["id"]
-            if isinstance(result, dict) and result.get("id")
-            else self._get_page_id_by_exact_title(space=space, title=effective_title)
-        )
-        if not page_id:
-            raise RuntimeError(f"Не удалось создать страницу '{effective_title}' в пространстве '{space}'")
-        return str(page_id)
 
     # ------------------------------------------------------------------
     def publish(
@@ -389,7 +511,10 @@ class ConfluencePublisher:
                 self._log(f"[skip] Вложение не найдено: {path}")
                 continue
             self._log(f"Прикрепляю файл {path.name} к странице {page_id}")
-            self._client.attach_file(page_id=page_id, filename=str(path))
+            self._retry_confluence_call(
+                action=f"Прикрепление файла '{path.name}' к странице {page_id}",
+                func=lambda path=path: self._client.attach_file(page_id=page_id, filename=str(path)),
+            )
 
     def _ensure_labels(self, *, page_id: str, labels: Sequence[str]) -> None:
         """
@@ -412,18 +537,26 @@ class ConfluencePublisher:
 
         set_labels = getattr(self._client, "set_page_labels", None)
         if callable(set_labels):
-            set_labels(page_id, payload)
+            self._retry_confluence_call(
+                action=f"Установка меток страницы {page_id}",
+                func=lambda: set_labels(page_id, payload),
+            )
             return
 
         set_label = getattr(self._client, "set_page_label", None)
         if callable(set_label):
-            for label in payload:
-                set_label(page_id, label["name"])
+            self._retry_confluence_call(
+                action=f"Установка меток страницы {page_id}",
+                func=lambda: [set_label(page_id, label["name"]) for label in payload],
+            )
             return
 
-        self._client.post(
-            f"rest/api/content/{page_id}/label",
-            json=cast(Any, payload),
+        self._retry_confluence_call(
+            action=f"Установка меток страницы {page_id}",
+            func=lambda: self._client.post(
+                f"rest/api/content/{page_id}/label",
+                json=cast(Any, payload),
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -532,13 +665,45 @@ class ConfluencePublisher:
             f"STRESS_report ⬝ {full_v}",
         )
 
+    def _normalize_parent_group_title(self, parent_visible: str | None) -> str | None:
+        """
+        Нормализует имя группы отчётов для ``conf_parent_page``.
+
+        Поддерживает оба формата:
+        - короткий: ``Системные службы``
+        - полный заголовок контейнера: ``STRESS_report <version> ⬝ Системные службы``
+        """
+        parent = self._normalize(parent_visible)
+        if not parent:
+            return None
+
+        left, sep, right = parent.partition("⬝")
+        left_norm = left.strip().lower()
+        if sep and (left_norm == "stress_report" or left_norm.startswith("stress_report ")):
+            tail = self._normalize(right)
+            if tail:
+                return tail
+        return parent
+
     def _report_page_title(self, *, version: str, parent_visible: str | None) -> str:
         """
         Формирует видимый заголовок страницы с отчётом.
         """
-        if parent_visible:
-            return f"STRESS_report {version} ⬝ {parent_visible}"
+        group_title = self._normalize_parent_group_title(parent_visible)
+        if group_title:
+            return f"STRESS_report {version} ⬝ {group_title}"
         return f"STRESS_report {version}"
+
+    def _versioned_page_name(self, *, page_name: str, from_version: str, to_version: str) -> str:
+        """
+        Возвращает имя страницы для нужной версии.
+
+        Если page_name содержит from_version и версии различаются, full-версия
+        заменяется на branch-версию.
+        """
+        if from_version and to_version != from_version and from_version in page_name:
+            return page_name.replace(from_version, to_version)
+        return page_name
 
     @classmethod
     def preview_hierarchy(
@@ -546,6 +711,7 @@ class ConfluencePublisher:
         *,
         test_cycle_versions: str | Sequence[str],
         conf_parent_page: str | None = None,
+        conf_new_page_name: str | None = None,
     ) -> str:
         """
         Возвращает текстовый предпросмотр иерархии страниц без публикации в Confluence.
@@ -556,6 +722,8 @@ class ConfluencePublisher:
                 ``"1.7.9.UU.1.1"`` или ``["1.7.9.UU.1.1", "1.7.9.UU.1.2"]``.
             conf_parent_page (str | None):
                 Название каталога/группы тестов (например ``"Системные службы"``).
+            conf_new_page_name (str | None):
+                Видимое имя конечной страницы отчёта. Если не задано, будет показан ``<page>``.
 
         Returns:
             str: Дерево страниц в виде многострочного текста.
@@ -568,6 +736,7 @@ class ConfluencePublisher:
             raw_versions = [str(v) for v in test_cycle_versions]
 
         parent_visible = helper._normalize(conf_parent_page)
+        page_visible = helper._normalize(conf_new_page_name) or "<page>"
 
         # dict[global_title][branch_title] -> данные ветки
         tree: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -587,6 +756,11 @@ class ConfluencePublisher:
             )
             full_page_title = helper._report_page_title(version=full_v, parent_visible=parent_visible)
             branch_page_title = helper._report_page_title(version=branch_v, parent_visible=parent_visible)
+            branch_leaf_title = helper._versioned_page_name(
+                page_name=page_visible,
+                from_version=full_v,
+                to_version=branch_v,
+            )
 
             global_node = tree.setdefault(global_title, {})
             branch_node = global_node.setdefault(
@@ -594,13 +768,15 @@ class ConfluencePublisher:
                 {
                     "full_nodes": {},
                     "branch_page_title": branch_page_title,
+                    "branch_leaf_title": branch_leaf_title,
                     "last_full_version": full_v,
                 },
             )
             branch_node["last_full_version"] = full_v
+            branch_node["branch_leaf_title"] = branch_leaf_title
 
             if full_v != branch_v:
-                branch_node["full_nodes"].setdefault(full_title, full_page_title)
+                branch_node["full_nodes"].setdefault(full_title, (full_page_title, page_visible))
 
         lines: List[str] = []
         global_items = list(tree.items())
@@ -617,6 +793,7 @@ class ConfluencePublisher:
                 branch_indent = "   " if branch_is_last else "│  "
                 full_items = list(branch_node["full_nodes"].items())
                 branch_page_title = str(branch_node["branch_page_title"])
+                branch_leaf_title = str(branch_node["branch_leaf_title"])
                 last_full_version = str(branch_node["last_full_version"])
                 branch_version = branch_title.split("⬝", 1)[1].strip() if "⬝" in branch_title else branch_title
                 branch_page_note = ""
@@ -627,16 +804,19 @@ class ConfluencePublisher:
 
                 child_count = len(full_items) + 1  # + branch page
 
-                for full_idx, (full_title, full_page_title) in enumerate(full_items):
+                for full_idx, (full_title, full_node) in enumerate(full_items):
                     child_is_last = full_idx == child_count - 1
                     child_prefix = "└─ " if child_is_last else "├─ "
                     lines.append(f"{branch_indent}{child_prefix}{full_title}")
 
                     full_indent = branch_indent + ("   " if child_is_last else "│  ")
+                    full_page_title, full_leaf_title = cast(Tuple[str, str], full_node)
                     lines.append(f"{full_indent}└─ {full_page_title}")
+                    lines.append(f"{full_indent}   └─ {full_leaf_title}")
 
                 branch_page_prefix = "└─ "
                 lines.append(f"{branch_indent}{branch_page_prefix}{branch_page_title}{branch_page_note}")
+                lines.append(f"{branch_indent}   └─ {branch_leaf_title}")
 
             if global_idx != len(global_items) - 1:
                 lines.append("")
@@ -703,6 +883,7 @@ class ConfluencePublisher:
         attachments_dir: Path | str | None = None,
         attachments: Sequence[str | Path] | None = None,
         create_tree: bool = True,
+        debug: bool = False,
     ) -> Dict[str, str | None]:
         """
         Публикует результат теста, строя дерево версий и публикуя страницы.
@@ -732,7 +913,12 @@ class ConfluencePublisher:
                     - release_page_id: "последняя" страница ветки (branch), которая перезаписывается
                 Если False — не создаёт версионные контейнеры, публикует только:
                     - parent (если задан) как контейнер с макросом children
-                    - страницу отчёта под parent (или на корне space если parent не задан)
+                    - страницу отчёта под parent (или на корневом parent библиотеки если parent не задан)
+            debug (bool):
+                Режим публикации:
+                    - True: корень дерева определяется автоматически как homepage указанного ``conf_space``
+                      (удобно для personal space).
+                    - False: используется зашитый root parent page id библиотеки.
 
         Returns:
             dict[str, str | None]:
@@ -752,6 +938,14 @@ class ConfluencePublisher:
         page_visible = self._normalize(conf_new_page_name)
         if not page_visible:
             raise ValueError("conf_new_page_name не должен быть пустым")
+
+        root_parent_id = self._resolve_publish_root_parent_id(
+            space=space,
+            debug=debug,
+        )
+        self._log(
+            f"Базовый родитель для дерева: page_id={root_parent_id} (debug={'on' if debug else 'off'})"
+        )
 
         self._log(f"Запуск публикации '{page_visible}' в пространство '{space}'")
 
@@ -785,7 +979,7 @@ class ConfluencePublisher:
             else:
                 self._log("create_tree=False: пропускаю создание версионного дерева")
 
-            parent_id: str | None = None
+            parent_id: str | None = root_parent_id
             if parent_visible:
                 token_parent = self._token(
                     kind="STRESS_REPORT",
@@ -797,7 +991,7 @@ class ConfluencePublisher:
                 parent_id = self._ensure_container_page(
                     space=space,
                     effective_title=eff_parent,
-                    parent_id=None,
+                    parent_id=root_parent_id,
                 )
 
             token_page = self._token(
@@ -839,7 +1033,11 @@ class ConfluencePublisher:
                 visible_title=global_title,
             )
             eff_global = self._with_hidden_suffix(global_title, token_global)
-            global_id = self._ensure_container_page(space=space, effective_title=eff_global, parent_id=None)
+            global_id = self._ensure_container_page(
+                space=space,
+                effective_title=eff_global,
+                parent_id=root_parent_id,
+            )
 
             # 2) branch: STRESS_REPORT
             token_branch = self._token(
@@ -865,35 +1063,61 @@ class ConfluencePublisher:
                 full_parent_id = self._ensure_container_page(space=space, effective_title=eff_full, parent_id=branch_id)
                 full_parent_title = full_title
 
-            # 4) Страница конкретного прогона: STRESS_report <full> ⬝ <parent>
+            # 4) Контейнеры под конкретную группу отчётов (если parent_visible задан)
+            full_leaf_parent_id = full_parent_id
+            full_leaf_parent_title = full_parent_title
             report_full_title = self._report_page_title(version=full_v, parent_visible=parent_visible)
+            if parent_visible:
+                token_full_container = self._token(
+                    kind="STRESS_REPORT",
+                    version=full_v,
+                    parent_title=full_parent_title,
+                    visible_title=report_full_title,
+                )
+                eff_full_container = self._with_hidden_suffix(report_full_title, token_full_container)
+                full_leaf_parent_id = self._ensure_container_page(
+                    space=space,
+                    effective_title=eff_full_container,
+                    parent_id=full_parent_id,
+                )
+                full_leaf_parent_title = report_full_title
+
+            report_branch_title = self._report_page_title(version=branch_v, parent_visible=parent_visible)
+            branch_leaf_parent_id = branch_id
+            branch_leaf_parent_title = branch_title
+            if parent_visible:
+                token_branch_container = self._token(
+                    kind="STRESS_REPORT",
+                    version=branch_v,
+                    parent_title=branch_title,
+                    visible_title=report_branch_title,
+                )
+                eff_branch_container = self._with_hidden_suffix(report_branch_title, token_branch_container)
+                branch_leaf_parent_id = self._ensure_container_page(
+                    space=space,
+                    effective_title=eff_branch_container,
+                    parent_id=branch_id,
+                )
+                branch_leaf_parent_title = report_branch_title
+
+            # 5) Конечная страница конкретного прогона
             token_full_page = self._token(
                 kind="STRESS_REPORT",
                 version=full_v,
-                parent_title=full_parent_title,
-                visible_title=report_full_title,
+                parent_title=full_leaf_parent_title,
+                visible_title=page_visible,
             )
-            eff_full_page = self._with_hidden_suffix(report_full_title, token_full_page)
+            eff_full_page = self._with_hidden_suffix(page_visible, token_full_page)
 
             page_id_full = self.publish(
                 space=space,
-                title=report_full_title,
+                title=page_visible,
                 _effective_title=eff_full_page,
-                parent_id=full_parent_id,
+                parent_id=full_leaf_parent_id,
                 body=html_body,
                 attachments=attachments_list or None,
             )
-            self._log(f"Страница full-версии '{report_full_title}' опубликована (id={page_id_full})")
-
-            # 5) Страница "последний прогон ветки": STRESS_report <branch> ⬝ <parent>
-            report_branch_title = self._report_page_title(version=branch_v, parent_visible=parent_visible)
-            token_branch_page = self._token(
-                kind="STRESS_REPORT",
-                version=branch_v,
-                parent_title=branch_title,
-                visible_title=report_branch_title,
-            )
-            eff_branch_page = self._with_hidden_suffix(report_branch_title, token_branch_page)
+            self._log(f"Страница full-версии '{page_visible}' опубликована (id={page_id_full})")
 
             branch_attachments: List[Path | str] | None = None
             if attachments_list:
@@ -904,16 +1128,29 @@ class ConfluencePublisher:
                     tmpdir=tmpdir,
                 )
 
+            branch_page_visible = self._versioned_page_name(
+                page_name=page_visible,
+                from_version=full_v,
+                to_version=branch_v,
+            )
+            token_branch_page = self._token(
+                kind="STRESS_REPORT",
+                version=branch_v,
+                parent_title=branch_leaf_parent_title,
+                visible_title=branch_page_visible,
+            )
+            eff_branch_page = self._with_hidden_suffix(branch_page_visible, token_branch_page)
+
             release_page_id = self.publish(
                 space=space,
-                title=report_branch_title,
+                title=branch_page_visible,
                 _effective_title=eff_branch_page,
-                parent_id=branch_id,
+                parent_id=branch_leaf_parent_id,
                 body=html_body,
                 attachments=branch_attachments or None,
             )
             self._log(
-                f"Страница branch-версии '{report_branch_title}' опубликована/обновлена (id={release_page_id})"
+                f"Страница branch-версии '{branch_page_visible}' опубликована/обновлена (id={release_page_id})"
             )
 
             return {"page_id": page_id_full, "release_page_id": release_page_id}

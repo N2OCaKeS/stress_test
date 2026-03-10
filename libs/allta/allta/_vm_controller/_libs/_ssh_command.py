@@ -367,9 +367,17 @@ echo "__ALLTA_LOG=$log_path"
                     "status": "ok",
                 }
 
+            run_id = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+            task_seed = task_name or "task"
+            task_tag = "".join(ch if ch.isalnum() else "_" for ch in task_seed)[:24] or "task"
+            host_tag = "".join(
+                ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_" for ch in host
+            )[:24] or "host"
+            log_path = f"/tmp/allta_nowait_terminate_{host_tag}_{task_tag}_{run_id}.log"
+
             wrapped = (
                 f"timeout --signal=TERM --kill-after=5s {nowait_timeout}s "
-                f"bash -lc {shlex.quote(command)}"
+                f"bash -lc {shlex.quote(command)} > {shlex.quote(log_path)} 2>&1"
             )
             _, stdout, stderr = ssh.exec_command(wrapped)
 
@@ -377,10 +385,51 @@ echo "__ALLTA_LOG=$log_path"
                 # Ставим сигнал после старта команды (через 10 секунд).
                 signals.set_delayed(host, signal_set, delay_sec=10)
 
-            output_stdout = stdout.read().decode(errors="ignore")
-            output_stderr = stderr.read().decode(errors="ignore")
-            exit_status = stdout.channel.recv_exit_status()
+            wait_deadline = time.time() + max(nowait_timeout + 20, 30)
+            while (not stdout.channel.exit_status_ready()) and (time.time() < wait_deadline):
+                time.sleep(0.2)
+
+            channel_forced_closed = False
+            if stdout.channel.exit_status_ready():
+                exit_status = stdout.channel.recv_exit_status()
+            else:
+                channel_forced_closed = True
+                exit_status = 124
+                try:
+                    stdout.channel.close()
+                except Exception:
+                    pass
+
+            output_stdout = ""
+            output_stderr = ""
+            if not channel_forced_closed:
+                try:
+                    output_stdout = stdout.read().decode(errors="ignore")
+                except Exception:
+                    output_stdout = ""
+                try:
+                    output_stderr = stderr.read().decode(errors="ignore")
+                except Exception:
+                    output_stderr = ""
             output = output_stdout + ("\n" + output_stderr if output_stderr else "")
+
+            log_snapshot = ""
+            try:
+                snap_cmd = (
+                    f"if [ -f {shlex.quote(log_path)} ]; then "
+                    f"cat {shlex.quote(log_path)}; "
+                    "fi"
+                )
+                _, snap_stdout, _ = ssh.exec_command(snap_cmd)
+                log_snapshot = snap_stdout.read().decode(errors="ignore")
+            except Exception as snapshot_error:
+                log_snapshot = f"Не удалось прочитать snapshot VM-лога: {snapshot_error}"
+
+            snapshot_text = log_snapshot if log_snapshot else "<empty>"
+            output = (
+                f"{output}\nVM_LOG_PATH: {log_path}\n"
+                f"VM_LOG_FULL:\n{snapshot_text}"
+            ).strip()
 
             if exit_status == 0:
                 print(f"[{host}] Команда закончила выполнение: {command}")
@@ -393,9 +442,12 @@ echo "__ALLTA_LOG=$log_path"
                 }
 
             if exit_status in (124, 137):
-                timeout_msg = (
-                    f"Команда принудительно завершена по nowait_timeout={nowait_timeout}s."
-                )
+                timeout_msg = f"Команда завершена по nowait_timeout={nowait_timeout}s."
+                if channel_forced_closed:
+                    timeout_msg = (
+                        f"{timeout_msg} SSH-канал не отдал exit-status вовремя, "
+                        "канал закрыт принудительно."
+                    )
                 print(f"[{host}] {timeout_msg}")
                 output = f"{output}\n{timeout_msg}".strip()
                 return {

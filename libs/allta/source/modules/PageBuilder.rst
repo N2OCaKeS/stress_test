@@ -444,7 +444,7 @@ ConfluencePublisher
 4. В ветке detailed имя страницы и вложений может быть переписано (full → detailed версия).
 
 ------------------------------------------------------------------------------------------------
-``__init__(base_url, username, password=None, token=None)``
+``__init__(base_url, username, password=None, token=None, publish_retry_interval=180, publish_retry_timeout=1800)``
 ------------------------------------------------------------------------------------------------
 
 Создаёт клиента Confluence.
@@ -457,8 +457,11 @@ ConfluencePublisher
 * ``username``: str — имя пользователя
 * ``password``: str|None — пароль
 * ``token``: str|None — API token (если используется)
+* ``publish_retry_interval``: int — интервал между повторами публикации в секундах
+* ``publish_retry_timeout``: int — общий таймаут повторов публикации в секундах
 
 Если и ``password``, и ``token`` не заданы — возбуждается ``ValueError``.
+Если параметры ретраев некорректны — также возбуждается ``ValueError``.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Пример использования
@@ -472,6 +475,8 @@ ConfluencePublisher
         base_url="confluence.company.local",
         username="user",
         token="***",
+        publish_retry_interval=180,
+        publish_retry_timeout=1800,
     )
 
 ------------------------------------------------------------------------------------------------
@@ -531,12 +536,16 @@ ConfluencePublisher
 * ``attachments``: Sequence[str|Path]|None — дополнительные вложения
   Можно передать ``builder.attachments`` (список, собранный из add_attachment/add_gallery).
 * ``create_tree``: bool — строить версионное дерево (default True)
+* ``debug``: bool — режим публикации:
+  ``False`` — под зашитым root parent библиотеки, ``True`` — под homepage ``conf_space``
 
 Поведение:
 
 * При ``create_tree=False`` или отсутствии версии публикуется только страница под parent (если задан).
-* При ``create_tree=True`` создаются контейнеры global → detailed → more и публикуются 2 страницы:
-  основная (more) и релизная (detailed).
+* При ``create_tree=True`` создаются контейнеры global → detailed → more.
+* Если задан ``conf_parent_page``, под версионными узлами создаются контейнеры
+  ``STRESS_report <version> ⬝ <conf_parent_page>`` с макросом children.
+* Под этими контейнерами публикуются 2 конечные страницы: основная (more) и релизная (detailed).
 * Если в имени страницы/вложений есть full-версия (more), в detailed-ветке она заменяется на detailed.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -571,6 +580,7 @@ ConfluencePublisher
         body=builder,
         attachments_dir="/tmp/report",
         create_tree=True,
+        debug=False,
     )
 
     print(result)

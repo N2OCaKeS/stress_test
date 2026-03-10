@@ -3,6 +3,7 @@ from ._decorators.Decorators import BaseDecorators
 from ._get_env.GetEnv import GetEnv
 from ._math_models.math_models import Criterion, MathModels
 from ._system_command.SystemCommands import SystemCommands
+from ._timer.Timer import Timer
 from ._vm_controller.Libvit import Libvirt
 from ._vm_controller.VBox import VBox
 from ._vm_controller._vm.LibvirtManager import LibvirtManager
@@ -19,6 +20,7 @@ __all__ = [
     "MathModels",
     "PageBuilder",
     "SystemCommands",
+    "Timer",
     "UploaderZC",
     "VBox",
     "VBoxManager",

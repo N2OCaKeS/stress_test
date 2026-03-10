@@ -3,7 +3,7 @@ import json
 from time import sleep
 from pathlib import Path
 
-from allta import Libvirt, LibvirtManager
+from allta import Libvirt, LibvirtManager, SystemCommands
 
 from kernel_conf import (
     USERNAME,
@@ -27,7 +27,7 @@ class CreateVM:
         self,
         rc_name: str = "",
         testdir: str = "",
-        kernel: str = "",
+        kernel: str = SystemCommands.check_output_command("uname -r"),
         vm_count: int = 0,
         vcpu: int = 0,
         ram: int = 0,

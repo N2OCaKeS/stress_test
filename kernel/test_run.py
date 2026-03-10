@@ -114,9 +114,8 @@ if args.TESTNAME == 'segfault':
 
     sigmentation_fault.prepare_vms()
     sigmentation_fault.start_test()
-    sigmentation_fault.vms_destroy()
     sigmentation_fault.results_processing()
-
+    sigmentation_fault.vms_destroy()
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
     publisher = kernel_publisher(

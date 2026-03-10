@@ -610,6 +610,7 @@ class _ZefirResultTable:
             + [x for x in self.new_tab.columns[4:].sort_values() if x in self.new_tab]
         ]
         self.new_tab = self.new_tab.T
+        Path("./templates").mkdir(parents=True, exist_ok=True)
         runtime_dir = Path(mkdtemp(prefix="allta_zefir_"))
         templates_dir = runtime_dir / "templates"
         templates_dir.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 from libs.libtests import Sigmentation_fault
 # from libs.libpublic import Public
 # from libs.virtlib import info_list
-from kernel.kernel_conf import BASE_PATH, SEGMENTATION_FAULT_VM_COUNT, SEGMENTATION_FAULT_VCPU, SEGMENTATION_FAULT_RAM
+from kernel_conf import BASE_PATH, SEGMENTATION_FAULT_VM_COUNT, SEGMENTATION_FAULT_VCPU, SEGMENTATION_FAULT_RAM
 # from allta import SystemCommands
 TEST_CYCLE_VERSION = "1.7.5"
 CONF_PARENT_PAGE = f"STRESS {TEST_CYCLE_VERSION} kernel net load"

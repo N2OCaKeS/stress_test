@@ -1,10 +1,10 @@
 import argparse
+from allta import UploaderZC
 from datetime import datetime
 
-from libs.zefir import UploaderZC
-from libs.libnet import get_duration
+from libs.lib_kernel import get_duration
 from libs.libtests import Sigmentation_fault
-from libs.libpublic import net_publisher
+from libs.libpublic import kernel_publisher
 
 from kernel_conf import BASE_PATH, SEGMENTATION_FAULT_VM_COUNT, SEGMENTATION_FAULT_VCPU, SEGMENTATION_FAULT_RAM
 
@@ -98,33 +98,27 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 basic_auth=args.BA,
                 test_cycle_version=args.TCV,
                 token=args.TOKEN,
-                username=args.USER,
-                grade_stand=args.STAND,
-                conf_space=args.SPACE,
-                conf_parent_page=args.PPAGE,
-                conf_new_page_name=args.NPAGE,
-                testname=args.TESTNAME)
+                username=args.USER)
 uzs.upload_test_cycle_status(zefir_status='progress')
 
 
 #Start test
-if args.TESTNAME == 'iof':
+if args.TESTNAME == 'segfault':
     time_start_script = datetime.now()
     
-    kernel_network = Sigmentation_fault(rc_name=args.TCV,
+    sigmentation_fault = Sigmentation_fault(rc_name=args.TCV,
                                 testdir=BASE_PATH,
                                 vm_count=SEGMENTATION_FAULT_VM_COUNT,
                                 vcpu=SEGMENTATION_FAULT_VCPU,
                                 ram=SEGMENTATION_FAULT_RAM)
 
-    kernel_network.prepare_vms()
-    kernel_network.start_test()
-    kernel_network.vms_destroy()
-    kernel_network.results_processing()
-
+    sigmentation_fault.prepare_vms()
+    sigmentation_fault.start_test()
+    sigmentation_fault.results_processing()
+    sigmentation_fault.vms_destroy()
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
-    publisher = net_publisher(
+    publisher = kernel_publisher(
         username=args.USER,
         token=args.TOKEN,
         space=args.SPACE,
@@ -135,6 +129,4 @@ if args.TESTNAME == 'iof':
         test_cycle_version=args.TCV,
     )
 
-    # uzs.public = True
-    #uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')

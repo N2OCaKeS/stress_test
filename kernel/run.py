@@ -2,7 +2,7 @@
 
 import subprocess
 import argparse
-from kernel.kernel_conf import REPORT_PATH, VENV_PATH
+from kernel_conf import REPORT_PATH, VENV_PATH
 from os import path, mkdir
 
 

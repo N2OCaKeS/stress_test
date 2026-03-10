@@ -1,24 +1,24 @@
-import re
 import json
-import numpy as np
 
-from allta import Libvirt, LibvirtManager, SystemCommands
-
-from pathlib import Path
 from time import sleep
-from os import path
+from pathlib import Path
 
-from kernel.kernel_conf import (
+from allta import Libvirt, LibvirtManager
+
+from kernel_conf import (
     USERNAME,
     PASSWORD,
     VM_OS_INFO_PATH,
     BASE_PATH,
-    IOF_OFF_PATH,
-    IOF_ON_PATH,
-    IOF_ON_NAME,
-    IOF_OFF_NAME,
-    ITERATIONS,
-    IOF_RESULTS,
+    VM_TEST1_OUTPUT,
+    VM_TEST2_OUTPUT,
+    RESULTS_FILE
+    # IOF_OFF_PATH,
+    # IOF_ON_PATH,
+    # IOF_ON_NAME,
+    # IOF_OFF_NAME,
+    # ITERATIONS,
+    # IOF_RESULTS,
 )
 
 
@@ -82,7 +82,7 @@ class CreateVM:
                 self.provider.prepare()
                 if VERSION_OS == "1.7":
                     self.vms_data = self.provider.build(
-                        box="xfs.1.7.5.o",
+                        box="1.7.5.o",
                         rc=self.rc_name,
                         vms=self.vms,
                         vms_dates=VMS_DATES,
@@ -90,7 +90,7 @@ class CreateVM:
                     )
                 elif VERSION_OS == "1.8":
                     self.vms_data = self.provider.build(
-                        box="xfs.1.8.1.o",
+                        box="1.8.1.o",
                         rc=self.rc_name,
                         vms=self.vms,
                         vms_dates=VMS_DATES,
@@ -170,25 +170,185 @@ class CreateVM:
 class Sigmentation_fault(CreateVM):
     def start_test(self):
         """
-        testvm1 - server
-        testvm2 - client
+        testvm1 - ВМ для теста
         """
 
         print("\n\n\nНачинаем выполнение теста\n\n\n")
         print("\n\n\nВыполнение подготовки к тесту\n\n\n")
+        """
+            1) dd if=/dev/zero of=xfs.file bs=1M count=384
+            2) mkfs.xfs -f xfs.file
+            3) mkdir xfs.mnt
+            4) mount -t xfs xfs.file xfs.mnt
+            5) fill.c ... gcc -o fill fill.c
+        """
         # Подготовка к выполнению теста
-        print("\n\n\nПодготовка завершена\n\n\n")
+        init_on_free_on = {
+            'testvm1': {
+                'init_on_free_off': {
+                    'command': r"""sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 init_on_free=1 transparent_hugepage=never"/' /etc/default/grub""",
+                    'signal set': 'sed command',
+                },
+                'update grub': {
+                    'command': 'sudo update-grub',
+                    'signal get': 'sed command',
+                    'signal set': 'update',
+                },
+                'reboot': {
+                    'signal get': 'update',
+                },
+            },
+        }
 
+        xfs_create = {
+            'testvm1': {
+                'dd': {
+                    'command': 'dd if=/dev/zero of=xfs.file bs=1M count=384',
+                    'signal set': 'dd xfsfile'
+                },
+                'mkfs_xfs': {
+                    'command': 'sudo mkfs.xfs -f xfs.file',
+                    'signal get': 'dd xfsfile',
+                    'signal set': 'mkfs xfs',
+                },
+                'mkdir': {
+                    'command': 'mkdir xfs.mnt',
+                    'signal get': 'mkfs xfs',
+                    'signal set': 'mkdir xfs'
+                },
+                'mount': {
+                    'command': 'sudo mount -t xfs xfs.file xfs.mnt',
+                    'signal get': 'mkdir xfs',
+                    'signal set': 'mount xfs'
+                },
+                'dd_test_file': {
+                    'command': "dd if=/dev/zero bs=4096 count=100 | tr '\\0' '\\1' | sudo tee /home/u/xfs.mnt/test_file",
+                    'signal get': 'mount xfs',
+                    'signal set': 'dd testfile'
+                }
+            }
+        }
+
+        # xfs_fill_out_file = {
+        #     'testvm1': {
+        #         'dd_test_file': {
+        #             'command': "sudo bash -c \"dd if=/dev/zero bs=4096 count=100 | tr '\0' '\1' > /home/u/xfs.mnt/test_file\"",
+        #             'signal set': 'dd testfile'
+        #         }
+        #     }
+        # }
+
+        scp_test_files = {
+            "testvm1": [
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/fill.c', 
+                    "path_vm": '/home/u/fill.c', 
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/test1.c', 
+                    "path_vm": '/home/u/test1.c', 
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/test2.c',
+                    "path_vm": '/home/u/test2.c'
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/fill.py',
+                    "path_vm": '/home/u/fill.py'
+                },
+                # {
+                #     "mode": "push",
+                #     "path_host": f'{BASE_PATH}/test1.py',
+                #     "path_vm": '/home/u/test1.py'
+                # },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/test2.py',
+                    "path_vm": '/home/u/test2.py'
+                },
+            ]
+        }
+
+        start_test1_and_fill = {
+            'testvm1': {
+                'compile_test1': {
+                    'command': 'gcc -o /home/u/test1 /home/u/test1.c',
+                    'signal set': 'compile test1'
+                },
+                'test1': {
+                    'command': '/home/u/test1 > /home/u/test1_output.txt',
+                    'signal get': 'compile test1',
+                    'signal set': 'test1 start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 190
+                },
+                'fill': {
+                    'command': 'python3 fill.py',
+                    'signal get': 'test1 start',
+                    'signal set': 'fill start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 180
+                }
+            }
+        }
+
+        start_test2_and_fill = {
+            'testvm1': {
+                'test1': {
+                    'command': 'sudo python3 test2.py',
+                    'signal set': 'test2 start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 310
+                },
+                'fill': {
+                    'command': 'sudo python3 fill.py',
+                    'signal get': 'test2 start',
+                    'signal set': 'fill start',
+                    'nowait': True,
+                    'nowait_mode': 'terminate',
+                    'nowait_timeout': 300
+                }
+            }
+        }
+
+        chown_test2_output = {
+            'testvm1': {
+                'chown': {
+                    'command': 'sudo chown u:u /home/u/test2_output.txt',
+                    'signal set': 'chown test2 output',
+                }
+            }
+        }
+
+
+        print('Включение опции init_on_free')
+        self.provider.execute(commands=init_on_free_on, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print('Подготовка xfs')
+        self.provider.execute(commands=xfs_create, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        # self.provider.execute(commands=xfs_fill_out_file, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+
+        print("Перенос тестовых файлов")
+        self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)         
+        print("\n\n\nПодготовка завершена\n\n\n")
         print("\n\n\nЗапускаем тест\n\n\n")
 
+        self.provider.execute(commands=start_test1_and_fill, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        self.provider.execute(commands=start_test2_and_fill, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        self.provider.execute(commands=chown_test2_output, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         print("\n\n\nТест завершен\n\n\n")
 
     def results_processing(self):
 
-        print("\n\n\nОбработка результатов\n\n\n")
-        # Обработка результатов
-        print("\n\n\n Результаты обработаны\n\n\n")
-
+        sleep(120)
         print("\n\n\nЗабираем данные о ОС с ВМ\n\n\n")
         scp_vm_params = {
             "testvm1": [
@@ -202,6 +362,16 @@ class Sigmentation_fault(CreateVM):
                     "path_host": VM_OS_INFO_PATH,
                     "path_vm": "/home/u/kernel.txt",
                 },
+                {
+                    "mode": "pull",
+                    "path_host": VM_TEST1_OUTPUT,
+                    "path_vm": "/home/u/test1_output.txt"
+                },
+                {
+                    "mode": "pull",
+                    "path_host": VM_TEST2_OUTPUT,
+                    "path_vm": "/home/u/test2_output.txt"
+                }
             ]
         }
         self.provider.scp(
@@ -211,5 +381,32 @@ class Sigmentation_fault(CreateVM):
             username=USERNAME,
             password=PASSWORD,
         )
-        print("results gets")
-        pass
+        print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
+        print("\n\n\nОбработка результатов\n\n\n")
+        # Обработка результатов
+        
+        status_test1_bug = False
+        with open(VM_TEST1_OUTPUT, 'r') as test1_file:
+            test1_output = test1_file.readlines()
+            for line in test1_output:
+                if "Got invalid value on page" in line:
+                    status_test1_bug = True
+                    break
+
+        status_test2_bug = False
+        with open(VM_TEST2_OUTPUT, 'r') as test2_file:
+            test2_output = test2_file.readlines()
+            for line in test2_output:
+                if "Ошибка сегментирования" in line:
+                    status_test2_bug = True
+                    break
+        
+        result = {
+            'status_test1': status_test1_bug,
+            'status_test2': status_test2_bug
+        }
+        with open(RESULTS_FILE, 'w') as result_file:
+            result_file.write(json.dumps(result))
+
+        print("\n\n\n Результаты обработаны\n\n\n")
+            

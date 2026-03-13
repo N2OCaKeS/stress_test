@@ -160,24 +160,24 @@ class PhysicalServerCreate(PhysicalServerBase):
 class PhysicalServerUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    name              : Optional[str]
-    ip_address        : Optional[str]
-    grade             : Optional[str]
-    cpu_model         : Optional[str]
-    cpu_total         : Optional[int]
-    cpu_cores_count   : Optional[int]
-    cpu_threads       : Optional[int]
-    ram_total         : Optional[int]
-    storage           : Optional[str]
-    gpu               : Optional[str]
+    name              : Optional[str] = None
+    ip_address        : Optional[str] = None
+    grade             : Optional[str] = None
+    cpu_model         : Optional[str] = None
+    cpu_total         : Optional[int] = None
+    cpu_cores_count   : Optional[int] = None
+    cpu_threads       : Optional[int] = None
+    ram_total         : Optional[int] = None
+    storage           : Optional[str] = None
+    gpu               : Optional[str] = None
     phy_if            : Optional[str]      = Field(default=None, validation_alias=AliasChoices("phy_if", "phu_if"))
-    virtualization    : Optional[bool]
-    ssh_port          : Optional[int]
-    driver_type       : Optional[DriverType]    
-    admin_panel_ip    : Optional[str]    
-    admin_panel_user  : Optional[str]
-    admin_panel_pass  : Optional[str]
-    os_version_id     : Optional[int]
+    virtualization    : Optional[bool] = None
+    ssh_port          : Optional[int] = None
+    driver_type       : Optional[DriverType] = None
+    admin_panel_ip    : Optional[str] = None
+    admin_panel_user  : Optional[str] = None
+    admin_panel_pass  : Optional[str] = None
+    os_version_id     : Optional[int] = None
 
     @field_validator("name")
     @classmethod

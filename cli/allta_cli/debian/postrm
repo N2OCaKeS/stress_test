@@ -1,9 +1,0 @@
-#!/bin/sh
-set -e
-case "$1" in
-  purge)
-    # Удаляем весь наш префикс при полном purge
-    rm -rf /opt/allta_cli
-    ;;
-esac
-exit 0

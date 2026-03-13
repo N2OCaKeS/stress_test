@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+ALLTA_BIN="/usr/bin/allta"
+ZSH_BIN="/bin/zsh"
+ZSH_COMPLETION_SOURCE="/usr/lib/allta/completions/_allta"
+ZSH_COMPLETION_DIR="/usr/share/zsh/vendor-completions"
+ZSH_COMPLETION_TARGET="${ZSH_COMPLETION_DIR}/_allta"
+
+if [ -f "$ALLTA_BIN" ]; then
+    chmod +x "$ALLTA_BIN"
+fi
+
+if [ -x "$ZSH_BIN" ] && [ -f "$ZSH_COMPLETION_SOURCE" ]; then
+    mkdir -p "$ZSH_COMPLETION_DIR"
+    cp -f "$ZSH_COMPLETION_SOURCE" "$ZSH_COMPLETION_TARGET"
+fi
+
+exit 0

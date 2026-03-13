@@ -1,0 +1,12 @@
+Source: allta
+Section: utils
+Priority: optional
+Maintainer: Maksim Filippenko <mfilippenko@astralinux.ru>
+Build-Depends: debhelper (>= 11), dh-python, python3-all, python3-setuptools
+Standards-Version: 4.5.0
+
+Package: allta
+Architecture: amd64
+Depends: ${misc:Depends}, openssh-client, sshpass
+Description: CLI-инструмент для работы с allta
+ CLI-интерфейс с изолированным Python для работы с allta 

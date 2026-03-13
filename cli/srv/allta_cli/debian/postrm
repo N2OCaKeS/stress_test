@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+BASH_COMPLETION_FILE="/usr/share/bash-completion/completions/allta"
+ZSH_COMPLETION_FILE="/usr/share/zsh/vendor-completions/_allta"
+
+case "$1" in
+  remove|purge)
+    rm -f "$BASH_COMPLETION_FILE" "$ZSH_COMPLETION_FILE"
+    if [ "$1" = "purge" ]; then
+      # Удаляем весь наш префикс при полном purge
+      rm -rf /opt/allta_cli
+    fi
+    ;;
+esac
+exit 0

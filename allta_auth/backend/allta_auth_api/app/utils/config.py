@@ -1,4 +1,7 @@
-# app/core/config.py
+"""Application settings and internal secret bootstrap."""
+
+import os
+import secrets
 import warnings
 from os import getenv
 
@@ -38,12 +41,35 @@ def _access_token_expire_minutes() -> int:
     return _as_int("ACCESS_TOKEN_EXPIRE_HOURS", 1) * 60
 
 
+def _secret_key_path() -> str:
+    return "/data/secret.key"
+
+
+def _load_or_create_secret_key(path: str) -> str:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            current = f.read().strip()
+        if current:
+            return current
+
+    key = secrets.token_hex(32)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(key)
+        f.write("\n")
+    os.replace(tmp_path, path)
+    return key
+
+
 class Settings(BaseSettings):
     DATABASE_URL: str = getenv(
         "DATABASE_URL",
         "postgresql://postgres:postgres@localhost:5432/postgres",
     )
-    SECRET_KEY: str = getenv("SECRET_KEY", "supersecretkey")
+    SECRET_KEY_PATH: str = _secret_key_path()
+    SECRET_KEY: str = _load_or_create_secret_key(SECRET_KEY_PATH)
     ALGORITHM: str = getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = _access_token_expire_minutes()
     COOKIE_SECURE: bool = _as_bool("COOKIE_SECURE", False)
@@ -90,12 +116,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-if settings.SECRET_KEY == "supersecretkey":
-    warnings.warn(
-        "SECRET_KEY uses insecure default value; set SECRET_KEY in environment.",
-        stacklevel=1,
-    )
 
 if settings.SEED_DEFAULT_ADMIN and settings.BASE_ADMIN_PASSWORD == "admin":
     warnings.warn(

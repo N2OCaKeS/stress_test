@@ -35,4 +35,4 @@ app.add_middleware(
 )
 
 app.include_router(health, prefix="", tags=["Health"])
-app.include_router(router, prefix="/v1/config",tags=["Config"])
+app.include_router(router, prefix="/v1/config")

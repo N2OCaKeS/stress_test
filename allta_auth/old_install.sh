@@ -215,16 +215,19 @@ exports(){
 	export ALLTA_EXTERNAL_HOST="allta.devos.astralinux.ru"
 	export REGISTRY_CERT_SUBJECT="/CN=allta.devos.astralinux.ru"
 	export REGISTRY_CERT_DAYS="3650"
-	export CONFIG_API_TOKENS_PATH="/home/u/tokens.json"
 	export AUTH_DB_PATH=$BASE_PATH/allta_auth_db_data
+	export AUTH_API_DATA_PATH=$BASE_PATH/allta_auth_api_data
 	export CONFIG_API_DATA_PATH=$BASE_PATH/allta_config_api_data	
+	export CONFIG_DB_PATH=$BASE_PATH/allta_config_db_data
 }
 
 dir(){
     sudo mkdir -p "$FILE_PATH"
 	sudo mkdir -p "$BASE_PATH"
 	sudo mkdir -p "$AUTH_DB_PATH"
+	sudo mkdir -p "$AUTH_API_DATA_PATH"
 	sudo mkdir -p "$CONFIG_API_DATA_PATH"
+	sudo mkdir -p "$CONFIG_DB_PATH"
 	sudo mkdir -p "$REGISTRY_KEYS_PATH"
 }
 
@@ -287,7 +290,9 @@ remove(){
 	done
 
 	sudo rm -rf $AUTH_DB_PATH 
+	sudo rm -rf $AUTH_API_DATA_PATH
     sudo rm -rf $CONFIG_API_DATA_PATH
+	sudo rm -rf $CONFIG_DB_PATH
 	sudo rm -rf $REGISTRY_KEYS_PATH
 	sudo rm $CRED_PATH/env.allta_auth_api 
 	sudo rm $CRED_PATH/env.allta_auth_db 

@@ -13,9 +13,16 @@ def _auth_api_url() -> str:
 
 class Settings(BaseSettings):
     AUTH_API_URL: str = _auth_api_url()
+    DATABASE_URL: str = getenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
+    )
+    SQL_ECHO: bool = (getenv("SQL_ECHO", "false").strip().lower() in {"1", "true", "yes", "y", "on"})
     DATA_DIR: str = "/data"
-    TOKENS_PATH: str = getenv("TOKENS_PATH", "tokens.json")
+    TOKEN_KEY_FILE_PATH: str = "/data/token_secret.key"
     TOKENS_READ_PERMISSION: str = getenv("TOKENS_READ_PERMISSION", "config.tokens")
+    CREDENTIALS_READ_PERMISSION: str = getenv("CREDENTIALS_READ_PERMISSION", "config.tokens")
+    CREDENTIALS_WRITE_PERMISSION: str = getenv("CREDENTIALS_WRITE_PERMISSION", "config.tokens")
 
 
 settings = Settings()

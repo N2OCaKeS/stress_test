@@ -4,6 +4,7 @@ import os
 from sqlalchemy_utils import database_exists, create_database
 from alembic.config import Config as AlembicConfig
 from alembic import command
+from alembic.util.exc import CommandError
 from app.utils.config import settings
 from app.db.session import SessionLocal, engine
 from app.api.v1.crud.oauth_client import ensure_bootstrap_oauth_clients
@@ -36,7 +37,16 @@ def on_starting(server):
     here = os.path.dirname(__file__)
     alembic_cfg = AlembicConfig(os.path.join(here, "alembic.ini"))
     alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
-    command.upgrade(alembic_cfg, "head")
+    try:
+        command.upgrade(alembic_cfg, "head")
+    except CommandError as e:
+        msg = str(e)
+        # Если миграционный граф временно разошёлся в несколько head,
+        # применяем все heads вместо падения старта API.
+        if "Multiple head revisions" in msg or "Multiple heads are present" in msg:
+            command.upgrade(alembic_cfg, "heads")
+        else:
+            raise
 
     # 3) Seed default users
     db = SessionLocal()

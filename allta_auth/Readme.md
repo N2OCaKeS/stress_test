@@ -42,9 +42,10 @@
 
     ```bash
     cd /var/allta_services/config
-    nano env.allta_auth_db
-    nano env.allta_auth_api
-    nano env.allta_config_api
+    nano env.authservice_auth_db
+    nano env.authservice_auth_api
+    nano env.authservice_config_db
+    nano env.authservice_config_api
     ```
 
 ## Интеграции
@@ -130,6 +131,29 @@ auth:
 
 - Для `GET /api/config/v1/config/tokens` требуется право `config.tokens`.
 - В `allta_config_api` это настраивается через `TOKENS_READ_PERMISSION` (по умолчанию `config.tokens`).
+- `tokens` больше не читается из `tokens.json`: значения берутся из БД (`token_credentials`) и хранятся в зашифрованном виде.
+- Детальные операции с token-creds (новый namespace):
+  - `GET /api/config/v1/config/tokens/details`
+  - `GET /api/config/v1/config/tokens/details/{token_key}`
+  - `POST /api/config/v1/config/tokens/details`
+  - `PATCH /api/config/v1/config/tokens/details/{token_key}`
+  - `DELETE /api/config/v1/config/tokens/details/{token_key}`
+- Для работы с сервисными кредами:
+  - `GET /api/config/v1/config/credentials`
+  - `GET /api/config/v1/config/credentials/{service_name}`
+  - `POST /api/config/v1/config/credentials`
+  - `PATCH /api/config/v1/config/credentials/{service_name}`
+  - `DELETE /api/config/v1/config/credentials/{service_name}`
+- Права для сервисных кредов задаются через:
+  - `CREDENTIALS_READ_PERMISSION`
+  - `CREDENTIALS_WRITE_PERMISSION`
+  (оба по умолчанию `config.tokens`).
+- Для хранения сервисных кредов Config API использует отдельную асинхронную PostgreSQL БД.
+- `config_api` генерирует ключ для шифрования token-creds автоматически при старте
+  и хранит его во внутреннем файле `/data/token_secret.key` (переменные env не требуются).
+- `auth_api` генерирует JWT `SECRET_KEY` автоматически при старте
+  и хранит его во внутреннем файле `/data/secret.key` (переменные env не требуются).
+- Endpoint iLO перенесён в Server API: `GET /api/server/v1/ilo/` (требуется аутентификация и право `server.manage` или `vm.manage`).
 
 ## RBAC
 

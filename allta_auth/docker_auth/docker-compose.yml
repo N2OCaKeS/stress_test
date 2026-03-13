@@ -74,6 +74,7 @@ services:
       - authservice_network
       - authservice_auth_api
     volumes:
+      - allta_auth_api_data:/data
       - ${REGISTRY_KEYS_PATH}:/run/secrets/registry:ro
 
   authservice-auth-db:
@@ -98,7 +99,7 @@ services:
   authservice-config-api:
     build:
       context: ../backend/allta_config_api
-      dockerfile: ../../docker_auth/allta_config_api/Dockerfile.allta_config_api
+      dockerfile: ../../docker_auth/allta_config_api/allta_config_api/Dockerfile.allta_config_api
     image: authservice-config-api
     container_name: authservice-config_api
     restart: always
@@ -106,6 +107,8 @@ services:
       - $CRED_PATH/env.authservice_config_api
     depends_on:
       authservice-auth-api:
+        condition: service_healthy
+      authservice-config-db:
         condition: service_healthy
     extra_hosts:
       - "${ALLTA_EXTERNAL_HOST}:host-gateway"
@@ -118,7 +121,25 @@ services:
       - authservice_network
     volumes:
       - allta_config_data:/data
-      - ${CONFIG_API_TOKENS_PATH}:/cred/tokens.json:ro
+
+  authservice-config-db:
+    build:
+      context: ./allta_config_api/allta_config_db
+      dockerfile: Dockerfile.allta_config_db
+    image: authservice-config-db:latest
+    container_name: authservice-config_db
+    restart: always
+    env_file:
+      - $CRED_PATH/env.authservice_config_db
+    volumes:
+      - allta_config_db_data:/var/lib/postgresql/data
+    networks:
+      - authservice_network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   docs-api-vm-auth:
     build:
@@ -143,12 +164,24 @@ volumes:
       type: none
       device: ${AUTH_DB_PATH}
       o: bind   
+  allta_auth_api_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${AUTH_API_DATA_PATH}
+      o: bind
   allta_config_data:
     driver: local
     driver_opts:
       type: none
       device: ${CONFIG_API_DATA_PATH}
       o: bind      
+  allta_config_db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${CONFIG_DB_PATH}
+      o: bind
 
 networks:
 

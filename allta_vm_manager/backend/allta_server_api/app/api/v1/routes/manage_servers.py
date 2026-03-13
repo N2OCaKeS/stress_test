@@ -61,7 +61,9 @@ def _can_see_admin_panel_passwords(user: AuthVerifyResponse) -> bool:
 
 def _to_server_read(server: PhysicalServer, *, reveal_passwords: bool) -> PhysicalServerRead:
     payload = PhysicalServerRead.model_validate(server).model_dump()
-    os_name = str(payload.get("os_version") or "").strip() or None
+    os_name = str(getattr(server, "os_version_name", "") or "").strip() or None
+    if not os_name:
+        os_name = str(payload.get("os_version") or "").strip() or None
     payload["os_version"] = os_name
     if not reveal_passwords:
         payload["admin_panel_pass"] = "***hidden***"
@@ -149,10 +151,11 @@ def update_server_os_version_by_names(
             detail=f"OS version '{data.os_version_name}' not found",
         )
 
-    server.os_version_id = os_version.id
+    # Bind relationship directly to keep response and ORM state consistent.
+    server.os_version = os_version
     db.commit()
-    updated_server = get_physical_server(db, server.id)
-    return _to_server_read(updated_server, reveal_passwords=True)
+    db.refresh(server)
+    return _to_server_read(server, reveal_passwords=True)
 
 
 @router.get(

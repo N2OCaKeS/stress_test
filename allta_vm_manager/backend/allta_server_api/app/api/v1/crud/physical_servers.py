@@ -1,5 +1,5 @@
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 
@@ -56,7 +56,12 @@ def _ensure_unique_stand_number(
 
 
 def get_physical_server(db: Session, server_id: int) -> PhysicalServer:
-    srv = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
+    srv = (
+        db.query(PhysicalServer)
+        .options(joinedload(PhysicalServer.os_version))
+        .filter(PhysicalServer.id == server_id)
+        .first()
+    )
     if not srv:
         raise ValueError(f"Server with id={server_id} not found")
     _decrypt_credentials(srv)
@@ -64,7 +69,13 @@ def get_physical_server(db: Session, server_id: int) -> PhysicalServer:
 
 
 def get_physical_servers(db: Session, skip: int = 0, limit: int = 100) -> List[PhysicalServer]:
-    servers = db.query(PhysicalServer).offset(skip).limit(limit).all()
+    servers = (
+        db.query(PhysicalServer)
+        .options(joinedload(PhysicalServer.os_version))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     for srv in servers:
         _decrypt_credentials(srv)
     return servers

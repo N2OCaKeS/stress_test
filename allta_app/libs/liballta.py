@@ -60,7 +60,9 @@ from allta_image_conf import (
     cz_comm,
     allta_version,
     test_station_vms,
-    allta_services_list
+    allta_services_list,
+    tokens,
+    ilo
 )
 
 
@@ -86,8 +88,6 @@ with open('/home/u/url_mob', 'r') as r:
     mobile_url = r.read().replace('\n', '').replace('\r', '')
 with open('/home/u/url_brest', 'r') as r:
     brest_url = r.read().replace('\n', '').replace('\r', '')
-with open('/home/u/tokens.json', 'r') as r:
-    tokens = json.load(r)
 
 AUTH_LOGIN_URL = 'http://allta.devos.astralinux.ru:21500/api/auth/login'
 AUTH_LOGOUT_URL = 'http://allta.devos.astralinux.ru:21500/api/auth/logout'
@@ -1076,9 +1076,7 @@ class BootOrder:
         self.no_fprint = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         self.reset_machine = 'reset /system1'
         self.slot_count = 5
-        if path.isfile('/home/u/ilo.json'):
-            with open('/home/u/ilo.json', 'r') as ilocfg:
-                self.ilo = json.load(ilocfg)
+        self.ilo = ilo
         self.login = self.ilo[self.stand]['username']
         self.password = self.ilo[self.stand]['password']
         self.address = self.ilo[self.stand]['ip']

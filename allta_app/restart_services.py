@@ -3,12 +3,11 @@ import string
 import random
 import subprocess
 import os
+
 from libs.liballta import get_aqs_json, ReleaseToRepo
-import json
+from allta_image_conf import tokens
 
 
-with open('/home/u/tokens.json', 'r') as r:
-    tokens = json.load(r)
 __git_token = tokens['git_token']
 current_directory = os.getcwd()
 get_aqs_json(current_directory, __git_token)

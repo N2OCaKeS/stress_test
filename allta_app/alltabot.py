@@ -18,7 +18,7 @@ from libs.liballta import (ReleaseToRepo,
                            run_command_on_stand,
                            busy_status_control)
 from libs.zefir import ZefirResultTable, ZefirTestRun
-from allta_image_conf import JIRA_URL, stands_type, stands_ip, stands_groups, test_run_stands
+from allta_image_conf import JIRA_URL, stands_type, stands_ip, stands_groups, test_run_stands, tokens
 from time import sleep
 
 
@@ -28,8 +28,6 @@ with open('/home/u/key.conf', 'r') as r:
 bot = Bot(API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-with open('/home/u/tokens.json', 'r') as r:
-    tokens = json.load(r)
 __conf_token = tokens['conf_token']
 __username = tokens['username']
 __basic = tokens['jira_token']

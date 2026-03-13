@@ -1,7 +1,7 @@
 #!/home/u/python/Python-3.12.1/venv/bin/python3.12
 
 import subprocess
-from allta_image_conf import branches, cycle_tree_index, tests, parent_page_list, JIRA_URL
+from allta_image_conf import branches, cycle_tree_index, tests, parent_page_list, JIRA_URL, tokens
 from libs.libconfluence import SendCommentToConfluence
 from libs.liballta import busy_status_control, TestTimeWatchdog
 import requests
@@ -43,10 +43,8 @@ parser.add_argument('-te',
                     help='test env status',
                     dest='TESTENV')
 
-args = parser.parse_args()
 
-with open('/home/u/tokens.json', 'r') as r:
-    tokens = json.load(r)
+args = parser.parse_args()
 __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']

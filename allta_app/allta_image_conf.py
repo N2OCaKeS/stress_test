@@ -1,6 +1,10 @@
 import json
 import requests
 
+from os import getenv
+from dotenv import load_dotenv
+
+
 
 def get_allta_conf():
     with open('./allta_conf.json', 'r') as r:
@@ -624,3 +628,22 @@ allta_services_list = [
     'statistics.service',
     'docker_registry.service'
 ]
+
+
+
+#################################################################################################################################################
+#API`s
+#################################################################################################################################################
+CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1"
+SERVER_API_BASE = "http://allta.devos.astralinux.ru:21501/api/server/v1"
+
+
+
+#################################################################################################################################################
+#Crede`s
+#################################################################################################################################################
+load_dotenv(dotenv_path='/var/allta_services/config/env.allta')
+TOKEN = getenv("ALLTA_AUTH_API_KEY")
+HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+tokens = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30).json()
+ilo = ''

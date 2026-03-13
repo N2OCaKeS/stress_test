@@ -19,7 +19,8 @@ from allta_image_conf import(changelog_testcycle_handler,
                              testname_columns,
                              JIRA_URL,
                              CONFLUENCE_URL,
-                             startswith_kernel_list)
+                             startswith_kernel_list,
+                             tokens)
 
 
 
@@ -450,8 +451,6 @@ class ZefirTestRun:
 
         self.JIRA_URL = f'https://{JIRA_URL}'
         self.headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0'}
-        with open('/home/u/tokens.json', 'r') as r:
-            tokens = json.load(r)
         self.__username = tokens['username']
         self.__jira_token = tokens['jira_token']
         self.PROJECT_NAME = "BT"

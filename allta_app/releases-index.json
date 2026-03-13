@@ -1,5 +1,5 @@
 {
-  "date": "2026-02-25 13:58:25.587381",
+  "date": "2026-03-13 12:36:23.417753",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -10911,6 +10911,80 @@
             }
           ],
           "path": "frozen/1.7/1.7.10/1.7.10.52",
+          "is_main_symlinked": false
+        },
+        "1.7.10.64": {
+          "astra_lists_commit": "2b58f1dc277a8313d368ba0483538a602e8c9669",
+          "version": {
+            "arch": 1,
+            "family": 7,
+            "release": 10,
+            "special": null,
+            "special_version": null,
+            "build": 64,
+            "real_family": 7,
+            "major_family": "1.7",
+            "release_family": "1.7.10",
+            "comparable_tuple": [
+              1,
+              7,
+              10,
+              "",
+              0,
+              64
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.10/1.7.10.64/iso/installation-1.7.10.64-13.03.2026_03.37.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.7/1.7.10/1.7.10.64/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "2026-03-13T03:37:00",
+              "device": null,
+              "hashsums": {
+                "gost": "8e08cf6e02e2b96affdaa1c16237fa914fc1ab0ab896bfcb59fc5b3d3042b1f8",
+                "md5": "c2cec1897c546281205bd6a878e3298f"
+              },
+              "changelog": "frozen/1.7/1.7.10/1.7.10.64/sources/changelogs/changelog-installation-1.7.10.64.html",
+              "release_notes": "frozen/1.7/1.7.10/1.7.10.64/sources/release-notes/release-notes-installation-1.7.10.64.html"
+            },
+            {
+              "path": "frozen/1.7/1.7.10/1.7.10.64/iso/main_update-1.7.10.64-13.03.2026_03.37.iso",
+              "type": "main_update",
+              "mount_point": "frozen/1.7/1.7.10/1.7.10.64/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-03-13T03:37:00",
+              "device": null,
+              "hashsums": {
+                "gost": "ae39cab6d6c2273ea31273a81e1ba73ad48fa65b650554fce540a76d8ae2f42f",
+                "md5": "b26bf968cbc1cbad463adc2257d66754"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.7/1.7.10/1.7.10.64/iso/base-1.7.10.64-13.03.2026_03.37.iso",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.10/1.7.10.64/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-03-13T03:37:00",
+              "device": null,
+              "hashsums": {
+                "gost": "3c2ed19479ba690c5239dac89a976b511f62ddad6630f1fb95e1848a13199bb4",
+                "md5": "4c2a888717c34a0756d9a0a5fcff4db4"
+              },
+              "changelog": "frozen/1.7/1.7.10/1.7.10.64/sources/changelogs/changelog-base-1.7.10.64.html",
+              "release_notes": "frozen/1.7/1.7.10/1.7.10.64/sources/release-notes/release-notes-base-1.7.10.64.html"
+            }
+          ],
+          "path": "frozen/1.7/1.7.10/1.7.10.64",
           "is_main_symlinked": false
         },
         "1.7.10.EXT1.1": {
@@ -23475,6 +23549,156 @@
           "path": "frozen/4.7/4.7.9/4.7.9.KREA1.1",
           "is_main_symlinked": false
         }
+      },
+      "4.7.10": {
+        "4.7.10.3": {
+          "astra_lists_commit": null,
+          "version": {
+            "arch": 4,
+            "family": 7,
+            "release": 10,
+            "special": null,
+            "special_version": null,
+            "build": 3,
+            "real_family": 7,
+            "major_family": "4.7",
+            "release_family": "4.7.10",
+            "comparable_tuple": [
+              4,
+              7,
+              10,
+              "",
+              0,
+              3
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/4.7/4.7.10/4.7.10.3/iso/main_update-4.7.10.3-02.03.2026_21.33.iso",
+              "type": "main_update",
+              "mount_point": "frozen/4.7/4.7.10/4.7.10.3/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-03-02T21:33:00",
+              "device": null,
+              "hashsums": {
+                "gost": "1a33bd1fd5b1101470aea708f012edc0ae99baa694237d90523b00342903e252",
+                "md5": "2b8681e98209f047caa2f202c64e0d67"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.10/4.7.10.3/iso/installation-4.7.10.3-02.03.2026_22.24.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.10/4.7.10.3/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "2026-03-02T22:24:00",
+              "device": null,
+              "hashsums": {
+                "gost": "914a8ad4a290cf4091d69034f3e9fc4b9c26a114f617bebb08941eb941ff1fdd",
+                "md5": "cb6b71dd57bbc9243c68f11983c32120"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.10/4.7.10.3/iso/installation-4.7.10.3-02.03.2026_22.00-mtrust1.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.10/4.7.10.3/installation-mtrust1",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-03-02T22:00:00",
+              "device": "mtrust1",
+              "hashsums": {
+                "gost": "c30d14c1c045a927f942e0ba6034fb87c40b7fff34dcb64207bd10670fee0e42",
+                "md5": "b829c09ff1632a5182c309f8bc282aca"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.10/4.7.10.3/iso/installation-4.7.10.3-02.03.2026_22.06-baikal1.iso",
+              "type": "installation",
+              "mount_point": "frozen/4.7/4.7.10/4.7.10.3/installation-baikal1",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "2026-03-02T22:06:00",
+              "device": "baikal1",
+              "hashsums": {
+                "gost": "583a282ec80cf31b40b9c0c567ca451310a6167a37c945e04cbef2b929b9dfe1",
+                "md5": "eb9a508143878262e75cd1ce8d51e52f"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/4.7/4.7.10/4.7.10.3/iso/base-4.7.10.3-02.03.2026_21.40.iso",
+              "type": "base",
+              "mount_point": "frozen/4.7/4.7.10/4.7.10.3/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-03-02T21:40:00",
+              "device": null,
+              "hashsums": {
+                "gost": "157e2b131487ce648482bcde86a5f6037dc0967bed749602e4a660857312e2a1",
+                "md5": "892b0f768aedeb72f568469a377f1e20"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/4.7/4.7.10/4.7.10.3",
+          "is_main_symlinked": false
+        },
+        "4.7.10.EXT1.1": {
+          "astra_lists_commit": null,
+          "version": {
+            "arch": 4,
+            "family": 7,
+            "release": 10,
+            "special": "EXT",
+            "special_version": 1,
+            "build": 1,
+            "real_family": 7,
+            "major_family": "4.7",
+            "release_family": "4.7.10",
+            "comparable_tuple": [
+              4,
+              7,
+              10,
+              "EXT",
+              1,
+              1
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/4.7/4.7.10/4.7.10.EXT1.1/iso/extended-4.7.10.EXT1.1-04.03.2026_19.59.iso",
+              "type": "extended",
+              "mount_point": "frozen/4.7/4.7.10/4.7.10.EXT1.1/extended-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-03-04T19:59:00",
+              "device": null,
+              "hashsums": {
+                "gost": "fd7577fc870b94f4da8dde3f14b69fefaa531f8364c0d830de31d278790b5b22",
+                "md5": "69e7f15b6db46b0dab1b115e64fb84b2"
+              },
+              "changelog": null,
+              "release_notes": null
+            }
+          ],
+          "path": "frozen/4.7/4.7.10/4.7.10.EXT1.1",
+          "is_main_symlinked": false
+        }
       }
     },
     "4.8": {
@@ -27904,6 +28128,12 @@
               "path": "stable/1.7/1.7.9/EXT1",
               "release_candidate": "1.7.9.EXT1.3"
             }
+          },
+          "UU": {
+            "1.7.9.UU1": {
+              "path": "stable/1.7/1.7.9/UU1",
+              "release_candidate": "1.7.9.46"
+            }
           }
         }
       }
@@ -28018,6 +28248,11 @@
       "3.8.4": {
         "path": "stable/3.8/3.8.4",
         "release_candidate": "3.8.4.3",
+        "special_versions": {}
+      },
+      "3.8.5": {
+        "path": "stable/3.8/3.8.5",
+        "release_candidate": "3.8.5.2",
         "special_versions": {}
       }
     },

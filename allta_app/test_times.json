@@ -21,7 +21,7 @@
             "postgresql-sm": "5:09:06",
             "psql parsec": "2:38:27",
             "psql vanilla": "2:23:00",
-            "psql balance": "1:47:56",
+            "psql balance": "0:47:59",
             "psql kernels": "1:48:56",
             "steal time": "2:27:28",
             "steal time-sm": "2:16:49",
@@ -56,8 +56,8 @@
             "auditd-p": "1:30:01",
             "auditd-u": "7:46:19",
             "digsig-cdt": "0:32:57",
-            "InitOnFree": "1:30:01",
-            "SegFault": "1:30:01",
+            "InitOnFree": "1:03:37",
+            "SegFault": "1:07:55",
             "Total time": "0:00:00"
         },
         "stand13": {

@@ -40,3 +40,9 @@ echo "Для остановки нажмите Ctrl+C или выполните:
 
 wait
 
+
+# 1. В режиме Орел опставить image, headers-generic, lam - reboot
+# 2. Отключить аудит - reboot
+# 3. Перевести в режим Смоленск - reboot
+# 4. Поставить linux-tools
+

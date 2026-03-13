@@ -1,3 +1,10 @@
+allta (1.0.3) unstable; urgency=medium
+
+  * Исправлены ошибки и добавлена возможность локального подключения к ВМ.
+
+ -- Filippenko Maksim <mfilippenko@astralinux.ru>  Tue, 6 Mar 2025 17:00:00 +0300
+
+
 allta (1.0.2) unstable; urgency=medium
 
   * Добавлена поддержка получения паролей от сервисов и централизованного управления ими.

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from typing import List, Optional
 
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.api.v1.schemas.os_versions import (
     OSVersionRead,
+    OSVersionSyncRead,
     OSVersionUpdate,
 )
 from app.api.v1.crud.os_versions import (
@@ -26,7 +28,9 @@ from app.api.v1.dependencies import get_current_admin_user
 from app.db.session import SessionLocal
 from app.api.v1.models.os_versions import OSVersion
 
-SYNC_INTERVAL_SEC = int(os.getenv("OS_VERSIONS_SYNC_INTERVAL", "900"))
+log = logging.getLogger(__name__)
+
+SYNC_INTERVAL_SEC = int(os.getenv("OS_VERSIONS_SYNC_INTERVAL", "180"))
 RELEASES_URL = os.getenv(
     "RELEASES_JSON_URL",
     "http://allta.devos.astralinux.ru/rest/api/get-repo-path",
@@ -57,7 +61,7 @@ def list_versions(
 
 
 @router.get(
-    "/{version_id}",
+    "/{version_id:int}",
     response_model=OSVersionRead,
     summary="Получить версию ОС по ID (только управление серверами)",
     dependencies=[Depends(get_current_admin_user)],
@@ -80,7 +84,7 @@ def read_version(
 
 
 @router.post(
-    "/{version_id}",
+    "/{version_id:int}",
     response_model=OSVersionRead,
     summary="Обновить существующую версию ОС (admin)",
     dependencies=[Depends(get_current_admin_user)],
@@ -104,7 +108,7 @@ def patch_version(
 
 
 @router.delete(
-    "/{version_id}",
+    "/{version_id:int}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить версию ОС (admin)",
     dependencies=[Depends(get_current_admin_user)],
@@ -127,40 +131,83 @@ def delete_version(
 
 # -- background sync ----------------------------------------------------------
 
-def _sync_versions_once() -> int:
+def _extract_release_names(payload: object) -> set[str]:
+    if isinstance(payload, dict):
+        return {str(key).strip() for key in payload.keys() if str(key).strip()}
+    if isinstance(payload, list):
+        names: set[str] = set()
+        for item in payload:
+            if isinstance(item, str) and item.strip():
+                names.add(item.strip())
+                continue
+            if isinstance(item, dict):
+                raw_name = item.get("name") or item.get("version")
+                text = str(raw_name).strip() if raw_name is not None else ""
+                if text:
+                    names.add(text)
+        return names
+    raise ValueError("Unexpected releases payload type")
+
+
+def _sync_versions_once() -> OSVersionSyncRead:
     """
     Тянет releases.json, добавляет новые версии в БД.
-
-    Returns:
-        int: сколько новых версий было добавлено.
     """
-
     resp = requests.get(RELEASES_URL, timeout=30)
     resp.raise_for_status()
-    releases = resp.json()
-    if not isinstance(releases, dict):
-        return 0
-    names = {str(k) for k in releases.keys()}
+    names = _extract_release_names(resp.json())
 
     with SessionLocal() as db:
         existing = {row[0] for row in db.query(OSVersion.name).all()}
         new_names = sorted(names - existing)
-        if not new_names:
-            return 0
-        for name in new_names:
-            db.add(OSVersion(name=name))
-        db.commit()
-        return len(new_names)
+        added = 0
+        if new_names:
+            for name in new_names:
+                db.add(OSVersion(name=name))
+            db.commit()
+            added = len(new_names)
+
+        total = db.query(OSVersion).count()
+        return OSVersionSyncRead(source_url=RELEASES_URL, added=added, total=total)
+
+
+@router.post(
+    "/refresh",
+    response_model=OSVersionSyncRead,
+    summary="Обновить список версий ОС из внешнего API (admin)",
+    dependencies=[Depends(get_current_admin_user)],
+)
+def refresh_versions():
+    """
+    Ручной запуск синхронизации списка версий ОС с внешним API.
+    """
+    try:
+        return _sync_versions_once()
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"External OS versions API is unavailable: {e}",
+        ) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Invalid response from external OS versions API: {e}",
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OS versions refresh failed: {e}",
+        ) from e
 
 
 async def _sync_loop():
     while True:
         try:
             added = await asyncio.to_thread(_sync_versions_once)
-            if added:
-                print(f"[os_versions] added {added} new versions from releases.json")
+            if added.added:
+                log.info("[os_versions] added %s new versions from releases.json", added.added)
         except Exception as e:
-            print(f"[os_versions] sync error: {e}")
+            log.warning("[os_versions] sync error: %s", e)
         await asyncio.sleep(SYNC_INTERVAL_SEC)
 
 

@@ -1,4 +1,4 @@
-import json, subprocess, logging
+import subprocess, logging
 import redfish
 
 from app.api.v1.models.physical_servers import PhysicalServer, DriverType
@@ -9,7 +9,6 @@ def __cmd(self, cmd):
 
 class ILOController:
     def __init__(self, server: PhysicalServer):
-        cfg = json.load(open("/home/u/ilo.json"))
         self.address = server.admin_panel_ip
         self.login = server.admin_panel_user
         self.password = server.admin_panel_pass

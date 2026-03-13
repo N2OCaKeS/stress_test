@@ -20,3 +20,9 @@ class OSVersionRead(OSVersionBase):
     id: int
 
     model_config = {"from_attributes": True}
+
+
+class OSVersionSyncRead(BaseModel):
+    source_url: str = Field(..., example="http://allta.devos.astralinux.ru/rest/api/get-repo-path")
+    added: int = Field(..., ge=0, example=3)
+    total: int = Field(..., ge=0, example=12)

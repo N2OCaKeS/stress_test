@@ -9,6 +9,8 @@ from app.api.v1.routes.os_versions import (
 from app.api.v1.routes.manage_servers import router as manage_servers_router
 from app.api.v1.routes.control_servers import router as control_servers_router
 from app.api.v1.routes.arm_info import router as arm_router
+from app.api.v1.routes.ilo_credentials import router as ilo_router
+from app.api.v1.routes.snapshot_passwords import router as snapshot_passwords_router
 from app.api.v1.routes.heal_checker import router as health
 app = FastAPI(title="Allta Server API",
     version="1.0.0",
@@ -45,6 +47,8 @@ app.include_router(os_versions_router, prefix="/v1", tags=["OS"])
 app.include_router(manage_servers_router, prefix="/v1", tags=["Server"])
 app.include_router(control_servers_router, prefix="/v1", tags=["Control"])
 app.include_router(arm_router, prefix="/v1", tags=["ARM"])
+app.include_router(ilo_router, prefix="/v1", tags=["ILO"])
+app.include_router(snapshot_passwords_router, prefix="/v1", tags=["Snapshot Passwords"])
 
 
 @app.on_event("startup")

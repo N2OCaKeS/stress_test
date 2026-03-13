@@ -22,7 +22,10 @@ from app.api.v1.dependencies import (
     get_current_admin_user,
     get_token,
 )
-from app.utils.server_api import get_physical_server_from_remote
+from app.utils.server_api import (
+    get_physical_server_from_remote,
+    get_snapshot_password_by_os_version,
+)
 from app.utils.redis_queue import enqueue_task
 from app.utils.config import settings
 
@@ -37,20 +40,26 @@ def _can_manage_vms(user: AuthVerifyResponse) -> bool:
     return user.has_permission(settings.VM_MANAGE_PERMISSION)
 
 
-def _server_task_info_from_api(srv, server_id: int) -> ServerTaskInfo:
+async def _server_task_info_from_api(srv, server_id: int, token: str) -> ServerTaskInfo:
     ip = str(getattr(srv, "ip_address", "") or getattr(srv, "admin_panel_ip", "")).strip()
-    username = str(
-        getattr(srv, "server_user", None) or getattr(srv, "admin_panel_user", None) or ""
+    os_version_name = str(
+        getattr(srv, "os_version", None) or getattr(srv, "os_version_name", None) or ""
     ).strip()
-    password = str(
-        getattr(srv, "server_password", None) or getattr(srv, "admin_panel_pass", None) or ""
-    )
     phy_if_raw = str(getattr(srv, "phy_if", None) or getattr(srv, "phys_iface", None) or "").strip()
 
     if not ip:
         raise HTTPException(status_code=502, detail="Remote server has no IP field")
+    if not os_version_name:
+        raise HTTPException(status_code=502, detail="Remote server has no os_version")
+
+    creds = await get_snapshot_password_by_os_version(os_version_name, token)
+    username = str(creds.ssh_username).strip()
+    password = str(creds.password)
     if not username or not password:
-        raise HTTPException(status_code=502, detail="Remote server has no credentials")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Snapshot password for os_version '{os_version_name}' is incomplete",
+        )
 
     return ServerTaskInfo(
         id=server_id,
@@ -248,7 +257,7 @@ async def create_snapshots(
     env = SnapshotTaskEnvelope(
         task_id=task_id,
         operation=SnapshotTaskOperation.create,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vms={_vm_name(vm): _vm_id(vm) for vm in vms},
         snapshot_name=snapshot_name,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
@@ -350,7 +359,7 @@ async def delete_snapshots(
     env = SnapshotTaskEnvelope(
         task_id=task_id,
         operation=SnapshotTaskOperation.delete,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vms={_vm_name(vm): _vm_id(vm) for vm in vms},
         snapshot_name=snapshot_name,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",
@@ -454,7 +463,7 @@ async def revert_snapshots(
     env = SnapshotTaskEnvelope(
         task_id=task_id,
         operation=SnapshotTaskOperation.revert,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vms={_vm_name(vm): _vm_id(vm) for vm in vms},
         snapshot_name=snapshot_name,
         json_remote_path=f"/opt/allta_vm/jobs/{task_id}.json",

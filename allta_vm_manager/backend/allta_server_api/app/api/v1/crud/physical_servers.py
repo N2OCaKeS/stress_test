@@ -8,17 +8,52 @@ from app.api.v1.models.os_versions import OSVersion
 from app.api.v1.schemas.physical_servers import (
     PhysicalServerCreate,
     PhysicalServerUpdate,
+    extract_stand_number,
 )
 from app.utils.crypto import Crypto
 
 
 def _decrypt_credentials(server: PhysicalServer):
-    if server.server_password:
-        crypto = Crypto()
-        server.server_password = crypto.decrypt(server.server_password)    
     if server.admin_panel_pass:
         crypto = Crypto()
         server.admin_panel_pass = crypto.decrypt(server.admin_panel_pass)
+
+
+def _find_server_with_stand_number(
+    db: Session,
+    stand_number: int,
+    exclude_server_id: Optional[int] = None,
+) -> Optional[tuple[int, str]]:
+    rows = db.query(PhysicalServer.id, PhysicalServer.name).all()
+    for row_id, row_name in rows:
+        if exclude_server_id is not None and row_id == exclude_server_id:
+            continue
+        parsed = extract_stand_number(str(row_name or "").strip())
+        if parsed == stand_number:
+            return row_id, str(row_name or "").strip()
+    return None
+
+
+def _ensure_unique_stand_number(
+    db: Session,
+    server_name: str,
+    exclude_server_id: Optional[int] = None,
+) -> None:
+    stand_number = extract_stand_number(server_name)
+    if stand_number is None:
+        raise ValueError("name must match format 'stand<number>_<server_name>'")
+
+    conflict = _find_server_with_stand_number(
+        db=db,
+        stand_number=stand_number,
+        exclude_server_id=exclude_server_id,
+    )
+    if conflict:
+        conflict_id, conflict_name = conflict
+        raise ValueError(
+            f"stand number '{stand_number}' is already used by server id={conflict_id} ({conflict_name})"
+        )
+
 
 def get_physical_server(db: Session, server_id: int) -> PhysicalServer:
     srv = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
@@ -38,6 +73,17 @@ def get_physical_servers(db: Session, skip: int = 0, limit: int = 100) -> List[P
 def create_physical_server(db: Session, data: PhysicalServerCreate) -> PhysicalServer:
     payload = data.model_dump()
     payload["ip_address"] = str(payload["ip_address"])
+    payload["name"] = str(payload["name"]).strip()
+    payload["grade"] = str(payload["grade"]).strip() if payload.get("grade") is not None else None
+    payload["cpu_model"] = (
+        str(payload["cpu_model"]).strip() if payload.get("cpu_model") is not None else None
+    )
+    payload["storage"] = str(payload["storage"]).strip() if payload.get("storage") is not None else None
+    payload["gpu"] = str(payload["gpu"]).strip() if payload.get("gpu") is not None else None
+    if payload.get("cpu_cores_count") is None:
+        payload["cpu_cores_count"] = payload.get("cpu_total")
+    if payload.get("cpu_threads") is None:
+        payload["cpu_threads"] = payload.get("cpu_cores_count")
 
     os_id = payload.get("os_version_id")
     if os_id is not None and not db.get(OSVersion, os_id):
@@ -52,9 +98,10 @@ def create_physical_server(db: Session, data: PhysicalServerCreate) -> PhysicalS
     if exists:
         raise ValueError(f"Server with IP {payload['ip_address']} already exists")
 
+    _ensure_unique_stand_number(db=db, server_name=payload["name"])
+
     crypto = Crypto()
     payload["admin_panel_pass"] = crypto.encrypt(secret=payload["admin_panel_pass"])
-    payload["server_password"] = crypto.encrypt(secret=payload["server_password"])
 
     server = PhysicalServer(**payload)
     db.add(server)
@@ -83,6 +130,27 @@ def update_physical_server(
 
     update_data = data.model_dump(exclude_unset=True)
 
+    if "name" in update_data:
+        update_data["name"] = str(update_data["name"]).strip()
+        _ensure_unique_stand_number(
+            db=db,
+            server_name=update_data["name"],
+            exclude_server_id=server_id,
+        )
+    if "grade" in update_data and update_data["grade"] is not None:
+        update_data["grade"] = str(update_data["grade"]).strip()
+    if "cpu_model" in update_data and update_data["cpu_model"] is not None:
+        update_data["cpu_model"] = str(update_data["cpu_model"]).strip()
+    if "storage" in update_data and update_data["storage"] is not None:
+        update_data["storage"] = str(update_data["storage"]).strip()
+    if "gpu" in update_data and update_data["gpu"] is not None:
+        update_data["gpu"] = str(update_data["gpu"]).strip()
+    if "cpu_total" in update_data:
+        if "cpu_cores_count" not in update_data or update_data["cpu_cores_count"] is None:
+            update_data["cpu_cores_count"] = update_data["cpu_total"]
+        if "cpu_threads" not in update_data or update_data["cpu_threads"] is None:
+            update_data["cpu_threads"] = update_data["cpu_cores_count"]
+
     # Проверка IP
     if "ip_address" in update_data:
         update_data["ip_address"] = str(update_data["ip_address"])
@@ -104,10 +172,6 @@ def update_physical_server(
     # Проверка driver_type
     if "driver_type" in update_data and update_data["driver_type"] not in [e.value for e in DriverType]:
         raise ValueError(f"Invalid driver_type: {update_data['driver_type']}")
-
-    if "server_password" in update_data:
-        crypto = Crypto()
-        update_data["server_password"] = crypto.encrypt(update_data["server_password"])
 
     # Шифрование пароля
     if "admin_panel_pass" in update_data:

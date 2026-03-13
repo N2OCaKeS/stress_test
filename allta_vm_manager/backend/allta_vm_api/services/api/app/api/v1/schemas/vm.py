@@ -179,6 +179,60 @@ class AstraUpdateRequest(BaseModel):
     }
 
 
+class AlltaUpdateRequest(BaseModel):
+    ids: Optional[List[int]] = Field(default=None, description="Идентификаторы ВМ")
+    names: Optional[List[str]] = Field(default=None, description="Имена ВМ")
+    password: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Если задан, после allta update пароль будет изменён на указанный.",
+        examples=["S3curePass!"],
+    )
+
+    @model_validator(mode="after")
+    def _at_least_one_selector(self):
+        if not (self.ids or self.names):
+            raise ValueError("Provide at least one of: ids or names (both allowed).")
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "ids": [10, 12],
+                "names": ["ws-01", "ws-02"],
+                "password": "S3curePass!",
+            }
+        }
+    }
+
+
+class PasswdRefreshRequest(BaseModel):
+    ids: Optional[List[int]] = Field(default=None, description="Идентификаторы ВМ")
+    names: Optional[List[str]] = Field(default=None, description="Имена ВМ")
+    password: str = Field(
+        ...,
+        min_length=1,
+        description="Новый пароль, который будет установлен после allta update на всех снимках.",
+        examples=["S3curePass!"],
+    )
+
+    @model_validator(mode="after")
+    def _at_least_one_selector(self):
+        if not (self.ids or self.names):
+            raise ValueError("Provide at least one of: ids or names (both allowed).")
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "ids": [10, 12],
+                "names": ["ws-01", "ws-02"],
+                "password": "S3curePass!",
+            }
+        }
+    }
+
+
 class CreateDefaultVMsRequest(BaseModel):
     # общий пароль для «базовых» ВМ
     password: str = Field(..., examples=["S3curePass!"])
@@ -218,6 +272,7 @@ class TaskOperation(str, Enum):
     vm_start = "vm.start"
     vm_stop = "vm.stop"
     vm_astra_update = "vm.astra_update"
+    vm_allta_update = "vm.allta_update"
 
 
 class TaskEnvelope(BaseModel):
@@ -227,6 +282,7 @@ class TaskEnvelope(BaseModel):
     json_remote_path: str
 
     vm_password: Optional[str] = None
+    new_password: Optional[str] = None
     vms_full: Optional[Dict[str, VMSpec]] = None
     vm_names: Optional[List[str]] = None
     snapshot_name: Optional[str] = None
@@ -250,6 +306,8 @@ class TaskEnvelope(BaseModel):
                 raise ValueError("vm_names is required for vm.astra_update")
             if not self.rc:
                 raise ValueError("rc is required for vm.astra_update")
+        if self.operation == TaskOperation.vm_allta_update and not self.vm_names:
+            raise ValueError("vm_names is required for vm.allta_update")
         return self
 
     model_config = {

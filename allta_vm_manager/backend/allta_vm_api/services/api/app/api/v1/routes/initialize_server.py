@@ -12,6 +12,7 @@ from app.api.v1.dependencies import get_current_admin_user, get_token
 from app.utils.config import settings
 from app.utils.server_api import (
     get_physical_server_from_remote,
+    get_snapshot_password_by_os_version,
     set_server_status,
 )
 from app.utils.redis_queue import enqueue_task
@@ -22,6 +23,44 @@ from app.api.v1.crud.vm_snapshot import list_snapshots, delete_snapshot
 
 router = APIRouter(prefix="/servers", tags=["Server"])
 VMS_HUB_STATUS = settings.VMS_HUB_STATUS
+
+
+async def _build_server_task_info(server, token: str) -> ServerTaskInfo:
+    ip_raw = str(getattr(server, "ip_address", "") or getattr(server, "admin_panel_ip", "")).strip()
+    if not ip_raw:
+        raise HTTPException(
+            status_code=502,
+            detail="Remote server has no IP field (admin_panel_ip/ip_address).",
+        )
+
+    os_version_name = str(
+        getattr(server, "os_version", None) or getattr(server, "os_version_name", None) or ""
+    ).strip()
+    if not os_version_name:
+        raise HTTPException(status_code=502, detail="Remote server has no os_version.")
+
+    creds = await get_snapshot_password_by_os_version(os_version_name, token)
+    username = str(creds.ssh_username).strip()
+    password = str(creds.password)
+    if not username or not password:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Snapshot password for os_version '{os_version_name}' is incomplete.",
+        )
+
+    phys_iface = str(getattr(server, "phy_if", "") or getattr(server, "phys_iface", "")).strip()
+    if not phys_iface:
+        raise HTTPException(
+            status_code=502,
+            detail="Remote server has no physical interface field (phy_if).",
+        )
+
+    return ServerTaskInfo(
+        ip=ip_address(ip_raw),
+        username=username,
+        password=password,
+        phy_if=phys_iface,
+    )
 
 
 @router.post(
@@ -52,34 +91,7 @@ async def prepare_vms_hub(
 
     updated = await set_server_status(server_id, VMS_HUB_STATUS, token)
 
-    ip_raw = (server.ip_address or server.admin_panel_ip).strip()
-    if not ip_raw:
-        raise HTTPException(
-            status_code=502,
-            detail="Remote server has no IP field (admin_panel_ip/ip_address).",
-        )
-
-    username = (server.server_user or server.admin_panel_user).strip()
-    password = server.server_password or server.admin_panel_pass
-    if not username or not password:
-        raise HTTPException(
-            status_code=502,
-            detail="Remote server has no credentials (server_user/server_password or admin_panel_user/admin_panel_pass).",
-        )
-
-    phys_iface = server.phy_if.strip()
-    if not phys_iface:
-        raise HTTPException(
-            status_code=502,
-            detail="Remote server has no physical interface field (phy_if).",
-        )
-
-    server_info = ServerTaskInfo(
-        ip=ip_address(ip_raw),
-        username=username,
-        password=password,
-        phy_if=phys_iface,
-    )
+    server_info = await _build_server_task_info(server, token)
     task_id = str(uuid.uuid4())
     envelope = TaskEnvelope(
         task_id=task_id,
@@ -138,34 +150,7 @@ async def rm_vms_hub(
             await db.delete(vm)
         await db.commit()
 
-    ip_raw = (server.ip_address or server.admin_panel_ip).strip()
-    if not ip_raw:
-        raise HTTPException(
-            status_code=502,
-            detail="Remote server has no IP field (admin_panel_ip/ip_address).",
-        )
-
-    username = (server.server_user or server.admin_panel_user).strip()
-    password = server.server_password or server.admin_panel_pass
-    if not username or not password:
-        raise HTTPException(
-            status_code=502,
-            detail="Remote server has no credentials (server_user/server_password or admin_panel_user/admin_panel_pass).",
-        )
-
-    phys_iface = server.phy_if.strip()
-    if not phys_iface:
-        raise HTTPException(
-            status_code=502,
-            detail="Remote server has no physical interface field (phy_if).",
-        )
-
-    server_info = ServerTaskInfo(
-        ip=ip_address(ip_raw),
-        username=username,
-        password=password,
-        phy_if=phys_iface,
-    )
+    server_info = await _build_server_task_info(server, token)
 
     task_id = str(uuid.uuid4())
     envelope = TaskEnvelope(

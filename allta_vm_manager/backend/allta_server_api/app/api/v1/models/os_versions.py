@@ -16,3 +16,9 @@ class OSVersion(Base):
         back_populates="os_version",
         cascade="all, delete-orphan",
     )
+    snapshot_password = relationship(
+        "SnapshotPassword",
+        back_populates="os_version",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )

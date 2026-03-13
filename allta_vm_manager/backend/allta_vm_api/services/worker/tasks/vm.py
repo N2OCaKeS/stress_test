@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Any, Callable, Awaitable
@@ -100,6 +101,36 @@ def _list_snapshots(ssh: SimpleSSH, vm_name: str) -> List[str]:
     )
     out = (r.get("stdout") or "")
     return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _bash_lc(script: str) -> str:
+    return f"bash -lc {shlex.quote(script)}"
+
+
+def _host_snapshot_command(action: str, vm_name: str, snapshot_name: str) -> str:
+    return (
+        f"sudo allta-vm snapshot {action} --vms {shlex.quote(vm_name)} "
+        f"--name {shlex.quote(snapshot_name)}"
+    )
+
+
+async def _wait_for_guest_ssh(ip: str, password: str, *, timeout_s: int = 180) -> tuple[bool, dict[str, Any]]:
+    last: dict[str, Any] = {"ip": ip, "ping": False, "ssh_rc": None, "ssh_stderr": ""}
+
+    async def _ready() -> bool:
+        ping_ok = await _ping(ip)
+        last["ping"] = ping_ok
+        if not ping_ok:
+            return False
+
+        ssh_vm = SimpleSSH(host=ip, username="u", password=password, connect_timeout=10)
+        res = ssh_vm.run_command("true", timeout=20)
+        last["ssh_rc"] = res.get("rc")
+        last["ssh_stderr"] = res.get("stderr")
+        return res.get("rc") == 0
+
+    ok = await _retry_for(_ready, timeout_s=timeout_s, interval_s=5)
+    return ok, last
 
 
 # --- generic retry ------------------------------------------------------------
@@ -789,6 +820,189 @@ def task_vm_astra_update(self, envelope: dict) -> dict:
             "max_parallel_groups": max_parallel,
             "groups_ok": ok_groups,
             "snapshots_db": {"name": rc, "added_for": added},
+        }
+        return out
+
+    try:
+        return asyncio.run(_run())
+    except TaskFailure:
+        raise
+    except Exception as e:
+        _fail(self, envelope, f"unexpected error: {e.__class__.__name__}",
+              stage="unexpected", stdout=None, stderr=traceback.format_exc())
+
+
+@shared_task(name="task_vm_allta_update", bind=True, base=BaseTask)
+def task_vm_allta_update(self, envelope: dict) -> dict:
+    _require(envelope, ["task_id", "operation", "server", "vm_names"])
+    server = envelope["server"]
+    vm_names: List[str] = envelope["vm_names"] or []
+    new_password: str | None = envelope.get("new_password")
+
+    allta_update_cmd = _bash_lc(
+        "set -euo pipefail; "
+        "cd /tmp; "
+        "rm -f ./allta_*_amd64.deb; "
+        "wget \"ftp://10.177.103.10/allta_*_amd64.deb\"; "
+        "compgen -G \"./allta_*_amd64.deb\" > /dev/null; "
+        "sudo dpkg -i ./allta_*_amd64.deb"
+    )
+
+    async def _run() -> dict:
+        SessionLocal = get_async_sessionmaker()
+        processed: dict[str, list[str]] = {}
+        password_updates: dict[str, str] = {}
+
+        async with SessionLocal() as db:
+            res = await db.execute(select(VirtualMachine).where(VirtualMachine.name.in_(vm_names)))
+            rows = res.scalars().all()
+            if len(rows) != len(vm_names):
+                found = {vm.name for vm in rows}
+                missing = [n for n in vm_names if n not in found]
+                _fail(self, envelope, f"some VMs not found in DB: {missing}",
+                      stage="db-precheck", extra={"missing": missing})
+
+            sids = {vm.server_id for vm in rows}
+            if len(sids) != 1 or int(server.get("id")) not in sids:
+                _fail(self, envelope,
+                      f"selected VMs belong to server_ids={sorted(sids)}, expected={server.get('id')}",
+                      stage="db-precheck")
+
+            vm_by_name = {vm.name: vm for vm in rows}
+            selected_vms = [vm_by_name[name] for name in vm_names]
+
+            snapshot_rows = (
+                await db.execute(
+                    select(VMSnapshot)
+                    .where(VMSnapshot.vm_id.in_([vm.id for vm in selected_vms]))
+                    .order_by(VMSnapshot.vm_id.asc(), VMSnapshot.id.asc())
+                )
+            ).scalars().all()
+
+            snapshots_by_vm_id: Dict[int, List[VMSnapshot]] = {}
+            for snapshot in snapshot_rows:
+                snapshots_by_vm_id.setdefault(int(snapshot.vm_id), []).append(snapshot)
+
+            current_passwords: Dict[int, str] = {}
+            password_errors: List[str] = []
+            for vm in selected_vms:
+                try:
+                    password = _CRYPTO.decrypt(vm.password_enc) if vm.password_enc else ""
+                except Exception as exc:
+                    password_errors.append(f"{vm.name}: decrypt_err={exc}")
+                    password = ""
+                if not password:
+                    password_errors.append(f"{vm.name}: empty password")
+                    continue
+                current_passwords[int(vm.id)] = password
+
+            if password_errors:
+                _fail(self, envelope, "password decrypt/empty errors",
+                      stage="payload-validate", extra={"details": password_errors})
+
+            ssh_srv = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+
+            for vm in selected_vms:
+                vm_id = int(vm.id)
+                vm_ip = str(vm.ip_address)
+                vm_password = current_passwords[vm_id]
+                snapshots = snapshots_by_vm_id.get(vm_id, [])
+                if not snapshots:
+                    _fail(self, envelope, f"no snapshots found in DB for VM '{vm.name}'",
+                          stage="db-precheck", extra={"vm": vm.name})
+
+                processed[vm.name] = []
+
+                for snapshot in snapshots:
+                    snapshot_name = str(snapshot.name)
+                    deleted_snapshot = False
+
+                    run_ssh(
+                        self,
+                        envelope,
+                        ssh_srv,
+                        _host_snapshot_command("revert", vm.name, snapshot_name),
+                        stage=f"snapshot-revert[{vm.name}:{snapshot_name}]",
+                    )
+
+                    ready, ready_meta = await _wait_for_guest_ssh(vm_ip, vm_password, timeout_s=180)
+                    if not ready:
+                        _fail(
+                            self,
+                            envelope,
+                            f"guest SSH is not ready after snapshot revert for VM '{vm.name}'",
+                            stage="guest-wait",
+                            extra={"vm": vm.name, "snapshot": snapshot_name, "wait": ready_meta},
+                        )
+
+                    ssh_vm = SimpleSSH(host=vm_ip, username="u", password=vm_password, connect_timeout=10)
+                    run_ssh(
+                        self,
+                        envelope,
+                        ssh_vm,
+                        allta_update_cmd,
+                        stage=f"guest-allta-update[{vm.name}:{snapshot_name}]",
+                    )
+
+                    if new_password:
+                        password_cmd = _bash_lc(
+                            "set -euo pipefail; "
+                            f"printf '%s\\n' {shlex.quote(f'u:{new_password}')} | sudo chpasswd"
+                        )
+                        run_ssh(
+                            self,
+                            envelope,
+                            ssh_vm,
+                            password_cmd,
+                            stage=f"guest-password-change[{vm.name}:{snapshot_name}]",
+                        )
+
+                        new_ready, new_ready_meta = await _wait_for_guest_ssh(vm_ip, new_password, timeout_s=60)
+                        if not new_ready:
+                            _fail(
+                                self,
+                                envelope,
+                                f"guest SSH is not ready with new password for VM '{vm.name}'",
+                                stage="guest-password-verify",
+                                extra={"vm": vm.name, "snapshot": snapshot_name, "wait": new_ready_meta},
+                            )
+
+                    run_ssh(
+                        self,
+                        envelope,
+                        ssh_srv,
+                        _host_snapshot_command("delete", vm.name, snapshot_name),
+                        stage=f"snapshot-delete[{vm.name}:{snapshot_name}]",
+                    )
+                    deleted_snapshot = True
+
+                    try:
+                        run_ssh(
+                            self,
+                            envelope,
+                            ssh_srv,
+                            _host_snapshot_command("create", vm.name, snapshot_name),
+                            stage=f"snapshot-create[{vm.name}:{snapshot_name}]",
+                        )
+                        deleted_snapshot = False
+                    except TaskFailure:
+                        if deleted_snapshot:
+                            await db.delete(snapshot)
+                            await db.commit()
+                        raise
+
+                    processed[vm.name].append(snapshot_name)
+
+                if new_password:
+                    vm.password_enc = _CRYPTO.encrypt(new_password)
+                    password_updates[vm.name] = "updated"
+                    await db.commit()
+
+        out = _std_ok(envelope)
+        out["data"] = {
+            "processed_snapshots": processed,
+            "password_updates": password_updates,
+            "password_changed": bool(new_password),
         }
         return out
 

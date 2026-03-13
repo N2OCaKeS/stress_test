@@ -1,5 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -9,6 +10,9 @@ from app.api.v1.schemas.physical_servers import (
     PhysicalServerUpdate,
     PhysicalServerStatusUpdate,
     FixedServerStatus,
+    is_valid_server_name,
+    extract_stand_number,
+    suggest_server_name,
 )
 from app.api.v1.crud.physical_servers import (
     get_physical_server,
@@ -23,6 +27,7 @@ from app.api.v1.dependencies import (
     AuthVerifyResponse,
 )
 from app.api.v1.models.physical_servers import PhysicalServer
+from app.api.v1.models.os_versions import OSVersion
 from app.utils.config import settings
 
 router = APIRouter(
@@ -31,11 +36,24 @@ router = APIRouter(
 )
 
 
+class ServerOSVersionUpdatePayload(BaseModel):
+    server_name: str = Field(..., min_length=1, max_length=100)
+    os_version_name: str = Field(..., min_length=1, max_length=100)
+
+    @field_validator("server_name", "os_version_name")
+    @classmethod
+    def strip_not_empty(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be empty")
+        return normalized
+
+
 def _can_manage_servers(user: AuthVerifyResponse) -> bool:
     return user.has_permission(settings.SERVER_MANAGE_PERMISSION)
 
 
-def _can_see_server_passwords(user: AuthVerifyResponse) -> bool:
+def _can_see_admin_panel_passwords(user: AuthVerifyResponse) -> bool:
     return user.has_permission(settings.SERVER_MANAGE_PERMISSION) or user.has_permission(
         settings.VM_MANAGE_PERMISSION
     )
@@ -43,8 +61,9 @@ def _can_see_server_passwords(user: AuthVerifyResponse) -> bool:
 
 def _to_server_read(server: PhysicalServer, *, reveal_passwords: bool) -> PhysicalServerRead:
     payload = PhysicalServerRead.model_validate(server).model_dump()
+    os_name = str(payload.get("os_version") or "").strip() or None
+    payload["os_version"] = os_name
     if not reveal_passwords:
-        payload["server_password"] = "***hidden***"
         payload["admin_panel_pass"] = "***hidden***"
     return PhysicalServerRead(**payload)
 
@@ -63,11 +82,77 @@ def list_servers(
     Доступ: любой аутентифицированный пользователь.
     """
     servers = get_physical_servers(db)
-    reveal_passwords = _can_see_server_passwords(current_user)
+    reveal_passwords = _can_see_admin_panel_passwords(current_user)
     return [
         _to_server_read(server, reveal_passwords=reveal_passwords)
         for server in servers
     ]
+
+
+@router.get(
+    "/name-format/invalid",
+    summary="Показать серверы с невалидным именем",
+)
+def list_servers_with_invalid_name(
+    db: Session = Depends(get_db),
+    _admin: AuthVerifyResponse = Depends(get_current_admin_user),
+):
+    servers = db.query(PhysicalServer).order_by(PhysicalServer.id.asc()).all()
+    items: list[dict[str, object]] = []
+
+    for server in servers:
+        current_name = str(server.name or "").strip()
+        if is_valid_server_name(current_name):
+            continue
+
+        items.append(
+            {
+                "server_id": server.id,
+                "current_name": current_name,
+                "parsed_stand_number": extract_stand_number(current_name),
+                "suggested_name": suggest_server_name(current_name),
+            }
+        )
+
+    return {"count": len(items), "items": items}
+
+
+@router.post(
+    "/os-version",
+    response_model=PhysicalServerRead,
+    dependencies=[Depends(get_current_admin_user)],
+    summary="Обновить версию ОС сервера по имени сервера и имени версии",
+)
+def update_server_os_version_by_names(
+    data: ServerOSVersionUpdatePayload,
+    db: Session = Depends(get_db),
+):
+    server = (
+        db.query(PhysicalServer)
+        .filter(PhysicalServer.name == data.server_name)
+        .first()
+    )
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Server '{data.server_name}' not found",
+        )
+
+    os_version = (
+        db.query(OSVersion)
+        .filter(OSVersion.name == data.os_version_name)
+        .first()
+    )
+    if not os_version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"OS version '{data.os_version_name}' not found",
+        )
+
+    server.os_version_id = os_version.id
+    db.commit()
+    updated_server = get_physical_server(db, server.id)
+    return _to_server_read(updated_server, reveal_passwords=True)
 
 
 @router.get(
@@ -89,7 +174,7 @@ def get_server(
         srv = get_physical_server(db, server_id)
         return _to_server_read(
             srv,
-            reveal_passwords=_can_see_server_passwords(current_user),
+            reveal_passwords=_can_see_admin_panel_passwords(current_user),
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -205,7 +290,8 @@ def release_status(
     curr = srv.status
 
     if curr == FixedServerStatus.free.value:
-        return srv
+        refreshed = get_physical_server(db, server_id)
+        return _to_server_read(refreshed, reveal_passwords=True)
 
     if curr in {s.value for s in FixedServerStatus}:
         srv.status = FixedServerStatus.free.value
@@ -213,5 +299,5 @@ def release_status(
         srv.status = FixedServerStatus.free.value
 
     db.commit()
-    db.refresh(srv)
-    return srv
+    refreshed = get_physical_server(db, server_id)
+    return _to_server_read(refreshed, reveal_passwords=True)

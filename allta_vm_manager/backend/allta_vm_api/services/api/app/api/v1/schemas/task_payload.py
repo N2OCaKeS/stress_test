@@ -25,6 +25,7 @@ class TaskEnvelope(BaseModel):
         "vm.create",
         "vm.base_create",
         "vm.update",
+        "vm.allta_update",
         "vm.power_on",
         "vm.power_off",
         "snapshot.create",
@@ -40,6 +41,7 @@ class TaskEnvelope(BaseModel):
 
     snapshot_name: Optional[str] = None
     rc: Optional[str] = None
+    new_password: Optional[str] = None
     box: Optional[str] = None
     kernel: Optional[str] = None
 

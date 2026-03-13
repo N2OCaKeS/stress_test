@@ -18,13 +18,17 @@ class PhysicalServer(Base):
     id                 = Column(Integer, primary_key=True, index=True)
     name               = Column(String(100), unique=True, nullable=False)
     ip_address         = Column(INET, unique=True, nullable=False)
+    grade              = Column(String(120), nullable=True)
+    cpu_model          = Column(String(255), nullable=True)
     cpu_total          = Column(Integer, nullable=False)
+    cpu_cores_count    = Column(Integer, nullable=True)
+    cpu_threads        = Column(Integer, nullable=True)
     ram_total          = Column(Integer, nullable=False)
+    storage            = Column(String(255), nullable=True)
+    gpu                = Column(String(255), nullable=True)
     phy_if             = Column(String(50), nullable = False, default="eth0")
     virtualization     = Column(Boolean, nullable=False, default=False)
     ssh_port           = Column(Integer, nullable=False, default=22)
-    server_user       = Column(String(100), nullable=False)
-    server_password   = Column(String, nullable=False)    
     driver_type        = Column(
         String(10),
         nullable=False,
@@ -42,3 +46,9 @@ class PhysicalServer(Base):
         nullable=True
     )
     os_version         = relationship("OSVersion", back_populates="servers")
+
+    @property
+    def os_version_name(self) -> str | None:
+        if self.os_version is None:
+            return None
+        return str(self.os_version.name or "").strip() or None

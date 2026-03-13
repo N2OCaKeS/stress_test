@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.config import settings
-from app.utils.server_api import get_physical_server_from_remote
+from app.utils.server_api import (
+    get_physical_server_from_remote,
+    get_snapshot_password_by_os_version,
+)
 from app.api.v1.models.ip_range import IPRange
 from app.api.v1.models.vm import VirtualMachine
 
@@ -42,10 +45,21 @@ async def ensure_server_ready_for_vms_hub(server_id: int, token: str) -> tuple[b
     if not ip:
         return False, "missing server IP (ip_address/admin_panel_ip)", None
 
-    username = getattr(server, "server_user", None) or getattr(server, "admin_panel_user", None)
-    password = getattr(server, "server_password", None) or getattr(server, "admin_panel_pass", None)
-    if not username or password is None:
-        return False, "missing credentials (server_user/server_password or admin_panel_user/admin_panel_pass)", None
+    os_version_name = str(
+        getattr(server, "os_version", None) or getattr(server, "os_version_name", None) or ""
+    ).strip()
+    if not os_version_name:
+        return False, "missing os_version on server", None
+
+    try:
+        snapshot_password = await get_snapshot_password_by_os_version(os_version_name, token)
+    except HTTPException as e:
+        return False, f"failed to resolve snapshot password: {e.detail}", None
+    except Exception as e:
+        return False, f"failed to resolve snapshot password: {e}", None
+
+    if not snapshot_password.ssh_username or snapshot_password.password is None:
+        return False, f"missing snapshot credentials for os_version '{os_version_name}'", None
 
     phy_if = getattr(server, "phy_if", None) or getattr(server, "phys_iface", None)
     if not phy_if:

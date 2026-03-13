@@ -12,7 +12,7 @@ import redis
 #     task_snapshot_create, task_snapshot_delete, task_snapshot_revert,
 # )
 from tasks.server import task_server_init, task_server_remove
-from tasks.vm import task_vm_astra_update, task_vm_base_create, task_vm_create, task_vm_delete, task_vm_start, task_vm_stop, task_vm_update
+from tasks.vm import task_vm_allta_update, task_vm_astra_update, task_vm_base_create, task_vm_create, task_vm_delete, task_vm_start, task_vm_stop, task_vm_update
 from tasks.snapshot import task_snapshot_create, task_snapshot_delete, task_snapshot_revert
 from utils.config import settings
 log = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ DISPATCH = {
     "vm.stop":         (task_vm_stop, Q_VM),
     "vm.delete":       (task_vm_delete, Q_VM),
     "vm.astra_update": (task_vm_astra_update, Q_VM),
+    "vm.allta_update": (task_vm_allta_update, Q_VM),
     "snapshot.create": (task_snapshot_create, Q_SNAPSHOT),
     "snapshot.delete": (task_snapshot_delete, Q_SNAPSHOT),
     "snapshot.revert": (task_snapshot_revert, Q_SNAPSHOT),

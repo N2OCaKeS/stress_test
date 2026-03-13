@@ -14,7 +14,8 @@ from app.api.v1.models.vm_snapshot import VMSnapshot
 from app.api.v1.schemas.vm import (
     VMRead, VMStatusUpdate, BatchVMCreateRequest, BatchVMUpdateRequest,
     VMDeleteRequest, AstraUpdateRequest, CreateDefaultVMsRequest,
-    TaskEnvelope, TaskOperation, ServerTaskInfo, VMSpec, normalize_status,
+    AlltaUpdateRequest, PasswdRefreshRequest, TaskEnvelope, TaskOperation,
+    ServerTaskInfo, VMSpec, normalize_status,
 )
 from app.api.v1.dependencies import (
     AuthVerifyResponse,
@@ -26,7 +27,11 @@ from app.utils.vm_helper import (
     ensure_server_ready_for_vms_hub, get_ip_range, get_range_bounds,
     ip_in_range, is_ip_free, is_name_free,
 )
-from app.utils.server_api import get_physical_server_from_remote, get_os_versions
+from app.utils.server_api import (
+    get_os_versions,
+    get_physical_server_from_remote,
+    get_snapshot_password_by_os_version,
+)
 from app.utils.redis_queue import enqueue_task
 from app.utils.crypto import Crypto
 from app.utils.config import settings
@@ -66,20 +71,26 @@ def _decrypted_vm_password(vm: VirtualMachine, *, reveal_password: bool) -> Opti
         return None
 
 
-def _server_task_info_from_api(srv, server_id: int) -> ServerTaskInfo:
+async def _server_task_info_from_api(srv, server_id: int, token: str) -> ServerTaskInfo:
     ip = str(getattr(srv, "ip_address", "") or getattr(srv, "admin_panel_ip", "")).strip()
-    username = str(
-        getattr(srv, "server_user", None) or getattr(srv, "admin_panel_user", None) or ""
+    os_version_name = str(
+        getattr(srv, "os_version", None) or getattr(srv, "os_version_name", None) or ""
     ).strip()
-    password = str(
-        getattr(srv, "server_password", None) or getattr(srv, "admin_panel_pass", None) or ""
-    )
     phy_if_raw = str(getattr(srv, "phy_if", None) or getattr(srv, "phys_iface", None) or "").strip()
 
     if not ip:
         raise HTTPException(status_code=502, detail="Remote server has no IP field")
+    if not os_version_name:
+        raise HTTPException(status_code=502, detail="Remote server has no os_version")
+
+    creds = await get_snapshot_password_by_os_version(os_version_name, token)
+    username = str(creds.ssh_username).strip()
+    password = str(creds.password)
     if not username or not password:
-        raise HTTPException(status_code=502, detail="Remote server has no credentials")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Snapshot password for os_version '{os_version_name}' is incomplete",
+        )
 
     return ServerTaskInfo(
         id=server_id,
@@ -129,6 +140,7 @@ def _vm_to_read(vm: VirtualMachine, *, password: Optional[str]) -> VMRead:
 
 def _env(*, task_id: str, operation: TaskOperation, server: ServerTaskInfo,
          vm_password: Optional[str] = None,
+         new_password: Optional[str] = None,
          vms_full: Optional[Dict[str, VMSpec]] = None,
          vm_names: Optional[List[str]] = None,
          snapshot_name: Optional[str] = None,
@@ -138,6 +150,7 @@ def _env(*, task_id: str, operation: TaskOperation, server: ServerTaskInfo,
         operation=operation,
         server=server,
         vm_password=vm_password,
+        new_password=new_password,
         vms_full=vms_full,
         vm_names=vm_names,
         snapshot_name=snapshot_name,
@@ -179,6 +192,23 @@ async def _assert_single_server_for_vms(
             detail=f"Selected VMs belong to different servers: {sorted(server_ids)}"
         )
     return vms
+
+
+async def _ensure_snapshots_exist_for_vms(db: AsyncSession, *, vms: List[VirtualMachine]) -> None:
+    vm_ids = [_vm_id(vm) for vm in vms]
+    res = await db.execute(
+        select(VMSnapshot.vm_id).where(VMSnapshot.vm_id.in_(vm_ids))
+    )
+    existing_ids = set(res.scalars().all())
+    missing = sorted(_vm_name(vm) for vm in vms if _vm_id(vm) not in existing_ids)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "No snapshots found in DB for some VMs.",
+                "vm_names": missing,
+            },
+        )
 
 
 async def _build_vms_full_for_create(
@@ -255,7 +285,7 @@ async def create(
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_create,
-        server=_server_task_info_from_api(srv, payload.server_id),
+        server=await _server_task_info_from_api(srv, payload.server_id, token),
         vms_full=vms_full,
         vm_password=payload.password,
     )
@@ -285,7 +315,7 @@ async def create_default_vms(
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_base_create,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vms_full=vms_full,
         vm_password=body.password,
     )
@@ -343,7 +373,7 @@ async def delete_vms(payload: VMDeleteRequest,
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_delete,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vm_names=[_vm_name(vm) for vm in vms],
     )
     await enqueue_task(env.model_dump(mode="json"))
@@ -379,7 +409,7 @@ async def batch_update_vms(payload: BatchVMUpdateRequest,
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_update,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vms_full=vms_full,
     )
     await enqueue_task(env.model_dump(mode="json"))
@@ -400,7 +430,7 @@ async def power_start_vms(payload: VMDeleteRequest,
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_start,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vm_names=[_vm_name(vm) for vm in vms],
     )
     await enqueue_task(env.model_dump(mode="json"))
@@ -421,7 +451,7 @@ async def power_stop_vms(payload: VMDeleteRequest,
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_stop,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vm_names=[_vm_name(vm) for vm in vms],
     )
     await enqueue_task(env.model_dump(mode="json"))
@@ -487,11 +517,59 @@ async def astra_update(payload: AstraUpdateRequest,
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_astra_update,
-        server=_server_task_info_from_api(srv, server_id),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vms_full=vms_full,
         vm_names=vm_names,
         rc=payload.rc,
         snapshot_name=payload.rc,
+    )
+    await enqueue_task(env.model_dump(mode="json"))
+    return {"task_id": task_id}
+
+
+@router.post("/allta-update", status_code=status.HTTP_202_ACCEPTED,
+             summary="Обновить allta на всех снимках выбранных ВМ (ставит задачу)")
+async def allta_update(payload: AlltaUpdateRequest,
+                       db: AsyncSession = Depends(get_async_db),
+                       _admin: AuthVerifyResponse = Depends(get_current_admin_user),
+                       token: str = Depends(get_token)):
+    vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
+    await _ensure_snapshots_exist_for_vms(db, vms=vms)
+
+    server_id = _vm_server_id(vms[0])
+    srv = await get_physical_server_from_remote(server_id, token)
+
+    task_id = _uuid_task()
+    env = _env(
+        task_id=task_id,
+        operation=TaskOperation.vm_allta_update,
+        server=await _server_task_info_from_api(srv, server_id, token),
+        vm_names=[_vm_name(vm) for vm in vms],
+        new_password=payload.password,
+    )
+    await enqueue_task(env.model_dump(mode="json"))
+    return {"task_id": task_id}
+
+
+@router.post("/passwd", status_code=status.HTTP_202_ACCEPTED,
+             summary="Обновить allta и сменить пароль на всех снимках выбранных ВМ (ставит задачу)")
+async def passwd_refresh(payload: PasswdRefreshRequest,
+                         db: AsyncSession = Depends(get_async_db),
+                         _admin: AuthVerifyResponse = Depends(get_current_admin_user),
+                         token: str = Depends(get_token)):
+    vms = await _assert_single_server_for_vms(db, ids=payload.ids, names=payload.names)
+    await _ensure_snapshots_exist_for_vms(db, vms=vms)
+
+    server_id = _vm_server_id(vms[0])
+    srv = await get_physical_server_from_remote(server_id, token)
+
+    task_id = _uuid_task()
+    env = _env(
+        task_id=task_id,
+        operation=TaskOperation.vm_allta_update,
+        server=await _server_task_info_from_api(srv, server_id, token),
+        vm_names=[_vm_name(vm) for vm in vms],
+        new_password=payload.password,
     )
     await enqueue_task(env.model_dump(mode="json"))
     return {"task_id": task_id}

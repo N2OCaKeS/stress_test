@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     AUTH_API_URL: str = _auth_api_url()
     SERVER_MANAGE_PERMISSION: str = getenv("SERVER_MANAGE_PERMISSION", "server.manage")
     VM_MANAGE_PERMISSION: str = getenv("VM_MANAGE_PERMISSION", "vm.manage")
+    SNAPSHOT_PASSWORDS_READ_PERMISSION: str = getenv(
+        "SNAPSHOT_PASSWORDS_READ_PERMISSION",
+        "server.snapshot_passwords.read",
+    )
+    SNAPSHOT_PASSWORDS_WRITE_PERMISSION: str = getenv(
+        "SNAPSHOT_PASSWORDS_WRITE_PERMISSION",
+        "server.snapshot_passwords.write",
+    )
     KEY_FILE_PATH: str = "/data/secret.key"
 
 

@@ -60,14 +60,16 @@ def _can_see_admin_panel_passwords(user: AuthVerifyResponse) -> bool:
 
 
 def _to_server_read(server: PhysicalServer, *, reveal_passwords: bool) -> PhysicalServerRead:
-    payload = PhysicalServerRead.model_validate(server).model_dump()
+    response = PhysicalServerRead.model_validate(server)
     os_name = str(getattr(server, "os_version_name", "") or "").strip() or None
     if not os_name:
-        os_name = str(payload.get("os_version") or "").strip() or None
-    payload["os_version"] = os_name
+        os_name = str(response.os_version or "").strip() or None
+
+    updates: dict[str, object] = {"os_version": os_name}
     if not reveal_passwords:
-        payload["admin_panel_pass"] = "***hidden***"
-    return PhysicalServerRead(**payload)
+        updates["admin_panel_pass"] = "***hidden***"
+
+    return response.model_copy(update=updates)
 
 
 @router.get(

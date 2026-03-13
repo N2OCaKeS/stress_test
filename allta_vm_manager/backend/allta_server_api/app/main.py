@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,31 +14,47 @@ from app.api.v1.routes.arm_info import router as arm_router
 from app.api.v1.routes.ilo_credentials import router as ilo_router
 from app.api.v1.routes.snapshot_passwords import router as snapshot_passwords_router
 from app.api.v1.routes.heal_checker import router as health
-app = FastAPI(title="Allta Server API",
+
+app = FastAPI(
+    title="Allta Server API",
     version="1.0.0",
     root_path="/api/server",
     openapi_url="/v1/openapi.json",
     docs_url="/v1/docs",
-    redoc_url="/v1/redoc",)
-origins = [
-    "http://localhost:8000",
-    "http://localhost:8001",
-    "http://localhost:8002",
-    "http://localhost:8003",
-    "http://localhost:8080",    
-    "http://127.0.0.1:8000",
-    "http://127.0.0.1:8001",
-    "http://127.0.0.1:8002", 
-    "http://127.0.0.1:8003",    
-    "http://127.0.0.1:8080",               
-    "http://allta.devos.astralinux.ru",
-    "https://allta.devos.astralinux.ru",
-    "http://allta.devos.astralinux.ru:21500",
-    "http://allta.devos.astralinux.ru:21501"]
+    redoc_url="/v1/redoc",
+)
+
+
+def _cors_origins() -> list[str]:
+    defaults = [
+        "http://localhost:8000",
+        "http://localhost:8001",
+        "http://localhost:8002",
+        "http://localhost:8003",
+        "http://localhost:8080",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001",
+        "http://127.0.0.1:8002",
+        "http://127.0.0.1:8003",
+        "http://127.0.0.1:8080",
+        "http://allta.devos.astralinux.ru",
+        "https://allta.devos.astralinux.ru",
+        "http://allta.devos.astralinux.ru:21500",
+        "https://allta.devos.astralinux.ru:21500",
+        "http://allta.devos.astralinux.ru:21501",
+        "https://allta.devos.astralinux.ru:21501",
+    ]
+    extra_raw = os.getenv("CORS_ALLOW_ORIGINS", "")
+    extra = [item.strip() for item in extra_raw.split(",") if item.strip()]
+    return defaults + extra
+
+
+origins = _cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|allta\.devos\.astralinux\.ru)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],

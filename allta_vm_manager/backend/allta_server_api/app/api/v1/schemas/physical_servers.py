@@ -200,6 +200,8 @@ class PhysicalServerStatusUpdate(BaseModel):
 
 
 class PhysicalServerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
     id: int
     name: str
     ip_address: str
@@ -225,6 +227,3 @@ class PhysicalServerRead(BaseModel):
         serialization_alias="os_version",
         example="1.8.1.6",
     )
-
-    class Config:
-        from_attributes = True

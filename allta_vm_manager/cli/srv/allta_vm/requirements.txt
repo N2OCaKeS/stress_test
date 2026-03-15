@@ -1,3 +1,4 @@
 --index-url=http://10.177.103.10:3141/root/release
---trust=10.177.103.10
-allta==1.0.20
+--trusted-host=10.177.103.10
+allta==1.1.7
+click

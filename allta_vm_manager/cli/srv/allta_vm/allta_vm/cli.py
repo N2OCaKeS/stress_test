@@ -220,6 +220,23 @@ def vm_astra_update(info_path: str, rc: str | None, new_password: str, reboot: b
     _exit_with_rc(rc_code, ok_msg="vm.astra-update: OK", err_msg="vm.astra-update failed")
 
 
+@vm.command("allta-update")
+@click.option(
+    "--payload-path", "payload_path", required=True,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Путь до JSON payload с VM/snapshot/password параметрами",
+)
+def vm_allta_update(payload_path: str):
+    """Обновление allta-cli в гостевых ВМ по payload и пересоздание snapshot'ов."""
+    try:
+        rc_code = Vm.allta_update(payload_path=payload_path)
+    except Exception as e:
+        click.echo(f"[ERROR] vm.allta-update: {e}", err=True)
+        raise click.exceptions.Exit(ExitCodes.UNEXPECTED)
+
+    _exit_with_rc(rc_code, ok_msg="vm.allta-update: OK", err_msg="vm.allta-update failed")
+
+
 # === snapshot ===
 
 @cli.group()

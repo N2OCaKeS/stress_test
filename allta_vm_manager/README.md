@@ -173,7 +173,14 @@ Allta_VM_Service это программный комплекс состоящи
 
     ```bash
     cd cli
-    ./build.sh allta-vm
+    ./install.sh start
+    ```
+
+    Локальный запуск без docker-обвязки (в базовом builder-образе):
+
+    ```bash
+    cd cli/srv
+    ./build.sh allta_vm
     ```
 
     Готовый файл сохраняется в директории запуска:

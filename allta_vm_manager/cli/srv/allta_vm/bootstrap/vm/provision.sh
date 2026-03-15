@@ -54,7 +54,7 @@ echo "u  ALL=(ALL:ALL) NOPASSWD:ALL" | sudo tee -a /etc/sudoers
 ip a
 
 wget ftp://10.177.103.10/allta*.deb
-sudo dpkg -i allta*.deb
+sudo apt-get install ./allta*.deb
 rm allta*.deb
 
 

@@ -82,8 +82,8 @@ def _ssh_domstate(ssh: SimpleSSH, name: str) -> str:
     return _parse_domstate_stdout(r.get("stdout", ""))
 
 
-def run_ssh(self, envelope: dict, ssh: SimpleSSH, command: str, *, stage: str) -> dict[str, Any]:
-    r = ssh.run_command(command=command)
+def run_ssh(self, envelope: dict, ssh: SimpleSSH, command: str, *, stage: str, timeout: int = 300) -> dict[str, Any]:
+    r = ssh.run_command(command=command, timeout=timeout)
     rc = r.get("rc")
     if rc != 0:
         _fail(
@@ -838,19 +838,17 @@ def task_vm_allta_update(self, envelope: dict) -> dict:
     server = envelope["server"]
     vm_names: List[str] = envelope["vm_names"] or []
     new_password: str | None = envelope.get("new_password")
+    task_id = str(envelope.get("task_id") or "unknown")
 
-    allta_update_cmd = _bash_lc(
-        "set -euo pipefail; "
-        "cd /tmp; "
-        "rm -f ./allta_*_amd64.deb; "
-        "wget \"ftp://10.177.103.10/allta_*_amd64.deb\"; "
-        "compgen -G \"./allta_*_amd64.deb\" > /dev/null; "
-        "sudo dpkg -i ./allta_*_amd64.deb"
-    )
+    def _to_int(value: Any, default: int, *, min_value: int = 0) -> int:
+        try:
+            out = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(out, min_value)
 
     async def _run() -> dict:
         SessionLocal = get_async_sessionmaker()
-        processed: dict[str, list[str]] = {}
         password_updates: dict[str, str] = {}
 
         async with SessionLocal() as db:
@@ -900,109 +898,114 @@ def task_vm_allta_update(self, envelope: dict) -> dict:
                 _fail(self, envelope, "password decrypt/empty errors",
                       stage="payload-validate", extra={"details": password_errors})
 
-            ssh_srv = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
-
+            payload_vms: List[Dict[str, Any]] = []
+            expected_processed: dict[str, list[str]] = {}
             for vm in selected_vms:
                 vm_id = int(vm.id)
-                vm_ip = str(vm.ip_address)
-                vm_password = current_passwords[vm_id]
                 snapshots = snapshots_by_vm_id.get(vm_id, [])
                 if not snapshots:
                     _fail(self, envelope, f"no snapshots found in DB for VM '{vm.name}'",
                           stage="db-precheck", extra={"vm": vm.name})
+                snapshot_names = [str(snapshot.name) for snapshot in snapshots]
+                payload_vms.append({
+                    "name": vm.name,
+                    "ip": str(vm.ip_address),
+                    "password": current_passwords[vm_id],
+                    "snapshots": snapshot_names,
+                })
+                expected_processed[vm.name] = snapshot_names
 
-                processed[vm.name] = []
+            payload: Dict[str, Any] = {
+                "vms": payload_vms,
+                "new_password": new_password,
+            }
+            for key in (
+                "guest_ssh_timeout_s",
+                "guest_boot_grace_s",
+                "guest_password_verify_timeout_s",
+            ):
+                if envelope.get(key) not in (None, ""):
+                    payload[key] = envelope.get(key)
 
-                for snapshot in snapshots:
-                    snapshot_name = str(snapshot.name)
-                    deleted_snapshot = False
+            payload_json = json.dumps(payload, ensure_ascii=False)
+            remote_payload_path = f"/tmp/allta_vm_allta_update_{task_id}.json"
+            marker = "__ALLTA_VM_PAYLOAD__"
+            upload_script = (
+                "set -euo pipefail\n"
+                f"cat > {shlex.quote(remote_payload_path)} <<'{marker}'\n"
+                f"{payload_json}\n"
+                f"{marker}\n"
+                f"chmod 600 {shlex.quote(remote_payload_path)}\n"
+            )
 
-                    run_ssh(
-                        self,
-                        envelope,
-                        ssh_srv,
-                        _host_snapshot_command("revert", vm.name, snapshot_name),
-                        stage=f"snapshot-revert[{vm.name}:{snapshot_name}]",
-                    )
+            ssh_srv = SimpleSSH(host=server["ip"], username=server["username"], password=server["password"])
+            host_cli_timeout_s = _to_int(
+                envelope.get("host_cli_timeout_s", os.getenv("ALLTA_VM_HOST_CLI_TIMEOUT_S", 7200)),
+                7200,
+                min_value=60,
+            )
+            cli_cmd = (
+                f"sudo allta-vm vm allta-update "
+                f"--payload-path {shlex.quote(remote_payload_path)}"
+            )
+            cli_result_data: Dict[str, Any] = {}
 
-                    ready, ready_meta = await _wait_for_guest_ssh(vm_ip, vm_password, timeout_s=180)
-                    if not ready:
-                        _fail(
-                            self,
-                            envelope,
-                            f"guest SSH is not ready after snapshot revert for VM '{vm.name}'",
-                            stage="guest-wait",
-                            extra={"vm": vm.name, "snapshot": snapshot_name, "wait": ready_meta},
-                        )
+            try:
+                run_ssh(
+                    self,
+                    envelope,
+                    ssh_srv,
+                    _bash_lc(upload_script),
+                    stage="allta-vm-payload-upload",
+                    timeout=120,
+                )
+                cli_result = run_ssh(
+                    self,
+                    envelope,
+                    ssh_srv,
+                    cli_cmd,
+                    stage="allta-vm-allta-update",
+                    timeout=host_cli_timeout_s,
+                )
+                stdout = (cli_result.get("stdout") or "").strip()
+                if stdout:
+                    for line in reversed(stdout.splitlines()):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            cli_result_data = json.loads(line)
+                            break
+                        except Exception:
+                            continue
+            finally:
+                ssh_srv.run_command(
+                    _bash_lc(f"rm -f {shlex.quote(remote_payload_path)}"),
+                    timeout=30,
+                )
 
-                    ssh_vm = SimpleSSH(host=vm_ip, username="u", password=vm_password, connect_timeout=10)
-                    run_ssh(
-                        self,
-                        envelope,
-                        ssh_vm,
-                        allta_update_cmd,
-                        stage=f"guest-allta-update[{vm.name}:{snapshot_name}]",
-                    )
+            if new_password:
+                raw_updated = cli_result_data.get("password_updated_vms")
+                if isinstance(raw_updated, list):
+                    updated_names = {str(x) for x in raw_updated}
+                else:
+                    # backward-compat fallback if CLI не вернул детальный список
+                    updated_names = {vm.name for vm in selected_vms}
 
-                    if new_password:
-                        password_cmd = _bash_lc(
-                            "set -euo pipefail; "
-                            f"printf '%s\\n' {shlex.quote(f'u:{new_password}')} | sudo chpasswd"
-                        )
-                        run_ssh(
-                            self,
-                            envelope,
-                            ssh_vm,
-                            password_cmd,
-                            stage=f"guest-password-change[{vm.name}:{snapshot_name}]",
-                        )
-
-                        new_ready, new_ready_meta = await _wait_for_guest_ssh(vm_ip, new_password, timeout_s=60)
-                        if not new_ready:
-                            _fail(
-                                self,
-                                envelope,
-                                f"guest SSH is not ready with new password for VM '{vm.name}'",
-                                stage="guest-password-verify",
-                                extra={"vm": vm.name, "snapshot": snapshot_name, "wait": new_ready_meta},
-                            )
-
-                    run_ssh(
-                        self,
-                        envelope,
-                        ssh_srv,
-                        _host_snapshot_command("delete", vm.name, snapshot_name),
-                        stage=f"snapshot-delete[{vm.name}:{snapshot_name}]",
-                    )
-                    deleted_snapshot = True
-
-                    try:
-                        run_ssh(
-                            self,
-                            envelope,
-                            ssh_srv,
-                            _host_snapshot_command("create", vm.name, snapshot_name),
-                            stage=f"snapshot-create[{vm.name}:{snapshot_name}]",
-                        )
-                        deleted_snapshot = False
-                    except TaskFailure:
-                        if deleted_snapshot:
-                            await db.delete(snapshot)
-                            await db.commit()
-                        raise
-
-                    processed[vm.name].append(snapshot_name)
-
-                if new_password:
-                    vm.password_enc = _CRYPTO.encrypt(new_password)
-                    password_updates[vm.name] = "updated"
-                    await db.commit()
+                for vm in selected_vms:
+                    if vm.name in updated_names:
+                        vm.password_enc = _CRYPTO.encrypt(new_password)
+                        password_updates[vm.name] = "updated"
+                    else:
+                        password_updates[vm.name] = "skipped"
+                await db.commit()
 
         out = _std_ok(envelope)
         out["data"] = {
-            "processed_snapshots": processed,
+            "processed_snapshots": cli_result_data.get("processed_snapshots", expected_processed),
             "password_updates": password_updates,
             "password_changed": bool(new_password),
+            "cli_result": cli_result_data,
         }
         return out
 

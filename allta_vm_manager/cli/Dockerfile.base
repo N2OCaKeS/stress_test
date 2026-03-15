@@ -1,0 +1,70 @@
+FROM debian:10
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHON_VERSION=3.12.9
+ENV ALLTA_BUILDER_PYTHON=/opt/allta-builder/python
+ENV PIP_ROOT_USER_ACTION=ignore
+ENV PATH=/opt/allta-builder/python/bin:${PATH}
+
+# Debian 10 is archived, so apt must use archive.debian.org.
+RUN printf '%s\n' \
+    'deb http://archive.debian.org/debian buster main contrib non-free' \
+    'deb http://archive.debian.org/debian-security buster/updates main contrib non-free' \
+    > /etc/apt/sources.list \
+    && printf '%s\n' \
+    'Acquire::Check-Valid-Until "false";' \
+    > /etc/apt/apt.conf.d/99archive
+
+RUN apt-get update \
+    && apt-get install -y sudo ca-certificates \
+        build-essential libssl-dev zlib1g-dev \
+        libncurses5-dev libncursesw5-dev libreadline-dev \
+        libsqlite3-dev libffi-dev wget xz-utils tk-dev \
+        libbz2-dev devscripts debhelper dh-python fakeroot \
+        python3-all python3-setuptools \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+
+RUN wget -q "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
+    && tar xf "Python-${PYTHON_VERSION}.tgz" \
+    && cd "Python-${PYTHON_VERSION}" \
+    && ./configure --prefix="${ALLTA_BUILDER_PYTHON}" --enable-optimizations --with-ensurepip=install --with-system-ffi=no \
+    && make -j"$(nproc)" \
+    && make install \
+    && rm -rf /tmp/Python-${PYTHON_VERSION} /tmp/Python-${PYTHON_VERSION}.tgz
+
+# Vendor shared libs required by bundled Python runtime.
+RUN set -eux; \
+    runtime_lib_dir="${ALLTA_BUILDER_PYTHON}/lib"; \
+    mkdir -p "${runtime_lib_dir}"; \
+    deps_tmp="$(mktemp)"; \
+    find "${ALLTA_BUILDER_PYTHON}/bin" "${ALLTA_BUILDER_PYTHON}/lib/python3.12/lib-dynload" \
+        -type f \( -name 'python3.12' -o -name '*.so' \) -print0 \
+        | xargs -0 -r ldd 2>/dev/null \
+        | awk '{ if ($2 == "=>" && $3 ~ /^\//) print $3; else if ($1 ~ /^\// && $1 !~ /:$/) print $1; }' \
+        | sort -u > "${deps_tmp}"; \
+    while IFS= read -r dep; do \
+        [ -n "${dep}" ] || continue; \
+        [ -f "${dep}" ] || continue; \
+        dep_base="$(basename "${dep}")"; \
+        case "${dep_base}" in \
+            ld-linux*.so*|libc.so.*|libpthread.so.*|libm.so.*|libdl.so.*|librt.so.*|libutil.so.*|libresolv.so.*|libnss_*.so.*|libgcc_s.so.*) \
+                continue ;; \
+        esac; \
+        real_dep="$(readlink -f "${dep}")"; \
+        [ -f "${real_dep}" ] || continue; \
+        real_base="$(basename "${real_dep}")"; \
+        cp -a "${real_dep}" "${runtime_lib_dir}/${real_base}"; \
+        soname="$(objdump -p "${real_dep}" | awk '/SONAME/ {print $2; exit}')"; \
+        if [ -n "${soname}" ] && [ "${soname}" != "${real_base}" ]; then \
+            ln -sf "${real_base}" "${runtime_lib_dir}/${soname}"; \
+        fi; \
+        if [ "${dep_base}" != "${real_base}" ] && [ "${dep_base}" != "${soname}" ]; then \
+            ln -sf "${real_base}" "${runtime_lib_dir}/${dep_base}"; \
+        fi; \
+    done < "${deps_tmp}"; \
+    rm -f "${deps_tmp}"
+
+# Python dependencies are installed later during .deb build
+# inside allta-vm-cli-builder container.

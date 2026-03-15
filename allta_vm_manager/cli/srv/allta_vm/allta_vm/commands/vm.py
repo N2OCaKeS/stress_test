@@ -3,7 +3,9 @@ import sys
 import shutil
 import logging
 import traceback
-from time import sleep
+import json
+import shlex
+from time import sleep, monotonic
 
 from allta import Libvirt, LibvirtManager, SystemCommands
 from allta_vm.commands.snapshot import Snapshot
@@ -64,6 +66,66 @@ def _verify_snapshots_exist(vms: list[str], snap_name: str) -> int:
 
 
 class Vm:
+    _SSH_OPTS = (
+        "-o StrictHostKeyChecking=no "
+        "-o UserKnownHostsFile=/dev/null "
+        "-o LogLevel=ERROR "
+        "-o ConnectTimeout=10"
+    )
+
+    @staticmethod
+    def _to_int(value, default: int, *, min_value: int = 0) -> int:
+        try:
+            out = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(out, min_value)
+
+    @staticmethod
+    def _guest_ssh_rc(ip: str, password: str, remote_cmd: str) -> int:
+        q_pass = shlex.quote(password)
+        q_host = shlex.quote(f"u@{ip}")
+        q_remote = shlex.quote(remote_cmd)
+        cmd = f"sshpass -p {q_pass} ssh {Vm._SSH_OPTS} {q_host} {q_remote}"
+        return SystemCommands.cmd_with_returncode(cmd)
+
+    @staticmethod
+    def _wait_for_guest_ssh(ip: str, passwords: list[str], *, timeout_s: int = 300, interval_s: int = 5):
+        deadline = monotonic() + timeout_s
+        last = {"ip": ip, "ping": False, "ssh_rc": None, "used_password": None}
+        q_ip = shlex.quote(ip)
+        while monotonic() < deadline:
+            ping_rc = SystemCommands.cmd_with_returncode(
+                f"ping -c 1 -W 5 {q_ip} >/dev/null 2>&1"
+            )
+            last["ping"] = (ping_rc == 0)
+            if last["ping"]:
+                for pwd in passwords:
+                    if not pwd:
+                        continue
+                    ssh_rc = Vm._guest_ssh_rc(ip, pwd, "true")
+                    last["ssh_rc"] = ssh_rc
+                    last["used_password"] = pwd if ssh_rc == 0 else None
+                    if ssh_rc == 0:
+                        return True, last
+            sleep(interval_s)
+        return False, last
+
+    @staticmethod
+    def _execute_vm_commands(vm_name: str, ip: str, password: str, steps: list[tuple[str, str]]) -> int:
+        vm_dates = {vm_name: {"ip_bridge": ip}}
+        commands = {vm_name: {}}
+        prev_signals: list[str] = []
+        for idx, (title, command) in enumerate(steps, start=1):
+            signal = f"step_{idx}"
+            commands[vm_name][title] = {
+                "command": command,
+                "signal set": signal,
+                "signal get": prev_signals,
+            }
+            prev_signals = [signal]
+        return Libvirt.execute(commands=commands, vms_dates=vm_dates, username="u", password=password)
+
     @staticmethod
     def _precheck_libvirt_env() -> int:
         where = "_precheck_libvirt_env"
@@ -546,6 +608,186 @@ class Vm:
                                        "post-check stopped failed",
                                        ExitCodes.VERIFY_FAILED)
 
+            logging.info("%s: OK", where)
+            return ExitCodes.OK
+        except Exception:
+            logging.exception("%s crashed", where)
+            return ExitCodes.UNEXPECTED
+
+    @staticmethod
+    def allta_update(payload_path: str):
+        where = "allta_update"
+        try:
+            logging.info("%s: start payload_path=%s", where, payload_path)
+            with open(payload_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            vms_payload = payload.get("vms") or []
+            if not isinstance(vms_payload, list) or not vms_payload:
+                return _log_and_return(where, logging.ERROR,
+                                       "payload.vms must be non-empty list",
+                                       ExitCodes.ACTION_FAILED)
+
+            new_password = payload.get("new_password") or None
+            guest_ssh_timeout_s = Vm._to_int(payload.get("guest_ssh_timeout_s"), 300, min_value=10)
+            guest_boot_grace_s = Vm._to_int(payload.get("guest_boot_grace_s"), 15, min_value=0)
+            guest_password_verify_timeout_s = Vm._to_int(
+                payload.get("guest_password_verify_timeout_s"), 120, min_value=10
+            )
+            protected_password_snapshots = {"1.7.5.9_build", "1.8.1.6_build"}
+
+            update_script = (
+                "set -euo pipefail; "
+                "cd /tmp; "
+                "rm -f ./allta_*_amd64.deb; "
+                "wget \"ftp://10.177.103.10/allta_*_amd64.deb\"; "
+                "sudo apt-get install -y ./allta_*_amd64.deb"
+            )
+            update_cmd = f"bash -lc {shlex.quote(update_script)}"
+            change_pwd_script = (
+                "set -euo pipefail; "
+                "printf '%s\\n' {line} | sudo chpasswd"
+            )
+
+            processed: dict[str, list[str]] = {}
+            password_updated_vms: list[str] = []
+            password_skipped_system_snapshots: dict[str, list[str]] = {}
+            for vm_data in vms_payload:
+                name = str(vm_data.get("name", "")).strip()
+                ip = str(vm_data.get("ip", "")).strip()
+                password = str(vm_data.get("password", ""))
+                snapshots = vm_data.get("snapshots") or []
+
+                if not name or not ip or not password:
+                    return _log_and_return(where, logging.ERROR,
+                                           f"invalid vm payload item: name/ip/password required ({vm_data})",
+                                           ExitCodes.ACTION_FAILED)
+                if not snapshots:
+                    return _log_and_return(where, logging.ERROR,
+                                           f"no snapshots passed for vm={name}",
+                                           ExitCodes.ACTION_FAILED)
+
+                processed[name] = []
+                changed_for_vm = False
+                skipped_for_vm: list[str] = []
+
+                for snapshot_name in [str(s) for s in snapshots]:
+                    snapshot_to_recreate = snapshot_name
+
+                    # 1) Откатываемся на snapshot.
+                    logging.info("%s: vm=%s snapshot revert=%s", where, name, snapshot_name)
+                    rc_revert = Snapshot.revert(vms=[name], snapshot_name=snapshot_name)
+                    if rc_revert != ExitCodes.OK:
+                        return _log_and_return(
+                            where, logging.ERROR,
+                            f"snapshot.revert failed vm={name} snapshot={snapshot_name} rc={_rc_desc(rc_revert)}",
+                            ExitCodes.ACTION_FAILED
+                        )
+
+                    if guest_boot_grace_s > 0:
+                        sleep(guest_boot_grace_s)
+
+                    # После revert пароль внутри ВМ может быть как старый, так и новый (после прошлых запусков).
+                    candidates = [password]
+                    if new_password and new_password != password:
+                        candidates.append(new_password)
+                    ready, ready_meta = Vm._wait_for_guest_ssh(
+                        ip, candidates, timeout_s=guest_ssh_timeout_s
+                    )
+                    if not ready:
+                        return _log_and_return(
+                            where, logging.ERROR,
+                            f"guest SSH not ready vm={name} snapshot={snapshot_name} wait={ready_meta}",
+                            ExitCodes.ACTION_FAILED
+                        )
+                    auth_password = str(ready_meta.get("used_password") or password)
+
+                    # 3) Обновляем утилиту в госте.
+                    logging.info("%s: vm=%s install allta deb", where, name)
+                    rc_update = Vm._execute_vm_commands(
+                        name,
+                        ip,
+                        auth_password,
+                        [("allta-update", update_cmd)],
+                    )
+                    if rc_update != 0:
+                        return _log_and_return(
+                            where, logging.ERROR,
+                            f"guest allta update failed vm={name} snapshot={snapshot_name} rc={rc_update}",
+                            ExitCodes.ACTION_FAILED
+                        )
+
+                    # 4) Меняем пароль, кроме системных _build snapshot.
+                    if new_password:
+                        if snapshot_name in protected_password_snapshots:
+                            skipped_for_vm.append(snapshot_name)
+                            logging.info(
+                                "%s: vm=%s snapshot=%s password change skipped (protected snapshot)",
+                                where, name, snapshot_name
+                            )
+                        else:
+                            pwd_cmd = f"bash -lc {shlex.quote(change_pwd_script.format(line=shlex.quote(f'u:{new_password}')))}"
+                            rc_pwd = Vm._execute_vm_commands(
+                                name,
+                                ip,
+                                auth_password,
+                                [("password-change", pwd_cmd)],
+                            )
+                            if rc_pwd != 0:
+                                return _log_and_return(
+                                    where, logging.ERROR,
+                                    f"guest password change failed vm={name} snapshot={snapshot_name} rc={rc_pwd}",
+                                    ExitCodes.ACTION_FAILED
+                                )
+
+                            new_ready, new_meta = Vm._wait_for_guest_ssh(
+                                ip, [new_password], timeout_s=guest_password_verify_timeout_s
+                            )
+                            if not new_ready:
+                                return _log_and_return(
+                                    where, logging.ERROR,
+                                    f"guest SSH not ready with new password vm={name} snapshot={snapshot_name} wait={new_meta}",
+                                    ExitCodes.ACTION_FAILED
+                                )
+                            changed_for_vm = True
+
+                    # 5) Удаляем snapshot.
+                    rc_del = Snapshot.delete(vms=[name], snapshot_name=snapshot_to_recreate)
+                    if rc_del != ExitCodes.OK:
+                        return _log_and_return(
+                            where, logging.ERROR,
+                            f"snapshot.delete failed vm={name} snapshot={snapshot_to_recreate} rc={_rc_desc(rc_del)}",
+                            ExitCodes.ACTION_FAILED
+                        )
+
+                    # 6) Создаём snapshot с тем же именем.
+                    rc_create = Snapshot.create(vms=[name], snapshot_name=snapshot_to_recreate)
+                    if rc_create != ExitCodes.OK:
+                        return _log_and_return(
+                            where, logging.ERROR,
+                            f"snapshot.create failed vm={name} snapshot={snapshot_to_recreate} rc={_rc_desc(rc_create)}",
+                            ExitCodes.ACTION_FAILED
+                        )
+
+                    processed[name].append(snapshot_to_recreate)
+
+                if changed_for_vm:
+                    password_updated_vms.append(name)
+                if skipped_for_vm:
+                    password_skipped_system_snapshots[name] = skipped_for_vm
+
+            print(json.dumps({
+                "processed_snapshots": processed,
+                "password_changed": bool(password_updated_vms),
+                "password_updated_vms": sorted(password_updated_vms),
+                "password_skipped_system_snapshots": password_skipped_system_snapshots,
+                "protected_password_snapshots": sorted(protected_password_snapshots),
+                "timeouts": {
+                    "guest_ssh_timeout_s": guest_ssh_timeout_s,
+                    "guest_boot_grace_s": guest_boot_grace_s,
+                    "guest_password_verify_timeout_s": guest_password_verify_timeout_s,
+                },
+            }, ensure_ascii=False))
             logging.info("%s: OK", where)
             return ExitCodes.OK
         except Exception:

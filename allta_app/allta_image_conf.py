@@ -646,4 +646,4 @@ load_dotenv(dotenv_path='/var/allta_services/config/env.allta')
 TOKEN = getenv("ALLTA_AUTH_API_KEY")
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 tokens = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30).json()
-ilo = ''
+ilo = requests.get(f"{SERVER_API_BASE}/ilo", headers=HEADERS, timeout=30).json()

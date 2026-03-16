@@ -1,10 +1,16 @@
+import json
+import requests
+
+from os import getenv
+
 UNICAL_PSWD = '$UNICAL_PSWD'
 
 std_user = '$STD_USER'
 if UNICAL_PSWD == 'True':
-    import json
-    with open('env/tokens.json', 'r') as r:
-        tokens = json.load(r)
+    CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1"
+    TOKEN = getenv("ALLTA_AUTH_API_KEY")
+    HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+    tokens = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30).json()
     std_password = tokens['srv_pass']
 else: std_password = '$STD_PASSWD'
 

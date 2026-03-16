@@ -86,10 +86,12 @@ def check_remote_command(command, ip, user, password):
 
 def remote_ssh_command(command, stand_ip):
     try:
-        with open('env/tokens.json', 'r') as r:
-            env = load(r)
+        CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1"
+        TOKEN = getenv("ALLTA_AUTH_API_KEY")
+        HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+        env = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30).json()
         if stand_ip == '10.177.103.10':
-            std_user = 'quest'
+            std_user = 'allta'
             passwd = env['pass']
         else: 
             from src.aggregator.conf import std_user

@@ -8,6 +8,8 @@ services:
     volumes:
       - ./logs:/app/logs
       - /home/u:/app/env
+    env_file:
+      - /var/allta_services/config/env.allta
     networks:
       - infocollector
 

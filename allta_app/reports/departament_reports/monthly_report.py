@@ -2,6 +2,7 @@ import os
 import json
 
 from libreport import MonthlyReport
+from allta_image_conf import tokens
 #from dotenv import load_dotenv
 
 
@@ -9,8 +10,6 @@ from libreport import MonthlyReport
 MONTH = '2025-09'
 
 
-with open('/home/u/tokens.json', 'r') as r:
-    tokens = json.load(r)
 CONF_TOKEN = tokens['conf_token']
 USERNAME = tokens['username']
 JIRA_TOKEN = tokens['jira_token']

@@ -48,7 +48,7 @@ from libs.liballta import (index_page,
                           services_health_status,
                           astra_services_health_status
                           )
-from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs, annotations
+from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs, annotations, tokens
 from backup.backuplibs import Backup, check_command
 from statistics_conf import statistics_conf
 import requests
@@ -59,9 +59,6 @@ import requests
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'srv_2413'
-
-with open('/home/u/tokens.json', 'r') as r:
-    tokens = json.load(r)
 __conf_token = tokens['conf_token']
 __username = tokens['username']
 __jira_token = tokens['jira_token']

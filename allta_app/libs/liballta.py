@@ -1080,7 +1080,7 @@ class BootOrder:
         self.login = self.ilo[self.stand]['username']
         self.password = self.ilo[self.stand]['password']
         self.address = self.ilo[self.stand]['ip']
-        self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
+        self.ssh_command = f"sshpass -p '{self.password}' ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}"
         self.client = redfish.redfish_client(base_url=self.address, username=self.login, password=self.password)
 
     def cmd(self, cmd):

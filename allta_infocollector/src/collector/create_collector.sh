@@ -2,6 +2,13 @@ NE_PATH=/home/node_exporter
 mkdir $NE_PATH
 cd $NE_PATH
 
+echo sudo mkdir /etc/docker >> prepare.sh
+cat << INTERNAL_EOF > /etc/docker/daemon.json
+{
+  "insecure-registries": ["allta.devos.astralinux.ru:21503"]
+}
+INTERNAL_EOF
+sudo systemctl restart docker.service
 
 cat << EOF > docker-compose.yml
 version: '3.7'

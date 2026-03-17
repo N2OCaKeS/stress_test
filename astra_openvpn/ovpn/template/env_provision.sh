@@ -40,8 +40,8 @@ fi
 echo "10000 65000" > /proc/sys/net/ipv4/ip_local_port_range
 
 #python
-wget ftp://10.177.103.10/allta_1.0.1_amd64.deb
-sudo dpkg -i allta_1.0.1_amd64.deb
+wget "ftp://10.177.103.10/allta_*.deb"
+sudo apt-get install ./allta_*.deb -y
 allta python
 /home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install --upgrade pip
 /home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install "allta==1.1.1" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10

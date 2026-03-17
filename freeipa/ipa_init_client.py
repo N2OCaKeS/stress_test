@@ -35,6 +35,9 @@ def initialization_freeipa_client():
     """    
     cmd("apt update")
     
+    # TODO ВРЕМЕННОЕ РЕШЕНИЕ, ПОКА НЕ ИСПРАВЛЕНА ОШИБКА С ЗАВИСИМОСТЬЮ ОТ SSHPASS
+    cmd("apt install -y sshpass")
+    
     cmd("apt install -y astra-freeipa-client")
     
     """

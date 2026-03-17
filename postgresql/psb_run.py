@@ -16,7 +16,7 @@ from psb_conf import SCRIPT_DIR, LOG_FILENAME, REPORT_FILENAME, REPORT_PATH, INF
     THREADS, THREADS_STEP, LIMITE_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, STEP_RATIO_BY_CLIENTS, PG_VERSION, DATA_SYSMON_FILENAME, \
     TANTOR_VERSION, VENV_PATH, PG_VERSION_18
-from libs.libpsqltests import Test
+from libs.libpsqltests import Test, OLAPTest
 from libs.zefir import UploaderZC
 from libs.libpsb import astra_version, dump, upload_results_to_ftp
 from libs.libtable import Report
@@ -165,6 +165,15 @@ parser.add_argument('-tantor_van',
                     help='tantor vanilla',
                     dest='TANTOR_VANILLA')
 
+# TODO
+parser.add_argument('-olap',
+                    action='store',
+                    required=False,
+                    help='olap',
+                    dest='OLAP')
+
+
+
 args = parser.parse_args()
 
 
@@ -228,6 +237,11 @@ if args.DB_PREPARE:
         subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_tantordb_prep.sh tantor {args.STAND} {alt_storage}',
                        shell=True,
                        stderr=subprocess.DEVNULL)
+    # TODO 
+    elif args.OLAP:
+        subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_db_prep_stand{args.STAND}_olap.sh {alt_storage}',
+                       shell=True,
+                       stderr=subprocess.DEVNULL)
     else:
         if 'debian' in args.NPAGE:
             subprocess.run('sudo bash {dir}/psb_db_prep_stand{stand}.sh {init_file} {deb}'.format(dir=SCRIPT_DIR,
@@ -270,40 +284,45 @@ if args.TEST_LIST == 'base':
         if args.SYSMON:
             sysmon = subprocess.Popen(f"{VENV_PATH} psb_sysmon.py", shell=True)
 
-        while clients <= limite_clients:
-            print('# INFO # --- clients count {}'.format(str(clients)))
-            with open(REPORT_FILENAME, 'a+') as report_file:
-                report_file.write(str(clients))
-            if 'debian' in args.NPAGE:
-                test = Test(scale=scale_factor,
-                            trs=transactions,
-                            ths=threads,
-                            cls=clients,
-                            debian=True)
-            elif args.PARSEC:
-                test = Test(scale=scale_factor,
-                            trs=transactions,
-                            ths=threads,
-                            cls=clients,
-                            parsec=True)
-            elif args.TANTOR_VANILLA:
-                test = Test(scale=scale_factor,
-                            trs=transactions,
-                            ths=threads,
-                            cls=clients,
-                            tantor=True)
-            else: 
-                test = Test(scale=scale_factor,
-                            trs=transactions,
-                            ths=threads,
-                            cls=clients)
+        # TODO OLAP test
+        if args.OLAP:
+            test = OLAPTest()
             print(test.run_test())
-            if args.SYSMON:
-                file_sysmon = open(f'{DATA_SYSMON_FILENAME}', 'a+')
-                file_sysmon.write("-----\n")
-                file_sysmon.close()
-            clients += clients_step
-            clients_step *= step_ratio_by_clients
+        else:
+            while clients <= limite_clients:
+                print('# INFO # --- clients count {}'.format(str(clients)))
+                with open(REPORT_FILENAME, 'a+') as report_file:
+                    report_file.write(str(clients))
+                if 'debian' in args.NPAGE:
+                    test = Test(scale=scale_factor,
+                                trs=transactions,
+                                ths=threads,
+                                cls=clients,
+                                debian=True)
+                elif args.PARSEC:
+                    test = Test(scale=scale_factor,
+                                trs=transactions,
+                                ths=threads,
+                                cls=clients,
+                                parsec=True)
+                elif args.TANTOR_VANILLA:
+                    test = Test(scale=scale_factor,
+                                trs=transactions,
+                                ths=threads,
+                                cls=clients,
+                                tantor=True)
+                else: 
+                    test = Test(scale=scale_factor,
+                                trs=transactions,
+                                ths=threads,
+                                cls=clients)
+                print(test.run_test())
+                if args.SYSMON:
+                    file_sysmon = open(f'{DATA_SYSMON_FILENAME}', 'a+')
+                    file_sysmon.write("-----\n")
+                    file_sysmon.close()
+                clients += clients_step
+                clients_step *= step_ratio_by_clients
 
         if args.SYSMON:
             sysmon.kill()
@@ -352,7 +371,11 @@ if args.TEST_LIST == 'base':
                                     'psb_load_psqlmemory.png',
                                     'psb_load_disk.png'])
             report.create_tar()
-             
+        # TODO OLAP report
+        elif args.OLAP:
+            pass
+        # TODO OLAP report
+        # ---------------------------
         else: # create report
             report = Report(param_name='clients')
             report.create_beauty_table()

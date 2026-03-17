@@ -166,3 +166,12 @@ class Test:
             self.logger.error(exception)
             return False
         return result
+
+
+
+class OLAPTest:
+    def __init__(self):
+        pass
+
+    def run_test(self):
+        pass

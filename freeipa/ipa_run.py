@@ -162,6 +162,10 @@ if __name__ == "__main__":
     sleep(300)
     
     # Копируем инициализирующие скрипты по sftp и запускаем
+    # TODO ВРЕМЕННОЕ РЕШЕНИЕ, ПОКА НЕ ИСПРАВЛЕНА ОШИБКА С ЗАВИСИМОСТЬЮ ОТ SSHPASS
+    remote_exec("sudo apt install -y sshpass", 'clients')
+    remote_exec("sudo apt --fix-broken install -y", 'clients')
+
     remote_put_file(HOSTS['clients']['ip'], f'/home/u/tokens.json', "/home/u/tokens.json")
     remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_conf.py', "ipa_conf.py")
     remote_put_file(HOSTS['clients']['ip'], f'/home/{USER}/ipa_init_client.py', "ipa_init_client.py")

@@ -5,13 +5,13 @@ set -e
 DB_NAME="protopack"
 PG_VERSION="15"
 
-echo "--- 1. Установка PostgreSQL $PG_VERSION ---"
-sudo apt update
-sudo apt install -y postgresql-$PG_VERSION postgresql-client-$PG_VERSION
+# echo "--- 1. Установка PostgreSQL $PG_VERSION ---"
+# sudo apt update
+# sudo apt install -y postgresql-$PG_VERSION postgresql-client-$PG_VERSION
 
-echo "--- 2. Запуск сервиса ---"
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
+# echo "--- 2. Запуск сервиса ---"
+# sudo systemctl start postgresql
+# sudo systemctl enable postgresql
 
 echo "--- 3. Создание базы данных ---"
 
@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS main.build_sources (
 ) WITH (OIDS = FALSE);
 EOF
 
+
+sudo wget -P /tmp ftp://10.177.103.205/upload/*
 
 echo "--- 5. Импорт данных из файлов ---"
 # Проверяем наличие файлов перед импортом

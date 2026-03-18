@@ -14,6 +14,9 @@ Pin-Priority: 500
 EOF
 sudo apt update
 
+# TODO ВРЕМЕННОЕ РЕШЕНИЕ, ПОКА НЕ ИСПРАВЛЕНА ОШИБКА С ЗАВИСИМОСТЬЮ ОТ SSHPASS
+sudo apt install sshpass -y
+sudo apt --fix-broken install -y
 # create venv in script_dir
 #sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev
 #python3 -m venv venv

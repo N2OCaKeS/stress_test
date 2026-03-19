@@ -181,28 +181,19 @@ rm -rf /etc/postgresql/$PG_VERSION/$PG_MAIN_CLUSTER
 
 
 # подключить диск
-# if [ "$2" == "SDA" ] || [ "$3" == "SDA" ]; then
-#   lsblk | grep "${STORAGE}"
-#   if [ $? -eq 0 ]; then
-#       lsblk | grep "${STORAGE}"
-#       if [ $? -eq 0 ]; then
-#           umount /var/lib/postgresql/11/
-#           parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
-#       fi
-#       parted -s /dev/${STORAGE} mklabel msdos mkpart primary xfs 0% 100%
-#       mkfs -t xfs -f /dev/${STORAGE}1
-#       mount /dev/${STORAGE}1 /var/lib/postgresql/11/
-#   fi
-# fi
+if [ "$1" == "SDA" ]; then
+  lsblk | grep "${STORAGE}"
+  if [ $? -eq 0 ]; then
+      lsblk | grep "${STORAGE}"
+      if [ $? -eq 0 ]; then
+          umount /var/lib/postgresql/11/
+          parted -s /dev/${STORAGE} select && parted -s /dev/${STORAGE} rm 1
+      fi
+      parted -s /dev/${STORAGE} mklabel gpt mkpart primary xfs 0% 100%
+      parted -s /dev/sda mkpart primary xfs 0% 100%
+      mkfs -t xfs -f /dev/${STORAGE}1
+      mount /dev/${STORAGE}1 /var/lib/postgresql/11/
+  fi
+fi
 
-
-# for port in $(pg_lsclusters -h | gawk '{print $3}');
-# do
-#   ###### Берем нашу базу proopack с ftp и заливаем ее в кластер
-#   cp $MAIN_DIR/sql/$sql_script /tmp/$sql_script
-#   cd /tmp
-#   chmod 644 /tmp/$sql_script
-#   su -c "psql -p $port -f /tmp/$sql_script" postgres
-#   rm /tmp/$sql_script
-#   cd - &> /dev/null
-# done
+bash OLAP.sh

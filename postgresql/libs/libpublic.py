@@ -21,7 +21,8 @@ class Public:
                  test_cycle_version=None,
                  storage=False,
                  kernel_check=False,
-                 balance=False):
+                 balance=False,
+                 olap=False):
     
         self.username = username
         self.token = token
@@ -34,6 +35,7 @@ class Public:
         self.storage = storage
         self.kernel_check = kernel_check
         self.balance = balance
+        self.olap = olap
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -191,6 +193,11 @@ class Public:
                 balance_table = file.read()
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             html_page = '\n'.join([header_table, head_row, balance_table])
+        elif self.olap:
+            with open(f'{REPORT_PATH}/results_olap.html', 'r') as file:
+                olap_table = file.read()
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            html_page = '\n'.join([header_table, head_row, olap_table])
         else:
             rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:

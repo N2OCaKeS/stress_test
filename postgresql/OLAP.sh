@@ -77,7 +77,7 @@ sudo wget -P /tmp ftp://10.177.103.205/upload/*
 
 echo "--- 5. Импорт данных из файлов ---"
 # Проверяем наличие файлов перед импортом
-for FILE in build_info build_packages_new build_sources; do
+for FILE in build_info build_packages_new build_sourses; do
     if [ -f "/tmp/$FILE" ]; then
         echo "Импорт $FILE..."
         sudo -u postgres psql -d $DB_NAME -f "/tmp/$FILE"

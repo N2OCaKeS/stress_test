@@ -2,6 +2,7 @@ import argparse
 import os
 import subprocess
 import json
+import asyncio
 
 from time import time, strftime, gmtime, sleep, ctime
 from sys import exit
@@ -287,7 +288,9 @@ if args.TEST_LIST == 'base':
         # TODO OLAP test
         if args.OLAP:
             test = OLAPTest()
-            print(test.run_test())
+            single_result, milti_result = asyncio.run(test.run_test())
+            print("single_result:", single_result)
+            print("milti_result:", milti_result)
         else:
             while clients <= limite_clients:
                 print('# INFO # --- clients count {}'.format(str(clients)))

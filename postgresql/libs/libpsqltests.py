@@ -181,10 +181,10 @@ class OLAPTest:
     def __init__(self):
         self.db_config = {
         "host": "127.0.0.1",
-        "port": 5432,
-        "dbname": "your_db",
-        "user": "your_user",
-        "password": "your_password",
+        "port": 6000,
+        "dbname": "protopack",
+        "user": "postgres",
+        "password": "12345678",
     }
 
         self.query: LiteralString = """
@@ -339,8 +339,8 @@ ORDER BY
     END,
     build_packages_1."binary"
 """  
-        self.passes = 3
-        self.parallel_queries = 10
+        self.passes = 1
+        self.concurrent_levels = [1, 10, 100, 1000, 10000]
         self.single_results_file = f"{REPORT_PATH}/olap_single_results.json"
         self.multi_results_file = f"{REPORT_PATH}/olap_multi_results.json"
 
@@ -358,11 +358,12 @@ ORDER BY
 
         single_result = []
         milti_result = {}
+        max_concurrency = max(self.concurrent_levels)
 
         pool = AsyncConnectionPool(
             conninfo=dsn,
-            min_size=self.parallel_queries,
-            max_size=self.parallel_queries,
+            min_size=1,
+            max_size=max_concurrency,
             open=False,
         )
 
@@ -377,25 +378,39 @@ ORDER BY
                 elapsed_seconds = time.perf_counter() - started
                 return round(elapsed_seconds, 3)
 
-            for query_num in range(1, 11):
-                one_result = await run_one()
-                single_result.append(one_result)
-                print(f"Одиночный запрос {query_num}: {one_result:.3f} сек")
+            for concurrency in self.concurrent_levels:
+                for pass_num in range(1, self.passes + 1):
+                    pass_result = await asyncio.gather(
+                        *(run_one() for _ in range(concurrency))
+                    )
+                    pass_result_list = list(pass_result)
+                    formatted_pass_result = [f"{value:.3f}" for value in pass_result_list]
 
-            for pass_num in range(1, self.passes + 1):
-                pass_result = await asyncio.gather(
-                    *(run_one() for _ in range(self.parallel_queries))
-                )
-                milti_result[pass_num] = list(pass_result)
-                formatted_pass_result = [f"{value:.3f}" for value in milti_result[pass_num]]
-                print(f"Параллельный проход {pass_num}: {formatted_pass_result} сек")
+                    if concurrency == 1:
+                        single_result.extend(pass_result_list)
+                        print(
+                            f"Уровень {concurrency}, проход {pass_num}: "
+                            f"{formatted_pass_result} сек"
+                        )
+                    else:
+                        level_key = str(concurrency)
+                        if level_key not in milti_result:
+                            milti_result[level_key] = {}
+                        milti_result[level_key][str(pass_num)] = pass_result_list
+                        print(
+                            f"Уровень {concurrency}, проход {pass_num}: "
+                            f"{formatted_pass_result} сек"
+                        )
         finally:
             await pool.close()
 
         single_result_seconds = [f"{value:.3f}" for value in single_result]
         multi_result_seconds = {
-            str(key): [f"{value:.3f}" for value in values]
-            for key, values in milti_result.items()
+            level: {
+                pass_num: [f"{value:.3f}" for value in values]
+                for pass_num, values in pass_values.items()
+            }
+            for level, pass_values in milti_result.items()
         }
 
         single_payload = {

@@ -4,7 +4,7 @@ import json
 import logging
 import time
 import asyncio
-from typing import LiteralString
+from typing import LiteralString, cast
 import psycopg
 from psycopg_pool import AsyncConnectionPool
 
@@ -181,33 +181,33 @@ class OLAPTest:
     def __init__(self):
         self.db_config = {
         "host": "127.0.0.1",
-        "port": 6000,
-        "dbname": "protopack",
-        "user": "postgres",
-        "password": "12345678",
+        "port": 55432,
+        "dbname": "olapdb",
+        "user": "olap",
+        "password": "olap",
     }
+      
 
-        self.query: LiteralString = """
-
+        self.hard_query: LiteralString = """
 WITH
     binary_search AS (
         (
             SELECT
-                main.build_packages_count.build AS build,
-                main.build_packages_count.repository AS repository,
-                main.build_packages_count.component AS component,
-                main.build_packages_count.sha256 AS SHA256,
+                main.build_packages.build AS build,
+                main.build_packages.repository AS repository,
+                main.build_packages.component AS component,
+                main.build_packages.sha256 AS SHA256,
                 1 AS sort_order
             FROM
-                main.build_packages_count
-                JOIN main.view_subversion_type ON main.view_subversion_type.subversion = main.build_packages_count.build
+                main.build_packages
+                
             WHERE
-                main.build_packages_count."binary" = 'apache2'
-                AND main.view_subversion_type.other = TRUE
-                AND main.build_packages_count."binary" LIKE '%apache2%'
+                main.build_packages."binary" = 'apache2'
+
+                AND main.build_packages."binary" LIKE '%apache2%'
             ORDER BY
-                main.build_packages_count.create_utc DESC,
-                main.build_packages_count."binary"
+                main.build_packages.create_utc DESC,
+                main.build_packages."binary"
         )
         UNION ALL
         (
@@ -219,14 +219,12 @@ WITH
                 2 AS sort_order
             FROM
                 main.build_packages
-                JOIN main.view_subversion_type ON main.view_subversion_type.subversion = main.build_packages.build
             WHERE
                 (
                     main.build_packages."binary" LIKE 'apache2' || '%'
                 )
                 AND main.build_packages."binary" != 'apache2'
                 AND main.build_packages."binary" != 'apache2'
-                AND main.view_subversion_type.other = TRUE
             ORDER BY
                 main.build_packages.create_utc DESC,
                 main.build_packages."binary"
@@ -241,7 +239,6 @@ WITH
                 3 AS sort_order
             FROM
                 main.build_packages
-                JOIN main.view_subversion_type ON main.view_subversion_type.subversion = main.build_packages.build
             WHERE
                 (
                     main.build_packages."binary" LIKE '%' || 'apache2' || '%'
@@ -250,7 +247,6 @@ WITH
                     main.build_packages."binary" NOT LIKE 'apache2' || '%'
                 )
                 AND main.build_packages."binary" != 'apache2'
-                AND main.view_subversion_type.other = TRUE
             ORDER BY
                 main.build_packages.create_utc DESC,
                 main.build_packages."binary"
@@ -338,11 +334,530 @@ ORDER BY
         ELSE 10
     END,
     build_packages_1."binary"
-"""  
-        self.passes = 1
-        self.concurrent_levels = [1, 10, 100, 1000, 10000]
-        self.single_results_file = f"{REPORT_PATH}/olap_single_results.json"
-        self.multi_results_file = f"{REPORT_PATH}/olap_multi_results.json"
+"""
+        self.order_query: LiteralString = """
+WITH base AS (
+    SELECT
+        bp.build,
+        bp.repository,
+        bp.component,
+        bp."binary",
+        bp.source,
+        bp.source_version,
+        bp.binary_version,
+        bp.create_utc,
+        coalesce(bp.binary_info_json ->> 'Description', '') AS description,
+        (
+            length(coalesce(bp.files, ''))
+            + length(coalesce(bp.binary_info, ''))
+            + length(coalesce(bp."binary", ''))
+            + length(coalesce(bp.binary_info_json::text, ''))
+        ) AS payload_len
+    FROM main.build_packages AS bp
+),
+tokenized AS (
+    SELECT
+        b.build,
+        b.repository,
+        b.component,
+        b."binary",
+        token
+    FROM base AS b
+    LEFT JOIN LATERAL regexp_split_to_table(lower(b.description), '\\W+') AS token
+        ON TRUE
+    WHERE token IS NOT NULL AND token <> ''
+),
+token_stats AS (
+    SELECT
+        t.build,
+        t.repository,
+        t.component,
+        t."binary",
+        count(*) AS token_count,
+        count(DISTINCT t.token) AS unique_token_count,
+        max(length(t.token)) AS max_token_len
+    FROM tokenized AS t
+    GROUP BY t.build, t.repository, t.component, t."binary"
+),
+ranked AS (
+    SELECT
+        b.*,
+        ts.token_count,
+        ts.unique_token_count,
+        ts.max_token_len,
+        row_number() OVER (
+            PARTITION BY b.repository, b.component
+            ORDER BY b.create_utc DESC NULLS LAST, b."binary"
+        ) AS row_in_repo_component,
+        dense_rank() OVER (
+            PARTITION BY b.source
+            ORDER BY coalesce(b.source_version, '') DESC
+        ) AS source_version_rank,
+        percent_rank() OVER (
+            PARTITION BY b.repository
+            ORDER BY b.payload_len DESC
+        ) AS payload_percent_rank,
+        lag(b.payload_len) OVER (
+            PARTITION BY b.repository, b.component
+            ORDER BY b.create_utc
+        ) AS prev_payload_len
+    FROM base AS b
+    LEFT JOIN token_stats AS ts
+        ON ts.build = b.build
+       AND ts.repository = b.repository
+       AND ts.component = b.component
+       AND ts."binary" = b."binary"
+),
+aggregated AS (
+    SELECT
+        r.repository,
+        r.component,
+        count(*) AS package_count,
+        avg(r.payload_len)::numeric(20, 3) AS avg_payload_len,
+        percentile_cont(0.50) WITHIN GROUP (ORDER BY r.payload_len) AS p50_payload_len,
+        percentile_cont(0.95) WITHIN GROUP (ORDER BY r.payload_len) AS p95_payload_len
+    FROM ranked AS r
+    GROUP BY r.repository, r.component
+)
+SELECT
+    r.build,
+    r.repository,
+    r.component,
+    r."binary",
+    r.source,
+    r.source_version,
+    r.binary_version,
+    r.create_utc,
+    r.payload_len,
+    r.token_count,
+    r.unique_token_count,
+    r.max_token_len,
+    r.row_in_repo_component,
+    r.source_version_rank,
+    r.payload_percent_rank,
+    r.prev_payload_len,
+    a.package_count,
+    a.avg_payload_len,
+    a.p50_payload_len,
+    a.p95_payload_len,
+    bi.rel,
+    bi.packages_sync
+FROM ranked AS r
+JOIN aggregated AS a
+    ON a.repository = r.repository
+   AND a.component = r.component
+LEFT JOIN main.build_info AS bi
+    ON bi.build = r.build
+ORDER BY
+    a.p95_payload_len DESC NULLS LAST,
+    r.payload_percent_rank DESC NULLS LAST,
+    coalesce(r.token_count, 0) DESC,
+    r.create_utc DESC NULLS LAST,
+    r."binary"
+LIMIT 800;
+"""
+        self.join_query: LiteralString = """
+WITH pkg AS (
+    SELECT
+        bp.build,
+        bp.repository,
+        bp.component,
+        bp."binary",
+        bp.source,
+        bp.source_version,
+        bp.binary_version,
+        bp.depends,
+        bp.create_utc
+    FROM main.build_packages AS bp
+),
+sources_expanded AS (
+    SELECT
+        bs.source,
+        bs.source_version,
+        bs.repository,
+        unnest(coalesce(bs.binary_packages, ARRAY[]::text[])) AS source_binary
+    FROM main.build_sources AS bs
+),
+dep_tokens AS (
+    SELECT
+        p.build,
+        p.repository,
+        p.component,
+        p."binary",
+        nullif(token, '') AS dep_token
+    FROM pkg AS p
+    LEFT JOIN LATERAL regexp_split_to_table(
+        regexp_replace(coalesce(p.depends::text, ''), '[\\{\\}\\"\\s]+', '', 'g'),
+        ','
+    ) AS token ON TRUE
+),
+mounts AS (
+    SELECT
+        bi.build,
+        mp.key AS mount_repo,
+        mp.value AS mount_path,
+        bt.build_type_item
+    FROM main.build_info AS bi
+    LEFT JOIN LATERAL jsonb_each_text(coalesce(bi.mount_point, '{}'::jsonb)) AS mp ON TRUE
+    LEFT JOIN LATERAL unnest(coalesce(bi.build_type, ARRAY[]::text[])) AS bt(build_type_item) ON TRUE
+)
+SELECT
+    p.build,
+    p.repository,
+    p.component,
+    p."binary",
+    p.source,
+    p.source_version,
+    p.binary_version,
+    bi.rel,
+    count(DISTINCT se.source_binary) AS source_binary_matches,
+    count(DISTINCT dt.dep_token) FILTER (WHERE dt.dep_token IS NOT NULL) AS dep_token_count,
+    count(DISTINCT sib."binary") AS sibling_binary_count,
+    count(DISTINCT m.mount_repo) AS mount_repo_count,
+    max(length(coalesce(m.mount_path, ''))) AS max_mount_path_len,
+    string_agg(DISTINCT m.build_type_item, ',' ORDER BY m.build_type_item) AS build_types
+FROM pkg AS p
+LEFT JOIN sources_expanded AS se
+    ON se.source = p.source
+   AND se.repository = p.repository
+   AND se.source_binary = p."binary"
+LEFT JOIN dep_tokens AS dt
+    ON dt.build = p.build
+   AND dt.repository = p.repository
+   AND dt.component = p.component
+   AND dt."binary" = p."binary"
+LEFT JOIN pkg AS sib
+    ON sib.source = p.source
+   AND sib.repository = p.repository
+LEFT JOIN main.build_info AS bi
+    ON bi.build = p.build
+LEFT JOIN mounts AS m
+    ON m.build = p.build
+WHERE
+    lower(coalesce(p."binary", '')) LIKE '%apache%'
+    OR lower(coalesce(p.source, '')) LIKE '%apache%'
+GROUP BY
+    p.build,
+    p.repository,
+    p.component,
+    p."binary",
+    p.source,
+    p.source_version,
+    p.binary_version,
+    bi.rel
+ORDER BY
+    sibling_binary_count DESC,
+    dep_token_count DESC,
+    mount_repo_count DESC,
+    p.build DESC
+LIMIT 900;
+"""
+        self.interlinear_search_query: LiteralString = """
+WITH docs AS (
+    SELECT
+        bp.build,
+        bp.repository,
+        bp.component,
+        bp."binary",
+        lower(
+            concat_ws(
+                ' ',
+                coalesce(bp."binary", ''),
+                coalesce(bp.source, ''),
+                coalesce(bp.source_version, ''),
+                coalesce(bp.binary_version, ''),
+                coalesce(bp.binary_info, ''),
+                coalesce(bp.binary_info_json ->> 'Description', ''),
+                coalesce(bp.binary_info_json ->> 'Filename', '')
+            )
+        ) AS doc
+    FROM main.build_packages AS bp
+),
+needles AS (
+    SELECT unnest(ARRAY[
+        'apache',
+        'server',
+        'module',
+        'library',
+        'http',
+        'security',
+        'package'
+    ]::text[]) AS needle
+),
+matches AS (
+    SELECT
+        d.build,
+        d.repository,
+        d.component,
+        d."binary",
+        n.needle,
+        strpos(d.doc, n.needle) AS first_pos,
+        (
+            length(d.doc) - length(replace(d.doc, n.needle, ''))
+        ) / nullif(length(n.needle), 0) AS hit_count,
+        ts_rank_cd(
+            to_tsvector('simple', d.doc),
+            plainto_tsquery('simple', n.needle)
+        ) AS rank_score
+    FROM docs AS d
+    JOIN needles AS n
+        ON d.doc LIKE '%' || n.needle || '%'
+),
+scored AS (
+    SELECT
+        m.build,
+        m.repository,
+        m.component,
+        m."binary",
+        count(*) AS matched_terms,
+        sum(m.hit_count) AS total_hits,
+        min(nullif(m.first_pos, 0)) AS first_pos,
+        sum(m.rank_score) AS total_rank
+    FROM matches AS m
+    GROUP BY
+        m.build,
+        m.repository,
+        m.component,
+        m."binary"
+    HAVING count(*) >= 2
+)
+SELECT
+    s.build,
+    s.repository,
+    s.component,
+    s."binary",
+    s.matched_terms,
+    s.total_hits,
+    s.total_rank,
+    s.first_pos,
+    left(d.doc, 320) AS snippet
+FROM scored AS s
+JOIN docs AS d
+    ON d.build = s.build
+   AND d.repository = s.repository
+   AND d.component = s.component
+   AND d."binary" = s."binary"
+ORDER BY
+    s.matched_terms DESC,
+    s.total_rank DESC,
+    s.total_hits DESC,
+    s.first_pos ASC NULLS LAST,
+    s."binary"
+LIMIT 900;
+"""
+        self.combined_analytics_query: LiteralString = """
+WITH pkg AS (
+    SELECT
+        bp.build,
+        bp.repository,
+        bp.component,
+        bp."binary",
+        bp.source,
+        bp.source_version,
+        bp.binary_version,
+        bp.create_utc,
+        coalesce(bp.binary_info_json ->> 'Description', '') AS description,
+        (
+            length(coalesce(bp.files, ''))
+            + length(coalesce(bp.binary_info, ''))
+            + length(coalesce(bp.depends::text, ''))
+        ) AS payload_len
+    FROM main.build_packages AS bp
+),
+search_score AS (
+    SELECT
+        p.build,
+        p.repository,
+        p.component,
+        p."binary",
+        count(*) FILTER (
+            WHERE lower(p.description) LIKE '%' || needle || '%'
+        ) AS matched_terms
+    FROM pkg AS p
+    CROSS JOIN LATERAL unnest(ARRAY['apache', 'http', 'module', 'server']::text[]) AS needle
+    GROUP BY p.build, p.repository, p.component, p."binary"
+),
+dep_score AS (
+    SELECT
+        p.build,
+        p.repository,
+        p.component,
+        p."binary",
+        count(*) FILTER (WHERE dep_token <> '') AS dep_tokens
+    FROM pkg AS p
+    LEFT JOIN LATERAL regexp_split_to_table(
+        regexp_replace(coalesce(p.description, ''), '[^a-zA-Z0-9]+', ' ', 'g'),
+        '\\s+'
+    ) AS dep_token ON TRUE
+    GROUP BY p.build, p.repository, p.component, p."binary"
+),
+repo_stats AS (
+    SELECT
+        p.repository,
+        percentile_cont(0.95) WITHIN GROUP (ORDER BY p.payload_len) AS repo_p95_payload,
+        avg(p.payload_len)::numeric(20, 3) AS repo_avg_payload
+    FROM pkg AS p
+    GROUP BY p.repository
+)
+SELECT
+    p.build,
+    p.repository,
+    p.component,
+    p."binary",
+    p.source,
+    p.source_version,
+    p.binary_version,
+    p.payload_len,
+    coalesce(ss.matched_terms, 0) AS matched_terms,
+    coalesce(ds.dep_tokens, 0) AS dep_tokens,
+    rs.repo_avg_payload,
+    rs.repo_p95_payload,
+    (
+        p.payload_len
+        + coalesce(ss.matched_terms, 0) * 25
+        + coalesce(ds.dep_tokens, 0) * 3
+    ) AS combined_score
+FROM pkg AS p
+LEFT JOIN search_score AS ss
+    ON ss.build = p.build
+   AND ss.repository = p.repository
+   AND ss.component = p.component
+   AND ss."binary" = p."binary"
+LEFT JOIN dep_score AS ds
+    ON ds.build = p.build
+   AND ds.repository = p.repository
+   AND ds.component = p.component
+   AND ds."binary" = p."binary"
+LEFT JOIN repo_stats AS rs
+    ON rs.repository = p.repository
+ORDER BY
+    combined_score DESC,
+    rs.repo_p95_payload DESC NULLS LAST,
+    p.create_utc DESC NULLS LAST
+LIMIT 1000;
+"""
+        self.combined_search_join_query: LiteralString = """
+WITH docs AS (
+    SELECT
+        bp.build,
+        bp.repository,
+        bp.component,
+        bp."binary",
+        bp.source,
+        bp.source_version,
+        lower(
+            concat_ws(
+                ' ',
+                coalesce(bp."binary", ''),
+                coalesce(bp.source, ''),
+                coalesce(bp.binary_info, ''),
+                coalesce(bp.binary_info_json::text, '')
+            )
+        ) AS doc
+    FROM main.build_packages AS bp
+),
+sources_expanded AS (
+    SELECT
+        bs.source,
+        bs.source_version,
+        bs.repository,
+        unnest(coalesce(bs.binary_packages, ARRAY[]::text[])) AS source_binary
+    FROM main.build_sources AS bs
+),
+mounts AS (
+    SELECT
+        bi.build,
+        mp.key AS mount_repo,
+        mp.value AS mount_path
+    FROM main.build_info AS bi
+    LEFT JOIN LATERAL jsonb_each_text(coalesce(bi.mount_point, '{}'::jsonb)) AS mp ON TRUE
+),
+scored AS (
+    SELECT
+        d.build,
+        d.repository,
+        d.component,
+        d."binary",
+        d.source,
+        d.source_version,
+        count(*) FILTER (
+            WHERE d.doc LIKE '%' || needle || '%'
+        ) AS term_hits
+    FROM docs AS d
+    CROSS JOIN LATERAL unnest(ARRAY['apache', 'http', 'module', 'repo', 'package']::text[]) AS needle
+    GROUP BY d.build, d.repository, d.component, d."binary", d.source, d.source_version
+)
+SELECT
+    s.build,
+    s.repository,
+    s.component,
+    s."binary",
+    s.source,
+    s.source_version,
+    s.term_hits,
+    count(DISTINCT se.source_binary) AS source_binary_matches,
+    count(DISTINCT m.mount_repo) AS mount_repo_count,
+    max(length(coalesce(m.mount_path, ''))) AS max_mount_path_len
+FROM scored AS s
+LEFT JOIN sources_expanded AS se
+    ON se.source = s.source
+   AND se.repository = s.repository
+   AND se.source_version = s.source_version
+   AND se.source_binary = s."binary"
+LEFT JOIN mounts AS m
+    ON m.build = s.build
+GROUP BY
+    s.build,
+    s.repository,
+    s.component,
+    s."binary",
+    s.source,
+    s.source_version,
+    s.term_hits
+HAVING s.term_hits >= 2
+ORDER BY
+    s.term_hits DESC,
+    source_binary_matches DESC,
+    mount_repo_count DESC,
+    s.build DESC
+LIMIT 1000;
+"""
+
+        self.queries: dict[str, dict[str, object]] = {
+            "hard_query": {
+                "query": self.hard_query,
+                "concurrent_levels": [1, 5, 10],
+                "passes": 1,
+            },
+            "order_query": {
+                "query": self.order_query,
+                "concurrent_levels": [1, 5, 10],
+                "passes": 1,
+            },
+            "join_query": {
+                "query": self.join_query,
+                "concurrent_levels": [1, 5, 10],
+                "passes": 1,
+            },
+            "interlinear_search_query": {
+                "query": self.interlinear_search_query,
+                "concurrent_levels": [1, 5, 10],
+                "passes": 1,
+            },
+            "combined_analytics_query": {
+                "query": self.combined_analytics_query,
+                "concurrent_levels": [1, 5, 10],
+                "passes": 1,
+            },
+            "combined_search_join_query": {
+                "query": self.combined_search_join_query,
+                "concurrent_levels": [1, 5, 10],
+                "passes": 1,
+            },
+        }
+
+        self.pool_connection_timeout = 600.0
+        self.results_file = f"{REPORT_PATH}/olap_results.json"
 
     async def run_test(self):
         db_config = self.db_config
@@ -356,9 +871,64 @@ ORDER BY
             f"password={db_config['password']}"
         )
 
-        single_result = []
-        milti_result = {}
-        max_concurrency = max(self.concurrent_levels)
+        def normalize_query_params(query_cfg):
+            query_text = query_cfg.get("query")
+            if not isinstance(query_text, str):
+                raise ValueError("query must be a SQL string")
+
+            raw_levels = query_cfg.get("concurrent_levels", [1])
+            levels = []
+            if isinstance(raw_levels, (list, tuple)):
+                for level in raw_levels:
+                    int_level = int(level)
+                    if int_level > 0:
+                        levels.append(int_level)
+            if not levels:
+                levels = [1]
+
+            passes = int(query_cfg.get("passes", 1))
+            if passes < 1:
+                passes = 1
+
+            return cast(LiteralString, query_text), levels, passes
+
+        prepared_queries = []
+        for query_name, query_cfg in self.queries.items():
+            query_text, concurrent_levels, passes = normalize_query_params(query_cfg)
+            prepared_queries.append((query_name, query_text, concurrent_levels, passes))
+
+        max_concurrency = max(
+            max(concurrent_levels) for _, _, concurrent_levels, _ in prepared_queries
+        )
+
+        def calc_percentile(values, percentile):
+            if not values:
+                return 0.0
+            sorted_values = sorted(values)
+            if len(sorted_values) == 1:
+                return sorted_values[0]
+            position = (len(sorted_values) - 1) * (percentile / 100)
+            lower_index = int(position)
+            upper_index = min(lower_index + 1, len(sorted_values) - 1)
+            fraction = position - lower_index
+            return sorted_values[lower_index] + (
+                sorted_values[upper_index] - sorted_values[lower_index]
+            ) * fraction
+
+        def calc_median_by_index(iterations):
+            if not iterations:
+                return []
+            values_count = len(iterations[0])
+            medians = []
+            for index in range(values_count):
+                values_at_index = [iteration[index] for iteration in iterations]
+                sorted_values = sorted(values_at_index)
+                mid = len(sorted_values) // 2
+                if len(sorted_values) % 2 == 0:
+                    medians.append((sorted_values[mid - 1] + sorted_values[mid]) / 2)
+                else:
+                    medians.append(sorted_values[mid])
+            return medians
 
         pool = AsyncConnectionPool(
             conninfo=dsn,
@@ -369,64 +939,59 @@ ORDER BY
 
         await pool.open()
         try:
-            async def run_one() -> float:
+            async def run_one(query_text: LiteralString) -> float:
                 started = time.perf_counter()
-                async with pool.connection() as conn:
+                async with pool.connection(timeout=self.pool_connection_timeout) as conn:
                     async with conn.cursor() as cur:
-                        await cur.execute(self.query)
+                        await cur.execute(query_text)
                         await cur.fetchall()
-                elapsed_seconds = time.perf_counter() - started
-                return round(elapsed_seconds, 3)
+                return time.perf_counter() - started
 
-            for concurrency in self.concurrent_levels:
-                for pass_num in range(1, self.passes + 1):
-                    pass_result = await asyncio.gather(
-                        *(run_one() for _ in range(concurrency))
-                    )
-                    pass_result_list = list(pass_result)
-                    formatted_pass_result = [f"{value:.3f}" for value in pass_result_list]
+            result = {
+                "time_unit": "seconds",
+                "result": {},
+            }
 
-                    if concurrency == 1:
-                        single_result.extend(pass_result_list)
-                        print(
-                            f"Уровень {concurrency}, проход {pass_num}: "
-                            f"{formatted_pass_result} сек"
+            for query_name, query_text, concurrent_levels, passes in prepared_queries:
+                result["result"][query_name] = {}
+
+                for concurrency in concurrent_levels:
+                    level_key = str(concurrency)
+                    level_iterations = []
+                    level_result = {}
+
+                    for pass_num in range(1, passes + 1):
+                        pass_result = await asyncio.gather(
+                            *(run_one(query_text) for _ in range(concurrency))
                         )
-                    else:
-                        level_key = str(concurrency)
-                        if level_key not in milti_result:
-                            milti_result[level_key] = {}
-                        milti_result[level_key][str(pass_num)] = pass_result_list
+                        pass_result_list = list(pass_result)
+                        level_iterations.append(pass_result_list)
+
+                        rounded_pass_result = [round(value, 3) for value in pass_result_list]
+                        level_result[str(pass_num)] = rounded_pass_result
+                        formatted_pass_result = [f"{value:.3f}" for value in rounded_pass_result]
                         print(
-                            f"Уровень {concurrency}, проход {pass_num}: "
-                            f"{formatted_pass_result} сек"
+                            f"Запрос {query_name}, уровень {concurrency}, "
+                            f"проход {pass_num}: {formatted_pass_result} сек"
                         )
+
+                    median_values = calc_median_by_index(level_iterations)
+                    rounded_median_values = [round(value, 3) for value in median_values]
+                    result["result"][query_name][level_key] = {
+                        "result": level_result,
+                        "median": rounded_median_values,
+                        "p99": round(calc_percentile(median_values, 99), 3),
+                        "p95": round(calc_percentile(median_values, 95), 3),
+                        "p50": round(calc_percentile(median_values, 50), 3),
+                        "min": round(min(median_values), 3) if median_values else 0.0,
+                        "max": round(max(median_values), 3) if median_values else 0.0,
+                    }
         finally:
             await pool.close()
 
-        single_result_seconds = [f"{value:.3f}" for value in single_result]
-        multi_result_seconds = {
-            level: {
-                pass_num: [f"{value:.3f}" for value in values]
-                for pass_num, values in pass_values.items()
-            }
-            for level, pass_values in milti_result.items()
-        }
-
-        single_payload = {
-            "time_unit": "seconds",
-            "single_result": single_result_seconds,
-        }
-        multi_payload = {
-            "time_unit": "seconds",
-            "multi_result": multi_result_seconds,
-        }
-
         os.makedirs(REPORT_PATH, exist_ok=True)
-        with open(self.single_results_file, "w", encoding="utf-8") as single_stream:
-            json.dump(single_payload, single_stream, ensure_ascii=False, indent=2)
-        with open(self.multi_results_file, "w", encoding="utf-8") as multi_stream:
-            json.dump(multi_payload, multi_stream, ensure_ascii=False, indent=2)
+        with open(self.results_file, "w", encoding="utf-8") as result_stream:
+            json.dump(result, result_stream, ensure_ascii=False, indent=2)
 
-        return single_result, milti_result
+        return result
     

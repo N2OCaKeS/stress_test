@@ -1,4 +1,6 @@
 import os
+import json
+import pandas as pd
 from libs.libreport import ReportToConfluence
 from libs.libpsb import perf
 from libs.libtable import Report
@@ -21,8 +23,7 @@ class Public:
                  test_cycle_version=None,
                  storage=False,
                  kernel_check=False,
-                 balance=False,
-                 olap=False):
+                 balance=False):
     
         self.username = username
         self.token = token
@@ -35,7 +36,6 @@ class Public:
         self.storage = storage
         self.kernel_check = kernel_check
         self.balance = balance
-        self.olap = olap
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -193,11 +193,54 @@ class Public:
                 balance_table = file.read()
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             html_page = '\n'.join([header_table, head_row, balance_table])
-        elif self.olap:
-            with open(f'{REPORT_PATH}/results_olap.html', 'r') as file:
-                olap_table = file.read()
+        
+        elif self.c_np.startswith('PSQL OLAP-hq'):
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            html_page = '\n'.join([header_table, head_row, olap_table])
+            
+            with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
+                rating_temp = template.read()
+                rating_html = rating_temp.format(r=str(self.total_rating))
+            
+            psql_olap_hq_tables = dict()
+
+            with open('report.json', 'r') as file:
+                report_data = json.load(file)
+
+            sql_requests = report_data['result'].keys()
+            for sql_request in sql_requests:
+                print(f"SQL запрос: {sql_request}")
+                data = {
+                    "metric": ["p99", "p95", "p50", "min", "max"],
+                    "value": [
+                        report_data['result'][sql_request]['p99'],
+                        report_data['result'][sql_request]['p95'],
+                        report_data['result'][sql_request]['p50'],
+                        report_data['result'][sql_request]['min'],
+                        report_data['result'][sql_request]['max']
+                    ]
+                }
+                df = pd.DataFrame(data)
+                html_content = f"<h2>{sql_request}</h2>\n"
+                html_content += df.to_html(index=False)
+                psql_olap_hq_tables[sql_request]['table'] = html_content
+
+            
+            with open('{}/img_template.html'.format(TEMPLATE_PATH), 'r') as template:
+                img_temp = template.read()
+                for sql_request in sql_requests:
+                    file = report_data['result'][sql_request]['speed_graph'].split('/')[-1]
+                    if file.endswith('png'):
+                        psql_olap_hq_tables[sql_request]['graph'] = img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
+                                                                                   img_png=file,
+                                                                                   description=GRAPH_DESCRIPTIONS[file])
+            html_psql_olap_hq_tables = []
+            for sql_request in sql_requests:
+                html_psql_olap_hq_tables.append(psql_olap_hq_tables[sql_request]['table'])
+                html_psql_olap_hq_tables.append(psql_olap_hq_tables[sql_request]['graph'])
+            
+            olap_results = '\n'.join(html_psql_olap_hq_tables)
+
+            html_page = '\n'.join([header_table, head_row, rating_html, olap_results])
         else:
             rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
@@ -212,9 +255,9 @@ class Public:
                 img_temp = template.read()
                 for file in os.listdir(REPORT_PATH):
                     if file.endswith('png'):
-                        images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
-                                                        img_png=file,
-                                                        description=GRAPH_DESCRIPTIONS[file]))
+                        psql_olap_hq_tables[sql_request]['graph']= img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np), 
+                                                                                   img_png=file, 
+                                                                                   description=GRAPH_DESCRIPTIONS[file])
                 images = '\n'.join(images_lst)
 
             html_page = '\n'.join([header_table, rating, main_table, images])

@@ -239,7 +239,7 @@ if args.DB_PREPARE:
                        shell=True,
                        stderr=subprocess.DEVNULL)
     # TODO 
-    elif args.OLAP:
+    elif args.OLAP == "heavy_queries":
         subprocess.run(f'sudo bash {SCRIPT_DIR}/psb_db_prep_stand{args.STAND}_olap.sh {alt_storage}',
                        shell=True,
                        stderr=subprocess.DEVNULL)
@@ -286,7 +286,7 @@ if args.TEST_LIST == 'base':
             sysmon = subprocess.Popen(f"{VENV_PATH} psb_sysmon.py", shell=True)
 
         # TODO OLAP test
-        if args.OLAP:
+        if args.OLAP == "heavy_queries":
             test = OLAPTest()
             milti_result = asyncio.run(test.run_test())
             print("milti_result:", milti_result)
@@ -374,7 +374,7 @@ if args.TEST_LIST == 'base':
                                     'psb_load_disk.png'])
             report.create_tar()
         # TODO OLAP report
-        elif args.OLAP:
+        elif args.OLAP == "heavy_queries":
             pass
         # TODO OLAP report
         # ---------------------------

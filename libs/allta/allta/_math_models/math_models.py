@@ -223,6 +223,8 @@ class MathModels:
 
         return np.poly1d(np.polyfit(x_arr, y_arr, 0))
 
+
+    # TODO не хватает aproximate а так же не хватает интеграла с рассчетом прощади под кривой
     @staticmethod
     def total_rating(
         criteria: Iterable[Criterion],

@@ -245,6 +245,12 @@ parser.add_argument('-kernel',
                     help='testlist',
                     dest='KERNELTEST')
 
+parser.add_argument('-olap',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='PSQL_OLAP')
+
 
 
 
@@ -308,6 +314,7 @@ ovf_sd_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check reboot
 freeipa_test = f'-tt {args.FREEIPA}'
 vpn = f'--test {args.VPN}'
 mail = f'-tt {args.MAIL}'
+psql_olap = f'-olap {args.PSQL_OLAP}'
 
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
@@ -386,6 +393,9 @@ elif args.NETWORK:
 elif args.KERNELTEST:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {kernel_test}'
+elif args.PSQL_OLAP:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_olap}'
 else: 
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {fs} {sn} {fti} {tcyc} {tcas} {ba} {tcv}'

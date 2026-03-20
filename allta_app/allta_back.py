@@ -327,6 +327,7 @@ try:
                             aovpn = '-vpn aovpncc'
                             iof = '-network iof'
                             seg = '-kernel segfault'
+                            psql_olap = '-olap heavy_queries'
                             if tests[dates_list[i][1]] == 'auditd-p':
                                 testlist = f'-aud psaud'
                             elif tests[dates_list[i][1]] == 'auditd-f':
@@ -425,7 +426,10 @@ try:
                                             {tcas} {branch} {cti} {pp} {testnum} {iof} {tes}', shell=True) 
                             elif tests[dates_list[i][1]] == 'SegFault':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)                                 
+                                            {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)
+                            elif tests[dates_list[i][1]] == 'PSQL OLAP-hq':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_olap} {tes}', shell=True)                                 
                             else: 
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                                 {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
@@ -488,6 +492,7 @@ try:
                     aovpn = '-vpn aovpncc'
                     iof = '-network iof'
                     seg = '-kernel segfault'
+                    psql_olap = '-olap heavy_queries'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -585,7 +590,10 @@ try:
                                             {tcas} {branch} {cti} {pp} {testnum} {iof} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'SegFault':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
-                                            {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)                           
+                                            {tcas} {branch} {cti} {pp} {testnum} {seg} {tes}', shell=True)   
+                    elif tests[dates_list[i][1]] == 'PSQL OLAP-hq':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {psql_olap} {tes}', shell=True)                        
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)

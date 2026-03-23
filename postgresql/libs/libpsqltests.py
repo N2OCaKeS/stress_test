@@ -3,10 +3,12 @@ import os
 import json
 import logging
 import time
-import asyncio
-from typing import LiteralString, cast
+from typing import LiteralString
 import psycopg
 from psycopg_pool import AsyncConnectionPool
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
 
 
 from psb_conf import LOG_FILENAME, DATABASE_NAME, \
@@ -181,13 +183,20 @@ class OLAPTest:
     def __init__(self):
         self.db_config = {
         "host": "127.0.0.1",
-        "port": 55432,
-        "dbname": "olapdb",
-        "user": "olap",
-        "password": "olap",
+        "port": 6000,
+        "dbname": "protopack",
+        "user": "postgres",
+        "password": "12345678",
     }
+    #     self.db_config = {
+    #     "host": "127.0.0.1",
+    #     "port": 55432,
+    #     "dbname": "olapdb",
+    #     "user": "olap",
+    #     "password": "olap",
+    # }    
       
-
+        # TODO Сделать более тяжелые запросы чтобы каждая итерация была по 10-15 мин
         self.hard_query: LiteralString = """
 WITH
     binary_search AS (
@@ -454,7 +463,6 @@ ORDER BY
     coalesce(r.token_count, 0) DESC,
     r.create_utc DESC NULLS LAST,
     r."binary"
-LIMIT 800;
 """
         self.join_query: LiteralString = """
 WITH pkg AS (
@@ -550,7 +558,6 @@ ORDER BY
     dep_token_count DESC,
     mount_repo_count DESC,
     p.build DESC
-LIMIT 900;
 """
         self.interlinear_search_query: LiteralString = """
 WITH docs AS (
@@ -643,7 +650,6 @@ ORDER BY
     s.total_hits DESC,
     s.first_pos ASC NULLS LAST,
     s."binary"
-LIMIT 900;
 """
         self.combined_analytics_query: LiteralString = """
 WITH pkg AS (
@@ -734,7 +740,6 @@ ORDER BY
     combined_score DESC,
     rs.repo_p95_payload DESC NULLS LAST,
     p.create_utc DESC NULLS LAST
-LIMIT 1000;
 """
         self.combined_search_join_query: LiteralString = """
 WITH docs AS (
@@ -820,39 +825,33 @@ ORDER BY
     source_binary_matches DESC,
     mount_repo_count DESC,
     s.build DESC
-LIMIT 1000;
 """
 
-        self.queries: dict[str, dict[str, object]] = {
+        self.passes = 3
+        self.available_queries: dict[str, dict[str, object]] = {
             "hard_query": {
                 "query": self.hard_query,
-                "concurrent_levels": [1, 5, 10],
-                "passes": 1,
+                "normalization_bounds": (0.0, 1.0),
             },
             "order_query": {
                 "query": self.order_query,
-                "concurrent_levels": [1, 5, 10],
-                "passes": 1,
+                "normalization_bounds": (0.0, 1.0),
             },
             "join_query": {
                 "query": self.join_query,
-                "concurrent_levels": [1, 5, 10],
-                "passes": 1,
+                "normalization_bounds": (0.0, 1.0),
             },
             "interlinear_search_query": {
                 "query": self.interlinear_search_query,
-                "concurrent_levels": [1, 5, 10],
-                "passes": 1,
+                "normalization_bounds": (0.0, 1.0),
             },
             "combined_analytics_query": {
                 "query": self.combined_analytics_query,
-                "concurrent_levels": [1, 5, 10],
-                "passes": 1,
+                "normalization_bounds": (0.0, 1.0),
             },
             "combined_search_join_query": {
                 "query": self.combined_search_join_query,
-                "concurrent_levels": [1, 5, 10],
-                "passes": 1,
+                "normalization_bounds": (0.0, 1.0),
             },
         }
 
@@ -861,6 +860,8 @@ LIMIT 1000;
 
     async def run_test(self):
         db_config = self.db_config
+        results_file_path = os.path.abspath(self.results_file)
+        report_dir = os.path.dirname(results_file_path)
 
 
         dsn = (
@@ -871,35 +872,13 @@ LIMIT 1000;
             f"password={db_config['password']}"
         )
 
-        def normalize_query_params(query_cfg):
+        passes = max(1, int(self.passes))
+        prepared_queries = []
+        for query_name, query_cfg in self.available_queries.items():
             query_text = query_cfg.get("query")
             if not isinstance(query_text, str):
-                raise ValueError("query must be a SQL string")
-
-            raw_levels = query_cfg.get("concurrent_levels", [1])
-            levels = []
-            if isinstance(raw_levels, (list, tuple)):
-                for level in raw_levels:
-                    int_level = int(level)
-                    if int_level > 0:
-                        levels.append(int_level)
-            if not levels:
-                levels = [1]
-
-            passes = int(query_cfg.get("passes", 1))
-            if passes < 1:
-                passes = 1
-
-            return cast(LiteralString, query_text), levels, passes
-
-        prepared_queries = []
-        for query_name, query_cfg in self.queries.items():
-            query_text, concurrent_levels, passes = normalize_query_params(query_cfg)
-            prepared_queries.append((query_name, query_text, concurrent_levels, passes))
-
-        max_concurrency = max(
-            max(concurrent_levels) for _, _, concurrent_levels, _ in prepared_queries
-        )
+                raise ValueError(f"Query text must be string for '{query_name}'")
+            prepared_queries.append((query_name, query_text))
 
         def calc_percentile(values, percentile):
             if not values:
@@ -915,27 +894,114 @@ LIMIT 1000;
                 sorted_values[upper_index] - sorted_values[lower_index]
             ) * fraction
 
-        def calc_median_by_index(iterations):
+        def calc_median(values):
+            if not values:
+                return 0.0
+            sorted_values = sorted(values)
+            mid = len(sorted_values) // 2
+            if len(sorted_values) % 2 == 0:
+                return (sorted_values[mid - 1] + sorted_values[mid]) / 2
+            return sorted_values[mid]
+
+        def calc_total_rating_overall(total_rating_data):
+            # Упрощенная модель:
+            # 1) Все критерии негативные: чем меньше время, тем лучше.
+            # 2) Вес каждого запроса одинаковый: 1 / количество запросов.
+            # 3) Нормализация по статическим границам из self.available_queries[*]["normalization_bounds"].
+            # 4) Интегральная оценка по запросу = нормированная площадь под кривой.
+            # 5) Итоговый рейтинг = сумма(weight_i * score_i) * 100.
+            # total_rating_data формат: {"query_name": [iter1, iter2, ...], ...}
+
+            def normalize_query_iterations(query_name, iterations):
+                if not iterations:
+                    return []
+
+                query_cfg = self.available_queries.get(query_name, {})
+                bounds = query_cfg.get("normalization_bounds")
+                if not isinstance(bounds, (tuple, list)) or len(bounds) != 2:
+                    raise ValueError(
+                        f"Set normalization_bounds=(lower, upper) for '{query_name}' in available_queries"
+                    )
+                lower_bound, upper_bound = float(bounds[0]), float(bounds[1])
+                span = upper_bound - lower_bound
+                if span <= 0:
+                    raise ValueError(
+                        f"Invalid normalization_bounds for '{query_name}': lower must be < upper"
+                    )
+
+                # Негативный критерий: меньше время = лучше.
+                normalized = [
+                    (upper_bound - value) / span
+                    for value in iterations
+                ]
+                return [min(1.0, max(0.0, value)) for value in normalized]
+
+            def calc_integral_score(normalized_values):
+                if not normalized_values:
+                    return 0.0
+                if len(normalized_values) == 1:
+                    return normalized_values[0]
+
+                # Аппроксимация линейной функцией между соседними точками.
+                x_values = list(range(1, len(normalized_values) + 1))
+                area = 0.0
+                for index in range(len(normalized_values) - 1):
+                    left_x = x_values[index]
+                    right_x = x_values[index + 1]
+                    left_y = normalized_values[index]
+                    right_y = normalized_values[index + 1]
+                    area += (left_y + right_y) * (right_x - left_x) / 2.0
+
+                x_span = x_values[-1] - x_values[0]
+                if x_span <= 0:
+                    return normalized_values[0]
+
+                score = area / x_span
+                return min(1.0, max(0.0, score))
+
+            if not total_rating_data:
+                return 0.0
+
+            query_scores = {}
+            for query_name, iterations in total_rating_data.items():
+                normalized_values = normalize_query_iterations(query_name, iterations)
+                integral_score = calc_integral_score(normalized_values)
+                query_scores[query_name] = integral_score
+
+            query_weight = 1.0 / len(query_scores)
+            weighted_score = 0.0
+            for query_score in query_scores.values():
+                weighted_score += query_score * query_weight
+
+            weighted_score = min(1.0, max(0.0, weighted_score))
+            return weighted_score * 100.0
+
+        def save_speed_graph(query_name, iterations):
+            graph_file_name = f"olap_speed_{query_name}.png"
+            graph_file_path = os.path.abspath(os.path.join(report_dir, graph_file_name))
             if not iterations:
-                return []
-            values_count = len(iterations[0])
-            medians = []
-            for index in range(values_count):
-                values_at_index = [iteration[index] for iteration in iterations]
-                sorted_values = sorted(values_at_index)
-                mid = len(sorted_values) // 2
-                if len(sorted_values) % 2 == 0:
-                    medians.append((sorted_values[mid - 1] + sorted_values[mid]) / 2)
-                else:
-                    medians.append(sorted_values[mid])
-            return medians
+                return graph_file_path
+
+            x_values = list(range(1, len(iterations) + 1))
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(x_values, iterations, marker="o", linewidth=1.2)
+            ax.set_title(f"OLAP speed graph: {query_name}")
+            ax.set_xlabel("Request order")
+            ax.set_ylabel("Seconds")
+            ax.grid(True, linestyle="--", alpha=0.4)
+            fig.tight_layout()
+            fig.savefig(graph_file_path, dpi=150)
+            plt.close(fig)
+            return graph_file_path
 
         pool = AsyncConnectionPool(
             conninfo=dsn,
             min_size=1,
-            max_size=max_concurrency,
+            max_size=1,
             open=False,
         )
+
+        os.makedirs(report_dir, exist_ok=True)
 
         await pool.open()
         try:
@@ -951,46 +1017,44 @@ LIMIT 1000;
                 "time_unit": "seconds",
                 "result": {},
             }
+            total_rating_data = {}
 
-            for query_name, query_text, concurrent_levels, passes in prepared_queries:
-                result["result"][query_name] = {}
+            for query_name, query_text in prepared_queries:
+                iterations = []
+                for pass_num in range(1, passes + 1):
+                    measurement = await run_one(query_text)
+                    iterations.append(measurement)
+                    print(
+                        f"Запрос {query_name}, проход {pass_num}: "
+                        f"{measurement:.3f} сек"
+                    )
 
-                for concurrency in concurrent_levels:
-                    level_key = str(concurrency)
-                    level_iterations = []
-                    level_result = {}
+                median_value = calc_median(iterations)
+                p99_value = calc_percentile(iterations, 99)
+                p95_value = calc_percentile(iterations, 95)
+                p50_value = calc_percentile(iterations, 50)
+                min_value = min(iterations) if iterations else 0.0
+                max_value = max(iterations) if iterations else 0.0
+                total_rating_data[query_name] = iterations
+                graph_file_path = save_speed_graph(query_name, iterations)
 
-                    for pass_num in range(1, passes + 1):
-                        pass_result = await asyncio.gather(
-                            *(run_one(query_text) for _ in range(concurrency))
-                        )
-                        pass_result_list = list(pass_result)
-                        level_iterations.append(pass_result_list)
+                result["result"][query_name] = {
+                    "iterations": [round(value, 3) for value in iterations],
+                    "median": round(median_value, 3),
+                    "p99": round(p99_value, 3),
+                    "p95": round(p95_value, 3),
+                    "p50": round(p50_value, 3),
+                    "min": round(min_value, 3),
+                    "max": round(max_value, 3),
+                    "speed_graph": graph_file_path,
+                }
 
-                        rounded_pass_result = [round(value, 3) for value in pass_result_list]
-                        level_result[str(pass_num)] = rounded_pass_result
-                        formatted_pass_result = [f"{value:.3f}" for value in rounded_pass_result]
-                        print(
-                            f"Запрос {query_name}, уровень {concurrency}, "
-                            f"проход {pass_num}: {formatted_pass_result} сек"
-                        )
-
-                    median_values = calc_median_by_index(level_iterations)
-                    rounded_median_values = [round(value, 3) for value in median_values]
-                    result["result"][query_name][level_key] = {
-                        "result": level_result,
-                        "median": rounded_median_values,
-                        "p99": round(calc_percentile(median_values, 99), 3),
-                        "p95": round(calc_percentile(median_values, 95), 3),
-                        "p50": round(calc_percentile(median_values, 50), 3),
-                        "min": round(min(median_values), 3) if median_values else 0.0,
-                        "max": round(max(median_values), 3) if median_values else 0.0,
-                    }
+            total_rating_overall = calc_total_rating_overall(total_rating_data)
+            result["total_rating"] = round(total_rating_overall, 3)
         finally:
             await pool.close()
 
-        os.makedirs(REPORT_PATH, exist_ok=True)
-        with open(self.results_file, "w", encoding="utf-8") as result_stream:
+        with open(results_file_path, "w", encoding="utf-8") as result_stream:
             json.dump(result, result_stream, ensure_ascii=False, indent=2)
 
         return result

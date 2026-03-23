@@ -55,6 +55,19 @@ class CreateUsersTest():
         Results.get_results(host='server')
 
 
+class PlaginMemberOfTest():
+    def test1(self):
+        remote_exec(f"ipa group-add gr_1", 'server')
+        remote_exec(f"python3 ipa_test_plagin.py", 'server')
+        remote_cmd("time ipa group-add-member --groups=gr_1 gr_2 > /home/u/ipa_plagin_results.txt", HOSTS['server']['ip'])
+
+    def test2(self):
+        pass
+    
+    def run(self):
+        self.test1()
+
+
 # class EnrollementTest():
     
 #     def __init__(self, list_with_qty_clients):

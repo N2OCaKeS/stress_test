@@ -10,7 +10,7 @@ from libs.libipa import (remote_exec,
                          upload_results_to_ftp)
 from ipa_conf import HOSTS, USER, INFO_FILENAME, REPORT_PATH
 from libs.zefir import UploaderZC
-from ipa_tests import AutentificationTest, CreateUsersTest
+from ipa_tests import AutentificationTest, CreateUsersTest, PlaginMemberOfTest
 from libs.libpublic import Public
 
 
@@ -227,6 +227,11 @@ if __name__ == "__main__":
                             x_label="Количество пользователей",
                             y_label="users/sec")
         total_rating = report.get_total_rating_create_users_test()
+    
+    elif args.TT == "plagin":
+        plagin_test = PlaginMemberOfTest()
+        plagin_test.run()    
+    
     else:
         report = Report()
         total_rating = 0

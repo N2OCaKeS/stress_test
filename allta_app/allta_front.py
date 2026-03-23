@@ -21,6 +21,7 @@ from libs.libilo import iLOConsoleCaller
 from libs.liballta import (index_page,
                           BackgroundTasks,
                           BootOrder,
+                          TestrunManager,
                           run_command_on_stand,
                           ssh_command,
                           background_task_main,
@@ -56,6 +57,8 @@ import time
 import base64
 import requests
 
+
+tm = TestrunManager()
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'srv_2413'
@@ -742,6 +745,66 @@ def update_services_health_status():
 @app.route('/astra-services-health-status', methods=['GET'])
 def update_astra_services_health_status():
     return astra_services_health_status()
+
+
+@app.route('/rest/api/testrunmg/addrc', methods=['POST'])
+def addrc():
+    """Добавление нового релиз кандидата"""
+    data = request.get_json()
+    
+    if not data or 'build' not in data or 'rc' not in data:
+        return {'error': 'Missing required fields: build, rc'}, 400
+    
+    try:
+        result = tm.addrc(build=data['build'], rc=data['rc'])
+        return result, 201 
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+
+@app.route('/rest/api/testrunmg/adduurc', methods=['POST'])
+def adduurc():
+    """Добавление нового релиз кандидата - срочное обновление"""
+    data = request.get_json()
+    
+    if not data or 'build' not in data or 'rc' not in data or 'uu' not in data:
+        return {'error': 'Missing required fields: build, rc, uu'}, 400
+    
+    try:
+        result = tm.adduurc(build=data['build'], rc=data['rc'], uu_value=data['uu'])
+        return result, 201  
+    except Exception as e:
+        return {'error': str(e)}, 500
+    
+
+@app.route('/rest/api/testrunmg/testrun', methods=['POST'])
+def create_testrun():
+    """Создание тестового прогона"""
+    data = request.get_json()
+
+    if not data or 'rc' not in data or 'final' not in data:
+        return {'error': 'Missing required fields: rc, final'}, 400
+    
+    try:
+        result = tm.add_testrun(rc=data['rc'], final=data['final'])
+        return result, 201  
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+
+@app.route('/rest/api/testrunmg/acs', methods=['POST'])
+def acs():
+    """Создание снимка на сервере"""
+    data = request.get_json()
+
+    if not data or 'rc' not in data or 'stand' not in data:
+        return {'error': 'Missing required fields: rc, stand'}, 400
+    
+    try:
+        result = tm.acs(rc=data['rc'], stand=data['final'])
+        return result, 201  
+    except Exception as e:
+        return {'error': str(e)}, 500
 
 
 # if __name__ == '__main__':

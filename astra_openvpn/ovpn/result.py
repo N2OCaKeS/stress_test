@@ -240,7 +240,7 @@ def analyze_result(
         "drops_mean": (float(drops_series.mean()) if not drops_series.empty else 0.0),  # Среднее количество ошибок/дропов за единицу времени
         "drops_median": (float(drops_series.median()) if not drops_series.empty else 0.0),  # Медиана количества ошибок/дропов за единицу времени
     }
-
+# TODO переписать под новую мат модель
     chart_rows = _build_chart_rows(df_charts)
     public_chart_rows = _build_public_chart_rows(df_charts)
     stats_table = _build_stats_table_rows(stats)

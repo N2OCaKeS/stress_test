@@ -14,6 +14,7 @@ import socket
 from os import path
 from libs.zefir import ZefirResultTable
 import psycopg2
+import traceback
 import asyncio
 import json
 from time import sleep
@@ -759,7 +760,11 @@ def addrc():
         result = tm.addrc(build=data['build'], rc=data['rc'])
         return result, 201 
     except Exception as e:
-        return {'error': str(e)}, 500
+        error_traceback = traceback.format_exc()
+        return {
+            'error': str(e),
+            'traceback': error_traceback
+        }, 500
 
 
 @app.route('/rest/api/testrunmg/adduurc', methods=['POST'])
@@ -774,7 +779,11 @@ def adduurc():
         result = tm.adduurc(build=data['build'], rc=data['rc'], uu_value=data['uu'])
         return result, 201  
     except Exception as e:
-        return {'error': str(e)}, 500
+        error_traceback = traceback.format_exc()
+        return {
+            'error': str(e),
+            'traceback': error_traceback
+        }, 500
     
 
 @app.route('/rest/api/testrunmg/testrun', methods=['POST'])
@@ -789,7 +798,11 @@ def create_testrun():
         result = tm.add_testrun(rc=data['rc'], final=data['final'])
         return result, 201  
     except Exception as e:
-        return {'error': str(e)}, 500
+        error_traceback = traceback.format_exc()
+        return {
+            'error': str(e),
+            'traceback': error_traceback
+        }, 500
 
 
 @app.route('/rest/api/testrunmg/acs', methods=['POST'])
@@ -804,7 +817,11 @@ def acs():
         result = tm.acs(rc=data['rc'], stand=data['stand'])
         return result, 201  
     except Exception as e:
-        return {'error': str(e)}, 500
+        error_traceback = traceback.format_exc()
+        return {
+            'error': str(e),
+            'traceback': error_traceback
+        }, 500
 
 
 # if __name__ == '__main__':

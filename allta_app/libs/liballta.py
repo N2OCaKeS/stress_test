@@ -1591,7 +1591,7 @@ class TestrunManager:
                 print(response.text)
                 value = response.json()
                 print(value)
-                print(f'vers {name.split('/')[-1]}')
+                print(f"vers {name.split('/')[-1]}")
                 config['cycle_tree_index'][name.split('/')[-1]] = str(value['id'])
                 config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
                 print(config['cycle_tree_index'])

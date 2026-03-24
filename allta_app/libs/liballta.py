@@ -63,8 +63,6 @@ from allta_image_conf import (
     allta_services_list,
     tokens,
     ilo,
-    SERVER_ACS_IP_OR_NAME,
-    SERVER_ACS_PORT,
     ACS_BASE_URL,
     stands_type
 )

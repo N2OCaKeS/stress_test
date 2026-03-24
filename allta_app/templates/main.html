@@ -1139,8 +1139,16 @@
                                 <input type="text" class="form-control" id="rcACSInput" placeholder="Пример: 1.7.10.52 | 1.8.3.UU.1.1">
                             </div>
                             <div class="mb-3">
-                                <label for="StandInput" class="form-label">Stand:</label>
-                                <input type="text" class="form-control" id="StandInput" placeholder="Пример: stand4">
+                                <label for="StandSelect" class="form-label">Stand:</label>
+                                <select class="form-select" id="StandSelect">
+                                    <option value="" disabled selected>Выберите значение</option>
+                                    <option value="selectstand3">stand3</option>
+                                    <option value="selectstand4">stand4</option>
+                                    <option value="selectstand10">stand10</option>
+                                    <option value="selectstand11">stand11</option>
+                                    <option value="selectstand12">stand12</option>
+                                    <option value="selectstand13">stand13</option>
+                                </select>
                             </div>
                             <div style="text-align: center;">
                               <button type="button" class="btn cst-btn-secondary" onclick="CreateACS()">Создать</button>
@@ -1342,7 +1350,7 @@
 
         <script>
           async function CreateACS() {
-              const stand = document.getElementById('StandInput').value.trim();
+              const stand = document.getElementById('StandSelect').value.trim();
               const rc = document.getElementById('rcACSInput').value.trim();
               const resultDiv = document.getElementById('ACSInputResult');
               
@@ -1372,7 +1380,7 @@
                   
                   if (response.ok) {
                       resultDiv.innerHTML = '<div class="alert alert-success">Создание снимка успешно запущено!</div>';
-                      document.getElementById('StandInput').value = '';
+                      document.getElementById('StandSelect').value = '';
                       document.getElementById('rcACSInput').value = '';
                       setTimeout(() => {
                             window.location.reload();

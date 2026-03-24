@@ -95,12 +95,25 @@ def redirect_login():
 @app.errorhandler(500)
 def internal_server_error(e):
     #app.logger.error(e)
+    if request.path.startswith('/rest/api/'):
+        return {
+            'error': 'Internal server error',
+            'message': str(e),
+            'traceback': traceback.format_exc()  
+        }, 500
+    
     return redirect(url_for('login'))
 
 
 @app.errorhandler(404)
 def page_not_found(e):
     #app.logger.error(e)
+    if request.path.startswith('/rest/api/'):
+        return {
+            'error': 'Not found',
+            'message': f'Endpoint {request.path} not found'
+        }, 404
+    
     return redirect(url_for('login'))
 
 

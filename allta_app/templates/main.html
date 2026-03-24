@@ -1207,6 +1207,13 @@
                           rc: rc
                       })
                   });
+
+                  // Проверяем, что пришел JSON
+                  const contentType = response.headers.get('content-type');
+                  if (!contentType || !contentType.includes('application/json')) {
+                      const text = await response.text();
+                      throw new Error(`Сервер вернул ${contentType || 'неизвестный формат'}. Статус: ${response.status}. Первые 400 символов: ${text.substring(0, 400)}`);
+                  }
                   
                   const data = await response.json();
                   
@@ -1227,10 +1234,17 @@
                       `;
                   }
               } catch (error) {
-                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
-                  setTimeout(() => {
-                      resultDiv.innerHTML = '';
-                  }, 5000);
+                  console.error('Fetch error:', error);
+                  
+                  const stackTrace = error.stack || 'Нет данных о стеке';
+                  
+                  resultDiv.innerHTML = `
+                      <div class="alert alert-danger">
+                          <strong>Ошибка:</strong> ${error.message}<br>
+                          <strong>Stack trace:</strong><br>
+                          <pre style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto;">${stackTrace}</pre>
+                      </div>
+                  `;
               }
           }
         </script>
@@ -1264,6 +1278,13 @@
                           uu: uuversion,
                       })
                   });
+
+                  // Проверяем, что пришел JSON
+                  const contentType = response.headers.get('content-type');
+                  if (!contentType || !contentType.includes('application/json')) {
+                      const text = await response.text();
+                      throw new Error(`Сервер вернул ${contentType || 'неизвестный формат'}. Статус: ${response.status}. Первые 400 символов: ${text.substring(0, 400)}`);
+                  }
                   
                   const data = await response.json();
                   
@@ -1285,10 +1306,17 @@
                       `;
                   }
               } catch (error) {
-                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
-                  setTimeout(() => {
-                      resultDiv.innerHTML = '';
-                  }, 5000);
+                  console.error('Fetch error:', error);
+                  
+                  const stackTrace = error.stack || 'Нет данных о стеке';
+                  
+                  resultDiv.innerHTML = `
+                      <div class="alert alert-danger">
+                          <strong>Ошибка:</strong> ${error.message}<br>
+                          <strong>Stack trace:</strong><br>
+                          <pre style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto;">${stackTrace}</pre>
+                      </div>
+                  `;
               }
           }
         </script>
@@ -1320,6 +1348,13 @@
                           final: changelog
                       })
                   });
+
+                  // Проверяем, что пришел JSON
+                  const contentType = response.headers.get('content-type');
+                  if (!contentType || !contentType.includes('application/json')) {
+                      const text = await response.text();
+                      throw new Error(`Сервер вернул ${contentType || 'неизвестный формат'}. Статус: ${response.status}. Первые 400 символов: ${text.substring(0, 400)}`);
+                  }
                   
                   const data = await response.json();
                   
@@ -1340,10 +1375,17 @@
                       `;
                   }
               } catch (error) {
-                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
-                  setTimeout(() => {
-                      resultDiv.innerHTML = '';
-                  }, 5000);
+                  console.error('Fetch error:', error);
+                  
+                  const stackTrace = error.stack || 'Нет данных о стеке';
+                  
+                  resultDiv.innerHTML = `
+                      <div class="alert alert-danger">
+                          <strong>Ошибка:</strong> ${error.message}<br>
+                          <strong>Stack trace:</strong><br>
+                          <pre style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto;">${stackTrace}</pre>
+                      </div>
+                  `;
               }
           }
         </script>
@@ -1375,6 +1417,13 @@
                           stand: stand
                       })
                   });
+
+                  // Проверяем, что пришел JSON
+                  const contentType = response.headers.get('content-type');
+                  if (!contentType || !contentType.includes('application/json')) {
+                      const text = await response.text();
+                      throw new Error(`Сервер вернул ${contentType || 'неизвестный формат'}. Статус: ${response.status}. Первые 400 символов: ${text.substring(0, 400)}`);
+                  }
                   
                   const data = await response.json();
                   
@@ -1395,10 +1444,17 @@
                       `;
                   }
               } catch (error) {
-                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
-                  setTimeout(() => {
-                      resultDiv.innerHTML = '';
-                  }, 5000);
+                  console.error('Fetch error:', error);
+                  
+                  const stackTrace = error.stack || 'Нет данных о стеке';
+                  
+                  resultDiv.innerHTML = `
+                      <div class="alert alert-danger">
+                          <strong>Ошибка:</strong> ${error.message}<br>
+                          <strong>Stack trace:</strong><br>
+                          <pre style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto;">${stackTrace}</pre>
+                      </div>
+                  `;
               }
           }
         </script>

@@ -1426,7 +1426,7 @@ class TestrunManager:
         self.__password = tokens['pass']
 
 
-    def run_tests(version, stand):
+    def run_tests(self, version, stand):
         tests_dir = 'conf/main_tests_args.conf'
         releases_dir = 'conf/main_releas_args.conf'
 
@@ -1577,7 +1577,7 @@ class TestrunManager:
             json.dump(data, w, indent=4)
 
 
-    def add_kernels(value):
+    def add_kernels(self, value):
         with open('./allta_conf.json', 'r') as r:
             config = json.load(r)
 

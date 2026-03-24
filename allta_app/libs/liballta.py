@@ -32,7 +32,7 @@ from paramiko import ssh_exception
 from time import sleep
 from datetime import datetime, timedelta
 
-from libs.zefir import ZefirTestRun
+from libs.zefir import ZefirTestRun, ZefirResultTable
 from allta_image_conf import (
     VENV_PATH,
     stp_version,
@@ -62,7 +62,11 @@ from allta_image_conf import (
     test_station_vms,
     allta_services_list,
     tokens,
-    ilo
+    ilo,
+    SERVER_ACS_IP_OR_NAME,
+    SERVER_ACS_PORT,
+    ACS_BASE_URL,
+    stands_type
 )
 
 
@@ -1401,3 +1405,334 @@ def astra_services_health_status():
         print('Some service(s) are not available')
         return jsonify({'astra_services_health_status': 'fail'})
 
+
+
+class TestrunManager:
+    """
+    Класс позволяет добавлять новые версии релиз кандидатов, создавать "снимки"
+    серверов, создавать тестовые прогоны, запускать прогоны.
+    Создан путем переноса основного функционала из ТГ-бота. 
+    """
+
+    def __init__(self,
+                 rc=None,
+                 build_version=None,
+                 stand=None):
+
+        self.rc = rc
+        self.build_version = build_version
+        self.stand = stand
+        self.__conf_token = tokens['conf_token']
+        self.__username = tokens['username']
+        self.__basic = tokens['jira_token']
+        self.__password = tokens['pass']
+
+
+    def run_tests(version, stand):
+        tests_dir = 'conf/main_tests_args.conf'
+        releases_dir = 'conf/main_releas_args.conf'
+
+        group = f'{stand}_group'
+        tests = stands_groups[group]
+
+        with open(releases_dir, 'w') as w:
+            w.write(str([version]))
+        with open(tests_dir, 'w') as w:
+            w.write(str(tests))
+
+        run_command_on_stand(list(stand)[-1], http=False)
+        sleep(20)
+
+
+    def create_test_run(version: str, final=None):
+        check_len_version = version.split('.')
+        if len(check_len_version) == 4 and check_len_version[3] != 'UU':
+            release = '.'.join(check_len_version[:3]) 
+        elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
+            release = '.'.join(check_len_version[:5]) 
+        
+        stands = test_run_stands
+        kernels = get_kernels_from_rc(version, get_list=True)
+
+        test_run = ZefirTestRun(use_kernels=kernels,
+                                stands=stands,
+                                release=release,
+                                rc=version,
+                                final=final)
+        test_run.creater()
+
+
+    def update_stp(self, version):
+        zefir_table = ZefirResultTable(test_cycle_version=str(version),
+                                    token=self.__conf_token,
+                                    basic_auth=self.__basic,
+                                    username=self.__username)
+        zefir_table
+
+
+    def acs_create_snapshot(self, version: str, stand):
+        res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
+        data_repos = json.loads(res_all_repos)
+        needed_repos = data_repos.get(version)
+        busy_status_control(stand, 'ACS', version=version)
+
+        if needed_repos:
+            repos_to_one_str = "\n".join(needed_repos)
+            res_ver = requests.post(f"{ACS_BASE_URL}/versions", json={"name": version,
+                                                                "digit_name": version})
+            data = res_ver.json()
+            id_new_version = data.get("data")
+            requests.post(f"{ACS_BASE_URL}/repos", json={"link": repos_to_one_str,
+                                                    "version_id": id_new_version}) 
+            
+        if version.startswith('1.8'):
+            restore_version = '1.8.1.6'
+        elif version.startswith('1.7'):
+            restore_version = '1.7.5'
+        
+        if stand == 'stand3':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer'})
+        elif stand == 'stand4':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'MiddleServer'})
+        elif stand == 'stand5':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'HighServer'})
+        elif stand == 'stand10':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer2'})
+        elif stand == 'stand11':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer3'})
+        elif stand == 'stand12':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer4'})
+        elif stand == 'stand13':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer5'})
+        else: res_create_full_snap = 'Wrong stand'
+        return res_create_full_snap.text
+
+
+    def generate_repo_path(self):
+        pkg_path = '/dists/{}/main/binary-amd64/Packages'
+        vers_path = '/dists/{}/Release'
+
+        def sort_element(repo_list: list, element):
+            [repo_list.insert(0, repo_list.pop(repo_list.index(i))) for i in repo_list if element in i]
+            return repo_list[0]
+
+        with open('./releases.json', 'r') as rj:
+            links = json.load(rj)
+
+        pkg_path_dict = {
+            f"pkg_path_{key}": sort_element([f"{value.split(' ')[1]}{pkg_path}".format(value.split(' ')[2])  
+            for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])], 'installation')
+            for key in links.keys()
+        }
+
+        vers_path_dict = {
+            f"vers_path_{key}": sort_element([f"{value.split(' ')[1]}{vers_path}".format(value.split(' ')[2])   
+            for value in links[key] if any(x in value for x in ['devel-repository', 'base-repository', 'installation'])], 'installation')
+            for key in links.keys()
+        }
+
+        return {**pkg_path_dict, **vers_path_dict}
+        
+        
+    def write_allta_conf(self, data):
+        with open('./allta_conf.json', 'w') as w:
+            json.dump(data, w, indent=4)
+
+
+    def add_kernels(value):
+        with open('./allta_conf.json', 'r') as r:
+            config = json.load(r)
+
+        rc_kernels = get_kernels_from_rc(value, get_list=True)
+        print(rc_kernels)
+        config['kernels'] += [kern for kern in rc_kernels if kern not in set(config['kernels'])]
+        return sorted(config['kernels'])
+
+
+    def update_changelog(value):
+        path = './ChangeLog'
+        with open(path, 'r') as r:
+            version = r.readline()
+            text = r.read()
+        upp_version = int(version.split(' ')[2].split('.')[-1]) + 1
+        pre_version = '.'.join(version.split(' ')[2].split('.')[:-1])
+        new_version = f'{' '.join(version.split(' ')[:-1])} {pre_version}.{upp_version}'
+
+        print(version)
+        print(new_version)
+        print('.'.join(version.split(' ')[2].split('.')[:-1]))
+
+        commit = f'{new_version}\n* Add {value}\n\n\n\n\n'
+
+        with open(path, 'w') as w:
+            w.write(f'{commit}\n{version}{text}')
+
+
+    def add_testrun_folder(self, rc):
+        main_folder = 2744
+        counter = 0
+
+        def __create_testrun_folder(name: str):
+                add_folder_url = f'https://jira.astralinux.ru/rest/atm/1.0/folder'
+                headers = {
+                    'Authorization': self.__basic
+                }
+                data = {
+                        "projectKey": "BT",
+                        "name": f"/stress_test/{name}",
+                        "type": "TEST_RUN"
+                        }
+
+                print(data)
+                response = requests.post(add_folder_url, headers=headers, json=data)
+                print(response.status_code)
+                print(response.text)
+                value = response.json()
+                print(value)
+                print(f'vers {name.split('/')[-1]}')
+                config['cycle_tree_index'][name.split('/')[-1]] = str(value['id'])
+                config['cycle_tree_index'] = {k: v for k, v in sorted(config['cycle_tree_index'].items())}
+                print(config['cycle_tree_index'])
+                self.write_allta_conf(config)
+
+        while counter < 2:
+            counter += 1
+            with open('./allta_conf.json', 'r') as r:
+                config = json.load(r)
+
+            print(config['cycle_tree_index'].keys())
+            if rc not in config['cycle_tree_index'].keys():
+                check_len_version = rc.split('.')
+                if len(check_len_version) == 4 and check_len_version[3] != 'UU':
+                    if '.'.join(check_len_version[:3]) in config['cycle_tree_index'].keys():
+                        parentfolder = '.'.join(check_len_version[:3])
+                        name = rc
+                        __create_testrun_folder(f'{parentfolder}/{name}')
+                    else: __create_testrun_folder('.'.join(check_len_version[:3]))
+                elif len(check_len_version) == 6 and check_len_version[3] == 'UU':
+                    if '.'.join(check_len_version[:5]) in config['cycle_tree_index'].keys():
+                        parentfolder = '.'.join(check_len_version[:5])
+                        name = rc
+                        __create_testrun_folder(f'{parentfolder}/{name}')
+                    else: __create_testrun_folder('.'.join(check_len_version[:5]))
+                else: 
+                    name = rc
+                    __create_testrun_folder(name)
+
+
+    def mod_allta_conf(self, value, rc, uu_value=None):
+        with open('./allta_conf.json', 'r') as r:
+            data = json.load(r)
+
+        cz_name = 'sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h "{}" \
+                    -l ru_RU.UTF-8 startdisk restore {}-{}rc{} nvme0n1'
+
+        if value not in data['releases_dict'].keys():
+            if uu_value:
+                data['releases_dict'][value] = uu_value
+            else: data['releases_dict'][value] = value
+            data['releases_dict'] = {k: v for k, v in sorted(data['releases_dict'].items())}
+        if value not in data['rc_list']:
+            data['rc_list'].append(value)
+            data['rc_list'] = sorted(data['rc_list']) 
+        if uu_value:
+            if '.'.join(value.split('.')[:5]) not in data['releases_list']:
+                data['releases_list'].append('.'.join(value.split('.')[:5]))
+                data['releases_list'] = sorted(data['releases_list'])
+        else:
+            if '.'.join(value.split('.')[:3]) not in data['releases_list']:
+                data['releases_list'].append('.'.join(value.split('.')[:3]))
+                data['releases_list'] = sorted(data['releases_list'])
+        if value not in data['release_version']:
+            data['release_version'].append(value)
+            data['release_version'] = sorted(data['release_version'])
+        if value not in data['releases']:
+            data['releases'].append(value)       
+            data['releases'] = sorted(data['releases']) 
+        if value not in data['build_rc_relation'].keys():
+            data['build_rc_relation'][value] = rc
+            data['build_rc_relation'] = {k: v for k, v in sorted(data['build_rc_relation'].items())}
+            
+        for stand in stands_type['phys'].keys():
+            if uu_value:
+                slice_value = 5
+            else: slice_value = 3
+            if stand != 'stand5':
+                if value not in data['cz_comm'][stand].keys():
+                    data['cz_comm'][stand][value] = cz_name.format(stands_ip[stand],
+                                                                stands_type['phys'][stand],
+                                                                ''.join(value.split('.')[:slice_value]),
+                                                                ''.join(value.split('.')[slice_value:]))
+            data['cz_comm'][stand] = {k: v for k, v in sorted(data['cz_comm'][stand].items())}
+
+        self.write_allta_conf(data)
+        
+        repo = ReleaseToRepo(current_directory='.')
+        repo.get_releases_index()
+        repo.generate_releases_file()
+
+        data['repo_path'] = {k: v for k, v in sorted(self.generate_repo_path().items())}
+        self.write_allta_conf(data)
+
+        data['kernels'] = self.add_kernels(value)
+        self.write_allta_conf(data)
+
+        self.add_testrun_folder(value)
+        self.update_changelog(value)
+
+    
+
+    def addrc(self, build=None, rc=None):
+        self.mod_allta_conf(build, rc)
+            
+
+
+    def adduurc(self, build=None, rc=None, uu_value=None):
+        #uu_value Использовать только если UU, иначе игнорировать
+        self.mod_allta_conf(build, rc, uu_value)
+      
+
+
+    def acs(self, rc=None, stand=None):
+        self.acs_create_snapshot(rc, stand)
+            
+
+
+    def add_testrun(self, rc=None, final=None):
+        if final == 'final':
+            self.create_test_run(rc, final=True)
+        else: self.create_test_run(rc)
+            
+
+
+    def runtests(self, rc=None, stand=None):
+        self.run_tests(rc, stand)
+            
+
+
+    def runalltests(self, rc=None):           
+        [self.run_tests(rc, test) for test in stands_type['phys'].keys()]
+
+
+            

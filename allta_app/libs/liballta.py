@@ -1678,7 +1678,6 @@ class TestrunManager:
         self.write_allta_conf(data)
 
         self.add_testrun_folder(value)
-        self.update_changelog(value)
 
     
 

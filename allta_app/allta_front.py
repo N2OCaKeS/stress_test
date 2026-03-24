@@ -801,7 +801,7 @@ def acs():
         return {'error': 'Missing required fields: rc, stand'}, 400
     
     try:
-        result = tm.acs(rc=data['rc'], stand=data['final'])
+        result = tm.acs(rc=data['rc'], stand=data['stand'])
         return result, 201  
     except Exception as e:
         return {'error': str(e)}, 500

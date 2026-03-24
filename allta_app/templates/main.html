@@ -990,6 +990,56 @@
               <br></br>
               <div class="accordion customAccordionnew" id="settingsAccordionnew">
                 <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAddRC">
+                            Добавить новый RC
+                        </button>
+                    </h2>
+                    <div id="collapseAddRC" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                        <div class="accordion-body" style="text-align: left;">
+                            <div class="mb-3">
+                                <label for="buildInput" class="form-label">Build version:</label>
+                                <input type="text" class="form-control" id="buildInput" placeholder="Пример: 1.7.10.52">
+                            </div>
+                            <div class="mb-3">
+                                <label for="rcInput" class="form-label">RC:</label>
+                                <input type="text" class="form-control" id="rcInput" placeholder="Пример: RC1">
+                            </div>
+                            <div style="text-align: center;">
+                              <button type="button" class="btn cst-btn-secondary" onclick="addRC()">Добавить</button>
+                            </div>
+                            <div id="addRcResult" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAdduuRC">
+                            Добавить новый UU RC
+                        </button>
+                    </h2>
+                    <div id="collapseAdduuRC" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                        <div class="accordion-body" style="text-align: left;">
+                            <div class="mb-3">
+                                <label for="uuVersionInput" class="form-label">UU version:</label>
+                                <input type="text" class="form-control" id="uuVersionInput" placeholder="Пример: 1.8.3.UU.1.1">
+                            </div>
+                            <div class="mb-3">
+                                <label for="builduuInput" class="form-label">Build version:</label>
+                                <input type="text" class="form-control" id="builduuInput" placeholder="Пример: 1.8.3.8">
+                            </div>
+                            <div class="mb-3">
+                                <label for="uurcInput" class="form-label">RC:</label>
+                                <input type="text" class="form-control" id="uurcInput" placeholder="Пример: RC1">
+                            </div>
+                            <div style="text-align: center;">
+                              <button type="button" class="btn cst-btn-secondary" onclick="adduuRC()">Добавить</button>
+                            </div>
+                            <div id="adduuRcResult" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
                   <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseRC">
                       Доступные RC
@@ -1049,6 +1099,52 @@
                     </div>
                   </div>
                 </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCreateTestrun">
+                            Создать прогон по Changelog
+                        </button>
+                    </h2>
+                    <div id="collapseCreateTestrun" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                        <div class="accordion-body" style="text-align: left;">                            
+                            <div class="mb-3">
+                                <label for="rcTestrunInput" class="form-label">Version:</label>
+                                <input type="text" class="form-control" id="rcTestrunInput" placeholder="Пример: 1.7.10.52 | 1.8.3.UU.1.1">
+                            </div>
+                            <div class="mb-3">
+                                <label for="ChangelogInput" class="form-label">Changelog:</label>
+                                <input type="text" class="form-control" id="ChangelogInput" placeholder="Пример: final | notfinal">
+                            </div>
+                            <div style="text-align: center;">
+                              <button type="button" class="btn cst-btn-secondary" onclick="CreateChangelogTestrun()">Создать</button>
+                            </div>
+                            <div id="addChangelogInputResult" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseACS">
+                            Создать снимок ACS
+                        </button>
+                    </h2>
+                    <div id="collapseACS" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                        <div class="accordion-body" style="text-align: left;">                            
+                            <div class="mb-3">
+                                <label for="rcACSInput" class="form-label">RC:</label>
+                                <input type="text" class="form-control" id="rcACSInput" placeholder="Пример: 1.7.10.52 | 1.8.3.UU.1.1">
+                            </div>
+                            <div class="mb-3">
+                                <label for="StandInput" class="form-label">Stand:</label>
+                                <input type="text" class="form-control" id="StandInput" placeholder="Пример: stand4">
+                            </div>
+                            <div style="text-align: center;">
+                              <button type="button" class="btn cst-btn-secondary" onclick="CreateACS()">Создать</button>
+                            </div>
+                            <div id="ACSInputResult" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
               </div>
               <style>
                 .cst-btn-secondary {
@@ -1071,6 +1167,206 @@
             </form>
           </div>
         </div>
+
+        <script>
+          async function addRC() {
+              const build = document.getElementById('buildInput').value.trim();
+              const rc = document.getElementById('rcInput').value.trim();
+              const resultDiv = document.getElementById('addRcResult');
+              
+              if (!build || !rc) {
+                  resultDiv.innerHTML = '<div class="alert alert-danger">Заполните оба поля: Build version и RC</div>';
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+                  return;
+              }
+              
+              resultDiv.innerHTML = '<div class="alert alert-info">Пожалуйста подождите...</div>';
+              
+              try {
+                  const response = await fetch('/rest/api/testrunmg/addrc', {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                          build: build,
+                          rc: rc
+                      })
+                  });
+                  
+                  const data = await response.json();
+                  
+                  if (response.ok) {
+                      resultDiv.innerHTML = '<div class="alert alert-success">RC успешно добавлен!</div>';
+                      document.getElementById('buildInput').value = '';
+                      document.getElementById('rcInput').value = '';
+                      setTimeout(() => {
+                            window.location.reload();
+                      }, 2000);
+                  } else {
+                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                  }
+              } catch (error) {
+                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+              }
+          }
+        </script>
+
+        <script>
+          async function adduuRC() {
+              const uuversion = document.getElementById('uuVersionInput').value.trim();
+              const build = document.getElementById('builduuInput').value.trim();
+              const rc = document.getElementById('uurcInput').value.trim();
+              const resultDiv = document.getElementById('adduuRcResult');
+              
+              if (!uuversion || !build || !rc) {
+                  resultDiv.innerHTML = '<div class="alert alert-danger">Заполните все поля: UU version, Build version и RC</div>';
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+                  return;
+              }
+              
+              resultDiv.innerHTML = '<div class="alert alert-info">Пожалуйста подождите...</div>';
+              
+              try {
+                  const response = await fetch('/rest/api/testrunmg/adduurc', {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                          build: build,
+                          rc: rc,
+                          uu: uuversion,
+                      })
+                  });
+                  
+                  const data = await response.json();
+                  
+                  if (response.ok) {
+                      resultDiv.innerHTML = '<div class="alert alert-success">UU RC успешно добавлен!</div>';
+                      document.getElementById('uuVersionInput').value = '';
+                      document.getElementById('builduuInput').value = '';
+                      document.getElementById('uurcInput').value = '';
+                      setTimeout(() => {
+                            window.location.reload();
+                      }, 2000);
+                  } else {
+                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                  }
+              } catch (error) {
+                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+              }
+          }
+        </script>
+
+        <script>
+          async function CreateChangelogTestrun() {
+              const version = document.getElementById('rcTestrunInput').value.trim();
+              const changelog = document.getElementById('ChangelogInput').value.trim();
+              const resultDiv = document.getElementById('addChangelogInputResult');
+              
+              if (!version || !changelog) {
+                  resultDiv.innerHTML = '<div class="alert alert-danger">Заполните оба поля: Version и ChangeLog</div>';
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+                  return;
+              }
+              
+              resultDiv.innerHTML = '<div class="alert alert-info">Пожалуйста подождите...</div>';
+              
+              try {
+                  const response = await fetch('/rest/api/testrunmg/testrun', {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                          rc: version,
+                          final: changelog
+                      })
+                  });
+                  
+                  const data = await response.json();
+                  
+                  if (response.ok) {
+                      resultDiv.innerHTML = '<div class="alert alert-success">Прогон успешно добавлен!</div>';
+                      document.getElementById('rcTestrunInput').value = '';
+                      document.getElementById('ChangelogInput').value = '';
+                      setTimeout(() => {
+                            window.location.reload();
+                      }, 2000);
+                  } else {
+                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                  }
+              } catch (error) {
+                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+              }
+          }
+        </script>
+
+        <script>
+          async function CreateACS() {
+              const stand = document.getElementById('StandInput').value.trim();
+              const rc = document.getElementById('rcACSInput').value.trim();
+              const resultDiv = document.getElementById('ACSInputResult');
+              
+              if (!stand || !rc) {
+                  resultDiv.innerHTML = '<div class="alert alert-danger">Заполните оба поля: RC и Stand</div>';
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+                  return;
+              }
+              
+              resultDiv.innerHTML = '<div class="alert alert-info">Пожалуйста подождите...</div>';
+              
+              try {
+                  const response = await fetch('/rest/api/testrunmg/acs', {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                          rc: rc,
+                          stand: stand
+                      })
+                  });
+                  
+                  const data = await response.json();
+                  
+                  if (response.ok) {
+                      resultDiv.innerHTML = '<div class="alert alert-success">Создание снимка успешно запущено!</div>';
+                      document.getElementById('StandInput').value = '';
+                      document.getElementById('rcACSInput').value = '';
+                      setTimeout(() => {
+                            window.location.reload();
+                      }, 2000);
+                  } else {
+                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                  }
+              } catch (error) {
+                  resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
+                  setTimeout(() => {
+                      resultDiv.innerHTML = '';
+                  }, 5000);
+              }
+          }
+        </script>
+
 
         <script>
           $(document).ready(function(){

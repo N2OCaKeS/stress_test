@@ -1461,7 +1461,7 @@ class TestrunManager:
             w.write(f'{commit}\n{version}{text}')
 
 
-    def create_test_run(version: str, final=None):
+    def create_test_run(self, version: str, final=None):
         check_len_version = version.split('.')
         if len(check_len_version) == 4 and check_len_version[3] != 'UU':
             release = '.'.join(check_len_version[:3]) 
@@ -1702,25 +1702,25 @@ class TestrunManager:
     
 
     def addrc(self, build=None, rc=None):
-        self.mod_allta_conf(build, rc)
+        self.mod_allta_conf(value=build, rc=rc)
             
 
 
     def adduurc(self, build=None, rc=None, uu_value=None):
         #uu_value Использовать только если UU, иначе игнорировать
-        self.mod_allta_conf(build, rc, uu_value)
+        self.mod_allta_conf(value=build, rc=rc, uu_value=uu_value)
       
 
 
     def acs(self, rc=None, stand=None):
-        self.acs_create_snapshot(rc, stand)
+        self.acs_create_snapshot(version=rc, stand=stand)
             
 
 
     def add_testrun(self, rc=None, final=None):
         if final == 'final':
-            self.create_test_run(rc, final=True)
-        else: self.create_test_run(rc)
+            self.create_test_run(version=rc, final=True)
+        else: self.create_test_run(version=rc)
             
 
 

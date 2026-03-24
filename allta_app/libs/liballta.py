@@ -1570,25 +1570,6 @@ class TestrunManager:
         return sorted(config['kernels'])
 
 
-    def update_changelog(value):
-        path = './ChangeLog'
-        with open(path, 'r') as r:
-            version = r.readline()
-            text = r.read()
-        upp_version = int(version.split(' ')[2].split('.')[-1]) + 1
-        pre_version = '.'.join(version.split(' ')[2].split('.')[:-1])
-        new_version = f'{' '.join(version.split(' ')[:-1])} {pre_version}.{upp_version}'
-
-        print(version)
-        print(new_version)
-        print('.'.join(version.split(' ')[2].split('.')[:-1]))
-
-        commit = f'{new_version}\n* Add {value}\n\n\n\n\n'
-
-        with open(path, 'w') as w:
-            w.write(f'{commit}\n{version}{text}')
-
-
     def add_testrun_folder(self, rc):
         main_folder = 2744
         counter = 0

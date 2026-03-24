@@ -1112,8 +1112,12 @@
                                 <input type="text" class="form-control" id="rcTestrunInput" placeholder="Пример: 1.7.10.52 | 1.8.3.UU.1.1">
                             </div>
                             <div class="mb-3">
-                                <label for="ChangelogInput" class="form-label">Changelog:</label>
-                                <input type="text" class="form-control" id="ChangelogInput" placeholder="Пример: final | notfinal">
+                                <label for="ChangelogSelect" class="form-label">Changelog:</label>
+                                <select class="form-select" id="ChangelogSelect">
+                                    <option value="" disabled selected>Выберите значение</option>
+                                    <option value="final">final</option>
+                                    <option value="notfinal">notfinal</option>
+                                </select>
                             </div>
                             <div style="text-align: center;">
                               <button type="button" class="btn cst-btn-secondary" onclick="CreateChangelogTestrun()">Создать</button>
@@ -1284,7 +1288,7 @@
         <script>
           async function CreateChangelogTestrun() {
               const version = document.getElementById('rcTestrunInput').value.trim();
-              const changelog = document.getElementById('ChangelogInput').value.trim();
+              const changelog = document.getElementById('ChangelogSelect').value.trim();
               const resultDiv = document.getElementById('addChangelogInputResult');
               
               if (!version || !changelog) {
@@ -1314,7 +1318,7 @@
                   if (response.ok) {
                       resultDiv.innerHTML = '<div class="alert alert-success">Прогон успешно добавлен!</div>';
                       document.getElementById('rcTestrunInput').value = '';
-                      document.getElementById('ChangelogInput').value = '';
+                      document.getElementById('ChangelogSelect').value = '';
                       setTimeout(() => {
                             window.location.reload();
                       }, 2000);

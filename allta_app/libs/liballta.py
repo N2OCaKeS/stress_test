@@ -1703,24 +1703,29 @@ class TestrunManager:
 
     def addrc(self, build=None, rc=None):
         self.mod_allta_conf(value=build, rc=rc)
+        return {'message': f'{rc} for {build} added successfully'}
             
 
 
     def adduurc(self, build=None, rc=None, uu_value=None):
         #uu_value Использовать только если UU, иначе игнорировать
         self.mod_allta_conf(value=build, rc=rc, uu_value=uu_value)
+        return {'message': f'{rc} for {uu_value} added successfully'}
       
 
 
     def acs(self, rc=None, stand=None):
         self.acs_create_snapshot(version=rc, stand=stand)
+        return {'message': f'ACS start for {rc} is successfully'}
             
 
 
     def add_testrun(self, rc=None, final=None):
         if final == 'final':
             self.create_test_run(version=rc, final=True)
+            return {'message': f'Add testrun for {rc} in mode {final} is successfully'}
         else: self.create_test_run(version=rc)
+        return {'message': f'Add testrun for {rc} in mode {final} is successfully'}
             
 
 

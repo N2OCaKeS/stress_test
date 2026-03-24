@@ -1206,7 +1206,13 @@
                             window.location.reload();
                       }, 2000);
                   } else {
-                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                      resultDiv.innerHTML = `
+                          <div class="alert alert-danger">
+                              <strong>Ошибка:</strong> ${data.error || 'Неизвестная ошибка'}<br>
+                              <strong>Traceback:</strong><br>
+                              <pre style="white-space: pre-wrap; font-size: 12px;">${data.traceback || 'Нет данных'}</pre>
+                          </div>
+                      `;
                   }
               } catch (error) {
                   resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
@@ -1258,7 +1264,13 @@
                             window.location.reload();
                       }, 2000);
                   } else {
-                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                      resultDiv.innerHTML = `
+                          <div class="alert alert-danger">
+                              <strong>Ошибка:</strong> ${data.error || 'Неизвестная ошибка'}<br>
+                              <strong>Traceback:</strong><br>
+                              <pre style="white-space: pre-wrap; font-size: 12px;">${data.traceback || 'Нет данных'}</pre>
+                          </div>
+                      `;
                   }
               } catch (error) {
                   resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
@@ -1307,7 +1319,13 @@
                             window.location.reload();
                       }, 2000);
                   } else {
-                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                      resultDiv.innerHTML = `
+                          <div class="alert alert-danger">
+                              <strong>Ошибка:</strong> ${data.error || 'Неизвестная ошибка'}<br>
+                              <strong>Traceback:</strong><br>
+                              <pre style="white-space: pre-wrap; font-size: 12px;">${data.traceback || 'Нет данных'}</pre>
+                          </div>
+                      `;
                   }
               } catch (error) {
                   resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;
@@ -1356,7 +1374,13 @@
                             window.location.reload();
                       }, 2000);
                   } else {
-                      resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                      resultDiv.innerHTML = `
+                          <div class="alert alert-danger">
+                              <strong>Ошибка:</strong> ${data.error || 'Неизвестная ошибка'}<br>
+                              <strong>Traceback:</strong><br>
+                              <pre style="white-space: pre-wrap; font-size: 12px;">${data.traceback || 'Нет данных'}</pre>
+                          </div>
+                      `;
                   }
               } catch (error) {
                   resultDiv.innerHTML = `<div class="alert alert-danger">Ошибка соединения: ${error.message}</div>`;

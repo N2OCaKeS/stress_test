@@ -1,4 +1,5 @@
 import os
+import json
 from os import path
 # import random
 from time import time, sleep
@@ -6,7 +7,7 @@ from time import time, sleep
 # from paramiko import SSHException
 
 from libs.libipa import remote_cmd, remote_put_file, remote_exec
-from ipa_conf import USER, HOSTS, REPORT_PATH #, LOWER_LIMITE_CLIENTS, STEP_CLIENTS, UPPER_LIMITE_CLIENTS, USERS_COUNT, 
+from ipa_conf import USER, HOSTS, REPORT_PATH, PLAGIN_REPORT_FILE #, LOWER_LIMITE_CLIENTS, STEP_CLIENTS, UPPER_LIMITE_CLIENTS, USERS_COUNT, 
 # from ipa_init_client_enroll import presettings_on_hosts_for_ipa_clients, create_centos_cont, init_ipa_client, delete_clients_from_dc, delete_docker_cont, check_qty_clients
 
 
@@ -59,11 +60,30 @@ class PlaginMemberOfTest():
     def test1(self):
         remote_exec(f"ipa group-add gr_1", 'server')
         remote_exec(f"python3 ipa_test_plagin.py", 'server')
-        remote_cmd("time ipa group-add-member --groups=gr_1 gr_2 > /home/u/ipa_plagin_results.txt", HOSTS['server']['ip'])
+        remote_cmd("{ time ipa group-add-member --groups=gr_1 gr_2; }> /home/u/ipa_plagin_results.txt", HOSTS['server']['ip'])
+        # { time sleep 10; }
+        # time ldapsearch -Y EXTERNAL -H 'ldapi://%2Frun%2Fslapd-STRESS-TESTING-LOCAL.socket'
 
-    def test2(self):
-        pass
-    
+    def processing_results(self):
+        with open(PLAGIN_REPORT_FILE, "r") as plugin_file:
+            for line in plugin_file.readlines():
+                if "real" in line:
+                    real_time = line.split("\t")[-1].strip("\n")
+                    minutes, seconds = real_time.split("m")
+                    minutes = int(minutes)
+                    seconds = float(seconds.strip("s").replace(",","."))
+                    total_seconds = minutes * 60 + seconds
+        with open("etime.txt", 'r') as etime_file:
+            etime = float(etime_file.read().split(" ")[-1])
+        
+        results = {
+                "total_seconds": total_seconds,
+                "etime": etime
+            }
+        
+        with open("ipa_results.json", "w") as j_file:
+            j_file.write(json.dumps(results))
+
     def run(self):
         self.test1()
 

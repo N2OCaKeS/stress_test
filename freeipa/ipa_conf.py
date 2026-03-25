@@ -64,6 +64,9 @@ USER_CREATE_STEP = 2000
 USER_CREATE_MAX = 10000
 
 
+PLAGIN_REPORT_FILE = "ipa_plagin_time.txt"
+
+
 '''
     Описание для графиков отчета
 '''

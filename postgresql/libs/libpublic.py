@@ -197,14 +197,15 @@ class Public:
         elif self.c_np.startswith('PSQL OLAP-hq'):
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             
-            with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
-                rating_temp = template.read()
-                rating_html = rating_temp.format(r=str(self.total_rating))
-            
             psql_olap_hq_tables = dict()
 
             with open('report.json', 'r') as file:
                 report_data = json.load(file)
+
+            total_rating = report_data['total_rating']
+            with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
+                rating_temp = template.read()
+                rating = rating_temp.format(r=str(total_rating))
 
             sql_requests = report_data['result'].keys()
             for sql_request in sql_requests:
@@ -240,7 +241,7 @@ class Public:
             
             olap_results = '\n'.join(html_psql_olap_hq_tables)
 
-            html_page = '\n'.join([header_table, head_row, rating_html, olap_results])
+            html_page = '\n'.join([header_table, head_row, rating, olap_results])
         else:
             rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:

@@ -13,7 +13,7 @@ from ipa_conf import USER, HOSTS, REPORT_PATH, PLAGIN_REPORT_FILE #, LOWER_LIMIT
 
 class Results:
     @staticmethod
-    def get_results(host):
+    def get_results(host, test_name=None):
         """
         Забираем файл с результатами
         """
@@ -28,6 +28,16 @@ class Results:
                         remote_path=f'/home/{USER}/ipa_report_error.txt',
                         local_path=f"{REPORT_PATH}/ipa_report_error.txt",
                         local_to_remote=False)
+        
+        if test_name == "plagin":
+            remote_put_file(host=HOSTS[host]['ip'],
+                            remote_path=f'/home/{USER}/ipa_plagin_results.txt',
+                            local_path=f"{REPORT_PATH}/ipa_plagin_results.txt",
+                            local_to_remote=False)
+            remote_put_file(host=HOSTS[host]['ip'],
+                            remote_path=f'/home/{USER}/ipa_plugin_results_etime.txt',
+                            local_path=f"{REPORT_PATH}/ipa_plugin_results_etime.txt",
+                            local_to_remote=False)
 
 
 class AutentificationTest():
@@ -63,8 +73,12 @@ class PlaginMemberOfTest():
         remote_cmd("{ time ipa group-add-member --groups=gr_1 gr_2; }> /home/u/ipa_plagin_results.txt", HOSTS['server']['ip'])
         # { time sleep 10; }
         # time ldapsearch -Y EXTERNAL -H 'ldapi://%2Frun%2Fslapd-STRESS-TESTING-LOCAL.socket'
+        remote_cmd("{ time ldapsearch -H 'ldapi://%2Frun%2Fslapd-STRESS-TESTING-LOCAL.socket; }' > /home/u/ipa_plugin_results_etime.txt", HOSTS['server']['ip'])
+
 
     def processing_results(self):
+        Results.get_results(host='server', test_name="plagin")
+        
         with open(PLAGIN_REPORT_FILE, "r") as plugin_file:
             for line in plugin_file.readlines():
                 if "real" in line:

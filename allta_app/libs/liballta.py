@@ -11,7 +11,11 @@ import requests
 import json
 import logging
 import redfish
+import uuid
+import time
+import signal
 import pandas as pd
+
 
 from flask import (render_template, 
                    request,  
@@ -25,12 +29,17 @@ from os import (path,
                 getcwd,
                 close,
                 unlink,
-                linesep)
+                linesep,
+                killpg,
+                getpgid)
 from multiprocessing import Process
 from tempfile import mkstemp
 from paramiko import ssh_exception
 from time import sleep
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional
+
 
 from libs.zefir import ZefirTestRun, ZefirResultTable
 from allta_image_conf import (
@@ -122,6 +131,9 @@ process_list10 = []
 process_list11 = []
 process_list12 = []
 process_list13 = []
+_queue_managers = {}
+_workers = {}
+_worker_threads = {}
 
 
 fd, temp_file_err = mkstemp(dir='/tmp/', suffix='log', text=True)
@@ -198,6 +210,425 @@ def server_diskspace_used():
         'partimag_disk_used': check_output_command("df -h | grep /dev/vdc1 | awk '{print$5}'")
     }
     return dates
+
+
+
+class TaskQueueManager:
+    """
+    Менеджер очереди для одного стенда
+    """
+    
+    def __init__(self, 
+                 stand_num: str, 
+                 queue_dir: str = './conf/task_queues'):
+        self.stand_num = stand_num
+        self.queue_file = Path(queue_dir) / f'queue_stand{stand_num}.json'
+        self.queue_dir = Path(queue_dir)
+        self.queue_dir.mkdir(exist_ok=True)
+        
+        # Инициализируем файл, если не существует
+        self._init_queue_file()
+    
+    def _init_queue_file(self):
+        """Создать файл очереди, если не существует"""
+        if not self.queue_file.exists():
+            self._write_queue({
+                'tasks': [],
+                'status': 'idle',
+                'current_task': None,
+                'last_run': None
+            })
+    
+    def _read_queue(self) -> Dict:
+        """Прочитать очередь из файла"""
+        with open(self.queue_file, 'r') as f:
+            return json.load(f)
+    
+    def _write_queue(self, data: Dict):
+        """Записать очередь в файл"""
+        with open(self.queue_file, 'w') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    
+    def add_task(self, tests: list, release: list, kernel: list) -> str:
+        """
+        Добавить задачу в очередь
+        
+        Args:
+            tests: список тестов, например ['CEPH', 'NTFS']
+            release: список релизов, например ['1.7.10.64']
+            kernel: список ядер, например ['5.15.0-170-generic'] или []
+        
+        Returns:
+            str: ID созданной задачи
+        """
+        # Генерируем ID задачи
+        task_id = f"{self.stand_num}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        
+        task = {
+            'id': task_id,
+            'tests': str(tests),      
+            'release': str(release),
+            'kernel': str(kernel),
+            'status': 'pending',
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # Читаем текущую очередь
+        queue_data = self._read_queue()
+        
+        # Добавляем задачу
+        queue_data['tasks'].append(task)
+        
+        # Сохраняем обратно
+        self._write_queue(queue_data)
+        
+        return task_id
+    
+    def get_tasks(self) -> List[Dict]:
+        """Получить все задачи из очереди"""
+        queue_data = self._read_queue()
+        return queue_data.get('tasks', [])
+    
+    def get_pending_tasks(self) -> List[Dict]:
+        """Получить только ожидающие задачи"""
+        queue_data = self._read_queue()
+        return [t for t in queue_data.get('tasks', []) if t.get('status') == 'pending']
+    
+    def clear_queue(self) -> int:
+        """
+        Очистить очередь (удалить все задачи)
+        
+        Returns:
+            int: количество удаленных задач
+        """
+        queue_data = self._read_queue()
+        task_count = len(queue_data.get('tasks', []))
+        
+        queue_data['tasks'] = []
+        queue_data['status'] = 'idle'
+        queue_data['current_task'] = None
+        
+        self._write_queue(queue_data)
+        
+        return task_count
+    
+    def get_queue_size(self) -> int:
+        """Получить количество задач в очереди"""
+        queue_data = self._read_queue()
+        return len(queue_data.get('tasks', []))
+    
+    def get_status(self) -> Dict:
+        """Получить статус очереди"""
+        queue_data = self._read_queue()
+        tasks = queue_data.get('tasks', [])
+        pending = [t for t in tasks if t.get('status') == 'pending']
+        running = [t for t in tasks if t.get('status') == 'running']
+        
+        return {
+            'stand': self.stand_num,
+            'status': queue_data.get('status', 'unknown'),
+            'total_tasks': len(tasks),
+            'pending_count': len(pending),
+            'running_count': len(running),
+            'tasks': tasks[-10:],  # последние 10 задач для отображения
+            'current_task': queue_data.get('current_task')
+        }
+    
+    def remove_task(self, task_id: str) -> bool:
+        """
+        Удалить конкретную задачу из очереди
+        
+        Returns:
+            bool: True если задача была удалена
+        """
+        queue_data = self._read_queue()
+        original_count = len(queue_data['tasks'])
+        
+        queue_data['tasks'] = [t for t in queue_data['tasks'] if t['id'] != task_id]
+        
+        if len(queue_data['tasks']) < original_count:
+            self._write_queue(queue_data)
+            return True
+        
+        return False
+
+
+def get_queue_manager(stand_num: str) -> TaskQueueManager:
+    """
+    Получить менеджер очереди для стенда (создать если не существует)
+    """
+    if stand_num not in _queue_managers:
+        _queue_managers[stand_num] = TaskQueueManager(stand_num)
+    return _queue_managers[stand_num]
+
+
+def add_to_queue(stand_num):
+    """
+    Обработка данных формы и добавление задачи в очередь для стенда
+    """
+    # Получаем данные из формы
+    tests = request.form.getlist('tests')
+    releas = request.form.getlist('releas')
+    kernel = request.form.getlist('kernel')
+
+    # Обработка тестов
+    if tests:
+        if isinstance(tests, list):
+            tests_list = tests
+        else:
+            tests_list = [tests]
+    else:
+        tests_list = []
+    
+    # Обработка сгруппированных тестов
+    found_group = False
+    for group in group_tests:
+        if str(tests) == '[\'' + str(group) + '\']':
+            found_group = True
+            tests_list = stands_groups['_'.join(group.replace('_', '').split(' '))]
+            break
+    
+    if not found_group and not tests_list:
+        return None, "Тесты не выбраны"
+    
+    # Обработка релиза
+    if releas:
+        if isinstance(releas, list):
+            release_list = releas
+        else:
+            release_list = [releas]
+    else:
+        release_list = []
+    
+    if not release_list:
+        return None, "Релиз не выбран"
+    
+    # Обработка ядра
+    if kernel:
+        if isinstance(kernel, list):
+            kernel_list = kernel
+        else:
+            kernel_list = [kernel]
+    else:
+        kernel_list = []
+        
+    # Добавляем задачу в очередь стенда
+    manager = get_queue_manager(stand_num)
+    task_id = manager.add_task(
+        tests=tests_list,
+        release=release_list,
+        kernel=kernel_list
+    )
+    
+    return (stand_num, task_id), None
+
+
+
+class StandWorker:
+    """
+    Воркер для выполнения задач стенда
+    """
+    
+    def __init__(self, 
+                 stand_num: str):
+        self.stand_num = stand_num
+        self.thread: Optional[threading.Thread] = None
+        self.running = False
+        self.current_process: Optional[subprocess.Popen] = None
+        self.queue_file = Path(f'./conf/task_queues/queue_stand{stand_num}.json')
+    
+    def start(self) -> bool:
+        """Запустить воркера"""
+        if self.running and self.thread and self.thread.is_alive():
+            return False
+        
+        self.running = True
+        self.thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self.thread.start()
+        return True
+    
+    def stop(self):
+        """Остановить воркера"""
+        self.running = False
+        
+        # Останавливаем текущий процесс
+        if self.current_process:
+            try:
+                # Отправляем SIGTERM всей группе процессов
+                killpg(getpgid(self.current_process.pid), signal.SIGTERM)
+            except:
+                pass
+            self.current_process = None
+        
+        # Обновляем статус в файле
+        if self.queue_file.exists():
+            with open(self.queue_file, 'r') as f:
+                queue_data = json.load(f)
+            
+            queue_data['status'] = 'stopped'
+            
+            with open(self.queue_file, 'w') as f:
+                json.dump(queue_data, f, indent=2)
+    
+    def is_alive(self) -> bool:
+        """Проверить, работает ли воркер"""
+        return self.running and self.thread and self.thread.is_alive()
+    
+    def _worker_loop(self):
+        """Основной цикл воркера"""
+        while self.running:
+            if not self.queue_file.exists():
+                time.sleep(2)
+                continue
+            
+            with open(self.queue_file, 'r') as f:
+                queue_data = json.load(f)
+            
+            # Проверяем статус остановки
+            if queue_data.get('status') == 'stopped':
+                break
+            
+            # Находим следующую задачу
+            tasks = queue_data.get('tasks', [])
+            pending = [t for t in tasks if t.get('status') == 'pending']
+            
+            if not pending:
+                # Нет задач — останавливаем воркер
+                break
+            
+            task = pending[0]
+            
+            # Помечаем как выполняемую
+            for t in tasks:
+                if t['id'] == task['id']:
+                    t['status'] = 'running'
+                    break
+            
+            queue_data['current_task'] = task
+            queue_data['status'] = 'running'
+            with open(self.queue_file, 'w') as f:
+                json.dump(queue_data, f, indent=2)
+            
+            # Выполняем задачу
+            success = self._execute_task(task)
+            
+            # Обновляем после выполнения
+            with open(self.queue_file, 'r') as f:
+                queue_data = json.load(f)
+            
+            if success:
+                # Удаляем задачу
+                queue_data['tasks'] = [t for t in queue_data['tasks'] if t['id'] != task['id']]
+            else:
+                # Помечаем как failed
+                for t in queue_data['tasks']:
+                    if t['id'] == task['id']:
+                        t['status'] = 'failed'
+                        break
+            
+            queue_data['current_task'] = None
+            
+            # Если есть еще задачи — остаемся в статусе running
+            pending_remaining = [t for t in queue_data['tasks'] if t.get('status') == 'pending']
+            if not pending_remaining:
+                queue_data['status'] = 'idle'
+            
+            with open(self.queue_file, 'w') as f:
+                json.dump(queue_data, f, indent=2)
+        
+        # Завершаем работу
+        self.running = False
+    
+    def _execute_task(self, task: Dict) -> bool:
+        """Выполнить задачу"""
+        testenv_status = prepare_testenv_status(method='get')
+        
+        tests = task['tests']
+        release = task['release']
+        kernel = task['kernel']
+        
+        if kernel and kernel != '[]':
+            command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -kn "{kernel}" -te {testenv_status}'
+        else:
+            command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -te {testenv_status}'
+        
+        with open(f'front_stand{self.stand_num}.log', 'a') as log:
+            log.write(f"\n{'='*60}\n")
+            log.write(f"Task: {task['id']}\n")
+            log.write(f"Release: {release}\n")
+            log.write(f"Tests: {tests}\n")
+            log.write(f"Kernel: {kernel}\n")
+            log.write(f"Command: {command}\n")
+            log.write(f"{'='*60}\n")
+            
+            self.current_process = subprocess.Popen(
+                command,
+                stdout=log,
+                stderr=log,
+                shell=True,
+                text=True,
+                preexec_fn=setsid
+            )
+            
+            try:
+                returncode = self.current_process.wait()
+                log.write(f"Completed with code: {returncode}\n")
+                return returncode == 0
+            except Exception as e:
+                log.write(f"Failed: {e}\n")
+                return False
+            finally:
+                self.current_process = None
+
+_workers: Dict[str, StandWorker] = {}
+
+
+def get_worker(stand_num: str) -> StandWorker:
+    """Получить или создать воркера для стенда"""
+    if stand_num not in _workers:
+        _workers[stand_num] = StandWorker(stand_num)
+    return _workers[stand_num]
+
+def start_worker_for_stand(stand_num: str) -> bool:
+    """Запустить воркера для стенда"""
+    worker = get_worker(stand_num)
+    return worker.start()
+
+def stop_worker_for_stand(stand_num: str):
+    """Остановить воркера для стенда"""
+    worker = get_worker(stand_num)
+    worker.stop()
+
+def is_worker_running(stand_num: str) -> bool:
+    """Проверить, работает ли воркер для стенда"""
+    worker = get_worker(stand_num)
+    return worker.is_alive()
+
+def stop_current_test(stand_num: str):
+    """
+    Остановить текущий запущенный тест/прогон
+    """
+    # Останавливаем процесс по PID
+    ppid = check_output_command(f"ps -fad -N | grep stand{stand_num} | awk {{'print $2'}}")
+    if ppid:
+        comm_and_log(f"pkill -TERM -g {ppid}")
+    # Освобождаем сервер с помощью индикатора занятости
+    busy_status_control(f'stand{stand_num}', 'stop')
+ 
+def stop_queue(stand_num: str):
+    """
+    Остановить очередь (воркера)
+    """
+    # Останавливаем воркера
+    stop_worker_for_stand(stand_num)
+    
+    # Обновляем статус в JSON
+    manager = get_queue_manager(stand_num)
+    queue_data = manager._read_queue()
+    queue_data['status'] = 'stopped'
+    manager._write_queue(queue_data)
+    
+    
 
 
 def info_collector(page, ajax=None):

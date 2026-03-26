@@ -48,7 +48,12 @@ from libs.liballta import (index_page,
                           AUTH_LOGOUT_URL,
                           AUTH_CHECK_TOKEN_URL,
                           services_health_status,
-                          astra_services_health_status
+                          astra_services_health_status,
+                          add_to_queue,
+                          get_queue_manager,
+                          start_worker_for_stand,
+                          stop_current_test,
+                          stop_queue
                           )
 from allta_image_conf import testname_columns, JIRA_URL, CONFLUENCE_URL, known_bugs, annotations, tokens
 from backup.backuplibs import Backup, check_command
@@ -280,8 +285,86 @@ def send_static(path):
 
 @app.route('/run-command-stand<num>', methods=['POST'])
 def run_command(num):
-    return run_command_on_stand(num)
+    #return run_command_on_stand(num)
+    """
+    Управление запуском и остановкой теста на стенде
+    """
+    command = request.form.get(f'command{num}')
+    
+    if command == 'start':
+        manager = get_queue_manager(num)
+        
+        if manager.get_queue_size() == 0:
+            return f"Очередь стенда {num} пуста", 400
+        
+        started = start_worker_for_stand(num)
+        
+        if started:
+            return f"Очередь стенда {num} запущена", 200
+        else:
+            return f"Воркер для стенда {num} уже работает", 200
+    elif command == 'stop':
+        stop_current_test(num)
+        return f"Тест на стенде {num} остановлен", 200
+    elif command == 'ok':
+        busy_status_control(f'stand{num}', 'stop')
+        return f"Статус на стенде {num} изменен", 200
+    
 
+@app.route('/queue-stand<num>/add', methods=['POST'])
+def queue_add(num):
+    """
+    Добавить задачу в очередь
+    """
+    result, error = add_to_queue(num)
+    if error:
+        return f"Ошибка: {error}", 400
+    else:
+        stand, task_id = result
+        return f"Задача {task_id} добавлена в очередь стенда {stand}", 200
+
+
+@app.route('/queue-stand<num>/stop', methods=['POST'])
+def queue_stop(num):
+    """
+    Остановить очередь
+    """
+    stop_queue(num)
+    return f"Очередь стенда {num} остановлена", 200
+
+
+@app.route('/queue-stand<num>/clear', methods=['POST'])
+def queue_clear(num):
+    """
+    Очистить очередь
+    """
+    manager = get_queue_manager(num)
+    count = manager.clear_queue()
+    return f"Очищено {count} задач из очереди стенда {num}", 200
+
+
+@app.route('/queue-stand<num>/status', methods=['GET'])
+def queue_status(num):
+    """
+    Получить статус очереди (JSON)
+    """
+    manager = get_queue_manager(num)
+    return manager.get_status()
+
+
+@app.route('/queue-stand<num>/task/<task_id>', methods=['DELETE'])
+def queue_remove_task(num, task_id):
+    """
+    Удалить конкретную задачу из очереди
+    """
+    manager = get_queue_manager(num)
+    success = manager.remove_task(task_id)
+    
+    if success:
+        return f"Задача {task_id} удалена", 200
+    else:
+        return f"Задача {task_id} не найдена", 404
+    
 
 @app.route('/update/<version>')
 def update_stp(version):

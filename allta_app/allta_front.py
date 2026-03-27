@@ -283,7 +283,7 @@ def send_static(path):
     return send_from_directory('static', path)
 
 
-@app.route('/run-command-stand<num>', methods=['POST'])
+@app.route('/rest/api/run-command-stand<num>', methods=['POST'])
 def run_command(num):
     #return run_command_on_stand(num)
     """
@@ -311,7 +311,7 @@ def run_command(num):
         return f"Статус на стенде {num} изменен", 200
     
 
-@app.route('/queue-stand/add', methods=['POST'])
+@app.route('/rest/api/queue-stand/add', methods=['POST'])
 def queue_add():
     """
     Добавить задачу в очередь
@@ -324,7 +324,7 @@ def queue_add():
         return f"Задача {task_id} добавлена в очередь стенда {stand}", 200
 
 
-@app.route('/queue-stand<num>/stop', methods=['POST'])
+@app.route('/rest/api/queue-stand<num>/stop', methods=['POST'])
 def queue_stop(num):
     """
     Остановить очередь
@@ -333,7 +333,7 @@ def queue_stop(num):
     return f"Очередь стенда {num} остановлена", 200
 
 
-@app.route('/queue-stand<num>/clear', methods=['POST'])
+@app.route('/rest/api/queue-stand<num>/clear', methods=['POST'])
 def queue_clear(num):
     """
     Очистить очередь
@@ -343,7 +343,7 @@ def queue_clear(num):
     return f"Очищено {count} задач из очереди стенда {num}", 200
 
 
-@app.route('/queue-stand<num>/status', methods=['GET'])
+@app.route('/rest/api/queue-stand<num>/status', methods=['GET'])
 def queue_status(num):
     """
     Получить статус очереди (JSON)

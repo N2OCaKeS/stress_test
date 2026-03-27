@@ -960,7 +960,7 @@
         <div id="accordionBlock1" class="card text-bg-dark mb-3" style="max-width: 27rem;">
           <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Параметры запуска тестов</div>
           <div class="card-body">
-            <form id="queueForm" method="POST" action="/queue-stand/add">
+            <form id="queueForm" method="POST" action="/rest/api/queue-stand/add">
               <br></br>
               <div class="accordion customAccordion" id="settingsAccordion">
                 <div class="accordion-item">
@@ -2448,7 +2448,7 @@
               <br></br>
   
   
-              <form method="POST" action="/run-command-stand1">             
+              <form method="POST" action="/rest/api/run-command-stand1">             
                 <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                     <button id="start-btn1" class="btn btn-start" name="command1" type="submit" value="start">Запустить</button>
                     <button id="stop-btn1" class="btn btn-stop" name="command1" type="submit" value="stop">Остановить</button>
@@ -2791,7 +2791,7 @@
               <br></br>
   
   
-              <form method="POST" action="/run-command-stand2">             
+              <form method="POST" action="/rest/api/run-command-stand2">             
                 <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                     <button id="start-btn2" class="btn btn-start" name="command2" type="submit" value="start">Запустить</button>
                     <button id="stop-btn2" class="btn btn-stop" name="command2" type="submit" value="stop">Остановить</button>
@@ -3142,7 +3142,7 @@
               <br></br>
   
   
-              <form method="POST" action="/run-command-stand3">
+              <form method="POST" action="/rest/api/run-command-stand3">
                 <style>
                     .btn-start, .btn-stop, .btn-ok {
                         color: #ffffff;
@@ -3611,7 +3611,7 @@
         <br></br>
 
 
-        <form method="POST" action="/run-command-stand4">              
+        <form method="POST" action="/rest/api/run-command-stand4">              
           <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
               <button id="start-btn4" class="btn btn-start" name="command4" type="submit" value="start">Запустить</button>
               <button id="stop-btn4" class="btn btn-stop" name="command4" type="submit" value="stop">Остановить</button>
@@ -3954,7 +3954,7 @@
     <br></br>
 
 
-    <form method="POST" action="/run-command-stand5">          
+    <form method="POST" action="/rest/api/run-command-stand5">          
       <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
           <button id="start-btn5" class="btn btn-start" name="command5" type="submit" value="start">Запустить</button>
           <button id="stop-btn5" class="btn btn-stop" name="command5" type="submit" value="stop">Остановить</button>
@@ -4319,7 +4319,7 @@
               <br></br>
   
   
-              <form method="POST" action="/run-command-stand6">             
+              <form method="POST" action="/rest/api/run-command-stand6">             
                 <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                     <button id="start-btn6" class="btn btn-start" name="command6" type="submit" value="start">Запустить</button>
                     <button id="stop-btn6" class="btn btn-stop" name="command6" type="submit" value="stop">Остановить</button>
@@ -4681,7 +4681,7 @@
             <br></br>
 
 
-            <form method="POST" action="/run-command-stand7">             
+            <form method="POST" action="/rest/api/run-command-stand7">             
               <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                   <button id="start-btn7" class="btn btn-start" name="command7" type="submit" value="start">Запустить</button>
                   <button id="stop-btn7" class="btn btn-stop" name="command7" type="submit" value="stop">Остановить</button>
@@ -5042,7 +5042,7 @@
           <br></br>
 
 
-          <form method="POST" action="/run-command-stand8">             
+          <form method="POST" action="/rest/api/run-command-stand8">             
             <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                 <button id="start-btn8" class="btn btn-start" name="command8" type="submit" value="start">Запустить</button>
                 <button id="stop-btn8" class="btn btn-stop" name="command8" type="submit" value="stop">Остановить</button>
@@ -5403,7 +5403,7 @@
           <br></br>
 
 
-          <form method="POST" action="/run-command-stand9">             
+          <form method="POST" action="/rest/api/run-command-stand9">             
             <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                 <button id="start-btn9" class="btn btn-start" name="command9" type="submit" value="start">Запустить</button>
                 <button id="stop-btn9" class="btn btn-stop" name="command9" type="submit" value="stop">Остановить</button>
@@ -5758,7 +5758,7 @@
       <br></br>
 
 
-      <form method="POST" action="/run-command-stand10">
+      <form method="POST" action="/rest/api/run-command-stand10">
         <style>
             .btn-start, .btn-stop, .btn-ok {
                 color: #ffffff;
@@ -6141,7 +6141,7 @@
       <br></br>
 
 
-      <form method="POST" action="/run-command-stand11">
+      <form method="POST" action="/rest/api/run-command-stand11">
         <style>
             .btn-start, .btn-stop, .btn-ok {
                 color: #ffffff;
@@ -6906,7 +6906,7 @@
       <br></br>
 
 
-      <form method="POST" action="/run-command-stand13">
+      <form method="POST" action="/rest/api/run-command-stand13">
         <style>
             .btn-start, .btn-stop, .btn-ok {
                 color: #ffffff;
@@ -6984,7 +6984,7 @@ document.querySelectorAll('.queue-status').forEach(button => {
 async function updateQueueStatus(stand) {
 
         try {
-            const response = await fetch(`/queue-stand${stand}/status`);
+            const response = await fetch(`/rest/api/queue-stand${stand}/status`);
             const data = await response.json();
             
             if (response.ok) {
@@ -7017,7 +7017,7 @@ document.querySelectorAll('.queue-action').forEach(button => {
         };
         
         try {
-            const response = await fetch(`/queue-stand${stand}/${action}`, {
+            const response = await fetch(`/rest/api/queue-stand${stand}/${action}`, {
                 method: 'POST'
             });
             

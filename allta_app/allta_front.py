@@ -298,6 +298,7 @@ def run_command(num):
             return f"Очередь стенда {num} пуста", 400
         
         started = start_worker_for_stand(num)
+        busy_status_control(f'stand{num}', 'TestRunner')
         
         if started:
             return f"Очередь стенда {num} запущена", 200

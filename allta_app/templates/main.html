@@ -7192,8 +7192,79 @@ $(document).ready(function() {
 });
 </script>
 
-
-
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    
+    // Обработчики для кнопок "Запустить" (используем run-command-stand)
+    document.querySelectorAll('[id^="start-btn"]').forEach(button => {
+        button.type = 'button';
+        
+        button.addEventListener('click', async function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const stand = this.id.split('-')[2];
+            
+            try {
+                // Отправляем на run-command-stand с command=start
+                const formData = new FormData();
+                formData.append(`command${stand}`, 'start');
+                
+                const response = await fetch(`/rest/api/run-command-stand${stand}`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const text = await response.text();
+                
+                if (response.ok) {
+                    showNotification(`✅ ${text}`, 'success');
+                    await updateQueueStatus(stand);
+                } else {
+                    showNotification(`❌ Ошибка запуска: ${text}`, 'danger');
+                }
+            } catch (error) {
+                showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger');
+            }
+        });
+    });
+    
+    // Обработчики для кнопок "Остановить" 
+    document.querySelectorAll('[id^="stop-btn"]').forEach(button => {
+    button.type = 'button';
+    
+    button.addEventListener('click', async function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const stand = this.id.split('-')[2];
+        
+        try {
+            // Отправляем на run-command-stand с command=stop
+            const formData = new FormData();
+            formData.append(`command${stand}`, 'stop');
+            
+            const response = await fetch(`/rest/api/run-command-stand${stand}`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const text = await response.text();
+            
+            if (response.ok) {
+                showNotification(`✅ ${text}`, 'success');
+                // После остановки теста обновляем статус очереди
+                await updateQueueStatus(stand);
+            } else {
+                showNotification(`❌ Ошибка остановки теста: ${text}`, 'danger');
+            }
+        } catch (error) {
+            showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger');
+        }
+    });
+});
+});
+</script>
 
 
 <!-- <div class="card text-bg-dark mb-3" style="max-width: 28rem;">

@@ -516,7 +516,7 @@ class StandWorker:
                 json.dump(queue_data, f, indent=2)
             
             # Выполняем задачу
-            success = self._execute_task(task)
+            success, message = self._execute_task(task)
             
             # Обновляем после выполнения
             with open(self.queue_file, 'r') as f:
@@ -530,6 +530,7 @@ class StandWorker:
                 for t in queue_data['tasks']:
                     if t['id'] == task['id']:
                         t['status'] = 'failed'
+                        t['error'] = message
                         break
             
             queue_data['current_task'] = None
@@ -545,7 +546,7 @@ class StandWorker:
         # Завершаем работу
         self.running = False
     
-    def _execute_task(self, task: Dict) -> bool:
+    def _execute_task(self, task: Dict) -> tuple[bool, str]:
         """Выполнить задачу"""
         testenv_status = prepare_testenv_status(method='get')
         
@@ -566,6 +567,7 @@ class StandWorker:
             log.write(f"Kernel: {kernel}\n")
             log.write(f"Command: {command}\n")
             log.write(f"{'='*60}\n")
+            log.flush()
             
             self.current_process = subprocess.Popen(
                 command,
@@ -579,10 +581,15 @@ class StandWorker:
             try:
                 returncode = self.current_process.wait()
                 log.write(f"Completed with code: {returncode}\n")
-                return returncode == 0
+                log.flush()
+                if returncode == 0:
+                    return True, "Выполнено успешно"  
+                else:
+                    return False, f"Завершился с кодом {returncode}" 
             except Exception as e:
                 log.write(f"Failed: {e}\n")
-                return False
+                log.flush()
+                return False, str(e)
             finally:
                 self.current_process = None
 

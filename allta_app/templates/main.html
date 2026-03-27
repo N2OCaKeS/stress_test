@@ -1651,7 +1651,7 @@
         </script>
 
         <script>
-          $("form").submit(function(event) {
+          $("form").not('#queueForm').submit(function(event) {
               event.preventDefault();  
               document.getElementById('loading-spinner').style.display = 'block';  
               var form_data = new FormData(this); 

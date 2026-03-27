@@ -767,6 +767,7 @@
             const alertDiv = document.createElement('div');
             alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
             alertDiv.setAttribute('role', 'alert');
+            alertDiv.style.textAlign = 'left';
             alertDiv.innerHTML = `
                 ${message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -1069,7 +1070,7 @@
                 return;
             }
 
-            const tests = formData.getAll('tests');
+            const tests = formData.getAll('options');
             if (!tests || tests.length === 0) {
                 showNotification('Пожалуйста, выберите хотя бы один тест', 'danger');
                 return;

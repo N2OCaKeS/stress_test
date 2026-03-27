@@ -430,13 +430,14 @@ class MathModel:
         )
 
         actual_result = self._evaluate_group(float(best_result["power"]))
-        return {
+
+        res = {
             "debug": True,
             "message": (
                 "Это отладочная функция для расчета коэффициента степенного преобразования "
                 "по deterministic synthetic-наборам от baseline в заданном диапазоне. "
                 "Подбор выполняется прямым перебором значений power "
-                "в захардкоженном интервале brute-force поиска. "
+                "в интервале brute-force поиска. "
                 "Подобранное значение не сохраняется автоматически: "
                 "передайте result['power'] в total_rating(power=...)."
             ),
@@ -462,6 +463,9 @@ class MathModel:
             "search_trace": search_trace,
             "synthetic_samples": best_result["per_sample"],
         }
+
+        print(res)
+        return res
 
     def _build_random_bounds_samples(
         self,

@@ -20,6 +20,8 @@ Allta Documentation
    modules/GetEnv
    modules/Libvirt
    modules/LibvirtManager
+   modules/MathModels
+   modules/OldMathModels
    modules/PageBuilder.rst
    modules/SystemCommands
    modules/VBox

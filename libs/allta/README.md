@@ -66,6 +66,48 @@ pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allt
 
 ### Примеры
 
+#### Расчет интегрального рейтинга через MathModel
+
+```python
+from allta._math_models import MathModel
+
+model = MathModel()
+
+model.add_criterion(
+    "la",
+    iterations=[100, 200, 300],
+    values=[20.0, 30.0, 50.0],
+    weight=0.4,
+    negative=True,
+    bounds=(0.0, 100.0),
+)
+model.add_criterion(
+    "tps",
+    iterations=[100, 200, 300],
+    values=[9000.0, 10000.0, 12000.0],
+    weight=0.6,
+    negative=False,
+    bounds=(0.0, 15000.0),
+)
+
+# Отладочный подбор общего коэффициента степенного преобразования.
+# Этот шаг нужен только для калибровки и должен быть отключен в release.
+# По умолчанию calc_power() использует 20 synthetic-точек,
+# построенных из bounds и типа критерия.
+debug = model.calc_power()
+
+# Расчет итогового рейтинга по всей группе критериев.
+# Для стабильных сравнений между запусками фиксируем найденный power
+# и потом передаем его явно в total_rating(...).
+fixed_power = debug["power"]
+result = model.total_rating(power=fixed_power)
+
+print(debug["power"])
+print(result["total_rating"])
+print(result["criteria"]["la"]["contribution"])
+print(result["criteria"]["tps"]["contribution"])
+```
+
 #### Развертывание ВМ и конфигурирование для теста
 
 1. Развертывание ВМ и установка всех базовых зависимостей и настроек

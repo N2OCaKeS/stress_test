@@ -82,6 +82,38 @@ DEFAULT_ALT_CALT_FACTORS: tuple[float, ...] = (
     2.01,
     2.33,
 )
+# Факторы для печати таблицы test_power().
+# 1.0 должен быть в центре списка (одинаковое количество значений слева и справа),
+# чтобы base-строка была по центру таблицы.
+TEST_POWER_TABLE_FACTORS: tuple[float, ...] = (
+    0.10,
+    0.15,
+    0.20,
+    0.25,
+    0.38,
+    0.43,
+    0.50,
+    0.57,
+    0.64,
+    0.72,
+    1.00,
+    1.12,
+    1.25,
+    1.30,
+    1.50,
+    1.80,
+    2.00,
+    2.12,
+    2.37,
+    2.63,
+    3.00,
+    3.11,
+    3.37,
+    3.74,
+    4.00,
+    6.00,
+    8.00,
+)
 
 
 class MathModel:
@@ -175,6 +207,125 @@ class MathModel:
             "bounds": (lower_bound, upper_bound),
         }
         return self
+
+    def test_power(
+        self,
+        power: Number,
+        factors: Sequence[Number] | None = None,
+        *,
+        bounds_margin: float = 1e-6,
+    ) -> None:
+        """
+        Строит тестовую +/- таблицу рейтингов от уже добавленных критериев.
+
+        Логика:
+        * берётся baseline (текущие значения критериев)
+        * строится сетка факторов (по умолчанию из ``TEST_POWER_TABLE_FACTORS``)
+        * для каждого фактора создаётся synthetic-набор:
+            - negative критерии: ``value / factor``
+            - positive критерии: ``value * factor``
+        * значения ограничиваются ``bounds``
+        * считается ``total_rating(power=...)``
+
+        Метод печатает таблицу с колонками ``Dataset``, ``Total rating``, ``ratio``
+        и ничего не возвращает.
+        """
+        if not self._criteria:
+            raise ValueError("Не добавлено ни одного критерия")
+        if not 0.0 <= float(bounds_margin) < 0.5:
+            raise ValueError("bounds_margin должен быть в диапазоне [0, 0.5)")
+
+        resolved_power = float(power)
+        factor_values = (
+            [float(value) for value in TEST_POWER_TABLE_FACTORS]
+            if factors is None
+            else [float(value) for value in factors]
+        )
+        if not factor_values:
+            raise ValueError("factors не должен быть пустым")
+        if any(value <= 0.0 for value in factor_values):
+            raise ValueError("Все factors должны быть > 0")
+
+        eps = 1e-12
+        lower_factors = [float(value) for value in factor_values if float(value) < 1.0 - eps]
+        upper_factors = [float(value) for value in factor_values if float(value) > 1.0 + eps]
+        one_count = sum(1 for value in factor_values if abs(float(value) - 1.0) <= eps)
+        if one_count != 1:
+            raise ValueError("factors должен содержать ровно одно значение 1.0")
+        ordered_factors = sorted(lower_factors) + [1.0] + sorted(upper_factors)
+
+        base_result = self._evaluate_group(resolved_power)
+        base_rating = float(base_result["total_rating"])
+
+        table_rows: list[dict[str, Any]] = []
+
+        for index, factor in enumerate(ordered_factors, start=1):
+            if abs(float(factor) - 1.0) <= eps:
+                table_rows.append(
+                    {
+                        "Dataset": f"ds_{index}(1) base",
+                        "Total rating": float(base_rating),
+                        "ratio": 1.0,
+                    }
+                )
+                continue
+
+            synthetic_values_by_name: dict[str, np.ndarray] = {}
+
+            for name, criterion in self._criteria.items():
+                base_values = np.array(criterion["values"], dtype=float)
+                lower_bound = float(criterion["bounds"][0])
+                upper_bound = float(criterion["bounds"][1])
+                interval = float(upper_bound - lower_bound)
+                margin = interval * float(bounds_margin)
+                lower_clip = float(lower_bound + margin)
+                upper_clip = float(upper_bound - margin)
+                if upper_clip <= lower_clip:
+                    lower_clip = float(lower_bound)
+                    upper_clip = float(upper_bound)
+
+                if bool(criterion["negative"]):
+                    synthetic_raw = base_values / float(factor)
+                else:
+                    synthetic_raw = base_values * float(factor)
+
+                synthetic_values_by_name[name] = np.clip(synthetic_raw, lower_clip, upper_clip)
+
+            row_result = self._evaluate_group(
+                resolved_power,
+                synthetic_values_by_name=synthetic_values_by_name,
+            )
+            total_rating = float(row_result["total_rating"])
+            ratio = float(total_rating / base_rating) if base_rating != 0.0 else 0.0
+
+            if ratio > 1.0:
+                state = "better"
+            elif ratio < 1.0:
+                state = "worse"
+            else:
+                state = "equal"
+            dataset_name = f"ds_{index}({factor:g}) {state}"
+
+            table_rows.append(
+                {
+                    "Dataset": dataset_name,
+                    "Total rating": float(total_rating),
+                    "ratio": float(ratio),
+                }
+            )
+
+        print(
+            f"\n=== test_power; power={resolved_power:.6f}; "
+            f"datasets={len(table_rows)} (base + {len(ordered_factors) - 1} synthetic) ==="
+        )
+        print(f"{'Dataset':<24} {'Total rating':>14} {'ratio':>10}")
+        print("-" * 52)
+        for row in table_rows:
+            print(
+                f"{row['Dataset']:<24} "
+                f"{float(row['Total rating']):>14.6f} "
+                f"{float(row['ratio']):>10.3f}"
+            )
 
     def total_rating(self, power: Number) -> dict[str, Any]:
         """

@@ -1081,6 +1081,8 @@
                 showNotification('Пожалуйста, выберите релиз', 'danger');
                 return;
             }
+
+            const kernels = formData.getAll('kernelslist');
             
             // Отправляем данные
             try {

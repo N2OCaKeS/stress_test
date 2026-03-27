@@ -14,7 +14,6 @@ import redfish
 import uuid
 import time
 import signal
-import shlex
 import pandas as pd
 
 
@@ -370,7 +369,7 @@ def add_to_queue():
     # Получаем данные из формы
     selected_options = request.form.getlist('options')
     releas = request.form.getlist('releas')
-    kernel = request.form.getlist('kernel')
+    kernel = request.form.getlist('kernelslist')
     stand = request.form.get('stand_num')
 
     # Проверка, что стенд выбран
@@ -412,19 +411,16 @@ def add_to_queue():
     
     # Обработка ядра
     if kernel:
-        if isinstance(kernel, list):
-            kernel_list = kernel
-        else:
-            kernel_list = [kernel]
+        kernel_str = ' '.join(kernel)  
     else:
-        kernel_list = []
+        kernel_str = ''
         
     # Добавляем задачу в очередь стенда
     manager = get_queue_manager(stand)
     task_id = manager.add_task(
         tests=tests_list,
         release=release_list,
-        kernel=kernel_list
+        kernel=kernel_str
     )
     
     return (stand, task_id), None
@@ -555,8 +551,8 @@ class StandWorker:
         release = task['release']
         kernel = task['kernel']
         
-        if kernel and kernel != '[]':
-            command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -kn {shlex.quote(kernel)} -te {testenv_status}'
+        if kernel and kernel.strip():
+            command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -kn {kernel} -te {testenv_status}'
         else:
             command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -te {testenv_status}'
         

@@ -634,7 +634,7 @@ allta_services_list = [
     'allta_infocollector.service',
     'allta.service',
     'allta_vm.service',
-    'bot_allta.service',
+    #'bot_allta.service',
     'changelog.service',
     'devpi.service',
     'grafana_prometheus.service',

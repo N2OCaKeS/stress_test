@@ -311,12 +311,12 @@ def run_command(num):
         return f"Статус на стенде {num} изменен", 200
     
 
-@app.route('/queue-stand<num>/add', methods=['POST'])
-def queue_add(num):
+@app.route('/queue-stand/add', methods=['POST'])
+def queue_add():
     """
     Добавить задачу в очередь
     """
-    result, error = add_to_queue(num)
+    result, error = add_to_queue()
     if error:
         return f"Ошибка: {error}", 400
     else:

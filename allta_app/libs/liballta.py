@@ -362,16 +362,22 @@ def get_queue_manager(stand_num: str) -> TaskQueueManager:
     return _queue_managers[stand_num]
 
 
-def add_to_queue(stand_num):
+def add_to_queue():
     """
     Обработка данных формы и добавление задачи в очередь для стенда
     """
     # Получаем данные из формы
-    tests = request.form.getlist('tests')
+    selected_options = request.form.getlist('options')
     releas = request.form.getlist('releas')
     kernel = request.form.getlist('kernel')
+    stand = request.form.get('stand_num')
+
+    # Проверка, что стенд выбран
+    if not stand:
+        return None, "Стенд не выбран"
 
     # Обработка тестов
+    tests = [option for option in main_options if option in selected_options]
     if tests:
         if isinstance(tests, list):
             tests_list = tests
@@ -413,14 +419,14 @@ def add_to_queue(stand_num):
         kernel_list = []
         
     # Добавляем задачу в очередь стенда
-    manager = get_queue_manager(stand_num)
+    manager = get_queue_manager(stand)
     task_id = manager.add_task(
         tests=tests_list,
         release=release_list,
         kernel=kernel_list
     )
     
-    return (stand_num, task_id), None
+    return (stand, task_id), None
 
 
 

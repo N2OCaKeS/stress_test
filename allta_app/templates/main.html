@@ -751,13 +751,110 @@
     <div class="row align-items-left">
       <div class="col-2">
         <div class="card text-bg-dark mb-3" style="max-width: 27rem;">
-          <div class="card-header" style="background: #002534;">Список подготовленных компонентов</div>
+          <div class="card-header" style="background: #002534;">Уведомления</div>
           <div class="card-body">
-            <p class="card-text">{{ test_list }}</p>
-            <p class="card-text">{{ releas_list }}</p>
-            <p class="card-text">{{ kernel_list }}</p>
+            <div id="notification-area">
+            </div>
           </div>
         </div>
+
+        <script>
+        // Отображение уведомлений
+        function showNotification(message, type = 'info', timeout = 5000) {
+            const notificationArea = document.getElementById('notification-area');
+            
+            // Создаем элемент уведомления
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.setAttribute('role', 'alert');
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            // Добавляем в начало блока (чтобы новые сообщения были сверху)
+            notificationArea.prepend(alertDiv);
+            
+            // Автоматически удаляем через указанное время
+            if (timeout > 0) {
+                setTimeout(() => {
+                    alertDiv.classList.remove('show');
+                    setTimeout(() => alertDiv.remove(), 300);
+                }, timeout);
+            }
+            
+            return alertDiv;
+        }
+
+        // Обработка ответа от сервера
+        // Отправка POST запроса и показа уведомления
+        async function postAndNotify(url, successMessage = null, errorPrefix = 'Ошибка') {
+            try {
+                const response = await fetch(url, { method: 'POST' });
+                const text = await response.text();
+                
+                if (response.ok) {
+                    // Если successMessage не указан, используем текст из ответа сервера
+                    const message = successMessage || text;
+                    showNotification(message, 'success');
+                    return { success: true, message: text };
+                } else {
+                    showNotification(`${errorPrefix}: ${text}`, 'danger');
+                    return { success: false, message: text };
+                }
+            } catch (error) {
+                showNotification(`Ошибка соединения: ${error.message}`, 'danger');
+                return { success: false, message: error.message };
+            }
+        }
+
+        // Отправка формы и показа уведомления
+        async function submitFormAndNotify(formElement, url = null, successMessage = null) {
+            const formData = new FormData(formElement);
+            const actionUrl = url || formElement.action;
+            
+            try {
+                const response = await fetch(actionUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const text = await response.text();
+                
+                if (response.ok) {
+                    const message = successMessage || text;
+                    showNotification(message, 'success');
+                    // Очищаем форму
+                    formElement.reset();
+                    return { success: true, message: text };
+                } else {
+                    showNotification(`Ошибка: ${text}`, 'danger');
+                    return { success: false, message: text };
+                }
+            } catch (error) {
+                showNotification(`Ошибка соединения: ${error.message}`, 'danger');
+                return { success: false, message: error.message };
+            }
+        }
+
+        // Отправка GET запроса (например, для статуса)
+        async function getAndNotify(url, errorPrefix = 'Ошибка') {
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    return { success: true, data: data };
+                } else {
+                    showNotification(`${errorPrefix}: ${JSON.stringify(data)}`, 'danger');
+                    return { success: false, data: data };
+                }
+            } catch (error) {
+                showNotification(`Ошибка соединения: ${error.message}`, 'danger');
+                return { success: false, data: null };
+            }
+        }
+        </script>
 
         <script>
           function updateBlockKernels(version) {
@@ -826,7 +923,7 @@
 
                       const container = document.querySelector('.container-fluid .card-body');
                       const header = document.querySelector('.card-header');
-                      header.textContent = 'Список подготовленных компонентов';
+                      header.textContent = 'Уведомления';
 
                       container.innerHTML = `
                       <p class="card-text">${data.test_list}</p>
@@ -863,7 +960,7 @@
         <div id="accordionBlock1" class="card text-bg-dark mb-3" style="max-width: 27rem;">
           <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Параметры запуска тестов</div>
           <div class="card-body">
-            <form method="POST" action="/{{ main_url }}">
+            <form id="queueForm" method="POST" action="/queue-stand/add">
               <br></br>
               <div class="accordion customAccordion" id="settingsAccordion">
                 <div class="accordion-item">
@@ -911,7 +1008,31 @@
                     </div>
                   </div>
                 </div>
+                <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseStandsQueue">
+                      Доступные стенды
+                    </button>
+                  </h2>
+                <div id="collapseStandsQueue" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                  <div class="accordion-body" style="text-align: left;">
+                    <div class="mb-3">
+                              <label for="StandSelectQueue" class="form-label">Stands:</label>
+                              <select class="form-select" id="StandSelectQueue" name="stand_num">
+                                  <option value="" disabled selected>Выберите значение</option>
+                                  <option value="3">stand3</option>
+                                  <option value="4">stand4</option>
+                                  <option value="10">stand10</option>
+                                  <option value="11">stand11</option>
+                                  <option value="12">stand12</option>
+                                  <option value="13">stand13</option>
+                              </select>
+                          </div>
+                    </div>
+                  </div>
+                </div>
               </div>
+
               <style>
                 .cst-btn-secondary {
                     background-color: #292d30; 
@@ -927,12 +1048,60 @@
               </style>
               <br></br>
               <div style="text-align: center;">
-                <button id="mainSaveButton" class="btn cst-btn-secondary" type="submit">Сохранить</button>
+                <button id="mainSaveButton" class="btn cst-btn-secondary" type="submit">Добавить в очередь</button>
               </div>
   
             </form>
           </div>
         </div>
+
+        <script>
+        // Перехватываем отправку формы
+        document.getElementById('queueForm').addEventListener('submit', async function(e) {
+            e.preventDefault(); // Отменяем стандартную отправку
+            
+            // Собираем данные формы
+            const formData = new FormData(this);
+            
+            const stand = formData.get('stand_num');
+            if (!stand) {
+                showNotification('Пожалуйста, выберите стенд', 'danger');
+                return;
+            }
+
+            const tests = formData.getAll('tests');
+            if (!tests || tests.length === 0) {
+                showNotification('Пожалуйста, выберите хотя бы один тест', 'danger');
+                return;
+            }
+
+            const releas = formData.get('releas');
+            if (!releas) {
+                showNotification('Пожалуйста, выберите релиз', 'danger');
+                return;
+            }
+            
+            // Отправляем данные
+            try {
+                const response = await fetch(this.action, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const text = await response.text();
+                
+                if (response.ok) {
+                    showNotification(`✅ ${text}`, 'success');
+                    // Очищаем форму 
+                    this.reset();
+                } else {
+                    showNotification(`❌ Ошибка: ${text}`, 'danger');
+                }
+            } catch (error) {
+                showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger');
+            }
+        });
+        </script>
       
         <!-- dinamic update kernel list -->
         <script>
@@ -2672,7 +2841,7 @@
           </h2>
           <div id="collapsestand3" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
             <div class="accordion-body-global" style="text-align: left;">
-      <div class="col-4 stands">
+      <div class="col-5 stands">
         <div class="card text-bg-dark mb-3">
           <div class="card-header">Hardware overview (stand3-59-204)
             <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal3">
@@ -2743,6 +2912,16 @@
                 </ul>
               </div>
                 <a class="btn btn-dark" href="https://10.177.5.59/" target="_blank">IPMI</a>                                  
+              <div class="dropdown d-inline-block">
+                  <button class="btn btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      Broker
+                  </button>
+                  <ul class="dropdown-menu">
+                      <li><button class="dropdown-item queue-status" data-stand="3">📊 Статус очереди</button></li>
+                      <li><button class="dropdown-item queue-action" data-stand="3" data-action="stop">⏹ Остановить очередь</button></li>
+                      <li><button class="dropdown-item queue-action" data-stand="3" data-action="clear">🗑 Очистить очередь</button></li>
+                  </ul>
+              </div>
             </div>
   
             <script>
@@ -3044,7 +3223,7 @@
     </h2>
     <div id="collapsestand4" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
       <div class="accordion-body-global" style="text-align: left;">
-<div class="col-4 stands">
+<div class="col-5 stands">
   <div class="card text-bg-dark mb-3">
     <div class="card-header">Hardware overview (stand4-58-203)
       <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal4">
@@ -3116,6 +3295,16 @@
           </ul>
         </div>
           <a class="btn btn-dark" href="https://10.177.5.58/" target="_blank">IPMI</a>
+        <div class="dropdown d-inline-block">
+            <button class="btn btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                Broker
+            </button>
+            <ul class="dropdown-menu">
+                <li><button class="dropdown-item queue-status" data-stand="4">📊 Статус очереди</button></li>
+                <li><button class="dropdown-item queue-action" data-stand="4" data-action="stop">⏹ Остановить очередь</button></li>
+                <li><button class="dropdown-item queue-action" data-stand="4" data-action="clear">🗑 Очистить очередь</button></li>
+            </ul>
+        </div>
       </div>
 
       <script>
@@ -5268,7 +5457,7 @@
   </h2>
   <div id="collapsestand10" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
     <div class="accordion-body-global" style="text-align: left;">
-<div class="col-4 stands">
+<div class="col-5 stands">
 <div class="card text-bg-dark mb-3">
   <div class="card-header">Hardware overview (stand10-0-206)
     <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal10">
@@ -5339,6 +5528,16 @@
         </ul>
       </div>
         <a class="btn btn-dark" href="https://10.177.5.78/" target="_blank">IPMI</a>  
+      <div class="dropdown d-inline-block">
+          <button class="btn btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              Broker
+          </button>
+          <ul class="dropdown-menu">
+              <li><button class="dropdown-item queue-status" data-stand="10">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="10" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="10" data-action="clear">🗑 Очистить очередь</button></li>
+          </ul>
+      </div>
     </div>
 
     <script>
@@ -5641,7 +5840,7 @@
   </h2>
   <div id="collapsestand11" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
     <div class="accordion-body-global" style="text-align: left;">
-<div class="col-4 stands">
+<div class="col-5 stands">
 <div class="card text-bg-dark mb-3">
   <div class="card-header">Hardware overview (stand11-0-207)
     <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal11">
@@ -5712,6 +5911,16 @@
         </ul>
       </div>
         <a class="btn btn-dark" href="https://10.177.5.74/" target="_blank">IPMI</a>  
+      <div class="dropdown d-inline-block">
+          <button class="btn btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              Broker
+          </button>
+          <ul class="dropdown-menu">
+              <li><button class="dropdown-item queue-status" data-stand="11">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="11" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="11" data-action="clear">🗑 Очистить очередь</button></li>
+          </ul>
+      </div>
     </div>
 
     <script>
@@ -6013,7 +6222,7 @@
   </h2>
   <div id="collapsestand12" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
     <div class="accordion-body-global" style="text-align: left;">
-<div class="col-4 stands">
+<div class="col-5 stands">
 <div class="card text-bg-dark mb-3">
   <div class="card-header">Hardware overview (stand12-0-208)
     <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal12">
@@ -6083,7 +6292,17 @@
           </li>
         </ul>
       </div>
-        <a class="btn btn-dark" href="https://10.177.5.70/" target="_blank">IPMI</a>  
+        <a class="btn btn-dark" href="https://10.177.5.70/" target="_blank">IPMI</a> 
+      <div class="dropdown d-inline-block">
+          <button class="btn btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              Broker
+          </button>
+          <ul class="dropdown-menu">
+              <li><button class="dropdown-item queue-status" data-stand="12">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="12" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="12" data-action="clear">🗑 Очистить очередь</button></li>
+          </ul>
+      </div> 
     </div>
 
     <script>
@@ -6386,7 +6605,7 @@
   </h2>
   <div id="collapsestand13" class="accordion-collapse collapse" data-bs-parent="#globalaccordionstand">
     <div class="accordion-body-global" style="text-align: left;">
-<div class="col-4 stands">
+<div class="col-5 stands">
 <div class="card text-bg-dark mb-3">
   <div class="card-header">Hardware overview (stand13-0-209)
     <button type="button" class="btn infoButton info-button" data-bs-toggle="modal" data-bs-target="#standModal13">
@@ -6456,7 +6675,17 @@
           </li>
         </ul>
       </div>
-        <a class="btn btn-dark" href="https://10.177.5.68/" target="_blank">IPMI</a>  
+        <a class="btn btn-dark" href="https://10.177.5.68/" target="_blank">IPMI</a> 
+      <div class="dropdown d-inline-block">
+          <button class="btn btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              Broker
+          </button>
+          <ul class="dropdown-menu">
+              <li><button class="dropdown-item queue-status" data-stand="13">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="13" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item queue-action" data-stand="13" data-action="clear">🗑 Очистить очередь</button></li>
+          </ul>
+      </div> 
     </div>
 
     <script>
@@ -6738,6 +6967,77 @@
 
 
 <!-- SCRIPTS -->
+
+
+
+
+<script>
+// Управление брокерами
+// Для статуса (GET запрос)
+document.querySelectorAll('.queue-status').forEach(button => {
+    button.addEventListener('click', async function() {
+        const stand = this.dataset.stand; 
+        await updateQueueStatus(stand); 
+    });
+});
+
+async function updateQueueStatus(stand) {
+
+        try {
+            const response = await fetch(`/queue-stand${stand}/status`);
+            const data = await response.json();
+            
+            if (response.ok) {
+                const message = `
+                    📊 Статус очереди стенда ${stand}:
+                    • Задач: ${data.total_tasks || 0}
+                    • Ожидают: ${data.pending_count || 0}
+                    • Выполняется: ${data.running_count || 0}
+                    • Статус воркера: ${data.status || 'idle'}
+                    ${data.current_task ? `• Текущая задача: ${data.current_task.id}` : ''}
+                `;
+                showNotification(message, 'info', 15000);
+            } else {
+                showNotification(`❌ Ошибка получения статуса: ${JSON.stringify(data)}`, 'danger', 10000);
+            }
+        } catch (error) {
+            showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger', 10000);
+        }
+}
+
+// Для команд (POST запросы)
+document.querySelectorAll('.queue-action').forEach(button => {
+    button.addEventListener('click', async function() {
+        const stand = this.dataset.stand;
+        const action = this.dataset.action;
+        
+        const actionNames = {
+            'stop': 'остановки',
+            'clear': 'очистки'
+        };
+        
+        try {
+            const response = await fetch(`/queue-stand${stand}/${action}`, {
+                method: 'POST'
+            });
+            
+            const text = await response.text();
+            
+            if (response.ok) {
+                showNotification(`✅ ${text}`, 'success');
+                if (action === 'stop' || action === 'clear') {
+                    // Обновляем статус после действия
+                    await updateQueueStatus(stand);
+                }
+            } else {
+                showNotification(`❌ Ошибка ${actionNames[action]}: ${text}`, 'danger', 10000);
+            }
+        } catch (error) {
+            showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger', 10000);
+        }
+    });
+});
+</script>
 
 
 <!-- Status block set authors-->

@@ -7203,7 +7203,7 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             e.stopPropagation();
             
-            const stand = this.id.split('-')[2];
+            const stand = this.id.match(/\d+$/)[0];
             
             try {
                 // Отправляем на run-command-stand с command=start
@@ -7237,7 +7237,7 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         e.stopPropagation();
         
-        const stand = this.id.split('-')[2];
+        const stand = this.id.match(/\d+$/)[0];
         
         try {
             // Отправляем на run-command-stand с command=stop

@@ -6988,14 +6988,15 @@ async function updateQueueStatus(stand) {
             const data = await response.json();
             
             if (response.ok) {
-                const message = `
-                    📊 Статус очереди стенда ${stand}:
-                    • Задач: ${data.total_tasks || 0}
-                    • Ожидают: ${data.pending_count || 0}
-                    • Выполняется: ${data.running_count || 0}
-                    • Статус воркера: ${data.status || 'idle'}
-                    ${data.current_task ? `• Текущая задача: ${data.current_task.id}` : ''}
-                `;
+                let message = `📊 Статус очереди стенда ${stand}:<br>`;
+                message += `• Задач: ${data.total_tasks || 0}<br>`;
+                message += `• Ожидают: ${data.pending_count || 0}<br>`;
+                message += `• Выполняется: ${data.running_count || 0}<br>`;
+                message += `• Статус воркера: ${data.status || 'idle'}`;
+                
+                if (data.current_task) {
+                    message += `<br>• Текущая задача: ${data.current_task.id}`;
+                }
                 showNotification(message, 'info', 15000);
             } else {
                 showNotification(`❌ Ошибка получения статуса: ${JSON.stringify(data)}`, 'danger', 10000);

@@ -1,5 +1,6 @@
 import os
 import re
+import pandas as pd
 from json import loads
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
@@ -132,25 +133,37 @@ class Public:
                                                     arm_st=self.stands[self.grade_stand]['storage'],
                                                     lead_time=info_dct.get("lead_time"))  
    
-        with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
-            rating_temp = template.read()
-            rating = rating_temp.format(r=self.total_rating)
-        
-        with open(f"{REPORT_PATH}/ipa_test_report_table.html") as report_table:
-            r_table = report_table.read()
-        
-        #TODO Дописать описание графов
-        with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
-            images_lst = []
-            img_temp = template.read()
-            for file in os.listdir(REPORT_PATH):
-                if file.endswith('png'):
-                    images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np), 
-                                                    img_png=file,
-                                                    description=GRAPH_DESCRIPTIONS[file]))
-            images = '\n'.join(images_lst)
+        if self.ts == "plugin":
+            with open("ipa_results.json", "r") as report_file:
+                results = loads(report_file.read())
+                total_seconds = results.get("total_seconds")
+                etime = results.get("etime")
+                df = pd.DataFrame([{
+                    "Время добавления пользователей из группы gr_1 в gr_2 (сек)": total_seconds,
+                    "Время выполнения ldap запроса с фильтром (etime)": etime,
+                }])
+                table_html_with_results = df.to_html()
+            html_page = '\n'.join([header_table, table_html_with_results])
+        else:
+            with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
+                rating_temp = template.read()
+                rating = rating_temp.format(r=self.total_rating)
+            
+            with open(f"{REPORT_PATH}/ipa_test_report_table.html") as report_table:
+                r_table = report_table.read()
+            
+            #TODO Дописать описание графов
+            with open(f'{TEMPLATE_PATH}/img_template.html', 'r') as template:
+                images_lst = []
+                img_temp = template.read()
+                for file in os.listdir(REPORT_PATH):
+                    if file.endswith('png'):
+                        images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np), 
+                                                        img_png=file,
+                                                        description=GRAPH_DESCRIPTIONS[file]))
+                images = '\n'.join(images_lst)
 
-        html_page = '\n'.join([header_table, rating, r_table, images]) 
+            html_page = '\n'.join([header_table, rating, r_table, images]) 
 
         #выкладываем информацию на страницу
         if release_pp and release_np:

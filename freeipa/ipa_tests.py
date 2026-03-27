@@ -78,7 +78,7 @@ class PlaginMemberOfTest():
 
     def processing_results(self):
         Results.get_results(host='server', test_name="plagin")
-        
+
         with open(PLAGIN_REPORT_FILE, "r") as plugin_file:
             for line in plugin_file.readlines():
                 if "real" in line:

@@ -99,7 +99,8 @@ parser.add_argument('-tt', '--type-test',
                     action='store',
                     required=False,
                     choices=['auth',
-                             'create-users'],
+                             'create-users'
+                             'plugin'],
                     help='type test',
                     default="auth",
                     dest='TT')
@@ -230,7 +231,7 @@ if __name__ == "__main__":
     
     elif args.TT == "plagin":
         plagin_test = PlaginMemberOfTest()
-        plagin_test.run()    
+        plagin_test.run()
     
     else:
         report = Report()

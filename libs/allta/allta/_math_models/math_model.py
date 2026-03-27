@@ -147,9 +147,9 @@ class MathModel:
         Создаёт пустую математическую модель.
 
         Внутренние параметры модели фиксированы:
-            - максимальная степень полинома: 10
-            - инверсия negative-критериев: включена
-            - epsilon для clipping: 1e-6
+        - максимальная степень полинома: 10
+        - инверсия negative-критериев: включена
+        - epsilon для clipping: 1e-6
         """
         self._max_degree = 10
         self._invert_negative = True
@@ -211,40 +211,21 @@ class MathModel:
     def test_power(
         self,
         power: Number,
-        factors: Sequence[Number] | None = None,
-        *,
-        bounds_margin: float = 1e-6,
     ) -> None:
         """
         Строит тестовую +/- таблицу рейтингов от уже добавленных критериев.
 
-        Логика:
-        * берётся baseline (текущие значения критериев)
-        * строится сетка факторов (по умолчанию из ``TEST_POWER_TABLE_FACTORS``)
-        * для каждого фактора создаётся synthetic-набор:
-            - negative критерии: ``value / factor``
-            - positive критерии: ``value * factor``
-        * значения ограничиваются ``bounds``
-        * считается ``total_rating(power=...)``
+        Args:
+            power (Number): Коэффициент степенного преобразования.
 
-        Метод печатает таблицу с колонками ``Dataset``, ``Total rating``, ``ratio``
-        и ничего не возвращает.
+        Returns:
+            None: Метод печатает таблицу с колонками ``Dataset``, ``Total rating`` и ``ratio``.
         """
         if not self._criteria:
             raise ValueError("Не добавлено ни одного критерия")
-        if not 0.0 <= float(bounds_margin) < 0.5:
-            raise ValueError("bounds_margin должен быть в диапазоне [0, 0.5)")
 
         resolved_power = float(power)
-        factor_values = (
-            [float(value) for value in TEST_POWER_TABLE_FACTORS]
-            if factors is None
-            else [float(value) for value in factors]
-        )
-        if not factor_values:
-            raise ValueError("factors не должен быть пустым")
-        if any(value <= 0.0 for value in factor_values):
-            raise ValueError("Все factors должны быть > 0")
+        factor_values = [float(value) for value in TEST_POWER_TABLE_FACTORS]
 
         eps = 1e-12
         lower_factors = [float(value) for value in factor_values if float(value) < 1.0 - eps]
@@ -277,7 +258,7 @@ class MathModel:
                 lower_bound = float(criterion["bounds"][0])
                 upper_bound = float(criterion["bounds"][1])
                 interval = float(upper_bound - lower_bound)
-                margin = interval * float(bounds_margin)
+                margin = interval * float(self._epsilon)
                 lower_clip = float(lower_bound + margin)
                 upper_clip = float(upper_bound - margin)
                 if upper_clip <= lower_clip:

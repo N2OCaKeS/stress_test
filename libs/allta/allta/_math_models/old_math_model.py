@@ -16,7 +16,15 @@ RawDataset = Mapping[str | Number, Mapping[str, RawMetricValue]]
 
 @dataclass(frozen=True)
 class CriterionParams:
-    """Параметры критерия для old-модели."""
+    """
+    Параметры критерия для old-модели.
+
+    Args:
+        weight (float | None, optional): Вес критерия.
+        negative (bool | None, optional): Признак negative-критерия.
+        bounds (tuple[float, float] | None, optional): Границы нормализации ``(L, U)``.
+        max_degree (int | None, optional): Максимальная степень полинома.
+    """
 
     weight: float | None = None
     negative: bool | None = None
@@ -24,6 +32,15 @@ class CriterionParams:
     max_degree: int | None = None
 
     def merged(self, override: "CriterionParams") -> "CriterionParams":
+        """
+        Объединяет текущие параметры с переопределением.
+
+        Args:
+            override (CriterionParams): Параметры, которые перекрывают текущие значения.
+
+        Returns:
+            CriterionParams: Новый объект параметров.
+        """
         return CriterionParams(
             weight=self.weight if override.weight is None else override.weight,
             negative=self.negative if override.negative is None else override.negative,
@@ -33,6 +50,15 @@ class CriterionParams:
 
     @classmethod
     def from_value(cls, value: "CriterionParams | Mapping[str, Any] | None") -> "CriterionParams":
+        """
+        Строит объект параметров из значения.
+
+        Args:
+            value (CriterionParams | Mapping[str, Any] | None): Исходное значение параметров.
+
+        Returns:
+            CriterionParams: Нормализованный объект параметров.
+        """
         if value is None:
             return cls()
         if isinstance(value, cls):
@@ -74,6 +100,14 @@ class OldMathModel:
         normalize_integral: bool = False,
         epsilon: float = 1e-12,
     ) -> None:
+        """
+        Создаёт пустую old-модель.
+
+        Args:
+            max_degree (int, optional): Максимальная степень полинома аппроксимации.
+            normalize_integral (bool, optional): Нормализовать интеграл на длину интервала.
+            epsilon (float, optional): Число для защиты от деления на ноль.
+        """
         self._max_degree = int(max_degree)
         self._normalize_integral = bool(normalize_integral)
         self._epsilon = float(epsilon)
@@ -90,6 +124,21 @@ class OldMathModel:
         *,
         max_degree: int | None = None,
     ) -> "OldMathModel":
+        """
+        Добавляет критерий в old-модель.
+
+        Args:
+            name (str): Название критерия.
+            iterations (Sequence[str | Number]): Значения оси X.
+            values (Sequence[Number]): Значения критерия по оси X.
+            weight (Number): Вес критерия.
+            negative (bool): Признак negative-критерия.
+            bounds (tuple[Number, Number]): Границы нормализации ``(L, U)``.
+            max_degree (int | None, optional): Локальная степень аппроксимации для критерия.
+
+        Returns:
+            OldMathModel: Текущий экземпляр для chaining-вызовов.
+        """
         if not name:
             raise ValueError("name не должен быть пустым")
         if len(iterations) != len(values):
@@ -121,6 +170,12 @@ class OldMathModel:
         return self
 
     def total_rating(self) -> dict[str, Any]:
+        """
+        Рассчитывает итоговый рейтинг по всем добавленным критериям.
+
+        Returns:
+            dict[str, Any]: Итоговый рейтинг и детализация по критериям.
+        """
         if not self._criteria:
             raise ValueError("Не добавлено ни одного критерия")
 
@@ -245,7 +300,22 @@ def calculate_old_total_rating(
     epsilon: float = 1e-12,
     criteria_params: Mapping[str, CriterionParams | Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Функциональный wrapper старой модели с поддержкой criteria_params."""
+    """
+    Функциональный wrapper для расчёта old-модели.
+
+    Args:
+        dataset (RawDataset): Датасет в формате ``{x_value: {metric_name: value | payload}}``.
+        negative_metrics (set[str] | Sequence[str] | None, optional): Список negative-критериев.
+        bounds_by_metric (Mapping[str, tuple[float, float]] | None, optional): Границы по критериям.
+        max_degree (int, optional): Максимальная степень полинома по умолчанию.
+        normalize_integral (bool, optional): Нормализовать интеграл на длину интервала.
+        epsilon (float, optional): Число для защиты от деления на ноль.
+        criteria_params (Mapping[str, CriterionParams | Mapping[str, Any]] | None, optional):
+            Переопределения параметров критериев. Ключ ``"*"`` задаёт общие параметры.
+
+    Returns:
+        dict[str, Any]: Итоговый рейтинг и детализация по критериям.
+    """
     model = OldMathModel(
         max_degree=max_degree,
         normalize_integral=normalize_integral,

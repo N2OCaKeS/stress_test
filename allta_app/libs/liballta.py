@@ -556,7 +556,7 @@ class StandWorker:
         kernel = task['kernel']
         
         if kernel and kernel != '[]':
-            command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -kn {str(kernel)} -te {testenv_status}'
+            command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -kn "{kernel}" -te {testenv_status}'
         else:
             command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -te {testenv_status}'
         

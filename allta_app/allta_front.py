@@ -12,12 +12,15 @@ from flask import (Flask,
 from flask_cors import CORS
 import socket
 from os import path
+import os
+import glob
 from libs.zefir import ZefirResultTable
 import psycopg2
 import traceback
 import asyncio
 import json
 from time import sleep
+from datetime import datetime
 from libs.libilo import iLOConsoleCaller
 from libs.liballta import (index_page,
                           BackgroundTasks,
@@ -292,8 +295,11 @@ def run_command(num):
     command = request.form.get(f'command{num}')
     
     if command == 'start':
+        # Очищаем лог стенда
+        with open(f'front_stand{num}.log', 'w') as w:
+            w.write('Start front logging\n\n')
+
         manager = get_queue_manager(num)
-        
         if manager.get_queue_size() == 0:
             return f"Очередь стенда {num} пуста", 400
         
@@ -432,6 +438,86 @@ def queue_retry_failed(num):
     else:
         return "Нет проваленных задач для изменения статуса", 200
     
+
+@app.route('/rest/api/stand<num>/logpage', methods=['GET'])
+def view_stand_log(num):
+    """
+    Страница просмотра лога стенда
+    """
+    return render_template('logpage.html', stand_num=num)
+      
+
+@app.route('/rest/api/stand<num>/log', methods=['GET'])
+def get_stand_log(num):
+    """Получить основной лог стенда"""
+    log_file = f'front_stand{num}.log'
+    try:
+        with open(log_file, 'r') as f:
+            log_content = f.read()
+        return {'log': log_content, 'size': len(log_content)}
+    except FileNotFoundError:
+        return {'error': 'Лог файл не найден'}, 404
+
+@app.route('/rest/api/stand<num>/log-files', methods=['GET'])
+def get_log_files(num):
+    """Получить список доступных логов для стенда"""
+    log_dir = 'logs'
+    pattern = f'backup_image_stand{num}_testnum*.log'
+    
+    try:
+        log_files = []
+        for file_path in glob.glob(os.path.join(log_dir, pattern)):
+            filename = os.path.basename(file_path)
+            test_num = filename.split('_testnum')[1].split('.')[0]
+            file_size = os.path.getsize(file_path)
+            file_mtime = os.path.getmtime(file_path)
+            
+            log_files.append({
+                'filename': filename,
+                'test_num': int(test_num),
+                'size': file_size,
+                'size_human': format_size(file_size),
+                'modified': datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        log_files.sort(key=lambda x: x['test_num'], reverse=True)
+        
+        return {
+            'stand': num,
+            'test_logs': log_files,
+            'count': len(log_files)
+        }
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+@app.route('/rest/api/stand<num>/log-file/<filename>', methods=['GET'])
+def get_test_log_file(num, filename):
+    """Получить содержимое конкретного файла лога"""
+    log_file = os.path.join('logs', filename)
+    
+    if not filename.startswith(f'backup_image_stand{num}_'):
+        return {'error': 'Access denied'}, 403
+    
+    try:
+        with open(log_file, 'r') as f:
+            log_content = f.read()
+        return {
+            'stand': num,
+            'filename': filename,
+            'log': log_content,
+            'size': len(log_content)
+        }
+    except FileNotFoundError:
+        return {'error': f'Файл {filename} не найден'}, 404
+
+def format_size(size):
+    """Форматирует размер файла в человекочитаемый вид"""
+    for unit in ['Б', 'КБ', 'МБ', 'ГБ']:
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} ТБ"
+
 
 @app.route('/update/<version>')
 def update_stp(version):

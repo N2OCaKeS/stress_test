@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Лог стенда {{ stand_num }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .log-container {
+            background-color: #2d2d2d;
+            border-radius: 8px;
+            padding: 0;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .log-header {
+            background-color: #252526;
+            padding: 12px 20px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .log-header h3 {
+            margin: 0;
+            color: #ff7b00;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        
+        .log-controls {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .log-controls button {
+            background-color: #3e3e42;
+            border: none;
+            color: #d4d4d4;
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .log-controls button:hover {
+            background-color: #ff7b00;
+            color: white;
+        }
+        
+        /* Блок выбора лога */
+        .log-selector {
+            background-color: #252526;
+            padding: 10px 20px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .log-selector label {
+            color: #ff7b00;
+            font-weight: bold;
+            margin: 0;
+        }
+        
+        .log-selector select {
+            background-color: #3e3e42;
+            border: 1px solid #ff7b00;
+            border-radius: 4px;
+            color: #d4d4d4;
+            padding: 6px 12px;
+            min-width: 350px;
+        }
+        
+        .log-selector select:hover {
+            border-color: #ff9b2a;
+        }
+        
+        .log-selector .log-info {
+            color: #858585;
+            font-size: 12px;
+        }
+        
+        .current-log-badge {
+            background-color: #ff7b00;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+        
+        /* Панель поиска и фильтрации */
+        .log-search-bar {
+            padding: 10px 20px;
+            background-color: #252526;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .log-search-bar input {
+            width: 100%;
+            padding: 6px 12px;
+            background-color: #3e3e42;
+            border: 1px solid #ff7b00;
+            border-radius: 4px;
+            color: #d4d4d4;
+        }
+        
+        .log-search-bar input:focus {
+            outline: none;
+            border-color: #ff9b2a;
+            box-shadow: 0 0 5px rgba(255, 123, 0, 0.3);
+        }
+        
+        .log-search-bar select {
+            padding: 6px 12px;
+            background-color: #3e3e42;
+            border: 1px solid #ff7b00;
+            border-radius: 4px;
+            color: #d4d4d4;
+        }
+        
+        .log-search-bar button {
+            padding: 6px 12px;
+            background-color: #3e3e42;
+            border: none;
+            border-radius: 4px;
+            color: #d4d4d4;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .log-search-bar button:hover {
+            background-color: #ff7b00;
+            color: white;
+        }
+        
+        .log-content {
+            background-color: #1e1e1e;
+            padding: 20px;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-x: auto;
+            max-height: calc(100vh - 280px);
+            overflow-y: auto;
+            font-family: 'Courier New', 'Consolas', monospace;
+        }
+        
+        .log-line {
+            padding: 2px 0;
+            border-left: 3px solid transparent;
+        }
+        
+        .log-line:hover {
+            background-color: #2a2a2a;
+            border-left-color: #ff7b00;
+        }
+        
+        .log-line-number {
+            display: inline-block;
+            width: 50px;
+            color: #858585;
+            user-select: none;
+            margin-right: 15px;
+            text-align: right;
+        }
+        
+        .log-line-text {
+            display: inline;
+            color: #d4d4d4;
+        }
+        
+        .badge-info {
+            background-color: #ff7b00;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 15px;
+            color: #858585;
+            font-size: 12px;
+            border-top: 1px solid #3e3e42;
+        }
+        
+        mark {
+            background-color: #ff7b00;
+            color: white;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #858585;
+        }
+        
+        /* Стили для скроллбара */
+        .log-content::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        .log-content::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        
+        .log-content::-webkit-scrollbar-thumb {
+            background: #ff7b00;
+            border-radius: 4px;
+        }
+        
+        .log-content::-webkit-scrollbar-thumb:hover {
+            background: #ff9b2a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-4">
+        <div class="log-container">
+            <div class="log-header">
+                <div>
+                    <h3><i class="fas fa-terminal"></i> Лог стенда {{ stand_num }}</h3>
+                    <span class="badge-info" id="logSize">0 символов</span>
+                </div>
+                <div class="log-controls">
+                    <button onclick="copyLog()" title="Копировать лог">
+                        <i class="fas fa-copy"></i> Копировать
+                    </button>
+                    <button onclick="downloadLog()" title="Скачать лог">
+                        <i class="fas fa-download"></i> Скачать
+                    </button>
+                    <button onclick="window.location.reload()" title="Обновить">
+                        <i class="fas fa-sync-alt"></i> Обновить
+                    </button>
+                    <button onclick="window.close()" title="Закрыть">
+                        <i class="fas fa-times"></i> Закрыть
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Выбор лога -->
+            <div class="log-selector">
+                <label><i class="fas fa-folder-open"></i> Выберите лог:</label>
+                <select id="logSelect" onchange="switchLog()">
+                    <option value="main" selected>📋 Основной лог стенда {{ stand_num }}</option>
+                </select>
+                <div class="log-info" id="logInfo"></div>
+            </div>
+            
+            <!-- Панель поиска и фильтрации -->
+            <div class="log-search-bar">
+                <div style="flex: 1; min-width: 200px;">
+                    <input type="text" id="searchInput" placeholder="🔍 Поиск по логу...">
+                </div>
+                <div>
+                    <select id="filterSelect">
+                        <option value="all">📋 Все строки</option>
+                        <option value="error">❌ Только ошибки</option>
+                        <option value="warning">⚠️ Только предупреждения</option>
+                        <option value="success">✅ Только успехи</option>
+                        <option value="task">📦 Задачи</option>
+                        <option value="command">💻 Команды</option>
+                        <option value="kernel">🐧 Ядра</option>
+                        <option value="test">🧪 Тесты</option>
+                    </select>
+                </div>
+                <div>
+                    <button onclick="clearFilters()">
+                        <i class="fas fa-times"></i> Сбросить
+                    </button>
+                </div>
+                <div>
+                    <span id="searchStats" style="color: #858585; font-size: 12px;">0/0</span>
+                </div>
+            </div>
+            
+            <div class="log-content" id="logContent">
+                <div class="empty-state">
+                    <i class="fas fa-spinner fa-spin"></i> Загрузка лога...
+                </div>
+            </div>
+            <footer>
+                <i class="fas fa-info-circle"></i> Автообновление каждые 5 секунд
+            </footer>
+        </div>
+    </div>
+    
+    <script>
+        let autoRefreshInterval;
+        let currentStand = "{{ stand_num }}";
+        let currentLogType = 'main';
+        let currentLogFile = null;
+        let currentSearchTerm = '';
+        let currentFilter = 'all';
+        let fullLogLines = [];
+        let availableLogs = [];
+        
+        // Загружаем список доступных логов
+        async function loadLogList() {
+            try {
+                const response = await fetch(`/rest/api/stand${currentStand}/log-files`);
+                const data = await response.json();
+                
+                if (response.ok && data.test_logs) {
+                    availableLogs = data.test_logs;
+                    const select = document.getElementById('logSelect');
+                    
+                    // Добавляем тестовые логи в выпадающий список
+                    data.test_logs.forEach(log => {
+                        const option = document.createElement('option');
+                        option.value = `test_${log.test_num}`;
+                        option.textContent = `🧪 Тест ${log.test_num} (${log.size_human}, ${log.modified})`;
+                        option.dataset.filename = log.filename;
+                        select.appendChild(option);
+                    });
+                    
+                    // Обновляем информацию
+                    const infoDiv = document.getElementById('logInfo');
+                    if (data.count > 0) {
+                        infoDiv.innerHTML = `<i class="fas fa-database"></i> Доступно ${data.count} логов тестов`;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading log list:', error);
+            }
+        }
+        
+        async function switchLog() {
+            const select = document.getElementById('logSelect');
+            const selectedValue = select.value;
+            
+            // Показываем индикатор загрузки
+            document.getElementById('logContent').innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Загрузка лога...</div>';
+            
+            if (selectedValue === 'main') {
+                currentLogType = 'main';
+                currentLogFile = null;
+                await loadMainLog();
+            } else if (selectedValue.startsWith('test_')) {
+                currentLogType = 'test';
+                const testNum = selectedValue.split('_')[1];
+                const log = availableLogs.find(l => l.test_num == testNum);
+                if (log) {
+                    currentLogFile = log.filename;
+                    await loadTestLog(log.filename);
+                }
+            }
+        }
+        
+        async function loadMainLog() {
+            try {
+                const response = await fetch(`/rest/api/stand${currentStand}/log`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    fullLogLines = data.log.split('\n');
+                    document.getElementById('logSize').textContent = `${data.size} символов`;
+                    applyFiltersAndSearch();
+                } else {
+                    fullLogLines = ['Ошибка загрузки лога: ' + (data.error || 'Неизвестная ошибка')];
+                    applyFiltersAndSearch();
+                }
+            } catch (error) {
+                console.error('Error loading main log:', error);
+                fullLogLines = ['Ошибка загрузки лога: ' + error.message];
+                applyFiltersAndSearch();
+            }
+        }
+        
+        async function loadTestLog(filename) {
+            try {
+                const response = await fetch(`/rest/api/stand${currentStand}/log-file/${filename}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    fullLogLines = data.log.split('\n');
+                    document.getElementById('logSize').textContent = `${data.size} символов`;
+                    applyFiltersAndSearch();
+                } else {
+                    fullLogLines = ['Ошибка загрузки лога: ' + (data.error || 'Неизвестная ошибка')];
+                    applyFiltersAndSearch();
+                }
+            } catch (error) {
+                console.error('Error loading test log:', error);
+                fullLogLines = ['Ошибка загрузки лога: ' + error.message];
+                applyFiltersAndSearch();
+            }
+        }
+        
+        function applyFiltersAndSearch() {
+            let filteredLines = [...fullLogLines];
+            
+            // Применяем фильтр
+            if (currentFilter !== 'all') {
+                filteredLines = filteredLines.filter(line => {
+                    const lowerLine = line.toLowerCase();
+                    switch (currentFilter) {
+                        case 'error':
+                            return lowerLine.includes('error') || lowerLine.includes('failed') || lowerLine.includes('traceback');
+                        case 'warning':
+                            return lowerLine.includes('warning');
+                        case 'success':
+                            return lowerLine.includes('success') || lowerLine.includes('done') || lowerLine.includes('completed');
+                        case 'task':
+                            return lowerLine.includes('task:');
+                        case 'command':
+                            return lowerLine.includes('command:');
+                        case 'kernel':
+                            return lowerLine.includes('kernel:');
+                        case 'test':
+                            return lowerLine.includes('тест:');
+                        default:
+                            return true;
+                    }
+                });
+            }
+            
+            // Применяем поиск
+            if (currentSearchTerm) {
+                const searchLower = currentSearchTerm.toLowerCase();
+                filteredLines = filteredLines.filter(line => line.toLowerCase().includes(searchLower));
+            }
+            
+            updateLogDisplay(filteredLines);
+            
+            // Обновляем статистику
+            const stats = document.getElementById('searchStats');
+            if (stats) {
+                stats.textContent = `${filteredLines.length}/${fullLogLines.length}`;
+            }
+        }
+        
+        function updateLogDisplay(lines) {
+            const container = document.getElementById('logContent');
+            
+            if (lines.length === 0) {
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i> Ничего не найдено</div>';
+                return;
+            }
+            
+            container.innerHTML = lines.map((line, index) => {
+                const escapedLine = escapeHtml(line);
+                let highlightedLine = escapedLine;
+                
+                if (currentSearchTerm) {
+                    const regex = new RegExp(`(${escapeRegex(currentSearchTerm)})`, 'gi');
+                    highlightedLine = escapedLine.replace(regex, '<mark>$1</mark>');
+                }
+                
+                return `
+                    <div class="log-line">
+                        <span class="log-line-number">${index + 1}</span>
+                        <span class="log-line-text">${highlightedLine}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            highlightLines();
+        }
+        
+        function highlightLines() {
+            const lines = document.querySelectorAll('.log-line-text');
+            lines.forEach(line => {
+                const text = line.textContent;
+                if (text.includes('ERROR') || text.includes('Failed') || text.includes('Traceback')) {
+                    line.style.color = '#f48771';
+                } else if (text.includes('WARNING') || text.includes('Warning')) {
+                    line.style.color = '#dcdcaa';
+                } else if (text.includes('SUCCESS') || text.includes('Done') || text.includes('Completed')) {
+                    line.style.color = '#6a9955';
+                } else if (text.includes('Task:')) {
+                    line.style.color = '#9cdcfe';
+                } else if (text.includes('Command:')) {
+                    line.style.color = '#ce9178';
+                } else if (text.includes('Kernel:')) {
+                    line.style.color = '#4ec9b0';
+                } else if (text.includes('Тест:')) {
+                    line.style.color = '#c586c0';
+                }
+            });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function escapeRegex(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+        
+        function copyLog() {
+            const text = fullLogLines.join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Лог скопирован в буфер обмена');
+            }).catch(() => {
+                alert('Не удалось скопировать лог');
+            });
+        }
+        
+        function downloadLog() {
+            const text = fullLogLines.join('\n');
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = currentLogType === 'main' ? `stand_${currentStand}_main_log.txt` : currentLogFile;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showToast('Лог скачан');
+        }
+        
+        function clearFilters() {
+            currentSearchTerm = '';
+            currentFilter = 'all';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('filterSelect').value = 'all';
+            applyFiltersAndSearch();
+            showToast('Фильтры сброшены');
+        }
+        
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.textContent = message;
+            toast.style.position = 'fixed';
+            toast.style.bottom = '20px';
+            toast.style.right = '20px';
+            toast.style.backgroundColor = '#ff7b00';
+            toast.style.color = 'white';
+            toast.style.padding = '10px 20px';
+            toast.style.borderRadius = '5px';
+            toast.style.zIndex = '1000';
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 2000);
+        }
+        
+        function startAutoRefresh() {
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            autoRefreshInterval = setInterval(() => {
+                if (currentLogType === 'main') {
+                    loadMainLog();
+                } else if (currentLogFile) {
+                    loadTestLog(currentLogFile);
+                }
+            }, 5000);
+        }
+        
+        // Навешиваем обработчики
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            currentSearchTerm = e.target.value;
+            applyFiltersAndSearch();
+        });
+        
+        document.getElementById('filterSelect').addEventListener('change', (e) => {
+            currentFilter = e.target.value;
+            applyFiltersAndSearch();
+        });
+        
+        // Загружаем список логов и основной лог, запускаем автообновление
+        loadLogList();
+        loadMainLog();
+        startAutoRefresh();
+    </script>
+</body>
+</html>

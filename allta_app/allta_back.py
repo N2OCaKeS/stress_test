@@ -10,6 +10,7 @@ import argparse
 import datetime
 from time import sleep
 import traceback
+import sys
 
 
 parser = argparse.ArgumentParser()
@@ -57,10 +58,19 @@ print(f"[DEBUG] Raw args.tests: {args.TESTS}")
 print(f"[DEBUG] Raw args.kernel: {args.KERNEL}")
 print(f"[DEBUG] Type of args.tests: {type(args.TESTS)}")
 print(f"[DEBUG] Type of args.kernel: {type(args.KERNEL)}")
+print(f"[DEBUG] Raw args.release: {args.RELEASE}")
 
 test_kernels = args.KERNEL.strip('[]').replace("'", "").split(', ')
 #__pt_version = '1.7.4'
-__pt_version = args.RELEASE
+if args.RELEASE:
+    if args.RELEASE.startswith('[') and args.RELEASE.endswith(']'):
+        __pt_version = args.RELEASE.strip('[]').replace("'", "").strip()
+    else:
+        __pt_version = args.RELEASE
+else:
+    __pt_version = ''
+print(f"[DEBUG] Raw clean.release: {__pt_version}")
+#__pt_version = args.RELEASE
 #__stand = 'stand1'
 __stand = args.STAND
 #__test_list = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'auditd-p', 'auditd-u', 'auditd-f', 'syslog-ng', 'unix']
@@ -618,7 +628,7 @@ try:
             save_all_output(f'Cтенд: {dates_list[i][0][3]} игнорируется\n')
             print(f'Cтенд: {dates_list[i][0][3]} игнорируется')
     #sleep(30)
-    calc_all_statistics()
+    #calc_all_statistics()
     total_end_time = datetime.datetime.now().replace(microsecond=0)
     save_all_output(f'\nDONE\n')
     print(f'\n\033[95mDone\033[0m\n')
@@ -632,7 +642,7 @@ try:
 except Exception as e:
     error_message = f'Error Type: {type(e).__name__}\nMessage: {str(e)}\nTraceback:\n'
     error_message += ''.join(traceback.format_tb(e.__traceback__))
-    print(error_message)
+    print(error_message, file=sys.stderr)
     with open(f'conf/work_status_{args.STAND}.conf', 'w') as wr:
         wr.write('Готово')
     bot_results('Прогон завершен исключением')

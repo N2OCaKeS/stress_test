@@ -6998,6 +6998,21 @@ async function updateQueueStatus(stand) {
                 if (data.current_task) {
                     message += `<br>• Текущая задача: ${data.current_task.id}`;
                 }
+
+                if (data.failed_tasks && data.failed_tasks.length > 0) {
+                    message += `<br><br><strong>⚠️ Упавшие задачи:</strong><br>`;
+                    data.failed_tasks.forEach(task => {
+                        // Форматируем ошибку с сохранением переносов строк
+                        const errorText = (task.error || 'Нет данных').replace(/\n/g, '<br>');
+                        message += `
+                            <details style="margin-left: 10px; margin-top: 8px;">
+                                <summary style="cursor: pointer; color: #dc3545;">❌ ${task.id}</summary>
+                                <pre style="font-size: 11px; white-space: pre-wrap; background: #f8f9fa; padding: 8px; margin-top: 5px; border-radius: 4px;">${errorText}</pre>
+                            </details>
+                        `;
+                    });
+                }
+
                 showNotification(message, 'info', 15000);
             } else {
                 showNotification(`❌ Ошибка получения статуса: ${JSON.stringify(data)}`, 'danger', 10000);

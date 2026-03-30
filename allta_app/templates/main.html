@@ -2922,6 +2922,8 @@
                       <li><button class="dropdown-item" onclick="showAllTasks('3')">📋 Все задачи</button></li>
                       <li><button class="dropdown-item" onclick="showFailedTasks('3')">❌ Проваленные задачи</button></li>
                       <li><hr class="dropdown-divider"></li>
+                      <li><button class="dropdown-item" onclick="window.open('/rest/api/stand3/logpage', '_blank')">📄 Просмотр лога</button></li>
+                      <li><hr class="dropdown-divider"></li>
                       <li><button class="dropdown-item queue-action" data-stand="3" data-action="stop">⏹ Остановить очередь</button></li>
                       <li><button class="dropdown-item" onclick="retryFailedTasks('3')">🔄 Возобновить проваленные</button></li>
                       <li><hr class="dropdown-divider"></li>
@@ -3309,6 +3311,8 @@
                 <li><button class="dropdown-item queue-status" data-stand="4">📊 Статус очереди</button></li>
                 <li><button class="dropdown-item" onclick="showAllTasks('4')">📋 Все задачи</button></li>
                 <li><button class="dropdown-item" onclick="showFailedTasks('4')">❌ Проваленные задачи</button></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><button class="dropdown-item" onclick="window.open('/rest/api/stand4/logpage', '_blank')">📄 Просмотр лога</button></li>
                 <li><hr class="dropdown-divider"></li>
                 <li><button class="dropdown-item queue-action" data-stand="4" data-action="stop">⏹ Остановить очередь</button></li>
                 <li><button class="dropdown-item" onclick="retryFailedTasks('4')">🔄 Возобновить проваленные</button></li>
@@ -5548,6 +5552,8 @@
               <li><button class="dropdown-item" onclick="showAllTasks('10')">📋 Все задачи</button></li>
               <li><button class="dropdown-item" onclick="showFailedTasks('10')">❌ Проваленные задачи</button></li>
               <li><hr class="dropdown-divider"></li>
+              <li><button class="dropdown-item" onclick="window.open('/rest/api/stand10/logpage', '_blank')">📄 Просмотр лога</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="10" data-action="stop">⏹ Остановить очередь</button></li>
               <li><button class="dropdown-item" onclick="retryFailedTasks('10')">🔄 Возобновить проваленные</button></li>
               <li><hr class="dropdown-divider"></li>
@@ -5936,6 +5942,8 @@
               <li><button class="dropdown-item" onclick="showAllTasks('11')">📋 Все задачи</button></li>
               <li><button class="dropdown-item" onclick="showFailedTasks('11')">❌ Проваленные задачи</button></li>
               <li><hr class="dropdown-divider"></li>
+              <li><button class="dropdown-item" onclick="window.open('/rest/api/stand11/logpage', '_blank')">📄 Просмотр лога</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="11" data-action="stop">⏹ Остановить очередь</button></li>
               <li><button class="dropdown-item" onclick="retryFailedTasks('11')">🔄 Возобновить проваленные</button></li>
               <li><hr class="dropdown-divider"></li>
@@ -6322,6 +6330,8 @@
               <li><button class="dropdown-item queue-status" data-stand="12">📊 Статус очереди</button></li>
               <li><button class="dropdown-item" onclick="showAllTasks('12')">📋 Все задачи</button></li>
               <li><button class="dropdown-item" onclick="showFailedTasks('12')">❌ Проваленные задачи</button></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><button class="dropdown-item" onclick="window.open('/rest/api/stand12/logpage', '_blank')">📄 Просмотр лога</button></li>
               <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="12" data-action="stop">⏹ Остановить очередь</button></li>
               <li><button class="dropdown-item" onclick="retryFailedTasks('12')">🔄 Возобновить проваленные</button></li>
@@ -6710,6 +6720,8 @@
               <li><button class="dropdown-item queue-status" data-stand="13">📊 Статус очереди</button></li>
               <li><button class="dropdown-item" onclick="showAllTasks('13')">📋 Все задачи</button></li>
               <li><button class="dropdown-item" onclick="showFailedTasks('13')">❌ Проваленные задачи</button></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><button class="dropdown-item" onclick="window.open('/rest/api/stand13/logpage', '_blank')">📄 Просмотр лога</button></li>
               <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="13" data-action="stop">⏹ Остановить очередь</button></li>
               <li><button class="dropdown-item" onclick="retryFailedTasks('13')">🔄 Возобновить проваленные</button></li>
@@ -7523,7 +7535,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 </script>
 
-<script>
+<!--<script>
 
   const CHECK_INTERVAL_MS = 60000;
   let checkTimer = setInterval(checkForUpdates, CHECK_INTERVAL_MS);
@@ -7604,7 +7616,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   startChecker();
   window.addEventListener('beforeunload', () => { if (checker) clearInterval(checker); });
-</script>
+</script>-->
 
 <!-- set reload page interval -->
 <!-- <script>

@@ -53,6 +53,10 @@ with open('allta_conf.json', 'r') as r:
      allta_conf = json.load(r)
 (rc_number := allta_conf['build_rc_relation'].get(args.RELEASE, ''))
 
+print(f"[DEBUG] Raw args.tests: {args.TESTS}")
+print(f"[DEBUG] Raw args.kernel: {args.KERNEL}")
+print(f"[DEBUG] Type of args.tests: {type(args.TESTS)}")
+print(f"[DEBUG] Type of args.kernel: {type(args.KERNEL)}")
 
 test_kernels = args.KERNEL.strip('[]').replace("'", "").split(', ')
 #__pt_version = '1.7.4'

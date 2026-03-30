@@ -570,29 +570,31 @@ class StandWorker:
             log.write(f"{'='*60}\n")
             log.flush()
             
-            self.current_process = subprocess.Popen(
-                command,
-                stdout=log,
-                stderr=log,
-                shell=True,
-                text=True,
-                preexec_fn=setsid
-            )
-            
             try:
-                returncode = self.current_process.wait()
-                log.write(f"Completed with code: {returncode}\n")
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    text=True,
+                    capture_output=True,  # захватываем stdout и stderr
+                    preexec_fn=setsid
+                )
+                
+                # Записываем stdout и stderr в лог
+                if result.stdout:
+                    log.write(f"STDOUT:\n{result.stdout}\n")
+                if result.stderr:
+                    log.write(f"STDERR:\n{result.stderr}\n")
                 log.flush()
-                if returncode == 0:
-                    return True, "Выполнено успешно"  
+                
+                if result.returncode == 0:
+                    return True, "Выполнено успешно"
                 else:
-                    return False, f"Завершился с кодом {returncode}" 
+                    error_msg = result.stderr.strip() if result.stderr else f"Завершился с кодом {result.returncode}"
+                    return False, error_msg
             except Exception as e:
                 log.write(f"Failed: {e}\n")
                 log.flush()
                 return False, str(e)
-            finally:
-                self.current_process = None
 
 _workers: Dict[str, StandWorker] = {}
 

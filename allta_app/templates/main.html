@@ -2919,7 +2919,12 @@
                   </button>
                   <ul class="dropdown-menu">
                       <li><button class="dropdown-item queue-status" data-stand="3">📊 Статус очереди</button></li>
+                      <li><button class="dropdown-item" onclick="showAllTasks('3')">📋 Все задачи</button></li>
+                      <li><button class="dropdown-item" onclick="showFailedTasks('3')">❌ Проваленные задачи</button></li>
+                      <li><hr class="dropdown-divider"></li>
                       <li><button class="dropdown-item queue-action" data-stand="3" data-action="stop">⏹ Остановить очередь</button></li>
+                      <li><button class="dropdown-item" onclick="retryFailedTasks('3')">🔄 Возобновить проваленные</button></li>
+                      <li><hr class="dropdown-divider"></li>
                       <li><button class="dropdown-item queue-action" data-stand="3" data-action="clear">🗑 Очистить очередь</button></li>
                   </ul>
               </div>
@@ -3302,7 +3307,12 @@
             </button>
             <ul class="dropdown-menu">
                 <li><button class="dropdown-item queue-status" data-stand="4">📊 Статус очереди</button></li>
+                <li><button class="dropdown-item" onclick="showAllTasks('4')">📋 Все задачи</button></li>
+                <li><button class="dropdown-item" onclick="showFailedTasks('4')">❌ Проваленные задачи</button></li>
+                <li><hr class="dropdown-divider"></li>
                 <li><button class="dropdown-item queue-action" data-stand="4" data-action="stop">⏹ Остановить очередь</button></li>
+                <li><button class="dropdown-item" onclick="retryFailedTasks('4')">🔄 Возобновить проваленные</button></li>
+                <li><hr class="dropdown-divider"></li>
                 <li><button class="dropdown-item queue-action" data-stand="4" data-action="clear">🗑 Очистить очередь</button></li>
             </ul>
         </div>
@@ -5535,7 +5545,12 @@
           </button>
           <ul class="dropdown-menu">
               <li><button class="dropdown-item queue-status" data-stand="10">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item" onclick="showAllTasks('10')">📋 Все задачи</button></li>
+              <li><button class="dropdown-item" onclick="showFailedTasks('10')">❌ Проваленные задачи</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="10" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item" onclick="retryFailedTasks('10')">🔄 Возобновить проваленные</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="10" data-action="clear">🗑 Очистить очередь</button></li>
           </ul>
       </div>
@@ -5918,7 +5933,12 @@
           </button>
           <ul class="dropdown-menu">
               <li><button class="dropdown-item queue-status" data-stand="11">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item" onclick="showAllTasks('11')">📋 Все задачи</button></li>
+              <li><button class="dropdown-item" onclick="showFailedTasks('11')">❌ Проваленные задачи</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="11" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item" onclick="retryFailedTasks('11')">🔄 Возобновить проваленные</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="11" data-action="clear">🗑 Очистить очередь</button></li>
           </ul>
       </div>
@@ -6300,7 +6320,12 @@
           </button>
           <ul class="dropdown-menu">
               <li><button class="dropdown-item queue-status" data-stand="12">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item" onclick="showAllTasks('12')">📋 Все задачи</button></li>
+              <li><button class="dropdown-item" onclick="showFailedTasks('12')">❌ Проваленные задачи</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="12" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item" onclick="retryFailedTasks('12')">🔄 Возобновить проваленные</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="12" data-action="clear">🗑 Очистить очередь</button></li>
           </ul>
       </div> 
@@ -6683,7 +6708,12 @@
           </button>
           <ul class="dropdown-menu">
               <li><button class="dropdown-item queue-status" data-stand="13">📊 Статус очереди</button></li>
+              <li><button class="dropdown-item" onclick="showAllTasks('13')">📋 Все задачи</button></li>
+              <li><button class="dropdown-item" onclick="showFailedTasks('13')">❌ Проваленные задачи</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="13" data-action="stop">⏹ Остановить очередь</button></li>
+              <li><button class="dropdown-item" onclick="retryFailedTasks('13')">🔄 Возобновить проваленные</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item queue-action" data-stand="13" data-action="clear">🗑 Очистить очередь</button></li>
           </ul>
       </div> 
@@ -7278,9 +7308,140 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+    // Обработчики для кнопок "Ок"
+    document.querySelectorAll('[id^="ok-btn"]').forEach(button => {
+            button.type = 'button';
+            
+            button.addEventListener('click', async function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const stand = this.id.match(/\d+$/)[0];
+                
+                try {
+                    const formData = new FormData();
+                    formData.append(`command${stand}`, 'ok');
+                    
+                    const response = await fetch(`/rest/api/run-command-stand${stand}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const text = await response.text();
+                    
+                    if (response.ok) {
+                        showNotification(`✅ ${text}`, 'success');
+                        // Обновляем статус очереди
+                        await updateQueueStatus(stand);
+                    } else {
+                        showNotification(`❌ Ошибка подтверждения: ${text}`, 'danger');
+                    }
+                } catch (error) {
+                    showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger');
+                }
+            });
+        });
 });
 </script>
 
+
+<script>
+  // Получить проваленные задачи
+  async function showFailedTasks(stand) {
+      try {
+          const response = await fetch(`/rest/api/queue-stand${stand}/failed-tasks`);
+          const data = await response.json();
+          
+          if (response.ok) {
+              let message = `❌ Проваленные задачи стенда ${stand}:<br>`;
+              message += `Всего: ${data.failed_count}<br><br>`;
+              
+              data.failed_tasks.forEach(task => {
+                  const errorText = (task.error || 'Нет данных').replace(/\n/g, '<br>');
+                  message += `
+                      <details style="margin-left: 10px; margin-top: 8px;">
+                          <summary style="cursor: pointer; color: #dc3545;">
+                              ❌ ${task.id} (${task.tests} | ${task.release})
+                          </summary>
+                          <pre style="font-size: 11px; white-space: pre-wrap; background: #f8f9fa; padding: 8px; margin-top: 5px; border-radius: 4px;">${errorText}</pre>
+                      </details>
+                  `;
+              });
+              
+              showNotification(message, 'warning', 20000);
+          } else {
+              showNotification(`❌ Ошибка получения проваленных задач: ${JSON.stringify(data)}`, 'danger');
+          }
+      } catch (error) {
+          showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger');
+      }
+  }
+</script>
+
+<script>
+  // Получить все задачи
+  async function showAllTasks(stand) {
+      try {
+          const response = await fetch(`/rest/api/queue-stand${stand}/all-tasks`);
+          const data = await response.json();
+          
+          if (response.ok) {
+              let message = `📋 Все задачи стенда ${stand}:<br>`;
+              message += `Всего: ${data.total_tasks}<br>`;
+              message += `📌 Ожидают: ${data.summary.pending}<br>`;
+              message += `🏃 Выполняется: ${data.summary.running}<br>`;
+              message += `❌ Упали: ${data.summary.failed}<br>`;
+              message += `✅ Выполнены: ${data.summary.completed}<br><br>`;
+              
+              data.tasks.forEach(task => {
+                  const statusIcon = {
+                      'pending': '⏳',
+                      'running': '🏃',
+                      'failed': '❌',
+                      'completed': '✅'
+                  }[task.status] || '❓';
+                  
+                  message += `${statusIcon} ${task.id}<br>`;
+                  message += `&nbsp;&nbsp;📦 ${task.tests}<br>`;
+                  message += `&nbsp;&nbsp;📀 ${task.release}<br>`;
+                  if (task.kernel && task.kernel !== '[]') {
+                      message += `&nbsp;&nbsp;🐧 ${task.kernel}<br>`;
+                  }
+                  message += `<br>`;
+              });
+              
+              showNotification(message, 'info', 30000);
+          } else {
+              showNotification(`❌ Ошибка получения задач: ${JSON.stringify(data)}`, 'danger');
+          }
+      } catch (error) {
+          showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger');
+      }
+  }
+</script>
+
+<script>
+  // Перезапустить проваленные задачи (только смена статуса)
+  async function retryFailedTasks(stand) {
+      try {
+          const response = await fetch(`/rest/api/queue-stand${stand}/retry-failed`, {
+              method: 'POST'
+          });
+          
+          const text = await response.text();
+          
+          if (response.ok) {
+              showNotification(`✅ ${text}`, 'success');
+              await updateQueueStatus(stand);
+          } else {
+              showNotification(`❌ Ошибка: ${text}`, 'danger');
+          }
+      } catch (error) {
+          showNotification(`❌ Ошибка соединения: ${error.message}`, 'danger');
+      }
+  }
+</script>
 
 <!-- <div class="card text-bg-dark mb-3" style="max-width: 28rem;">
   <div class="card-header">Список выбранных тестов</div>

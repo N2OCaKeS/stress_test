@@ -367,6 +367,72 @@ def queue_remove_task(num, task_id):
         return f"Задача {task_id} не найдена", 404
     
 
+@app.route('/rest/api/queue-stand<num>/failed-tasks', methods=['GET'])
+def queue_failed_tasks(num):
+    """
+    Получить список проваленных задач для стенда
+    """
+    manager = get_queue_manager(num)
+    tasks = manager.get_tasks()
+    
+    failed_tasks = [t for t in tasks if t.get('status') == 'failed']
+    
+    return {
+        'stand': num,
+        'failed_count': len(failed_tasks),
+        'failed_tasks': failed_tasks
+    }
+    
+
+@app.route('/rest/api/queue-stand<num>/all-tasks', methods=['GET'])
+def queue_all_tasks(num):
+    """
+    Получить все задачи для стенда (включая выполненные и упавшие)
+    """
+    manager = get_queue_manager(num)
+    tasks = manager.get_tasks()
+    
+    # Сортируем по статусу и времени создания
+    status_order = {'pending': 1, 'running': 2, 'failed': 3, 'completed': 4}
+    tasks_sorted = sorted(tasks, key=lambda t: (status_order.get(t.get('status', 'pending'), 5), t.get('created_at', '')))
+    
+    return {
+        'stand': num,
+        'total_tasks': len(tasks),
+        'tasks': tasks_sorted,
+        'summary': {
+            'pending': len([t for t in tasks if t.get('status') == 'pending']),
+            'running': len([t for t in tasks if t.get('status') == 'running']),
+            'failed': len([t for t in tasks if t.get('status') == 'failed']),
+            'completed': len([t for t in tasks if t.get('status') == 'completed'])
+        }
+    }
+
+
+@app.route('/rest/api/queue-stand<num>/retry-failed', methods=['POST'])
+def queue_retry_failed(num):
+    """
+    Сменить статус проваленных задач на pending
+    """
+    manager = get_queue_manager(num)
+    tasks = manager.get_tasks()
+    
+    retried_count = 0
+    for task in tasks:
+        if task.get('status') == 'failed':
+            # Меняем статус на pending
+            task['status'] = 'pending' 
+            if 'error' in task:
+                del task['error']
+            retried_count += 1
+    
+    if retried_count > 0:
+        manager._write_queue(manager._read_queue())
+        return f"Статус {retried_count} проваленных задач изменен на pending", 200
+    else:
+        return "Нет проваленных задач для изменения статуса", 200
+    
+
 @app.route('/update/<version>')
 def update_stp(version):
     """

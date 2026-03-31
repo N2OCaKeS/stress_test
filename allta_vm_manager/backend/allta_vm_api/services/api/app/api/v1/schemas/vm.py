@@ -84,17 +84,28 @@ class CreateVMItem(BaseModel):
 
 
 class BatchVMCreateRequest(BaseModel):
-    server_id: int = Field(..., examples=[2])
+    server_id: Optional[int] = Field(default=None, examples=[2])
+    server_name: Optional[str] = Field(default=None, examples=["stand12_srv-main"])
     ip_range_id: int = Field(..., examples=[5])
     # общий пароль для всей группы ВМ (в открытом виде; шифрует воркер при записи в БД)
     password: str = Field(..., min_length=1, examples=["S3curePass!"])
     # ключ — имя ВМ
     vms: Dict[str, CreateVMItem]
 
+    @model_validator(mode="after")
+    def _exactly_one_server_ref(self):
+        has_id = self.server_id is not None
+        has_name = bool(self.server_name and self.server_name.strip())
+        if has_id == has_name:
+            raise ValueError("Provide exactly one of: server_id or server_name.")
+        if self.server_name is not None:
+            self.server_name = self.server_name.strip()
+        return self
+
     model_config = {
         "json_schema_extra": {
             "example": {
-                "server_id": 2,
+                "server_name": "stand12_srv-main",
                 "ip_range_id": 5,
                 "password": "S3curePass!",
                 "vms": {

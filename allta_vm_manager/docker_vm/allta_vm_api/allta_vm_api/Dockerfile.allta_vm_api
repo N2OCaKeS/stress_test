@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.12-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -6,6 +7,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       build-essential \
       libpq-dev \
+      ca-certificates \
       curl && \
     rm -rf /var/lib/apt/lists/*
 
@@ -17,6 +19,29 @@ RUN pip install poetry
 COPY . .
 
 RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
+RUN --mount=type=secret,id=allta_api_ca,target=/run/secrets/allta_api_ca,required=true \
+    install -m 0644 /run/secrets/allta_api_ca /usr/local/share/ca-certificates/allta-api.crt && \
+    update-ca-certificates
+RUN python - <<'PY'
+import pathlib
+import sys
+
+cert = pathlib.Path("/usr/local/share/ca-certificates/allta-api.crt").read_bytes()
+try:
+    import certifi
+except Exception:
+    sys.exit(0)
+
+bundle = pathlib.Path(certifi.where())
+data = bundle.read_bytes()
+if cert not in data:
+    with bundle.open("ab") as fh:
+        if not data.endswith(b"\n"):
+            fh.write(b"\n")
+        fh.write(cert)
+        if not cert.endswith(b"\n"):
+            fh.write(b"\n")
+PY
 
 EXPOSE 8000
 

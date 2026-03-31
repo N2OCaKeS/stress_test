@@ -31,6 +31,12 @@ def _can_read_ilo(user: AuthVerifyResponse) -> bool:
 
 
 @router.get(
+    "",
+    summary="Получить BMC-креды по данным серверов (ilo endpoint for compatibility)",
+    response_model=dict[str, IloCredentialRead],
+    include_in_schema=False,
+)
+@router.get(
     "/",
     summary="Получить BMC-креды по данным серверов (ilo endpoint for compatibility)",
     response_model=dict[str, IloCredentialRead],

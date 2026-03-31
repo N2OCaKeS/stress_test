@@ -55,17 +55,58 @@ def _ensure_unique_stand_number(
         )
 
 
-def get_physical_server(db: Session, server_id: int) -> PhysicalServer:
-    srv = (
-        db.query(PhysicalServer)
-        .options(joinedload(PhysicalServer.os_version))
-        .filter(PhysicalServer.id == server_id)
-        .first()
-    )
+def _normalize_server_ref(server_ref: int | str) -> tuple[Optional[int], Optional[str]]:
+    if isinstance(server_ref, int):
+        return server_ref, None
+
+    normalized = str(server_ref).strip()
+    if not normalized:
+        raise ValueError("Server identifier cannot be empty")
+
+    parsed_id: Optional[int] = int(normalized) if normalized.isdigit() else None
+    return parsed_id, normalized
+
+
+def _find_physical_server_by_ref(
+    db: Session,
+    server_ref: int | str,
+    *,
+    with_os_version: bool,
+) -> Optional[PhysicalServer]:
+    parsed_id, parsed_name = _normalize_server_ref(server_ref)
+
+    query = db.query(PhysicalServer)
+    if with_os_version:
+        query = query.options(joinedload(PhysicalServer.os_version))
+
+    if parsed_id is not None:
+        srv = query.filter(PhysicalServer.id == parsed_id).first()
+        if srv:
+            return srv
+
+    if parsed_name is not None:
+        return query.filter(PhysicalServer.name == parsed_name).first()
+
+    return None
+
+
+def resolve_physical_server_id(db: Session, server_ref: int | str) -> int:
+    srv = _find_physical_server_by_ref(db, server_ref, with_os_version=False)
     if not srv:
-        raise ValueError(f"Server with id={server_id} not found")
+        raise ValueError(f"Server with id/name='{server_ref}' not found")
+    return int(srv.id)
+
+
+def get_physical_server_by_ref(db: Session, server_ref: int | str) -> PhysicalServer:
+    srv = _find_physical_server_by_ref(db, server_ref, with_os_version=True)
+    if not srv:
+        raise ValueError(f"Server with id/name='{server_ref}' not found")
     _decrypt_credentials(srv)
     return srv
+
+
+def get_physical_server(db: Session, server_id: int) -> PhysicalServer:
+    return get_physical_server_by_ref(db, server_id)
 
 
 def get_physical_servers(db: Session, skip: int = 0, limit: int = 100) -> List[PhysicalServer]:

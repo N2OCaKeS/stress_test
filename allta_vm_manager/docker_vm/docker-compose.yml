@@ -5,10 +5,12 @@ services:
     build:
       context: ./allta_nginx
       dockerfile: Dockerfile.allta_nginx
+      secrets:
+        - allta_api_ca
     image: vmmanager-vm-nginx:latest
     container_name: vmmanager-vm-nginx
     ports:
-      - "21501:80"
+      - "21501:443"
     extra_hosts:
       - "${ALLTA_EXTERNAL_HOST}:host-gateway"
     networks:
@@ -23,12 +25,14 @@ services:
       vmmanager-redis-commander:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O - --no-check-certificate https://127.0.0.1:443/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
       start_period: 10s
     restart: always
+    volumes:
+      - allta_tls_data:/etc/nginx/tls:ro
 
 
   # SERVER API
@@ -36,6 +40,8 @@ services:
     build:
       context: ../backend/allta_server_api
       dockerfile: ../../docker_vm/allta_server_api/allta_server_api/Dockerfile.allta_server_api
+      secrets:
+        - allta_api_ca
     image: vmmanager-server-api:latest
     container_name: vmmanager-server-api
     restart: always
@@ -83,6 +89,8 @@ services:
     build:
       context: ../backend/allta_vm_api/services/api
       dockerfile: ../../../../docker_vm/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
+      secrets:
+        - allta_api_ca
     image: vmmanager-vm-api
     container_name: vmmanager-vm-api
     restart: always
@@ -132,6 +140,8 @@ services:
     build:
       context: ../backend/allta_vm_api/services/worker
       dockerfile: ../../../../docker_vm/allta_vm_api/allta_vm_celery/Dockerfile.allta_vm_celery
+      secrets:
+        - allta_api_ca
     image: vmmanager-vm-celery:latest
     container_name: vmmanager-vm-celery
     restart: always
@@ -140,6 +150,8 @@ services:
     depends_on:
       vmmanager-redis:
         condition: service_healthy
+    extra_hosts:
+      - "${ALLTA_EXTERNAL_HOST}:host-gateway"
     networks:
       - vmmanager_vm_api
       - vmmanager_redis
@@ -209,6 +221,11 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+
+secrets:
+  allta_api_ca:
+    file: ${TLS_CERT_FILE}
+
 volumes:
   allta_server_api:
     driver: local
@@ -243,6 +260,12 @@ volumes:
     driver_opts:
       type: none
       device: ${REDIS_PATH}
+      o: bind
+  allta_tls_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${TLS_CERTS_PATH}
       o: bind
 
 networks:

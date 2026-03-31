@@ -19,20 +19,23 @@ from app.api.v1.models.vm import VirtualMachine
 VMS_HUB_STATUS = settings.VMS_HUB_STATUS  # например, "vms_hub"
 
 
-async def ensure_server_ready_for_vms_hub(server_id: int, token: str) -> tuple[bool, Optional[str], Optional[object]]:
+async def ensure_server_ready_for_vms_hub(
+    server_ref: int | str,
+    token: str,
+) -> tuple[bool, Optional[str], Optional[object]]:
     """
     Проверяет готовность физического сервера для работы как VMS hub.
     Возвращает кортеж (ok, reason, server).
     """
     try:
-        server = await get_physical_server_from_remote(server_id, token)
+        server = await get_physical_server_from_remote(server_ref, token)
     except HTTPException as e:
         return False, f"failed to fetch server: {e.detail}", None
     except Exception as e:
         return False, f"failed to fetch server: {e}", None
 
     if not server:
-        return False, f"server id={server_id} not found", None
+        return False, f"server id/name='{server_ref}' not found", None
 
     if not getattr(server, "virtualization", False):
         return False, "virtualization is disabled on this server", None

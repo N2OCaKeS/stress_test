@@ -13,6 +13,10 @@ from app.utils.config import settings
 MANAGE_API_BASE = settings.SERVER_API_BASE
 
 
+def _encode_server_ref(server_ref: int | str) -> str:
+    return quote(str(server_ref).strip(), safe="")
+
+
 def _response_detail(resp: httpx.Response) -> str:
     try:
         payload = resp.json()
@@ -31,13 +35,14 @@ def _response_detail(resp: httpx.Response) -> str:
 
 
 async def get_physical_server_from_remote(
-    server_id: int,
+    server_ref: int | str,
     token: str,
     *,
     base_url: str = MANAGE_API_BASE,
     timeout_sec: float = 5.0,
 ) -> PhysicalServer:
-    url = f"{base_url.rstrip('/')}/v1/manage/{server_id}"
+    encoded_server_ref = _encode_server_ref(server_ref)
+    url = f"{base_url.rstrip('/')}/v1/manage/{encoded_server_ref}"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     try:
@@ -68,14 +73,15 @@ async def get_physical_server_from_remote(
 
 
 async def set_server_status(
-    server_id: int,
+    server_ref: int | str,
     status_value: str,
     token: str,
     *,
     base_url: str = MANAGE_API_BASE,
     timeout_sec: float = 5.0,
 ) -> PhysicalServerStatusOnly:
-    url = f"{base_url.rstrip('/')}/v1/manage/{server_id}/status"
+    encoded_server_ref = _encode_server_ref(server_ref)
+    url = f"{base_url.rstrip('/')}/v1/manage/{encoded_server_ref}/status"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
@@ -111,13 +117,14 @@ async def set_server_status(
 
 
 async def clear_server_status(
-    server_id: int,
+    server_ref: int | str,
     token: str,
     *,
     base_url: str = MANAGE_API_BASE,
     timeout_sec: float = 5.0,
 ) -> PhysicalServer:
-    url = f"{base_url.rstrip('/')}/v1/manage/{server_id}/release"
+    encoded_server_ref = _encode_server_ref(server_ref)
+    url = f"{base_url.rstrip('/')}/v1/manage/{encoded_server_ref}/release"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",

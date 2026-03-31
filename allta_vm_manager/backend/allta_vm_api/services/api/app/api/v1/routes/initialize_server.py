@@ -64,12 +64,12 @@ async def _build_server_task_info(server, token: str) -> ServerTaskInfo:
 
 
 @router.post(
-    "/{server_id}/prepare-vms-hub",
+    "/{server_ref}/prepare-vms-hub",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Подготовить сервер как VMS hub",
 )
 async def prepare_vms_hub(
-    server_id: int,
+    server_ref: str,
     token: str = Depends(get_token),
     _admin=Depends(get_current_admin_user),
 ):
@@ -80,16 +80,17 @@ async def prepare_vms_hub(
     3. Формирует задание с данными сервера и ставит его в очередь Redis.
     4. Возвращает task_id и обновлённый объект сервера.
     """
-    server = await get_physical_server_from_remote(server_id, token)
+    server = await get_physical_server_from_remote(server_ref, token)
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
+    server_id = int(server.id)
 
     if not getattr(server, "virtualization", False):
         raise HTTPException(
             status_code=400, detail="Virtualization is disabled on this server"
         )
 
-    updated = await set_server_status(server_id, VMS_HUB_STATUS, token)
+    updated = await set_server_status(server_ref, VMS_HUB_STATUS, token)
 
     server_info = await _build_server_task_info(server, token)
     task_id = str(uuid.uuid4())
@@ -109,12 +110,12 @@ async def prepare_vms_hub(
 
 
 @router.delete(
-    "/{server_id}/rm-vms-hub",
+    "/{server_ref}/rm-vms-hub",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Удалить VMS hub и все связанные ВМ",
 )
 async def rm_vms_hub(
-    server_id: int,
+    server_ref: str,
     token: str = Depends(get_token),
     _admin=Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_async_db),
@@ -127,14 +128,15 @@ async def rm_vms_hub(
     4. Формирует задание на удаление и ставит его в очередь Redis.
     5. Возвращает task_id и обновлённый объект сервера.
     """
-    server = await get_physical_server_from_remote(server_id, token)
+    server = await get_physical_server_from_remote(server_ref, token)
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
+    server_id = int(server.id)
     
     if getattr(server, "status", None) != VMS_HUB_STATUS:
         raise HTTPException(status_code=400, detail="This server is not configured as a VMS hub.")
 
-    updated = await set_server_status(server_id, "free", token)
+    updated = await set_server_status(server_ref, "free", token)
 
     vm_rows = await db.execute(
         select(VirtualMachine).where(VirtualMachine.server_id == server_id)

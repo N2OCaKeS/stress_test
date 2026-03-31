@@ -4,6 +4,9 @@ import random
 import subprocess
 import os
 
+from allta_image_conf import trust_api_cert_for_requests
+trust_api_cert_for_requests()
+
 from allta_image_conf import tokens
 from libs.liballta import get_aqs_json, ReleaseToRepo
 

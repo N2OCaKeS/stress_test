@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Callable, Optional
 
 import httpx
@@ -80,7 +81,11 @@ def _normalize_auth_payload(raw_payload: dict) -> dict:
 
 def _request_auth_profile(url: str, token: str) -> dict:
     headers = {"Authorization": f"Bearer {token}"}
-    resp = httpx.get(url, headers=headers, timeout=5.0)
+    verify: str | bool = True
+    auth_ca_bundle = (settings.AUTH_CA_BUNDLE or "").strip()
+    if auth_ca_bundle and Path(auth_ca_bundle).is_file():
+        verify = auth_ca_bundle
+    resp = httpx.get(url, headers=headers, timeout=5.0, verify=verify)
     resp.raise_for_status()
     return resp.json()
 

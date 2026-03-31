@@ -5,8 +5,8 @@ services:
     build:
       context: ./allta_portainer
       dockerfile: Dockerfile.allta_portainer
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: allta-portainer:latest
     container_name: allta_portainer
     restart: always   
@@ -30,10 +30,6 @@ services:
       - allta_tls_data:/etc/allta/tls:ro
     ports:
       - 9443:9443
-
-secrets:
-  allta_api_ca:
-    file: ${TLS_CERT_FILE}
 
 volumes:
   allta_portainer_data:

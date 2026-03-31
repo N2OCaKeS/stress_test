@@ -238,6 +238,20 @@ prepare_shared_tls() {
 	install_shared_tls_cert_to_trust_store
 }
 
+export_allta_ca_build_arg() {
+	local cert_b64
+	if ! sudo test -s "$TLS_CERT_FILE"; then
+		echo "TLS сертификат не найден: $TLS_CERT_FILE"
+		exit 1
+	fi
+
+	if cert_b64="$(sudo base64 -w 0 "$TLS_CERT_FILE" 2>/dev/null)"; then
+		export ALLTA_API_CA_B64="$cert_b64"
+	else
+		export ALLTA_API_CA_B64="$(sudo base64 "$TLS_CERT_FILE" | tr -d '\n')"
+	fi
+}
+
 creds(){
 	sudo mkdir -p "$CRED_PATH"
 	shopt -s nullglob
@@ -315,8 +329,9 @@ dir(){
 start(){
 	exports
 	prepare_shared_tls
-	export DOCKER_BUILDKIT=1
-	export COMPOSE_DOCKER_CLI_BUILD=1
+	export_allta_ca_build_arg
+	export DOCKER_BUILDKIT=0
+	unset COMPOSE_DOCKER_CLI_BUILD
 	cd "$COMPOSE_DIR"
 	if [ ! -f "$CRED_PATH/env.portainer" ]; then
 		echo "Missing $CRED_PATH/env.portainer. Run './install.sh precond' and edit the env file first."
@@ -334,8 +349,9 @@ stop(){
 reinstall(){
 	exports
 	prepare_shared_tls
-	export DOCKER_BUILDKIT=1
-	export COMPOSE_DOCKER_CLI_BUILD=1
+	export_allta_ca_build_arg
+	export DOCKER_BUILDKIT=0
+	unset COMPOSE_DOCKER_CLI_BUILD
 	cd "$COMPOSE_DIR"
 	docker-compose --file docker-compose.yml down -v
 	sudo rm -rf $BASE_PATH

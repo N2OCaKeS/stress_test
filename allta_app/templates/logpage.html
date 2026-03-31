@@ -170,7 +170,7 @@
             padding: 0;
             margin: 0;
             border-left: 3px solid transparent;
-            min-height: 18px;
+            min-height: auto;
         }
         
         .log-line:hover {
@@ -178,16 +178,26 @@
             border-left-color: #ff7b00;
         }
         
+        .log-pre {
+            margin: 0;
+            padding: 8px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-x: auto;
+        }
+
         .log-line-number {
             display: inline-block;
-            width: 50px;
+            width: 45px;
             color: #858585;
             user-select: none;
             margin-right: 15px;
             text-align: right;
-            font-size: 12px;
-            line-height: 18px;
-            flex-shrink: 0;
         }
         
         .log-line-text {
@@ -470,50 +480,76 @@
             const container = document.getElementById('logContent');
             
             if (lines.length === 0) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i> Ничего не найдено</div>';
+                container.innerHTML = '<div class="empty-state">📄 Ничего не найдено</div>';
                 return;
             }
             
-            container.innerHTML = lines.map((line, index) => {
+            // Фильтруем пустые строки
+            const nonEmptyLines = lines.filter(line => line.trim() !== '');
+            
+            if (nonEmptyLines.length === 0) {
+                container.innerHTML = '<div class="empty-state">📄 Ничего не найдено</div>';
+                return;
+            }
+            
+            // Собираем весь текст в одну строку с переносами
+            let fullText = nonEmptyLines.join('\n');
+            
+            // Подсветка поиска (если есть)
+            if (currentSearchTerm) {
+                const regex = new RegExp(`(${escapeRegex(currentSearchTerm)})`, 'gi');
+                fullText = fullText.replace(regex, '<mark>$1</mark>');
+            }
+            
+            // Экранируем HTML
+            fullText = escapeHtml(fullText);
+            
+            // Добавляем номера строк вручную 
+            const numberedLines = nonEmptyLines.map((line, index) => {
+                const lineNumber = (index + 1).toString().padStart(4, ' ');
                 const escapedLine = escapeHtml(line);
-                let highlightedLine = escapedLine;
+                let displayLine = escapedLine;
                 
                 if (currentSearchTerm) {
                     const regex = new RegExp(`(${escapeRegex(currentSearchTerm)})`, 'gi');
-                    highlightedLine = escapedLine.replace(regex, '<mark>$1</mark>');
+                    displayLine = escapedLine.replace(regex, '<mark>$1</mark>');
                 }
                 
-                return `
-                    <div class="log-line">
-                        <span class="log-line-number">${index + 1}</span>
-                        <span class="log-line-text">${highlightedLine}</span>
-                    </div>
-                `;
-            }).join('');
+                return `<span class="log-line-number">${lineNumber}</span> ${displayLine}`;
+            }).join('\n');
             
-            highlightLines();
+            container.innerHTML = `<pre class="log-pre">${numberedLines}</pre>`;
+            
+            // Применяем подсветку цветов
+            highlightPreLines();
         }
-        
-        function highlightLines() {
-            const lines = document.querySelectorAll('.log-line-text');
-            lines.forEach(line => {
-                const text = line.textContent;
-                if (text.includes('ERROR') || text.includes('Failed') || text.includes('Traceback')) {
-                    line.style.color = '#f48771';
-                } else if (text.includes('WARNING') || text.includes('Warning')) {
-                    line.style.color = '#dcdcaa';
-                } else if (text.includes('SUCCESS') || text.includes('Done') || text.includes('Completed')) {
-                    line.style.color = '#6a9955';
-                } else if (text.includes('Task:')) {
-                    line.style.color = '#9cdcfe';
-                } else if (text.includes('Command:')) {
-                    line.style.color = '#ce9178';
-                } else if (text.includes('Kernel:')) {
-                    line.style.color = '#4ec9b0';
-                } else if (text.includes('Тест:')) {
-                    line.style.color = '#c586c0';
+
+        function highlightPreLines() {
+            const pre = document.querySelector('.log-pre');
+            if (!pre) return;
+            
+            const lines = pre.innerHTML.split('\n');
+            const coloredLines = lines.map(line => {
+                let coloredLine = line;
+                if (line.includes('ERROR') || line.includes('Failed') || line.includes('Traceback')) {
+                    coloredLine = `<span style="color: #f48771">${line}</span>`;
+                } else if (line.includes('WARNING') || line.includes('Warning')) {
+                    coloredLine = `<span style="color: #dcdcaa">${line}</span>`;
+                } else if (line.includes('SUCCESS') || line.includes('Done') || line.includes('Completed')) {
+                    coloredLine = `<span style="color: #6a9955">${line}</span>`;
+                } else if (line.includes('Task:')) {
+                    coloredLine = `<span style="color: #9cdcfe">${line}</span>`;
+                } else if (line.includes('Command:')) {
+                    coloredLine = `<span style="color: #ce9178">${line}</span>`;
+                } else if (line.includes('Kernel:')) {
+                    coloredLine = `<span style="color: #4ec9b0">${line}</span>`;
+                } else if (line.includes('Тест:')) {
+                    coloredLine = `<span style="color: #c586c0">${line}</span>`;
                 }
-            });
+                return coloredLine;
+            }).join('\n');
+            
+            pre.innerHTML = coloredLines;
         }
         
         function escapeHtml(text) {

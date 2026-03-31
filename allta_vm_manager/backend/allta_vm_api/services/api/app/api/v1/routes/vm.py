@@ -125,6 +125,44 @@ def _vm_status(vm: VirtualMachine) -> Optional[str]:
     return cast(Optional[str], vm.status)
 
 
+def _resolve_server_ref_from_payload(payload: BatchVMCreateRequest) -> int | str:
+    if payload.server_id is not None:
+        return payload.server_id
+    if payload.server_name is not None and payload.server_name.strip():
+        return payload.server_name.strip()
+    raise HTTPException(
+        status_code=422,
+        detail="Specify exactly one of server_id or server_name",
+    )
+
+
+async def _get_vm_by_ref(db: AsyncSession, vm_ref: str) -> VirtualMachine:
+    normalized_ref = vm_ref.strip()
+    if not normalized_ref:
+        raise HTTPException(status_code=404, detail="VM not found")
+
+    vm: Optional[VirtualMachine] = None
+
+    if normalized_ref.isdigit():
+        res = await db.execute(
+            select(VirtualMachine).where(VirtualMachine.id == int(normalized_ref))
+        )
+        vm = res.scalar_one_or_none()
+
+    if vm is None:
+        res = await db.execute(
+            select(VirtualMachine).where(VirtualMachine.name == normalized_ref)
+        )
+        vm = res.scalar_one_or_none()
+
+    if vm is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"VM with id/name='{normalized_ref}' not found",
+        )
+    return vm
+
+
 def _vm_to_read(vm: VirtualMachine, *, password: Optional[str]) -> VMRead:
     return VMRead(
         id=_vm_id(vm),
@@ -214,6 +252,7 @@ async def _ensure_snapshots_exist_for_vms(db: AsyncSession, *, vms: List[Virtual
 async def _build_vms_full_for_create(
     db: AsyncSession,
     payload: BatchVMCreateRequest,
+    server_id: int,
 ) -> Dict[str, VMSpec]:
     """
     Проверяет пул IP (существование), границы диапазона,
@@ -250,7 +289,7 @@ async def _build_vms_full_for_create(
             cpu=item.cpu,
             ram=item.ram,
             ip_bridge=ip_address(ip_str),
-            server_id=payload.server_id,
+            server_id=server_id,
         )
 
     if errors:
@@ -268,24 +307,27 @@ async def create(
     token: str = Depends(get_token),
     _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
+    server_ref = _resolve_server_ref_from_payload(payload)
+
     # сервер готов
-    ok, reason, _ = await ensure_server_ready_for_vms_hub(payload.server_id, token)
+    ok, reason, _ = await ensure_server_ready_for_vms_hub(server_ref, token)
     if not ok:
         if reason and "not found" in reason:
             raise HTTPException(status_code=404, detail=reason)
         raise HTTPException(status_code=400, detail=reason or "server not ready for vms hub")
 
-    # пул и занятость IP — проверяем и собираем vms_full
-    vms_full = await _build_vms_full_for_create(db, payload)
-
     # информация о сервере (для воркера)
-    srv = await get_physical_server_from_remote(payload.server_id, token)
+    srv = await get_physical_server_from_remote(server_ref, token)
+    server_id = int(srv.id)
+
+    # пул и занятость IP — проверяем и собираем vms_full
+    vms_full = await _build_vms_full_for_create(db, payload, server_id)
 
     task_id = _uuid_task()
     env = _env(
         task_id=task_id,
         operation=TaskOperation.vm_create,
-        server=await _server_task_info_from_api(srv, payload.server_id, token),
+        server=await _server_task_info_from_api(srv, server_id, token),
         vms_full=vms_full,
         vm_password=payload.password,
     )
@@ -294,16 +336,17 @@ async def create(
 
 
 # ---------- CREATE DEFAULT ----------
-@router.post("/create-default-vms/{server_id}", status_code=status.HTTP_202_ACCEPTED,
+@router.post("/create-default-vms/{server_ref}", status_code=status.HTTP_202_ACCEPTED,
              summary="Создать набор базовых ВМ (ставит задачу в Redis; БД заполняет воркер)",
              dependencies=[Depends(get_current_admin_user)])
 async def create_default_vms(
-    server_id: int,
+    server_ref: str,
     body: CreateDefaultVMsRequest,
     token: str = Depends(get_token),
     _admin: AuthVerifyResponse = Depends(get_current_admin_user),
 ):
-    srv = await get_physical_server_from_remote(server_id, token)
+    srv = await get_physical_server_from_remote(server_ref, token)
+    server_id = int(srv.id)
 
     vms_full: Dict[str, VMSpec] = {
         name: VMSpec(cpu=int(cfg["cpu"]), ram=int(cfg["ram"]),
@@ -324,15 +367,12 @@ async def create_default_vms(
 
 
 # ---------- READ ----------
-@router.get("/{vm_id}", response_model=VMRead,
-            summary="Получить ВМ по id (пароль расшифрован, если сохранён)")
-async def get_vm_by_id(vm_id: int,
+@router.get("/{vm_ref}", response_model=VMRead,
+            summary="Получить ВМ по id или имени (пароль расшифрован, если сохранён)")
+async def get_vm_by_ref(vm_ref: str,
                        db: AsyncSession = Depends(get_async_db),
                        user: AuthVerifyResponse = Depends(get_current_user)):
-    res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
-    vm = res.scalar_one_or_none()
-    if not vm:
-        raise HTTPException(status_code=404, detail="VM not found")
+    vm = await _get_vm_by_ref(db, vm_ref)
 
     password = _decrypted_vm_password(
         vm,
@@ -578,15 +618,12 @@ async def passwd_refresh(payload: PasswdRefreshRequest,
 
 
 # ---------- STATUS ----------
-@router.patch("/{vm_id}/status", response_model=VMRead,
+@router.patch("/{vm_ref}/status", response_model=VMRead,
               summary="Установить статус ВМ (fixed или логин).")
-async def set_vm_status(vm_id: int, data: VMStatusUpdate,
+async def set_vm_status(vm_ref: str, data: VMStatusUpdate,
                         db: AsyncSession = Depends(get_async_db),
                         user: AuthVerifyResponse = Depends(get_current_admin_user)):
-    res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
-    vm = res.scalar_one_or_none()
-    if not vm:
-        raise HTTPException(status_code=404, detail="VM not found")
+    vm = await _get_vm_by_ref(db, vm_ref)
 
     setattr(vm, "status", normalize_status(data.status))
     await db.commit()
@@ -600,15 +637,12 @@ async def set_vm_status(vm_id: int, data: VMStatusUpdate,
     return _vm_to_read(vm, password=pwd)
 
 
-@router.post("/{vm_id}/release", response_model=VMRead,
+@router.post("/{vm_ref}/release", response_model=VMRead,
              summary="Сбросить статус ВМ в 'free'.")
-async def release_vm_status(vm_id: int,
+async def release_vm_status(vm_ref: str,
                             db: AsyncSession = Depends(get_async_db),
                             user: AuthVerifyResponse = Depends(get_current_admin_user)):
-    res = await db.execute(select(VirtualMachine).where(VirtualMachine.id == vm_id))
-    vm = res.scalar_one_or_none()
-    if not vm:
-        raise HTTPException(status_code=404, detail="VM not found")
+    vm = await _get_vm_by_ref(db, vm_ref)
 
     curr = (_vm_status(vm) or "").strip()
     if curr != "free":

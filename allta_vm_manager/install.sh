@@ -205,6 +205,24 @@ list_service_cred_names() {
 	shopt -u nullglob
 }
 
+enforce_https_env_value() {
+	local env_file="$1"
+	local key="$2"
+
+	if ! sudo test -f "$env_file"; then
+		return 0
+	fi
+
+	sudo sed -i -E "s|^(${key}=)http://|\\1https://|" "$env_file"
+}
+
+normalize_https_endpoints() {
+	enforce_https_env_value "$CRED_PATH/env.vmmanager_server_api" "AUTH_API_URL"
+	enforce_https_env_value "$CRED_PATH/env.vmmanager_server_api" "SERVER_API_BASE"
+	enforce_https_env_value "$CRED_PATH/env.vmmanager_vm_api" "AUTH_API_URL"
+	enforce_https_env_value "$CRED_PATH/env.vmmanager_vm_api" "SERVER_API_BASE"
+}
+
 update_creds_from_examples() {
 	local src newname target before_tmp after_tmp
 	UPDATED_CRED_FILES=()
@@ -272,6 +290,74 @@ ensure_service_exists() {
 	fi
 }
 
+generate_shared_tls_cert() {
+	local openssl_cfg san_list
+
+	if ! command -v openssl >/dev/null 2>&1; then
+		echo "openssl не найден. Установите openssl и повторите команду."
+		exit 1
+	fi
+
+	sudo mkdir -p "$TLS_CERTS_PATH"
+
+	if sudo test -s "$TLS_CERT_FILE" && sudo test -s "$TLS_KEY_FILE"; then
+		return 0
+	fi
+
+	openssl_cfg="$(mktemp)"
+	san_list="DNS:${ALLTA_EXTERNAL_HOST},DNS:localhost,IP:127.0.0.1"
+
+	cat > "$openssl_cfg" <<EOF
+[req]
+default_bits = 4096
+default_md = sha256
+prompt = no
+x509_extensions = v3_req
+distinguished_name = dn
+
+[dn]
+CN = ${ALLTA_EXTERNAL_HOST}
+
+[v3_req]
+subjectAltName = ${san_list}
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+basicConstraints = CA:TRUE
+EOF
+
+	sudo openssl req \
+		-x509 \
+		-nodes \
+		-newkey rsa:4096 \
+		-days "$ALLTA_TLS_DAYS" \
+		-keyout "$TLS_KEY_FILE" \
+		-out "$TLS_CERT_FILE" \
+		-config "$openssl_cfg" >/dev/null 2>&1
+
+	sudo chmod 0600 "$TLS_KEY_FILE"
+	sudo chmod 0644 "$TLS_CERT_FILE"
+	rm -f "$openssl_cfg"
+}
+
+install_shared_tls_cert_to_trust_store() {
+	if ! sudo sh -c 'command -v update-ca-certificates >/dev/null 2>&1'; then
+		echo "update-ca-certificates не найден, пропускаю установку сертификата в trust store."
+		return 0
+	fi
+
+	if sudo test -f "$TLS_SYSTEM_CA_FILE" && sudo cmp -s "$TLS_CERT_FILE" "$TLS_SYSTEM_CA_FILE"; then
+		return 0
+	fi
+
+	sudo install -m 0644 "$TLS_CERT_FILE" "$TLS_SYSTEM_CA_FILE"
+	sudo update-ca-certificates >/dev/null
+}
+
+prepare_shared_tls() {
+	generate_shared_tls_cert
+	install_shared_tls_cert_to_trust_store
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./manage.sh <command>
@@ -320,6 +406,11 @@ exports(){
     export FILE_PATH="/var/allta_services"
 	export BASE_PATH=$FILE_PATH/volumes
 	export CRED_PATH=$FILE_PATH/config
+	export TLS_CERTS_PATH="$FILE_PATH/certs"
+	export TLS_CERT_FILE="$TLS_CERTS_PATH/allta-api.crt"
+	export TLS_KEY_FILE="$TLS_CERTS_PATH/allta-api.key"
+	export TLS_SYSTEM_CA_FILE="/usr/local/share/ca-certificates/allta-api.crt"
+	export ALLTA_TLS_DAYS="${ALLTA_TLS_DAYS:-3650}"
 	export ALLTA_EXTERNAL_HOST="allta.devos.astralinux.ru"
 	export SERVER_DB_PATH=$BASE_PATH/allta_server_db_data
 	export VM_DB_PATH=$BASE_PATH/allta_vm_db_data
@@ -335,6 +426,7 @@ exports(){
 dir(){
     sudo mkdir -p "$FILE_PATH"    
 	sudo mkdir -p "$BASE_PATH"
+	sudo mkdir -p "$TLS_CERTS_PATH"
 	sudo mkdir -p "$SERVER_DB_PATH"
 	sudo mkdir -p "$VM_DB_PATH"
 	sudo mkdir -p "$SERVER_API_DATA_PATH"
@@ -355,6 +447,9 @@ creds(){
 
 start(){
 	exports
+	export DOCKER_BUILDKIT=1
+	export COMPOSE_DOCKER_CLI_BUILD=1
+	prepare_shared_tls
 	cd "$COMPOSE_DIR"
 	docker-compose --file docker-compose.yml up --build -d
 }
@@ -367,6 +462,9 @@ stop(){
 
 reinstall(){
 	exports
+	export DOCKER_BUILDKIT=1
+	export COMPOSE_DOCKER_CLI_BUILD=1
+	prepare_shared_tls
 	cd "$COMPOSE_DIR"
 	docker-compose --file docker-compose.yml down -v
 	sudo rm -rf $BASE_PATH
@@ -416,19 +514,23 @@ remove(){
 
 precond(){
 	exports
-	# sudo apt-get update
-	# sudo apt-get install -y docker-compose docker wget curl
+	sudo apt-get update
+	sudo apt-get install -y docker-compose docker wget curl openssl ca-certificates
 	sudo usermod -aG docker "$USER"
 	sudo systemctl enable docker.service
 	sudo systemctl start docker.service
 	# sudo mkdir -p "$BACKUP_DIR"
 	dir
+	prepare_shared_tls
 	creds
+	normalize_https_endpoints
 	service
 }
 
 update(){
 	exports
+	echo "0) ensure shared TLS certificate and trust store"
+	prepare_shared_tls
 	cd "$INSTALL_PATH"
 
 	echo "1) save current git state"
@@ -447,6 +549,7 @@ update(){
 
 	echo "5) sync creds with example templates"
 	update_creds_from_examples
+	normalize_https_endpoints
 
 	echo "6) review updated creds"
 	review_updated_creds

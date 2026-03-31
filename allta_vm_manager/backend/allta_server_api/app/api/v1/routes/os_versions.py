@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 from typing import List, Optional
 
 import requests
@@ -27,6 +28,7 @@ from app.api.v1.crud.os_versions import (
 from app.api.v1.dependencies import get_current_admin_user
 from app.db.session import SessionLocal
 from app.api.v1.models.os_versions import OSVersion
+from app.api.v1.models.snapshot_passwords import SnapshotPassword
 
 log = logging.getLogger(__name__)
 
@@ -131,22 +133,130 @@ def delete_version(
 
 # -- background sync ----------------------------------------------------------
 
-def _extract_release_names(payload: object) -> set[str]:
+def _normalize_repository_urls(raw_urls: object) -> list[str]:
+    items: list[str] = []
+
+    if raw_urls is None:
+        return items
+
+    if isinstance(raw_urls, str):
+        value = raw_urls.strip()
+        return [value] if value else []
+
+    if isinstance(raw_urls, dict):
+        for key in ("repository_urls", "repo_urls", "repositories", "urls", "url", "path"):
+            if key in raw_urls:
+                return _normalize_repository_urls(raw_urls.get(key))
+        return items
+
+    if isinstance(raw_urls, (list, tuple, set)):
+        for value in raw_urls:
+            if isinstance(value, str):
+                text = value.strip()
+                if text:
+                    items.append(text)
+
+    # Keep order, remove duplicates.
+    return list(dict.fromkeys(items))
+
+
+def _extract_release_payload(payload: object) -> dict[str, list[str]]:
+    releases: dict[str, list[str]] = {}
+
     if isinstance(payload, dict):
-        return {str(key).strip() for key in payload.keys() if str(key).strip()}
-    if isinstance(payload, list):
-        names: set[str] = set()
-        for item in payload:
-            if isinstance(item, str) and item.strip():
-                names.add(item.strip())
+        for raw_name, raw_urls in payload.items():
+            name = str(raw_name).strip()
+            if not name:
                 continue
+            releases[name] = _normalize_repository_urls(raw_urls)
+        return releases
+
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, str):
+                name = item.strip()
+                if name:
+                    releases[name] = []
+                continue
+
             if isinstance(item, dict):
                 raw_name = item.get("name") or item.get("version")
-                text = str(raw_name).strip() if raw_name is not None else ""
-                if text:
-                    names.add(text)
-        return names
+                name = str(raw_name).strip() if raw_name is not None else ""
+                if not name:
+                    continue
+                raw_urls = (
+                    item.get("repository_urls")
+                    or item.get("repo_urls")
+                    or item.get("repositories")
+                    or item.get("urls")
+                    or item.get("url")
+                    or item.get("path")
+                )
+                releases[name] = _normalize_repository_urls(raw_urls)
+        return releases
+
     raise ValueError("Unexpected releases payload type")
+
+
+def _version_sort_key(version_name: str) -> tuple[list[int], str]:
+    numeric_parts = [int(part) for part in re.findall(r"\d+", version_name)]
+    return numeric_parts, version_name
+
+
+def _major_version(version_name: str) -> str | None:
+    numeric_parts = [int(part) for part in re.findall(r"\d+", version_name)]
+    if len(numeric_parts) < 2:
+        return None
+    return f"{numeric_parts[0]}.{numeric_parts[1]}"
+
+
+def _clone_snapshot_password_for_major(db: Session, target_os_version: OSVersion) -> bool:
+    major = _major_version(str(target_os_version.name or ""))
+    if not major:
+        return False
+
+    target_id = int(target_os_version.id)
+    rows = (
+        db.query(SnapshotPassword, OSVersion.name)
+        .join(OSVersion, SnapshotPassword.os_version_id == OSVersion.id)
+        .filter(SnapshotPassword.os_version_id != target_id)
+        .all()
+    )
+
+    source_password: SnapshotPassword | None = None
+    source_version_name: str | None = None
+    for password_row, os_version_name in rows:
+        if _major_version(str(os_version_name or "")) != major:
+            continue
+        if source_version_name is None:
+            source_password = password_row
+            source_version_name = str(os_version_name)
+            continue
+        if _version_sort_key(str(os_version_name)) > _version_sort_key(source_version_name):
+            source_password = password_row
+            source_version_name = str(os_version_name)
+
+    if source_password is None:
+        return False
+
+    exists = (
+        db.query(SnapshotPassword.id)
+        .filter(SnapshotPassword.os_version_id == target_id)
+        .first()
+    )
+    if exists:
+        return False
+
+    db.add(
+        SnapshotPassword(
+            os_version_id=target_id,
+            ssh_username=source_password.ssh_username,
+            password=source_password.password,  # already encrypted in DB
+            updated_by=f"auto-sync:{source_version_name}",
+        )
+    )
+    db.flush()
+    return True
 
 
 def _sync_versions_once() -> OSVersionSyncRead:
@@ -155,17 +265,32 @@ def _sync_versions_once() -> OSVersionSyncRead:
     """
     resp = requests.get(RELEASES_URL, timeout=30)
     resp.raise_for_status()
-    names = _extract_release_names(resp.json())
+    releases = _extract_release_payload(resp.json())
 
     with SessionLocal() as db:
-        existing = {row[0] for row in db.query(OSVersion.name).all()}
-        new_names = sorted(names - existing)
+        existing_versions = db.query(OSVersion).all()
+        existing_by_name = {str(item.name): item for item in existing_versions}
+
+        # Refresh repository URLs for versions that already exist.
+        for version_name, urls in releases.items():
+            existing = existing_by_name.get(version_name)
+            if existing is None:
+                continue
+            if (existing.repository_urls or []) != urls:
+                existing.repository_urls = urls
+
+        new_names = sorted(set(releases.keys()) - set(existing_by_name.keys()), key=_version_sort_key)
         added = 0
         if new_names:
             for name in new_names:
-                db.add(OSVersion(name=name))
+                created = OSVersion(name=name, repository_urls=releases.get(name, []))
+                db.add(created)
+                db.flush()  # get created.id for snapshot password binding
+                _clone_snapshot_password_for_major(db, created)
             db.commit()
             added = len(new_names)
+        else:
+            db.commit()
 
         total = db.query(OSVersion).count()
         return OSVersionSyncRead(source_url=RELEASES_URL, added=added, total=total)

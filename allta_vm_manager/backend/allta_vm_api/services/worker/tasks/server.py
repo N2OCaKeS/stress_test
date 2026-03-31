@@ -20,7 +20,7 @@ def task_server_init(self, envelope: dict) -> dict:
 
     ssh = SimpleSSH(host=ip, username=username, password=password)
 
-    _run_or_raise(ssh, f"wget -q -O /tmp/allta_cli.deb ftp://10.177.103.10/boxes/allta-vm_1.0.0_amd64.deb",
+    _run_or_raise(ssh, "wget -q -O /tmp/allta_cli.deb ftp://10.177.103.10/boxes/allta-vm_*_amd64.deb",
                   title="download allta_cli.deb", timeout=300)
 
     _run_or_raise(ssh, "sudo apt-get install -y /tmp/allta_cli.deb", title="install allta_cli", timeout=300)

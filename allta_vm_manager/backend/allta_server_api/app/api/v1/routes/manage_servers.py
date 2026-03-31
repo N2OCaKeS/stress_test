@@ -16,10 +16,12 @@ from app.api.v1.schemas.physical_servers import (
 )
 from app.api.v1.crud.physical_servers import (
     get_physical_server,
+    get_physical_server_by_ref,
     get_physical_servers,
     create_physical_server,
     update_physical_server,
     delete_physical_server,
+    resolve_physical_server_id,
 )
 from app.api.v1.dependencies import (
     get_current_user,
@@ -161,22 +163,22 @@ def update_server_os_version_by_names(
 
 
 @router.get(
-    "/{server_id}",
+    "/{server_ref}",
     response_model=PhysicalServerRead,
     dependencies=[Depends(get_current_user)],
-    summary="Получить сервер по id (любой аутентифицированный пользователь)",
+    summary="Получить сервер по id или имени (любой аутентифицированный пользователь)",
 )
 def get_server(
-    server_id: int,
+    server_ref: str,
     db: Session = Depends(get_db),
     current_user: AuthVerifyResponse = Depends(get_current_user),
 ):
     """
-    Возвращает информацию о сервере по его ID.  
+    Возвращает информацию о сервере по его ID или имени.  
     Доступ: любой аутентифицированный пользователь.
     """
     try:
-        srv = get_physical_server(db, server_id)
+        srv = get_physical_server_by_ref(db, server_ref)
         return _to_server_read(
             srv,
             reveal_passwords=_can_see_admin_panel_passwords(current_user),
@@ -207,13 +209,13 @@ def create_server(
 
 
 @router.patch(
-    "/{server_id}",
+    "/{server_ref}",
     response_model=PhysicalServerRead,
     dependencies=[Depends(get_current_admin_user)],
     summary="Обновить данные сервера (только админ)",
 )
 def update_server(
-    server_id: int,
+    server_ref: str,
     data: PhysicalServerUpdate,
     db: Session = Depends(get_db),
 ):
@@ -222,6 +224,7 @@ def update_server(
     Доступ: только администратор.
     """
     try:
+        server_id = resolve_physical_server_id(db, server_ref)
         return update_physical_server(db, server_id, data)
     except ValueError as e:
         if "not found" in str(e).lower():
@@ -230,13 +233,13 @@ def update_server(
 
 
 @router.delete(
-    "/{server_id}",
+    "/{server_ref}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(get_current_admin_user)],
     summary="Удалить сервер (только админ)",
 )
 def delete_server(
-    server_id: int,
+    server_ref: str,
     db: Session = Depends(get_db),
 ):
     """
@@ -244,17 +247,18 @@ def delete_server(
     Доступ: только администратор.
     """
     try:
+        server_id = resolve_physical_server_id(db, server_ref)
         delete_physical_server(db, server_id)
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.post(
-    "/{server_id}/status",
+    "/{server_ref}/status",
     summary="Изменить статус сервера",
 )
 def update_status(
-    server_id: int,
+    server_ref: str,
     status_in: PhysicalServerStatusUpdate,
     db: Session = Depends(get_db),
     _admin: AuthVerifyResponse = Depends(get_current_admin_user),
@@ -263,9 +267,14 @@ def update_status(
     Изменяет статус сервера.
     Доступ: только пользователи с правом управления серверами.
     """
+    try:
+        server_id = resolve_physical_server_id(db, server_ref)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
     server = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
     if not server:
-        raise HTTPException(404, detail="Server not found")
+        raise HTTPException(status_code=404, detail="Server not found")
 
     server.status = status_in.status
     db.commit()
@@ -275,12 +284,12 @@ def update_status(
 
 
 @router.post(
-    "/{server_id}/release",
+    "/{server_ref}/release",
     response_model=PhysicalServerRead,
     summary="Освободить сервер",
 )
 def release_status(
-    server_id: int,
+    server_ref: str,
     _admin: AuthVerifyResponse = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
@@ -288,9 +297,14 @@ def release_status(
     Освобождает сервер (возвращает его в статус `free`).
     Доступ: только пользователи с правом управления серверами.
     """
+    try:
+        server_id = resolve_physical_server_id(db, server_ref)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
     srv = db.query(PhysicalServer).filter(PhysicalServer.id == server_id).first()
     if not srv:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Server with id={server_id} not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
 
     curr = srv.status
 

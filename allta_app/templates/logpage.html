@@ -295,8 +295,18 @@
             
             <!-- Панель поиска и фильтрации -->
             <div class="log-search-bar">
-                <div style="flex: 1; min-width: 200px;">
-                    <input type="text" id="searchInput" placeholder="🔍 Поиск по логу...">
+                <div style="flex: 1; min-width: 200px; display: flex; gap: 5px;">
+                    <input type="text" id="searchInput" placeholder="🔍 Поиск по логу..." 
+                        style="flex: 1; padding: 6px 12px; background-color: #3e3e42; border: 1px solid #ff7b00; border-radius: 4px; color: #d4d4d4;">
+                    <span id="searchCounter" style="color: #858585; font-size: 12px; padding: 6px;">0/0</span>
+                    <button onclick="searchPrev()" title="Предыдущее (Shift+Enter)" 
+                            style="background: #3e3e42; border: none; color: #d4d4d4; padding: 4px 10px; border-radius: 4px; cursor: pointer;">
+                        <i class="fas fa-arrow-up"></i>
+                    </button>
+                    <button onclick="searchNext()" title="Следующее (Enter)" 
+                            style="background: #3e3e42; border: none; color: #d4d4d4; padding: 4px 10px; border-radius: 4px; cursor: pointer;">
+                        <i class="fas fa-arrow-down"></i>
+                    </button>
                 </div>
                 <div>
                     <select id="filterSelect">
@@ -308,6 +318,7 @@
                         <option value="command">💻 Команды</option>
                         <option value="kernel">🐧 Ядра</option>
                         <option value="test">🧪 Тесты</option>
+                        <option value="iteration">🔄 Завершённые тесты</option>
                     </select>
                 </div>
                 <div>
@@ -315,8 +326,8 @@
                         <i class="fas fa-times"></i> Сбросить
                     </button>
                 </div>
-                <div>
-                    <span id="searchStats" style="color: #858585; font-size: 12px;">0/0</span>
+            </div>
+                
                 </div>
             </div>
             
@@ -326,7 +337,27 @@
                 </div>
             </div>
             <footer>
-                <i class="fas fa-info-circle"></i> Автообновление каждые 5 секунд
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <i class="fas fa-info-circle"></i> Автообновление каждые 5 секунд
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="scrollToTop()" 
+                                title="В начало (Ctrl+Home)" 
+                                style="background: #3e3e42; border: none; color: #d4d4d4; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: all 0.2s;"
+                                onmouseover="this.style.backgroundColor='#ff7b00'; this.style.color='white'"
+                                onmouseout="this.style.backgroundColor='#3e3e42'; this.style.color='#d4d4d4'">
+                            <i class="fas fa-angle-double-up"></i> Начало
+                        </button>
+                        <button onclick="scrollToBottom()" 
+                                title="В конец (Ctrl+End)" 
+                                style="background: #3e3e42; border: none; color: #d4d4d4; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: all 0.2s;"
+                                onmouseover="this.style.backgroundColor='#ff7b00'; this.style.color='white'"
+                                onmouseout="this.style.backgroundColor='#3e3e42'; this.style.color='#d4d4d4'">
+                            <i class="fas fa-angle-double-down"></i> Конец
+                        </button>
+                    </div>
+                </div>
             </footer>
         </div>
     </div>
@@ -340,6 +371,8 @@
         let currentFilter = 'all';
         let fullLogLines = [];
         let availableLogs = [];
+        let currentSearchMatches = [];
+        let currentSearchIndex = -1;
         
         // Загружаем список доступных логов
         async function loadLogList() {
@@ -438,27 +471,32 @@
             
             // Применяем фильтр
             if (currentFilter !== 'all') {
-                filteredLines = filteredLines.filter(line => {
-                    const lowerLine = line.toLowerCase();
-                    switch (currentFilter) {
-                        case 'error':
-                            return lowerLine.includes('error') || lowerLine.includes('failed') || lowerLine.includes('traceback');
-                        case 'warning':
-                            return lowerLine.includes('warning');
-                        case 'success':
-                            return lowerLine.includes('success') || lowerLine.includes('done') || lowerLine.includes('completed');
-                        case 'task':
-                            return lowerLine.includes('task:');
-                        case 'command':
-                            return lowerLine.includes('command:');
-                        case 'kernel':
-                            return lowerLine.includes('kernel:');
-                        case 'test':
-                            return lowerLine.includes('тест:');
-                        default:
-                            return true;
-                    }
-                });
+                if (currentFilter === 'iteration') {
+                    // Специальная логика для итераций: показываем блоки с итерациями
+                    filteredLines = filterIterationBlocks(filteredLines);
+                } else {
+                    filteredLines = filteredLines.filter(line => {
+                        const lowerLine = line.toLowerCase();
+                        switch (currentFilter) {
+                            case 'error':
+                                return lowerLine.includes('error') || lowerLine.includes('failed') || lowerLine.includes('traceback');
+                            case 'warning':
+                                return lowerLine.includes('warning');
+                            case 'success':
+                                return lowerLine.includes('success') || lowerLine.includes('done') || lowerLine.includes('completed');
+                            case 'task':
+                                return lowerLine.includes('task:');
+                            case 'command':
+                                return lowerLine.includes('command:');
+                            case 'kernel':
+                                return lowerLine.includes('kernel:');
+                            case 'test':
+                                return lowerLine.includes('тест:');
+                            default:
+                                return true;
+                        }
+                    });
+                }
             }
             
             // Применяем поиск
@@ -469,11 +507,57 @@
             
             updateLogDisplay(filteredLines);
             
-            // Обновляем статистику
-            const stats = document.getElementById('searchStats');
-            if (stats) {
-                stats.textContent = `${filteredLines.length}/${fullLogLines.length}`;
+        }
+
+        // Функция для фильтрации завершённых итераций
+        function filterIterationBlocks(lines) {
+            const result = [];
+            let inIterationBlock = false;
+            let iterationCompleted = false;
+            let currentBlock = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
+                // Начало блока итерации
+                if (line.includes('Итерация №') || line.includes('Iteration')) {
+                    // Если предыдущий блок был завершён, добавляем его в результат
+                    if (inIterationBlock && iterationCompleted) {
+                        result.push(...currentBlock);
+                    }
+                    
+                    // Начинаем новый блок
+                    inIterationBlock = true;
+                    iterationCompleted = false;
+                    currentBlock = [line];
+                }
+                // Если мы внутри блока итерации
+                else if (inIterationBlock) {
+                    currentBlock.push(line);
+                    
+                    // Проверяем, завершена ли итерация
+                    if (line.includes('Выполнен') || line.includes('Completed')) {
+                        iterationCompleted = true;
+                    }
+                    
+                    // Конец блока — когда встречаем следующую итерацию или конец файла
+                    if (i + 1 < lines.length && 
+                        (lines[i + 1].includes('Итерация №') || lines[i + 1].includes('Iteration'))) {
+                        inIterationBlock = false;
+                        if (iterationCompleted) {
+                            result.push(...currentBlock);
+                        }
+                        currentBlock = [];
+                    }
+                }
             }
+            
+            // Добавляем последний блок, если он завершён
+            if (inIterationBlock && iterationCompleted) {
+                result.push(...currentBlock);
+            }
+            
+            return result;
         }
         
         function updateLogDisplay(lines) {
@@ -484,8 +568,7 @@
                 return;
             }
             
-            // Фильтруем пустые строки
-            // Если надо их удалять - раскомментировать ниже
+            // Фильтруем пустые строки (раскомментировать если нужно удалять)
             // const nonEmptyLines = lines.filter(line => line.trim() !== '');
             const nonEmptyLines = lines;
             
@@ -494,37 +577,25 @@
                 return;
             }
             
-            // Собираем весь текст в одну строку с переносами
-            let fullText = nonEmptyLines.join('\n');
-            
-            // Подсветка поиска (если есть)
-            if (currentSearchTerm) {
-                const regex = new RegExp(`(${escapeRegex(currentSearchTerm)})`, 'gi');
-                fullText = fullText.replace(regex, '<mark>$1</mark>');
-            }
-            
-            // Экранируем HTML
-            fullText = escapeHtml(fullText);
-            
-            // Добавляем номера строк вручную 
+            // Добавляем номера строк
             const numberedLines = nonEmptyLines.map((line, index) => {
                 const lineNumber = (index + 1).toString().padStart(4, ' ');
                 const escapedLine = escapeHtml(line);
-                let displayLine = escapedLine;
-                
-                if (currentSearchTerm) {
-                    const regex = new RegExp(`(${escapeRegex(currentSearchTerm)})`, 'gi');
-                    displayLine = escapedLine.replace(regex, '<mark>$1</mark>');
-                }
-                
-                return `<span class="log-line-number">${lineNumber}</span> ${displayLine}`;
+                return `<span class="log-line-number">${lineNumber}</span> ${escapedLine}`;
             }).join('\n');
             
             container.innerHTML = `<pre class="log-pre">${numberedLines}</pre>`;
             
-            // Применяем подсветку цветов
+            // Применяем цветовую подсветку
             highlightPreLines();
+            
+            // Если есть активный поиск, применяем его
+            if (currentSearchTerm && currentSearchTerm !== '') {
+                performSearch();
+            }
         }
+             
+        
 
         function highlightPreLines() {
             const pre = document.querySelector('.log-pre');
@@ -632,9 +703,199 @@
             applyFiltersAndSearch();
         });
         
+        // При изменении фильтра
         document.getElementById('filterSelect').addEventListener('change', (e) => {
             currentFilter = e.target.value;
             applyFiltersAndSearch();
+            
+            // Показываем подсказку о количестве найденных итераций
+            if (currentFilter === 'iteration') {
+                // Считаем количество завершённых итераций в исходном логе
+                const completedCount = countCompletedIterations(fullLogLines);
+                showToast(`Найдено ${completedCount} завершённых итераций`, 'info');
+            }
+        });
+
+        // Функция подсчёта завершённых итераций
+        function countCompletedIterations(lines) {
+            let count = 0;
+            let inIteration = false;
+            let completed = false;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
+                if (line.includes('Итерация №') || line.includes('Iteration')) {
+                    if (inIteration && completed) {
+                        count++;
+                    }
+                    inIteration = true;
+                    completed = false;
+                } else if (inIteration && (line.includes('Выполнен') || line.includes('Completed'))) {
+                    completed = true;
+                }
+            }
+            
+            if (inIteration && completed) {
+                count++;
+            }
+            
+            return count;
+        }
+
+        function scrollToTop() {
+            const logContent = document.querySelector('.log-content');
+            if (logContent) {
+                logContent.scrollTop = 0;
+            }
+        }
+
+        function scrollToBottom() {
+            const logContent = document.querySelector('.log-content');
+            if (logContent) {
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+        }
+
+        // Поиск с подсветкой и навигацией
+        function performSearch() {
+            const searchInput = document.getElementById('searchInput');
+            const searchTerm = searchInput.value.trim();
+            
+            if (searchTerm === '') {
+                // Очищаем подсветку
+                clearSearchHighlights();
+                currentSearchMatches = [];
+                currentSearchIndex = -1;
+                updateSearchCounter();
+                return;
+            }
+            
+            currentSearchTerm = searchTerm;
+            
+            // Находим все совпадения
+            const container = document.getElementById('logContent');
+            const pre = container.querySelector('.log-pre');
+            if (!pre) return;
+            
+            // Получаем все строки
+            const lines = pre.innerHTML.split('\n');
+            const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
+            
+            // Подсвечиваем все совпадения
+            const highlightedLines = lines.map(line => {
+                return line.replace(regex, '<mark class="search-highlight">$1</mark>');
+            }).join('\n');
+            
+            pre.innerHTML = highlightedLines;
+            
+            // Собираем позиции всех совпадений
+            currentSearchMatches = [];
+            const allMarks = pre.querySelectorAll('mark.search-highlight');
+            allMarks.forEach(mark => {
+                currentSearchMatches.push(mark);
+            });
+            
+            currentSearchIndex = currentSearchMatches.length > 0 ? 0 : -1;
+            updateSearchCounter();
+            
+            if (currentSearchIndex >= 0) {
+                scrollToMatch(currentSearchIndex);
+                highlightCurrentMatch();
+            }
+        }
+
+        function searchNext() {
+            if (currentSearchMatches.length === 0) return;
+            
+            currentSearchIndex = (currentSearchIndex + 1) % currentSearchMatches.length;
+            scrollToMatch(currentSearchIndex);
+            highlightCurrentMatch();
+            updateSearchCounter();
+        }
+
+        function searchPrev() {
+            if (currentSearchMatches.length === 0) return;
+            
+            currentSearchIndex = (currentSearchIndex - 1 + currentSearchMatches.length) % currentSearchMatches.length;
+            scrollToMatch(currentSearchIndex);
+            highlightCurrentMatch();
+            updateSearchCounter();
+        }
+
+        function scrollToMatch(index) {
+            const match = currentSearchMatches[index];
+            if (match) {
+                match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function highlightCurrentMatch() {
+            // Сбрасываем подсветку всех
+            currentSearchMatches.forEach(match => {
+                match.style.backgroundColor = '#ff7b00';
+                match.style.color = 'white';
+            });
+            
+            // Подсвечиваем текущий
+            if (currentSearchMatches[currentSearchIndex]) {
+                currentSearchMatches[currentSearchIndex].style.backgroundColor = '#ff9b2a';
+                currentSearchMatches[currentSearchIndex].style.color = 'white';
+            }
+        }
+
+        function clearSearchHighlights() {
+            const container = document.getElementById('logContent');
+            const pre = container.querySelector('.log-pre');
+            if (!pre) return;
+            
+            // Убираем mark-теги, оставляя текст
+            const marks = pre.querySelectorAll('mark.search-highlight');
+            marks.forEach(mark => {
+                const parent = mark.parentNode;
+                parent.replaceChild(document.createTextNode(mark.textContent), mark);
+            });
+        }
+
+        function updateSearchCounter() {
+            const counter = document.getElementById('searchCounter');
+            if (counter) {
+                if (currentSearchMatches.length > 0) {
+                    counter.textContent = `${currentSearchIndex + 1}/${currentSearchMatches.length}`;
+                } else {
+                    counter.textContent = '0/0';
+                }
+            }
+        }
+
+        // Поиск при вводе
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            performSearch();
+        });
+
+        // Горячие клавиши
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+F — фокус на поиск
+            if (e.ctrlKey && e.key === 'f') {
+                e.preventDefault();
+                document.getElementById('searchInput').focus();
+                document.getElementById('searchInput').select();
+            }
+            // Enter — следующее совпадение
+            else if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                searchNext();
+            }
+            // Shift+Enter — предыдущее совпадение
+            else if (e.key === 'Enter' && e.shiftKey) {
+                e.preventDefault();
+                searchPrev();
+            }
+            // Esc — очистить поиск
+            else if (e.key === 'Escape') {
+                document.getElementById('searchInput').value = '';
+                performSearch();
+            }
         });
         
         // Загружаем список логов и основной лог, запускаем автообновление

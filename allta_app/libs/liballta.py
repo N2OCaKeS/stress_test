@@ -101,9 +101,9 @@ with open('/home/u/url_mob', 'r') as r:
 with open('/home/u/url_brest', 'r') as r:
     brest_url = r.read().replace('\n', '').replace('\r', '')
 
-AUTH_LOGIN_URL = 'http://allta.devos.astralinux.ru:21500/api/auth/login'
-AUTH_LOGOUT_URL = 'http://allta.devos.astralinux.ru:21500/api/auth/logout'
-AUTH_CHECK_TOKEN_URL = 'http://allta.devos.astralinux.ru:21500/api/auth/verify'
+AUTH_LOGIN_URL = 'https://allta.devos.astralinux.ru:21500/api/auth/login'
+AUTH_LOGOUT_URL = 'https://allta.devos.astralinux.ru:21500/api/auth/logout'
+AUTH_CHECK_TOKEN_URL = 'https://allta.devos.astralinux.ru:21500/api/auth/verify'
 COOKIE_NAME = 'access_token'
 COOKIE_SECURE = False
 

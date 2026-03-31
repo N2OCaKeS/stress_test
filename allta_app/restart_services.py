@@ -4,8 +4,9 @@ import random
 import subprocess
 import os
 
-from libs.liballta import get_aqs_json, ReleaseToRepo
 from allta_image_conf import tokens
+from libs.liballta import get_aqs_json, ReleaseToRepo
+
 
 
 __git_token = tokens['git_token']

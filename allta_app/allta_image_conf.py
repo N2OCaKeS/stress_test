@@ -649,8 +649,8 @@ allta_services_list = [
 #################################################################################################################################################
 #API`s
 #################################################################################################################################################
-CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1"
-SERVER_API_BASE = "http://allta.devos.astralinux.ru:21501/api/server/v1"
+CONFIG_API_BASE = "https://allta.devos.astralinux.ru:21500/api/config/v1"
+SERVER_API_BASE = "https://allta.devos.astralinux.ru:21501/api/server/v1"
 
 
 

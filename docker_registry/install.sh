@@ -272,6 +272,74 @@ ensure_service_exists() {
 	fi
 }
 
+generate_shared_tls_cert() {
+	local openssl_cfg san_list
+
+	if ! command -v openssl >/dev/null 2>&1; then
+		echo "openssl не найден. Установите openssl и повторите команду."
+		exit 1
+	fi
+
+	sudo mkdir -p "$TLS_CERTS_PATH"
+
+	if sudo test -s "$TLS_CERT_FILE" && sudo test -s "$TLS_KEY_FILE"; then
+		return 0
+	fi
+
+	openssl_cfg="$(mktemp)"
+	san_list="DNS:${ALLTA_EXTERNAL_HOST},DNS:localhost,IP:127.0.0.1"
+
+	cat > "$openssl_cfg" <<EOF
+[req]
+default_bits = 4096
+default_md = sha256
+prompt = no
+x509_extensions = v3_req
+distinguished_name = dn
+
+[dn]
+CN = ${ALLTA_EXTERNAL_HOST}
+
+[v3_req]
+subjectAltName = ${san_list}
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+basicConstraints = CA:TRUE
+EOF
+
+	sudo openssl req \
+		-x509 \
+		-nodes \
+		-newkey rsa:4096 \
+		-days "$ALLTA_TLS_DAYS" \
+		-keyout "$TLS_KEY_FILE" \
+		-out "$TLS_CERT_FILE" \
+		-config "$openssl_cfg" >/dev/null 2>&1
+
+	sudo chmod 0600 "$TLS_KEY_FILE"
+	sudo chmod 0644 "$TLS_CERT_FILE"
+	rm -f "$openssl_cfg"
+}
+
+install_shared_tls_cert_to_trust_store() {
+	if ! sudo sh -c 'command -v update-ca-certificates >/dev/null 2>&1'; then
+		echo "update-ca-certificates не найден, пропускаю установку сертификата в trust store."
+		return 0
+	fi
+
+	if sudo test -f "$TLS_SYSTEM_CA_FILE" && sudo cmp -s "$TLS_CERT_FILE" "$TLS_SYSTEM_CA_FILE"; then
+		return 0
+	fi
+
+	sudo install -m 0644 "$TLS_CERT_FILE" "$TLS_SYSTEM_CA_FILE"
+	sudo update-ca-certificates >/dev/null
+}
+
+prepare_shared_tls() {
+	generate_shared_tls_cert
+	install_shared_tls_cert_to_trust_store
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./install.sh <command>
@@ -322,10 +390,14 @@ exports(){
 	export CRED_PATH=$FILE_PATH/config
 	export DOCKER_REGISTRY_KEYS_PATH=$FILE_PATH/secrets
 	export REGISTRY_KEYS_PATH=$DOCKER_REGISTRY_KEYS_PATH
+	export TLS_CERTS_PATH="$FILE_PATH/certs"
+	export TLS_CERT_FILE="$TLS_CERTS_PATH/allta-api.crt"
+	export TLS_KEY_FILE="$TLS_CERTS_PATH/allta-api.key"
+	export TLS_SYSTEM_CA_FILE="/usr/local/share/ca-certificates/allta-api.crt"
+	export ALLTA_TLS_DAYS="${ALLTA_TLS_DAYS:-3650}"
 	export ALLTA_EXTERNAL_HOST="allta.devos.astralinux.ru"
 
 	export DOCKER_REGISTRY_PATH="/home/partimag/docker_registry_data"
-	export DOCKER_REGISTRY_CERT=$BASE_PATH/docker_registry_cert
 	export STATE_DIR="$FILE_PATH/install_state/${SERIVE_NAME%.service}"
 	export PREVIOUS_COMMIT_FILE="$STATE_DIR/previous_commit.hash"
 	export PREVIOUS_BRANCH_FILE="$STATE_DIR/previous_branch.txt"
@@ -337,9 +409,8 @@ dir(){
 	sudo mkdir -p "$BASE_PATH"
 	sudo mkdir -p "$CRED_PATH"
 	sudo mkdir -p "$DOCKER_REGISTRY_KEYS_PATH"
-
+	sudo mkdir -p "$TLS_CERTS_PATH"
 	sudo mkdir -p "$DOCKER_REGISTRY_PATH"
-	sudo mkdir -p "$DOCKER_REGISTRY_CERT"
 }
 
 creds(){
@@ -355,6 +426,9 @@ creds(){
 
 start(){
 	exports
+	prepare_shared_tls
+	export DOCKER_BUILDKIT=1
+	export COMPOSE_DOCKER_CLI_BUILD=1
 	cd "$COMPOSE_DIR"
 	docker-compose --file docker-compose.yml up --build -d
 }
@@ -367,11 +441,14 @@ stop(){
 
 reinstall(){
 	exports
+	prepare_shared_tls
+	export DOCKER_BUILDKIT=1
+	export COMPOSE_DOCKER_CLI_BUILD=1
 	cd "$COMPOSE_DIR"
 	docker-compose --file docker-compose.yml down -v
-	sudo rm -rf "$DOCKER_REGISTRY_PATH" "$DOCKER_REGISTRY_CERT"
+	sudo rm -rf "$DOCKER_REGISTRY_PATH"
 	dir
-	# docker-compose --file docker-compose.yml up --build -d
+	docker-compose --file docker-compose.yml up --build -d
 }
 
 remove(){
@@ -384,7 +461,6 @@ remove(){
     sudo systemctl daemon-reload
 
 	local -a IMAGES=(
-		"docker-registry-cert-init:latest"
 		"docker-registry:latest"
 		"docker-registry-ui:latest"
 		"docker-registry-ui-gateway:latest"
@@ -395,9 +471,8 @@ remove(){
 		docker image rm "$img" || docker image rm -f "$img" || echo "пропускаю: $img"
 	done
 
-	sudo rm -rf "$DOCKER_REGISTRY_PATH" "$DOCKER_REGISTRY_CERT"
+	sudo rm -rf "$DOCKER_REGISTRY_PATH"
 	sudo rm -f "$CRED_PATH/env.docker_registry"
-	sudo rm -f "$CRED_PATH/env.docker_registry_cert_init"
 	sudo rm -f "$CRED_PATH/env.docker_registry_ui"
 
     sudo rmdir --ignore-fail-on-non-empty $CRED_PATH
@@ -408,17 +483,20 @@ remove(){
 precond(){
 	exports
 	sudo apt-get update
-	sudo apt-get install -y docker-compose docker wget curl
+	sudo apt-get install -y docker-compose docker wget curl openssl ca-certificates
 	sudo usermod -aG docker "$USER"
 	sudo systemctl enable docker.service
 	sudo systemctl start docker.service
 	dir
+	prepare_shared_tls
 	creds
 	service
 }
 
 update(){
 	exports
+	echo "0) ensure shared TLS certificate and trust store"
+	prepare_shared_tls
 	cd "$INSTALL_PATH"
 
 	echo "1) save current git state"

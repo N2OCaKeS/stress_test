@@ -6,10 +6,11 @@
 
 Состав:
 
-- `docker-registry-cert-init` - инициализация CA и TLS-сертификата registry
 - `docker-registry` - сам registry (`registry:2`) с TLS и token auth через `allta_auth`
 - `docker-registry-ui` - web UI (`joxit/docker-registry-ui`)
 - `docker-registry-ui-gateway` - nginx-gateway для UI с авторизацией через `allta_auth`
+
+TLS-сертификат общий для всех сервисов и берётся из `/var/allta_services/certs` (`allta-api.crt`/`allta-api.key`).
 
 Оркестрация выполняется через `docker/docker-compose.yml`, а lifecycle через `install.sh`.
 
@@ -61,16 +62,9 @@
 После `precond` шаблоны env копируются в `/var/allta_services/config`:
 
 - `env.docker_registry`
-- `env.docker_registry_cert_init`
 - `env.docker_registry_ui`
 
 ### Ключевые переменные
-
-`env.docker_registry_cert_init`:
-
-- `REGISTRY_HOST` - DNS-имя registry (используется в CN/SAN сертификата)
-- `CA_DAYS` - срок жизни CA
-- `CERT_DAYS` - срок жизни серверного сертификата
 
 `env.docker_registry`:
 
@@ -85,7 +79,7 @@
 
 `env.docker_registry_ui`:
 
-- `NGINX_PROXY_PASS_URL=https://docker-registry:5000` - прокси на registry
+- `NGINX_PROXY_PASS_URL=https://<host>:21503` - прокси на registry
 - `PULL_URL=<host>:21503` - адрес pull/push для клиентов
 - `SINGLE_REGISTRY`, `REGISTRY_TITLE` - параметры UI
 - `DELETE_IMAGES=false` - удаление образов через UI отключено
@@ -93,12 +87,12 @@
 ## Порты и точки входа
 
 - Registry API: `https://<host>:21503/v2/`
-- Web UI: `http://<host>:21502/` (доступ только после авторизации в `allta_auth`)
+- Web UI: `https://<host>:21502/` (доступ только после авторизации в `allta_auth`)
 
 Ожидаемое поведение:
 
 - `https://<host>:21503/v2/` без логина: HTTP `401 Unauthorized` (нормальная проверка доступности).
-- `http://<host>:21502/` без логина: редирект на OAuth-логин `allta_auth`, после входа возврат в UI.
+- `https://<host>:21502/` без логина: редирект на OAuth-логин `allta_auth`, после входа возврат в UI.
 - Доступ в UI определяется `required_permission` OAuth-клиента `allta-docker-ui` в `allta_auth`.
 - Если `required_permission` пустой, войти может любой авторизованный пользователь.
 - Удаление образов через UI запрещено.
@@ -110,7 +104,7 @@
 - `sudo ./install.sh precond` - подготовка каталогов/конфигов + генерация systemd unit
 - `sudo ./install.sh start` - `docker-compose up --build -d`
 - `sudo ./install.sh stop` - `docker-compose down`
-- `sudo ./install.sh reinstall` - `down -v` + удаление данных registry/cert + пересоздание каталогов
+- `sudo ./install.sh reinstall` - `down -v` + удаление данных registry + пересоздание каталогов
 - `sudo ./install.sh remove` - полное удаление: контейнеров, локальных image, systemd unit, env-файлов и данных
 
 Команды через systemd:
@@ -125,7 +119,7 @@ sudo systemctl stop docker_registry.service
 
 - `/var/allta_services/config` - env-файлы проекта
 - `/var/allta_services/volumes/docker_registry_data` - данные registry
-- `/var/allta_services/volumes/docker_registry_cert` - CA и TLS-сертификаты
+- `/var/allta_services/certs` - общий TLS-сертификат (`allta-api.crt`, `allta-api.key`)
 - `/var/allta_services/secrets` - ключи подписи/проверки токенов (`auth-registry.crt`, `registry_signing.key`)
 
 ## Проверка работоспособности

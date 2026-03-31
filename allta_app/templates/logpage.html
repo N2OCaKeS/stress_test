@@ -500,10 +500,11 @@
             }
             
             // Применяем поиск
-            if (currentSearchTerm) {
-                const searchLower = currentSearchTerm.toLowerCase();
-                filteredLines = filteredLines.filter(line => line.toLowerCase().includes(searchLower));
-            }
+            // Фильтр строк - сейчас не используется
+            // if (currentSearchTerm) {
+            //     const searchLower = currentSearchTerm.toLowerCase();
+            //     filteredLines = filteredLines.filter(line => line.toLowerCase().includes(searchLower));
+            // }
             
             updateLogDisplay(filteredLines);
             

@@ -131,6 +131,7 @@ services:
       - authservice_network
     volumes:
       - allta_config_data:/data
+      - allta_tls_data:/etc/allta/tls:ro
 
   authservice-config-db:
     build:

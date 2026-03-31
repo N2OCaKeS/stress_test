@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Callable, Optional
 
 import httpx
@@ -91,8 +92,12 @@ def get_current_user(
     """
     url = f"{settings.AUTH_API_URL}/v1/integrations/whoami"
     headers = {"Authorization": f"Bearer {token}"}
+    verify: str | bool = True
+    auth_ca_bundle = (settings.AUTH_CA_BUNDLE or "").strip()
+    if auth_ca_bundle and Path(auth_ca_bundle).is_file():
+        verify = auth_ca_bundle
     try:
-        resp = httpx.get(url, headers=headers, timeout=5.0)
+        resp = httpx.get(url, headers=headers, timeout=5.0, verify=verify)
         resp.raise_for_status()
     except httpx.RequestError:
         raise HTTPException(

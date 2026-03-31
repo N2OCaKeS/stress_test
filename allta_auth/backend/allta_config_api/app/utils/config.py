@@ -13,6 +13,7 @@ def _auth_api_url() -> str:
 
 class Settings(BaseSettings):
     AUTH_API_URL: str = _auth_api_url()
+    AUTH_CA_BUNDLE: str = getenv("AUTH_CA_BUNDLE", "/etc/allta/tls/allta-api.crt")
     DATABASE_URL: str = getenv(
         "DATABASE_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",

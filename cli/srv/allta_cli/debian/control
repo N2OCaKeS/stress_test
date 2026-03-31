@@ -7,6 +7,6 @@ Standards-Version: 4.5.0
 
 Package: allta
 Architecture: amd64
-Depends: ${misc:Depends}, openssh-client, sshpass
+Depends: ${misc:Depends}, openssh-client, sshpass, ca-certificates, openssl
 Description: CLI-инструмент для работы с allta
  CLI-интерфейс с изолированным Python для работы с allta 

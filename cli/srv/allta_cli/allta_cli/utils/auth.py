@@ -178,7 +178,7 @@ def logout(
     Не падает, если токен уже невалиден, но сообщит об этом при verbose=True.
     """
     base = (api_base_url or API_BASE_URL).rstrip("/")
-    url = f"{base}/api/auth/logout"
+    url = f"{base}:21500/api/auth/logout"
 
     token = None
     try:

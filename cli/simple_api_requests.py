@@ -20,8 +20,8 @@ from urllib.parse import quote
 
 import requests
 
-DEFAULT_CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1"
-DEFAULT_SERVER_API_BASE = "http://allta.devos.astralinux.ru:21501/api/server/v1"
+DEFAULT_CONFIG_API_BASE = "https://allta.devos.astralinux.ru:21500/api/config/v1"
+DEFAULT_SERVER_API_BASE = "https://allta.devos.astralinux.ru:21501/api/server/v1"
 TOKEN_ENV_CANDIDATES = ("ALLTA_AUTH_TOKEN", "ALLTA_API_TOKEN", "ALLTA_TOKEN")
 
 

@@ -484,10 +484,10 @@ def run_login_shortcut(
                         "Передача пароля в аргументах командной строки небезопасна, устаревает и будет удалена в будущих версиях. "
                         "Используйте ALLTA_PASSWORD, интерактивный ввод или вход по API token через --token и ALLTA_API_TOKEN."
                     )
-                ui.http("POST http://allta.devos.astralinux.ru:21500/api/auth/login")
+                ui.http("POST https://allta.devos.astralinux.ru:21500/api/auth/login")
                 auth_utils.login(login=user, password=secret, verbose=False)
             else:
-                ui.http("GET http://allta.devos.astralinux.ru:21500/api/auth/verify")
+                ui.http("GET https://allta.devos.astralinux.ru:21500/api/auth/verify")
                 auth_utils.login_with_api_token(login=user, api_token=secret, verbose=False)
             ui.ok("Вход выполнен.")
         except auth_utils.AuthError as e:

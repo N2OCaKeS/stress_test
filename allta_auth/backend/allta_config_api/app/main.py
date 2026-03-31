@@ -24,7 +24,9 @@ origins = [
     "http://allta.devos.astralinux.ru",
     "https://allta.devos.astralinux.ru",    
     "http://allta.devos.astralinux.ru:21500",
-    "http://allta.devos.astralinux.ru:21501"]
+    "https://allta.devos.astralinux.ru:21500",
+    "http://allta.devos.astralinux.ru:21501",
+    "https://allta.devos.astralinux.ru:21501"]
 
 app.add_middleware(
     CORSMiddleware,

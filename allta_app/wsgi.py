@@ -10,6 +10,9 @@ import threading
 from logging.handlers import RotatingFileHandler
 from time import sleep
 
+from allta_image_conf import trust_api_cert_for_requests
+trust_api_cert_for_requests()
+
 from allta_front import app
 
 

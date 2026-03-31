@@ -8,8 +8,8 @@ services:
     build:
       context: ./docker_registry
       dockerfile: Dockerfile
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: docker-registry:latest
     container_name: docker-registry
     restart: always
@@ -47,8 +47,8 @@ services:
     build:
       context: ./docker_registry_ui
       dockerfile: Dockerfile
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: docker-registry-ui:latest
     container_name: docker-registry-ui
     restart: always
@@ -82,8 +82,8 @@ services:
     build:
       context: ./docker_registry_ui_gateway
       dockerfile: Dockerfile
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: docker-registry-ui-gateway:latest
     container_name: docker-registry-ui-gateway
     restart: always
@@ -104,10 +104,6 @@ services:
       docker_registry:
     volumes:
       - allta_tls_data:/etc/nginx/tls:ro
-
-secrets:
-  allta_api_ca:
-    file: ${TLS_CERT_FILE}
 
 volumes:
   allta_docker_registry_data:

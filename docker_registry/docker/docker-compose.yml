@@ -2,43 +2,30 @@ version: '3.8'
 
 services:
   # =========================
-  # INIT TLS: CA (один раз) + server key/cert (каждый рестарт init)
-  # =========================
-  docker-registry-cert-init:
-    build:
-      context: ./init_cert
-      dockerfile: Dockerfile
-    image: docker-registry-cert-init:latest
-    container_name: docker-registry-cert-init
-    restart: "no"
-    env_file:
-      - $CRED_PATH/env.docker_registry_cert_init      
-    volumes:
-      - allta_docker_registry_cert:/tls
-    networks:
-      docker_registry:
-
-  # =========================
   # DOCKER REGISTRY
   # =========================
   docker-registry:
     build:
       context: ./docker_registry
       dockerfile: Dockerfile
+      secrets:
+        - allta_api_ca
     image: docker-registry:latest
     container_name: docker-registry
     restart: always
     ports:
       - "21503:5000"
-    depends_on:
-      docker-registry-cert-init:
-        condition: service_completed_successfully
     volumes:
       - allta_docker_registry_data:/var/lib/registry
-      - allta_docker_registry_cert:/tls:ro
+      - allta_tls_data:/tls:ro
       - allta_docker_registry_keys:/run/secrets/registry:ro
     env_file:
       - $CRED_PATH/env.docker_registry
+    environment:
+      REGISTRY_HTTP_TLS_CERTIFICATE: /tls/allta-api.crt
+      REGISTRY_HTTP_TLS_KEY: /tls/allta-api.key
+      REGISTRY_AUTH_TOKEN_REALM: https://${ALLTA_EXTERNAL_HOST:-allta.devos.astralinux.ru}:21502/auth/registry/token
+      SSL_CERT_FILE: /tls/allta-api.crt
     extra_hosts:
       - "${ALLTA_EXTERNAL_HOST:-allta.devos.astralinux.ru}:host-gateway"
 
@@ -60,6 +47,8 @@ services:
     build:
       context: ./docker_registry_ui
       dockerfile: Dockerfile
+      secrets:
+        - allta_api_ca
     image: docker-registry-ui:latest
     container_name: docker-registry-ui
     restart: always
@@ -68,6 +57,12 @@ services:
         condition: service_healthy
     env_file:
       - $CRED_PATH/env.docker_registry_ui
+    environment:
+      NGINX_PROXY_PASS_URL: https://${ALLTA_EXTERNAL_HOST:-allta.devos.astralinux.ru}:21503
+      NODE_EXTRA_CA_CERTS: /etc/allta/tls/allta-api.crt
+      SSL_CERT_FILE: /etc/allta/tls/allta-api.crt
+    extra_hosts:
+      - "${ALLTA_EXTERNAL_HOST:-allta.devos.astralinux.ru}:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:80/ >/dev/null || exit 1"]
       interval: 10s
@@ -76,6 +71,8 @@ services:
       start_period: 10s
     networks:
       docker_registry:
+    volumes:
+      - allta_tls_data:/etc/allta/tls:ro
 
 
   # =========================
@@ -85,25 +82,32 @@ services:
     build:
       context: ./docker_registry_ui_gateway
       dockerfile: Dockerfile
+      secrets:
+        - allta_api_ca
     image: docker-registry-ui-gateway:latest
     container_name: docker-registry-ui-gateway
     restart: always
     ports:
-      - "21502:80"
+      - "21502:443"
     depends_on:
       docker-registry-ui:
         condition: service_healthy
     extra_hosts:
       - "${ALLTA_EXTERNAL_HOST:-allta.devos.astralinux.ru}:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O - --no-check-certificate https://127.0.0.1:443/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 10s
     networks:
       docker_registry:
+    volumes:
+      - allta_tls_data:/etc/nginx/tls:ro
 
+secrets:
+  allta_api_ca:
+    file: ${TLS_CERT_FILE}
 
 volumes:
   allta_docker_registry_data:
@@ -113,12 +117,11 @@ volumes:
       device: ${DOCKER_REGISTRY_PATH}
       o: bind
 
-
-  allta_docker_registry_cert:
+  allta_tls_data:
     driver: local
     driver_opts:
       type: none
-      device: ${DOCKER_REGISTRY_CERT}
+      device: ${TLS_CERTS_PATH}
       o: bind
 
   allta_docker_registry_keys:

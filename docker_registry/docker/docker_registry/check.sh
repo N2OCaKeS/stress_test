@@ -12,8 +12,8 @@ ls -la /run/secrets/registry 2>/dev/null || echo "  (no /run/secrets/registry mo
 echo
 
 echo "[diag] Presence checks:"
-test -s /tls/tls.crt && echo "  OK: /tls/tls.crt" || echo "  WARN: /tls/tls.crt missing/empty"
-test -s /tls/tls.key && echo "  OK: /tls/tls.key" || echo "  WARN: /tls/tls.key missing/empty"
+test -s /tls/allta-api.crt && echo "  OK: /tls/allta-api.crt" || echo "  WARN: /tls/allta-api.crt missing/empty"
+test -s /tls/allta-api.key && echo "  OK: /tls/allta-api.key" || echo "  WARN: /tls/allta-api.key missing/empty"
 test -s /run/secrets/registry/auth-registry.crt \
   && echo "  OK: /run/secrets/registry/auth-registry.crt" \
   || echo "  WARN: /run/secrets/registry/auth-registry.crt missing/empty"

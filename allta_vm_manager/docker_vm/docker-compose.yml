@@ -62,6 +62,7 @@ services:
       - vmmanager_network
     volumes:
       - allta_server_api:/data
+      - allta_tls_data:/etc/allta/tls:ro
 
 
   vmmanager-server-db:
@@ -114,6 +115,7 @@ services:
       - vmmanager_network
     volumes:
       - allta_vm_api:/data
+      - allta_tls_data:/etc/allta/tls:ro
 
 
   vmmanager-vm-db:

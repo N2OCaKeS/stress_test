@@ -778,12 +778,15 @@
             const container = document.getElementById('logContent');
             const pre = container.querySelector('.log-pre');
             if (!pre) return;
+
+            clearSearchHighlights();
             
-            // Получаем все строки
-            const lines = pre.innerHTML.split('\n');
+            // Получаем чистый текст (без mark-тегов)
+            const cleanText = pre.textContent;
+            const lines = cleanText.split('\n');
             const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
             
-            // Подсвечиваем все совпадения
+            // Создаём новые строки с подсветкой
             const highlightedLines = lines.map(line => {
                 return line.replace(regex, '<mark class="search-highlight">$1</mark>');
             }).join('\n');

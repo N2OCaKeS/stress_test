@@ -485,7 +485,9 @@
             }
             
             // Фильтруем пустые строки
-            const nonEmptyLines = lines.filter(line => line.trim() !== '');
+            // Если надо их удалять - раскомментировать ниже
+            // const nonEmptyLines = lines.filter(line => line.trim() !== '');
+            const nonEmptyLines = lines;
             
             if (nonEmptyLines.length === 0) {
                 container.innerHTML = '<div class="empty-state">📄 Ничего не найдено</div>';

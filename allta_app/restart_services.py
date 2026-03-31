@@ -4,12 +4,8 @@ import random
 import subprocess
 import os
 
-from allta_image_conf import trust_api_cert_for_requests
-trust_api_cert_for_requests()
-
-from allta_image_conf import tokens
 from libs.liballta import get_aqs_json, ReleaseToRepo
-
+from allta_image_conf import tokens
 
 
 __git_token = tokens['git_token']
@@ -48,11 +44,11 @@ subprocess.run('cd /home/u/folder_git_for_infocollector/stress_test && git check
 subprocess.run('python3 /home/u/folder_git_for_infocollector/stress_test/allta_infocollector/config_handler.py', shell=True)
 subprocess.run('sleep 10 && sudo systemctl restart allta_infocollector.service', shell=True)
 
-#subprocess.run('cd /home/u/folder_git_for_libs && python3 git_clone.py', shell=True)
-#subprocess.run('cd /home/u/folder_git_for_libs/stress_test && git checkout libs', shell=True)
-#subprocess.run('systemctl stop devpi', shell=True)
-#subprocess.run('bash /home/u/folder_git_for_libs/stress_test/libs/devpi_service/install_service.sh', shell=True)
-#subprocess.run('sudo systemctl restart devpi', shell=True)
+subprocess.run('cd /home/u/folder_git_for_libs && python3 git_clone.py', shell=True)
+subprocess.run('cd /home/u/folder_git_for_libs/stress_test && git checkout libs', shell=True)
+subprocess.run('systemctl stop devpi', shell=True)
+subprocess.run('bash /home/u/folder_git_for_libs/stress_test/libs/devpi_service/install_service.sh', shell=True)
+subprocess.run('sudo systemctl restart devpi', shell=True)
 
 subprocess.run('sudo docker image ls', shell=True)
 subprocess.run('sudo docker image prune', shell=True)

@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 FROM nginx:alpine
 
+ARG ALLTA_API_CA_B64
+
 RUN set -eux; \
     if ! command -v update-ca-certificates >/dev/null 2>&1; then \
       if command -v apk >/dev/null 2>&1; then \
@@ -12,8 +14,8 @@ RUN set -eux; \
       fi; \
     fi; \
     command -v update-ca-certificates >/dev/null 2>&1
-RUN --mount=type=secret,id=allta_api_ca,target=/run/secrets/allta_api_ca,required=true \
-    install -m 0644 /run/secrets/allta_api_ca /usr/local/share/ca-certificates/allta-api.crt && \
+RUN test -n "$ALLTA_API_CA_B64" && \
+    printf '%s' "$ALLTA_API_CA_B64" | base64 -d > /usr/local/share/ca-certificates/allta-api.crt && \
     update-ca-certificates
 
 RUN rm /etc/nginx/conf.d/default.conf

@@ -25,10 +25,12 @@ services:
     build:
       context: ./allta_nginx
       dockerfile: Dockerfile.allta_nginx
+      secrets:
+        - allta_api_ca
     image: authservice-auth-nginx:latest
     container_name: authservice-auth-nginx
     ports:
-      - "21500:80"
+      - "21500:443"
     networks:
       authservice_network:
     depends_on:
@@ -39,18 +41,22 @@ services:
       docs-api-vm-auth:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://127.0.0.1:80/"]
+      test: ["CMD-SHELL", "wget -q -O - --no-check-certificate https://127.0.0.1:443/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
       start_period: 10s
     restart: always
+    volumes:
+      - allta_tls_data:/etc/nginx/tls:ro
 
   # AUTH-API
   authservice-auth-api:
     build:
       context: ../backend/allta_auth_api
       dockerfile: ../../docker_auth/allta_auth_api/allta_auth_api/Dockerfile.auth_api
+      secrets:
+        - allta_api_ca
     image: authservice-auth-api
     container_name: authservice-auth_api
     restart: always
@@ -65,6 +71,8 @@ services:
         condition: service_completed_successfully
       authservice-auth-db:
         condition: service_healthy
+    extra_hosts:
+      - "${ALLTA_EXTERNAL_HOST}:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/auth/health"]
       interval: 5s
@@ -100,6 +108,8 @@ services:
     build:
       context: ../backend/allta_config_api
       dockerfile: ../../docker_auth/allta_config_api/allta_config_api/Dockerfile.allta_config_api
+      secrets:
+        - allta_api_ca
     image: authservice-config-api
     container_name: authservice-config_api
     restart: always
@@ -156,6 +166,10 @@ services:
       timeout: 3s
       retries: 3     
 
+secrets:
+  allta_api_ca:
+    file: ${TLS_CERT_FILE}
+
 volumes:
   # AUTH API
   allta_auth_db_data:
@@ -181,6 +195,12 @@ volumes:
     driver_opts:
       type: none
       device: ${CONFIG_DB_PATH}
+      o: bind
+  allta_tls_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${TLS_CERTS_PATH}
       o: bind
 
 networks:

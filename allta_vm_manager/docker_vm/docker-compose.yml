@@ -5,8 +5,8 @@ services:
     build:
       context: ./allta_nginx
       dockerfile: Dockerfile.allta_nginx
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: vmmanager-vm-nginx:latest
     container_name: vmmanager-vm-nginx
     ports:
@@ -40,8 +40,8 @@ services:
     build:
       context: ../backend/allta_server_api
       dockerfile: ../../docker_vm/allta_server_api/allta_server_api/Dockerfile.allta_server_api
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: vmmanager-server-api:latest
     container_name: vmmanager-server-api
     restart: always
@@ -89,8 +89,8 @@ services:
     build:
       context: ../backend/allta_vm_api/services/api
       dockerfile: ../../../../docker_vm/allta_vm_api/allta_vm_api/Dockerfile.allta_vm_api
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: vmmanager-vm-api
     container_name: vmmanager-vm-api
     restart: always
@@ -140,8 +140,8 @@ services:
     build:
       context: ../backend/allta_vm_api/services/worker
       dockerfile: ../../../../docker_vm/allta_vm_api/allta_vm_celery/Dockerfile.allta_vm_celery
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: vmmanager-vm-celery:latest
     container_name: vmmanager-vm-celery
     restart: always
@@ -221,10 +221,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
-
-secrets:
-  allta_api_ca:
-    file: ${TLS_CERT_FILE}
 
 volumes:
   allta_server_api:

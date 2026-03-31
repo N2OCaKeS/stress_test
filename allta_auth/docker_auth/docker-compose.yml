@@ -25,8 +25,8 @@ services:
     build:
       context: ./allta_nginx
       dockerfile: Dockerfile.allta_nginx
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: authservice-auth-nginx:latest
     container_name: authservice-auth-nginx
     ports:
@@ -55,8 +55,8 @@ services:
     build:
       context: ../backend/allta_auth_api
       dockerfile: ../../docker_auth/allta_auth_api/allta_auth_api/Dockerfile.auth_api
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: authservice-auth-api
     container_name: authservice-auth_api
     restart: always
@@ -108,8 +108,8 @@ services:
     build:
       context: ../backend/allta_config_api
       dockerfile: ../../docker_auth/allta_config_api/allta_config_api/Dockerfile.allta_config_api
-      secrets:
-        - allta_api_ca
+      args:
+        ALLTA_API_CA_B64: ${ALLTA_API_CA_B64}
     image: authservice-config-api
     container_name: authservice-config_api
     restart: always
@@ -165,10 +165,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3     
-
-secrets:
-  allta_api_ca:
-    file: ${TLS_CERT_FILE}
 
 volumes:
   # AUTH API

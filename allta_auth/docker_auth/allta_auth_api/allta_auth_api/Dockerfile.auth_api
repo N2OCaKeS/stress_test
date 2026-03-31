@@ -2,6 +2,7 @@
 FROM python:3.12-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG ALLTA_API_CA_B64
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -19,8 +20,8 @@ RUN pip install "poetry>=2.2.1"
 COPY . .
 
 RUN poetry version && poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
-RUN --mount=type=secret,id=allta_api_ca,target=/run/secrets/allta_api_ca,required=true \
-    install -m 0644 /run/secrets/allta_api_ca /usr/local/share/ca-certificates/allta-api.crt && \
+RUN test -n "$ALLTA_API_CA_B64" && \
+    printf '%s' "$ALLTA_API_CA_B64" | base64 -d > /usr/local/share/ca-certificates/allta-api.crt && \
     update-ca-certificates
 RUN python - <<'PY'
 import pathlib

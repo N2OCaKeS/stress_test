@@ -5,20 +5,35 @@ services:
     build:
       context: ./allta_portainer
       dockerfile: Dockerfile.allta_portainer
+      secrets:
+        - allta_api_ca
     image: allta-portainer:latest
     container_name: allta_portainer
     restart: always   
-  
+    command:
+      - --sslcert
+      - /etc/allta/tls/allta-api.crt
+      - --sslkey
+      - /etc/allta/tls/allta-api.key
     env_file:
       - ${CRED_PATH}/env.portainer
+    environment:
+      PORTAINER_OAUTH_AUTHORIZATION_URL: https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/authorize
+      PORTAINER_OAUTH_ACCESS_TOKEN_URL: https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/token
+      PORTAINER_OAUTH_RESOURCE_URL: https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/userinfo
     extra_hosts:
       - "allta.devos.astralinux.ru:host-gateway"
     volumes:
       - allta_portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       - ${OAUTH_CLIENT_SECRETS_PATH}:/run/secrets/oauth_clients:ro
+      - allta_tls_data:/etc/allta/tls:ro
     ports:
       - 9443:9443
+
+secrets:
+  allta_api_ca:
+    file: ${TLS_CERT_FILE}
 
 volumes:
   allta_portainer_data:
@@ -26,4 +41,10 @@ volumes:
     driver_opts:
       type: none
       device: ${PORTAINER_PATH}
+      o: bind
+  allta_tls_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${TLS_CERTS_PATH}
       o: bind

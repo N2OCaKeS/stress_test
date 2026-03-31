@@ -4,6 +4,8 @@ set -eu
 PORTAINER_BIN="/portainer"
 PORTAINER_API_URL="${PORTAINER_API_URL:-http://127.0.0.1:9000}"
 STARTUP_TIMEOUT_SECONDS="${PORTAINER_STARTUP_TIMEOUT_SECONDS:-60}"
+PORTAINER_TLS_CA_SOURCE="${PORTAINER_TLS_CA_SOURCE:-/etc/allta/tls/allta-api.crt}"
+PORTAINER_TLS_CA_TARGET="${PORTAINER_TLS_CA_TARGET:-/usr/local/share/ca-certificates/allta-api.crt}"
 
 log() {
   printf '%s\n' "[portainer-init] $*" >&2
@@ -182,6 +184,28 @@ sync_standard_users_to_team() {
   fi
 }
 
+sync_api_ca_to_trust_store() {
+  if ! command -v update-ca-certificates >/dev/null 2>&1; then
+    log "update-ca-certificates is missing; skip CA sync."
+    return 0
+  fi
+
+  if [ ! -s "$PORTAINER_TLS_CA_SOURCE" ]; then
+    log "CA source is missing: $PORTAINER_TLS_CA_SOURCE"
+    return 0
+  fi
+
+  if [ -f "$PORTAINER_TLS_CA_TARGET" ] && cmp -s "$PORTAINER_TLS_CA_SOURCE" "$PORTAINER_TLS_CA_TARGET"; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$PORTAINER_TLS_CA_TARGET")"
+  cp "$PORTAINER_TLS_CA_SOURCE" "$PORTAINER_TLS_CA_TARGET"
+  update-ca-certificates >/dev/null 2>&1 || true
+}
+
+sync_api_ca_to_trust_store
+
 "$PORTAINER_BIN" "$@" &
 PORTAINER_PID="$!"
 
@@ -336,9 +360,9 @@ if [ "$(to_bool_json "${PORTAINER_OAUTH_ENABLED:-true}")" = "true" ]; then
   if [ -z "$client_secret" ]; then
     log "OAuth client secret is missing. Set PORTAINER_OAUTH_CLIENT_SECRET or mount PORTAINER_OAUTH_CLIENT_SECRET_FILE."
   else
-    authorization_url="${PORTAINER_OAUTH_AUTHORIZATION_URL:-http://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/authorize}"
-    access_token_url="${PORTAINER_OAUTH_ACCESS_TOKEN_URL:-http://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/token}"
-    resource_url="${PORTAINER_OAUTH_RESOURCE_URL:-http://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/userinfo}"
+    authorization_url="${PORTAINER_OAUTH_AUTHORIZATION_URL:-https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/authorize}"
+    access_token_url="${PORTAINER_OAUTH_ACCESS_TOKEN_URL:-https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/token}"
+    resource_url="${PORTAINER_OAUTH_RESOURCE_URL:-https://allta.devos.astralinux.ru:21500/api/auth/v1/integrations/oauth/userinfo}"
     redirect_url="${PORTAINER_OAUTH_REDIRECT_URL:-https://allta.devos.astralinux.ru:9443/}"
     user_identifier="${PORTAINER_OAUTH_USER_IDENTIFIER:-preferred_username}"
     scopes="${PORTAINER_OAUTH_SCOPES:-profile}"

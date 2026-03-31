@@ -461,8 +461,8 @@ creds(){
 
 start(){
     exports
-    export DOCKER_BUILDKIT=1
-    export COMPOSE_DOCKER_CLI_BUILD=1
+    export DOCKER_BUILDKIT=0
+    unset COMPOSE_DOCKER_CLI_BUILD
     prepare_shared_tls
     export_allta_ca_build_arg
     cd "$COMPOSE_DIR"
@@ -477,8 +477,8 @@ stop(){
 
 reinstall(){
     exports
-    export DOCKER_BUILDKIT=1
-    export COMPOSE_DOCKER_CLI_BUILD=1
+    export DOCKER_BUILDKIT=0
+    unset COMPOSE_DOCKER_CLI_BUILD
     prepare_shared_tls
     export_allta_ca_build_arg
     cd "$COMPOSE_DIR"

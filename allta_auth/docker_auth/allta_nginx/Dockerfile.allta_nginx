@@ -2,6 +2,8 @@
 # syntax=docker/dockerfile:1.7
 FROM nginx:alpine
 
+ARG ALLTA_API_CA_B64
+
 RUN apk add --no-cache apache2-utils ca-certificates
 
 # Update the base image to ensure all packages are up-to-date
@@ -15,8 +17,8 @@ COPY template/nginx.conf /etc/nginx/nginx.conf
 COPY template/conf.d/* /etc/nginx/conf.d/
 COPY template/services/* /etc/nginx/services/
 COPY template/html /etc/nginx/html
-RUN --mount=type=secret,id=allta_api_ca,target=/run/secrets/allta_api_ca,required=true \
-    install -m 0644 /run/secrets/allta_api_ca /usr/local/share/ca-certificates/allta-api.crt && \
+RUN test -n "$ALLTA_API_CA_B64" && \
+    printf '%s' "$ALLTA_API_CA_B64" | base64 -d > /usr/local/share/ca-certificates/allta-api.crt && \
     update-ca-certificates
 
 # Expose HTTPS port

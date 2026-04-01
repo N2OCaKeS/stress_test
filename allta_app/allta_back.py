@@ -632,7 +632,7 @@ try:
             save_all_output(f'Cтенд: {dates_list[i][0][3]} игнорируется\n')
             print(f'Cтенд: {dates_list[i][0][3]} игнорируется')
     #sleep(30)
-    #calc_all_statistics()
+    calc_all_statistics()
     total_end_time = datetime.datetime.now().replace(microsecond=0)
     save_all_output(f'\nDONE\n')
     print(f'\n\033[95mDone\033[0m\n')

@@ -1,27 +1,18 @@
 #!/home/u/python/Python-3.12.1/venv/bin/python3.12
 import sys
 import logging
-import requests
+from logging.handlers import RotatingFileHandler
+from allta_front import app
 import datetime
 import os
 import re
-import threading
-
-from logging.handlers import RotatingFileHandler
 from time import sleep
-
-from allta_image_conf import trust_api_cert_for_requests
-trust_api_cert_for_requests()
-
-from allta_front import app
-
-
+import threading
 
 app.secret_key = 'srv_2413'
 log_file_dir = '/home/u/git/stress_test/allta_app/'
 log_file_name = 'error.log'
 log_size = 52428800 
-
 
 def logrotate():
     logger = logging.getLogger() 

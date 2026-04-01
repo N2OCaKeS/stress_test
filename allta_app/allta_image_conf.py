@@ -1,11 +1,6 @@
 import json
 import requests
-import os
-import ssl
-import socket
-import certifi
 
-from pathlib import Path
 from os import getenv
 from dotenv import load_dotenv
 
@@ -654,82 +649,14 @@ allta_services_list = [
 #################################################################################################################################################
 #API`s
 #################################################################################################################################################
-CONFIG_API_BASE = "https://allta.devos.astralinux.ru:21500/api/config/v1"
-SERVER_API_BASE = "https://allta.devos.astralinux.ru:21501/api/server/v1"
+CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1"
+SERVER_API_BASE = "http://allta.devos.astralinux.ru:21501/api/server/v1"
 
 
 
 #################################################################################################################################################
 #Crede`s
 #################################################################################################################################################
-def trust_api_cert_for_requests(host: str = "allta.devos.astralinux.ru", port: int = 21500) -> None:
-    certs_dir = Path.cwd()
-    cert_file = certs_dir / "allta-api.crt"
-    bundle_file = certs_dir / "certifi-allta-bundle.pem"
-    shared_cert_file = Path("/var/allta_services/certs/allta-api.crt")
-
-    def _extract_and_validate_single_cert(pem_text: str) -> str:
-        begin = "-----BEGIN CERTIFICATE-----"
-        end = "-----END CERTIFICATE-----"
-        start = pem_text.find(begin)
-        if start < 0:
-            raise ValueError("BEGIN CERTIFICATE marker not found")
-        stop = pem_text.find(end, start)
-        if stop < 0:
-            raise ValueError("END CERTIFICATE marker not found")
-        stop += len(end)
-        cert = pem_text[start:stop].strip() + "\n"
-        ssl.PEM_cert_to_DER_cert(cert)
-        return cert
-
-    def _validate_ca_bundle(path: Path) -> None:
-        ctx = ssl.create_default_context()
-        ctx.load_verify_locations(cafile=str(path))
-
-    try:
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with socket.create_connection((host, port), timeout=8) as sock:
-            with ctx.wrap_socket(sock, server_hostname=host) as tls:
-                cert_der = tls.getpeercert(binary_form=True)
-        if not cert_der:
-            raise RuntimeError("empty peer cert")
-        cert_pem = _extract_and_validate_single_cert(ssl.DER_cert_to_PEM_cert(cert_der))
-        cert_file.write_text(cert_pem, encoding="utf-8")
-    except Exception:
-        cert_pem = None
-        for candidate in (cert_file, shared_cert_file):
-            if not candidate.exists():
-                continue
-            try:
-                cert_pem = _extract_and_validate_single_cert(candidate.read_text(encoding="utf-8"))
-                if candidate != cert_file:
-                    cert_file.write_text(cert_pem, encoding="utf-8")
-                break
-            except Exception:
-                continue
-        if cert_pem is None:
-            os.environ.pop("REQUESTS_CA_BUNDLE", None)
-            os.environ.pop("SSL_CERT_FILE", None)
-            return
-
-    base = Path(certifi.where()).read_text(encoding="utf-8")
-    if not base.endswith("\n"):
-        base += "\n"
-    bundle_file.write_text(base + cert_pem, encoding="utf-8")
-    try:
-        _validate_ca_bundle(bundle_file)
-    except Exception:
-        os.environ.pop("REQUESTS_CA_BUNDLE", None)
-        os.environ.pop("SSL_CERT_FILE", None)
-        return
-
-    os.environ["REQUESTS_CA_BUNDLE"] = str(bundle_file)
-    os.environ["SSL_CERT_FILE"] = str(bundle_file)
-
-trust_api_cert_for_requests()
-
 load_dotenv(dotenv_path='/var/allta_services/config/env.allta')
 TOKEN = getenv("ALLTA_AUTH_API_KEY")
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
@@ -743,3 +670,4 @@ ilo = requests.get(f"{SERVER_API_BASE}/ilo/", headers=HEADERS, timeout=30).json(
 #################################################################################################################################################
 SERVER_ACS_PORT = 9999
 ACS_BASE_URL = f"http://{allta_network['ip']}:{SERVER_ACS_PORT}"
+

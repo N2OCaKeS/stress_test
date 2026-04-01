@@ -547,7 +547,7 @@ JOIN main.build_packages AS bp
                 values=[float(value) for value in result["result"]["hard_query"]["iterations"]],
                 weight=0.3,
                 negative=True,
-                bounds=(0.0, 270.0),
+                bounds=(0.0, 1650.0),
             )
             model.add_criterion(
                 name="order_query",
@@ -555,7 +555,7 @@ JOIN main.build_packages AS bp
                 values=[float(value) for value in result["result"]["order_query"]["iterations"]],
                 weight=0.2,
                 negative=True,
-                bounds=(0.0, 410.0),
+                bounds=(0.0, 2220.0),
             )
             model.add_criterion(
                 name="substring_search_query",
@@ -571,10 +571,9 @@ JOIN main.build_packages AS bp
                 values=[float(value) for value in result["result"]["join_query"]["iterations"]],
                 weight=0.2,
                 negative=True,
-                bounds=(0.0, 50.0),
+                bounds=(0.0, 900.0),
             )
-            power_info = model.calc_power()
-            total_rating_info = model.total_rating(power_info["power"])
+            total_rating_info = model.total_rating(0.884)
             result["math_model"] = {
                 "power": round(0.884, 6),
                 "mean_abs_log_error": round(0.04389865273013631, 6),

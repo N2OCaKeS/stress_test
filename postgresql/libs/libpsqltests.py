@@ -372,15 +372,15 @@ JOIN main.build_packages AS bp
             tar_stderr = tar_process.stderr.read()
         tar_return_code = tar_process.wait()
 
-        if tar_return_code != 0:
-            raise RuntimeError(
-                "Failed to extract OOM dump: "
-                + tar_stderr.decode("utf-8", errors="replace")
-            )
         if restore_process.returncode != 0:
             raise RuntimeError(
                 "Failed to restore OOM database: "
                 + restore_process.stderr.decode("utf-8", errors="replace")
+            )
+        if tar_return_code not in (0, -13, 141):
+            raise RuntimeError(
+                "Failed to extract OOM dump: "
+                + tar_stderr.decode("utf-8", errors="replace")
             )
 
     def _run_oom_query_iterations(self):

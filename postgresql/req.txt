@@ -1,6 +1,6 @@
 --index-url http://10.177.103.10:3141/root/release
 --trusted-host 10.177.103.10
-allta==1.0.9
+allta==1.1.8
 atlassian-python-api 
 pretty-html-table 
 pandas == 2.2.3 

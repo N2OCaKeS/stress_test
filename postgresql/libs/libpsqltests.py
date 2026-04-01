@@ -2,6 +2,7 @@ import re
 import os
 import json
 import logging
+import subprocess
 import time
 from typing import LiteralString
 import psycopg
@@ -282,6 +283,132 @@ JOIN main.build_packages AS bp
 
         self.pool_connection_timeout = 600.0
         self.results_file = f"{REPORT_PATH}/olap_results.json"
+        self.oom_db_name = "test"
+        self.oom_query_name = "oom_form_am289n04_query"
+        self.oom_query = "SELECT am289.form_am289n04()"
+        self.oom_roles = (
+            "am289",
+            "data",
+            "data_db",
+            "data_common",
+        )
+        self.oom_dump_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "sql", "test.tar.gz")
+        )
+
+    def _restore_oom_database(self):
+        if not os.path.isfile(self.oom_dump_path):
+            raise FileNotFoundError(
+                f"OOM dump not found: {self.oom_dump_path}"
+            )
+
+        admin_config = dict(self.db_config)
+        admin_config["dbname"] = "postgres"
+
+        with psycopg.connect(
+            host=admin_config["host"],
+            port=admin_config["port"],
+            dbname=admin_config["dbname"],
+            user=admin_config["user"],
+            password=admin_config["password"],
+            autocommit=True,
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT pg_terminate_backend(pid)
+                    FROM pg_stat_activity
+                    WHERE datname = %s AND pid <> pg_backend_pid()
+                    """,
+                    (self.oom_db_name,),
+                )
+                cur.execute(
+                    psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
+                        psycopg.sql.Identifier(self.oom_db_name)
+                    )
+                )
+                for role_name in self.oom_roles:
+                    cur.execute(
+                        psycopg.sql.SQL("DROP ROLE IF EXISTS {}").format(
+                            psycopg.sql.Identifier(role_name)
+                        )
+                    )
+                cur.execute(
+                    psycopg.sql.SQL("CREATE DATABASE {}").format(
+                        psycopg.sql.Identifier(self.oom_db_name)
+                    )
+                )
+
+        env = os.environ.copy()
+        env["PGPASSWORD"] = str(self.db_config["password"])
+
+        tar_process = subprocess.Popen(
+            ["tar", "-xOf", self.oom_dump_path, "test.sql"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            restore_process = subprocess.run(
+                [
+                    "psql",
+                    "-h", str(self.db_config["host"]),
+                    "-p", str(self.db_config["port"]),
+                    "-U", str(self.db_config["user"]),
+                    "-d", self.oom_db_name,
+                    "-v", "ON_ERROR_STOP=1",
+                ],
+                stdin=tar_process.stdout,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                env=env,
+                check=False,
+            )
+        finally:
+            if tar_process.stdout is not None:
+                tar_process.stdout.close()
+
+        tar_stderr = b""
+        if tar_process.stderr is not None:
+            tar_stderr = tar_process.stderr.read()
+        tar_return_code = tar_process.wait()
+
+        if tar_return_code != 0:
+            raise RuntimeError(
+                "Failed to extract OOM dump: "
+                + tar_stderr.decode("utf-8", errors="replace")
+            )
+        if restore_process.returncode != 0:
+            raise RuntimeError(
+                "Failed to restore OOM database: "
+                + restore_process.stderr.decode("utf-8", errors="replace")
+            )
+
+    def _run_oom_query_iterations(self):
+        print("Восстанавливаю OOM базу данных test")
+        self._restore_oom_database()
+        iterations = []
+
+        for pass_num in range(1, max(1, int(self.passes)) + 1):
+            started = time.perf_counter()
+            with psycopg.connect(
+                host=self.db_config["host"],
+                port=self.db_config["port"],
+                dbname=self.oom_db_name,
+                user=self.db_config["user"],
+                password=self.db_config["password"],
+            ) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(self.oom_query)
+                    if cur.description is not None:
+                        cur.fetchall()
+            measurement = time.perf_counter() - started
+            iterations.append(measurement)
+            print(
+                f"Запрос {self.oom_query_name}, проход {pass_num}: "
+                f"{measurement:.3f} сек"
+            )
+
+        return iterations
 
     async def run_test(self):
         db_config = self.db_config
@@ -346,6 +473,25 @@ JOIN main.build_packages AS bp
             plt.close(fig)
             return graph_file_path
 
+        def build_result_entry(query_name, iterations):
+            median_value = calc_median(iterations)
+            p99_value = calc_percentile(iterations, 99)
+            p95_value = calc_percentile(iterations, 95)
+            p50_value = calc_percentile(iterations, 50)
+            min_value = min(iterations) if iterations else 0.0
+            max_value = max(iterations) if iterations else 0.0
+            graph_file_path = save_speed_graph(query_name, iterations)
+            return {
+                "iterations": [round(value, 3) for value in iterations],
+                "median": round(median_value, 3),
+                "p99": round(p99_value, 3),
+                "p95": round(p95_value, 3),
+                "p50": round(p50_value, 3),
+                "min": round(min_value, 3),
+                "max": round(max_value, 3),
+                "speed_graph": graph_file_path,
+            }
+
         pool = AsyncConnectionPool(
             conninfo=dsn,
             min_size=1,
@@ -384,25 +530,14 @@ JOIN main.build_packages AS bp
                         f"{measurement:.3f} сек"
                     )
 
-                median_value = calc_median(iterations)
-                p99_value = calc_percentile(iterations, 99)
-                p95_value = calc_percentile(iterations, 95)
-                p50_value = calc_percentile(iterations, 50)
-                min_value = min(iterations) if iterations else 0.0
-                max_value = max(iterations) if iterations else 0.0
                 total_rating_data[query_name] = iterations
-                graph_file_path = save_speed_graph(query_name, iterations)
+                result["result"][query_name] = build_result_entry(query_name, iterations)
 
-                result["result"][query_name] = {
-                    "iterations": [round(value, 3) for value in iterations],
-                    "median": round(median_value, 3),
-                    "p99": round(p99_value, 3),
-                    "p95": round(p95_value, 3),
-                    "p50": round(p50_value, 3),
-                    "min": round(min_value, 3),
-                    "max": round(max_value, 3),
-                    "speed_graph": graph_file_path,
-                }
+            oom_iterations = self._run_oom_query_iterations()
+            result["result"][self.oom_query_name] = build_result_entry(
+                self.oom_query_name,
+                oom_iterations,
+            )
             criteria_iterations = [float(index) for index in range(1, passes + 1)]
 
             model = MathModel()

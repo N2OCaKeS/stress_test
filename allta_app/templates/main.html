@@ -1797,7 +1797,7 @@
             background-color: #1e1e1e;
             padding: 20px;
             font-family: 'Courier New', 'Consolas', monospace;
-            font-size: 13px;
+            font-size: 15px;
             line-height: 1.4;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -1842,7 +1842,7 @@
             background-color: #1e1e1e;
             color: #d4d4d4;
             font-family: 'Courier New', 'Consolas', monospace;
-            font-size: 13px;
+            font-size: 15px;
             line-height: 1.4;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -1906,38 +1906,35 @@
                 return response.json();
               })
               .then(data => {
-                // Формируем HTML-таблицу с цветовой подсветкой
-                let html = '<div style="font-family: \'Courier New\', monospace; font-size: 13px;">';
+                // Формируем текст с цветовой подсветкой через CSS-классы
+                let lines = [];
                 
                 Object.entries(data).forEach(([service, status]) => {
                     let statusClass = '';
                     let statusText = status;
                     
                     if (status.includes('active (running)')) {
-                        statusClass = 'running';
+                        statusClass = 'service-status-running';
                         statusText = '✅ active (running)';
                     } else if (status.includes('active (exited)')) {
-                        statusClass = 'exited';
+                        statusClass = 'service-status-exited';
                         statusText = '✅ active (exited)';
                     } else if (status.includes('inactive')) {
-                        statusClass = 'inactive';
+                        statusClass = 'service-status-inactive';
                         statusText = '⏸ inactive';
                     } else if (status.includes('failed')) {
-                        statusClass = 'failed';
+                        statusClass = 'service-status-failed';
                         statusText = '❌ failed';
                     } else {
-                        statusClass = 'inactive';
+                        statusClass = 'service-status-inactive';
                     }
                     
-                    html += `
-                        <div class="service-line">
-                            <span class="service-name">${service}:</span>
-                            <span class="service-status ${statusClass}">${statusText}</span>
-                        </div>
-                    `;
+                    // Формируем строку с выравниванием
+                    const paddedService = service.padEnd(30, ' ');
+                    lines.push(`<span class="service-name">${paddedService}</span> <span class="${statusClass}">${statusText}</span>`);
                 });
                 
-                html += '</div>';
+                const html = `<pre class="services-health-pre">${lines.join('\n')}</pre>`;
                 
                 document.querySelector('#servicesHealthModal .modal-body').innerHTML = html;
                 
@@ -1947,10 +1944,10 @@
             .catch(error => {
                 console.error('Ошибка при получении данных:', error.message);
                 document.querySelector('#servicesHealthModal .modal-body').innerHTML = `
-                    <div style="color: #f48771; font-family: 'Courier New', monospace;">
-                        ❌ Возникла ошибка при получении данных:<br>
-                        ${error.message}
-                    </div>
+                    <pre class="services-health-pre" style="color: #f48771;">
+    ❌ Возникла ошибка при получении данных:
+    ${error.message}
+                    </pre>
                 `;
                 const modal = new bootstrap.Modal(document.getElementById('servicesHealthModal'));
                 modal.show();

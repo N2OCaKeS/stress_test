@@ -1989,6 +1989,36 @@ class TestrunManager:
                                                                                         "version_to_update": version,
                                                                                         "password_cs": self.__password,
                                                                                         "stand_name": 'LowServer5'})
+        elif stand == 'AllStands':
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer'})
+            time.sleep(300)
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'MiddleServer'})
+            time.sleep(300)
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer2'})
+            time.sleep(300)
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer3'})
+            time.sleep(300)
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer4'})
+            time.sleep(300)
+            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                        "version_to_update": version,
+                                                                                        "password_cs": self.__password,
+                                                                                        "stand_name": 'LowServer5'})
         else: res_create_full_snap = 'Wrong stand'
         return res_create_full_snap.text
 

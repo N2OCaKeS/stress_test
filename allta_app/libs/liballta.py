@@ -32,7 +32,8 @@ from os import (path,
                 unlink,
                 linesep,
                 killpg,
-                getpgid)
+                getpgid,
+                rename)
 from multiprocessing import Process
 from tempfile import mkstemp
 from paramiko import ssh_exception
@@ -1934,61 +1935,138 @@ class TestrunManager:
         zefir_table
 
 
-    def acs_create_snapshot(self, version: str, stand):
-        res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
-        data_repos = json.loads(res_all_repos)
-        needed_repos = data_repos.get(version)
-        busy_status_control(stand, 'ACS', version=version)
+    @staticmethod
+    def write_log(message, log_name='acs', max_size_mb=10):
+        """Запись в разные файлы логов с ротацией"""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        log_file = f'{log_name}.log'
+        
+        # Ротация если файл больше max_size_mb
+        if path.exists(log_file) and path.getsize(log_file) > max_size_mb * 1024 * 1024:
+            file_size_mb = path.getsize(log_file) / 1024 / 1024 
+            backup_file = f'{log_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+            rename(log_file, backup_file)
+            print(f"Log rotated: {backup_file} (was {file_size_mb:.2f} MB)")
+        
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"{timestamp} - {message}\n")
+        print(f"{timestamp} - {message}")
 
-        if needed_repos:
-            repos_to_one_str = "\n".join(needed_repos)
-            res_ver = requests.post(f"{ACS_BASE_URL}/versions", json={"name": version,
-                                                                "digit_name": version})
-            data = res_ver.json()
-            id_new_version = data.get("data")
-            requests.post(f"{ACS_BASE_URL}/repos", json={"link": repos_to_one_str,
-                                                    "version_id": id_new_version}) 
-            
-        if version.startswith('1.8'):
-            restore_version = '1.8.1.6'
-        elif version.startswith('1.7'):
-            restore_version = '1.7.5'
-        
-        stand_mapping = {
-            'stand3': 'LowServer',
-            'stand4': 'MiddleServer',
-            'stand5': 'HighServer',
-            'stand10': 'LowServer2',
-            'stand11': 'LowServer3',
-            'stand12': 'LowServer4',
-            'stand13': 'LowServer5',
-            'AllStands': 'all'  
-        }
-        
+
+    def acs_create_snapshot(self, version: str, stand):
         if stand == 'AllStands':
-            stands_list = ['LowServer', 'MiddleServer', 'LowServer2', 'LowServer3', 'LowServer4', 'LowServer5']
-            for s in stands_list:
-                requests.post(f"{ACS_BASE_URL}/create_full_snap", 
-                            params={"restore_version": restore_version,
-                                    "version_to_update": version,
-                                    "password_cs": self.__password,
-                                    "stand_name": s})
-                time.sleep(300)
-            return {'message': f'ACS started for all stands with version {version}'}
+            logname = 'acs_allstands'
+        else:
+            logname = f'acs_{stand}'
+
+        self.write_log(f"\n\n=== ACS Snapshot Started ===", logname)
+        self.write_log(f"Parameters: version={version}, stand={stand}", logname)
         
-        elif stand in stand_mapping:
-            res_create_full_snap = requests.post(f"{ACS_BASE_URL}/create_full_snap", 
-                                                params={"restore_version": restore_version,
+        try:
+            res_all_repos = requests.get("http://allta.devos.astralinux.ru/rest/api/get-repo-path-as-json").text
+            data_repos = json.loads(res_all_repos)
+            needed_repos = data_repos.get(version)
+            
+            if needed_repos:
+                self.write_log(f"Found needed repos for version {version}: {len(needed_repos)} repos", logname)
+                repos_to_one_str = "\n".join(needed_repos)
+                res_ver = requests.post(f"{ACS_BASE_URL}/versions", json={"name": version,
+                                                                    "digit_name": version})
+                data = res_ver.json()
+                id_new_version = data.get("data")
+                requests.post(f"{ACS_BASE_URL}/repos", json={"link": repos_to_one_str,
+                                                        "version_id": id_new_version})
+                self.write_log(f"Created version {version} with id {id_new_version}", logname)
+                
+            if version.startswith('1.8'):
+                restore_version = '1.8.1.6'
+            elif version.startswith('1.7'):
+                restore_version = '1.7.5'
+            else:
+                self.write_log(f"ERROR: Unsupported version: {version}", logname)
+                return {'error': f'Unsupported version: {version}'}
+            
+            self.write_log(f"Restore version: {restore_version}",logname)
+            
+            stand_mapping = {
+                'stand3': 'LowServer',
+                'stand4': 'MiddleServer',
+                'stand5': 'HighServer',
+                'stand10': 'LowServer2',
+                'stand11': 'LowServer3',
+                'stand12': 'LowServer4',
+                'stand13': 'LowServer5', 
+            }
+            
+            if stand == 'AllStands':
+                self.write_log("Starting AllStands mode - will process 6 stands", logname)
+                stands_config = [
+                    ('stand3', 'LowServer'),
+                    ('stand4', 'MiddleServer'),
+                    ('stand10', 'LowServer2'),
+                    ('stand11', 'LowServer3'),
+                    ('stand12', 'LowServer4'),
+                    ('stand13', 'LowServer5')
+                ]
+                
+                total = len(stands_config)
+                for idx, (stand_key, stand_name) in enumerate(stands_config, 1):
+                    self.write_log(f"Processing stand {idx}/{total}: {stand_key} -> {stand_name}", logname)
+                    
+                    try:
+                        busy_status_control(stand_key, 'ACS', version=version)
+                        self.write_log(f"Busy status control passed for {stand_key}", logname)
+                        
+                        response = requests.post(f"{ACS_BASE_URL}/create_full_snap", 
+                                            params={"restore_version": restore_version,
                                                     "version_to_update": version,
                                                     "password_cs": self.__password,
-                                                    "stand_name": stand_mapping[stand]})
-            if res_create_full_snap.status_code == 200:
-                return {'message': f'ACS started successfully for {stand}', 'details': res_create_full_snap.text}
+                                                    "stand_name": stand_name})
+                        
+                        self.write_log(f"ACS request for {stand_key}: status={response.status_code}", logname)
+                        
+                        if response.status_code != 200:
+                            self.write_log(f"WARNING: Non-200 response for {stand_key}: {response.text[:200]}", logname)
+                        
+                        if idx < total:
+                            self.write_log(f"Sleeping 300 seconds before next stand...", logname)
+                            time.sleep(300)
+                            
+                    except Exception as e:
+                        self.write_log(f"ERROR processing {stand_key}: {str(e)}", logname)
+                        continue
+                
+                self.write_log(f"ACS completed for all stands with version {version}", logname)
+                return {'message': f'ACS started for all stands with version {version}'}
+            
+            elif stand in stand_mapping:
+                self.write_log(f"Processing single stand: {stand} -> {stand_mapping[stand]}", logname)
+                
+                busy_status_control(stand, 'ACS', version=version)
+                self.write_log("Busy status control passed", logname)
+                
+                response = requests.post(f"{ACS_BASE_URL}/create_full_snap", 
+                                    params={"restore_version": restore_version,
+                                            "version_to_update": version,
+                                            "password_cs": self.__password,
+                                            "stand_name": stand_mapping[stand]})
+                
+                self.write_log(f"ACS request completed with status: {response.status_code}", logname)
+                
+                if response.status_code == 200:
+                    self.write_log(f"SUCCESS: ACS started successfully for {stand}", logname)
+                    return {'message': f'ACS started successfully for {stand}', 'details': response.text}
+                else:
+                    self.write_log(f"ERROR: ACS request failed for {stand}: status={response.status_code}", logname)
+                    return {'error': f'ACS request failed with status {response.status_code}', 
+                            'details': response.text}
             else:
-                return {'error': f'ACS request failed with status {res_create_full_snap.status_code}', 
-                        'details': res_create_full_snap.text}
-        else:
-            return {'error': f'Wrong stand: {stand}. Available stands: {list(stand_mapping.keys())} + AllStands'}
+                self.write_log(f"ERROR: Wrong stand parameter: {stand}", logname)
+                return {'error': f'Wrong stand: {stand}. Available stands: {list(stand_mapping.keys())} + AllStands'}
+                
+        except Exception as e:
+            self.write_log(f"UNEXPECTED ERROR: {str(e)}", logname)
+            return {'error': f'Internal error: {str(e)}'}
 
 
     def generate_repo_path(self):

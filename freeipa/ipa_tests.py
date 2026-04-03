@@ -29,14 +29,10 @@ class Results:
                         local_path=f"{REPORT_PATH}/ipa_report_error.txt",
                         local_to_remote=False)
         
-        if test_name == "plagin":
+        if test_name == "plugin":
             remote_put_file(host=HOSTS[host]['ip'],
                             remote_path=f'/home/{USER}/ipa_plagin_results.txt',
                             local_path=f"{REPORT_PATH}/ipa_plagin_results.txt",
-                            local_to_remote=False)
-            remote_put_file(host=HOSTS[host]['ip'],
-                            remote_path=f'/home/{USER}/ipa_plugin_results_etime.txt',
-                            local_path=f"{REPORT_PATH}/ipa_plugin_results_etime.txt",
                             local_to_remote=False)
 
 
@@ -66,20 +62,18 @@ class CreateUsersTest():
         Results.get_results(host='server')
 
 
-class PlaginMemberOfTest():
+class PluginMemberOfTest():
     def test1(self):
+        remote_cmd('echo 12345678 | kinit admin', HOSTS['server']['ip'])
         remote_exec(f"ipa group-add gr_1", 'server')
+        remote_exec(f"ipa group-add gr_2", 'server')
         remote_exec(f"python3 ipa_test_plagin.py", 'server')
-        remote_cmd("{ time ipa group-add-member --groups=gr_1 gr_2; }> /home/u/ipa_plagin_results.txt", HOSTS['server']['ip'])
-        # { time sleep 10; }
-        # time ldapsearch -Y EXTERNAL -H 'ldapi://%2Frun%2Fslapd-STRESS-TESTING-LOCAL.socket'
-        remote_cmd("{ time ldapsearch -H 'ldapi://%2Frun%2Fslapd-STRESS-TESTING-LOCAL.socket; }' > /home/u/ipa_plugin_results_etime.txt", HOSTS['server']['ip'])
-
+        remote_cmd("{ time ipa group-add-member --groups=gr_1 gr_2; } &> /home/u/ipa_plugin_results.txt", HOSTS['server']['ip'])
 
     def processing_results(self):
-        Results.get_results(host='server', test_name="plagin")
+        Results.get_results(host='server', test_name="plugin")
 
-        with open(PLAGIN_REPORT_FILE, "r") as plugin_file:
+        with open("ipa_plugin_results.txt", "r") as plugin_file:
             for line in plugin_file.readlines():
                 if "real" in line:
                     real_time = line.split("\t")[-1].strip("\n")
@@ -87,12 +81,9 @@ class PlaginMemberOfTest():
                     minutes = int(minutes)
                     seconds = float(seconds.strip("s").replace(",","."))
                     total_seconds = minutes * 60 + seconds
-        with open("etime.txt", 'r') as etime_file:
-            etime = float(etime_file.read().split(" ")[-1])
         
         results = {
                 "total_seconds": total_seconds,
-                "etime": etime
             }
         
         with open("ipa_results.json", "w") as j_file:
@@ -132,11 +123,6 @@ class PlaginMemberOfTest():
 #             delete_clients_from_dc(clients)
 #             delete_docker_cont(clients)
 #             sleep(300)
-
-
-class CreateUserTest():
-    pass
-
 
 class ApiTest():
     pass

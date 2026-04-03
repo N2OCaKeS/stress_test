@@ -137,10 +137,8 @@ class Public:
             with open("ipa_results.json", "r") as report_file:
                 results = loads(report_file.read())
                 total_seconds = results.get("total_seconds")
-                etime = results.get("etime")
                 df = pd.DataFrame([{
                     "Время добавления пользователей из группы gr_1 в gr_2 (сек)": total_seconds,
-                    "Время выполнения ldap запроса с фильтром (etime)": etime,
                 }])
                 table_html_with_results = df.to_html()
             html_page = '\n'.join([header_table, table_html_with_results])

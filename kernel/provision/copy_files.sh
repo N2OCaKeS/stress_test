@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Add disk
+# sudo qemu-img create -f qcow2 /vms/db1.qcow2 100G && sudo virsh attach-disk testvm1 /vms/db1.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio
+
+
 # ============================================
 # Скрипт для тестирования XFS на /dev/vdb
 # ============================================

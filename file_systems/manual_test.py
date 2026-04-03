@@ -702,7 +702,7 @@ def fs_mark33_count(start=FILES,
 
         if test.returncode == 0:
             with open('{}/{}'.format(REPORT_PATH, REPORT_FILENAME), 'a+') as report_file:
-                report_file.write(out.splitlines()[-5]+'\n')
+                report_file.write(out.splitlines()[-5]+'\n') # В некоторых случаях [-1]
             print("{} | \033[92mpass\033[0m".format(out.splitlines()[-1]))
             print(out)
         else:

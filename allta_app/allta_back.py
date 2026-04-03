@@ -330,6 +330,7 @@ try:
                             sd_ovf = '-ovf sd'
                             ipa_auth = '-ipa auth'
                             ipa_user = '-ipa create-users'
+                            ipa_plugin = '-ipa plugin'
                             dovecot = '-mail imap'
                             exim = '-mail smtp'
                             parsec_impact = '-parsec-impact impact'
@@ -400,6 +401,9 @@ try:
                             elif tests[dates_list[i][1]] == 'FreeIPA c-users':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {ipa_user} {tes}', shell=True)
+                            elif tests[dates_list[i][1]] == 'FreeIPA plugin':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {ipa_plugin} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'parsec impact-fs':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {parsec_impact} {tes}', shell=True)                           
@@ -495,6 +499,7 @@ try:
                     sd_ovf = '-ovf sd'
                     ipa_auth = '-ipa auth'
                     ipa_user = '-ipa create-users'
+                    ipa_plugin = '-ipa plugin'
                     dovecot = '-mail imap'
                     exim = '-mail smtp'
                     parsec_impact = '-parsec-impact impact'
@@ -564,6 +569,9 @@ try:
                     elif tests[dates_list[i][1]] == 'FreeIPA c-users':
                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {ipa_user} {tes}', shell=True)
+                    elif tests[dates_list[i][1]] == 'FreeIPA plugin':
+                            subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {ipa_plugin} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'parsec impact-fs':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {parsec_impact} {tes}', shell=True)

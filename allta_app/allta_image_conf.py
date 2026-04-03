@@ -110,7 +110,7 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
             'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl', 'AOpenVPNcc',
                                  'Dovecot-IMAP', 'Exim4-SMTP', 'SegFault'],
             'UnixBench':        ['unix', 'unix parsec'],
-            'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users'],
+            'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users', "FreeIPA plugin"],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
             'Apache':           ['apache-rp'],
             'Docker/Podman/LXC':['docker-wa'],
@@ -156,6 +156,7 @@ def parent_page_list():
 branches = {
     'freeipa authentication test':'freeipa',
     'freeipa create users test':'freeipa',
+    'freeipa plugin test':'freeipa',
     'file system benchmark. EXT4':'file_systems',
     'file system benchmark. XFS':'file_systems',
     'postgresql benchmark':'postgresql',
@@ -227,6 +228,7 @@ tests = {
     'DIGSIG. Check digsig time': 'digsig-cdt',
     'freeipa authentication test':'FreeIPA auth',
     'freeipa create users test':'FreeIPA c-users',
+    'freeipa plugin test':'FreeIPA plugin',
     'file system benchmark. EXT4':'EXT4',
     'file system benchmark. XFS':'XFS',
     'postgresql benchmark':'postgresql',
@@ -306,7 +308,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq']
+              'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin']
 
 
 
@@ -390,7 +392,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
         """
         topics = {
             'orel_stand3':      ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'FreeIPA auth', 'unix', 'FreeIPA c-users'],
-            'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'unix parsec'],
+            'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'unix parsec', 'FreeIPA plugin'],
             'orel_stand4':      ['postgresql-aud-off', 'postgresql', 'psql balance', 'steal time', 'psql kernels'],
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla', 'steal time-sm'],
             'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio'],
@@ -412,7 +414,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
     return handler(topic=get_topic())
 
 stands_groups = {
-    'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users'],
+    'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users', 'FreeIPA plugin'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
 
@@ -475,7 +477,8 @@ tests_case_zefir_key = {
     'FIO large':'BT-T18278',
     'InitOnFree':'BT-T18909',
     'SegFault':'BT-T18927',
-    'PSQL OLAP-hq':'BT-T19100'
+    'PSQL OLAP-hq':'BT-T19100',
+    'FreeIPA plugin':'BT-T19492'
 }
 
 
@@ -506,7 +509,8 @@ testname_columns = {
                     'ceph parsec benchmark':'FS_CEPH_parsec', 'astra openvpn client connections':'AOpenVPNcc',
                     'dovecot benchmark':'Dovecot-IMAP', 'exim benchmark':'Exim4-SMTP', 'Large FIO benchmark':'FIO_large',
                     'Network benchmark. Init_on_free':'InitOnFree', 'segmentation_fault':'SegFault',
-                    'postgresql benchmark olap':'PSQL_OLAP-hq'
+                    'postgresql benchmark olap':'PSQL_OLAP-hq',
+                    'freeipa plugin test':'FreeIPA_plugin'
                     }
 
 

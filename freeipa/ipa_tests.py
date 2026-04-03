@@ -73,7 +73,7 @@ class PluginMemberOfTest():
     def processing_results(self):
         Results.get_results(host='server', test_name="plugin")
 
-        with open("ipa_plugin_results.txt", "r") as plugin_file:
+        with open(f"{REPORT_PATH}/ipa_plugin_results.txt", "r") as plugin_file:
             for line in plugin_file.readlines():
                 if "real" in line:
                     real_time = line.split("\t")[-1].strip("\n")

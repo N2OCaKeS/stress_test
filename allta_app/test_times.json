@@ -13,6 +13,7 @@
             "unix parsec": "1:04:45",
             "FreeIPA auth": "1:25:04",
             "FreeIPA c-users": "0:42:57",
+            "FreeIPA plugin": "0:42:50",
             "Total time": "0:00:00"
         },
         "stand4": {
@@ -81,6 +82,7 @@
             "unix parsec": "1:20:07",
             "FreeIPA auth": "1:25:58",
             "FreeIPA c-users": "1:21:10",
+            "FreeIPA plugin": "0:42:50",
             "Total time": "0:00:00"
         },
         "stand4": {

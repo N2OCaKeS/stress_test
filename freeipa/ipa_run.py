@@ -230,6 +230,7 @@ if __name__ == "__main__":
         total_rating = report.get_total_rating_create_users_test()
     
     elif args.TT == "plugin":
+        remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_test_plugin.py', "ipa_test_plugin.py")
         plugin_test = PluginMemberOfTest()
         plugin_test.run()
         plugin_test.processing_results()

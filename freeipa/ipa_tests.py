@@ -7,7 +7,7 @@ from time import time, sleep
 # from paramiko import SSHException
 
 from libs.libipa import remote_cmd, remote_put_file, remote_exec
-from ipa_conf import USER, HOSTS, REPORT_PATH, PLAGIN_REPORT_FILE #, LOWER_LIMITE_CLIENTS, STEP_CLIENTS, UPPER_LIMITE_CLIENTS, USERS_COUNT, 
+from ipa_conf import USER, HOSTS, REPORT_PATH #, LOWER_LIMITE_CLIENTS, STEP_CLIENTS, UPPER_LIMITE_CLIENTS, USERS_COUNT, 
 # from ipa_init_client_enroll import presettings_on_hosts_for_ipa_clients, create_centos_cont, init_ipa_client, delete_clients_from_dc, delete_docker_cont, check_qty_clients
 
 
@@ -31,8 +31,8 @@ class Results:
         
         if test_name == "plugin":
             remote_put_file(host=HOSTS[host]['ip'],
-                            remote_path=f'/home/{USER}/ipa_plagin_results.txt',
-                            local_path=f"{REPORT_PATH}/ipa_plagin_results.txt",
+                            remote_path=f'/home/{USER}/ipa_plugin_results.txt',
+                            local_path=f"{REPORT_PATH}/ipa_plugin_results.txt",
                             local_to_remote=False)
 
 
@@ -67,7 +67,7 @@ class PluginMemberOfTest():
         remote_cmd('echo 12345678 | kinit admin', HOSTS['server']['ip'])
         remote_exec(f"ipa group-add gr_1", 'server')
         remote_exec(f"ipa group-add gr_2", 'server')
-        remote_exec(f"python3 ipa_test_plagin.py", 'server')
+        remote_exec(f"python3 ipa_test_plugin.py", 'server')
         remote_cmd("{ time ipa group-add-member --groups=gr_1 gr_2; } &> /home/u/ipa_plugin_results.txt", HOSTS['server']['ip'])
 
     def processing_results(self):

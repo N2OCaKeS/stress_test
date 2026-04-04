@@ -80,7 +80,7 @@ def create_user(i):
                 )
                 elapsed = time.time() - start
                 results_queue.put((login, elapsed, True))
-                if i >= 50000 and i <= 54000:
+                if i >= 45000 and i <= 50000:
                     client.group_add_member(
                         "gr_1",
                         o_user=[login]
@@ -119,7 +119,7 @@ def del_user(user_id):
 
 def main():
     init_client_pool(size=30)
-    user_count = 55000
+    user_count = 50000
     start_total = time.time()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_user = {

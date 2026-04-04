@@ -63,7 +63,6 @@ USER_CREATE_START = 2000
 USER_CREATE_STEP = 2000
 USER_CREATE_MAX = 10000
 
-
 '''
     Описание для графиков отчета
 '''

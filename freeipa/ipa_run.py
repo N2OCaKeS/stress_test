@@ -10,7 +10,7 @@ from libs.libipa import (remote_exec,
                          upload_results_to_ftp)
 from ipa_conf import HOSTS, USER, INFO_FILENAME, REPORT_PATH
 from libs.zefir import UploaderZC
-from ipa_tests import AutentificationTest, CreateUsersTest
+from ipa_tests import AutentificationTest, CreateUsersTest, PluginMemberOfTest
 from libs.libpublic import Public
 
 
@@ -99,7 +99,8 @@ parser.add_argument('-tt', '--type-test',
                     action='store',
                     required=False,
                     choices=['auth',
-                             'create-users'],
+                             'create-users'
+                             'plugin'],
                     help='type test',
                     default="auth",
                     dest='TT')
@@ -227,6 +228,13 @@ if __name__ == "__main__":
                             x_label="Количество пользователей",
                             y_label="users/sec")
         total_rating = report.get_total_rating_create_users_test()
+    
+    elif args.TT == "plugin":
+        remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_test_plugin.py', "ipa_test_plugin.py")
+        plugin_test = PluginMemberOfTest()
+        plugin_test.run()
+        plugin_test.processing_results()
+
     else:
         report = Report()
         total_rating = 0

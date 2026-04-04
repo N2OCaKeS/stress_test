@@ -1,4 +1,5 @@
 import os
+import json
 from os import path
 # import random
 from time import time, sleep
@@ -12,7 +13,7 @@ from ipa_conf import USER, HOSTS, REPORT_PATH #, LOWER_LIMITE_CLIENTS, STEP_CLIE
 
 class Results:
     @staticmethod
-    def get_results(host):
+    def get_results(host, test_name=None):
         """
         Забираем файл с результатами
         """
@@ -27,6 +28,12 @@ class Results:
                         remote_path=f'/home/{USER}/ipa_report_error.txt',
                         local_path=f"{REPORT_PATH}/ipa_report_error.txt",
                         local_to_remote=False)
+        
+        if test_name == "plugin":
+            remote_put_file(host=HOSTS[host]['ip'],
+                            remote_path=f'/home/{USER}/ipa_plugin_results.txt',
+                            local_path=f"{REPORT_PATH}/ipa_plugin_results.txt",
+                            local_to_remote=False)
 
 
 class AutentificationTest():
@@ -53,6 +60,37 @@ class CreateUsersTest():
         remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_create_users_ldap_cli.py', 'ipa_create_users_ldap_cli.py')
         remote_exec(f"sudo python3 ipa_create_users_ldap_cli.py", 'server')
         Results.get_results(host='server')
+
+
+class PluginMemberOfTest():
+    def test1(self):
+        remote_cmd('echo 12345678 | kinit admin', HOSTS['server']['ip'])
+        remote_exec(f"ipa group-add gr_1", 'server')
+        remote_exec(f"ipa group-add gr_2", 'server')
+        remote_exec(f"python3 ipa_test_plugin.py", 'server')
+        remote_cmd("{ time ipa group-add-member --groups=gr_1 gr_2; } &> /home/u/ipa_plugin_results.txt", HOSTS['server']['ip'])
+
+    def processing_results(self):
+        Results.get_results(host='server', test_name="plugin")
+
+        with open(f"{REPORT_PATH}/ipa_plugin_results.txt", "r") as plugin_file:
+            for line in plugin_file.readlines():
+                if "real" in line:
+                    real_time = line.split("\t")[-1].strip("\n")
+                    minutes, seconds = real_time.split("m")
+                    minutes = int(minutes)
+                    seconds = float(seconds.strip("s").replace(",","."))
+                    total_seconds = minutes * 60 + seconds
+        
+        results = {
+                "total_seconds": total_seconds,
+            }
+        
+        with open("ipa_results.json", "w") as j_file:
+            j_file.write(json.dumps(results))
+
+    def run(self):
+        self.test1()
 
 
 # class EnrollementTest():
@@ -85,11 +123,6 @@ class CreateUsersTest():
 #             delete_clients_from_dc(clients)
 #             delete_docker_cont(clients)
 #             sleep(300)
-
-
-class CreateUserTest():
-    pass
-
 
 class ApiTest():
     pass

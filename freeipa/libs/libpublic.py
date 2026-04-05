@@ -134,7 +134,8 @@ class Public:
                                                     lead_time=info_dct.get("lead_time"))  
    
         if self.ts == "plugin":
-            with open("ipa_results.json", "r") as report_file:
+            print("зашли в плагин публикацию")
+            with open(f"{REPORT_PATH}/ipa_results.json", "r") as report_file:
                 results = loads(report_file.read())
                 total_seconds = results.get("total_seconds")
                 df = pd.DataFrame([{

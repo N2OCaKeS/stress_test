@@ -85,8 +85,8 @@ class PluginMemberOfTest():
         results = {
                 "total_seconds": total_seconds,
             }
-        
-        with open("ipa_results.json", "w") as j_file:
+
+        with open(f"{REPORT_PATH}/ipa_results.json", "w") as j_file:
             j_file.write(json.dumps(results))
 
     def run(self):

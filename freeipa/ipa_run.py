@@ -99,7 +99,7 @@ parser.add_argument('-tt', '--type-test',
                     action='store',
                     required=False,
                     choices=['auth',
-                             'create-users'
+                             'create-users',
                              'plugin'],
                     help='type test',
                     default="auth",

@@ -67,7 +67,7 @@ class PluginMemberOfTest():
         remote_cmd('echo 12345678 | kinit admin', HOSTS['server']['ip'])
         remote_exec(f"ipa group-add gr_1", 'server')
         remote_exec(f"ipa group-add gr_2", 'server')
-        remote_exec(f"python3 ipa_test_plugin.py", 'server')
+        remote_exec(f"/home/u/venv/bin/python3 ipa_test_plugin.py", 'server')
         remote_cmd("{ time ipa group-add-member --groups=gr_1 gr_2; } &> /home/u/ipa_plugin_results.txt", HOSTS['server']['ip'])
 
     def processing_results(self):

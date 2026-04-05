@@ -121,7 +121,8 @@ if __name__ == "__main__":
                  conf_space=args.SPACE,
                  conf_parent_page=args.PPAGE,
                  conf_new_page_name=args.NPAGE,
-                 grade_stand=args.STAND)
+                 grade_stand=args.STAND,
+                 test_set=args.TT)
     
     uzs.upload_test_cycle_status('progress')
 

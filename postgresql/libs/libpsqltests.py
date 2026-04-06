@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 
 from psb_conf import LOG_FILENAME, DATABASE_NAME, \
     MAC_SQL_UPGRADE, MAC_SQL_TRANSACTION, \
-    TABLESPACE_DEFAULT, REPORT_FILENAME, REPORT_PATH, PG_SETEST_PORT, PG_VERSION, PG_VERSION_18
+    TABLESPACE_DEFAULT, REPORT_FILENAME, REPORT_PATH, PG_SETEST_CLUSTER, PG_SETEST_PORT, PG_VERSION, PG_VERSION_18
 from libs.libpsb import init_test_tables, upgrade_test_table, pgbench, pgbench_custom, astra_version
 # import pysnooper
 
@@ -286,15 +286,170 @@ JOIN main.build_packages AS bp
         self.oom_db_name = "test"
         self.oom_query_name = "oom_form_am289n04_query"
         self.oom_query = "SELECT am289.form_am289n04()"
-        self.oom_roles = (
-            "am289",
-            "data",
-            "data_db",
-            "data_common",
-        )
+        self.oom_cluster_name = PG_SETEST_CLUSTER
+        self.oom_cluster_port = self.db_config["port"]
+        self.oom_roles = {
+            "am289": "useram289",
+            "data": "userdata",
+            "data_db": "userdata_db",
+            "data_common": "userdata_com",
+            "ab122": "userab122",
+            "ott1g": "userott1g",
+            "ott32": "userott32",
+        }
         self.oom_dump_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "sql", "test.tar.gz")
         )
+
+    def _get_cluster_version(self):
+        al_version = astra_version()[0]
+        if str(al_version).startswith("1.8"):
+            return PG_VERSION_18
+        return PG_VERSION
+
+    def _run_cluster_command(self, args, check=True):
+        process = subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if check and process.returncode != 0:
+            raise RuntimeError(
+                "Cluster command failed: "
+                + " ".join(str(arg) for arg in args)
+                + os.linesep
+                + process.stderr.strip()
+            )
+        return process
+
+    def _recreate_oom_cluster(self):
+        cluster_version = str(self._get_cluster_version())
+        cluster_name = self.oom_cluster_name
+        cluster_port = str(self.oom_cluster_port)
+        cluster_conf_dir = f"/etc/postgresql/{cluster_version}/{cluster_name}"
+        hba_path = os.path.join(cluster_conf_dir, "pg_hba.conf")
+        postgresql_conf_path = os.path.join(cluster_conf_dir, "postgresql.conf")
+
+        print(
+            f"Пересоздаю кластер {cluster_name} "
+            f"(PostgreSQL {cluster_version}, порт {cluster_port})"
+        )
+
+        self._run_cluster_command(
+            ["pg_ctlcluster", cluster_version, cluster_name, "stop"],
+            check=False,
+        )
+        self._run_cluster_command(
+            ["pg_dropcluster", cluster_version, cluster_name, "--stop"],
+            check=False,
+        )
+        self._run_cluster_command(
+            ["pg_createcluster", cluster_version, cluster_name, "--port", cluster_port]
+        )
+
+        if os.path.isfile(hba_path):
+            with open(hba_path, "r", encoding="utf-8") as hba_stream:
+                hba_content = hba_stream.read()
+            hba_content = (
+                hba_content
+                .replace("scram-sha-256", "trust")
+                .replace("md5", "trust")
+                .replace("peer", "trust")
+            )
+            with open(hba_path, "w", encoding="utf-8") as hba_stream:
+                hba_stream.write(hba_content)
+
+        if os.path.isfile(postgresql_conf_path):
+            with open(postgresql_conf_path, "r", encoding="utf-8") as conf_stream:
+                conf_lines = conf_stream.readlines()
+
+            updated_conf_lines = []
+            ignore_socket_configured = False
+            grant_options_configured = False
+            for line in conf_lines:
+                if re.match(r"\s*#?\s*ac_ignore_socket_maclabel\s*=", line):
+                    updated_conf_lines.append(
+                        "ac_ignore_socket_maclabel = false\n"
+                    )
+                    ignore_socket_configured = True
+                elif re.match(r"\s*#?\s*ac_enable_grant_options\s*=", line):
+                    updated_conf_lines.append(
+                        "ac_enable_grant_options = true\n"
+                    )
+                    grant_options_configured = True
+                else:
+                    updated_conf_lines.append(line)
+
+            if not ignore_socket_configured:
+                updated_conf_lines.append(
+                    "\nac_ignore_socket_maclabel = false\n"
+                )
+            if not grant_options_configured:
+                updated_conf_lines.append(
+                    "ac_enable_grant_options = true\n"
+                )
+
+            with open(postgresql_conf_path, "w", encoding="utf-8") as conf_stream:
+                conf_stream.writelines(updated_conf_lines)
+
+        self._run_cluster_command(
+            ["pg_ctlcluster", cluster_version, cluster_name, "restart"]
+        )
+
+    def _prepare_oom_roles_and_labels(self):
+        admin_config = dict(self.db_config)
+        admin_config["dbname"] = "postgres"
+
+        with psycopg.connect(
+            host=admin_config["host"],
+            port=admin_config["port"],
+            dbname=admin_config["dbname"],
+            user=admin_config["user"],
+            password=admin_config["password"],
+            autocommit=True,
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute("MAC LABEL ON CLUSTER IS '{2,0}'")
+                cur.execute("MAC LABEL ON TABLESPACE pg_global IS '{2,0}'")
+                cur.execute("MAC CCR ON CLUSTER IS OFF")
+
+                for role_name, role_password in self.oom_roles.items():
+                    cur.execute(
+                        psycopg.sql.SQL(
+                            "CREATE ROLE {} LOGIN PASSWORD %s"
+                        ).format(psycopg.sql.Identifier(role_name)),
+                        (role_password,),
+                    )
+
+                cur.execute(
+                    psycopg.sql.SQL("CREATE DATABASE {}").format(
+                        psycopg.sql.Identifier(self.oom_db_name)
+                    )
+                )
+
+        with psycopg.connect(
+            host=self.db_config["host"],
+            port=self.db_config["port"],
+            dbname=self.oom_db_name,
+            user=self.db_config["user"],
+            password=self.db_config["password"],
+            autocommit=True,
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    psycopg.sql.SQL("MAC LABEL ON DATABASE {} IS '{{2,0}}'").format(
+                        psycopg.sql.Identifier(self.oom_db_name)
+                    )
+                )
+                cur.execute(
+                    psycopg.sql.SQL("MAC CCR ON DATABASE {} IS OFF").format(
+                        psycopg.sql.Identifier(self.oom_db_name)
+                    )
+                )
+                cur.execute("MAC CCR ON SCHEMA public IS OFF")
+                cur.execute("MAC LABEL ON SCHEMA public IS '{2,0}'")
 
     def _restore_oom_database(self):
         if not os.path.isfile(self.oom_dump_path):
@@ -333,11 +488,8 @@ JOIN main.build_packages AS bp
                             psycopg.sql.Identifier(role_name)
                         )
                     )
-                cur.execute(
-                    psycopg.sql.SQL("CREATE DATABASE {}").format(
-                        psycopg.sql.Identifier(self.oom_db_name)
-                    )
-                )
+
+        self._prepare_oom_roles_and_labels()
 
         env = os.environ.copy()
         env["PGPASSWORD"] = str(self.db_config["password"])
@@ -532,56 +684,58 @@ JOIN main.build_packages AS bp
 
                 total_rating_data[query_name] = iterations
                 result["result"][query_name] = build_result_entry(query_name, iterations)
-
-            oom_iterations = self._run_oom_query_iterations()
-            result["result"][self.oom_query_name] = build_result_entry(
-                self.oom_query_name,
-                oom_iterations,
-            )
-            criteria_iterations = [float(index) for index in range(1, passes + 1)]
-
-            model = MathModel()
-            model.add_criterion(
-                name="hard_query",
-                iterations=criteria_iterations,
-                values=[float(value) for value in result["result"]["hard_query"]["iterations"]],
-                weight=0.3,
-                negative=True,
-                bounds=(0.0, 1650.0),
-            )
-            model.add_criterion(
-                name="order_query",
-                iterations=criteria_iterations,
-                values=[float(value) for value in result["result"]["order_query"]["iterations"]],
-                weight=0.2,
-                negative=True,
-                bounds=(0.0, 2220.0),
-            )
-            model.add_criterion(
-                name="substring_search_query",
-                iterations=criteria_iterations,
-                values=[float(value) for value in result["result"]["substring_search_query"]["iterations"]],
-                weight=0.3,
-                negative=True,
-                bounds=(0.0, 120.0),
-            )
-            model.add_criterion(
-                name="join_query",
-                iterations=criteria_iterations,
-                values=[float(value) for value in result["result"]["join_query"]["iterations"]],
-                weight=0.2,
-                negative=True,
-                bounds=(0.0, 900.0),
-            )
-            total_rating_info = model.total_rating(0.884)
-            result["math_model"] = {
-                "power": round(0.884, 6),
-                "mean_abs_log_error": round(0.04389865273013631, 6),
-                "selection_score": round(0.04389865273013631, 6),
-            }
-            result["total_rating"] = round(float(total_rating_info["total_rating"]), 3)
         finally:
             await pool.close()
+
+        self._recreate_oom_cluster()
+        oom_iterations = self._run_oom_query_iterations()
+        result["result"][self.oom_query_name] = build_result_entry(
+            self.oom_query_name,
+            oom_iterations,
+        )
+
+        criteria_iterations = [float(index) for index in range(1, passes + 1)]
+
+        model = MathModel()
+        model.add_criterion(
+            name="hard_query",
+            iterations=criteria_iterations,
+            values=[float(value) for value in result["result"]["hard_query"]["iterations"]],
+            weight=0.3,
+            negative=True,
+            bounds=(0.0, 1650.0),
+        )
+        model.add_criterion(
+            name="order_query",
+            iterations=criteria_iterations,
+            values=[float(value) for value in result["result"]["order_query"]["iterations"]],
+            weight=0.2,
+            negative=True,
+            bounds=(0.0, 2220.0),
+        )
+        model.add_criterion(
+            name="substring_search_query",
+            iterations=criteria_iterations,
+            values=[float(value) for value in result["result"]["substring_search_query"]["iterations"]],
+            weight=0.3,
+            negative=True,
+            bounds=(0.0, 120.0),
+        )
+        model.add_criterion(
+            name="join_query",
+            iterations=criteria_iterations,
+            values=[float(value) for value in result["result"]["join_query"]["iterations"]],
+            weight=0.2,
+            negative=True,
+            bounds=(0.0, 900.0),
+        )
+        total_rating_info = model.total_rating(0.884)
+        result["math_model"] = {
+            "power": round(0.884, 6),
+            "mean_abs_log_error": round(0.04389865273013631, 6),
+            "selection_score": round(0.04389865273013631, 6),
+        }
+        result["total_rating"] = round(float(total_rating_info["total_rating"]), 3)
 
         with open(results_file_path, "w", encoding="utf-8") as result_stream:
             json.dump(result, result_stream, ensure_ascii=False, indent=2)

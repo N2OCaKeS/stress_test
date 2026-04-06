@@ -11,6 +11,9 @@
     "1.7.10.64": [
         "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.10/1.7.10.64/base-repository 1.7_x86-64 main contrib non-free"
     ],
+    "1.7.10.69": [
+        "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.10/1.7.10.69/base-repository 1.7_x86-64 main contrib non-free"
+    ],
     "1.7.2": [
         "deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.2/1.7.2.5/base-repository 1.7_x86-64 main contrib non-free"
     ],
@@ -191,5 +194,10 @@
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.5/1.8.5.46/extended-repository 1.8_x86-64 main contrib non-free",
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.5/1.8.5.46/installation 1.8_x86-64 main contrib non-free",
         "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.5/1.8.5.46/devel-repository 1.8_x86-64 main contrib non-free"
+    ],
+    "1.8.6.23": [
+        "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.6/1.8.6.23/devel-repository 1.8_x86-64 main contrib non-free",
+        "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.6/1.8.6.23/installation 1.8_x86-64 main contrib non-free",
+        "deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.6/1.8.6.23/extended-repository 1.8_x86-64 main contrib non-free"
     ]
 }

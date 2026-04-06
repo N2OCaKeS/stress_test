@@ -16,6 +16,22 @@ ALLTA_SHARED_CERT_PATH="${ALLTA_SHARED_CERT_PATH:-/var/allta_services/certs/allt
 ALLTA_SYSTEM_CA_TARGET="${ALLTA_SYSTEM_CA_TARGET:-/usr/local/share/ca-certificates/allta-api.crt}"
 DEB_STAGING_DIR="${DEB_STAGING_DIR:-/tmp/allta-cli-debs}"
 
+registry_host_only() {
+    printf '%s\n' "${REGISTRY_HOST%%:*}"
+}
+
+registry_port_only() {
+    local host_part port_part
+    host_part="$(registry_host_only)"
+    port_part="${REGISTRY_HOST#${host_part}}"
+    port_part="${port_part#:}"
+    if [ -n "${port_part}" ] && [ "${port_part}" != "${REGISTRY_HOST}" ]; then
+        printf '%s\n' "${port_part}"
+        return
+    fi
+    printf '443\n'
+}
+
 sudo_cmd() {
     if [ "${EUID}" -eq 0 ]; then
         return 1
@@ -51,8 +67,16 @@ run_docker() {
     docker "$@"
 }
 
-fetch_api_cert_from_endpoint() {
-    local target="$1"
+is_valid_cert_file() {
+    local cert_path="$1"
+
+    [ -s "${cert_path}" ] && openssl x509 -in "${cert_path}" -noout >/dev/null 2>&1
+}
+
+fetch_cert_from_endpoint() {
+    local host="$1"
+    local port="$2"
+    local target="$3"
 
     if ! command -v openssl >/dev/null 2>&1; then
         return 1
@@ -60,26 +84,38 @@ fetch_api_cert_from_endpoint() {
 
     if command -v timeout >/dev/null 2>&1; then
         timeout 8 openssl s_client \
-            -servername "${ALLTA_API_HOST}" \
-            -connect "${ALLTA_API_HOST}:${ALLTA_API_PORT}" \
+            -servername "${host}" \
+            -connect "${host}:${port}" \
             < /dev/null 2>/dev/null \
             | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "${target}" || true
     else
         openssl s_client \
-            -servername "${ALLTA_API_HOST}" \
-            -connect "${ALLTA_API_HOST}:${ALLTA_API_PORT}" \
+            -servername "${host}" \
+            -connect "${host}:${port}" \
             < /dev/null 2>/dev/null \
             | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "${target}" || true
     fi
 
-    [ -s "${target}" ] && openssl x509 -in "${target}" -noout >/dev/null 2>&1
+    is_valid_cert_file "${target}"
 }
 
 resolve_api_cert_source() {
-    local tmp_cert
+    local tmp_cert registry_host registry_port
 
     tmp_cert="$(mktemp)"
-    if fetch_api_cert_from_endpoint "${tmp_cert}"; then
+    if fetch_cert_from_endpoint "${ALLTA_API_HOST}" "${ALLTA_API_PORT}" "${tmp_cert}"; then
+        run_root mkdir -p "$(dirname "${ALLTA_SHARED_CERT_PATH}")"
+        if [ ! -f "${ALLTA_SHARED_CERT_PATH}" ] || ! cmp -s "${tmp_cert}" "${ALLTA_SHARED_CERT_PATH}"; then
+            run_root install -m 0644 "${tmp_cert}" "${ALLTA_SHARED_CERT_PATH}"
+        fi
+        rm -f "${tmp_cert}"
+        printf '%s\n' "${ALLTA_SHARED_CERT_PATH}"
+        return 0
+    fi
+
+    registry_host="$(registry_host_only)"
+    registry_port="$(registry_port_only)"
+    if fetch_cert_from_endpoint "${registry_host}" "${registry_port}" "${tmp_cert}"; then
         run_root mkdir -p "$(dirname "${ALLTA_SHARED_CERT_PATH}")"
         if [ ! -f "${ALLTA_SHARED_CERT_PATH}" ] || ! cmp -s "${tmp_cert}" "${ALLTA_SHARED_CERT_PATH}"; then
             run_root install -m 0644 "${tmp_cert}" "${ALLTA_SHARED_CERT_PATH}"
@@ -90,8 +126,13 @@ resolve_api_cert_source() {
     fi
 
     rm -f "${tmp_cert}"
-    if [ -s "${ALLTA_SHARED_CERT_PATH}" ] && openssl x509 -in "${ALLTA_SHARED_CERT_PATH}" -noout >/dev/null 2>&1; then
+    if is_valid_cert_file "${ALLTA_SHARED_CERT_PATH}"; then
         printf '%s\n' "${ALLTA_SHARED_CERT_PATH}"
+        return 0
+    fi
+
+    if is_valid_cert_file "${ALLTA_SYSTEM_CA_TARGET}"; then
+        printf '%s\n' "${ALLTA_SYSTEM_CA_TARGET}"
         return 0
     fi
 
@@ -126,12 +167,65 @@ configure_docker_registry_ca() {
     run_root install -m 0644 "${cert_source}" "${docker_ca_file}"
 }
 
-ensure_api_tls_trust() {
+restart_docker_service() {
+    if command -v systemctl >/dev/null 2>&1; then
+        run_root systemctl restart docker || true
+        return
+    fi
+
+    if command -v service >/dev/null 2>&1; then
+        run_root service docker restart || true
+    fi
+}
+
+configure_docker_registry_http() {
+    local daemon_json="/etc/docker/daemon.json"
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "python3 не найден: не могу автоматически включить insecure-registry для HTTP." >&2
+        echo "Добавьте ${REGISTRY_HOST} в /etc/docker/daemon.json -> insecure-registries вручную." >&2
+        return 1
+    fi
+
+    run_root python3 - "${daemon_json}" "${REGISTRY_HOST}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+daemon_path = Path(sys.argv[1])
+registry_host = sys.argv[2]
+
+data = {}
+if daemon_path.exists():
+    try:
+        data = json.loads(daemon_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+
+registries = data.get("insecure-registries")
+if not isinstance(registries, list):
+    registries = []
+
+if registry_host not in registries:
+    registries.append(registry_host)
+
+data["insecure-registries"] = registries
+daemon_path.parent.mkdir(parents=True, exist_ok=True)
+daemon_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+
+    restart_docker_service
+}
+
+ensure_registry_transport() {
     local cert_source
 
     cert_source="$(resolve_api_cert_source)" || {
-        echo "Не удалось получить CA сертификат от API (${ALLTA_API_HOST}:${ALLTA_API_PORT})." >&2
-        exit 1
+        echo "HTTPS на API/registry недоступен, переключаю Docker registry ${REGISTRY_HOST} в HTTP insecure mode." >&2
+        configure_docker_registry_http
+        return 0
     }
 
     install_system_ca "${cert_source}"
@@ -207,7 +301,7 @@ precond() {
         run_root service docker start || true
     fi
 
-    ensure_api_tls_trust
+    ensure_registry_transport
 
     echo "Docker установлен"
 }
@@ -215,7 +309,7 @@ precond() {
 start() {
     local deb_file staged_deb
 
-    ensure_api_tls_trust
+    ensure_registry_transport
 
     echo "Подтягиваю базовый образ ${PUBLISHED_BASE_IMAGE}..."
     run_docker pull "${PUBLISHED_BASE_IMAGE}"
@@ -247,7 +341,7 @@ build_base() {
 docker_img() {
     local local_tag remote_tag
 
-    ensure_api_tls_trust
+    ensure_registry_transport
 
     local_tag="${LOCAL_IMAGE_NAME}:${IMAGE_TAG}"
     remote_tag="${REMOTE_IMAGE_REPO}:${IMAGE_TAG}"
@@ -310,7 +404,7 @@ case "${1:-}" in
         precond
         ;;
     trust)
-        ensure_api_tls_trust
+        ensure_registry_transport
         ;;
     build-base)
         build_base

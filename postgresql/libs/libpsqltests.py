@@ -394,6 +394,32 @@ JOIN main.build_packages AS bp
             with open(postgresql_conf_path, "w", encoding="utf-8") as conf_stream:
                 conf_stream.writelines(updated_conf_lines)
 
+        self._run_cluster_command(["pdpl-user", "-i", "63", "postgres"])
+        self._run_cluster_command(
+            ["usermod", "-a", "-G", "shadow", "postgres"],
+            check=False,
+        )
+        self._run_cluster_command(
+            ["setfacl", "-d", "-m", "u:postgres:r", "/etc/parsec/macdb"]
+        )
+        self._run_cluster_command(
+            ["setfacl", "-R", "-m", "u:postgres:r", "/etc/parsec/macdb"]
+        )
+        self._run_cluster_command(
+            ["setfacl", "-m", "u:postgres:rx", "/etc/parsec/macdb"]
+        )
+        self._run_cluster_command(
+            ["setfacl", "-d", "-m", "u:postgres:r", "/etc/parsec/capdb"]
+        )
+        self._run_cluster_command(
+            ["setfacl", "-R", "-m", "u:postgres:r", "/etc/parsec/capdb"]
+        )
+        self._run_cluster_command(
+            ["setfacl", "-m", "u:postgres:rx", "/etc/parsec/capdb"]
+        )
+        self._run_cluster_command(
+            ["systemctl", "restart", "parsec"]
+        )
         self._run_cluster_command(
             ["pg_ctlcluster", cluster_version, cluster_name, "restart"]
         )

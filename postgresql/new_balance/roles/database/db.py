@@ -30,7 +30,7 @@ ExecReload=/usr/lib/postgresql/{VERSION_PG}/bin/pg_ctl reload -D {postgres_data_
 [Install]
 WantedBy=multi-user.target
 EOF"""
-
+        pg_hba_proto = ''
         if VERSION_PG == '11':
             pg_hba_proto = 'md5'
         elif VERSION_PG == '15':
@@ -45,12 +45,12 @@ EOF"""
                     'signal get': ''
                 },
                 'change postgres password': {
-                    'command': f'yes postgres | sudo passwd postgres',
+                    'command': 'yes postgres | sudo passwd postgres',
                     'signal set': '',
                     'signal get': ''
                 },                
                 'set postgres privilege': {
-                    'command': f'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
+                    'command': 'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
                         sudo usermod -a -G shadow postgres && \
                         sudo setfacl -d -m u:postgres:r /etc/parsec/macdb && \
                         sudo setfacl -R -m u:postgres:r /etc/parsec/macdb && \
@@ -115,7 +115,7 @@ EOF"""
 
                 # sssd.conf
                 {
-                    'path': f'/etc/sssd/sssd.conf',
+                    'path': '/etc/sssd/sssd.conf',
                     'old': 'allowed_uids = 0, 33, 114, fly-dm, ipaapi',
                     'new': 'allowed_uids = 0, 33, 114, fly-dm, ipaapi, postgres'
                 },
@@ -195,7 +195,7 @@ EOF"""
                 },
                 {
                     'path': f'{postgres_config_path}/pg_hba.conf',
-                    'old': f'local   replication     all                                     peer',
+                    'old': 'local   replication     all                                     peer',
                     'new': 'local   replication     postgres                                trust'
                 },
                 {
@@ -231,7 +231,7 @@ EOF"""
                     'signal get': ['2']
                 },
                 'restart sssd': {
-                    'command': f'sudo systemctl restart sssd',
+                    'command': 'sudo systemctl restart sssd',
                     'signal set': '',
                     'signal get': ['3']
                 },

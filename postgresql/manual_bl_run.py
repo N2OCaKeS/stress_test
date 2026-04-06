@@ -36,10 +36,10 @@ print(f"\nЗапуск баланса с версией {args.build_version}, р
 bl_lib.balance(rc=args.build_version, sec_mode=args.security_mode)
 
 print("\n\n_____________________________________\n\n")
-SystemCommands('cat ./available_packages.txt')
+SystemCommands.check_output_command('cat ./available_packages.txt')
 print("\n\n_____________________________________\n\n")
 
-SystemCommands('cat ./psb_info.txt')
+SystemCommands.check_output_command('cat ./psb_info.txt')
 print("\n\n_____________________________________\n\n")
 print("Результаты тестирования:")
-SystemCommands('cat ./results_balance.txt')
+SystemCommands.check_output_command('cat ./results_balance.txt')

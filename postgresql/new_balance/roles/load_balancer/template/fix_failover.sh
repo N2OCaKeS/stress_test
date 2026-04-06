@@ -79,7 +79,6 @@ fi
 
 echo "failover.sh: end: new_main_node_id=$NEW_MAIN_NODE_ID on $NEW_MAIN_NODE_HOST is promoted to a primary"
 
-bash
 update_nodes_after_failover() {
     echo "=== Обновляем реплики после failover ==="
 

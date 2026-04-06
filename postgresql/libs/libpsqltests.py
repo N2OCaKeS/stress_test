@@ -324,6 +324,39 @@ JOIN main.build_packages AS bp
             )
         return process
 
+    def _run_psql_as_postgres(self, dbname="postgres", sql=None, stdin=None):
+        command = [
+            "sudo",
+            "-u",
+            "postgres",
+            "psql",
+            "-p",
+            str(self.oom_cluster_port),
+            "-d",
+            dbname,
+            "-v",
+            "ON_ERROR_STOP=1",
+        ]
+        if sql is not None:
+            command.extend(["-c", sql])
+
+        process = subprocess.run(
+            command,
+            input=stdin,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if process.returncode != 0:
+            raise RuntimeError(
+                "psql command failed: "
+                + " ".join(command)
+                + os.linesep
+                + process.stderr.strip()
+            )
+        return process
+
     def _recreate_oom_cluster(self):
         cluster_version = str(self._get_cluster_version())
         cluster_name = self.oom_cluster_name
@@ -425,57 +458,32 @@ JOIN main.build_packages AS bp
         )
 
     def _prepare_oom_roles_and_labels(self):
-        admin_config = dict(self.db_config)
-        admin_config["dbname"] = "postgres"
+        self._run_psql_as_postgres(sql="MAC LABEL ON CLUSTER IS '{2,0}';")
+        self._run_psql_as_postgres(sql="MAC LABEL ON TABLESPACE pg_global IS '{2,0}';")
+        self._run_psql_as_postgres(sql="MAC CCR ON CLUSTER IS OFF;")
 
-        with psycopg.connect(
-            host=admin_config["host"],
-            port=admin_config["port"],
-            dbname=admin_config["dbname"],
-            user=admin_config["user"],
-            password=admin_config["password"],
-            autocommit=True,
-        ) as conn:
-            with conn.cursor() as cur:
-                cur.execute("MAC LABEL ON CLUSTER IS '{2,0}'")
-                cur.execute("MAC LABEL ON TABLESPACE pg_global IS '{2,0}'")
-                cur.execute("MAC CCR ON CLUSTER IS OFF")
+        for role_name, role_password in self.oom_roles.items():
+            self._run_psql_as_postgres(
+                sql=f"CREATE USER {role_name} WITH PASSWORD '{role_password}';"
+            )
 
-                for role_name, role_password in self.oom_roles.items():
-                    cur.execute(
-                        psycopg.sql.SQL(
-                            "CREATE ROLE {} LOGIN PASSWORD %s"
-                        ).format(psycopg.sql.Identifier(role_name)),
-                        (role_password,),
-                    )
-
-                cur.execute(
-                    psycopg.sql.SQL("CREATE DATABASE {}").format(
-                        psycopg.sql.Identifier(self.oom_db_name)
-                    )
-                )
-
-        with psycopg.connect(
-            host=self.db_config["host"],
-            port=self.db_config["port"],
+        self._run_psql_as_postgres(sql=f"CREATE DATABASE {self.oom_db_name};")
+        self._run_psql_as_postgres(
             dbname=self.oom_db_name,
-            user=self.db_config["user"],
-            password=self.db_config["password"],
-            autocommit=True,
-        ) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    psycopg.sql.SQL("MAC LABEL ON DATABASE {} IS '{{2,0}}'").format(
-                        psycopg.sql.Identifier(self.oom_db_name)
-                    )
-                )
-                cur.execute(
-                    psycopg.sql.SQL("MAC CCR ON DATABASE {} IS OFF").format(
-                        psycopg.sql.Identifier(self.oom_db_name)
-                    )
-                )
-                cur.execute("MAC CCR ON SCHEMA public IS OFF")
-                cur.execute("MAC LABEL ON SCHEMA public IS '{2,0}'")
+            sql=f"MAC LABEL ON DATABASE {self.oom_db_name} IS '{{2,0}}';",
+        )
+        self._run_psql_as_postgres(
+            dbname=self.oom_db_name,
+            sql=f"MAC CCR ON DATABASE {self.oom_db_name} IS OFF;",
+        )
+        self._run_psql_as_postgres(
+            dbname=self.oom_db_name,
+            sql="MAC CCR ON SCHEMA public IS OFF;",
+        )
+        self._run_psql_as_postgres(
+            dbname=self.oom_db_name,
+            sql="MAC LABEL ON SCHEMA public IS '{2,0}';",
+        )
 
     def _restore_oom_database(self):
         if not os.path.isfile(self.oom_dump_path):
@@ -524,28 +532,30 @@ JOIN main.build_packages AS bp
             ["tar", "-xOf", self.oom_dump_path, "test.sql"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            text=True,
         )
         try:
             restore_process = subprocess.run(
                 [
+                    "sudo",
+                    "-u",
+                    "postgres",
                     "psql",
-                    "-h", str(self.db_config["host"]),
                     "-p", str(self.db_config["port"]),
-                    "-U", str(self.db_config["user"]),
                     "-d", self.oom_db_name,
                     "-v", "ON_ERROR_STOP=1",
                 ],
                 stdin=tar_process.stdout,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                env=env,
+                text=True,
                 check=False,
             )
         finally:
             if tar_process.stdout is not None:
                 tar_process.stdout.close()
 
-        tar_stderr = b""
+        tar_stderr = ""
         if tar_process.stderr is not None:
             tar_stderr = tar_process.stderr.read()
         tar_return_code = tar_process.wait()
@@ -553,12 +563,12 @@ JOIN main.build_packages AS bp
         if restore_process.returncode != 0:
             raise RuntimeError(
                 "Failed to restore OOM database: "
-                + restore_process.stderr.decode("utf-8", errors="replace")
+                + restore_process.stderr
             )
         if tar_return_code not in (0, -13, 141):
             raise RuntimeError(
                 "Failed to extract OOM dump: "
-                + tar_stderr.decode("utf-8", errors="replace")
+                + tar_stderr
             )
 
     def _run_oom_query_iterations(self):

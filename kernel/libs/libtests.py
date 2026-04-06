@@ -410,3 +410,10 @@ class Sigmentation_fault(CreateVM):
 
         print("\n\n\n Результаты обработаны\n\n\n")
             
+
+class XFSMemoryLeak(CreateVM):
+    def start_test(self):
+        pass
+
+    def results_processing(self):
+        pass

@@ -6,6 +6,7 @@ import requests
 from allta_cli.utils import ui
 from allta_cli.utils.auth import load_token
 from allta_cli.utils.config import CONFIG_API_BASE, SERVER_API_BASE
+from allta_cli.utils.http_fallback import request_with_http_fallback
 
 
 class ConfigApiError(RuntimeError):
@@ -79,6 +80,10 @@ def _auth_headers() -> Dict[str, str]:
     }
 
 
+def _request(method: str, url: str, **kwargs: Any) -> requests.Response:
+    return request_with_http_fallback(method, url, **kwargs)
+
+
 def tokens(tokens_type: Optional[str] = None) -> Union[str, Dict[str, str]]:
     """
     Возвращает либо весь tokens.json, либо отдельный ключ.
@@ -87,7 +92,7 @@ def tokens(tokens_type: Optional[str] = None) -> Union[str, Dict[str, str]]:
     url = f"{CONFIG_API_BASE}/config/tokens"
     ui.http(f"GET {url}")
     try:
-        r = requests.get(url, headers=_auth_headers(), timeout=30)
+        r = _request("GET", url, headers=_auth_headers(), timeout=30)
         r.raise_for_status()
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось получить tokens.json: {e}") from e
@@ -121,7 +126,7 @@ def ilo() -> Dict[str, IloEntry]:
     url = f"{SERVER_API_BASE}/ilo/"
     ui.http(f"GET {url}")
     try:
-        r = requests.get(url, headers=_auth_headers(), timeout=30)
+        r = _request("GET", url, headers=_auth_headers(), timeout=30)
         r.raise_for_status()
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось получить iLO credentials: {e}") from e
@@ -170,7 +175,7 @@ def files(filename: str) -> Any:
     ui.http(f"GET {url}")
 
     try:
-        r = requests.get(url, headers=_auth_headers(), timeout=30)
+        r = _request("GET", url, headers=_auth_headers(), timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось получить файл '{filename}': {e}") from e
 
@@ -257,7 +262,7 @@ def list_token_credentials() -> list[TokenCredential]:
     url = f"{CONFIG_API_BASE}/config/tokens/details"
     ui.http(f"GET {url}")
     try:
-        resp = requests.get(url, headers=_auth_headers(), timeout=30)
+        resp = _request("GET", url, headers=_auth_headers(), timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось получить список токенов: {e}") from e
 
@@ -290,7 +295,7 @@ def get_token_credential(token_key: str) -> TokenCredential:
     url = f"{CONFIG_API_BASE}/config/tokens/details/{key}"
     ui.http(f"GET {url}")
     try:
-        resp = requests.get(url, headers=_auth_headers(), timeout=30)
+        resp = _request("GET", url, headers=_auth_headers(), timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось получить токен '{key}': {e}") from e
 
@@ -329,7 +334,7 @@ def upsert_token_credential(token_key: str, token: str) -> TokenCredential:
     }
     ui.http(f"POST {url}")
     try:
-        resp = requests.post(url, headers=_auth_headers(), json=payload, timeout=30)
+        resp = _request("POST", url, headers=_auth_headers(), json=payload, timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось сохранить токен '{key}': {e}") from e
 
@@ -361,7 +366,7 @@ def update_token_credential(token_key: str, token: str) -> TokenCredential:
     url = f"{CONFIG_API_BASE}/config/tokens/details/{key}"
     ui.http(f"PATCH {url}")
     try:
-        resp = requests.patch(url, headers=_auth_headers(), json={"token": value}, timeout=30)
+        resp = _request("PATCH", url, headers=_auth_headers(), json={"token": value}, timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось обновить токен '{key}': {e}") from e
 
@@ -393,7 +398,7 @@ def delete_token_credential(token_key: str) -> None:
     url = f"{CONFIG_API_BASE}/config/tokens/details/{key}"
     ui.http(f"DELETE {url}")
     try:
-        resp = requests.delete(url, headers=_auth_headers(), timeout=30)
+        resp = _request("DELETE", url, headers=_auth_headers(), timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось удалить токен '{key}': {e}") from e
 
@@ -453,7 +458,7 @@ def list_service_credentials() -> list[ServiceCredential]:
     url = f"{CONFIG_API_BASE}/config/credentials"
     ui.http(f"GET {url}")
     try:
-        resp = requests.get(url, headers=_auth_headers(), timeout=30)
+        resp = _request("GET", url, headers=_auth_headers(), timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось получить список сервисных кредов: {e}") from e
 
@@ -486,7 +491,7 @@ def get_service_credential(service_name: str) -> ServiceCredential:
     url = f"{CONFIG_API_BASE}/config/credentials/{name}"
     ui.http(f"GET {url}")
     try:
-        resp = requests.get(url, headers=_auth_headers(), timeout=30)
+        resp = _request("GET", url, headers=_auth_headers(), timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось получить креды сервиса '{name}': {e}") from e
 
@@ -527,7 +532,7 @@ def upsert_service_credential(service_name: str, username: str, password: str) -
     }
     ui.http(f"POST {url}")
     try:
-        resp = requests.post(url, headers=_auth_headers(), json=payload, timeout=30)
+        resp = _request("POST", url, headers=_auth_headers(), json=payload, timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось сохранить креды сервиса '{name}': {e}") from e
 
@@ -569,7 +574,7 @@ def update_service_credential(
     url = f"{CONFIG_API_BASE}/config/credentials/{name}"
     ui.http(f"PATCH {url}")
     try:
-        resp = requests.patch(url, headers=_auth_headers(), json=payload, timeout=30)
+        resp = _request("PATCH", url, headers=_auth_headers(), json=payload, timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось обновить креды сервиса '{name}': {e}") from e
 
@@ -601,7 +606,7 @@ def delete_service_credential(service_name: str) -> None:
     url = f"{CONFIG_API_BASE}/config/credentials/{name}"
     ui.http(f"DELETE {url}")
     try:
-        resp = requests.delete(url, headers=_auth_headers(), timeout=30)
+        resp = _request("DELETE", url, headers=_auth_headers(), timeout=30)
     except requests.RequestException as e:
         raise ConfigApiError(f"Не удалось удалить креды сервиса '{name}': {e}") from e
 

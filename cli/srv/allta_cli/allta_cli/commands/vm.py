@@ -7,6 +7,7 @@ import requests
 
 from allta_cli.utils import auth
 from allta_cli.utils.config import VM_API_BASE
+from allta_cli.utils.http_fallback import request_with_http_fallback
 
 
 class VMError(RuntimeError):
@@ -24,7 +25,7 @@ def _api_url(path: str) -> str:
 
 def _request(method: str, path: str, *, params=None, json=None, timeout=30) -> requests.Response:
     url = _api_url(path)
-    resp = requests.request(
+    resp = request_with_http_fallback(
         method=method,
         url=url,
         headers=_headers(),

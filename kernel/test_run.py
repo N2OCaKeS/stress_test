@@ -1,8 +1,8 @@
 import argparse
-from allta import UploaderZC
+from allta import UploaderZC, SystemCommands
 from datetime import datetime
 
-from libs.lib_kernel import get_duration
+from libs.lib_kernel import get_duration, check_output_command
 from libs.libtests import Sigmentation_fault, XFSMemoryLeak
 from libs.libpublic import kernel_publisher, xfs_memory_leak_publisher
 
@@ -139,6 +139,7 @@ elif args.TESTNAME == 'xfs_memory_leak':
                                     ram=SEGMENTATION_FAULT_RAM)
     
     xfs_memory_leak.prepare_vms()
+    SystemCommands.check_output_command("qemu-img create -f qcow2 /vms/db1.qcow2 100G && virsh attach-disk testvm1 /vms/db1.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio")
     xfs_memory_leak.start_test()
     xfs_memory_leak.results_processing()
     xfs_memory_leak.vms_destroy()

@@ -4,7 +4,7 @@ import pandas as pd
 from json import loads
 from pathlib import Path
 from libs.libreport import ReportToConfluence, ReportToJira
-from ipa_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH, MAX_USERS_AUTH
+from ipa_conf import INFO_FILENAME, TEMPLATE_PATH, GRAPH_DESCRIPTIONS, REPORT_PATH, MAX_USERS_AUTH, DESCRIPTION
 
 class Public:
     '''
@@ -132,17 +132,21 @@ class Public:
                                                     arm_mem=self.stands[self.grade_stand]['ram'],
                                                     arm_st=self.stands[self.grade_stand]['storage'],
                                                     lead_time=info_dct.get("lead_time"))  
-   
+        
+        with open(f'{TEMPLATE_PATH}/description.html', 'r') as template:
+                description_temp = template.read()
+                description = description_temp.format(description=DESCRIPTION.get(self.ts))
+
         if self.ts == "plugin":
-            print("зашли в плагин публикацию")
             with open(f"{REPORT_PATH}/ipa_results.json", "r") as report_file:
                 results = loads(report_file.read())
                 total_seconds = results.get("total_seconds")
                 df = pd.DataFrame([{
                     "Время добавления пользователей из группы gr_1 в gr_2 (сек)": total_seconds,
                 }])
-                table_html_with_results = df.to_html()
-            html_page = '\n'.join([header_table, table_html_with_results])
+                table_html_with_results = df.to_html(index=False)
+
+            html_page = '\n'.join([header_table, description, table_html_with_results])
         else:
             with open(f'{TEMPLATE_PATH}/rating_template.html', 'r') as template:
                 rating_temp = template.read()
@@ -162,7 +166,7 @@ class Public:
                                                         description=GRAPH_DESCRIPTIONS[file]))
                 images = '\n'.join(images_lst)
 
-            html_page = '\n'.join([header_table, rating, r_table, images]) 
+            html_page = '\n'.join([header_table, description, rating, r_table, images]) 
 
         #выкладываем информацию на страницу
         if release_pp and release_np:

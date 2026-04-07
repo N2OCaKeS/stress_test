@@ -203,7 +203,7 @@ if __name__ == "__main__":
                             title_graph="value_for_last_proc_delay/user_count",
                             x_label="Количество пользователй",
                             y_label="Время аутентификации почти последним пользователем")
-        total_rating = report.get_total_rating()
+        uzs.total_rating = report.get_total_rating()
 
     elif args.TT == "create-users":
         create_users_test = CreateUsersTest()
@@ -228,7 +228,7 @@ if __name__ == "__main__":
                             title_graph="user_per_second",
                             x_label="Количество пользователей",
                             y_label="users/sec")
-        total_rating = report.get_total_rating_create_users_test()
+        uzs.total_rating = report.get_total_rating_create_users_test()
     
     elif args.TT == "plugin":
         remote_put_file(HOSTS['server']['ip'], f'/home/{USER}/ipa_test_plugin.py', "ipa_test_plugin.py")
@@ -238,14 +238,14 @@ if __name__ == "__main__":
 
     else:
         report = Report()
-        total_rating = 0
+        uzs.total_rating = 0
     
     put_system_info_in_file(time_start_script, INFO_FILENAME)
 
     # upload_results_to_ftp(args.TCV, f'{REPORT_PATH}/ipa_report.txt', f'{args.TCYC}_ipa_report.txt')
 
     uzs.public = True
-    uzs.total_rating = total_rating
+    # uzs.total_rating = total_rating
     # uzs.statistics = True
     uzs.upload_test_cycle_status(zefir_status='pass')
 

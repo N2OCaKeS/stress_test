@@ -325,8 +325,13 @@ JOIN main.build_packages AS bp
         return process
 
     def _run_psql_as_postgres(self, dbname="postgres", sql=None, stdin=None):
+        # Используем -i (login shell / логин-сессия) чтобы PAM загрузил Parsec-атрибуты
+        # пользователя postgres, включая привилегию "change MAC label"
+        # We use -i (login shell) so PAM loads Parsec attributes for the postgres user,
+        # including the "change MAC label" privilege
         command = [
             "sudo",
+            "-i",
             "-u",
             "postgres",
             "psql",
@@ -538,6 +543,7 @@ JOIN main.build_packages AS bp
             restore_process = subprocess.run(
                 [
                     "sudo",
+                    "-i",
                     "-u",
                     "postgres",
                     "psql",

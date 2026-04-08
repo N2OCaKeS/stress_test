@@ -9,7 +9,7 @@ from new_balance.roles.vm_info import VERSION_OS, VMS, VMS_DATES, PROVIDER
 
 def balance(rc, sec_mode="s"):
     provider = PROVIDER
-
+    new_vms_data = {}
     if isinstance(provider, Libvirt):
         provider.prepare()
         SystemCommands.cmd(
@@ -17,10 +17,11 @@ def balance(rc, sec_mode="s"):
         )
 
         if VERSION_OS == "1.7":
-            provider.build(box = f"1.7.5.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
+            new_vms_data = provider.build(box = f"1.7.5.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
         elif VERSION_OS == "1.8":
-            provider.build(box = f"1.8.1.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
+            new_vms_data =  provider.build(box = f"1.8.1.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
 
+    VMS_DATES.update(new_vms_data)  # обновляем оригинальный словарь in-place, чтобы все модули увидели новые IP / update original dict in-place so all modules see new IPs
     provider.check(vms=VMS, vms_dates=VMS_DATES)
 
     configure = PreConfigure()  # Проверено работает

@@ -1,6 +1,7 @@
-import psutil
-import datetime
 import time
+import psutil
+from datetime import datetime
+
 
 def get_ram_usage():
     memory = psutil.virtual_memory()

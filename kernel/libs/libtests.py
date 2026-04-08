@@ -428,31 +428,11 @@ class XFSMemoryLeak(CreateVM):
             ]
         }
 
-        start_copy_files = {
+        start_test = {
             'testvm1': {
                 'copy_files': {
-                    'command': 'sudo bash /home/u/copy_files.sh > /home/u/copy_output.txt',
-                    'signal set': 'copy start',
-                    'nowait': True,
-                    'nowait_mode': 'continue',
-                },
-
-                'get_info': {
-                    'command': 'python3 get_info.py',
-                    'signal get': 'copy start',
-                    'signal set': 'get info start',
-                    'nowait': True,
-                    'nowait_mode': 'terminate',
-                    'nowait_timeout': 190
-                },
-
-                'get_info_after_copy': {
-                    'command': 'python3 get_info.py',
-                    'signal get': 'get info start',
-                    'signal set': 'after copy',
-                    'nowait': True,
-                    'nowait_mode': 'terminate',
-                    'nowait_timeout': 60
+                    'command': 'sudo python3 start_xfs_test.py',
+                    'signal set': 'start test',
                 }
             }
         }
@@ -463,7 +443,7 @@ class XFSMemoryLeak(CreateVM):
         print("\n\n\nПодготовка завершена\n\n\n")
         print("\n\n\nЗапускаем тест\n\n\n")
 
-        self.provider.execute(commands=start_copy_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        self.provider.execute(commands=start_test, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
 
     def results_processing(self):

@@ -362,6 +362,65 @@ JOIN main.build_packages AS bp
             )
         return process
 
+    def _create_oom_system_users(self):
+        # Создаём системных пользователей с MAC-метками как в psb_large_tmp_table_prep.sh
+        # Create system users with MAC labels as in psb_large_tmp_table_prep.sh
+        users_label_02 = ["am289", "data", "ab122", "ott1g", "ott32"]
+        users_label_00 = ["data_db", "data_common"]
+
+        for username in users_label_02:
+            self._run_cluster_command(
+                ["adduser", "--disabled-password", "--gecos", "", username],
+                check=False,
+            )
+            self._run_cluster_command(["pdpl-user", "-l", "0:2", username], check=False)
+
+        for username in users_label_00:
+            self._run_cluster_command(
+                ["adduser", "--disabled-password", "--gecos", "", username],
+                check=False,
+            )
+            self._run_cluster_command(["pdpl-user", "-l", "0:0", username], check=False)
+
+    def _reinstall_postgresql(self, cluster_version: str):
+        # Полностью удаляем PostgreSQL и все данные, затем устанавливаем заново.
+        # Completely remove PostgreSQL and all data, then reinstall from scratch.
+        env = os.environ.copy()
+        env["DEBIAN_FRONTEND"] = "noninteractive"
+
+        print(f"Останавливаю PostgreSQL...")
+        # Останавливаем сервис перед удалением / Stop service before removal
+        self._run_cluster_command(["systemctl", "stop", "postgresql"], check=False)
+
+        print(f"Удаляю PostgreSQL {cluster_version} и все данные...")
+        # Удаляем пакеты / Remove packages
+        subprocess.run(
+            [
+                "apt-get", "purge", "--auto-remove", "-y",
+                f"postgresql-{cluster_version}",
+                "postgresql-common",
+                "postgresql-client-common",
+            ],
+            env=env,
+            check=False,
+        )
+
+        # Удаляем оставшиеся данные и конфиги / Remove remaining data and configs
+        subprocess.run(["rm", "-rf", "/var/lib/postgresql/"], check=False)
+        subprocess.run(["rm", "-rf", "/etc/postgresql/"], check=False)
+
+        print(f"Устанавливаю PostgreSQL {cluster_version}...")
+        # Устанавливаем заново / Reinstall
+        result = subprocess.run(
+            ["apt-get", "install", "-y", f"postgresql-{cluster_version}"],
+            env=env,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Не удалось установить postgresql-{cluster_version}"
+            )
+
     def _recreate_oom_cluster(self):
         cluster_version = str(self._get_cluster_version())
         cluster_name = self.oom_cluster_name
@@ -375,14 +434,26 @@ JOIN main.build_packages AS bp
             f"(PostgreSQL {cluster_version}, порт {cluster_port})"
         )
 
+        # Создаём системных пользователей с MAC-метками (как в psb_large_tmp_table_prep.sh)
+        # Create system users with MAC labels (as in psb_large_tmp_table_prep.sh)
+        self._create_oom_system_users()
+
+        # Полностью удаляем PostgreSQL и устанавливаем заново (как в OOM vagrant-скрипте)
+        # Completely remove PostgreSQL and reinstall (as in OOM vagrant script)
+        self._reinstall_postgresql(cluster_version)
+
+        # После установки apt создаёт кластер main — удаляем его
+        # After install, apt creates a main cluster — drop it
         self._run_cluster_command(
-            ["pg_ctlcluster", cluster_version, cluster_name, "stop"],
+            ["pg_ctlcluster", cluster_version, "main", "stop"],
             check=False,
         )
         self._run_cluster_command(
-            ["pg_dropcluster", cluster_version, cluster_name, "--stop"],
+            ["pg_dropcluster", cluster_version, "main", "--stop"],
             check=False,
         )
+
+        # Создаём нужный кластер на нужном порту / Create the required cluster on the required port
         self._run_cluster_command(
             ["pg_createcluster", cluster_version, cluster_name, "--port", cluster_port]
         )
@@ -458,8 +529,12 @@ JOIN main.build_packages AS bp
         self._run_cluster_command(
             ["systemctl", "restart", "parsec"]
         )
+        # Полный перезапуск через systemd (как в psb_large_tmp_table_prep.sh) корректно
+        # инициализирует Parsec-контекст процесса postgres, включая "change MAC label"
+        # Full restart via systemd (as in psb_large_tmp_table_prep.sh) correctly
+        # initializes the Parsec context for the postgres process, including "change MAC label"
         self._run_cluster_command(
-            ["pg_ctlcluster", cluster_version, cluster_name, "restart"]
+            ["systemctl", "restart", "postgresql"]
         )
 
     def _prepare_oom_roles_and_labels(self):

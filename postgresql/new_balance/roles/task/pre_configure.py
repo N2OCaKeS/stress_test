@@ -7,7 +7,7 @@ from new_balance.roles.vm_info import (
     USERNAME,
     PASSWORD,
     PROVIDER,
-    PGOOL_IP,
+    PGPOOL_IP,
 )
 from allta import SystemCommands, Libvirt
 
@@ -44,7 +44,7 @@ class PreConfigure:
         self.provider.set_hosts(
             domain="balance.rbt", vms_dates=VMS_DATES, username="u", password="1"
         )
-        command = f'echo -e "{PGOOL_IP}\tpgpool.{DOMAIN}\tpgpool" | tee -a /etc/hosts'
+        command = f'echo -e "{PGPOOL_IP}\tpgpool.{DOMAIN}\tpgpool" | tee -a /etc/hosts'
         hosts = {
             "g_all": {
                 "set hosts": {

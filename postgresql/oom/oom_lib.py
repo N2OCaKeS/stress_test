@@ -59,7 +59,7 @@ class VBox():
         
         if system.cmd_with_returncode(f'cd oom && vagrant box add {box_name} {box_url} --force') != 0:
             return 1
-        if system.cmd_with_returncode(f'cd oom && UPDATE={box_name} BOX_URL={box_url} RC={rc} KL={kernel} vagrant up --provider=virtualbox') != 0:
+        if system.cmd_with_returncode(f'cd oom && VAGRANT_EXPERIMENTAL="disks" UPDATE={box_name} BOX_URL={box_url} RC={rc} KL={kernel} vagrant up --provider=virtualbox') != 0:
             return 1
     
         return 0

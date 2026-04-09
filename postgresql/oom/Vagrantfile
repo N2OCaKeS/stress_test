@@ -96,6 +96,9 @@ Vagrant.configure("2") do |config|
     if ENV['VM_NAME'] == vm[:name] or ENV['VM_NAME'].nil?
       config.vm.define vm[:name] do |machine|
         machine.vm.hostname = vm[:hostname]
+        if machine.vm.respond_to?(:disk)
+          machine.vm.disk :disk, size: "100GB", primary: true
+        end
         machine.vm.provider "virtualbox" do |vb|
           vb.check_guest_additions = false
           vb.name = vm[:name]

@@ -34,7 +34,7 @@ class PreConfigure:
         }
         self.provider.apt.install(
             apt_structure=apt_install,
-            vm_dates=VMS_DATES,
+            vms_dates=VMS_DATES,
             vms_groups=VMS_GROUPS,
             username=USERNAME,
             password=PASSWORD,

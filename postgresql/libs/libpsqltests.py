@@ -846,23 +846,32 @@ JOIN main.build_packages AS bp
             values=[float(value) for value in result["result"]["substring_search_query"]["iterations"]],
             weight=0.3,
             negative=True,
-            bounds=(0.0, 120.0),
+            bounds=(0.0, 850.0),
         )
         model.add_criterion(
             name="join_query",
             iterations=criteria_iterations,
             values=[float(value) for value in result["result"]["join_query"]["iterations"]],
-            weight=0.2,
+            weight=0.1,
             negative=True,
-            bounds=(0.0, 900.0),
+            bounds=(0.0, 600.0),
         )
-        total_rating_info = model.total_rating(0.884)
+        model.add_criterion(
+            name=self.oom_query_name,
+            iterations=criteria_iterations,
+            values=[float(value) for value in oom_iterations],
+            weight=0.1,
+            negative=True,
+            bounds=(0.0, 7900.0),
+        )
+
+        total_rating_info = model.total_rating(0.882)
         result["math_model"] = {
-            "power": round(0.884, 6),
-            "mean_abs_log_error": round(0.04389865273013631, 6),
-            "selection_score": round(0.04389865273013631, 6),
+            "power": round(0.882, 6),
+            "mean_abs_log_error": round(0.0446958192156943, 6),
+            "selection_score": round(0.04469581921569429, 6),
         }
-        result["total_rating"] = round(float(total_rating_info["total_rating"]), 3)
+        result["total_rating"] = round(float(total_rating_info["total_rating"]*100))
 
         with open(results_file_path, "w", encoding="utf-8") as result_stream:
             json.dump(result, result_stream, ensure_ascii=False, indent=2)

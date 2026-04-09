@@ -3,88 +3,79 @@
   "result": {
     "hard_query": {
       "iterations": [
-        0.013,
-        0.003,
-        0.002
+        166.484,
+        164.258,
+        165.384
       ],
-      "median": 0.003,
-      "p99": 0.013,
-      "p95": 0.012,
-      "p50": 0.003,
-      "min": 0.002,
-      "max": 0.013,
-      "speed_graph": "/home/n2ocake/git/stress_test/postgresql/report/olap_speed_hard_query.png"
+      "median": 165.384,
+      "p99": 166.462,
+      "p95": 166.374,
+      "p50": 165.384,
+      "min": 164.258,
+      "max": 166.484,
+      "speed_graph": "/home/u/git/stress_test/postgresql/report/olap_speed_hard_query.png"
     },
     "order_query": {
       "iterations": [
-        0.003,
-        0.001,
-        0.001
+        213.997,
+        216.572,
+        211.741
       ],
-      "median": 0.001,
-      "p99": 0.003,
-      "p95": 0.003,
-      "p50": 0.001,
-      "min": 0.001,
-      "max": 0.003,
-      "speed_graph": "/home/n2ocake/git/stress_test/postgresql/report/olap_speed_order_query.png"
+      "median": 213.997,
+      "p99": 216.52,
+      "p95": 216.314,
+      "p50": 213.997,
+      "min": 211.741,
+      "max": 216.572,
+      "speed_graph": "/home/u/git/stress_test/postgresql/report/olap_speed_order_query.png"
+    },
+    "substring_search_query": {
+      "iterations": [
+        85.164,
+        84.144,
+        84.815
+      ],
+      "median": 84.815,
+      "p99": 85.157,
+      "p95": 85.129,
+      "p50": 84.815,
+      "min": 84.144,
+      "max": 85.164,
+      "speed_graph": "/home/u/git/stress_test/postgresql/report/olap_speed_substring_search_query.png"
     },
     "join_query": {
       "iterations": [
-        0.002,
-        0.001,
-        0.001
+        63.823,
+        63.573,
+        63.571
       ],
-      "median": 0.001,
-      "p99": 0.002,
-      "p95": 0.002,
-      "p50": 0.001,
-      "min": 0.001,
-      "max": 0.002,
-      "speed_graph": "/home/n2ocake/git/stress_test/postgresql/report/olap_speed_join_query.png"
+      "median": 63.573,
+      "p99": 63.818,
+      "p95": 63.798,
+      "p50": 63.573,
+      "min": 63.571,
+      "max": 63.823,
+      "speed_graph": "/home/u/git/stress_test/postgresql/report/olap_speed_join_query.png"
     },
-    "interlinear_search_query": {
+    "oom_form_am289n04_query": {
       "iterations": [
-        0.002,
-        0.001,
-        0.001
+        790.447,
+        732.586,
+        756.179
       ],
-      "median": 0.001,
-      "p99": 0.002,
-      "p95": 0.002,
-      "p50": 0.001,
-      "min": 0.001,
-      "max": 0.002,
-      "speed_graph": "/home/n2ocake/git/stress_test/postgresql/report/olap_speed_interlinear_search_query.png"
-    },
-    "combined_analytics_query": {
-      "iterations": [
-        0.002,
-        0.001,
-        0.001
-      ],
-      "median": 0.001,
-      "p99": 0.002,
-      "p95": 0.002,
-      "p50": 0.001,
-      "min": 0.001,
-      "max": 0.002,
-      "speed_graph": "/home/n2ocake/git/stress_test/postgresql/report/olap_speed_combined_analytics_query.png"
-    },
-    "combined_search_join_query": {
-      "iterations": [
-        0.002,
-        0.002,
-        0.001
-      ],
-      "median": 0.002,
-      "p99": 0.002,
-      "p95": 0.002,
-      "p50": 0.002,
-      "min": 0.001,
-      "max": 0.002,
-      "speed_graph": "/home/n2ocake/git/stress_test/postgresql/report/olap_speed_combined_search_join_query.png"
+      "median": 756.179,
+      "p99": 789.761,
+      "p95": 787.02,
+      "p50": 756.179,
+      "min": 732.586,
+      "max": 790.447,
+      "speed_graph": "/home/u/git/stress_test/postgresql/report/olap_speed_oom_form_am289n04_query.png"
     }
   },
-  "total_rating": 99.787
+  "math_model": {
+    "power": 0.884,
+    "mean_abs_log_error": 0.044696,
+    "selection_score": 0.044696
+  },
+  "total_rating": 1401
 }

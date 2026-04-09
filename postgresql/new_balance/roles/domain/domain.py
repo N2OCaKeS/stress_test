@@ -51,7 +51,7 @@ EOF"""
             freeipa = {
                 "dcfreeipa": {
                     "init domain": {
-                        "command": f"sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y",
+                        "command": f"sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y --ssl",
                         "signal set": "",
                         "signal get": "",
                     },

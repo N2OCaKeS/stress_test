@@ -19,7 +19,7 @@ class PreConfigure:
     def apt_install(self):
 
         apt_install = {
-            "g_domain_client": ["astra-freeipa-client"],
+            "g_domain_client": ["astra-freeipa-client", "ntpdate"],
             "g_database": [
                 f"postgresql-{VERSION_PG}",
                 f"postgresql-{VERSION_PG}-pgpool2",

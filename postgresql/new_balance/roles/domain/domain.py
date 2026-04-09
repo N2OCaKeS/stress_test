@@ -41,7 +41,7 @@ class DomainVM:
             )
 
         elif isinstance(provider, Libvirt):
-            client = f"sleep 10 && sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-client -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y || true"
+            client = f"sleep 10 && sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-client -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y"
             resolv = f"""
 sudo cat << 'EOF' > /etc/resolv.conf
 search {DOMAIN}
@@ -51,7 +51,7 @@ EOF"""
             freeipa = {
                 "dcfreeipa": {
                     "init domain": {
-                        "command": f"sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -o -y",
+                        "command": f"sudo DEBIAN_FRONTEND=noninteractive astra-freeipa-server -d {DOMAIN} -p {DOMAIN_ADMIN_PASSWORD} -y",
                         "signal set": "",
                         "signal get": "",
                     },

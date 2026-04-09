@@ -405,9 +405,16 @@ JOIN main.build_packages AS bp
             check=False,
         )
 
-        # Удаляем оставшиеся данные и конфиги / Remove remaining data and configs
+        # Удаляем оставшиеся данные, конфиги и systemd-директории / Remove remaining data, configs and systemd dirs
         subprocess.run(["rm", "-rf", "/var/lib/postgresql/"], check=False)
         subprocess.run(["rm", "-rf", "/etc/postgresql/"], check=False)
+        # Удаляем systemd service drop-in директории, иначе pg_createcluster упадёт с ошибкой "File exists"
+        # Remove systemd service drop-in dirs, otherwise pg_createcluster fails with "File exists"
+        subprocess.run(
+            ["bash", "-c", f"rm -rf /etc/systemd/system/postgresql@{cluster_version}-*.service.d"],
+            check=False,
+        )
+        subprocess.run(["systemctl", "daemon-reload"], check=False)
 
         print(f"Устанавливаю PostgreSQL {cluster_version}...")
         # Устанавливаем заново / Reinstall
@@ -615,6 +622,10 @@ JOIN main.build_packages AS bp
             text=True,
         )
         try:
+            # Дамп содержит CREATE USER для уже существующих ролей — не используем ON_ERROR_STOP,
+            # как в оригинальном bash-скрипте psb_large_tmp_table_prep.sh
+            # The dump contains CREATE USER for already existing roles — no ON_ERROR_STOP,
+            # same as in original bash script psb_large_tmp_table_prep.sh
             restore_process = subprocess.run(
                 [
                     "sudo",
@@ -624,7 +635,6 @@ JOIN main.build_packages AS bp
                     "psql",
                     "-p", str(self.db_config["port"]),
                     "-d", self.oom_db_name,
-                    "-v", "ON_ERROR_STOP=1",
                 ],
                 stdin=tar_process.stdout,
                 stdout=subprocess.DEVNULL,

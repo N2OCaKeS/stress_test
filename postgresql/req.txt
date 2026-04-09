@@ -15,6 +15,6 @@ prettytable
 psycopg2-binary
 paramiko
 setuptools
-psycopg
+psycopg[binary]
 psycopg_pool
 asyncio

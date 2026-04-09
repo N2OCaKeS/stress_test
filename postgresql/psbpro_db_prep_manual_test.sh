@@ -112,6 +112,8 @@ sudo systemctl status ${PG_SERVICE}
 sudo -u postgres ${BIN_PATH}/pgbench -i -h localhost -p 6000 -U $USER -s 100 $DB_NAME
 
 #sudo perf record -g -a /opt/pgpro/ent-17/bin/pgbench -h localhost -p 6000 -U postgres -t 1000 -j 200 -c 200 test
+#sudo perf record -g -a /opt/pgpro/ent-17/bin/pgbench -h localhost -p 6000 -U postgres -T 300 -j 100 -c 100 test -P 10 -M simple -f /tmp/empty.sql
+
 
 
 #sudo perf record -g -a &
@@ -137,3 +139,58 @@ sudo -u postgres ${BIN_PATH}/pgbench -i -h localhost -p 6000 -U $USER -s 100 $DB
 
 # sudo systemctl start postgrespro-ent-17.service 
 # sudo systemctl status postgrespro-ent-17.service 
+
+
+
+# Из DEVQA-5787
+# Механизм:
+# Нагрузка создается за счет высокой частоты коротких транзакций.
+# Самое главное — это включенное расширения pg_stat_statements (или pgpro_stats).
+
+# На каждую транзакцию (даже SELECT 1) Postgres делает системные вызовы для замера времени и обновления статистики.
+# Все процессы пытаются одновременно обновить общие структуры данных в памяти (статистика, аудит).
+# Это вызывает в ядре:
+# •    Конкуренция за спинлоки (_raw_spin_unlock_irqrestore).
+# •    Постоянная работа с объектами памяти ядра (refill_obj_stock)
+
+# Инструкция:
+# Конфигурация PostgreSQL (postgresql.conf)
+# Включить сбор статистики, так как он генерирует системные вызовы:
+# shared_preload_libraries = 'pg_stat_statements'
+# pg_stat_statements.track = all
+# pg_stat_statements.track_utility = on
+# pg_stat_statements.track_planning = on
+# pg_stat_statements.save = off  
+  
+
+# Логирование также добавляет нагрузку
+# log_connections = on
+# log_disconnections = on 
+
+# Скрипт нагрузки (/tmp/empty.sql)
+# BEGIN;
+# SELECT 1;
+# COMMIT;
+
+
+# psql -U postgres -d test -p 6000
+# CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+# SELECT * FROM pg_stat_statements LIMIT 100;
+
+
+# Запуск теста (pgbench)
+# Запускаем 100 параллельных сессий, которые постоянно шлют запросы:
+
+# -c 100: 100 клиентов
+# -j 100: 100 потоков
+# -T 300: 5 минут теста
+# -P 10: Отчет каждые 10 сек
+# sudo -u postgres pgbench -U postgres test -c 100 -j 100 -T 300 -P 10 -M simple -f /tmp/empty.sql 
+
+# Результаты perf top
+# Утилита perf top получает:
+
+# •    refill_obj_stock (~14%): Высокая нагрузка на подсистему кэширования объектов ядра.
+# •    _raw_spin_unlock_irqrestore (~8.2%): Функция ядра, используемая для освобождения спин-блоков. 
+# •    audit_filter_rules (~1%): Активность аудита.
+

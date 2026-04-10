@@ -199,7 +199,7 @@ class Public:
             
             psql_olap_hq_tables = dict()
 
-            with open('report.json', 'r') as file:
+            with open(f'{REPORT_PATH}/olap_results.json', 'r') as file:
                 report_data = json.load(file)
 
             total_rating = report_data['total_rating']

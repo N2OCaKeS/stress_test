@@ -71,13 +71,21 @@ class VBox():
         if os.path.isfile('/home/tests/results'):
             with open('/home/tests/results', 'r') as r:
                 text = r.read()
-            for i in found_values:
-                if i in text:
-                    print('Провалено. Обнаружены ошибки: ООМ, Крах СУБД')
-                    return 1
-                else:
-                    print('Тест пройден, ошибки не обнаружены')
-                    return 0
+
+            found = False
+            for value in found_values:
+                if value in text:
+                    if 'bloom' in text and value == 'oom':
+                        continue  
+                    
+                    found = True
+                    break
+            if found:
+                print('Провалено. Обнаружены ошибки: ООМ, Крах СУБД')
+                return 1
+            else:
+                print('Тест пройден, ошибки не обнаружены')
+                return 0
         else: 
             print('Файл </home/tests/results> не найден')
             return 1

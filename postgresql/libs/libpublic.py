@@ -1,6 +1,7 @@
 import os
 import json
 import pandas as pd
+from collections import defaultdict
 from libs.libreport import ReportToConfluence
 from libs.libpsb import perf
 from libs.libtable import Report
@@ -197,7 +198,7 @@ class Public:
         elif self.c_np.startswith('PSQL OLAP-hq'):
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             
-            psql_olap_hq_tables = dict()
+            psql_olap_hq_tables = defaultdict(dict)
 
             with open(f'{REPORT_PATH}/olap_results.json', 'r') as file:
                 report_data = json.load(file)
@@ -241,7 +242,7 @@ class Public:
             
             olap_results = '\n'.join(html_psql_olap_hq_tables)
 
-            html_page = '\n'.join([header_table, head_row, rating, olap_results])
+            html_page = '\n'.join([header_table, head_row, rating, olap_results, images])
         else:
             rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
@@ -256,9 +257,9 @@ class Public:
                 img_temp = template.read()
                 for file in os.listdir(REPORT_PATH):
                     if file.endswith('png'):
-                        psql_olap_hq_tables[sql_request]['graph']= img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np), 
-                                                                                   img_png=file, 
-                                                                                   description=GRAPH_DESCRIPTIONS[file])
+                        images_lst.append(img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
+                                                        img_png=file,
+                                                        description=GRAPH_DESCRIPTIONS[file]))
                 images = '\n'.join(images_lst)
 
             html_page = '\n'.join([header_table, rating, main_table, images])

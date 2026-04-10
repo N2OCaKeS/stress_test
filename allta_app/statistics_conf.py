@@ -3,7 +3,7 @@ statistics_conf = {
         "set_of_test_types": ['apache-rp']
     },
     "FreeIPA": {
-        "set_of_test_types": ['FreeIPA auth', 'FreeIPA c-users']
+        "set_of_test_types": ['FreeIPA auth', 'FreeIPA c-users', 'FreeIPA plugin']
     },
     "Parsec": {
         "set_of_test_types": ['parsec impact-fs', 'parsec impact-fs aud-off'],

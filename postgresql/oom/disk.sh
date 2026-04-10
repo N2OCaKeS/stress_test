@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e  # Останавливаемся при ошибке
+set -e
 
 echo "=== Расширение диска ==="
 
@@ -7,35 +7,32 @@ echo "=== Расширение диска ==="
 sudo apt update
 sudo apt install cloud-guest-utils -y
 
-# Определяем корневой раздел
-ROOT_DEV=$(df / | awk 'NR==2 {print $1}')
-echo "Корневой раздел: $ROOT_DEV"
+# Определяем физический диск и раздел, на котором находится LVM
+# Находим физический раздел, используемый в LVM
+PV_DEV=$(sudo pvs --noheadings -o pv_name | head -1 | xargs)
+echo "Physical Volume: $PV_DEV"
 
-# Определяем основной диск (убираем последнюю цифру из /dev/sda3 → /dev/sda)
-DISK=$(echo $ROOT_DEV | sed 's/[0-9]*$//')
-PART_NUM=$(echo $ROOT_DEV | grep -o '[0-9]*$')
+# Из /dev/sda получаем диск (/dev/sda) и номер раздела 
+DISK=$(echo $PV_DEV | sed 's/[0-9]*$//')
+PART_NUM=$(echo $PV_DEV | grep -o '[0-9]*$')
 echo "Диск: $DISK, номер раздела: $PART_NUM"
 
-# Расширяем раздел
-sudo growpart $DISK $PART_NUM || true
-
-# Если используется LVM
-if command -v pvresize &> /dev/null; then
-    # Определяем physical volume
-    PV=$(sudo pvs --noheadings -o pv_name | head -1 | xargs)
-    if [ -n "$PV" ]; then
-        sudo pvresize $PV
-        
-        # Расширяем logical volume с корнем
-        LV=$(sudo lvs --noheadings -o lv_name,lv_attr | grep '^-' | head -1 | awk '{print $1}')
-        VG=$(sudo vgs --noheadings -o vg_name | head -1 | xargs)
-        
-        if [ -n "$LV" ] && [ -n "$VG" ]; then
-            sudo lvextend -l +100%FREE /dev/$VG/$LV
-            sudo resize2fs /dev/$VG/$LV || sudo xfs_growfs /
-        fi
-    fi
+# Расширяем физический раздел
+if [ -n "$PART_NUM" ]; then
+    sudo growpart $DISK $PART_NUM || true
+else
+    echo "Не удалось определить номер раздела"
+    exit 1
 fi
+
+# Расширяем Physical Volume в LVM
+sudo pvresize $PV_DEV
+
+# Расширяем Logical Volume с корнем
+sudo lvextend -l +100%FREE /dev/mapper/VG712-lv_root
+
+# Расширяем файловую систему
+sudo resize2fs /dev/mapper/VG712-lv_root
 
 echo "=== Результат ==="
 df -h /

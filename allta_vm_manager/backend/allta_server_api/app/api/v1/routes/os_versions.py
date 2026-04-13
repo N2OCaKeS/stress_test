@@ -32,7 +32,7 @@ from app.api.v1.models.snapshot_passwords import SnapshotPassword
 
 log = logging.getLogger(__name__)
 
-SYNC_INTERVAL_SEC = int(os.getenv("OS_VERSIONS_SYNC_INTERVAL", "180"))
+SYNC_INTERVAL_SEC = int(os.getenv("OS_VERSIONS_SYNC_INTERVAL", "60"))
 RELEASES_URL = os.getenv(
     "RELEASES_JSON_URL",
     "http://allta.devos.astralinux.ru/rest/api/get-repo-path",
@@ -198,9 +198,33 @@ def _extract_release_payload(payload: object) -> dict[str, list[str]]:
     raise ValueError("Unexpected releases payload type")
 
 
-def _version_sort_key(version_name: str) -> tuple[list[int], str]:
-    numeric_parts = [int(part) for part in re.findall(r"\d+", version_name)]
-    return numeric_parts, version_name
+def _version_sort_key(version_name: str) -> tuple:
+    """
+    Ключ сортировки для версии ОС с поддержкой смешанных числовых и текстовых
+    сегментов (например «1.7.6.UU.1.3»).
+
+    Sort key for OS version that supports mixed numeric and text segments
+    (e.g. "1.7.6.UU.1.3").
+
+    Каждый сегмент представлен кортежем (тип, значение):
+      (0, int)  — числовой сегмент
+      (1, str)  — текстовый сегмент (UU, rc, beta и т.п.)
+    Числовые сегменты всегда «меньше» текстовых на одном уровне,
+    поэтому «1.7.6.11» < «1.7.6.UU.1.3» — UU-варианты идут после числовых.
+
+    Each segment is represented as a tuple (type, value):
+      (0, int)  — numeric segment
+      (1, str)  — text segment (UU, rc, beta, etc.)
+    Numeric segments are always "less than" text segments at the same depth,
+    so "1.7.6.11" < "1.7.6.UU.1.3" — UU variants come after numeric ones.
+    """
+    parts = []
+    for segment in re.split(r"[.\-_]", version_name):
+        if segment.isdigit():
+            parts.append((0, int(segment)))
+        elif segment:
+            parts.append((1, segment.lower()))
+    return parts, version_name
 
 
 def _major_version(version_name: str) -> str | None:
@@ -216,6 +240,17 @@ def _clone_snapshot_password_for_major(db: Session, target_os_version: OSVersion
         return False
 
     target_id = int(target_os_version.id)
+
+    # Если пароль уже есть — ничего не делаем.
+    # If password already exists — do nothing.
+    exists = (
+        db.query(SnapshotPassword.id)
+        .filter(SnapshotPassword.os_version_id == target_id)
+        .first()
+    )
+    if exists:
+        return False
+
     rows = (
         db.query(SnapshotPassword, OSVersion.name)
         .join(OSVersion, SnapshotPassword.os_version_id == OSVersion.id)
@@ -223,28 +258,28 @@ def _clone_snapshot_password_for_major(db: Session, target_os_version: OSVersion
         .all()
     )
 
+    # Шаг 1: ищем самую новую версию в том же мажоре (например 1.8).
+    # Step 1: find the newest version within the same major (e.g. 1.8).
     source_password: SnapshotPassword | None = None
     source_version_name: str | None = None
     for password_row, os_version_name in rows:
         if _major_version(str(os_version_name or "")) != major:
             continue
-        if source_version_name is None:
+        if source_version_name is None or _version_sort_key(str(os_version_name)) > _version_sort_key(source_version_name):
             source_password = password_row
             source_version_name = str(os_version_name)
-            continue
-        if _version_sort_key(str(os_version_name)) > _version_sort_key(source_version_name):
-            source_password = password_row
-            source_version_name = str(os_version_name)
+
+    # Шаг 2: если в том же мажоре паролей нет (новый мажор) —
+    # берём пароль от самой новой версии среди всех мажоров.
+    # Step 2: if no passwords exist in the same major (new major group) —
+    # take the password from the newest version across all majors.
+    if source_password is None:
+        for password_row, os_version_name in rows:
+            if source_version_name is None or _version_sort_key(str(os_version_name)) > _version_sort_key(source_version_name):
+                source_password = password_row
+                source_version_name = str(os_version_name)
 
     if source_password is None:
-        return False
-
-    exists = (
-        db.query(SnapshotPassword.id)
-        .filter(SnapshotPassword.os_version_id == target_id)
-        .first()
-    )
-    if exists:
         return False
 
     db.add(

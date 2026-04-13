@@ -166,6 +166,18 @@ class Public:
                                                         arm_proc=self.stands[self.grade_stand]['cpu'],
                                                         arm_mem=self.stands[self.grade_stand]['ram'],
                                                         arm_st=self.stands[self.grade_stand]['storage'])
+        elif self.c_np.startswith('PSQL OLAP-hq'):
+            with open('{}/header_table_template_olap.html'.format(TEMPLATE_PATH), 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        package_name=self.package,
+                                                        package_vers=info_lst[2],
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'],
+                                                        lead_time=info_lst[3])
         else:
             with open('{}/header_table_template.html'.format(TEMPLATE_PATH), 'r') as file:
                 header_table_temp = file.read()
@@ -242,7 +254,7 @@ class Public:
             
             olap_results = '\n'.join(html_psql_olap_hq_tables)
 
-            html_page = '\n'.join([header_table, head_row, rating, olap_results, images])
+            html_page = '\n'.join([header_table, head_row, rating, olap_results])
         else:
             rep = Report(report_file='{}/psb_report.txt'.format(REPORT_PATH))
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:

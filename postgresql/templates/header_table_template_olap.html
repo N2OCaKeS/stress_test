@@ -1,0 +1,68 @@
+<p>
+    <table border="1">
+      <tbody>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Astra version</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{av}</td>
+        </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Kernel</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{kernel}</td>
+        </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Package</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{package_name}_{package_vers}</td>
+        </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Ranging</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
+                <a href="https://life.astralinux.ru/pages/viewpage.action?pageId=150939635"> подробнее </a>
+                <ul>
+                    <li><b>hard_query</b>: 0.3</li>
+                    <li><b>order_query</b>: 0.2</li>
+                    <li><b>substring_search_query</b>: 0.3</li>
+                    <li><b>join_query</b>: 0.1</li>
+                    <li><b>oom_form_am289n04_query</b>: 0.1</li>
+                </ul>
+            </td>
+        </tr>
+        <tr>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Params</b></td>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
+             <ul>
+                 <li>Итерации для каждого запроса (запросы запускаются поочередно): 5</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>ARM</b></td>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
+              <a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">{arm_num}</a>
+              <ul>
+                  <li>Processor: {arm_proc}</li>
+                  <li>Memory: {arm_mem}</li>
+                  <li>Storage: {arm_st}</li>
+              </ul>
+          </td>
+        </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Lead time</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{lead_time}</td>
+        </tr>
+      </tbody>
+    </table>
+</p>
+<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
+    <h2>Описание</h2>
+</p>
+<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
+    Тестирование работы PostgreSQL c olap запросами, и замером времени каждого запроса. Нагрузка идет запросами по очереди с повторением каждого запроса 3 раза. В тестировании участвуют сложные аналитические запросы.
+    Результатом тестирования являются таблицы значений:
+    <ul>
+        <li><b>hard_query</b>: комплексный поиск пакетов и исходников по подстроке lib с JOIN, проверкой нескольких текстовых полей и сортировкой по вычисляемому md5;</li>
+        <li><b>order_query</b>: полная выборка из main.build_packages с тяжёлой сортировкой по вычисляемому md5, длине поля files и дате создания;</li>
+        <li><b>substring_search_query</b>: поиск бинарных пакетов, в названии которых встречается подстрока lib;</li>
+        <li><b>join_query</b>: соединение исходных пакетов и бинарных пакетов для сборки debian.sid.unstable;</li>
+        <li><b>oom_form_am289n04_query</b>: тяжёлый процедурный пересчёт по большому набору ДСЕ: цикл по записям, вложенные расчёты маршрутов, временные таблицы и массовые DELETE/INSERT, создающие высокую CPU, memory и I/O нагрузку.</li>
+    </ul>
+</p>

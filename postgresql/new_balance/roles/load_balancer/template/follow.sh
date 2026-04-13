@@ -43,7 +43,7 @@ PG_BIN="/usr/lib/postgresql/${VERSION_PG}/bin"
 ARCHIVE_DIR="/var/lib/postgresql/${VERSION_PG}/archivedir"
 PCP_HOST="pgpool.balance.rbt"
 PCP_USER="pgpool"
-PCP_PASSFILE="/tmp/.pcppass"
+PCP_PASSFILE="/var/lib/postgresql/.pcppass"
 
 echo "=== follow.sh start NODE ${NODE_ID} (${NODE_HOST}:${NODE_PORT}) ==="
 

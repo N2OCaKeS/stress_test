@@ -1,4 +1,6 @@
-from allta import Libvirt, SystemCommands
+import os
+
+from allta import Libvirt, SystemCommands, LibvirtManager
 from new_balance.roles.database.db import DatabaseVM
 from new_balance.roles.domain.domain import DomainVM
 from new_balance.roles.load_balancer.load_balancer import LoadBalancer
@@ -11,25 +13,30 @@ def balance(rc, sec_mode="s"):
     provider = PROVIDER
     new_vms_data = {}
     if isinstance(provider, Libvirt):
-        provider.prepare()
-        SystemCommands.cmd(
-            'sudo sed -i \'s|#cgroup_controllers = \\[ "cpu", "devices", "memory", "blkio", "cpuset", "cpuacct" \\]|cgroup_controllers = [ "cpu", "devices", "memory" ]|\' /etc/libvirt/qemu.conf && sudo systemctl restart libvirtd'
-        )
+        save_path = "vms.json"
 
-        if VERSION_OS == "1.7":
-            new_vms_data = provider.build(box = f"1.7.5.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
-        elif VERSION_OS == "1.8":
-            new_vms_data =  provider.build(box = f"1.8.1.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
+        if os.path.exists(save_path):
+            new_vms_data = LibvirtManager.Vm.load_vms_data(save_path)
+            LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="build")
+        else:
+            provider.prepare()
+            SystemCommands.cmd(
+                'sudo sed -i \'s|#cgroup_controllers = \\[ "cpu", "devices", "memory", "blkio", "cpuset", "cpuacct" \\]|cgroup_controllers = [ "cpu", "devices", "memory" ]|\' /etc/libvirt/qemu.conf && sudo systemctl restart libvirtd'
+            )
+
+            if VERSION_OS == "1.7":
+                new_vms_data = provider.build(box=f"1.7.5.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
+            elif VERSION_OS == "1.8":
+                new_vms_data = provider.build(box=f"1.8.1.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
+
+            LibvirtManager.Vm.save_vms_data(vms_dates=new_vms_data, save_path=save_path)  # сохраняем IP ВМ для следующего запуска / save VM IPs for next run
 
     VMS_DATES.update(new_vms_data)  # обновляем оригинальный словарь in-place, чтобы все модули увидели новые IP / update original dict in-place so all modules see new IPs
     provider.check(vms=VMS, vms_dates=VMS_DATES)
 
     configure = PreConfigure()  # Проверено работает
     configure.prepare()
-    # if isinstance(provider, VBox):
-    #     VBoxManager.create_snapshot(vms=VMS, snapshot_name="prepare")
-    # elif isinstance(provider, Libvirt):
-    #     LibvirtManager.create_snapshot(vms=VMS, snapshot_name="prepare")
+
 
     domain = DomainVM()  # Проверено работает
     domain.settings()
@@ -43,3 +50,5 @@ def balance(rc, sec_mode="s"):
     test = Test()
     test.test()
     SystemCommands.cmd("cat results_balance.txt")
+    # LibvirtManager.Vm.stop(vms=VMS)
+

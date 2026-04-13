@@ -48,6 +48,13 @@ class LoadBalancer:
                     "old": "#pcp_listen_addresses = 'localhost'",
                     "new": "pcp_listen_addresses = '*'",
                 },
+                {
+                    # раскомментируем pcp_port — без явного значения PCP-сервер не стартует в pgpool 4.6
+                    # uncomment pcp_port — without explicit value PCP server does not start in pgpool 4.6
+                    "path": f"{pgpool_config_path}/pgpool.conf",
+                    "old": "#pcp_port = 9898",
+                    "new": "pcp_port = 9898",
+                },
                 # Настройки проверки состояния
                 {
                     "path": f"{pgpool_config_path}/pgpool.conf",
@@ -62,6 +69,12 @@ class LoadBalancer:
                 {
                     "path": f"{pgpool_config_path}/pgpool.conf",
                     "old": "#health_check_user = 'nobody'",
+                    "new": "health_check_user = 'postgres'",
+                },
+                {
+                    # Запасной вариант если дефолт пустой, а не 'nobody' / Fallback if default is empty string, not 'nobody'
+                    "path": f"{pgpool_config_path}/pgpool.conf",
+                    "old": "#health_check_user = ''",
                     "new": "health_check_user = 'postgres'",
                 },
                 {
@@ -83,6 +96,12 @@ class LoadBalancer:
                 {
                     "path": f"{pgpool_config_path}/pgpool.conf",
                     "old": "#sr_check_user = 'nobody'",
+                    "new": "sr_check_user = 'postgres'",
+                },
+                {
+                    # Запасной вариант если дефолт пустой, а не 'nobody' / Fallback if default is empty string, not 'nobody'
+                    "path": f"{pgpool_config_path}/pgpool.conf",
+                    "old": "#sr_check_user = ''",
                     "new": "sr_check_user = 'postgres'",
                 },
                 {
@@ -226,18 +245,20 @@ EOF
             "g_load_balancer": {
                 "set chmod failover scripts": {
                     "command": "sudo chmod +x /tmp/*.sh  && sudo mkdir -p /var/log && sudo touch /var/log/pgpool_failover.log && sudo chown -R postgres:postgres /var/log/pgpool_failover.log",
-                    "signal set": "",
+                    "signal set": "1",
                     "signal get": "",
                 },
                 "configure pcp": {
-                    "command": f"echo '{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD_MD5}' | sudo tee -a /etc/pgpool2/pcp.conf && sudo bash -c \"printf '{PGPOOL_HOSTNAME}:9898:{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD}\\n' > /tmp/.pcppass\" && sudo chmod 600 /tmp/.pcppass",
-                    "signal set": "",
-                    "signal get": "",
+                    # .pcppass хранится в /var/lib/postgresql/ — постоянное место, не очищается при перезагрузке
+                    # .pcppass stored in /var/lib/postgresql/ — persistent location, not cleared on reboot
+                    "command": f"echo '{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD_MD5}' | sudo tee -a /etc/pgpool2/pcp.conf && sudo bash -c \"printf '{PGPOOL_HOSTNAME}:9898:{PGPOOL_PCP_USER}:{PGPOOL_PASSWORD}\\n' > /var/lib/postgresql/.pcppass\" && sudo chmod 600 /var/lib/postgresql/.pcppass && sudo chown postgres:postgres /var/lib/postgresql/.pcppass",
+                    "signal set": "2",
+                    "signal get": "1",
                 },
                 "config pool_hba": {
                     "command": "echo -e 'host all all 127.0.0.1/32 trust\nhost all all 0.0.0.0/0 trust' | sudo tee -a /etc/pgpool2/pool_hba.conf",
-                    "signal set": "",
-                    "signal get": "",
+                    "signal set": "3",
+                    "signal get": "2",
                 },
                 "set postgres privilege": {
                     "command": "sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
@@ -248,18 +269,18 @@ EOF
                         sudo setfacl -d -m u:postgres:r /etc/parsec/capdb && \
                         sudo setfacl -R -m u:postgres:r /etc/parsec/capdb && \
                         sudo setfacl -m u:postgres:rx /etc/parsec/capdb",
-                    "signal set": "",
-                    "signal get": "",
+                    "signal set": "4",
+                    "signal get": "3",
                 },
                 "backend hosts": {
                     "command": f"sudo tee -a {pgpool_config_path}/pgpool.conf <<EOF\n{new_block}",
-                    "signal set": "set backend host",
-                    "signal get": "",
+                    "signal set": "5",
+                    "signal get": "4",
                 },
                 "fix pgpool2.service": {
                     "command": "sudo sed -i '/^\\[Service\\]/a CapabilitiesParsec=PARSEC_CAP_PRIV_SOCK PARSEC_CAP_MAC_SOCK' /lib/systemd/system/pgpool2.service",
                     "signal set": "Update pgpool service",
-                    "signal get": "",
+                    "signal get": "5",
                 },
                 "reload daemon": {
                     "command": "sudo systemctl daemon-reload",
@@ -268,13 +289,15 @@ EOF
                 },
                 "enable pgpool": {
                     "command": "sudo systemctl enable pgpool2.service",
-                    "signal set": "",
+                    "signal set": "daemon enable",
                     "signal get": ["daemon reload"],
                 },
                 "start pgpool": {
+                    # ждём set backend host — pgpool должен стартовать только после записи backend-хостов в конфиг
+                    # wait for set backend host — pgpool must start only after backend hosts are written to config
                     "command": "sudo systemctl start pgpool2.service",
                     "signal set": "",
-                    "signal get": ["daemon reload"],
+                    "signal get": ["daemon enable"],
                 },
             }
         }

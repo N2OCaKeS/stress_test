@@ -82,9 +82,20 @@ EOF"""
                     'signal set': '',
                     'signal get': ['Database created']
                 },
+                'create pg_stat_tmp via tmpfiles': {
+                    # /var/run очищается при перезагрузке — регистрируем каталог в tmpfiles.d
+                    # чтобы он создавался автоматически при каждом старте системы
+                    # /var/run is cleared on reboot — register dir in tmpfiles.d
+                    # so it gets created automatically on every system start
+                    'command': f'echo "d /var/run/postgresql/{VERSION_PG}-contrprimer.pg_stat_tmp 0700 postgres postgres -" | \
+                        sudo tee /etc/tmpfiles.d/postgresql-contrprimer.conf && \
+                        sudo systemd-tmpfiles --create /etc/tmpfiles.d/postgresql-contrprimer.conf',
+                    'signal set': '',
+                    'signal get': ['Database created']
+                },
 
                 'init db': {
-                    'command': f'sudo su - postgres -c "pg_createcluster {VERSION_PG} contrprimer --datadir={postgres_data_path} --port={POSTGRES_PORT} -- --data-checksums"',
+                    'command': f'sudo pg_createcluster {VERSION_PG} contrprimer --datadir={postgres_data_path} --port={POSTGRES_PORT} -- --data-checksums',
                     'signal set': 'Database created',
                     'signal get': ['Created db path']
                 },
@@ -286,6 +297,13 @@ EOF"""
                     "command": f"sudo su - postgres -c \"psql -p {POSTGRES_PORT} -c \'CREATE DATABASE test;\'\"",
                     "signal set": "pgbench manual",
                     "signal get": ['database2', "repl start"]
+                },
+                # Создаём таблицу для теста балансировки — чтобы clients.py не делал это сам при старте
+                # Create test table for load balancing test — so clients.py doesn't do it on startup
+                'create test table': {
+                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d test -c \'CREATE TABLE IF NOT EXISTS test (value BIGINT PRIMARY KEY, time TIMESTAMPTZ NOT NULL DEFAULT now());\'"',
+                    'signal set': 'test table created',
+                    'signal get': ['pgbench manual']
                 },
             },
 

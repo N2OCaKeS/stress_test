@@ -165,7 +165,7 @@ def info_list():
 
 # ===================== Точка входа =====================
 def main():
-    ensure_table()
+    # Таблица создаётся заранее в db.py при настройке БД / Table is pre-created in db.py during DB setup
     threads = []
     for _ in range(NUM_CLIENTS):
         t = threading.Thread(target=run_worker, daemon=True)

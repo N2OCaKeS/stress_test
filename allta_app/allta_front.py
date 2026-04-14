@@ -149,7 +149,7 @@ def call_auth_login(username: str, password: str):
         'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',
     }
-    return requests.post(AUTH_LOGIN_URL, data=payload, headers=headers, timeout=10)
+    return requests.post(AUTH_LOGIN_URL, data=payload, headers=headers, timeout=10, verify=False)
 
 @app.route("/check-token", methods=["GET"])
 def check_token():
@@ -159,7 +159,7 @@ def check_token():
 
     headers = {"Accept": "*/*", "Authorization": f"Bearer {token}"}
     try:
-        r = requests.get(AUTH_CHECK_TOKEN_URL, headers=headers, timeout=5)
+        r = requests.get(AUTH_CHECK_TOKEN_URL, headers=headers, timeout=5, verify=False)
         if r.status_code in (200, 204):
             return ("", 204)
         if r.status_code in (401, 403):
@@ -254,7 +254,7 @@ def logout():
         headers['Authorization'] = f'Bearer {token}'
 
     try:
-        requests.post(AUTH_LOGOUT_URL, headers=headers, timeout=5)
+        requests.post(AUTH_LOGOUT_URL, headers=headers, timeout=5, verify=False)
     except Exception:
         try:
             app.logger.warning("Auth logout request failed", exc_info=True)
@@ -1075,4 +1075,3 @@ def acs():
 
 # if __name__ == '__main__':
 #     app.run(host='127.0.0.1', port=8000, debug=True)
-

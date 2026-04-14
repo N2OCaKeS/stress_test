@@ -1,4 +1,5 @@
 from allta import Libvirt, LibvirtManager, SystemCommands
+import glob
 import json
 from pathlib import Path
 from time import sleep
@@ -23,6 +24,7 @@ from ovpn.result import analyze_result
 class Ovpn:
     def __init__(self):
         self.new_vms_dates = {}
+        self.csv_paths: list = []
 
     def build(self, rc: str, mode: str):
         path = Path("vms_dates.txt")
@@ -316,7 +318,7 @@ EOF'""",
         print("\n\n\n Сервер настроен \n\n\n")
         print()
 
-    def start_test(self):
+    def start_test(self, runs: int = 3):
         print("\n\n\n Запускаем тест \n\n\n")
 
         client_count = int(CLIENTS_TOTAL / (len(list(VMS_DATES.keys())) - 1))
@@ -327,69 +329,110 @@ EOF'""",
             total_seconds = int(STATS_DURATION_SECONDS)
         else:
             total_seconds = ramp_seconds + int(STATS_EXTRA_SECONDS)
-        start_client = {
-            "testvm1": {
-                "get stats": {
-                    "command": f"python3.12 /home/u/statistic.py --host 127.0.0.1 --port 7505 --interval 1 --duration {total_seconds} -o /home/u/stats.csv",
-                    "signal set": "",
-                    "signal get": "",
-                },
-            },
-        }
-        for idx, i in enumerate(range(2, 6)):
-            host = f"testvm{i}"
-            client_start = int(idx * client_count)
 
-            cmd = (
-                "sudo su -c 'ulimit -u 100000 && ulimit -n 100000 && ulimit -s 100000 && "
-                f"/home/u/python/Python-3.12.1/venv/bin/python3.12 /home/u/loader.py --client_per_minutes {client_per_minutes} "
-                f"--client_start {client_start} --client_count {client_count}'"
+        self.csv_paths = []
+
+        for run in range(1, runs + 1):
+            print(f"\n\n\n Прогон {run}/{runs} \n\n\n")
+            csv_name = f"stats_{run}.csv"
+
+            start_client = {
+                "testvm1": {
+                    "get stats": {
+                        "command": f"python3.12 /home/u/statistic.py --host 127.0.0.1 --port 7505 --interval 1 --duration {total_seconds} -o /home/u/{csv_name}",
+                        "signal set": "",
+                        "signal get": "",
+                    },
+                },
+            }
+            for idx, i in enumerate(range(2, 6)):
+                host = f"testvm{i}"
+                client_start = int(idx * client_count)
+
+                cmd = (
+                    "sudo su -c 'ulimit -u 100000 && ulimit -n 100000 && ulimit -s 100000 && "
+                    f"/home/u/python/Python-3.12.1/venv/bin/python3.12 /home/u/loader.py --client_per_minutes {client_per_minutes} "
+                    f"--client_start {client_start} --client_count {client_count}'"
+                )
+
+                start_client[host] = {"run_perf":
+                    {
+                        "command": cmd,
+                        "nowait": True,
+                        "nowait_mode": "terminate",
+                        "nowait_timeout": total_seconds
+                    }
+                }
+
+            Libvirt.execute(
+                commands=start_client,
+                vms_dates=self.new_vms_dates,
+                vms_groups=VMS_GROUP,
+                username=USER,
+                password=PASSWORD,
             )
 
-            start_client[host] = {"run_perf": 
-                {
-                    "command": cmd, 
-                    "nowait": True, 
-                    "nowait_mode": "terminate", 
-                    "nowait_timeout": total_seconds
-                }
+            print(f"\n\n\n Получаем результаты прогона {run} \n\n\n")
+            scp_pull = {
+                "testvm1": [
+                    {
+                        "mode": "pull",
+                        "path_host": "/home/u/",
+                        "path_vm": f"/home/u/{csv_name}",
+                    },
+                ],
             }
+            Libvirt.scp(
+                scp_settings=scp_pull,
+                vms_dates=self.new_vms_dates,
+                vms_groups=VMS_GROUP,
+                username=USER,
+                password=PASSWORD,
+            )
+            self.csv_paths.append(f"/home/u/{csv_name}")
 
-        Libvirt.execute(
-            commands=start_client,
-            vms_dates=self.new_vms_dates,
-            vms_groups=VMS_GROUP,
-            username=USER,
-            password=PASSWORD,
-        )
-
-        print("\n\n\n Получаем результаты \n\n\n")
-        scp_pull = {
-            "testvm1": [
-                {
-                    "mode": "pull",
-                    "path_host": "/home/u/",
-                    "path_vm": "/home/u/stats.csv",
-                },
-            ],
-        }
-
-        Libvirt.scp(
-            scp_settings=scp_pull,
-            vms_dates=self.new_vms_dates,
-            vms_groups=VMS_GROUP,
-            username=USER,
-            password=PASSWORD,
-        )
-        print("\n\n\n Результаты получены \n\n\n")        
+            # Сбрасываем клиентские подключения между прогонами
+            # Reset client connections between runs
+            if run < runs:
+                print(f"\n\n\n Сброс клиентов перед прогоном {run + 1} \n\n\n")
+                reset_clients = {
+                    f"testvm{i}": {
+                        "kill_openvpn": {
+                            "command": "sudo killall -q openvpn || true",
+                            "signal set": "",
+                            "signal get": "",
+                        }
+                    }
+                    for i in range(2, 6)
+                }
+                Libvirt.execute(
+                    commands=reset_clients,
+                    vms_dates=self.new_vms_dates,
+                    vms_groups=VMS_GROUP,
+                    username=USER,
+                    password=PASSWORD,
+                )
+                sleep(30)  # Ждём сброса подключений / Wait for connections to drop
 
         print("\n\n\n Тест выполнен \n\n\n")
 
     def get_result(self):
         print("\n\n\n Обрабатываем результаты \n\n\n")
 
+        # Если csv_paths не заполнен (например, повторный запуск после сбоя),
+        # ищем файлы stats_*.csv оставшиеся от предыдущего прогона.
+        # If csv_paths is empty (e.g. rerun after crash), discover stats_*.csv from previous run.
+        if not self.csv_paths:
+            found = sorted(glob.glob("/home/u/stats_*.csv"))
+            if not found:
+                raise RuntimeError(
+                    "Нет CSV файлов для анализа. Сначала запустите start_test()."
+                )
+            print(f"Найдены CSV от предыдущего прогона: {found}")
+            self.csv_paths = found
+
         result = analyze_result(
-            csv_path="/home/u/stats.csv",
+            csv_paths=self.csv_paths,
             tester_start=0,
             tester_count=CLIENTS_TOTAL,
         )

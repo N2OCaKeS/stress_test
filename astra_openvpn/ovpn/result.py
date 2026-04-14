@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
-from allta import Criterion, MathModels
+from allta import MathModel
 
 TESTER_RE = re.compile(r"^tester(\d+)$")
 
@@ -127,13 +127,75 @@ def _build_stats_table_rows(stats: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
-def analyze_result(
+def _extract_rating_metrics(
     csv_path: str,
     tester_start: int,
     tester_count: int,
     load_end_second: Optional[float] = None,
-):
+) -> Dict[str, int]:
+    """
+    Извлекает три ключевые метрики одного прогона для математической модели.
+    Extracts three key metrics of a single run for the math model.
+    """
     df = pd.read_csv(csv_path)
+    df = df.sort_values("seconds").reset_index(drop=True)
+
+    first_sec = float(df["seconds"].iloc[0])
+    last_sec = float(df["seconds"].iloc[-1])
+
+    if load_end_second is not None:
+        ramp_end_second = float(load_end_second)
+    else:
+        ramp_end_second = (tester_count / 120.0) * 60.0
+
+    ramp_end_second = max(first_sec, min(ramp_end_second, last_sec))
+
+    expected_testers: Set[str] = {
+        f"tester{i}" for i in range(tester_start, tester_start + tester_count)
+    }
+
+    mask = df["seconds"] <= ramp_end_second
+    if not mask.any():
+        mask = pd.Series([True] * len(df))
+    df_stats = df[mask].reset_index(drop=True)
+
+    clients_sets: List[Set[str]] = [
+        _parse_clients_field(s) for s in df_stats["client_names"]
+    ]
+
+    ever_connected: Set[str] = set()
+    for names in clients_sets:
+        ever_connected |= names & expected_testers
+
+    active_last: Set[str] = clients_sets[-1] & expected_testers
+    disconnected: Set[str] = ever_connected - active_last
+
+    ever_count = len(ever_connected)
+
+    # Если никто не подключился — минимальные значения чтобы рейтинг не сломался
+    # If no one connected — minimum values so the rating does not break
+    if ever_count == 0:
+        return {
+            "ever_connected_count": 1,
+            "not_connected_count": tester_count,
+            "disconnected_count": tester_count,
+        }
+    return {
+        "ever_connected_count": ever_count,
+        "not_connected_count": tester_count - ever_count,
+        "disconnected_count": len(disconnected),
+    }
+
+
+def analyze_result(
+    csv_paths: List[str],
+    tester_start: int,
+    tester_count: int,
+    load_end_second: Optional[float] = None,
+):
+    # Для отображения (графики, статистика) берём последний прогон
+    # For display (charts, stats) use the last run
+    df = pd.read_csv(csv_paths[-1])
 
     required_cols = {"seconds", "active_clients", "client_names"}
     if not required_cols.issubset(df.columns):
@@ -240,21 +302,47 @@ def analyze_result(
         "drops_mean": (float(drops_series.mean()) if not drops_series.empty else 0.0),  # Среднее количество ошибок/дропов за единицу времени
         "drops_median": (float(drops_series.median()) if not drops_series.empty else 0.0),  # Медиана количества ошибок/дропов за единицу времени
     }
-# TODO переписать под новую мат модель
     chart_rows = _build_chart_rows(df_charts)
     public_chart_rows = _build_public_chart_rows(df_charts)
     stats_table = _build_stats_table_rows(stats)
-    if stats["ever_connected_count"] == 0:
-            criterions = [Criterion(name="ever_connected_count", values=[1], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
-                  Criterion(name="not_connected_count", values=[tester_count], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
-                  Criterion(name="disconnected_count", values=[tester_count], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
-    else:
-        criterions = [Criterion(name="ever_connected_count", values=[stats["ever_connected_count"]], weight=0.4, sign=1, lower_bound=0, upper_bound=tester_count),
-                    Criterion(name="not_connected_count", values=[stats["not_connected_count"]], weight=0.4, sign=-1, lower_bound=0, upper_bound=tester_count),
-                    Criterion(name="disconnected_count", values=[stats["disconnected_count"]], weight=0.2, sign=-1, lower_bound=0, upper_bound=tester_count)]
 
-    total_rating, s = MathModels.total_rating(criteria=criterions)
-    total_rating = int(round(total_rating * 10))
+    # Собираем метрики по каждому прогону и строим модель на реальных данных
+    # Collect metrics per run and build the model on real multi-run data
+    per_run = [
+        _extract_rating_metrics(path, tester_start, tester_count, load_end_second)
+        for path in csv_paths
+    ]
+    iterations = list(range(1, len(csv_paths) + 1))
+
+    model = MathModel()
+    model.add_criterion(
+        name="ever_connected_count",
+        iterations=iterations,
+        values=[m["ever_connected_count"] for m in per_run],
+        weight=0.4,
+        negative=False,  # больше подключений — лучше / more connections — better
+        bounds=(0, tester_count),
+    )
+    model.add_criterion(
+        name="not_connected_count",
+        iterations=iterations,
+        values=[m["not_connected_count"] for m in per_run],
+        weight=0.4,
+        negative=True,
+        bounds=(0, tester_count),
+    )
+    model.add_criterion(
+        name="disconnected_count",
+        iterations=iterations,
+        values=[m["disconnected_count"] for m in per_run],
+        weight=0.2,
+        negative=True,  
+        bounds=(0, tester_count),
+    )
+    power = float(0.45)
+    rating_result = model.total_rating(power=power)
+    total_rating = int(round(rating_result["total_rating"] * 1000))
+    print (total_rating)
     return AnalysisResult(
         stats=stats,
         stats_table=stats_table,

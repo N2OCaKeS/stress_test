@@ -470,7 +470,13 @@ class XFSMemoryLeak(CreateVM):
                     "mode": "pull",
                     "path_host": f"{BASE_PATH}/ram_usage_log.txt",
                     "path_vm": "/home/u/ram_usage_log.txt"
+                },
+                {
+                    "mode": "pull",
+                    "path_host": f"{BASE_PATH}/results.json",
+                    "path_vm": "/home/u/results.json"
                 }
+
             ]
         }
         self.provider.scp(
@@ -482,7 +488,5 @@ class XFSMemoryLeak(CreateVM):
         )
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         print("\n\n\nОбработка результатов\n\n\n")
-        # Обработка результатов
-
-        pass
+        
         

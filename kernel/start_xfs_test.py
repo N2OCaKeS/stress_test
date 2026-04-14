@@ -3,16 +3,6 @@ import time
 
 
 def run_scripts():
-    print("Запуск copy.sh...")
-    copy_process = subprocess.Popen(
-        ['bash /home/u/copy_files.sh'],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        shell=True
-    )
-    
-    time.sleep(1)
     
     print("Запуск get_info.py...")
     info_process = subprocess.Popen(
@@ -20,6 +10,17 @@ def run_scripts():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
+    )
+
+    time.sleep(1)
+
+    print("Запуск copy.sh...")
+    copy_process = subprocess.Popen(
+        ['bash /home/u/copy_files.sh'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        shell=True
     )
     
     print("Оба скрипта запущены. Ожидание завершения copy.sh...")
@@ -47,7 +48,6 @@ def run_scripts():
     if stderr:
         print("Ошибки copy.sh:", stderr)
     
-    print("\n--- Вывод get_info.py (первые 10 строк) ---")
     stdout, stderr = info_process.communicate()
     lines = stdout.split('\n')
     for line in lines[:10]:

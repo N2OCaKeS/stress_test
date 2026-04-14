@@ -3,7 +3,7 @@
 import json
 from allta import PageBuilder, ConfluencePublisher
 
-from kernel_conf import VM_INFONAME, VM_KERNEL, SEGMENTATION_FAULT_RAM, SEGMENTATION_FAULT_VCPU, RESULTS_FILE
+from kernel_conf import VM_INFONAME, VM_KERNEL, SEGMENTATION_FAULT_RAM, SEGMENTATION_FAULT_VCPU, RESULTS_FILE, XFS_MEMORY_LEAK_RAM, XFS_MEMORY_LEAK_VCPU
 
 def kernel_publisher(
         username,
@@ -121,8 +121,8 @@ def xfs_memory_leak_publisher(username,
         vm_info_kernel = vm_info_kernel_file.read()
 
     params = [
-        {"label": "VCPU", "value": SEGMENTATION_FAULT_VCPU},
-        {"label": "RAM", "value": SEGMENTATION_FAULT_RAM},
+        {"label": "VCPU", "value": XFS_MEMORY_LEAK_VCPU},
+        {"label": "RAM", "value": XFS_MEMORY_LEAK_RAM},
     ]
 
     header_table = [
@@ -162,7 +162,11 @@ def xfs_memory_leak_publisher(username,
     with open(RESULTS_FILE, 'r') as f:
         results_dict = json.load(f)
 
-    builder.add_table()
+    builder.add_table({
+        "title": "Результаты тестирования",
+        "headers": ["Утечка памяти"],
+        "rows": [[results_dict['status']]],
+    })
 
     publish_result = reporter.publish_results_from_params(
         conf_space=space,

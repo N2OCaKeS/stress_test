@@ -61,6 +61,7 @@
             "InitOnFree": "1:03:50",
             "SegFault": "1:09:32",
             "PSQL_OLAP-hq": "2:28:15",
+            "XFS mem leak": "2:00:00",            
             "Total time": "0:00:00"
         },
         "stand13": {
@@ -131,6 +132,8 @@
             "SegFault": "1:10:35",
             "PSQL_OLAP-hq": "2:28:15",
             "Total time": "0:00:00",
+            "XFS mem leak": "2:00:00",
+
             "PSQL OLAP-hq": "2:32:54"
         },
         "stand13": {

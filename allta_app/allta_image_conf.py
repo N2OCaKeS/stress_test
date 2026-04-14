@@ -108,7 +108,7 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
                                  'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
             'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
             'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl', 'AOpenVPNcc',
-                                 'Dovecot-IMAP', 'Exim4-SMTP', 'SegFault'],
+                                 'Dovecot-IMAP', 'Exim4-SMTP', 'SegFault', "XFS mem leak"],
             'UnixBench':        ['unix', 'unix parsec'],
             'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users', "FreeIPA plugin"],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
@@ -207,6 +207,7 @@ branches = {
     'Network benchmark. Init_on_free':'network',
     'segmentation_fault':'kernel',
     'postgresql benchmark olap':'postgresql',
+    'XFS. Memory leak':'kernel'
 }
 
 
@@ -275,7 +276,8 @@ tests = {
     'exim benchmark':'Exim4-SMTP',
     'Network benchmark. Init_on_free':'InitOnFree',
     'segmentation_fault':'SegFault',
-    'postgresql benchmark olap':'PSQL OLAP-hq'
+    'postgresql benchmark olap':'PSQL OLAP-hq',
+    'XFS. Memory leak': 'XFS mem leak'
 }
 
 
@@ -308,7 +310,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin']
+              'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak']
 
 
 
@@ -399,7 +401,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand10': ['CEPH parsec'],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
-            'orel_stand12':     ['syslog-ng', 'InitOnFree', 'SegFault'],
+            'orel_stand12':     ['syslog-ng', 'InitOnFree', 'SegFault', 'XFS mem leak'],
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'PSQL OLAP-hq'],
             'orel_stand13':     ['syslog-ng-cwl'],
             'smolensk_stand13': []
@@ -419,7 +421,7 @@ stands_groups = {
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
 
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
-    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq'],
+    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'XFS mem leak'],
 
     'stand13_group':['syslog-ng-cwl']
 }
@@ -478,7 +480,8 @@ tests_case_zefir_key = {
     'InitOnFree':'BT-T18909',
     'SegFault':'BT-T18927',
     'PSQL OLAP-hq':'BT-T19100',
-    'FreeIPA plugin':'BT-T19492'
+    'FreeIPA plugin':'BT-T19492',
+    'XFS mem leak':'BT-T19753',
 }
 
 
@@ -510,7 +513,8 @@ testname_columns = {
                     'dovecot benchmark':'Dovecot-IMAP', 'exim benchmark':'Exim4-SMTP', 'Large FIO benchmark':'FIO_large',
                     'Network benchmark. Init_on_free':'InitOnFree', 'segmentation_fault':'SegFault',
                     'postgresql benchmark olap':'PSQL_OLAP-hq',
-                    'freeipa plugin test':'FreeIPA_plugin'
+                    'freeipa plugin test':'FreeIPA_plugin',
+                    'XFS. Memory leak':'XFS_mem_leak'
                     }
 
 
@@ -675,4 +679,3 @@ ilo = requests.get(f"{SERVER_API_BASE}/ilo/", headers=HEADERS, timeout=30, verif
 #################################################################################################################################################
 SERVER_ACS_PORT = 9999
 ACS_BASE_URL = f"http://{allta_network['ip']}:{SERVER_ACS_PORT}"
-

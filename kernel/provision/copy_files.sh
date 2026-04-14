@@ -1,5 +1,11 @@
 #!/bin/bash
 
+#Проверка опции init_on_free
+#sudo dmesg | grep -i "mem auto-init"
+
+#Создать ВМ
+#sudo allta local vm build --count 1 --ram 8 --rc 1.7.10.72 --disk 100
+
 # Add disk
 # sudo qemu-img create -f qcow2 /vms/db1.qcow2 100G && sudo virsh attach-disk testvm1 /vms/db1.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio
 

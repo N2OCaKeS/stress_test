@@ -15,6 +15,13 @@ INFO_FILENAME = 'ap_info.txt'
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 
+#VM Settings
+USERNAME = "u"
+PASSWORD = "1"
+ABP_VM_COUNT = 2
+ABP_VCPU = 16
+ABP_RAM = 32768
+
 #Количество запусков бенчмарка
 REPETITIONS_COUNTER = 30
 #Запросы

@@ -431,7 +431,7 @@ class XFSMemoryLeak(CreateVM):
                 {
                     "mode": "push",
                     "path_host": f'{BASE_PATH}/start_xfs_test.py', 
-                    "path_vm": '/home/u/get_info.py', 
+                    "path_vm": '/home/u/start_xfs_test.py', 
                 },
             ]
         }

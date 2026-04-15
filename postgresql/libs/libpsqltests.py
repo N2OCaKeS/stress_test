@@ -628,10 +628,6 @@ JOIN main.build_packages AS bp
             text=True,
         )
         try:
-            # Дамп содержит CREATE USER для уже существующих ролей — не используем ON_ERROR_STOP,
-            # как в оригинальном bash-скрипте psb_large_tmp_table_prep.sh
-            # The dump contains CREATE USER for already existing roles — no ON_ERROR_STOP,
-            # same as in original bash script psb_large_tmp_table_prep.sh
             restore_process = subprocess.run(
                 [
                     "sudo",
@@ -676,7 +672,7 @@ JOIN main.build_packages AS bp
             with open(f"/proc/{pid}/status", "r") as f:
                 for line in f:
                     if line.startswith("VmRSS:"):
-                        return float(line.split()[1])  # значение в кБ / value in kB
+                        return float(line.split()[1])
         except (FileNotFoundError, ValueError, OSError):
             pass
         return 0.0
@@ -696,7 +692,7 @@ JOIN main.build_packages AS bp
                 password=self.db_config["password"],
             ) as conn:
                 with conn.cursor() as cur:
-                    # Получаем PID серверного процесса PostgreSQL / Get PID of PostgreSQL backend process
+                    # Получаем PID серверного процесса PostgreSQL 
                     cur.execute("SELECT pg_backend_pid()")
                     pid_row = cur.fetchone()
                     assert pid_row is not None
@@ -734,7 +730,10 @@ JOIN main.build_packages AS bp
         )
 
         passes = max(1, int(self.passes))
-        prepared_queries = list(self.available_queries.items())
+        prepared_queries = [
+            (name, cfg) for name, cfg in self.available_queries.items()
+            if name != self.oom_query_name
+        ]
 
         def calc_percentile(values, percentile):
             if not values:
@@ -779,15 +778,11 @@ JOIN main.build_packages AS bp
             return graph_file_path
 
         def save_memory_graph(query_name, all_samples: list[list[float]]) -> str:
-            # all_samples — список списков: каждый внутренний список это сэмплы памяти (МБ) одной итерации
-            # all_samples — list of lists: each inner list is memory samples (MB) for one iteration
             graph_file_name = f"olap_memory_{query_name}.png"
             graph_file_path = os.path.abspath(os.path.join(report_dir, graph_file_name))
             if not all_samples or not any(all_samples):
                 return graph_file_path
 
-            # Tab10 цвета заданы явно чтобы не зависеть от версии matplotlib
-            # Tab10 colors defined explicitly to avoid matplotlib version dependency
             colors = [
                 "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
                 "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
@@ -805,7 +800,6 @@ JOIN main.build_packages AS bp
                         alpha=0.7,
                         label=f"Итерация {idx + 1}")
 
-            # Медиана по каждой временной точке красным / Median at each time point in red
             max_len = max((len(s) for s in all_samples if s), default=0)
             median_values = []
             for t_idx in range(max_len):
@@ -851,9 +845,7 @@ JOIN main.build_packages AS bp
                 "max": round(max_value, 3),
                 "speed_graph": graph_file_path,
             }
-            # Добавляем статистику по памяти если она передана / Add memory stats if provided
-            # all_memory_samples — список списков сэмплов (МБ) по каждому проходу
-            # all_memory_samples — list of sample lists (MB) per iteration
+
             if all_memory_samples:
                 flat = [v for samples in all_memory_samples for v in samples]
                 entry["memory_mb"] = {
@@ -874,12 +866,6 @@ JOIN main.build_packages AS bp
 
         os.makedirs(report_dir, exist_ok=True)
 
-        # Если OOM-запрос есть в списке — пересоздаём кластер и восстанавливаем БД до открытия пула
-        # If OOM query is in the list — recreate cluster and restore DB before opening the pool
-        if self.oom_query_name in self.available_queries:
-            self._recreate_oom_cluster()
-            self._restore_oom_database()
-
         await pool.open()
         try:
 
@@ -891,8 +877,6 @@ JOIN main.build_packages AS bp
                 stop_event = asyncio.Event()
 
                 async def sample_loop(pid: int) -> None:
-                    # Собираем VmRSS каждую секунду пока выполняется запрос
-                    # Collect VmRSS every second while the query runs
                     while not stop_event.is_set():
                         samples.append(self._read_proc_rss_kb(pid) / 1024)
                         await asyncio.sleep(1.0)
@@ -913,7 +897,6 @@ JOIN main.build_packages AS bp
                             await sample_task
 
                 if db_cfg is not None:
-                    # Прямое подключение для запросов с другой БД / Direct connection for different DB
                     async with await psycopg.AsyncConnection.connect(**db_cfg) as conn:
                         elapsed = await execute(conn)
                 else:
@@ -968,6 +951,17 @@ JOIN main.build_packages AS bp
                 result["result"][query_name] = build_result_entry(query_name, iterations, all_memory_samples, memory_graph)
         finally:
             await pool.close()
+
+
+        if self.oom_query_name in self.available_queries:
+            self._recreate_oom_cluster()
+            oom_iterations, oom_memory = self._run_oom_query_iterations()
+            oom_memory_samples = [[m] for m in oom_memory]
+            oom_memory_graph = save_memory_graph(self.oom_query_name, oom_memory_samples)
+            total_rating_data[self.oom_query_name] = oom_iterations
+            result["result"][self.oom_query_name] = build_result_entry(
+                self.oom_query_name, oom_iterations, oom_memory_samples, oom_memory_graph
+            )
 
         criteria_iterations = [float(index) for index in range(1, passes + 1)]
 

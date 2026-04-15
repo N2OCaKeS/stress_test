@@ -409,6 +409,8 @@ class Sigmentation_fault(CreateVM):
             result_file.write(json.dumps(result))
 
         print("\n\n\n Результаты обработаны\n\n\n")
+
+        return status_test1_bug and status_test2_bug
             
 
 class XFSMemoryLeak(CreateVM):

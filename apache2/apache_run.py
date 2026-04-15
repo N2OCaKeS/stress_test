@@ -106,7 +106,8 @@ if args.TESTNAME == 'apache_pam':
                         testdir=SCRIPT_DIR,
                         vm_count=ABP_VM_COUNT,
                         vcpu=ABP_VCPU,
-                        ram=ABP_RAM)
+                        ram=ABP_RAM,
+                        kernel=str(args.TCYC).split('_')[2])
     
     abp.prepare_vms()
     abp.create_test_env()

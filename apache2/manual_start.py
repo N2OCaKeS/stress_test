@@ -14,7 +14,8 @@ abp = ApacheBenchPam(rc_name='1.7.10.72',
                     testdir=SCRIPT_DIR,
                     vm_count=ABP_VM_COUNT,
                     vcpu=ABP_VCPU,
-                    ram=ABP_RAM)
+                    ram=ABP_RAM,
+                    kernel='6.1.161-1-generic')
 
 abp.prepare_vms()
 abp.create_test_env()

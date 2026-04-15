@@ -3,9 +3,11 @@ import os
 import json
 import logging
 import subprocess
-import time
 from typing import LiteralString
+import time
+import asyncio
 import psycopg
+import psycopg.sql
 from psycopg_pool import AsyncConnectionPool
 from allta import MathModel
 import matplotlib
@@ -266,21 +268,6 @@ JOIN main.build_packages AS bp
     AND ps.source = bp.source
     AND ps.build = 'debian.sid.unstable'
 """ # 4-5 секунд
-        self.available_queries: dict[str, dict[str, object]] = {
-            "hard_query": {
-                "query": self.hard_query,
-            },
-            "order_query": {
-                "query": self.order_query,
-            },
-            "substring_search_query": {
-                "query": self.substring_search_query,
-            },
-            "join_query": {
-                "query": self.join_query,
-            },
-        }
-
         self.pool_connection_timeout = 600.0
         self.results_file = f"{REPORT_PATH}/olap_results.json"
         self.oom_db_name = "test"
@@ -300,6 +287,25 @@ JOIN main.build_packages AS bp
         self.oom_dump_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "sql", "test.tar.gz")
         )
+
+        self.available_queries: dict[str, dict[str, object]] = {
+            "hard_query": {
+                "query": self.hard_query,
+            },
+            "order_query": {
+                "query": self.order_query,
+            },
+            "substring_search_query": {
+                "query": self.substring_search_query,
+            },
+            "join_query": {
+                "query": self.join_query,
+            },
+            self.oom_query_name: {
+                "query": self.oom_query,
+                "db_config": {**self.db_config, "dbname": self.oom_db_name},
+            },
+        }
 
     def _get_cluster_version(self):
         al_version = astra_version()[0]
@@ -662,13 +668,26 @@ JOIN main.build_packages AS bp
                 + tar_stderr
             )
 
-    def _run_oom_query_iterations(self):
+    @staticmethod
+    def _read_proc_rss_kb(pid: int) -> float:
+        # Читаем VmRSS — то же значение что htop показывает в колонке RES
+        # RssAnon
+        try:
+            with open(f"/proc/{pid}/status", "r") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        return float(line.split()[1])  # значение в кБ / value in kB
+        except (FileNotFoundError, ValueError, OSError):
+            pass
+        return 0.0
+
+    def _run_oom_query_iterations(self) -> tuple[list[float], list[float]]:
         print("Восстанавливаю OOM базу данных test")
         self._restore_oom_database()
         iterations = []
+        memory_iterations = []
 
         for pass_num in range(1, max(1, int(self.passes)) + 1):
-            started = time.perf_counter()
             with psycopg.connect(
                 host=self.db_config["host"],
                 port=self.db_config["port"],
@@ -677,17 +696,29 @@ JOIN main.build_packages AS bp
                 password=self.db_config["password"],
             ) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(self.oom_query)
+                    # Получаем PID серверного процесса PostgreSQL / Get PID of PostgreSQL backend process
+                    cur.execute("SELECT pg_backend_pid()")
+                    pid_row = cur.fetchone()
+                    assert pid_row is not None
+                    backend_pid = pid_row[0]
+
+                    rss_before = self._read_proc_rss_kb(backend_pid)
+                    started = time.perf_counter()
+                    cur.execute(self.oom_query)  # type: ignore[arg-type]
                     if cur.description is not None:
                         cur.fetchall()
-            measurement = time.perf_counter() - started
+                    measurement = time.perf_counter() - started
+                    rss_after = self._read_proc_rss_kb(backend_pid)
+
+            memory_mb = max(0.0, rss_after - rss_before) / 1024
             iterations.append(measurement)
+            memory_iterations.append(memory_mb)
             print(
                 f"Запрос {self.oom_query_name}, проход {pass_num}: "
-                f"{measurement:.3f} сек"
+                f"{measurement:.3f} сек, память: {memory_mb:.2f} МБ"
             )
 
-        return iterations
+        return iterations, memory_iterations
 
     async def run_test(self):
         db_config = self.db_config
@@ -703,12 +734,7 @@ JOIN main.build_packages AS bp
         )
 
         passes = max(1, int(self.passes))
-        prepared_queries = []
-        for query_name, query_cfg in self.available_queries.items():
-            query_text = query_cfg.get("query")
-            if not isinstance(query_text, str):
-                raise ValueError(f"Query text must be string for '{query_name}'")
-            prepared_queries.append((query_name, query_text))
+        prepared_queries = list(self.available_queries.items())
 
         def calc_percentile(values, percentile):
             if not values:
@@ -752,7 +778,62 @@ JOIN main.build_packages AS bp
             plt.close(fig)
             return graph_file_path
 
-        def build_result_entry(query_name, iterations):
+        def save_memory_graph(query_name, all_samples: list[list[float]]) -> str:
+            # all_samples — список списков: каждый внутренний список это сэмплы памяти (МБ) одной итерации
+            # all_samples — list of lists: each inner list is memory samples (MB) for one iteration
+            graph_file_name = f"olap_memory_{query_name}.png"
+            graph_file_path = os.path.abspath(os.path.join(report_dir, graph_file_name))
+            if not all_samples or not any(all_samples):
+                return graph_file_path
+
+            # Tab10 цвета заданы явно чтобы не зависеть от версии matplotlib
+            # Tab10 colors defined explicitly to avoid matplotlib version dependency
+            colors = [
+                "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+            ]
+            fig, ax = plt.subplots(figsize=(12, 5))
+
+            # Кривая каждой итерации своим цветом / Each iteration curve in its own color
+            for idx, samples in enumerate(all_samples):
+                if not samples:
+                    continue
+                x = list(range(len(samples)))
+                ax.plot(x, samples,
+                        color=colors[idx % len(colors)],
+                        linewidth=1.2,
+                        alpha=0.7,
+                        label=f"Итерация {idx + 1}")
+
+            # Медиана по каждой временной точке красным / Median at each time point in red
+            max_len = max((len(s) for s in all_samples if s), default=0)
+            median_values = []
+            for t_idx in range(max_len):
+                vals = [s[t_idx] for s in all_samples if len(s) > t_idx]
+                if vals:
+                    sorted_v = sorted(vals)
+                    mid = len(sorted_v) // 2
+                    m = (sorted_v[mid - 1] + sorted_v[mid]) / 2 if len(sorted_v) % 2 == 0 else sorted_v[mid]
+                    median_values.append(m)
+            if median_values:
+                x_med = list(range(len(median_values)))
+                ax.plot(x_med, median_values,
+                        color="red",
+                        linewidth=2.0,
+                        linestyle="--",
+                        label="Медиана")
+
+            ax.set_title(f"Memory usage: {query_name}")
+            ax.set_xlabel("Time (seconds)")
+            ax.set_ylabel("Memory (MB)")
+            ax.legend()
+            ax.grid(True, linestyle="--", alpha=0.4)
+            fig.tight_layout()
+            fig.savefig(graph_file_path, dpi=150)
+            plt.close(fig)
+            return graph_file_path
+
+        def build_result_entry(query_name, iterations, all_memory_samples=None, memory_graph=None):
             median_value = calc_median(iterations)
             p99_value = calc_percentile(iterations, 99)
             p95_value = calc_percentile(iterations, 95)
@@ -760,7 +841,7 @@ JOIN main.build_packages AS bp
             min_value = min(iterations) if iterations else 0.0
             max_value = max(iterations) if iterations else 0.0
             graph_file_path = save_speed_graph(query_name, iterations)
-            return {
+            entry = {
                 "iterations": [round(value, 3) for value in iterations],
                 "median": round(median_value, 3),
                 "p99": round(p99_value, 3),
@@ -770,6 +851,19 @@ JOIN main.build_packages AS bp
                 "max": round(max_value, 3),
                 "speed_graph": graph_file_path,
             }
+            # Добавляем статистику по памяти если она передана / Add memory stats if provided
+            # all_memory_samples — список списков сэмплов (МБ) по каждому проходу
+            # all_memory_samples — list of sample lists (MB) per iteration
+            if all_memory_samples:
+                flat = [v for samples in all_memory_samples for v in samples]
+                entry["memory_mb"] = {
+                    "iterations": [[round(v, 2) for v in s] for s in all_memory_samples],
+                    "median": round(calc_median(flat), 2),
+                    "min": round(min(flat), 2),
+                    "max": round(max(flat), 2),
+                    "graph": memory_graph,
+                }
+            return entry
 
         pool = AsyncConnectionPool(
             conninfo=dsn,
@@ -780,90 +874,123 @@ JOIN main.build_packages AS bp
 
         os.makedirs(report_dir, exist_ok=True)
 
+        # Если OOM-запрос есть в списке — пересоздаём кластер и восстанавливаем БД до открытия пула
+        # If OOM query is in the list — recreate cluster and restore DB before opening the pool
+        if self.oom_query_name in self.available_queries:
+            self._recreate_oom_cluster()
+            self._restore_oom_database()
+
         await pool.open()
         try:
 
-            async def run_one(query_text: str) -> float:
-                started = time.perf_counter()
-                async with pool.connection(
-                    timeout=self.pool_connection_timeout
-                ) as conn:
+            async def run_one(
+                query_text: str,
+                db_cfg: dict | None = None,
+            ) -> tuple[float, dict[str, float], list[float]]:
+                samples: list[float] = []
+                stop_event = asyncio.Event()
+
+                async def sample_loop(pid: int) -> None:
+                    # Собираем VmRSS каждую секунду пока выполняется запрос
+                    # Collect VmRSS every second while the query runs
+                    while not stop_event.is_set():
+                        samples.append(self._read_proc_rss_kb(pid) / 1024)
+                        await asyncio.sleep(1.0)
+
+                async def execute(conn) -> float:
                     async with conn.cursor() as cur:
-                        await cur.execute(query_text)
-                        await cur.fetchall()
-                return time.perf_counter() - started
+                        await cur.execute("SELECT pg_backend_pid()")
+                        pid_row = await cur.fetchone()
+                        assert pid_row is not None
+                        sample_task = asyncio.create_task(sample_loop(pid_row[0]))
+                        try:
+                            started = time.perf_counter()
+                            await cur.execute(query_text)  # type: ignore[arg-type]
+                            await cur.fetchall()
+                            return time.perf_counter() - started
+                        finally:
+                            stop_event.set()
+                            await sample_task
+
+                if db_cfg is not None:
+                    # Прямое подключение для запросов с другой БД / Direct connection for different DB
+                    async with await psycopg.AsyncConnection.connect(**db_cfg) as conn:
+                        elapsed = await execute(conn)
+                else:
+                    async with pool.connection(timeout=self.pool_connection_timeout) as conn:
+                        elapsed = await execute(conn)
+
+                if not samples:
+                    memory_stats: dict[str, float] = {"median": 0.0, "min": 0.0, "max": 0.0}
+                else:
+                    sorted_s = sorted(samples)
+                    mid = len(sorted_s) // 2
+                    median = (
+                        (sorted_s[mid - 1] + sorted_s[mid]) / 2
+                        if len(sorted_s) % 2 == 0
+                        else sorted_s[mid]
+                    )
+                    memory_stats = {
+                        "median": round(median, 2),
+                        "min": round(sorted_s[0], 2),
+                        "max": round(sorted_s[-1], 2),
+                    }
+
+                return elapsed, memory_stats, samples
 
             result = {
                 "time_unit": "seconds",
                 "result": {},
             }
-            total_rating_data = {}
+            total_rating_data: dict[str, list[float]] = {}
 
-            for query_name, query_text in prepared_queries:
-                iterations = []
+            for query_name, query_cfg in prepared_queries:
+                query_text = query_cfg.get("query")
+                if not isinstance(query_text, str):
+                    raise ValueError(f"Query text must be string for '{query_name}'")
+                db_cfg = query_cfg.get("db_config")
+                db_cfg_dict = db_cfg if isinstance(db_cfg, dict) else None
+
+                iterations: list[float] = []
+                all_memory_samples: list[list[float]] = []
                 for pass_num in range(1, passes + 1):
-                    measurement = await run_one(query_text)
+                    measurement, memory_stats, raw_samples = await run_one(query_text, db_cfg=db_cfg_dict)
                     iterations.append(measurement)
+                    all_memory_samples.append(raw_samples)
                     print(
                         f"Запрос {query_name}, проход {pass_num}: "
-                        f"{measurement:.3f} сек"
+                        f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
+                        f"[{memory_stats['min']:.2f}–{memory_stats['max']:.2f}]"
                     )
 
+                memory_graph = save_memory_graph(query_name, all_memory_samples)
                 total_rating_data[query_name] = iterations
-                result["result"][query_name] = build_result_entry(query_name, iterations)
+                result["result"][query_name] = build_result_entry(query_name, iterations, all_memory_samples, memory_graph)
         finally:
             await pool.close()
 
-        self._recreate_oom_cluster()
-        oom_iterations = self._run_oom_query_iterations()
-        result["result"][self.oom_query_name] = build_result_entry(
-            self.oom_query_name,
-            oom_iterations,
-        )
-
         criteria_iterations = [float(index) for index in range(1, passes + 1)]
 
+        # Критерии для матмодели — добавляем только те запросы, которые были запущены
+        criteria_configs = [
+            ("hard_query",             0.3, (0.0, 1650.0)),
+            ("order_query",            0.2, (0.0, 2220.0)),
+            ("substring_search_query", 0.3, (0.0,  850.0)),
+            ("join_query",             0.1, (0.0,  600.0)),
+            (self.oom_query_name,      0.1, (0.0, 7900.0)),
+        ]
         model = MathModel()
-        model.add_criterion(
-            name="hard_query",
-            iterations=criteria_iterations,
-            values=[float(value) for value in result["result"]["hard_query"]["iterations"]],
-            weight=0.3,
-            negative=True,
-            bounds=(0.0, 1650.0),
-        )
-        model.add_criterion(
-            name="order_query",
-            iterations=criteria_iterations,
-            values=[float(value) for value in result["result"]["order_query"]["iterations"]],
-            weight=0.2,
-            negative=True,
-            bounds=(0.0, 2220.0),
-        )
-        model.add_criterion(
-            name="substring_search_query",
-            iterations=criteria_iterations,
-            values=[float(value) for value in result["result"]["substring_search_query"]["iterations"]],
-            weight=0.3,
-            negative=True,
-            bounds=(0.0, 850.0),
-        )
-        model.add_criterion(
-            name="join_query",
-            iterations=criteria_iterations,
-            values=[float(value) for value in result["result"]["join_query"]["iterations"]],
-            weight=0.1,
-            negative=True,
-            bounds=(0.0, 600.0),
-        )
-        model.add_criterion(
-            name=self.oom_query_name,
-            iterations=criteria_iterations,
-            values=[float(value) for value in oom_iterations],
-            weight=0.1,
-            negative=True,
-            bounds=(0.0, 7900.0),
-        )
+        for crit_name, weight, bounds in criteria_configs:
+            if crit_name not in total_rating_data:
+                continue
+            model.add_criterion(
+                name=crit_name,
+                iterations=criteria_iterations,
+                values=[float(v) for v in total_rating_data[crit_name]],
+                weight=weight,
+                negative=True,
+                bounds=bounds,
+            )
 
         total_rating_info = model.total_rating(0.882)
         result["math_model"] = {

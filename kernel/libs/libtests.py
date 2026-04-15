@@ -492,7 +492,7 @@ class XFSMemoryLeak(CreateVM):
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         print("\n\n\nОбработка результатов\n\n\n")
         
-        status = analyze_ram_usage()
+        status = analyze_ram_usage(f"{BASE_PATH}/ram_usage_log.txt")
         if status == "Присутсвует":
             return False
         else:

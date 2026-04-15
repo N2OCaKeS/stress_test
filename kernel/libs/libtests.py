@@ -2,6 +2,7 @@ import json
 
 from time import sleep
 from pathlib import Path
+from analyze_ram_usage import analyze_ram_usage
 
 from allta import Libvirt, LibvirtManager, SystemCommands
 
@@ -473,11 +474,11 @@ class XFSMemoryLeak(CreateVM):
                     "path_host": f"{BASE_PATH}/ram_usage_log.txt",
                     "path_vm": "/home/u/ram_usage_log.txt"
                 },
-                {
-                    "mode": "pull",
-                    "path_host": f"{BASE_PATH}/results.json",
-                    "path_vm": "/home/u/results.json"
-                }
+                # {
+                #     "mode": "pull",
+                #     "path_host": f"{BASE_PATH}/results.json",
+                #     "path_vm": "/home/u/results.json"
+                # }
 
             ]
         }
@@ -491,4 +492,8 @@ class XFSMemoryLeak(CreateVM):
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         print("\n\n\nОбработка результатов\n\n\n")
         
-        
+        status = analyze_ram_usage()
+        if status == "Присутсвует":
+            return False
+        else:
+            return True

@@ -14,6 +14,6 @@ xfs_memory_leak = XFSMemoryLeak(rc_name=TEST_CYCLE_VERSION,
                                 vcpu=XFS_MEMORY_LEAK_VCPU, 
                                 ram=XFS_MEMORY_LEAK_RAM)
 xfs_memory_leak.prepare_vms()
-# xfs_memory_leak.start_test()
-# xfs_memory_leak.results_processing()
+xfs_memory_leak.start_test()
+status = xfs_memory_leak.results_processing()
 

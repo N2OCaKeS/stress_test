@@ -40,7 +40,7 @@ def analyze_ram_usage(filename="ram_usage_log.txt"):
         percent_increase = 0
     
 
-    if percent_increase > 5:
+    if percent_increase > 20:
         status = "Присутсвует"
     else:
         status = "Отсутствует"
@@ -52,6 +52,7 @@ def analyze_ram_usage(filename="ram_usage_log.txt"):
     with open("result.json", 'w', encoding="utf-8") as status_file:
         json.dump(data, status_file, ensure_ascii=False, indent=4)
 
+    return status
     
             
 

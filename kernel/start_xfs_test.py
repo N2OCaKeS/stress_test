@@ -47,6 +47,10 @@ def run_scripts():
     print(stdout)
     if stderr:
         print("Ошибки copy.sh:", stderr)
+        
+    with open("/home/u/copy_output.txt", "w+") as cp_out_file:
+        cp_out_file.write(stdout)
+        cp_out_file.write(stderr)
     
     stdout, stderr = info_process.communicate()
     lines = stdout.split('\n')

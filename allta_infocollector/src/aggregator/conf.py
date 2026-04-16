@@ -7,10 +7,10 @@ UNICAL_PSWD = '$UNICAL_PSWD'
 
 std_user = '$STD_USER'
 if UNICAL_PSWD == 'True':
-    CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1"
+    CONFIG_API_BASE = "https://allta.devos.astralinux.ru:21500/api/config/v1"
     TOKEN = getenv("ALLTA_AUTH_API_KEY")
     HEADERS = {"Authorization": f"Bearer {TOKEN}"}
-    tokens = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30).json()
+    tokens = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30, verify=False).json()
     std_password = tokens['srv_pass']
 else: std_password = '$STD_PASSWD'
 

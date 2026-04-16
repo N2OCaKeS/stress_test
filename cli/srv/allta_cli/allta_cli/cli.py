@@ -292,6 +292,13 @@ class ServerGroup(SectionedGroup):
         return super().get_command(ctx, cmd_name)
 
 
+class ServerPasswordGroup(NoUsageGroup):
+    def get_command(self, ctx, cmd_name):
+        if cmd_name in {"add"}:
+            cmd_name = "set"
+        return super().get_command(ctx, cmd_name)
+
+
 class TokensGroup(NoUsageGroup):
     def resolve_command(self, ctx, args):
         if args and not args[0].startswith("-"):
@@ -484,11 +491,9 @@ def run_login_shortcut(
                         "Передача пароля в аргументах командной строки небезопасна, устаревает и будет удалена в будущих версиях. "
                         "Используйте ALLTA_PASSWORD, интерактивный ввод или вход по API token через --token и ALLTA_API_TOKEN."
                     )
-                ui.http("POST http://allta.devos.astralinux.ru:21500/api/auth/login")
-                auth_utils.login(login=user, password=secret, verbose=False)
+                auth_utils.login(login=user, password=secret, verbose=True)
             else:
-                ui.http("GET http://allta.devos.astralinux.ru:21500/api/auth/verify")
-                auth_utils.login_with_api_token(login=user, api_token=secret, verbose=False)
+                auth_utils.login_with_api_token(login=user, api_token=secret, verbose=True)
             ui.ok("Вход выполнен.")
         except auth_utils.AuthError as e:
             ui.err(f"Ошибка входа: {e}")
@@ -1107,7 +1112,7 @@ def server_group():
     _ensure_authenticated_or_exit()
 
 
-@server_group.group("password", short_help="CRUD паролей для снимков/ОС.")
+@server_group.group("password", cls=ServerPasswordGroup, short_help="CRUD паролей для снимков/ОС.")
 def server_snapshot_password_group():
     pass
 
@@ -1123,6 +1128,7 @@ def _server_table_rows(servers: list[dict]) -> list[list[object]]:
             server.get("ip_address", ""),
             "yes" if server.get("virtualization") else "no",
             server.get("status", ""),
+            server.get("os_version", "") or server.get("os_version_name", ""),
         ])
     return rows
 
@@ -1264,7 +1270,7 @@ def _build_server_create_payload(
     admin_panel_ip: str,
     admin_panel_user: str,
     admin_panel_pass: str | None,
-    os_version_id: int | None,
+    os_version: str | None,
 ) -> dict[str, object]:
     return {
         "name": name,
@@ -1284,7 +1290,7 @@ def _build_server_create_payload(
         "admin_panel_ip": admin_panel_ip,
         "admin_panel_user": admin_panel_user,
         "admin_panel_pass": admin_panel_pass or _prompt_hidden_password("Введите пароль IPMI/iLO"),
-        "os_version_id": os_version_id,
+        "os_version": os_version.strip() if isinstance(os_version, str) and os_version.strip() else None,
     }
 
 
@@ -1307,7 +1313,7 @@ def _build_server_update_payload(
     admin_panel_ip: str | None,
     admin_panel_user: str | None,
     status: str | None,
-    os_version_id: int | None,
+    os_version: str | None,
 ) -> dict[str, object]:
     payload = {
         "name": name,
@@ -1327,7 +1333,7 @@ def _build_server_update_payload(
         "admin_panel_ip": admin_panel_ip,
         "admin_panel_user": admin_panel_user,
         "status": status,
-        "os_version_id": os_version_id,
+        "os_version": os_version.strip() if isinstance(os_version, str) and os_version.strip() else None,
     }
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -1350,7 +1356,7 @@ def server_list_cli(raw_output: bool):
         return
 
     ui.table(
-        headers=["ID", "Stand", "Name", "IP", "Virt", "Status"],
+        headers=["ID", "Stand", "Name", "IP", "Virt", "Status", "OS Version"],
         rows=_server_table_rows(servers),
     )
 
@@ -1390,7 +1396,7 @@ def server_show_cli(server_query: str, raw_output: bool):
 @click.option("--ipmi-ip", "admin_panel_ip", required=True, help="IP IPMI/iLO.")
 @click.option("--ipmi-user", "admin_panel_user", required=True, help="Пользователь IPMI/iLO.")
 @click.option("--ipmi-password", "admin_panel_pass", default=None, show_default=False, help="Пароль IPMI/iLO.")
-@click.option("--os-version-id", default=None, show_default=False, type=int, help="ID версии ОС.")
+@click.option("--os-version", default=None, show_default=False, help="Версия ОС текстом, например ubuntu, debian, 1.7.10.64.")
 @click.option("--raw", "raw_output", is_flag=True, help="Вывести ответ в JSON.")
 def server_add_cli(
     name: str,
@@ -1410,7 +1416,7 @@ def server_add_cli(
     admin_panel_ip: str,
     admin_panel_user: str,
     admin_panel_pass: str | None,
-    os_version_id: int | None,
+    os_version: str | None,
     raw_output: bool,
 ):
     try:
@@ -1433,7 +1439,7 @@ def server_add_cli(
                 admin_panel_ip=admin_panel_ip,
                 admin_panel_user=admin_panel_user,
                 admin_panel_pass=admin_panel_pass,
-                os_version_id=os_version_id,
+                os_version=os_version,
             )
         )
         if raw_output:
@@ -1467,7 +1473,7 @@ def server_add_cli(
 @click.option("--ipmi-ip", "admin_panel_ip", default=None, show_default=False, help="Новый IP IPMI/iLO.")
 @click.option("--ipmi-user", "admin_panel_user", default=None, show_default=False, help="Новый пользователь IPMI/iLO.")
 @click.option("--status", default=None, show_default=False, help="Новый статус.")
-@click.option("--os-version-id", default=None, show_default=False, type=int, help="Новый ID версии ОС.")
+@click.option("--os-version", default=None, show_default=False, help="Новая версия ОС текстом.")
 @click.option("--raw", "raw_output", is_flag=True, help="Вывести ответ в JSON.")
 def server_upd_cli(
     server_query: str | None,
@@ -1489,7 +1495,7 @@ def server_upd_cli(
     admin_panel_ip: str | None,
     admin_panel_user: str | None,
     status: str | None,
-    os_version_id: int | None,
+    os_version: str | None,
     raw_output: bool,
 ):
     payload = _build_server_update_payload(
@@ -1510,7 +1516,7 @@ def server_upd_cli(
         admin_panel_ip=admin_panel_ip,
         admin_panel_user=admin_panel_user,
         status=status,
-        os_version_id=os_version_id,
+        os_version=os_version,
     )
     if not payload:
         raise click.UsageError("Нужно указать хотя бы одно поле для обновления.")

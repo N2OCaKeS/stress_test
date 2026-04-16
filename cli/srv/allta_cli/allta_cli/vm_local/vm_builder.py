@@ -8,10 +8,10 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+import requests
 
 from allta_cli.utils.allta_runtime import get_libvirt, get_libvirt_manager
+from allta_cli.utils.http_fallback import request_with_http_fallback
 
 Libvirt = get_libvirt()
 LibvirtManager = get_libvirt_manager()
@@ -25,7 +25,7 @@ PROVIDER_VM_STATE_FILE = STATE_DIR / "provider_vms_dates.json"
 DEFAULT_LOCAL_USER = "u"
 DEFAULT_LOCAL_PASSWORD = "1"
 DEFAULT_LOCAL_SSH_PORT = "22"
-RELEASES_URL = "http://allta.devos.astralinux.ru/rest/api/get-repo-path"
+RELEASES_URL = "https://allta.devos.astralinux.ru/rest/api/get-repo-path"
 
 
 def _utc_now() -> str:
@@ -87,7 +87,7 @@ def _normalize_vm_record(
         "bridge": bridge,
         "cpu": cpu if cpu is not None else raw.get("cpu"),
         "ram": ram if ram is not None else raw.get("ram"),
-        "disk_size": disk_size if disk_size is not None else raw.get("disk_size"),
+        "disk_size": disk_size if disk_size is not None else raw.get("disk"),
         "box": box or _pick_str(raw, ("box",)),
         "rc": rc or _pick_str(raw, ("rc", "release")),
         "status": status,
@@ -207,12 +207,27 @@ def _dedupe_names(vm_names: list[str]) -> list[str]:
     return result
 
 
+def _build_provider_vm_params(*, cpu: int, ram: int, disk_size: int) -> dict[str, Any]:
+    # allta 1.1.8 использует ключ `disk` для qemu-img resize.
+    return {
+        "cpu": cpu,
+        # allta_lib/virt-install ожидает память в MB.
+        "ram": ram * 1024,
+        "disk": disk_size,
+    }
+
+
 def _fetch_releases_map(timeout: int = 20) -> dict[str, Any]:
-    req = Request(RELEASES_URL, headers={"User-Agent": "allta-cli/1 local-vm"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
-            payload = resp.read().decode("utf-8")
-    except (HTTPError, URLError, TimeoutError) as e:
+        resp = request_with_http_fallback(
+            "GET",
+            RELEASES_URL,
+            headers={"User-Agent": "allta-cli/1 local-vm"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        payload = resp.text
+    except requests.RequestException as e:
         raise RuntimeError(f"Не удалось получить releases: {e}") from e
     except OSError as e:
         raise RuntimeError(f"Ошибка сети при получении releases: {e}") from e
@@ -473,12 +488,11 @@ class VmBuilder:
 
         build_params: dict[str, dict[str, Any]] = {}
         for name in names:
-            build_params[name] = {
-                "cpu": self.cpu,
-                # allta_lib/virt-install ожидает память в MB.
-                "ram": self.ram * 1024,
-                "disk_size": self.disk_size,
-            }
+            build_params[name] = _build_provider_vm_params(
+                cpu=self.cpu,
+                ram=self.ram,
+                disk_size=self.disk_size,
+            )
 
         self.vms_dates = self.provider.build(
             box=self.box,

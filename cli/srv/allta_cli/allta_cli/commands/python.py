@@ -12,9 +12,10 @@ from shutil import which, rmtree
 from allta_cli.utils import ui
 from allta_cli.utils.system_commands import SystemCommands
 from allta_cli.utils.config import PYTHON_PATH, PYTHON_GET_COMMAND
+from allta_cli.utils.http_fallback import http_fallback_url, prefer_https_url
 from allta_cli.utils.runtime_env import system_ld_library_path_scope
 
-_PRIVATE_INDEX = "http://10.177.103.10:3141/root/release"
+_PRIVATE_INDEX = "https://10.177.103.10:3141/root/release"
 _PRIVATE_HOST = "10.177.103.10"
 
 
@@ -39,6 +40,26 @@ def _run(cmd: str, fail: str) -> int:
     if rc != 0:
         ui.err(f"{fail} (код {rc})")
     return rc
+
+
+def _install_allta_package(pip_bin: Path) -> int:
+    https_index = prefer_https_url(_PRIVATE_INDEX)
+    http_index = http_fallback_url(https_index)
+
+    https_cmd = (
+        f"{shlex.quote(str(pip_bin))} install -i {shlex.quote(https_index)} "
+        f"--trusted-host {_PRIVATE_HOST} allta"
+    )
+    rc = _run(https_cmd, "установка пакета allta")
+    if rc == 0 or not http_index:
+        return rc
+
+    ui.warn("Установка allta по HTTPS не удалась, пробую HTTP.")
+    http_cmd = (
+        f"{shlex.quote(str(pip_bin))} install -i {shlex.quote(http_index)} "
+        f"--trusted-host {_PRIVATE_HOST} allta"
+    )
+    return _run(http_cmd, "установка пакета allta")
 
 
 def _find_archive(d: Path) -> Path | None:
@@ -179,10 +200,7 @@ def install_python(activate_shell: bool = False) -> int:
             return 1
 
         ui.step("Установка пакета allta в venv (приватный индекс)…")
-        rc = _run(
-            f"{shlex.quote(str(pip_bin))} install -i {_PRIVATE_INDEX} --trusted-host {_PRIVATE_HOST} allta",
-            "установка пакета allta",
-        )
+        rc = _install_allta_package(pip_bin)
         if rc != 0:
             return rc
 

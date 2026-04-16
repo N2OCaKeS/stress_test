@@ -9,6 +9,7 @@ import requests
 
 from allta_cli.utils import ui
 from allta_cli.utils.config import API_BASE_URL, SESSION_FILE, TOKEN_TTL_HOURS_DEFAULT
+from allta_cli.utils.http_fallback import request_with_http_fallback
 
 SESSION_AUTH_TYPE_PASSWORD = "password"
 SESSION_AUTH_TYPE_API_TOKEN = "api_token"
@@ -95,11 +96,8 @@ def login(
     url = f"{base}:21500/api/auth/login"
     data = {"username": login, "password": password, "grant_type": "password"}
 
-    if verbose:
-        ui.http(f"POST {url}")
-
     try:
-        r = requests.post(url, data=data, timeout=20)
+        r = request_with_http_fallback("POST", url, data=data, timeout=20, log=verbose)
     except requests.RequestException as e:
         raise AuthError(f"Не удалось подключиться к серверу авторизации: {e}") from e
 
@@ -137,11 +135,8 @@ def login_with_api_token(
     url = f"{base}:21500/api/auth/verify"
     headers = {"Authorization": f"Bearer {api_token}"}
 
-    if verbose:
-        ui.http(f"GET {url}")
-
     try:
-        r = requests.get(url, headers=headers, timeout=20)
+        r = request_with_http_fallback("GET", url, headers=headers, timeout=20, log=verbose)
     except requests.RequestException as e:
         raise AuthError(f"Не удалось подключиться к серверу авторизации: {e}") from e
 
@@ -178,7 +173,7 @@ def logout(
     Не падает, если токен уже невалиден, но сообщит об этом при verbose=True.
     """
     base = (api_base_url or API_BASE_URL).rstrip("/")
-    url = f"{base}/api/auth/logout"
+    url = f"{base}:21500/api/auth/logout"
 
     token = None
     try:
@@ -202,11 +197,8 @@ def logout(
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}
 
-    if verbose:
-        ui.http(f"POST {url} (revoke)")
-
     try:
-        r = requests.post(url, headers=headers, timeout=15)
+        r = request_with_http_fallback("POST", url, headers=headers, timeout=15, log=verbose)
         if r.status_code not in (200, 204, 401):
             r.raise_for_status()
     except requests.RequestException as e:

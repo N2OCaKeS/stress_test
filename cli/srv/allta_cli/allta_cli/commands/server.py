@@ -9,6 +9,8 @@ import requests
 
 from allta_cli.utils import auth
 from allta_cli.utils.config import SERVER_API_BASE
+from allta_cli.utils.http_fallback import request_with_http_fallback
+from allta_cli.utils.runtime_env import system_ld_library_path_scope
 
 
 class ServerError(RuntimeError):
@@ -53,7 +55,7 @@ def _api_url(path: str) -> str:
 
 def _request(method: str, path: str, *, params=None, json=None, timeout=30) -> requests.Response:
     url = _api_url(path)
-    resp = requests.request(
+    resp = request_with_http_fallback(
         method=method,
         url=url,
         headers=_headers(),
@@ -402,7 +404,13 @@ def get_snapshot_password(os_version_name: str) -> SnapshotPasswordEntry:
 
     url = _api_url(f"/passwords/{name}")
     try:
-        resp = requests.get(url, headers=_headers(), timeout=20, allow_redirects=False)
+        resp = request_with_http_fallback(
+            "GET",
+            url,
+            headers=_headers(),
+            timeout=20,
+            allow_redirects=False,
+        )
     except requests.RequestException as e:
         raise ServerError(f"Не удалось получить пароль для версии ОС '{name}': {e}") from e
 
@@ -465,7 +473,8 @@ def update_snapshot_password(
     if user is not None:
         payload["ssh_username"] = user
     try:
-        resp = requests.patch(
+        resp = request_with_http_fallback(
+            "PATCH",
             url,
             headers=_headers(),
             json=payload,
@@ -496,7 +505,13 @@ def delete_snapshot_password(os_version_name: str) -> None:
 
     url = _api_url(f"/passwords/{name}")
     try:
-        resp = requests.delete(url, headers=_headers(), timeout=20, allow_redirects=False)
+        resp = request_with_http_fallback(
+            "DELETE",
+            url,
+            headers=_headers(),
+            timeout=20,
+            allow_redirects=False,
+        )
     except requests.RequestException as e:
         raise ServerError(f"Не удалось удалить пароль для версии ОС '{name}': {e}") from e
 
@@ -565,18 +580,19 @@ def exec_ssh(server: dict) -> None:
     ]
 
     sshpass_bin = shutil.which("sshpass")
-    if sshpass_bin and password and password != "***hidden***":
-        os.execvp(
-            sshpass_bin,
-            [
-                "sshpass",
-                "-p",
-                password,
-                *ssh_args,
-            ],
-        )
+    with system_ld_library_path_scope():
+        if sshpass_bin and password and password != "***hidden***":
+            os.execvp(
+                sshpass_bin,
+                [
+                    "sshpass",
+                    "-p",
+                    password,
+                    *ssh_args,
+                ],
+            )
 
-    os.execvp(ssh_bin, ssh_args)
+        os.execvp(ssh_bin, ssh_args)
 
 
 def _raise_server_error(resp: requests.Response) -> None:

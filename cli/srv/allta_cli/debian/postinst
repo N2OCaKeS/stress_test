@@ -6,6 +6,65 @@ ZSH_BIN="/bin/zsh"
 ZSH_COMPLETION_SOURCE="/usr/lib/allta/completions/_allta"
 ZSH_COMPLETION_DIR="/usr/share/zsh/vendor-completions"
 ZSH_COMPLETION_TARGET="${ZSH_COMPLETION_DIR}/_allta"
+ALLTA_API_HOST="${ALLTA_API_HOST:-allta.devos.astralinux.ru}"
+ALLTA_API_PORT="${ALLTA_API_PORT:-21500}"
+ALLTA_CA_TARGET="/usr/local/share/ca-certificates/allta-api.crt"
+ALLTA_SHARED_CERT_SOURCE="/var/allta_services/certs/allta-api.crt"
+
+install_api_tls_trust() {
+    update_ca_cmd=""
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "allta postinst: openssl не найден, установка trust cert пропущена." >&2
+        return 0
+    fi
+
+    update_ca_cmd="$(command -v update-ca-certificates 2>/dev/null || true)"
+    if [ -z "$update_ca_cmd" ] && [ -x /usr/sbin/update-ca-certificates ]; then
+        update_ca_cmd="/usr/sbin/update-ca-certificates"
+    fi
+    if [ -z "$update_ca_cmd" ] && [ -x /usr/bin/update-ca-certificates ]; then
+        update_ca_cmd="/usr/bin/update-ca-certificates"
+    fi
+
+    if [ -z "$update_ca_cmd" ]; then
+        echo "allta postinst: update-ca-certificates не найден, установка trust cert пропущена." >&2
+        return 0
+    fi
+
+    tmp_cert="$(mktemp)"
+    cert_installed=0
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 8 openssl s_client -servername "$ALLTA_API_HOST" -connect "${ALLTA_API_HOST}:${ALLTA_API_PORT}" < /dev/null 2>/dev/null \
+            | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "$tmp_cert" || true
+    else
+        openssl s_client -servername "$ALLTA_API_HOST" -connect "${ALLTA_API_HOST}:${ALLTA_API_PORT}" < /dev/null 2>/dev/null \
+            | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "$tmp_cert" || true
+    fi
+
+    if [ -s "$tmp_cert" ] \
+        && openssl x509 -in "$tmp_cert" -noout >/dev/null 2>&1; then
+        install -m 0644 "$tmp_cert" "$ALLTA_CA_TARGET"
+        "$update_ca_cmd" >/dev/null 2>&1 || true
+        mkdir -p "$(dirname "$ALLTA_SHARED_CERT_SOURCE")"
+        if [ ! -f "$ALLTA_SHARED_CERT_SOURCE" ] || ! cmp -s "$tmp_cert" "$ALLTA_SHARED_CERT_SOURCE"; then
+            install -m 0644 "$tmp_cert" "$ALLTA_SHARED_CERT_SOURCE" || true
+        fi
+        cert_installed=1
+    fi
+
+    if [ "$cert_installed" -eq 0 ] && [ -s "$ALLTA_SHARED_CERT_SOURCE" ] \
+        && openssl x509 -in "$ALLTA_SHARED_CERT_SOURCE" -noout >/dev/null 2>&1; then
+        install -m 0644 "$ALLTA_SHARED_CERT_SOURCE" "$ALLTA_CA_TARGET"
+        "$update_ca_cmd" >/dev/null 2>&1 || true
+        cert_installed=1
+    fi
+
+    if [ "$cert_installed" -eq 0 ]; then
+        echo "allta postinst: не удалось получить TLS-сертификат API (${ALLTA_API_HOST}:${ALLTA_API_PORT})." >&2
+    fi
+
+    rm -f "$tmp_cert"
+}
 
 if [ -f "$ALLTA_BIN" ]; then
     chmod +x "$ALLTA_BIN"
@@ -15,5 +74,11 @@ if [ -x "$ZSH_BIN" ] && [ -f "$ZSH_COMPLETION_SOURCE" ]; then
     mkdir -p "$ZSH_COMPLETION_DIR"
     cp -f "$ZSH_COMPLETION_SOURCE" "$ZSH_COMPLETION_TARGET"
 fi
+
+case "$1" in
+    configure|reconfigure)
+        install_api_tls_trust
+        ;;
+esac
 
 exit 0

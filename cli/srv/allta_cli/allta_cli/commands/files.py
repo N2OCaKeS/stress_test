@@ -4,12 +4,13 @@ import re
 from io import BytesIO
 from urllib.parse import urlparse
 from ftplib import FTP
-from urllib.request import urlopen, Request
+import requests
 from urllib.error import URLError, HTTPError, ContentTooShortError
 
 from allta_cli.utils import ui
 from allta_cli.utils.config_api import files as fetch_file, ConfigApiError, ConfigApiFileNotFound
 from allta_cli.utils.auth import AuthError, TokenExpiredError, NotAuthenticatedError
+from allta_cli.utils.http_fallback import request_with_http_fallback
 
 
 def _dump_json_like(filename: str, data: dict) -> None:
@@ -86,10 +87,14 @@ def _fetch_json_from_ftp(url: str, timeout: int = 20) -> dict:
 
 
 def _fetch_json_from_http(url: str, timeout: int = 20) -> dict:
-    req = Request(url, headers={"User-Agent": "python-urllib/3"})
-    with urlopen(req, timeout=timeout) as resp:
-        data = resp.read()
-    return json.loads(data.decode("utf-8"))
+    resp = request_with_http_fallback(
+        "GET",
+        url,
+        headers={"User-Agent": "python-urllib/3"},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return json.loads(resp.content.decode("utf-8"))
 
 
 def _natural_key(s: str):
@@ -170,7 +175,7 @@ def boxes_cmd() -> int:
 
 
 def releases_cmd() -> int:
-    releases_url = "http://allta.devos.astralinux.ru/rest/api/get-repo-path"
+    releases_url = "https://allta.devos.astralinux.ru/rest/api/get-repo-path"
     with ui.section("RELEASES"):
         try:
             data = _fetch_json_from_http(releases_url)
@@ -187,7 +192,7 @@ def releases_cmd() -> int:
 
             return 0
 
-        except (HTTPError, URLError, ContentTooShortError, TimeoutError) as e:
+        except (requests.RequestException, HTTPError, URLError, ContentTooShortError, TimeoutError) as e:
             ui.err(f"Сетевая ошибка при получении releases: {e}")
             return 1
         except json.JSONDecodeError as e:

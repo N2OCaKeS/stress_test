@@ -5,6 +5,7 @@ import sys
 import click
 
 from allta_cli.cli import COMMAND_SHORTCUTS, cli, run_login_shortcut_argv
+from allta_cli.utils.tls_bootstrap import ensure_api_tls_trust
 
 
 def _should_handle_login_shortcut(args: list[str]) -> bool:
@@ -30,6 +31,7 @@ def _expand_shortcuts(args: list[str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None):
+    ensure_api_tls_trust()
     args = _expand_shortcuts(list(sys.argv[1:] if argv is None else argv))
     try:
         if _should_handle_login_shortcut(args):

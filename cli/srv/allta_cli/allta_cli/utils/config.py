@@ -2,14 +2,14 @@ from pathlib import Path
 import os
 import shlex
 
-API_BASE_URL = str("http://allta.devos.astralinux.ru").rstrip("/")
+API_BASE_URL = str("https://allta.devos.astralinux.ru").rstrip("/")
 VM_API_BASE = f"{API_BASE_URL}:21501/api/vm/v1".rstrip("/")
 SERVER_API_BASE = f"{API_BASE_URL}:21501/api/server/v1".rstrip("/")
 
 SESSION_FILE =  Path(Path.home() / ".config" / "allta" / "session.json")
 TOKEN_TTL_HOURS_DEFAULT = 10 * 60 * 60
 
-CONFIG_API_BASE = "http://allta.devos.astralinux.ru:21500/api/config/v1".rstrip("/")
+CONFIG_API_BASE = "https://allta.devos.astralinux.ru:21500/api/config/v1".rstrip("/")
 
 GIT_REPO_URL = "https://git.astralinux.ru/scm/qa/stress_test.git"
 GIT_DEST_DIR = Path(os.path.expanduser("~/git"))

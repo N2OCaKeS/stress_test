@@ -161,11 +161,11 @@ class PageBuilder:
     _DETAILS_LIST_STYLE = "margin:6px 0 0 18px;padding:0;"
     _ARM_INFO_URL = "https://life.astralinux.ru/pages/viewpage.action?pageId=192234259"
     _ARM_API_URLS = (
-        "http://allta.devos.astralinux.ru:21501/api/server/v1/arm/v2",
-        "http://allta.devos.astralinux.ru:21501/api/server/v1/arm/legacy",
-        "http://allta.devos.astralinux.ru:21501/api/server/v1/arm/",
+        "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/v2",
+        "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/legacy",
+        "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/",
     )
-    _ARM_API_URL = _ARM_API_URLS[0]
+    _ARM_API_URL = _ARM_API_URLS[2]
     _ARM_CATALOG = {
         "1": {
             "grade": "VM Test WorkStation",
@@ -990,7 +990,7 @@ class PageBuilder:
         errors = []
         for url in self._ARM_API_URLS:
             try:
-                response = requests.get(url, timeout=3)
+                response = requests.get(url, timeout=30, verify=False)
             except Exception as e:
                 errors.append(f"{url}: {type(e).__name__}: {e}")
                 continue

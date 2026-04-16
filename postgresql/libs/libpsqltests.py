@@ -953,14 +953,37 @@ JOIN main.build_packages AS bp
             await pool.close()
 
 
+        # Если OOM-запрос есть в списке — запускаем его через run_one для корректного сбора памяти
+        # If OOM query is in the list — run it via run_one for correct memory sampling
         if self.oom_query_name in self.available_queries:
             self._recreate_oom_cluster()
-            oom_iterations, oom_memory = self._run_oom_query_iterations()
-            oom_memory_samples = [[m] for m in oom_memory]
-            oom_memory_graph = save_memory_graph(self.oom_query_name, oom_memory_samples)
+            # Восстанавливаем БД один раз перед всеми итерациями / Restore DB once before all iterations
+            self._restore_oom_database()
+            oom_query_cfg = self.available_queries[self.oom_query_name]
+            oom_query_text = oom_query_cfg.get("query")
+            if not isinstance(oom_query_text, str):
+                raise ValueError(f"Query text must be string for '{self.oom_query_name}'")
+            oom_db_cfg = oom_query_cfg.get("db_config")
+            oom_db_cfg_dict = oom_db_cfg if isinstance(oom_db_cfg, dict) else None
+
+            oom_iterations: list[float] = []
+            all_oom_memory_samples: list[list[float]] = []
+            for pass_num in range(1, passes + 1):
+                measurement, memory_stats, raw_samples = await run_one(
+                    oom_query_text, db_cfg=oom_db_cfg_dict
+                )
+                oom_iterations.append(measurement)
+                all_oom_memory_samples.append(raw_samples)
+                print(
+                    f"Запрос {self.oom_query_name}, проход {pass_num}: "
+                    f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
+                    f"[{memory_stats['min']:.2f}–{memory_stats['max']:.2f}]"
+                )
+
+            oom_memory_graph = save_memory_graph(self.oom_query_name, all_oom_memory_samples)
             total_rating_data[self.oom_query_name] = oom_iterations
             result["result"][self.oom_query_name] = build_result_entry(
-                self.oom_query_name, oom_iterations, oom_memory_samples, oom_memory_graph
+                self.oom_query_name, oom_iterations, all_oom_memory_samples, oom_memory_graph
             )
 
         criteria_iterations = [float(index) for index in range(1, passes + 1)]

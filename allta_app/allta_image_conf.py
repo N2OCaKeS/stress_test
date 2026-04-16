@@ -207,7 +207,7 @@ branches = {
     'Network benchmark. Init_on_free':'network',
     'segmentation_fault':'kernel',
     'postgresql benchmark olap':'postgresql',
-    'XFS. Memory leak':'kernel'
+    'xfs memory leak':'kernel'
 }
 
 
@@ -277,7 +277,7 @@ tests = {
     'Network benchmark. Init_on_free':'InitOnFree',
     'segmentation_fault':'SegFault',
     'postgresql benchmark olap':'PSQL OLAP-hq',
-    'XFS. Memory leak': 'XFS mem leak'
+    'xfs memory leak': 'XFS mem leak'
 }
 
 
@@ -514,7 +514,7 @@ testname_columns = {
                     'Network benchmark. Init_on_free':'InitOnFree', 'segmentation_fault':'SegFault',
                     'postgresql benchmark olap':'PSQL_OLAP-hq',
                     'freeipa plugin test':'FreeIPA_plugin',
-                    'XFS. Memory leak':'XFS_mem_leak'
+                    'xfs memory leak':'XFS_mem_leak'
                     }
 
 

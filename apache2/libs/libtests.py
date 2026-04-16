@@ -4,7 +4,21 @@ from time import sleep
 from pathlib import Path
 
 from allta import Libvirt, LibvirtManager, SystemCommands
-from apa_conf import SCRIPT_DIR, USERNAME, PASSWORD
+from apa_conf import (
+    SCRIPT_DIR, 
+    USERNAME, 
+    PASSWORD, 
+    TESTED_QA_USER,
+    TESTED_QA_USER_MAC,
+    TESTED_QA_USER_MAC_CAT,
+    CONCURRENCY,
+    CONCURRENCY_STEP,
+    MAX_CONCURRENCY,
+    MAX_REQUESTS,
+    CSV_RESULTS_FILE,
+    PLOT_FILE,
+    AB_OUTPUT_FILE
+)
 
 
 
@@ -140,6 +154,11 @@ class CreateVM:
                         "path_host": f"{self.testdir}/provision/000-default-pam.conf",
                         "path_vm": "/home/u/000-default-pam.conf",
                     },
+                    {
+                        "mode": "push",
+                        "path_host": f"{self.testdir}/provision/apache2",
+                        "path_vm": "/home/u/apache2",
+                    },
                 ]
             }
             self.provider.scp(
@@ -198,7 +217,106 @@ class ApacheBenchPam(CreateVM):
         """
 
         print ("\n\n\nНачинаем подготовку тестового окружения\n\n\n")
+        print ("\n\n\nПодготовка клиента\n\n\n")
+        client_prepare = {
+            "testvm2": {
+                "add_category": {
+                    "command": f"sudo usercat -a 8 'Cat_8'",
+                    "signal set": "add_category",
+                },
+                "add_user": {
+                    "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER}",
+                    "signal set": "add_user",
+                    "signal get": "add_category",
+                },
+                "add_user": {
+                    "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC}",
+                    "signal set": "add_user_mac",
+                    "signal get": "add_user",
+                },
+                "add_user": {
+                    "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC_CAT}",
+                    "signal set": "add_user_mac_cat",
+                    "signal get": "add_user_mac",
+                },
+                "set_level": {
+                    "command": f"sudo pdpl-user -i 0 -l 2:2 -c 0x0:0x0 {TESTED_QA_USER_MAC}",
+                    "signal set": "set_level",
+                    "signal get": "add_user_mac_cat",
+                },
+                "set_level": {
+                    "command": f"sudo pdpl-user -i 0 -l 2:2 -c 0xA:0xA {TESTED_QA_USER_MAC_CAT}",
+                    "signal set": "set_level_cat",
+                    "signal get": "set_level",
+                },
+            }
+        }
 
+        self.provider.execute(commands=client_prepare, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        print ("\n\n\nПодготовка клиента завершена\n\n\n")
+
+        print ("\n\n\nПодготовка сервера\n\n\n")
+        server_prepare = {
+            "testvm1": {
+                "server_prepare": {
+                    "command": f"cd /home/u && sudo bash apache_server_prepare.sh pam",
+                    "signal set": "server_prepare",
+                },
+                "copy": {
+                    "command": f"sudo cp /home/u/apache2 /etc/pam.d/apache2",
+                    "signal set": "copy_apache",
+                    "signal get": "server_prepare",
+                },
+                "pam_tally": {
+                    "command": f"echo 'account required pam_tally.so' | sudo tee -a /etc/pam.d/apache2",
+                    "signal set": "pam_tally",
+                    "signal get": "copy_apache",
+                },
+                "copy_sa": {
+                    "command": f"sudo cp /home/u/000-default-pam.conf /etc/apache2/sites-available/000-default.conf",
+                    "signal set": "copy_sa",
+                    "signal get": "pam_tally",
+                },
+                "usermod": {
+                    "command": f"sudo usermod -aG shadow www-data",
+                    "signal set": "usermod",
+                    "signal get": "copy_sa",
+                },
+                "server_prepare_end": {
+                    "command": f"cd /home/u && sudo bash apache_server_prepare.sh pam",
+                    "signal set": "server_prepare_end",
+                    "signal get": "usermod",
+                },
+                "add_user": {
+                    "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER}",
+                    "signal set": "add_user",
+                    "signal get": "server_prepare_end",
+                },
+                "add_user": {
+                    "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC}",
+                    "signal set": "add_user_mac",
+                    "signal get": "add_user",
+                },
+                "add_user": {
+                    "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC_CAT}",
+                    "signal set": "add_user_mac_cat",
+                    "signal get": "add_user_mac",
+                },
+                "set_level": {
+                    "command": f"sudo pdpl-user -i 0 -l 2:2 -c 0x0:0x0 {TESTED_QA_USER_MAC}",
+                    "signal set": "set_level",
+                    "signal get": "add_user_mac_cat",
+                },
+                "set_level": {
+                    "command": f"sudo pdpl-user -i 0 -l 2:2 -c 0xA:0xA {TESTED_QA_USER_MAC_CAT}",
+                    "signal set": "set_level_cat",
+                    "signal get": "set_level",
+                },
+            }
+        }
+
+        self.provider.execute(commands=server_prepare, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        print ("\n\n\nПодготовка сервера завершена\n\n\n")
 
 
     def start_test(self):
@@ -207,13 +325,11 @@ class ApacheBenchPam(CreateVM):
         testvm2 - client
         """
         
-        print ("\n\n\nНачинаем выполнение теста\n\n\n")
         print ("\n\n\nВыполнение подготовки к тесту\n\n\n")
         # Подготовка к выполнению теста
         print("\n\n\nПодготовка завершена\n\n\n")
 
         print("\n\n\n Настраиваем сеть  \n\n\n")
-
         LibvirtManager.Vm.stop(vms=self.vms)
         print(SystemCommands.check_output_command('sudo sed -i \'s#<forward mode="nat"/>#<forward mode="none"/>#\' "/vms/network.xml"'))
         print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
@@ -221,8 +337,48 @@ class ApacheBenchPam(CreateVM):
 
         LibvirtManager.Vm.start(vms=self.vms)
         sleep(90)
-
         print("\n\n\n Сеть настроена  \n\n\n")
 
 
+        print ("\n\n\nНачинаем выполнение теста\n\n\n")
+        astra_mode_switch_enable = {
+            "testvm1": {
+                "astra_mode": {
+                    "command": f"sudo sed -i -e 's/# AstraMode on/AstraMode on/' /etc/apache2/apache2.conf",
+                    "signal set": "astra_mode_1",
+                },
+                "astra_mode_2": {
+                    "command": f"sudo sed -i -e 's/AstraMode off/AstraMode on/' /etc/apache2/apache2.conf",
+                    "signal set": "astra_mode_2",
+                    "signal get": "astra_mode_1",
+                },
+            }
+        }
+
+        self.provider.execute(commands=astra_mode_switch_enable, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        server_ip = self.vms_data['testvm1']['ip_bridge']
+        cat_urls = {
+            f'http://{server_ip}/lev2.html': TESTED_QA_USER_MAC,
+            f'http://{server_ip}/lev2catA.html': TESTED_QA_USER_MAC_CAT
+        }
+        nocat_urls = {
+            f'http://{server_ip}/lev0.html': TESTED_QA_USER
+        }
+
+        for url, user in cat_urls.values():
+            for concurrent in range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP):
+                abp_test_command = f"""
+                    /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} -A {user}:1 {url} > {AB_OUTPUT_FILE}
+                """
+                abp_test = {
+                    "testvm2": {
+                        "run_test": {
+                            "command": f"{abp_test_command}",
+                            "signal set": "run_test",
+                        },
+                    }
+                }
+
+                self.provider.execute(commands=abp_test, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         

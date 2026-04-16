@@ -347,6 +347,7 @@ try:
                             iof = '-network iof'
                             seg = '-kernel segfault'
                             psql_olap = '-olap heavy_queries'
+                            xfs_memory_leak = '-kernel xfs_memory_leak'
                             if tests[dates_list[i][1]] == 'auditd-p':
                                 testlist = f'-aud psaud'
                             elif tests[dates_list[i][1]] == 'auditd-f':
@@ -452,6 +453,9 @@ try:
                             elif tests[dates_list[i][1]] == 'PSQL OLAP-hq':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {psql_olap} {tes}', shell=True)                                 
+                            elif tests[dates_list[i][1]] == 'XFS mem leak':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {xfs_memory_leak} {tes}', shell=True)                                      
                             else: 
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                                 {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)
@@ -516,6 +520,7 @@ try:
                     iof = '-network iof'
                     seg = '-kernel segfault'
                     psql_olap = '-olap heavy_queries'
+                    xfs_memory_leak = '-kernel xfs_memory_leak'
                     if tests[dates_list[i][1]] == 'auditd-p':
                         testlist = f'-aud psaud'
                     elif tests[dates_list[i][1]] == 'auditd-f':
@@ -620,6 +625,9 @@ try:
                     elif tests[dates_list[i][1]] == 'PSQL OLAP-hq':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {psql_olap} {tes}', shell=True)                        
+                    elif tests[dates_list[i][1]] == 'XFS mem leak':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {xfs_memory_leak} {tes}', shell=True)
                     else: 
                         subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {tes}', shell=True)

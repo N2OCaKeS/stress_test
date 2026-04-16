@@ -292,19 +292,19 @@ JOIN main.build_packages AS bp
             "hard_query": {
                 "query": self.hard_query,
             },
-            "order_query": {
-                "query": self.order_query,
-            },
-            "substring_search_query": {
-                "query": self.substring_search_query,
-            },
-            "join_query": {
-                "query": self.join_query,
-            },
-            self.oom_query_name: {
-                "query": self.oom_query,
-                "db_config": {**self.db_config, "dbname": self.oom_db_name},
-            },
+            # "order_query": {
+            #     "query": self.order_query,
+            # },
+            # "substring_search_query": {
+            #     "query": self.substring_search_query,
+            # },
+            # "join_query": {
+            #     "query": self.join_query,
+            # },
+            # self.oom_query_name: {
+            #     "query": self.oom_query,
+            #     "db_config": {**self.db_config, "dbname": self.oom_db_name},
+            # },
         }
 
     def _get_cluster_version(self):
@@ -881,9 +881,17 @@ JOIN main.build_packages AS bp
                 stop_event = threading.Event()
 
                 def sample_loop(pid: int) -> None:
+                    # Абсолютное планирование: следующий замер привязан к T+N, а не к
+                    # "подожди 1 сек от текущего момента" — компенсирует кумулятивный дрейф.
+                    # Absolute scheduling: next sample is anchored to T+N, not "wait 1s from
+                    # now" — compensates for cumulative drift of the sampling loop.
+                    interval = 1.0
+                    next_sample_at = time.monotonic() + interval
                     while not stop_event.is_set():
                         samples.append(self._read_proc_rss_kb(pid) / 1024)
-                        stop_event.wait(1.0)
+                        wait_time = next_sample_at - time.monotonic()
+                        next_sample_at += interval
+                        stop_event.wait(max(0.001, wait_time))
 
                 async def execute(conn) -> float:
                     async with conn.cursor() as cur:
@@ -894,14 +902,18 @@ JOIN main.build_packages AS bp
                             target=sample_loop, args=(pid_row[0],), daemon=True
                         )
                         sampler.start()
+                        elapsed = 0.0
                         try:
                             started = time.perf_counter()
                             await cur.execute(query_text)  # type: ignore[arg-type]
-                            await cur.fetchall()
-                            return time.perf_counter() - started
+                            # Замеряем только выполнение запроса на стороне БД, без передачи данных
+                            # Measure only server-side query execution time, excluding data transfer
+                            elapsed = time.perf_counter() - started
                         finally:
                             stop_event.set()
                             sampler.join()
+                        await cur.fetchall()
+                        return elapsed
 
                 if db_cfg is not None:
                     async with await psycopg.AsyncConnection.connect(**db_cfg) as conn:

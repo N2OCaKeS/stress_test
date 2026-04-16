@@ -146,7 +146,12 @@ elif args.TESTNAME == 'xfs_memory_leak':
     xfs_memory_leak.prepare_vms()
     SystemCommands.check_output_command("qemu-img create -f qcow2 /vms/db1.qcow2 100G && virsh attach-disk testvm1 /vms/db1.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio")
     xfs_memory_leak.start_test()
-    xfs_memory_leak.results_processing()
+    status = xfs_memory_leak.results_processing()
+    if status == False:
+        uzs.upload_test_cycle_status(zefir_status='pass')
+    else:
+        uzs.upload_test_cycle_status(zefir_status='fail')
+
     xfs_memory_leak.vms_destroy()
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
@@ -162,6 +167,5 @@ elif args.TESTNAME == 'xfs_memory_leak':
         test_cycle_version=args.TCV,
     )
 
-    uzs.upload_test_cycle_status(zefir_status='pass')
 
 

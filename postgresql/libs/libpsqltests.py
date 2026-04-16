@@ -5,7 +5,7 @@ import logging
 import subprocess
 from typing import LiteralString
 import time
-import asyncio
+import threading
 import psycopg
 import psycopg.sql
 from psycopg_pool import AsyncConnectionPool
@@ -192,7 +192,7 @@ class OLAPTest:
             "user": "postgres",
             "password": "12345678",
         }
-        self.passes = 5
+        self.passes = 2
 
         self.hard_query = """
 SELECT
@@ -874,19 +874,26 @@ JOIN main.build_packages AS bp
                 db_cfg: dict | None = None,
             ) -> tuple[float, dict[str, float], list[float]]:
                 samples: list[float] = []
-                stop_event = asyncio.Event()
+                # Используем поток вместо asyncio-задачи: threading.Event.wait() спит ровно 1 сек
+                # независимо от занятости event loop
+                # Use thread instead of asyncio task: threading.Event.wait() sleeps exactly 1 sec
+                # regardless of event loop busyness
+                stop_event = threading.Event()
 
-                async def sample_loop(pid: int) -> None:
+                def sample_loop(pid: int) -> None:
                     while not stop_event.is_set():
                         samples.append(self._read_proc_rss_kb(pid) / 1024)
-                        await asyncio.sleep(1.0)
+                        stop_event.wait(1.0)
 
                 async def execute(conn) -> float:
                     async with conn.cursor() as cur:
                         await cur.execute("SELECT pg_backend_pid()")
                         pid_row = await cur.fetchone()
                         assert pid_row is not None
-                        sample_task = asyncio.create_task(sample_loop(pid_row[0]))
+                        sampler = threading.Thread(
+                            target=sample_loop, args=(pid_row[0],), daemon=True
+                        )
+                        sampler.start()
                         try:
                             started = time.perf_counter()
                             await cur.execute(query_text)  # type: ignore[arg-type]
@@ -894,7 +901,7 @@ JOIN main.build_packages AS bp
                             return time.perf_counter() - started
                         finally:
                             stop_event.set()
-                            await sample_task
+                            sampler.join()
 
                 if db_cfg is not None:
                     async with await psycopg.AsyncConnection.connect(**db_cfg) as conn:

@@ -192,7 +192,7 @@ class OLAPTest:
             "user": "postgres",
             "password": "12345678",
         }
-        self.passes = 2
+        self.passes = 5
 
         self.hard_query = """
 SELECT

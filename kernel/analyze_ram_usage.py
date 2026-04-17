@@ -1,4 +1,5 @@
 import json
+from kernel_conf import RESULTS_FILE
 
 def analyze_ram_usage(filename="ram_usage_log.txt"):
 
@@ -49,7 +50,7 @@ def analyze_ram_usage(filename="ram_usage_log.txt"):
         "status": status
     }
 
-    with open("result.json", 'w', encoding="utf-8") as status_file:
+    with open(RESULTS_FILE, 'w', encoding="utf-8") as status_file:
         json.dump(data, status_file, ensure_ascii=False, indent=4)
 
     return status

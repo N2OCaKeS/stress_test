@@ -224,8 +224,13 @@ class Public:
             for sql_request in sql_requests:
                 print(f"SQL запрос: {sql_request}")
                 memory_mb = report_data['result'][sql_request].get('memory_mb', {})
+                pg_total = report_data['result'][sql_request].get('pg_total_memory_mb', {})
                 data = {
-                    "metric": ["p99", "p95", "p50", "min", "max", "memory median (MB)", "memory min (MB)", "memory max (MB)"],
+                    "metric": [
+                        "p99", "p95", "p50", "min", "max",
+                        "memory median (MB)", "memory min (MB)", "memory max (MB)",
+                        "pg total memory median (MB)", "pg total memory min (MB)", "pg total memory max (MB)",
+                    ],
                     "value": [
                         report_data['result'][sql_request]['p99'],
                         report_data['result'][sql_request]['p95'],
@@ -235,6 +240,9 @@ class Public:
                         memory_mb.get('median', '-'),
                         memory_mb.get('min', '-'),
                         memory_mb.get('max', '-'),
+                        pg_total.get('median', '-'),
+                        pg_total.get('min', '-'),
+                        pg_total.get('max', '-'),
                     ]
                 }
                 df = pd.DataFrame(data)
@@ -258,11 +266,19 @@ class Public:
                             psql_olap_hq_tables[sql_request]['memory_graph'] = img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
                                                                                        img_png=file,
                                                                                        description=GRAPH_DESCRIPTIONS.get(file, file))
+                    pg_total_graph_path = report_data['result'][sql_request].get('pg_total_memory_mb', {}).get('graph', '')
+                    if pg_total_graph_path:
+                        file = pg_total_graph_path.split('/')[-1]
+                        if file.endswith('png'):
+                            psql_olap_hq_tables[sql_request]['pg_total_memory_graph'] = img_temp.format(page_id=confluence_report.get_confluence_page_id(self.c_space, c_np),
+                                                                                       img_png=file,
+                                                                                       description=GRAPH_DESCRIPTIONS.get(file, file))
             html_psql_olap_hq_tables = []
             for sql_request in sql_requests:
                 html_psql_olap_hq_tables.append(psql_olap_hq_tables[sql_request]['table'])
                 html_psql_olap_hq_tables.append(psql_olap_hq_tables[sql_request].get('speed_graph', ''))
                 html_psql_olap_hq_tables.append(psql_olap_hq_tables[sql_request].get('memory_graph', ''))
+                html_psql_olap_hq_tables.append(psql_olap_hq_tables[sql_request].get('pg_total_memory_graph', ''))
             
             olap_results = '\n'.join(html_psql_olap_hq_tables)
 

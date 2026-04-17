@@ -3,7 +3,7 @@
 import json
 from allta import PageBuilder, ConfluencePublisher
 
-from kernel_conf import VM_INFONAME, VM_KERNEL, SEGMENTATION_FAULT_RAM, SEGMENTATION_FAULT_VCPU, RESULTS_FILE
+from kernel_conf import VM_INFONAME, VM_KERNEL, SEGMENTATION_FAULT_RAM, SEGMENTATION_FAULT_VCPU, RESULTS_FILE, XFS_MEMORY_LEAK_RAM, XFS_MEMORY_LEAK_VCPU
 
 def kernel_publisher(
         username,
@@ -99,4 +99,83 @@ def kernel_publisher(
         attachments=[*builder.attachments],
     )
     return builder, preview_path, publish_result
+
+def xfs_memory_leak_publisher(username,
+                              token,
+                              space,
+                              parent_title,
+                              title,
+                              stand_number,
+                              lead_time="",
+                              test_cycle_version: str | None = None,
+):
+    preview_path = "report/confluence_report.html"
+    reporter = ConfluencePublisher(
+        base_url="https://life.astralinux.ru", username=username, token=token
+    )
+    builder = PageBuilder(title=title)
+
+    with open(VM_INFONAME) as vm_info_av_file:
+        vm_info_av = vm_info_av_file.read()
+    with open(VM_KERNEL) as vm_info_kernel_file:
+        vm_info_kernel = vm_info_kernel_file.read()
+
+    params = [
+        {"label": "VCPU", "value": XFS_MEMORY_LEAK_VCPU},
+        {"label": "RAM", "value": XFS_MEMORY_LEAK_RAM},
+    ]
+
+    header_table = [
+        {
+            "label": "VM Astra Version",
+            "value": vm_info_av
+        },
+        {
+            "lavel": "VM Kernel",
+            "value": vm_info_kernel
+        },
+        {
+            "label": "Params",
+            "value": {
+                "items": params,
+            },
+        },
+        {
+            "label": "ARM",
+            "value": {
+                "stand_number": f"{stand_number}",
+            },
+        },
+        {
+            "label": "Lead time",
+            "value": {
+                "text": lead_time,
+            },
+        },
+    ]
+
+    builder.add_header_table(rows=header_table)
+    builder.add_heading(text="Описание", level=2)
+    builder.add_paragraph()
+
+
+    with open(RESULTS_FILE, 'r') as f:
+        results_dict = json.load(f)
+
+    builder.add_table({
+        "title": "Результаты тестирования",
+        "headers": ["Утечка памяти"],
+        "rows": [[results_dict['status']]],
+    })
+
+    publish_result = reporter.publish_results_from_params(
+        conf_space=space,
+        conf_parent_page=parent_title,
+        conf_new_page_name=title,
+        test_cycle_version=test_cycle_version,
+        body=builder,
+        attachments=[*builder.attachments],
+    )
+    return builder, preview_path, publish_result
+
 

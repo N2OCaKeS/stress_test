@@ -2,6 +2,7 @@ import json
 
 from time import sleep
 from pathlib import Path
+from analyze_ram_usage import analyze_ram_usage
 
 from allta import Libvirt, LibvirtManager, SystemCommands
 
@@ -409,4 +410,95 @@ class Sigmentation_fault(CreateVM):
             result_file.write(json.dumps(result))
 
         print("\n\n\n Результаты обработаны\n\n\n")
+
+        return status_test1_bug and status_test2_bug
             
+
+class XFSMemoryLeak(CreateVM):
+    def start_test(self):
+        scp_test_files = {
+            "testvm1": [
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/provision/copy_files.sh', 
+                    "path_vm": '/home/u/copy_files.sh', 
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/get_info.py', 
+                    "path_vm": '/home/u/get_info.py', 
+                },
+                {
+                    "mode": "push",
+                    "path_host": f'{BASE_PATH}/start_xfs_test.py', 
+                    "path_vm": '/home/u/start_xfs_test.py', 
+                },
+            ]
+        }
+
+        start_test = {
+            'testvm1': {
+                'copy_files': {
+                    'command': 'sudo python3 start_xfs_test.py',
+                    'signal set': 'start test',
+                }
+            }
+        }
+
+        print("Перенос тестовых файлов")
+        self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("\n\n\nПодготовка завершена\n\n\n")
+        print("\n\n\nЗапускаем тест\n\n\n")
+
+        self.provider.execute(commands=start_test, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+
+    def results_processing(self):
+        sleep(120)
+        print("\n\n\nЗабираем данные о ОС с ВМ\n\n\n")
+        scp_vm_params = {
+            "testvm1": [
+                {
+                    "mode": "pull",
+                    "path_host": VM_OS_INFO_PATH,
+                    "path_vm": "/home/u/av.txt",
+                },
+                {
+                    "mode": "pull",
+                    "path_host": VM_OS_INFO_PATH,
+                    "path_vm": "/home/u/kernel.txt",
+                },
+                {
+                    "mode": "pull",
+                    "path_host": f"{BASE_PATH}/copy_output.txt",
+                    "path_vm": "/home/u/copy_output.txt"
+                },
+                {
+                    "mode": "pull",
+                    "path_host": f"{BASE_PATH}/ram_usage_log.txt",
+                    "path_vm": "/home/u/ram_usage_log.txt"
+                },
+                # {
+                #     "mode": "pull",
+                #     "path_host": f"{BASE_PATH}/results.json",
+                #     "path_vm": "/home/u/results.json"
+                # }
+
+            ]
+        }
+        self.provider.scp(
+            scp_settings=scp_vm_params,
+            vms_dates=self.vms_data,
+            vms_groups=self.vms_group,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+        print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
+        print("\n\n\nОбработка результатов\n\n\n")
+        
+        status = analyze_ram_usage(f"{BASE_PATH}/ram_usage_log.txt")
+        if status == "Отсутствует":
+            return False
+        else:
+            return True

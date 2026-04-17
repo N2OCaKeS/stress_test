@@ -1,10 +1,10 @@
 import argparse
-from allta import UploaderZC
+from allta import UploaderZC, SystemCommands
 from datetime import datetime
 
-from libs.lib_kernel import get_duration
-from libs.libtests import Sigmentation_fault
-from libs.libpublic import kernel_publisher
+from libs.lib_kernel import get_duration, check_output_command
+from libs.libtests import Sigmentation_fault, XFSMemoryLeak
+from libs.libpublic import kernel_publisher, xfs_memory_leak_publisher
 
 from kernel_conf import BASE_PATH, SEGMENTATION_FAULT_VM_COUNT, SEGMENTATION_FAULT_VCPU, SEGMENTATION_FAULT_RAM
 
@@ -114,8 +114,14 @@ if args.TESTNAME == 'segfault':
 
     sigmentation_fault.prepare_vms()
     sigmentation_fault.start_test()
-    sigmentation_fault.results_processing()
+    status = sigmentation_fault.results_processing()
     sigmentation_fault.vms_destroy()
+
+    if status:
+        uzs.upload_test_cycle_status(zefir_status='pass')
+    else:
+        uzs.upload_test_cycle_status(zefir_status='fail')
+
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
     publisher = kernel_publisher(
@@ -129,4 +135,37 @@ if args.TESTNAME == 'segfault':
         test_cycle_version=args.TCV,
     )
 
-    uzs.upload_test_cycle_status(zefir_status='pass')
+elif args.TESTNAME == 'xfs_memory_leak':
+    time_start_script = datetime.now()
+    xfs_memory_leak = XFSMemoryLeak(rc_name=args.TCV,
+                                    testdir=BASE_PATH,
+                                    vm_count=SEGMENTATION_FAULT_VM_COUNT,
+                                    vcpu=SEGMENTATION_FAULT_VCPU,
+                                    ram=SEGMENTATION_FAULT_RAM)
+    
+    xfs_memory_leak.prepare_vms()
+    SystemCommands.check_output_command("qemu-img create -f qcow2 /vms/db1.qcow2 100G && virsh attach-disk testvm1 /vms/db1.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio")
+    xfs_memory_leak.start_test()
+    status = xfs_memory_leak.results_processing()
+    if status == False:
+        uzs.upload_test_cycle_status(zefir_status='pass')
+    else:
+        uzs.upload_test_cycle_status(zefir_status='fail')
+
+    xfs_memory_leak.vms_destroy()
+
+    lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
+    
+    publisher = xfs_memory_leak_publisher(
+        username=args.USER,
+        token=args.TOKEN,
+        space=args.SPACE,
+        parent_title=args.PPAGE,
+        title=args.NPAGE,
+        stand_number=args.STAND,
+        lead_time=lead_time,
+        test_cycle_version=args.TCV,
+    )
+
+
+

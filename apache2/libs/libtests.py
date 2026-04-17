@@ -230,12 +230,12 @@ class ApacheBenchPam(CreateVM):
                     "signal set": "add_user",
                     "signal get": "add_category",
                 },
-                "add_user": {
+                "add_user2": {
                     "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC}",
                     "signal set": "add_user_mac",
                     "signal get": "add_user",
                 },
-                "add_user": {
+                "add_user3": {
                     "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC_CAT}",
                     "signal set": "add_user_mac_cat",
                     "signal get": "add_user_mac",
@@ -245,7 +245,7 @@ class ApacheBenchPam(CreateVM):
                     "signal set": "set_level",
                     "signal get": "add_user_mac_cat",
                 },
-                "set_level": {
+                "set_level2": {
                     "command": f"sudo pdpl-user -i 0 -l 2:2 -c 0xA:0xA {TESTED_QA_USER_MAC_CAT}",
                     "signal set": "set_level_cat",
                     "signal get": "set_level",
@@ -293,12 +293,12 @@ class ApacheBenchPam(CreateVM):
                     "signal set": "add_user",
                     "signal get": "server_prepare_end",
                 },
-                "add_user": {
+                "add_user2": {
                     "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC}",
                     "signal set": "add_user_mac",
                     "signal get": "add_user",
                 },
-                "add_user": {
+                "add_user3": {
                     "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER_MAC_CAT}",
                     "signal set": "add_user_mac_cat",
                     "signal get": "add_user_mac",
@@ -308,7 +308,7 @@ class ApacheBenchPam(CreateVM):
                     "signal set": "set_level",
                     "signal get": "add_user_mac_cat",
                 },
-                "set_level": {
+                "set_level2": {
                     "command": f"sudo pdpl-user -i 0 -l 2:2 -c 0xA:0xA {TESTED_QA_USER_MAC_CAT}",
                     "signal set": "set_level_cat",
                     "signal get": "set_level",
@@ -390,7 +390,7 @@ class ApacheBenchPam(CreateVM):
         }
 
         print ("\n\n\nНачинаем выполнение теста Apache pam\n\n\n")
-        for url, user in cat_urls.values():
+        for url, user in cat_urls.items():
             for concurrent in range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP):
                 abp_test_command = f"""
                     /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} -A {user}:1 {url} >> {AB_OUTPUT_FILE_PAM}
@@ -429,7 +429,7 @@ class ApacheBenchPam(CreateVM):
         self.provider.execute(commands=apache_pam_reset, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         self.provider.execute(commands=astra_mode_switch_disable, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
-        for url, user in nocat_urls.values():
+        for url, user in nocat_urls.items():
             for concurrent in range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP):
                 abp_test_command_nopam = f"""
                     /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} {url} >> {AB_OUTPUT_FILE_NOPAM}

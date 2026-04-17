@@ -3,10 +3,10 @@
 
 mylib="apache_prepare.sh"
 
-if [[ $(basename $PWD) != testlink ]]; then
-    printf "Executed from wrong directory." >& 2
-    exit 1
-fi
+#if [[ $(basename $PWD) != testlink ]]; then
+#    printf "Executed from wrong directory." >& 2
+#    exit 1
+#fi
 
 if [[ -e ./${mylib} ]]; then
     source $mylib

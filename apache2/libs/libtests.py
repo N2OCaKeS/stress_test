@@ -17,7 +17,8 @@ from apa_conf import (
     MAX_REQUESTS,
     CSV_RESULTS_FILE,
     PLOT_FILE,
-    AB_OUTPUT_FILE
+    AB_OUTPUT_FILE_PAM,
+    AB_OUTPUT_FILE_NOPAM
 )
 
 
@@ -339,7 +340,6 @@ class ApacheBenchPam(CreateVM):
         sleep(90)
         print("\n\n\n Сеть настроена  \n\n\n")
 
-
         print ("\n\n\nНачинаем выполнение теста\n\n\n")
         astra_mode_switch_enable = {
             "testvm1": {
@@ -351,6 +351,29 @@ class ApacheBenchPam(CreateVM):
                     "command": f"sudo sed -i -e 's/AstraMode off/AstraMode on/' /etc/apache2/apache2.conf",
                     "signal set": "astra_mode_2",
                     "signal get": "astra_mode_1",
+                },
+                "restart_service": {
+                    "command": f"sudo systemctl restart apache2.service",
+                    "signal set": "restart",
+                    "signal get": "astra_mode_2",
+                },
+            }
+        }
+        astra_mode_switch_disable = {
+            "testvm1": {
+                "astra_mode": {
+                    "command": f"sudo sed -i -e 's/# AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
+                    "signal set": "astra_mode_1",
+                },
+                "astra_mode_2": {
+                    "command": f"sudo sed -i -e 's/AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
+                    "signal set": "astra_mode_2",
+                    "signal get": "astra_mode_1",
+                },
+                "restart_service": {
+                    "command": f"sudo systemctl restart apache2.service",
+                    "signal set": "restart",
+                    "signal get": "astra_mode_2",
                 },
             }
         }
@@ -366,10 +389,11 @@ class ApacheBenchPam(CreateVM):
             f'http://{server_ip}/lev0.html': TESTED_QA_USER
         }
 
+        print ("\n\n\nНачинаем выполнение теста Apache pam\n\n\n")
         for url, user in cat_urls.values():
             for concurrent in range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP):
                 abp_test_command = f"""
-                    /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} -A {user}:1 {url} > {AB_OUTPUT_FILE}
+                    /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} -A {user}:1 {url} >> {AB_OUTPUT_FILE_PAM}
                 """
                 abp_test = {
                     "testvm2": {
@@ -381,4 +405,45 @@ class ApacheBenchPam(CreateVM):
                 }
 
                 self.provider.execute(commands=abp_test, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
-        
+        print ("\n\n\nApache pam завершен\n\n\n")
+
+        print ("\n\n\nНачинаем выполнение теста Apache no_pam\n\n\n")
+        apache_pam_reset = {
+            "testvm1": {
+                "copy": {
+                    "command": f"sudo cp /home/u/apache2 /etc/pam.d/apache2",
+                    "signal set": "copy_apache",
+                },
+                "000-default": {
+                    "command": f"sudo cp /home/u/000-default-no-pam.conf /etc/apache2/sites-available/000-default.conf",
+                    "signal set": "000-default",
+                    "signal get": "copy_apache",
+                },
+                "server_prepare": {
+                    "command": f"cd /home/u && sudo bash apache_server_prepare.sh pam",
+                    "signal set": "server_prepare",
+                    "signal get": "000-default",
+                },
+            }    
+        }
+        self.provider.execute(commands=apache_pam_reset, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        self.provider.execute(commands=astra_mode_switch_disable, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        for url, user in nocat_urls.values():
+            for concurrent in range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP):
+                abp_test_command_nopam = f"""
+                    /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} {url} >> {AB_OUTPUT_FILE_NOPAM}
+                """
+                abp_test_nopam = {
+                    "testvm2": {
+                        "run_test": {
+                            "command": f"{abp_test_command_nopam}",
+                            "signal set": "run_test",
+                        },
+                    }
+                }
+
+                self.provider.execute(commands=abp_test_nopam, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        print ("\n\n\nApache no_pam завершен\n\n\n")
+
+       

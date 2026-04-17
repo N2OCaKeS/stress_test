@@ -19,7 +19,7 @@ abp = ApacheBenchPam(rc_name='1.7.10.72',
 
 abp.prepare_vms()
 abp.create_test_env()
-#abp.start_test()
+abp.start_test()
 
 
 

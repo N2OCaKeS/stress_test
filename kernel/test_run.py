@@ -2,7 +2,7 @@ import argparse
 from allta import UploaderZC, SystemCommands
 from datetime import datetime
 
-from libs.lib_kernel import get_duration, check_output_command
+from libs.lib_kernel import get_duration
 from libs.libtests import Sigmentation_fault, XFSMemoryLeak
 from libs.libpublic import kernel_publisher, xfs_memory_leak_publisher
 

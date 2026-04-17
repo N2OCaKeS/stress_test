@@ -156,7 +156,6 @@ def xfs_memory_leak_publisher(username,
 
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
-    builder.add_paragraph()
 
 
     with open(RESULTS_FILE, 'r') as f:

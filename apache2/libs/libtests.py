@@ -446,4 +446,16 @@ class ApacheBenchPam(CreateVM):
                 self.provider.execute(commands=abp_test_nopam, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         print ("\n\n\nApache no_pam завершен\n\n\n")
 
-       
+# TODO
+# Добавить создание папки report и файлов с итогами для каждой ВМ
+# Забрать файлы результатов с ВМ
+# Исправить пути у ВМ, которые используют git расположение файлов хоста:
+# /home/u/git/stress_test/apache2/report/summary_no-pam.txt: Нет такого файла или каталога
+# /usr/bin/ab -c 175 -n 2500 -e /home/u/git/stress_test/apache2/report/percentages.csv -g /home/u/git/stress_test/apache2/report/values.tsv http://192.168.100.147/lev0.html >> /home/u/git/stress_test/apache2/report/summary_no-pam.txt
+#                 ': ОШИБКА:
+# bash: строка 1: /home/u/git/stress_test/apache2/report/summary_no-pam.txt: Нет такого файла или каталога
+
+# /usr/bin/ab -c 175 -n 2500 -e /home/u/git/stress_test/apache2/report/percentages.csv -g /home/u/git/stress_test/apache2/report/values.tsv -A qa2:1 http://192.168.100.147/lev2catA.html >> /home/u/git/stress_test/apache2/report/summary_pam.txt
+#                ': ОШИБКА:
+# bash: строка 1: /home/u/git/stress_test/apache2/report/summary_pam.txt: Нет такого файла или каталога
+

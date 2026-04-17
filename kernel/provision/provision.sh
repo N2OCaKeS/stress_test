@@ -2,7 +2,16 @@
 
 set -vx
 
-sudo apt-get install -y sysstat netcat
+PACKAGES=(
+  sysstat 
+  netcat
+)
+
+sudo apt-get update
+for pkg in "${PACKAGES[@]}"; do
+  echo "Устанавливаем пакет ${pkg}..."
+  sudo apt-get install -y "$pkg" || echo "⚠ Предупреждение: не удалось установить ${pkg}"
+done
 
 wget ftp://10.177.103.10/allta_*_amd64.deb
 sudo dpkg -i allta_*_amd64.deb

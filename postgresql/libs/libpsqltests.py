@@ -666,8 +666,6 @@ JOIN main.build_packages AS bp
 
     @staticmethod
     def _read_proc_rss_kb(pid: int) -> float:
-        # Читаем VmRSS — то же значение что htop показывает в колонке RES
-        # RssAnon
         try:
             with open(f"/proc/{pid}/status", "r") as f:
                 for line in f:
@@ -676,6 +674,51 @@ JOIN main.build_packages AS bp
         except (FileNotFoundError, ValueError, OSError):
             pass
         return 0.0
+
+    @staticmethod
+    def _get_postmaster_pid(backend_pid: int) -> int:
+        pid = backend_pid
+        while True:
+            try:
+                with open(f"/proc/{pid}/status", "r") as f:
+                    ppid = 0
+                    for line in f:
+                        if line.startswith("PPid:"):
+                            ppid = int(line.split()[1])
+                            break
+                if ppid <= 1:
+                    return pid
+                try:
+                    with open(f"/proc/{ppid}/cmdline", "rb") as f:
+                        ppid_cmdline = f.read().replace(b'\x00', b' ').decode(errors='replace')
+                except (FileNotFoundError, OSError):
+                    return pid
+                if "postgres" not in ppid_cmdline and "postmaster" not in ppid_cmdline:
+                    return pid
+                pid = ppid
+            except (FileNotFoundError, OSError, ValueError):
+                return pid
+
+    @staticmethod
+    def _read_pg_total_rss_kb(postmaster_pid: int) -> float:
+        total = OLAPTest._read_proc_rss_kb(postmaster_pid)
+        try:
+            for entry in os.scandir("/proc"):
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    pid = int(entry.name)
+                    with open(f"/proc/{pid}/status", "r") as f:
+                        for line in f:
+                            if line.startswith("PPid:"):
+                                if int(line.split()[1]) == postmaster_pid:
+                                    total += OLAPTest._read_proc_rss_kb(pid)
+                                break
+                except (FileNotFoundError, OSError, ValueError):
+                    continue
+        except OSError:
+            pass
+        return total
 
     def _run_oom_query_iterations(self) -> tuple[list[float], list[float]]:
         print("Восстанавливаю OOM базу данных test")
@@ -692,7 +735,6 @@ JOIN main.build_packages AS bp
                 password=self.db_config["password"],
             ) as conn:
                 with conn.cursor() as cur:
-                    # Получаем PID серверного процесса PostgreSQL 
                     cur.execute("SELECT pg_backend_pid()")
                     pid_row = cur.fetchone()
                     assert pid_row is not None
@@ -827,7 +869,57 @@ JOIN main.build_packages AS bp
             plt.close(fig)
             return graph_file_path
 
-        def build_result_entry(query_name, iterations, all_memory_samples=None, memory_graph=None):
+        def save_pg_total_memory_graph(query_name, all_samples: list[list[float]]) -> str:
+            graph_file_name = f"olap_pg_total_memory_{query_name}.png"
+            graph_file_path = os.path.abspath(os.path.join(report_dir, graph_file_name))
+            if not all_samples or not any(all_samples):
+                return graph_file_path
+
+            colors = [
+                "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+            ]
+            fig, ax = plt.subplots(figsize=(12, 5))
+
+            for idx, samples in enumerate(all_samples):
+                if not samples:
+                    continue
+                x = list(range(len(samples)))
+                ax.plot(x, samples,
+                        color=colors[idx % len(colors)],
+                        linewidth=1.2,
+                        alpha=0.7,
+                        label=f"Итерация {idx + 1}")
+
+            max_len = max((len(s) for s in all_samples if s), default=0)
+            median_values = []
+            for t_idx in range(max_len):
+                vals = [s[t_idx] for s in all_samples if len(s) > t_idx]
+                if vals:
+                    sorted_v = sorted(vals)
+                    mid = len(sorted_v) // 2
+                    m = (sorted_v[mid - 1] + sorted_v[mid]) / 2 if len(sorted_v) % 2 == 0 else sorted_v[mid]
+                    median_values.append(m)
+            if median_values:
+                x_med = list(range(len(median_values)))
+                ax.plot(x_med, median_values,
+                        color="red",
+                        linewidth=2.0,
+                        linestyle="--",
+                        label="Медиана")
+
+            ax.set_title(f"PostgreSQL total memory (all processes): {query_name}")
+            ax.set_xlabel("Time (seconds)")
+            ax.set_ylabel("Memory (MB)")
+            ax.legend()
+            ax.grid(True, linestyle="--", alpha=0.4)
+            fig.tight_layout()
+            fig.savefig(graph_file_path, dpi=150)
+            plt.close(fig)
+            return graph_file_path
+
+        def build_result_entry(query_name, iterations, all_memory_samples=None, memory_graph=None,
+                               all_pg_total_samples=None, pg_total_memory_graph=None):
             median_value = calc_median(iterations)
             p99_value = calc_percentile(iterations, 99)
             p95_value = calc_percentile(iterations, 95)
@@ -855,6 +947,15 @@ JOIN main.build_packages AS bp
                     "max": round(max(flat), 2),
                     "graph": memory_graph,
                 }
+            if all_pg_total_samples:
+                flat_total = [v for samples in all_pg_total_samples for v in samples]
+                entry["pg_total_memory_mb"] = {
+                    "iterations": [[round(v, 2) for v in s] for s in all_pg_total_samples],
+                    "median": round(calc_median(flat_total), 2),
+                    "min": round(min(flat_total), 2),
+                    "max": round(max(flat_total), 2),
+                    "graph": pg_total_memory_graph,
+                }
             return entry
 
         pool = AsyncConnectionPool(
@@ -872,23 +973,17 @@ JOIN main.build_packages AS bp
             async def run_one(
                 query_text: str,
                 db_cfg: dict | None = None,
-            ) -> tuple[float, dict[str, float], list[float]]:
+            ) -> tuple[float, dict[str, float], list[float], list[float]]:
                 samples: list[float] = []
-                # Используем поток вместо asyncio-задачи: threading.Event.wait() спит ровно 1 сек
-                # независимо от занятости event loop
-                # Use thread instead of asyncio task: threading.Event.wait() sleeps exactly 1 sec
-                # regardless of event loop busyness
+                pg_total_samples: list[float] = []
                 stop_event = threading.Event()
 
-                def sample_loop(pid: int) -> None:
-                    # Абсолютное планирование: следующий замер привязан к T+N, а не к
-                    # "подожди 1 сек от текущего момента" — компенсирует кумулятивный дрейф.
-                    # Absolute scheduling: next sample is anchored to T+N, not "wait 1s from
-                    # now" — compensates for cumulative drift of the sampling loop.
+                def sample_loop(pid: int, postmaster_pid: int) -> None:
                     interval = 1.0
                     next_sample_at = time.monotonic() + interval
                     while not stop_event.is_set():
                         samples.append(self._read_proc_rss_kb(pid) / 1024)
+                        pg_total_samples.append(self._read_pg_total_rss_kb(postmaster_pid) / 1024)
                         wait_time = next_sample_at - time.monotonic()
                         next_sample_at += interval
                         stop_event.wait(max(0.001, wait_time))
@@ -898,16 +993,16 @@ JOIN main.build_packages AS bp
                         await cur.execute("SELECT pg_backend_pid()")
                         pid_row = await cur.fetchone()
                         assert pid_row is not None
+                        backend_pid = pid_row[0]
+                        postmaster_pid = self._get_postmaster_pid(backend_pid)
                         sampler = threading.Thread(
-                            target=sample_loop, args=(pid_row[0],), daemon=True
+                            target=sample_loop, args=(backend_pid, postmaster_pid), daemon=True
                         )
                         sampler.start()
                         elapsed = 0.0
                         try:
                             started = time.perf_counter()
                             await cur.execute(query_text)  # type: ignore[arg-type]
-                            # Замеряем только выполнение запроса на стороне БД, без передачи данных
-                            # Measure only server-side query execution time, excluding data transfer
                             elapsed = time.perf_counter() - started
                         finally:
                             stop_event.set()
@@ -938,7 +1033,7 @@ JOIN main.build_packages AS bp
                         "max": round(sorted_s[-1], 2),
                     }
 
-                return elapsed, memory_stats, samples
+                return elapsed, memory_stats, samples, pg_total_samples
 
             result = {
                 "time_unit": "seconds",
@@ -955,10 +1050,12 @@ JOIN main.build_packages AS bp
 
                 iterations: list[float] = []
                 all_memory_samples: list[list[float]] = []
+                all_pg_total_samples: list[list[float]] = []
                 for pass_num in range(1, passes + 1):
-                    measurement, memory_stats, raw_samples = await run_one(query_text, db_cfg=db_cfg_dict)
+                    measurement, memory_stats, raw_samples, pg_total_raw = await run_one(query_text, db_cfg=db_cfg_dict)
                     iterations.append(measurement)
                     all_memory_samples.append(raw_samples)
+                    all_pg_total_samples.append(pg_total_raw)
                     print(
                         f"Запрос {query_name}, проход {pass_num}: "
                         f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
@@ -966,17 +1063,18 @@ JOIN main.build_packages AS bp
                     )
 
                 memory_graph = save_memory_graph(query_name, all_memory_samples)
+                pg_total_memory_graph = save_pg_total_memory_graph(query_name, all_pg_total_samples)
                 total_rating_data[query_name] = iterations
-                result["result"][query_name] = build_result_entry(query_name, iterations, all_memory_samples, memory_graph)
+                result["result"][query_name] = build_result_entry(
+                    query_name, iterations, all_memory_samples, memory_graph,
+                    all_pg_total_samples, pg_total_memory_graph,
+                )
         finally:
             await pool.close()
 
 
-        # Если OOM-запрос есть в списке — запускаем его через run_one для корректного сбора памяти
-        # If OOM query is in the list — run it via run_one for correct memory sampling
         if self.oom_query_name in self.available_queries:
             self._recreate_oom_cluster()
-            # Восстанавливаем БД один раз перед всеми итерациями / Restore DB once before all iterations
             self._restore_oom_database()
             oom_query_cfg = self.available_queries[self.oom_query_name]
             oom_query_text = oom_query_cfg.get("query")
@@ -987,12 +1085,14 @@ JOIN main.build_packages AS bp
 
             oom_iterations: list[float] = []
             all_oom_memory_samples: list[list[float]] = []
+            all_oom_pg_total_samples: list[list[float]] = []
             for pass_num in range(1, passes + 1):
-                measurement, memory_stats, raw_samples = await run_one(
+                measurement, memory_stats, raw_samples, pg_total_raw = await run_one(
                     oom_query_text, db_cfg=oom_db_cfg_dict
                 )
                 oom_iterations.append(measurement)
                 all_oom_memory_samples.append(raw_samples)
+                all_oom_pg_total_samples.append(pg_total_raw)
                 print(
                     f"Запрос {self.oom_query_name}, проход {pass_num}: "
                     f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
@@ -1000,14 +1100,15 @@ JOIN main.build_packages AS bp
                 )
 
             oom_memory_graph = save_memory_graph(self.oom_query_name, all_oom_memory_samples)
+            oom_pg_total_memory_graph = save_pg_total_memory_graph(self.oom_query_name, all_oom_pg_total_samples)
             total_rating_data[self.oom_query_name] = oom_iterations
             result["result"][self.oom_query_name] = build_result_entry(
-                self.oom_query_name, oom_iterations, all_oom_memory_samples, oom_memory_graph
+                self.oom_query_name, oom_iterations, all_oom_memory_samples, oom_memory_graph,
+                all_oom_pg_total_samples, oom_pg_total_memory_graph,
             )
 
         criteria_iterations = [float(index) for index in range(1, passes + 1)]
 
-        # Критерии для матмодели — добавляем только те запросы, которые были запущены
         criteria_configs = [
             ("hard_query",             0.3, (0.0, 1650.0)),
             ("order_query",            0.2, (0.0, 2220.0)),

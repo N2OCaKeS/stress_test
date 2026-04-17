@@ -292,19 +292,19 @@ JOIN main.build_packages AS bp
             "hard_query": {
                 "query": self.hard_query,
             },
-            # "order_query": {
-            #     "query": self.order_query,
-            # },
-            # "substring_search_query": {
-            #     "query": self.substring_search_query,
-            # },
-            # "join_query": {
-            #     "query": self.join_query,
-            # },
-            # self.oom_query_name: {
-            #     "query": self.oom_query,
-            #     "db_config": {**self.db_config, "dbname": self.oom_db_name},
-            # },
+            "order_query": {
+                "query": self.order_query,
+            },
+            "substring_search_query": {
+                "query": self.substring_search_query,
+            },
+            "join_query": {
+                "query": self.join_query,
+            },
+            self.oom_query_name: {
+                "query": self.oom_query,
+                "db_config": {**self.db_config, "dbname": self.oom_db_name},
+            },
         }
 
     def _get_cluster_version(self):

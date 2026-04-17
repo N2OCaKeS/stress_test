@@ -160,12 +160,7 @@ class PageBuilder:
     _DETAILS_LINK_STYLE = "color:#0052CC;text-decoration:none;"
     _DETAILS_LIST_STYLE = "margin:6px 0 0 18px;padding:0;"
     _ARM_INFO_URL = "https://life.astralinux.ru/pages/viewpage.action?pageId=192234259"
-    _ARM_API_URLS = (
-        "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/v2",
-        "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/legacy",
-        "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/",
-    )
-    _ARM_API_URL = _ARM_API_URLS[2]
+    _ARM_API_URL = "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/"
     _ARM_CATALOG = {
         "1": {
             "grade": "VM Test WorkStation",
@@ -285,7 +280,7 @@ class PageBuilder:
         self._sections.append(f'<h{level} style="{self._HEADING_STYLE}">{escape(text)}</h{level}>')
         return self
 
-    def add_paragraph(self, text):
+    def add_paragraph(self, text=""):
         """
         Добавляет текстовый блок с поддержкой переводов строк.
 
@@ -987,36 +982,27 @@ class PageBuilder:
         Пытается подгрузить актуальный каталог ARM из API.
         При недоступности сервера остаётся локальный словарь.
         """
-        errors = []
-        for url in self._ARM_API_URLS:
-            try:
-                response = requests.get(url, timeout=30, verify=False)
-            except Exception as e:
-                errors.append(f"{url}: {type(e).__name__}: {e}")
-                continue
+        # Подавляем предупреждение о самоподписанном сертификате / Suppress self-signed cert warning
+        requests.packages.urllib3.disable_warnings()
+        try:
+            response = requests.get(self._ARM_API_URL, timeout=30, verify=False)
+        except Exception as e:
+            print(f"ARM API недоступно, используем локальные данные: {type(e).__name__}: {e}")
+            return
 
-            if not response.ok:
-                errors.append(f"{url}: status {response.status_code}")
-                continue
+        if not response.ok:
+            print(f"ARM API вернул статус {response.status_code}, используем локальные данные")
+            return
 
-            try:
-                data = response.json()
-            except Exception as e:
-                errors.append(f"{url}: invalid json ({type(e).__name__}: {e})")
-                continue
+        try:
+            data = response.json()
+        except Exception as e:
+            print(f"ARM API вернул некорректный JSON, используем локальные данные: {e}")
+            return
 
-            normalized = self._normalize_arm_catalog_payload(data)
-            if normalized:
-                self._ARM_CATALOG = normalized
-                return
-
-            errors.append(f"{url}: empty/invalid payload")
-
-        if errors:
-            print(
-                "ARM API недоступно или вернуло некорректный ответ, "
-                f"используем локальные данные: {'; '.join(errors)}"
-            )
+        normalized = self._normalize_arm_catalog_payload(data)
+        if normalized:
+            self._ARM_CATALOG = normalized
 
     def _detect_astra_version(self):
         version = ""

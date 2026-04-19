@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     AUTH_API_URL: str = _auth_api_url()
     AUTH_CA_BUNDLE: str = getenv("AUTH_CA_BUNDLE", "/etc/allta/tls/allta-api.crt")
     SERVER_API_BASE: str = _server_api_base()
+    # CA bundle for server_api HTTPS / CA-пучок для HTTPS запросов к server_api
+    SERVER_CA_BUNDLE: str = getenv("SERVER_CA_BUNDLE", "/etc/allta/tls/allta-api.crt")
     VM_MANAGE_PERMISSION: str = getenv("VM_MANAGE_PERMISSION", "vm.manage")
     SERVER_MANAGE_PERMISSION: str = getenv("SERVER_MANAGE_PERMISSION", "server.manage")
     REDIS_URL: str = getenv("REDIS_URL", "redis://localhost:6379/0")

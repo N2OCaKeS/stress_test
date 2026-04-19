@@ -29,7 +29,9 @@ def task_server_init(self, envelope: dict) -> dict:
         " && wget -q -O /tmp/allta_cli.deb \"ftp://10.177.103.10/boxes/$FILE\"",
         title="download allta_cli.deb", timeout=300)
 
-    _run_or_raise(ssh, "sudo apt-get install -y /tmp/allta_cli.deb", title="install allta_cli", timeout=300)
+    # ./ prefix makes apt-get treat the arg as a local file and resolve deps automatically
+    # префикс ./ заставляет apt-get видеть локальный файл и автоматически ставить зависимости
+    _run_or_raise(ssh, "cd /tmp && sudo apt-get install -y ./allta_cli.deb", title="install allta_cli", timeout=300)
 
     _run_or_raise(ssh, "sudo mkdir -p /opt/allta_vm/jobs && sudo chmod -R 0775 /opt",
                   title="prepare /opt/allta_vm", timeout=120)

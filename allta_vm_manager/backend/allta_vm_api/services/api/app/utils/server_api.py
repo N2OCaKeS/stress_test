@@ -11,6 +11,8 @@ from app.api.v1.schemas.server import (
 from app.utils.config import settings
 
 MANAGE_API_BASE = settings.SERVER_API_BASE
+# CA bundle used for TLS verification / CA-пучок для проверки TLS
+_CA_BUNDLE = settings.SERVER_CA_BUNDLE
 
 
 def _encode_server_ref(server_ref: int | str) -> str:
@@ -46,7 +48,7 @@ async def get_physical_server_from_remote(
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     try:
-        async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        async with httpx.AsyncClient(timeout=timeout_sec, verify=_CA_BUNDLE) as client:
             resp = await client.get(url, headers=headers)
     except httpx.RequestError as e:
         raise HTTPException(
@@ -90,7 +92,7 @@ async def set_server_status(
     payload = {"status": status_value}
 
     try:
-        async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        async with httpx.AsyncClient(timeout=timeout_sec, verify=_CA_BUNDLE) as client:
             resp = await client.post(url, headers=headers, json=payload)
     except httpx.RequestError as e:
         raise HTTPException(
@@ -131,7 +133,7 @@ async def clear_server_status(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        async with httpx.AsyncClient(timeout=timeout_sec, verify=_CA_BUNDLE) as client:
             resp = await client.post(url, headers=headers)
     except httpx.RequestError as e:
         raise HTTPException(
@@ -167,7 +169,7 @@ async def get_os_versions(
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     try:
-        async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        async with httpx.AsyncClient(timeout=timeout_sec, verify=_CA_BUNDLE) as client:
             resp = await client.get(url, headers=headers)
     except httpx.RequestError as e:
         raise HTTPException(
@@ -212,7 +214,7 @@ async def get_snapshot_password_by_os_version(
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     try:
-        async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        async with httpx.AsyncClient(timeout=timeout_sec, verify=_CA_BUNDLE) as client:
             resp = await client.get(url, headers=headers)
     except httpx.RequestError as e:
         raise HTTPException(

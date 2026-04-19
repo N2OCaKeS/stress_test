@@ -20,15 +20,16 @@ def task_server_init(self, envelope: dict) -> dict:
 
     ssh = SimpleSSH(host=ip, username=username, password=password)
 
-    # FTP glob is not expanded by wget — list dir first, then download
-    # wget не раскрывает glob в FTP-URL — сначала получаем имя файла через листинг
+    # FTP returns HTML listing — extract filename from href attribute (ends with quote)
+    # FTP отдаёт HTML-листинг — извлекаем имя файла из href (заканчивается кавычкой)
     _run_or_raise(ssh,
         "FILE=$(wget -qO- ftp://10.177.103.10/boxes/"
-        " | grep -oP 'allta-vm_\\S+_amd64\\.deb(?=\\s|$)'"
+        " | grep -oP 'allta-vm_\\S+?_amd64\\.deb(?=\")'"
         " | sort | tail -1)"
         " && wget -q -O /tmp/allta_cli.deb \"ftp://10.177.103.10/boxes/$FILE\"",
         title="download allta_cli.deb", timeout=300)
 
+    _run_or_raise(ssh, "sudo apt-get update -qq", title="apt-get update", timeout=120)
     # ./ prefix makes apt-get treat the arg as a local file and resolve deps automatically
     # префикс ./ заставляет apt-get видеть локальный файл и автоматически ставить зависимости
     _run_or_raise(ssh, "cd /tmp && sudo apt-get install -y ./allta_cli.deb", title="install allta_cli", timeout=300)

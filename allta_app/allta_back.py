@@ -336,6 +336,7 @@ try:
                             parsec_impact = '-parsec-impact impact'
                             parsec_impact_ao = '-parsec-impact-ao audit-off'
                             apache_rp = '-apache rp'
+                            apache_pam = '-apache apache_pam'
                             steal_time = '-lvirt stealtime'
                             steal_time_sm = '-lvirt stealtime_sm'
                             fio = '-lvirt fio'
@@ -414,6 +415,9 @@ try:
                             elif tests[dates_list[i][1]] == 'apache-rp':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {apache_rp} {tes}', shell=True)
+                            elif tests[dates_list[i][1]] == 'apache-bp':
+                                subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                            {tcas} {branch} {cti} {pp} {testnum} {apache_pam} {tes}', shell=True)
                             elif tests[dates_list[i][1]] == 'steal time':
                                 subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                             {tcas} {branch} {cti} {pp} {testnum} {steal_time} {tes}', shell=True)
@@ -509,6 +513,7 @@ try:
                     parsec_impact = '-parsec-impact impact'
                     parsec_impact_ao = '-parsec-impact-ao audit-off'
                     apache_rp = '-apache rp'
+                    apache_pam = '-apache apache_pam'
                     steal_time = '-lvirt stealtime'
                     steal_time_sm = '-lvirt stealtime_sm'
                     fio = '-lvirt fio'
@@ -586,6 +591,9 @@ try:
                     elif tests[dates_list[i][1]] == 'apache-rp':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {apache_rp} {tes}', shell=True)
+                    elif tests[dates_list[i][1]] == 'apache-bp':
+                             subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
+                                        {tcas} {branch} {cti} {pp} {testnum} {apache_pam} {tes}', shell=True)
                     elif tests[dates_list[i][1]] == 'steal time':
                              subprocess.run(f'./backup_image.py {sn} {rs} {test} {mode} {kn} {stand} {tcyc} \
                                         {tcas} {branch} {cti} {pp} {testnum} {steal_time} {tes}', shell=True) 

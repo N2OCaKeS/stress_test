@@ -402,7 +402,7 @@ class ApacheBenchPam(CreateVM):
 
         print ("\n\n\nНачинаем выполнение теста Apache pam\n\n\n")
         for url, user in cat_urls.items():
-            for concurrent in range(1, MAX_CONCURRENCY, CONCURRENCY_STEP):
+            for concurrent in [1] + list(range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP)):
                 abp_test_command = f"""
                     /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} -A {user}:1 {url} >> {AB_OUTPUT_FILE_PAM}
                 """
@@ -441,7 +441,7 @@ class ApacheBenchPam(CreateVM):
         self.provider.execute(commands=astra_mode_switch_disable, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
         for url, user in nocat_urls.items():
-            for concurrent in range(1, MAX_CONCURRENCY, CONCURRENCY_STEP):
+            for concurrent in [1] + list(range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP)):
                 abp_test_command_nopam = f"""
                     /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} {url} >> {AB_OUTPUT_FILE_NOPAM}
                 """

@@ -726,14 +726,14 @@ JOIN main.build_packages AS bp
         iterations = []
         memory_iterations = []
 
-        for pass_num in range(1, max(1, int(self.passes)) + 1):
-            with psycopg.connect(
-                host=self.db_config["host"],
-                port=self.db_config["port"],
-                dbname=self.oom_db_name,
-                user=self.db_config["user"],
-                password=self.db_config["password"],
-            ) as conn:
+        with psycopg.connect(
+            host=self.db_config["host"],
+            port=self.db_config["port"],
+            dbname=self.oom_db_name,
+            user=self.db_config["user"],
+            password=self.db_config["password"],
+        ) as conn:
+            for pass_num in range(1, max(1, int(self.passes)) + 1):
                 with conn.cursor() as cur:
                     cur.execute("SELECT pg_backend_pid()")
                     pid_row = cur.fetchone()
@@ -748,13 +748,13 @@ JOIN main.build_packages AS bp
                     measurement = time.perf_counter() - started
                     rss_after = self._read_proc_rss_kb(backend_pid)
 
-            memory_mb = max(0.0, rss_after - rss_before) / 1024
-            iterations.append(measurement)
-            memory_iterations.append(memory_mb)
-            print(
-                f"Запрос {self.oom_query_name}, проход {pass_num}: "
-                f"{measurement:.3f} сек, память: {memory_mb:.2f} МБ"
-            )
+                memory_mb = max(0.0, rss_after - rss_before) / 1024
+                iterations.append(measurement)
+                memory_iterations.append(memory_mb)
+                print(
+                    f"Запрос {self.oom_query_name}, проход {pass_num}: "
+                    f"{measurement:.3f} сек, память: {memory_mb:.2f} МБ"
+                )
 
         return iterations, memory_iterations
 

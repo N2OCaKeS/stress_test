@@ -963,6 +963,7 @@ JOIN main.build_packages AS bp
             min_size=1,
             max_size=1,
             open=False,
+            kwargs={"autocommit": True},
         )
 
         os.makedirs(report_dir, exist_ok=True)
@@ -973,6 +974,7 @@ JOIN main.build_packages AS bp
             async def run_one(
                 query_text: str,
                 db_cfg: dict | None = None,
+                existing_conn=None,
             ) -> tuple[float, dict[str, float], list[float], list[float]]:
                 samples: list[float] = []
                 pg_total_samples: list[float] = []
@@ -995,6 +997,8 @@ JOIN main.build_packages AS bp
                         assert pid_row is not None
                         backend_pid = pid_row[0]
                         postmaster_pid = self._get_postmaster_pid(backend_pid)
+                        samples.append(self._read_proc_rss_kb(backend_pid) / 1024)
+                        pg_total_samples.append(self._read_pg_total_rss_kb(postmaster_pid) / 1024)
                         sampler = threading.Thread(
                             target=sample_loop, args=(backend_pid, postmaster_pid), daemon=True
                         )
@@ -1010,7 +1014,9 @@ JOIN main.build_packages AS bp
                         await cur.fetchall()
                         return elapsed
 
-                if db_cfg is not None:
+                if existing_conn is not None:
+                    elapsed = await execute(existing_conn)
+                elif db_cfg is not None:
                     async with await psycopg.AsyncConnection.connect(**db_cfg) as conn:
                         elapsed = await execute(conn)
                 else:
@@ -1048,19 +1054,34 @@ JOIN main.build_packages AS bp
                 db_cfg = query_cfg.get("db_config")
                 db_cfg_dict = db_cfg if isinstance(db_cfg, dict) else None
 
+                if db_cfg_dict is not None:
+                    query_conn = await psycopg.AsyncConnection.connect(**db_cfg_dict, autocommit=True)
+                    use_pool = False
+                else:
+                    query_conn = await pool.getconn(timeout=self.pool_connection_timeout)
+                    use_pool = True
+
                 iterations: list[float] = []
                 all_memory_samples: list[list[float]] = []
                 all_pg_total_samples: list[list[float]] = []
-                for pass_num in range(1, passes + 1):
-                    measurement, memory_stats, raw_samples, pg_total_raw = await run_one(query_text, db_cfg=db_cfg_dict)
-                    iterations.append(measurement)
-                    all_memory_samples.append(raw_samples)
-                    all_pg_total_samples.append(pg_total_raw)
-                    print(
-                        f"Запрос {query_name}, проход {pass_num}: "
-                        f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
-                        f"[{memory_stats['min']:.2f}–{memory_stats['max']:.2f}]"
-                    )
+                try:
+                    for pass_num in range(1, passes + 1):
+                        measurement, memory_stats, raw_samples, pg_total_raw = await run_one(
+                            query_text, existing_conn=query_conn
+                        )
+                        iterations.append(measurement)
+                        all_memory_samples.append(raw_samples)
+                        all_pg_total_samples.append(pg_total_raw)
+                        print(
+                            f"Запрос {query_name}, проход {pass_num}: "
+                            f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
+                            f"[{memory_stats['min']:.2f}–{memory_stats['max']:.2f}]"
+                        )
+                finally:
+                    if use_pool:
+                        await pool.putconn(query_conn)
+                    else:
+                        await query_conn.close()
 
                 memory_graph = save_memory_graph(query_name, all_memory_samples)
                 pg_total_memory_graph = save_pg_total_memory_graph(query_name, all_pg_total_samples)
@@ -1086,18 +1107,27 @@ JOIN main.build_packages AS bp
             oom_iterations: list[float] = []
             all_oom_memory_samples: list[list[float]] = []
             all_oom_pg_total_samples: list[list[float]] = []
-            for pass_num in range(1, passes + 1):
-                measurement, memory_stats, raw_samples, pg_total_raw = await run_one(
-                    oom_query_text, db_cfg=oom_db_cfg_dict
-                )
-                oom_iterations.append(measurement)
-                all_oom_memory_samples.append(raw_samples)
-                all_oom_pg_total_samples.append(pg_total_raw)
-                print(
-                    f"Запрос {self.oom_query_name}, проход {pass_num}: "
-                    f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
-                    f"[{memory_stats['min']:.2f}–{memory_stats['max']:.2f}]"
-                )
+            oom_conn = (
+                await psycopg.AsyncConnection.connect(**oom_db_cfg_dict, autocommit=True)
+                if oom_db_cfg_dict is not None
+                else None
+            )
+            try:
+                for pass_num in range(1, passes + 1):
+                    measurement, memory_stats, raw_samples, pg_total_raw = await run_one(
+                        oom_query_text, existing_conn=oom_conn
+                    )
+                    oom_iterations.append(measurement)
+                    all_oom_memory_samples.append(raw_samples)
+                    all_oom_pg_total_samples.append(pg_total_raw)
+                    print(
+                        f"Запрос {self.oom_query_name}, проход {pass_num}: "
+                        f"{measurement:.3f} сек, память: медиана {memory_stats['median']:.2f} МБ "
+                        f"[{memory_stats['min']:.2f}–{memory_stats['max']:.2f}]"
+                    )
+            finally:
+                if oom_conn is not None:
+                    await oom_conn.close()
 
             oom_memory_graph = save_memory_graph(self.oom_query_name, all_oom_memory_samples)
             oom_pg_total_memory_graph = save_pg_total_memory_graph(self.oom_query_name, all_oom_pg_total_samples)

@@ -18,7 +18,8 @@ from apa_conf import (
     CSV_RESULTS_FILE,
     PLOT_FILE,
     AB_OUTPUT_FILE_PAM,
-    AB_OUTPUT_FILE_NOPAM
+    AB_OUTPUT_FILE_NOPAM,
+    REPORT_PATH
 )
 
 
@@ -221,9 +222,14 @@ class ApacheBenchPam(CreateVM):
         print ("\n\n\nПодготовка клиента\n\n\n")
         client_prepare = {
             "testvm2": {
+                "report": {
+                    "command": f"sudo mkdir -p {REPORT_PATH} && sudo chmod -R 777 {REPORT_PATH}",
+                    "signal set": "add_report",
+                },
                 "add_category": {
                     "command": f"sudo usercat -a 8 'Cat_8'",
                     "signal set": "add_category",
+                    "signal get": "add_report",
                 },
                 "add_user": {
                     "command": f"sudo yes '1' | sudo adduser {TESTED_QA_USER}",
@@ -259,9 +265,14 @@ class ApacheBenchPam(CreateVM):
         print ("\n\n\nПодготовка сервера\n\n\n")
         server_prepare = {
             "testvm1": {
+                "report": {
+                    "command": f"sudo mkdir -p {REPORT_PATH} && sudo chmod -R 777 {REPORT_PATH}",
+                    "signal set": "add_report",
+                },
                 "server_prepare": {
                     "command": f"cd /home/u && sudo bash apache_server_prepare.sh pam",
                     "signal set": "server_prepare",
+                    "signal get": "add_report",
                 },
                 "copy": {
                     "command": f"sudo cp /home/u/apache2 /etc/pam.d/apache2",

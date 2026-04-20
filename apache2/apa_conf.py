@@ -8,7 +8,8 @@ JIRA_URL = response_jira_url.text
 CONFLUENCE_URL = response_confluence_url.text
 
 SCRIPT_DIR = '/home/u/git/stress_test/apache2'
-REPORT_PATH = f'{SCRIPT_DIR}/report'
+VM_PATH = '/home/u'
+REPORT_PATH = f'{VM_PATH}/report'
 TEMPLATE_PATH = f'{SCRIPT_DIR}/templates'
 CSV_RESULTS_FILE = f'{REPORT_PATH}/percentages.csv'
 PLOT_FILE = f'{REPORT_PATH}/values.tsv'

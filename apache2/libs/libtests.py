@@ -1,4 +1,4 @@
-
+import os
 
 from time import sleep
 from pathlib import Path
@@ -402,7 +402,7 @@ class ApacheBenchPam(CreateVM):
 
         print ("\n\n\nНачинаем выполнение теста Apache pam\n\n\n")
         for url, user in cat_urls.items():
-            for concurrent in range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP):
+            for concurrent in range(1, MAX_CONCURRENCY, CONCURRENCY_STEP):
                 abp_test_command = f"""
                     /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} -A {user}:1 {url} >> {AB_OUTPUT_FILE_PAM}
                 """
@@ -441,7 +441,7 @@ class ApacheBenchPam(CreateVM):
         self.provider.execute(commands=astra_mode_switch_disable, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
         for url, user in nocat_urls.items():
-            for concurrent in range(CONCURRENCY_STEP, MAX_CONCURRENCY, CONCURRENCY_STEP):
+            for concurrent in range(1, MAX_CONCURRENCY, CONCURRENCY_STEP):
                 abp_test_command_nopam = f"""
                     /usr/bin/ab -c {concurrent} -n {MAX_REQUESTS} -e {CSV_RESULTS_FILE} -g {PLOT_FILE} {url} >> {AB_OUTPUT_FILE_NOPAM}
                 """
@@ -457,16 +457,25 @@ class ApacheBenchPam(CreateVM):
                 self.provider.execute(commands=abp_test_nopam, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         print ("\n\n\nApache no_pam завершен\n\n\n")
 
-# TODO
-# Добавить создание папки report и файлов с итогами для каждой ВМ
-# Забрать файлы результатов с ВМ
-# Исправить пути у ВМ, которые используют git расположение файлов хоста:
-# /home/u/git/stress_test/apache2/report/summary_no-pam.txt: Нет такого файла или каталога
-# /usr/bin/ab -c 175 -n 2500 -e /home/u/git/stress_test/apache2/report/percentages.csv -g /home/u/git/stress_test/apache2/report/values.tsv http://192.168.100.147/lev0.html >> /home/u/git/stress_test/apache2/report/summary_no-pam.txt
-#                 ': ОШИБКА:
-# bash: строка 1: /home/u/git/stress_test/apache2/report/summary_no-pam.txt: Нет такого файла или каталога
 
-# /usr/bin/ab -c 175 -n 2500 -e /home/u/git/stress_test/apache2/report/percentages.csv -g /home/u/git/stress_test/apache2/report/values.tsv -A qa2:1 http://192.168.100.147/lev2catA.html >> /home/u/git/stress_test/apache2/report/summary_pam.txt
-#                ': ОШИБКА:
-# bash: строка 1: /home/u/git/stress_test/apache2/report/summary_pam.txt: Нет такого файла или каталога
+        scp_results = {
+            "testvm2": [
+                {
+                    "mode": "pull",
+                    "path_host": f"{self.testdir}/summary_no-pam.txt",
+                    "path_vm": f"{AB_OUTPUT_FILE_NOPAM}",
+                },
+                {
+                    "mode": "pull",
+                    "path_host": f"{self.testdir}/summary_pam.txt",
+                    "path_vm": f"{AB_OUTPUT_FILE_PAM}",
+                },
+            ]
+        }
+        self.provider.scp(scp_settings=scp_results, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        if os.path.isfile(f"{self.testdir}/summary_pam.txt") and os.path.isfile(f"{self.testdir}/summary_no-pam.txt"):
+            print (f"\n\n\nРезультаты успешно скопированы на сервер и расположены в {self.testdir}\n\n\n")
+        else:
+            print ("\n\nFail\nНе удалось скопировать результаты теста с ВМ\n\n\n")
 

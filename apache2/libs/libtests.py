@@ -3,7 +3,9 @@ import os
 from time import sleep
 from pathlib import Path
 
-from allta import Libvirt, LibvirtManager, SystemCommands
+from allta import Libvirt, LibvirtManager, SystemCommands, MathModel
+
+from parse_results import build_tables_separately_for_each_lvl_or_category
 from apa_conf import (
     SCRIPT_DIR, 
     USERNAME, 
@@ -478,4 +480,36 @@ class ApacheBenchPam(CreateVM):
             print (f"\n\n\nРезультаты успешно скопированы на сервер и расположены в {self.testdir}\n\n\n")
         else:
             print ("\n\nFail\nНе удалось скопировать результаты теста с ВМ\n\n\n")
+
+
+    def preprocessing_results(self):
+
+        model = MathModel()
+        for lvl in build_tables_separately_for_each_lvl_or_category():   
+            model.add_criterion(
+                f"{lvl}_rps",
+                iterations=lvl.index.tolist(),
+                values=lvl["requests_per_second"].tolist(),
+                weight=0.16666,
+                negative=False,
+                bounds=(0.0, 50000.0),
+            )
+            model.add_criterion(
+                f"{lvl}_waiting",
+                iterations=lvl.index.tolist(),
+                values=lvl["waiting_median_ms"].tolist(),
+                weight=0.16666,
+                negative=True,
+                bounds=(0.0, 65000.0),
+            )
+        
+        # TODO ЗАФИКСИРОВАТЬ POWER после первого расчета
+        debug = model.calc_power()
+        fixed_power = debug["power"]
+        print(f"Debug power: {fixed_power}")
+        result = model.total_rating(power=fixed_power)  
+
+        return result['total_rating']
+
+
 

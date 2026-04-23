@@ -2,9 +2,11 @@ import re
 import pandas as pd
 import sys
 
+from apa_conf import AB_OUTPUT_FILE_NOPAM, AB_OUTPUT_FILE_PAM
+
 FILES = {
-    "no-pam": "summary_no-pam.txt",
-    "pam": "summary_pam.txt",
+    "no-pam": AB_OUTPUT_FILE_NOPAM, # "summary_no-pam.txt",
+    "pam": AB_OUTPUT_FILE_PAM,  # "summary_pam.txt",
 }
 
 BLOCK_SEPARATOR = re.compile(r"This is ApacheBench")

@@ -308,6 +308,96 @@ class MathModel:
                 f"{float(row['ratio']):>10.3f}"
             )
 
+    def compare_power_table(
+        self,
+        power: Number,
+        factors: Sequence[Number] = TEST_POWER_TABLE_FACTORS,
+        clip_to_bounds: bool = False,
+        print_table: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Строит таблицу сравнения рейтинга при multiplicative-изменении критериев.
+
+        Для каждого коэффициента:
+        - positive-критерии умножаются на коэффициент;
+        - negative-критерии делятся на коэффициент.
+
+        Args:
+            power (Number): Коэффициент степенного преобразования для ``total_rating``.
+            factors (Sequence[Number], optional): Коэффициенты изменения критериев.
+            clip_to_bounds (bool, optional): Ограничивать synthetic-значения границами bounds.
+                По умолчанию отключено, чтобы таблица показывала чистое изменение критериев.
+            print_table (bool, optional): Печатать таблицу в stdout.
+
+        Returns:
+            dict[str, Any]: Базовый рейтинг и строки таблицы.
+        """
+        if not self._criteria:
+            raise ValueError("Не добавлено ни одного критерия")
+
+        resolved_power = float(power)
+        ordered_factors = self._prepare_factor_values(factors)
+        base_result = self._evaluate_group(resolved_power)
+        base_rating = float(base_result["total_rating"])
+        rows: list[dict[str, Any]] = []
+
+        for factor in ordered_factors:
+            if math.isclose(float(factor), 1.0, rel_tol=0.0, abs_tol=1e-12):
+                rating = float(base_rating)
+            else:
+                synthetic_values_by_name = self._build_multiplicative_values(
+                    float(factor),
+                    clip_to_bounds=bool(clip_to_bounds),
+                )
+                rating = float(
+                    self._evaluate_group(
+                        resolved_power,
+                        synthetic_values_by_name=synthetic_values_by_name,
+                    )["total_rating"]
+                )
+
+            rating_ratio = float(rating / base_rating) if base_rating != 0.0 else 0.0
+            if rating_ratio > 1.0:
+                comparison = f"лучше x{rating_ratio:.4f}"
+            elif rating_ratio < 1.0 and rating_ratio > 0.0:
+                comparison = f"хуже x{1.0 / rating_ratio:.4f}"
+            elif math.isclose(rating_ratio, 1.0, rel_tol=0.0, abs_tol=1e-12):
+                comparison = "так же x1.0000"
+            else:
+                comparison = "нельзя сравнить"
+
+            rows.append(
+                {
+                    "factor": float(factor),
+                    "rating": float(rating),
+                    "rating_ratio": float(rating_ratio),
+                    "comparison": comparison,
+                }
+            )
+
+        result = {
+            "power": float(resolved_power),
+            "base_rating": float(base_rating),
+            "factors": [float(value) for value in ordered_factors],
+            "rows": rows,
+        }
+
+        if print_table:
+            print("=== compare_power_table ===")
+            print(f"power: {resolved_power}")
+            print(f"base_rating: {base_rating}")
+            print()
+            print(f"{'коэф. критериев':>16} | {'полученный рейтинг':>20} | {'относительно оригинала':>24}")
+            print("-" * 67)
+            for row in rows:
+                print(
+                    f"{float(row['factor']):>16g} | "
+                    f"{float(row['rating']):>20.6f} | "
+                    f"{row['comparison']:>24}"
+                )
+
+        return result
+
     def total_rating(self, power: Number) -> dict[str, Any]:
         """
         Рассчитывает итоговый рейтинг по всем ранее добавленным критериям.
@@ -328,144 +418,284 @@ class MathModel:
 
     def calc_power(
         self,
-        sample_count: int = 50,
+        sample_count: int = 200,
         random_seed: int = 42,
         bounds_margin: float = 0.01,
         signed_ratio_range: tuple[float, float] = (-4.0, 4.0),
         out_of_band_weight: float = 0.25,
         jitter: float = 0.0,
         trend_strength: float = 0.0,
+        power_range: tuple[float, float] = (0.001, 10.0),
+        search_iterations: int = 100,
+        clip_to_bounds: bool = False,
+        test_factors: Sequence[Number] = TEST_POWER_TABLE_FACTORS,
     ) -> dict[str, Any]:
         """
-        Отладочная функция подбора ``power`` по synthetic-наборам от baseline в заданном диапазоне.
+        Отладочная функция подбора ``power`` по multiplicative-наборам от baseline.
 
         Логика подбора:
             1. Переданные критерии принимаются за baseline с коэффициентом ``1.0``.
             2. Пользователь задаёт рабочий диапазон в signed-виде, например:
                ``(-4, 4)`` -> ``[0.25; 4.0]``,
                ``(-6, 2)`` -> ``[1/6; 2.0]``.
-            3. Строится ``sample_count`` synthetic-наборов от baseline по детерминированной
-               логарифмической сетке факторов внутри диапазона. Базовый набор ``1.0``
-               не входит в synthetic-сетку и считается отдельной опорной точкой.
-            4. Для каждого synthetic-набора значения строятся от baseline; при необходимости
-               применяется мягкая защита от выхода за ``bounds``.
-            5. ``power`` подбирается прямым brute-force перебором по захардкоженной сетке.
-            6. Выбирается такой ``power``, при котором отношение
-               ``total_rating_synthetic / total_rating_baseline`` максимально близко
-               к реальному коэффициенту synthetic-набора.
+            3. Строится набор коэффициентов из логарифмической сетки диапазона и
+               ``TEST_POWER_TABLE_FACTORS``. Базовый коэффициент ``1.0`` исключается
+               из подбора и считается отдельной опорной точкой.
+            4. Для каждого коэффициента значения критериев меняются multiplicative-образом:
+               positive-критерии умножаются на коэффициент, negative-критерии делятся
+               на коэффициент.
+            5. ``power`` подбирается ternary-search, чтобы отношение
+               ``total_rating_synthetic / total_rating_baseline`` было максимально близко
+               к коэффициенту изменения критериев.
 
         Args:
             sample_count (int, optional): Количество synthetic-наборов в диапазоне,
-                не считая baseline.
-            random_seed (int, optional): Seed для воспроизводимого точечного разброса,
-                если ``jitter`` или ``trend_strength`` больше нуля.
-            bounds_margin (float, optional): Защитный отступ от границ bounds.
+                не считая baseline. Используется вместе с ``test_factors``.
+            random_seed (int, optional): Оставлен для совместимости с прежней сигнатурой.
+            bounds_margin (float, optional): Оставлен для совместимости с прежней сигнатурой.
             signed_ratio_range (tuple[float, float], optional): Рабочий диапазон относительно
                 baseline в signed-виде. Положительное значение означает улучшение во столько раз,
                 отрицательное — ухудшение во столько раз. Например ``(-4, 4)`` означает диапазон
                 ``[0.25; 4.0]``.
-            out_of_band_weight (float, optional): Вес ошибок вне приоритетного диапазона.
-                Для текущей deterministic-сетки обычно можно оставлять ``1.0`` или значение по
-                умолчанию.
-            jitter (float, optional): Амплитуда случайного разброса по точкам внутри набора.
-                По умолчанию ``0.0`` для максимальной точности.
-            trend_strength (float, optional): Сила слабого линейного тренда по итерациям.
-                По умолчанию ``0.0`` для максимальной точности.
+            out_of_band_weight (float, optional): Оставлен для совместимости с прежней сигнатурой.
+            jitter (float, optional): Оставлен для совместимости с прежней сигнатурой.
+            trend_strength (float, optional): Оставлен для совместимости с прежней сигнатурой.
+            power_range (tuple[float, float], optional): Диапазон поиска ``power``.
+            search_iterations (int, optional): Количество итераций ternary-search.
+            clip_to_bounds (bool, optional): Ограничивать synthetic-значения границами bounds.
+                По умолчанию отключено, чтобы коэффициент отражал чистое изменение критериев.
+            test_factors (Sequence[Number], optional): Дополнительные коэффициенты проверки.
 
         Returns:
             dict[str, Any]: Отладочная информация по подобранному ``power``.
         """
         if not self._criteria:
             raise ValueError("Не добавлено ни одного критерия")
-        if sample_count < 5:
-            raise ValueError("sample_count должен быть >= 5")
-        if not 0.0 < bounds_margin < 0.5:
-            raise ValueError("bounds_margin должен быть в диапазоне (0, 0.5)")
-        if out_of_band_weight <= 0.0:
-            raise ValueError("out_of_band_weight должен быть > 0")
-        if jitter < 0.0:
-            raise ValueError("jitter должен быть >= 0")
-        if trend_strength < 0.0:
-            raise ValueError("trend_strength должен быть >= 0")
+        if sample_count < 2:
+            raise ValueError("sample_count должен быть >= 2")
+        if search_iterations < 1:
+            raise ValueError("search_iterations должен быть >= 1")
 
-        focus_ratio_min, focus_ratio_max = self._resolve_signed_ratio_range(signed_ratio_range)
+        power_min = float(power_range[0])
+        power_max = float(power_range[1])
+        if power_min <= 0.0 or power_max <= 0.0 or power_min >= power_max:
+            raise ValueError("power_range должен задавать корректный положительный диапазон")
 
-        synthetic_samples = self._build_random_bounds_samples(
+        ratio_min, ratio_max = self._resolve_signed_ratio_range(signed_ratio_range)
+        multipliers = self._build_calc_power_factors(
+            ratio_min=float(ratio_min),
+            ratio_max=float(ratio_max),
             sample_count=int(sample_count),
-            random_seed=int(random_seed),
-            bounds_margin=float(bounds_margin),
-            focus_ratio_min=float(focus_ratio_min),
-            focus_ratio_max=float(focus_ratio_max),
-            jitter=float(jitter),
-            trend_strength=float(trend_strength),
+            test_factors=test_factors,
         )
 
-        candidate_powers = np.linspace(
-            float(RANDOM_BOUNDS_POWER_MIN),
-            float(RANDOM_BOUNDS_POWER_MAX),
-            num=int(RANDOM_BOUNDS_POWER_STEPS),
-            dtype=float,
-        )
-        best_result = self._evaluate_power_candidates_random_bounds(
-            candidate_powers=[float(value) for value in candidate_powers],
-            synthetic_samples=synthetic_samples,
-            focus_ratio_min=float(focus_ratio_min),
-            focus_ratio_max=float(focus_ratio_max),
-            out_of_band_weight=float(out_of_band_weight),
-        )
-        search_trace: list[dict[str, Any]] = [
-            {
-                "stage": "bruteforce",
-                "step": float(candidate_powers[1] - candidate_powers[0]),
-                "range": [float(candidate_powers[0]), float(candidate_powers[-1])],
-                "candidate_count": int(candidate_powers.size),
-                "best_power": float(best_result["power"]),
-                "selection_score": float(best_result["selection_score"]),
-            }
-        ]
+        params_by_multiplier: dict[float, list[tuple[float, float]]] = {
+            1.0: self._rating_power_params(self._evaluate_group(1.0)),
+        }
+        for multiplier in multipliers:
+            synthetic_values_by_name = self._build_multiplicative_values(
+                float(multiplier),
+                clip_to_bounds=bool(clip_to_bounds),
+            )
+            params_by_multiplier[float(multiplier)] = self._rating_power_params(
+                self._evaluate_group(
+                    1.0,
+                    synthetic_values_by_name=synthetic_values_by_name,
+                )
+            )
+
+        def rating_from_params(power: float, multiplier: float) -> float:
+            return sum(
+                float(coef) * (float(odds) ** float(power))
+                for coef, odds in params_by_multiplier[float(multiplier)]
+            )
+
+        def score(power: float) -> float:
+            base_rating = rating_from_params(float(power), 1.0)
+            if not math.isfinite(base_rating) or base_rating <= 0.0:
+                return float("inf")
+
+            errors: list[float] = []
+            for multiplier in multipliers:
+                sample_rating = rating_from_params(float(power), float(multiplier))
+                if not math.isfinite(sample_rating) or sample_rating <= 0.0:
+                    return float("inf")
+                rating_ratio = float(sample_rating / base_rating)
+                errors.append((math.log(rating_ratio) - math.log(float(multiplier))) ** 2)
+            return float(sum(errors) / len(errors))
+
+        left = float(power_min)
+        right = float(power_max)
+        for _ in range(int(search_iterations)):
+            left_mid = left + (right - left) / 3.0
+            right_mid = right - (right - left) / 3.0
+            if score(left_mid) < score(right_mid):
+                right = right_mid
+            else:
+                left = left_mid
+
+        best_power = float((left + right) / 2.0)
+        best_score = float(score(best_power))
+        base_rating = float(rating_from_params(best_power, 1.0))
+        per_sample: list[dict[str, float]] = []
+        raw_error_sum = 0.0
+
+        for multiplier in multipliers:
+            sample_rating = float(rating_from_params(best_power, float(multiplier)))
+            rating_ratio = float(sample_rating / base_rating)
+            abs_log_error = abs(math.log(rating_ratio) - math.log(float(multiplier)))
+            raw_error_sum += abs_log_error
+            per_sample.append(
+                {
+                    "multiplier": float(multiplier),
+                    "target_ratio": float(multiplier),
+                    "rating_ratio": float(rating_ratio),
+                    "abs_log_error": float(abs_log_error),
+                }
+            )
+
+        actual_result = self._evaluate_group(float(best_power))
+        result = {
+            "debug": True,
+            "message": (
+                "Это отладочная функция для расчета коэффициента степенного преобразования "
+                "по multiplicative synthetic-наборам от baseline. "
+                "Positive-критерии умножаются на коэффициент, negative-критерии делятся "
+                "на коэффициент, а отношение рейтингов подгоняется к этому коэффициенту. "
+                "Подобранное значение не сохраняется автоматически: "
+                "передайте result['power'] в total_rating(power=...)."
+            ),
+            "power": float(best_power),
+            "mean_abs_log_error": float(raw_error_sum / len(per_sample)),
+            "selection_score": float(best_score),
+            "sample_count": int(sample_count),
+            "random_seed": int(random_seed),
+            "bounds_margin": float(bounds_margin),
+            "signed_ratio_range": [float(signed_ratio_range[0]), float(signed_ratio_range[1])],
+            "focus_ratio_min": float(ratio_min),
+            "focus_ratio_max": float(ratio_max),
+            "out_of_band_weight": float(out_of_band_weight),
+            "jitter": float(jitter),
+            "trend_strength": float(trend_strength),
+            "power_min": float(power_min),
+            "power_max": float(power_max),
+            "search_iterations": int(search_iterations),
+            "clip_to_bounds": bool(clip_to_bounds),
+            "test_factors": [float(value) for value in self._prepare_factor_values(test_factors)],
+            "actual_dataset": {
+                "rating": float(actual_result["total_rating"]),
+                "ratio_to_baseline": 1.0,
+            },
+            "search_trace": [
+                {
+                    "stage": "ternary-search",
+                    "range": [float(power_min), float(power_max)],
+                    "iteration_count": int(search_iterations),
+                    "best_power": float(best_power),
+                    "selection_score": float(best_score),
+                }
+            ],
+            "synthetic_samples": per_sample,
+        }
 
         print(
             "[MathModel] calc_power(...) — отладочная функция. "
             "Отключите её в release и передавайте зафиксированный power в total_rating(power=...)."
         )
+        print(result)
+        return result
 
-        actual_result = self._evaluate_group(float(best_result["power"]))
+    def _prepare_factor_values(
+        self,
+        factors: Sequence[Number],
+    ) -> list[float]:
+        if not factors:
+            raise ValueError("factors не должен быть пустым")
 
-        res = {
-            "debug": True,
-            "message": (
-                "Это отладочная функция для расчета коэффициента степенного преобразования "
-                "по deterministic synthetic-наборам от baseline в заданном диапазоне. "
-                "Подбор выполняется прямым перебором значений power "
-                "в интервале brute-force поиска. "
-                "Подобранное значение не сохраняется автоматически: "
-                "передайте result['power'] в total_rating(power=...)."
-            ),
-            "power": float(best_result["power"]),
-            "mean_abs_log_error": float(best_result["mean_abs_log_error"]),
-            "selection_score": float(best_result["selection_score"]),
-            "sample_count": int(sample_count),
-            "random_seed": int(random_seed),
-            "bounds_margin": float(bounds_margin),
-            "signed_ratio_range": [float(signed_ratio_range[0]), float(signed_ratio_range[1])],
-            "focus_ratio_min": float(focus_ratio_min),
-            "focus_ratio_max": float(focus_ratio_max),
-            "out_of_band_weight": float(out_of_band_weight),
-            "jitter": float(jitter),
-            "trend_strength": float(trend_strength),
-            "power_min": float(RANDOM_BOUNDS_POWER_MIN),
-            "power_max": float(RANDOM_BOUNDS_POWER_MAX),
-            "power_steps": int(RANDOM_BOUNDS_POWER_STEPS),
-            "actual_dataset": {
-                "rating": float(actual_result["total_rating"]),
-                "ratio_to_baseline": 1.0,
-            },
-            "search_trace": search_trace,
-            "synthetic_samples": best_result["per_sample"],
-        }
+        unique_values: dict[float, float] = {}
+        for factor in factors:
+            value = float(factor)
+            if value <= 0.0:
+                raise ValueError("Все factors должны быть > 0")
+            unique_values[round(value, 12)] = value
 
-        print(res)
-        return res
+        unique_values[1.0] = 1.0
+        values = list(unique_values.values())
+        lower_factors = [value for value in values if value < 1.0 - 1e-12]
+        upper_factors = [value for value in values if value > 1.0 + 1e-12]
+        return sorted(lower_factors) + [1.0] + sorted(upper_factors)
+
+    def _build_calc_power_factors(
+        self,
+        ratio_min: float,
+        ratio_max: float,
+        sample_count: int,
+        test_factors: Sequence[Number],
+    ) -> list[float]:
+        grid_factors = self._build_ratio_factor_grid(
+            ratio_min=float(ratio_min),
+            ratio_max=float(ratio_max),
+            sample_count=int(sample_count),
+        )
+        prepared_test_factors = self._prepare_factor_values(test_factors)
+
+        factors_by_key: dict[float, float] = {}
+        for factor in [*grid_factors, *prepared_test_factors]:
+            factor = float(factor)
+            if (
+                float(ratio_min) <= factor <= float(ratio_max)
+                and not math.isclose(factor, 1.0, rel_tol=0.0, abs_tol=1e-12)
+            ):
+                factors_by_key[round(factor, 12)] = factor
+
+        if not factors_by_key:
+            raise ValueError("Не удалось построить набор коэффициентов для calc_power")
+
+        return sorted(factors_by_key.values())
+
+    def _rating_power_params(
+        self,
+        result: dict[str, Any],
+    ) -> list[tuple[float, float]]:
+        return [
+            (
+                float(criterion["weight"]) * float(criterion["interval"]),
+                float(criterion["odds"]),
+            )
+            for criterion in result["criteria"].values()
+        ]
+
+    def _build_multiplicative_values(
+        self,
+        multiplier: float,
+        clip_to_bounds: bool,
+    ) -> dict[str, np.ndarray]:
+        if float(multiplier) <= 0.0:
+            raise ValueError("multiplier должен быть > 0")
+
+        synthetic_values_by_name: dict[str, np.ndarray] = {}
+        for name, criterion in self._criteria.items():
+            base_values = np.array(criterion["values"], dtype=float)
+            if bool(criterion["negative"]):
+                synthetic_raw = base_values / float(multiplier)
+            else:
+                synthetic_raw = base_values * float(multiplier)
+
+            if bool(clip_to_bounds):
+                lower_bound = float(criterion["bounds"][0])
+                upper_bound = float(criterion["bounds"][1])
+                interval = float(upper_bound - lower_bound)
+                margin = interval * float(self._epsilon)
+                lower_clip = float(lower_bound + margin)
+                upper_clip = float(upper_bound - margin)
+                if upper_clip <= lower_clip:
+                    lower_clip = float(lower_bound)
+                    upper_clip = float(upper_bound)
+                synthetic_raw = np.clip(synthetic_raw, lower_clip, upper_clip)
+
+            synthetic_values_by_name[name] = synthetic_raw
+
+        return synthetic_values_by_name
 
     def _build_random_bounds_samples(
         self,

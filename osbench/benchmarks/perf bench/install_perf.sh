@@ -28,3 +28,5 @@ install_perf() {
         exit 1
     fi
 }
+
+install_perf

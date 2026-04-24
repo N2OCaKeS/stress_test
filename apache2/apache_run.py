@@ -5,7 +5,7 @@ from datetime import datetime
 from libs.zefir import UploaderZC
 from libs.libapa import get_duration
 from libs.libtests import ApacheBenchPam
-from libs.libpublic import apache2_publisher
+from libs.libpublic_new import apache2_publisher
 from apa_conf import ABP_RAM, ABP_VCPU, ABP_VM_COUNT, SCRIPT_DIR
 
 

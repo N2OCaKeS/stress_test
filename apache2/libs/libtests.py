@@ -5,7 +5,7 @@ from pathlib import Path
 
 from allta import Libvirt, LibvirtManager, SystemCommands, MathModel
 
-from parse_results import build_tables_separately_for_each_lvl_or_category
+from apa_parse_results import build_tables_separately_for_each_lvl_or_category
 from apa_conf import (
     SCRIPT_DIR, 
     USERNAME, 
@@ -21,7 +21,10 @@ from apa_conf import (
     PLOT_FILE,
     AB_OUTPUT_FILE_PAM,
     AB_OUTPUT_FILE_NOPAM,
-    REPORT_PATH
+    REPORT_PATH,
+    VM_OS_INFO_PATH,
+    VM_KERNEL,
+    VM_INFONAME,
 )
 
 
@@ -483,6 +486,31 @@ class ApacheBenchPam(CreateVM):
 
 
     def preprocessing_results(self):
+
+        sleep(120)
+        print("\n\n\nЗабираем данные о ОС с ВМ\n\n\n")
+        scp_vm_params = {
+            "testvm1": [
+                {
+                    "mode": "pull",
+                    "path_host": VM_INFONAME,
+                    "path_vm": "/home/u/av.txt",
+                },
+                {
+                    "mode": "pull",
+                    "path_host": VM_KERNEL,
+                    "path_vm": "/home/u/kernel.txt",
+                }
+            ]
+        }
+        self.provider.scp(
+            scp_settings=scp_vm_params,
+            vms_dates=self.vms_data,
+            vms_groups=self.vms_group,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+        print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
 
         model = MathModel()
         for lvl in build_tables_separately_for_each_lvl_or_category():   

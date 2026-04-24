@@ -1,4 +1,5 @@
 import requests
+from pathlib import Path
 
 jira_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-jira-url'
 confluence_url_api = 'http://allta.devos.astralinux.ru/rest/api/get-confluence-url'
@@ -74,5 +75,11 @@ CONCURRENCY_STEP = 50
 MAX_REQUESTS = 2500
 
 
+# Base params
+# Create dir if not created
+VM_OS_INFO_PATH = f"{SCRIPT_DIR}/vm_info"
+Path(VM_OS_INFO_PATH).mkdir(mode=0o777, parents=True, exist_ok=True)
+VM_INFONAME = f'{VM_OS_INFO_PATH}/av.txt'
+VM_KERNEL = f'{VM_OS_INFO_PATH}/kernel.txt'
 
 

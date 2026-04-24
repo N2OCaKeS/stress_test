@@ -5,6 +5,7 @@ from datetime import datetime
 from libs.zefir import UploaderZC
 from libs.libapa import get_duration
 from libs.libtests import ApacheBenchPam
+from libs.libpublic import apache2_publisher
 from apa_conf import ABP_RAM, ABP_VCPU, ABP_VM_COUNT, SCRIPT_DIR
 
 
@@ -116,6 +117,14 @@ if args.TESTNAME == 'apache_pam':
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
+    publisher = apache2_publisher(username=args.USER, 
+                                  token=args.TOKEN, 
+                                  space=args.SPACE, 
+                                  parent_title=args.PPAGE, 
+                                  title=args.NPAGE, 
+                                  stand_number=args.STAND, 
+                                  lead_time=lead_time, 
+                                  test_cycle_version=args.TCV)
 
     uzs.upload_test_cycle_status(zefir_status='pass')
 

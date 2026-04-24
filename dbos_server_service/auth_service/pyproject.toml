@@ -1,0 +1,41 @@
+[tool.poetry]
+name = "auth-service"
+version = "0.1.0"
+description = "DBOS authentication and authorization service"
+authors = []
+readme = "README.md"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "0.115.12"
+uvicorn = { version = "0.34.0", extras = ["standard"] }
+sqlalchemy = "2.0.40"
+psycopg = { version = "3.2.6", extras = ["binary"] }
+pydantic = "2.11.3"
+pydantic-settings = "2.8.1"
+alembic = "1.15.2"
+argon2-cffi = "23.1.0"
+PyJWT = "2.10.1"
+email-validator = "2.2.0"
+python-multipart = "0.0.20"
+cryptography = "44.0.3"
+httpx = "0.28.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "9.0.3"
+pytest-asyncio = "^1.0"
+httpx = "0.28.1"
+requests = "2.32.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short -q"
+asyncio_mode = "auto"
+markers = [
+    "e2e: end-to-end tests that require the full docker-compose test stack",
+]

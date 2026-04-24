@@ -20,8 +20,7 @@ abp = ApacheBenchPam(rc_name='1.7.10.72',
 abp.prepare_vms()
 abp.create_test_env()
 abp.start_test()
-
-
+total_rating = abp.preprocessing_results()
 
 lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
 

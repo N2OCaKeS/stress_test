@@ -160,7 +160,7 @@ class PageBuilder:
     _DETAILS_LINK_STYLE = "color:#0052CC;text-decoration:none;"
     _DETAILS_LIST_STYLE = "margin:6px 0 0 18px;padding:0;"
     _ARM_INFO_URL = "https://life.astralinux.ru/pages/viewpage.action?pageId=192234259"
-    _ARM_API_URL = "http://allta.devos.astralinux.ru:21501/api/server/v1/arm/"
+    _ARM_API_URL = "https://allta.devos.astralinux.ru:21501/api/server/v1/arm/"
     _ARM_CATALOG = {
         "1": {
             "grade": "VM Test WorkStation",
@@ -280,7 +280,7 @@ class PageBuilder:
         self._sections.append(f'<h{level} style="{self._HEADING_STYLE}">{escape(text)}</h{level}>')
         return self
 
-    def add_paragraph(self, text):
+    def add_paragraph(self, text=""):
         """
         Добавляет текстовый блок с поддержкой переводов строк.
 
@@ -889,33 +889,120 @@ class PageBuilder:
             return merged
         merged.setdefault("stand_number", match.group(1))
         merged.setdefault("link", self._ARM_INFO_URL)
-        if server.get("grade"):
-            merged["link_text"] = f"{server['grade']} ({match.group(1)})"
+        link_title = server.get("grade") or server.get("server_name")
+        if link_title:
+            merged["link_text"] = f"{link_title} ({match.group(1)})"
         if not merged.get("items") and not merged.get("list"):
-            merged["items"] = [
-                {"label": "Processor", "value": server["cpu"]},
-                {"label": "Memory", "value": server["ram"]},
-                {"label": "Storage", "value": server["storage"]},
-            ]
+            items = []
+            if server.get("cpu"):
+                items.append({"label": "Processor", "value": server.get("cpu")})
+            if server.get("ram"):
+                items.append({"label": "Memory", "value": server.get("ram")})
+            if server.get("storage"):
+                items.append({"label": "Storage", "value": server.get("storage")})
+            if server.get("gpu"):
+                items.append({"label": "GPU", "value": server.get("gpu")})
+            if items:
+                merged["items"] = items
         return merged
+
+    @staticmethod
+    def _coerce_to_int(value):
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _normalize_arm_server(cls, stand_number, payload):
+        if not isinstance(payload, Mapping):
+            return None
+        data = dict(payload)
+        normalized_stand = str(stand_number).strip()
+        if not normalized_stand:
+            return None
+
+        cpu = data.get("cpu")
+        if not cpu:
+            cpu_model = data.get("cpu_model")
+            cores = (
+                data.get("cpu_cores_count")
+                if data.get("cpu_cores_count") is not None
+                else data.get("cpu_cores-count")
+            )
+            if cores is None:
+                cores = data.get("cpu_total")
+            cores_int = cls._coerce_to_int(cores)
+            if cpu_model and cores_int:
+                cpu = f"{cpu_model} ({cores_int} cores)"
+            elif cpu_model:
+                cpu = str(cpu_model)
+            elif cores_int:
+                cpu = f"CPU ({cores_int} cores)"
+
+        ram = data.get("ram")
+        if not ram:
+            ram_total = cls._coerce_to_int(data.get("ram_total"))
+            if ram_total is not None:
+                if ram_total > 0 and ram_total % 1024 == 0:
+                    ram = f"{ram_total // 1024}Gb"
+                else:
+                    ram = f"{ram_total}Mb"
+
+        return {
+            "stand_number": normalized_stand,
+            "server_name": data.get("server_name"),
+            "grade": data.get("grade"),
+            "cpu": cpu,
+            "ram": ram,
+            "storage": data.get("storage"),
+            "gpu": data.get("gpu"),
+        }
+
+    @classmethod
+    def _normalize_arm_catalog_payload(cls, data):
+        if not isinstance(data, Mapping):
+            return {}
+
+        normalized = {}
+        for stand_number, payload in data.items():
+            if not re.search(r"\d+", str(stand_number)):
+                continue
+            prepared = cls._normalize_arm_server(stand_number, payload)
+            if prepared:
+                normalized[str(stand_number)] = prepared
+        return normalized
 
     def _refresh_arm_catalog(self):
         """
         Пытается подгрузить актуальный каталог ARM из API.
         При недоступности сервера остаётся локальный словарь.
         """
+        # Подавляем предупреждение о самоподписанном сертификате / Suppress self-signed cert warning
+        requests.packages.urllib3.disable_warnings()
         try:
-            response = requests.get(self._ARM_API_URL, timeout=3)
-            if response.ok:
-                data = response.json()
-                if isinstance(data, dict) and data:
-                    self._ARM_CATALOG = data
-                else:
-                    print("ARM API вернуло пустой/некорректный ответ, используем локальные данные")
-            else:
-                print(f"ARM API недоступно (status {response.status_code}), используем локальные данные")
+            response = requests.get(self._ARM_API_URL, timeout=30, verify=False)
         except Exception as e:
-            print(f"ARM API недоступно ({type(e).__name__}: {e}), используем локальные данные")
+            print(f"ARM API недоступно, используем локальные данные: {type(e).__name__}: {e}")
+            return
+
+        if not response.ok:
+            print(f"ARM API вернул статус {response.status_code}, используем локальные данные")
+            return
+
+        try:
+            data = response.json()
+        except Exception as e:
+            print(f"ARM API вернул некорректный JSON, используем локальные данные: {e}")
+            return
+
+        normalized = self._normalize_arm_catalog_payload(data)
+        if normalized:
+            self._ARM_CATALOG = normalized
 
     def _detect_astra_version(self):
         version = ""

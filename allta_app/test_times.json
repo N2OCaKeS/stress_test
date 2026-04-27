@@ -54,6 +54,7 @@
         "stand12": {
             "syslog-ng": "2:44:29",
             "apache-rp": "0:38:45",
+            "apache-bp": "1:38:45",
             "auditd-f": "0:44:47",
             "auditd-p": "1:28:53",
             "auditd-u": "7:52:43",
@@ -124,6 +125,7 @@
         "stand12": {
             "syslog-ng": "2:28:31",
             "apache-rp": "0:32:16",
+            "apache-bp": "1:32:16",
             "auditd-f": "0:44:02",
             "auditd-p": "2:00:36",
             "auditd-u": "15:25:00",

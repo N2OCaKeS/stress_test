@@ -112,7 +112,7 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
             'UnixBench':        ['unix', 'unix parsec'],
             'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users', "FreeIPA plugin"],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt'],
-            'Apache':           ['apache-rp'],
+            'Apache':           ['apache-rp', 'apache-bp'],
             'Docker/Podman/LXC':['docker-wa'],
             'Qemu/KVM/Libvirt': ['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong', 'FIO large'],
             'Network':          ['InitOnFree']}
@@ -194,6 +194,7 @@ branches = {
     'Parsec impact fs benchmark audit-off':'parsec',
     'DIGSIG. Check digsig time':'parsec',
     'Apache_ReverseProxy':'apache2',
+    'Apache_BenchPam':'apache2',
     'Steal time':'virt',
     'Steal time smolensk':'virt',
     'FIO benchmark':'virt',
@@ -264,6 +265,7 @@ tests = {
     'storage drive overflow':'SD-overflow',
     'ram overflow':'RAM-overflow',
     'Apache_ReverseProxy':'apache-rp',
+    'Apache_BenchPam':'apache-bp',
     'Steal time':'steal time',
     'Steal time smolensk':'steal time-sm',
     'FIO benchmark':'FIO',
@@ -308,7 +310,7 @@ group_tests = ['_stand3 group', '_stand4 group', '_stand10 group', '_stand11 gro
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache-rp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
+              'apache-rp', 'apache-bp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
               'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak']
 
@@ -402,7 +404,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
             'orel_stand12':     ['syslog-ng', 'InitOnFree', 'SegFault', 'XFS mem leak'],
-            'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'PSQL OLAP-hq'],
+            'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'PSQL OLAP-hq'],
             'orel_stand13':     ['syslog-ng-cwl'],
             'smolensk_stand13': []
         }
@@ -421,7 +423,7 @@ stands_groups = {
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
 
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
-    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'XFS mem leak'],
+    'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'XFS mem leak'],
 
     'stand13_group':['syslog-ng-cwl']
 }
@@ -456,6 +458,7 @@ tests_case_zefir_key = {
     'parsec impact-fs':'BT-T13486',
     'parsec impact-fs aud-off':'BT-T13489',
     'apache-rp':'BT-T13621',
+    'apache-bp':'BT-T19797',
     'steal time':'BT-T13735',
     'EXT2':'BT-T7560',
     'EXT3':'BT-T7561',
@@ -504,7 +507,7 @@ testname_columns = {
                     'tantor benchmark kernels':'Tantor_kernels', 'linux_system_benchmark. UnixBench parsec':'UnixBench_parsec',
                     'postgresql benchmark balance':'PSQL_balance', 'freeipa authentication test':'FreeIPA_auth',
                     'Parsec impact fs benchmark':'Parsec_impact-fs', 'Parsec impact fs benchmark audit-off':'Parsec_imp-fs_aud-off',
-                    'Apache_ReverseProxy':'Apache_RP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
+                    'Apache_ReverseProxy':'Apache_RP', 'Apache_BenchPam':'Apache_BP', 'Steal time':'Steal_time', 'file system benchmark. EXFAT':'FS_EXFAT',
                     'FIO benchmark':'FIO', 'Virt UnixBench':'vUnixBench', 'vPingPong':'vPingPong', 'Steal time smolensk':'Steal_time-sm',
                     'postgresql benchmark oom':'PSQL_OOM', 'syslog-ng benchmark check-write-log':'Syslog-NG-cwl',
                     'DIGSIG. Check digsig time':'DIGSIG-cdt', 'docker web-application':'Docker-WA', 'ceph benchmark':'FS_CEPH',

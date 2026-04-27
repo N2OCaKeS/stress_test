@@ -114,7 +114,7 @@ if args.TESTNAME == 'apache_pam':
     abp.prepare_vms()
     abp.create_test_env()
     abp.start_test()
-    abp.vms_destroy()
+    # abp.vms_destroy()
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())

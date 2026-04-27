@@ -3,9 +3,10 @@ import argparse
 from datetime import datetime
 
 from libs.zefir import UploaderZC
-from libs.libapa import get_duration
+from libs.libapa import get_duration, info_list
 from libs.libtests import ApacheBenchPam
 from libs.libpublic_new import apache2_publisher
+from apache_tests import ApacheBenchReverseProxy
 from apa_conf import ABP_RAM, ABP_VCPU, ABP_VM_COUNT, SCRIPT_DIR
 
 
@@ -128,3 +129,13 @@ if args.TESTNAME == 'apache_pam':
 
     uzs.upload_test_cycle_status(zefir_status='pass')
 
+elif args.TESTNAME == 'rp':
+
+    test = ApacheBenchReverseProxy()
+    test.run()
+    info_list()
+
+    uzs.public = True
+    #uzs.statistics = True
+
+    uzs.upload_test_cycle_status(zefir_status='pass')

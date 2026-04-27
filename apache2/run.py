@@ -22,4 +22,4 @@ with open(f'/home/u/{args.NAME}', 'r') as r:
         dates = r.read()
 
 
-subprocess.run(f'sudo {VENV_PATH} apacherp_run.py {dates}', shell=True)
+subprocess.run(f'sudo {VENV_PATH} apache_run.py {dates}', shell=True)

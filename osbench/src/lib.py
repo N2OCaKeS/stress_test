@@ -6,7 +6,7 @@ from typing import Union, Tuple
 from functools import wraps
 from os import linesep
 
-from src.logger import log
+from logger import log
 
 
 

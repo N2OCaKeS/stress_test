@@ -2,7 +2,7 @@
 from os import chdir
 
 from lib import Test, system, status_check
-from src.logger import log
+from logger import log
 from config.conf import (
     LOW_CONC,
     HIGH_CONC,
@@ -32,15 +32,21 @@ class UnixBench(Test):
         run_cmd_args = ' '.join(f"-c {c}" for c in concurrency)
 
         chdir(ub_dir)
+        system.command("sudo chmod +x Run")
         result, code = system.command(f"./Run {run_cmd_args}")
 
         if code:
+            log.info(result)
             log.info("UnixBench: - тестирование завершено успешно")
             return result, True
         else:
+            log.error(result)
             log.error("UnixBench: - тестирование провалено")
             return result, False
 
+
+    def get_results(self):
+        pass
         
 
         

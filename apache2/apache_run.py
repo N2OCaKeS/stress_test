@@ -114,7 +114,7 @@ if args.TESTNAME == 'apache_pam':
     abp.prepare_vms()
     abp.create_test_env()
     abp.start_test()
-    abp.preprocessing_results()
+    total_rating = abp.preprocessing_results()
     abp.vms_destroy()
 
 
@@ -125,6 +125,7 @@ if args.TESTNAME == 'apache_pam':
                                   parent_title=args.PPAGE, 
                                   title=args.NPAGE, 
                                   stand_number=args.STAND, 
+                                  total_rating=total_rating,
                                   lead_time=lead_time, 
                                   test_cycle_version=args.TCV)
 

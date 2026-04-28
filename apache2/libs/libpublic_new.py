@@ -11,6 +11,7 @@ def apache2_publisher(
         parent_title,
         title,
         stand_number,
+        total_rating,
         lead_time="",
         test_cycle_version: str | None = None,
 ):
@@ -60,6 +61,8 @@ def apache2_publisher(
     ]
 
     builder.add_header_table(rows=header_table)
+    builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
+    
     builder.add_heading(text="Описание", level=2)
     builder.add_paragraph(
         text="Нагрузочное тестирование веб сервера Apache2 с PAM-аутентификацией \

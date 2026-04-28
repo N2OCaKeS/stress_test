@@ -83,8 +83,7 @@ def apache2_publisher(
         "rows": df_rps_reset.values.tolist()
     }
 
-    df_waiting_reset = df_waiting.reset_index()
-    df_waiting_reset['concurrency_level'] = df_waiting_reset['concurrency_level'].astype('Int64')
+    df_waiting_reset = df_waiting.reset_index().astype('Int64')
     dict_waiting = {
         "title": "Waiting (ms)",
         "headers": df_waiting_reset.columns.tolist(),

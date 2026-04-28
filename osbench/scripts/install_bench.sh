@@ -27,20 +27,24 @@ install_perf() {
 }
 
 build_lmbench() { 
-    cd benchmarks/LMbench/lmbench || { echo "❌ Папка не найдена"; exit 1; }
+    pushd benchmarks/LMbench/lmbench || { echo "❌ Папка не найдена"; exit 1; }
+    chmod -R +x scripts/ 2>/dev/null || true
     make -j"$(nproc)" || { echo "❌ Ошибка сборки LMbench"; exit 1; }
+    popd
     echo "LMBench собран."
 }
 
 build_unixbench() {
-    cd benchmarks/UnixBench/byte-unixbench/UnixBench || { echo "❌ Папка не найдена"; exit 1; }
+    pushd benchmarks/UnixBench/byte-unixbench/UnixBench || { echo "❌ Папка не найдена"; exit 1; }
     make -j"$(nproc)" || { echo "❌ Ошибка сборки UnixBench"; exit 1; }
+    popd
     echo "UnixBench собран."
 }
 
 build_fsmark() {
-    cd benchmarks/fs_mark || { echo "❌ Папка не найдена"; exit 1; }
+    pushd benchmarks/fs_mark || { echo "❌ Папка не найдена"; exit 1; }
     make -j"$(nproc)" || { echo "❌ Ошибка сборки FS_Mark"; exit 1; }
+    popd
     echo "FS_Mark собран."
 }
 

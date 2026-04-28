@@ -1,7 +1,10 @@
 
+import subprocess
+
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Union, Tuple
 from functools import wraps
+from os import linesep
 
 from src.logger import log
 
@@ -13,19 +16,19 @@ class Test(ABC):
     Абстрактный конвейер
     """
 
-@abstractmethod
-def start_test(cls) -> Union[str, None]:
-    """Запуск серии тестов с использованием бенчмарка 'X'"""
-    pass
-    
-@abstractmethod
-def get_results(cls) -> Union[str, None]:
-    """Сбор результатов тестирования"""
-    pass
+    @abstractmethod
+    def start_test(cls) -> Union[str, None]:
+        """Запуск серии тестов с использованием бенчмарка 'X'"""
+        pass
+        
+    @abstractmethod
+    def get_results(cls) -> Union[str, None]:
+        """Сбор результатов тестирования"""
+        pass
 
 
 
-def status_checker(method):
+def status_check(method):
 
     """
     Декоратор, который выводит сообщение с статусом, 
@@ -54,3 +57,30 @@ def status_checker(method):
             exit(1)
     return wrapper
 
+
+
+class system:
+    
+    """
+    Обращение к системе
+    """
+
+    @staticmethod
+    def command(command: str, returncode=None) -> Tuple[str, bool]:
+        result = subprocess.Popen([command], shell=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, universal_newlines=True, text=True)
+        result.wait()
+        output, errors = result.communicate()
+        output = linesep.join([s for s in output.splitlines() if s])
+        errors = linesep.join([s for s in errors.splitlines() if s])
+        code = result.returncode == 0
+        if returncode:
+            if not errors:
+               return output, code
+            else:
+               return errors, code
+        else:
+            if not errors:
+                 return output, True
+            else:
+                 return errors, False

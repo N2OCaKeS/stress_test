@@ -53,7 +53,7 @@ class OSBLogger:
         self.logger.handlers.clear()
         
         formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+            '%(asctime)s - %(levelname)s: - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         

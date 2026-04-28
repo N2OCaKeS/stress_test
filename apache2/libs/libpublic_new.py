@@ -76,6 +76,7 @@ def apache2_publisher(
     
     df_rps, df_waiting = build_tables_separately_for_each_metric()
     df_rps_reset = df_rps.reset_index()
+    df_rps_reset['concurrency_level'] = df_rps_reset['concurrency_level'].astype('Int64')
     dict_rps = {
         "title": "RPS",
         "headers": df_rps_reset.columns.tolist(),
@@ -83,14 +84,15 @@ def apache2_publisher(
     }
 
     df_waiting_reset = df_waiting.reset_index()
+    df_waiting_reset['concurrency_level'] = df_waiting_reset['concurrency_level'].astype('Int64')
     dict_waiting = {
-        "title": "Waiting",
+        "title": "Waiting (ms)",
         "headers": df_waiting_reset.columns.tolist(),
         "rows": df_waiting_reset.values.tolist()
     }
 
-    builder.add_table(**dict_rps)
-    builder.add_table(**dict_waiting)
+    builder.add_table(dict_rps)
+    builder.add_table(dict_waiting)
 
     publish_result = reporter.publish_results_from_params(
         conf_space=space,

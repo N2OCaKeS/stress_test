@@ -1,5 +1,5 @@
 
-from os import chdir
+from os import chdir, environ
 
 from lib import Test, system, status_check
 from osb_logger import log
@@ -22,11 +22,15 @@ class UnixBench(Test):
         self.high_concurrency = high_concurrency
         self.step = step
 
-
+        
     @status_check  
     def start_test(self):
 
         log.info("Запуск UnixBench")
+        
+        environ['LANG'] = 'en_US.UTF-8'
+        environ['LC_ALL'] = 'en_US.UTF-8'
+        
         ub_dir = f"{MAIN_DIR}/benchmarks/UnixBench/byte-unixbench/UnixBench/"
         concurrency = [self.low_concurrency] + list(range(self.step, self.high_concurrency, self.step))
         run_cmd_args = ' '.join(f"-c {c}" for c in concurrency)

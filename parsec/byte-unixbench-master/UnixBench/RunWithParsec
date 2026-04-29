@@ -1,0 +1,19 @@
+#!/usr/bin/bash
+
+# Preparing test enuvironment
+$(dirname "$0")/parsec/prepare
+
+# Read configuration
+for v in `cat $(dirname "$0")/parsec/config`; do
+  export $v
+done
+
+# Run tests with additional parameter
+saved_dir=`pwd`
+cd $(dirname "$0") 
+sudo ./Run $* -M "$parsec_workdir"
+cd $saved_dir
+
+# Cleanup test environment
+#$(dirname "$0")/parsec/cleanup
+

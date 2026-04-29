@@ -18,7 +18,7 @@ DETAILDF_NAME = f'{TEMPLATE_PATH}/sl_detaildf.html'
 
 INFO_FILENAME = 'sl_info.txt'
 
-UB_PATH = '/home/u/git/stress_test/linux_system/byte-unixbench-master/UnixBench'
+UB_PATH = '/home/u/git/stress_test/parsec/byte-unixbench-master/UnixBench'
 UB_CONCURRENCY = 4
 
 PERF_FREQ = 99

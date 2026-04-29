@@ -32,8 +32,8 @@ class UnixBench(Test):
         run_cmd_args = ' '.join(f"-c {c}" for c in concurrency)
 
         chdir(ub_dir)
-        system.command("sudo chmod +x Run")
-        result, code = system.command(f"./Run {run_cmd_args}")
+        system.leave_command("sudo chmod +x Run")
+        result, code = system.leave_command(f"./Run {run_cmd_args}")
 
         if code:
             log.info(result)

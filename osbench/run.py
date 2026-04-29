@@ -1,22 +1,30 @@
 #!/bin/python3
 
-import subprocess
 import argparse
 
 from os import path
 
+from src.lib import system
 from config.conf import VENV_PATH
 from src.logger import log
+
 
 log.setup(
     name="OSBench",
     log_file=f"{path.dirname(path.abspath(__file__))}/logs/osbench.log",
     log_level="DEBUG",
-    console=True
+    console=True,
+    colored_console=True
 )
+
 
 parser = argparse.ArgumentParser()
 group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument('-tc', '--test-colors', 
+                   action='store_true', 
+                   help='check colors',
+                   dest='COLORS')
+
 group.add_argument('-p', '--prepare',
                     action='store_true',
                     required=False,
@@ -30,13 +38,19 @@ group.add_argument('-r', '--run',
                     dest='RUN')
 args = parser.parse_args()
 
+if args.COLORS:
+    log.debug("Отладка - голубой")
+    log.info("Информация - зелёный")
+    log.warning("Предупреждение - жёлтый")
+    log.error("Ошибка - красный")
+    log.critical("Критическая ошибка - ярко-красный")
 
 if args.PREP:
     log.info("Настройка окружения\n")
-    subprocess.run(f'sudo bash scripts/prepare.sh', shell=True, check=True)
+    system.leave_command(f'sudo bash scripts/prepare.sh')
     log.info("\nНастройка бенчмарков\n")
-    subprocess.run(f'sudo bash scripts/install_bench.sh', shell=True)
+    system.leave_command(f'sudo bash scripts/install_bench.sh')
 elif args.RUN:
     log.info("\nНачало тестирования\n")
-    subprocess.run(f'sudo {VENV_PATH} src/osbench.py', shell=True)
+    system.leave_command(f'sudo {VENV_PATH} src/osbench.py')
 

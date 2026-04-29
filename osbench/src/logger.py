@@ -5,10 +5,60 @@ from pathlib import Path
 from typing import Optional
 
 
+
+class Colors:
+    RESET = '\033[0m'
+    # Основные цвета
+    BLACK = '\033[30m'
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
+    # Жирные варианты
+    BOLD_RED = '\033[1;31m'
+    BOLD_YELLOW = '\033[1;33m'
+    BOLD_GREEN = '\033[1;32m'
+    BOLD_CYAN = '\033[1;36m'
+
+
+class ColoredFormatter(logging.Formatter):
+    """
+    Форматтер с цветовой подсветкой уровня логирования
+    """
+    LEVEL_COLORS = {
+        logging.DEBUG: Colors.CYAN,
+        logging.INFO: Colors.GREEN,
+        logging.WARNING: Colors.YELLOW,
+        logging.ERROR: Colors.RED,
+        logging.CRITICAL: Colors.BOLD_RED,
+    }
+    
+    def format(self, record):
+        # Сохраняем оригинальный levelname
+        original_levelname = record.levelname
+        
+        # Добавляем цвет для levelname
+        color = self.LEVEL_COLORS.get(record.levelno, Colors.RESET)
+        record.levelname = f"{color}{original_levelname}{Colors.RESET}"
+        
+        # Форматируем сообщение
+        result = super().format(record)
+        
+        # Восстанавливаем оригинальный levelname
+        record.levelname = original_levelname
+        
+        return result
+
+
+
 class OSBLogger:
     
     """
-    Простой логгер для всего приложения
+    Основной логгер для всего приложения с функцией 
+    параллельного вывода в терминал. 
     """
     
     _instance = None
@@ -32,7 +82,8 @@ class OSBLogger:
         name: str = "OSBench",
         log_file: Optional[str] = None,
         log_level: str = "INFO",
-        console: bool = True
+        console: bool = True,
+        colored_console: bool = True
     ):
         
         """
@@ -43,6 +94,7 @@ class OSBLogger:
             log_file: Путь к файлу лога (если не нужен, оставить None)
             log_level: DEBUG, INFO, WARNING, ERROR
             console: Выводить ли в консоль
+            colored_console: Добавить цвета
         """
 
         if self._setup:
@@ -52,15 +104,28 @@ class OSBLogger:
         self.logger.setLevel(getattr(logging, log_level.upper()))
         self.logger.handlers.clear()
         
-        formatter = logging.Formatter(
+        # Форматтер для файла (без цветов)
+        file_formatter = logging.Formatter(
             '%(asctime)s - %(levelname)s: - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
+        # Форматтер для консоли (с цветами или без)
+        if colored_console:
+            console_formatter = ColoredFormatter(
+                '%(asctime)s - %(levelname)s: - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+        else:
+            console_formatter = logging.Formatter(
+                '%(asctime)s - %(levelname)s: - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+        
         # Консольный вывод
         if console:
             console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setFormatter(formatter)
+            console_handler.setFormatter(console_formatter)
             self.logger.addHandler(console_handler)
         
         # Файловый вывод
@@ -68,7 +133,7 @@ class OSBLogger:
             log_path = Path(log_file)
             log_path.parent.mkdir(parents=True, exist_ok=True)
             file_handler = logging.FileHandler(log_file, encoding='utf-8')
-            file_handler.setFormatter(formatter)
+            file_handler.setFormatter(file_formatter)
             self.logger.addHandler(file_handler)
         
         self._setup = True

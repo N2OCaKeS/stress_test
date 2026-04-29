@@ -122,7 +122,7 @@ class system:
             log.warning(f"Команда прервана пользователем: {command}")
             raise
 
-        log.info(f"Команда завершена с кодом: {process.returncode}")
+        log.info(f"Команда '{command}' завершена с кодом: {process.returncode}")
 
         output = '\n'.join(output_lines)
         errors = '\n'.join(error_lines)

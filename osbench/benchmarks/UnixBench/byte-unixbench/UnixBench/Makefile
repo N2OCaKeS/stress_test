@@ -164,7 +164,6 @@ BINS = $(PROGDIR)/arithoh $(PROGDIR)/register $(PROGDIR)/short \
 # Required non-binary files.
 REQD = $(BINS) $(PROGDIR)/unixbench.logo \
 	$(PROGDIR)/multi.sh $(PROGDIR)/tst.sh $(PROGDIR)/index.base \
-	$(PROGDIR)/gfx-x11 \
 	$(TESTDIR)/sort.src $(TESTDIR)/cctest.c $(TESTDIR)/dc.dat \
 	$(TESTDIR)/large.txt
 

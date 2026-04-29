@@ -2,7 +2,6 @@
 import sys
 
 from pathlib import Path
-from src.osb_logger import log
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from unixbench import UnixBench

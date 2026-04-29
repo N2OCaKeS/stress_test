@@ -5,19 +5,8 @@ import argparse
 from os import path
 
 from src.osb_logger import log
-log.setup(
-    name="OSBench",
-    log_file=f"{path.dirname(path.abspath(__file__))}/logs/osbench.log",
-    log_level="DEBUG",
-    console=True,
-    colored_console=True
-)
-
 from src.lib import system
 from config.conf import VENV_PATH
-
-
-
 
 
 

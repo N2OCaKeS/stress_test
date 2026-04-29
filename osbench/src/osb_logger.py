@@ -3,7 +3,7 @@ import sys
 
 from pathlib import Path
 from typing import Optional
-
+from config.conf import MAIN_DIR
 
 
 class Colors:
@@ -80,8 +80,8 @@ class OSBLogger:
     def setup(
         self,
         name: str = "OSBench",
-        log_file: Optional[str] = None,
-        log_level: str = "INFO",
+        log_file: Optional[str] = f"{MAIN_DIR}/logs/osbench.log",
+        log_level: str = "DEBUG",
         console: bool = True,
         colored_console: bool = True
     ):

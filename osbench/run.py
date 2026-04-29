@@ -39,10 +39,10 @@ if args.COLORS:
 
 if args.PREP:
     log.info("Настройка окружения\n")
-    system.leave_command(f'sudo bash scripts/prepare.sh')
+    system.leave_command(f'sudo bash scripts/prepare.sh', returncode=True)
     log.info("\nНастройка бенчмарков\n")
-    system.leave_command(f'sudo bash scripts/install_bench.sh')
+    system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True)
 elif args.RUN:
     log.info("\nНачало тестирования\n")
-    system.leave_command(f'sudo {VENV_PATH} src/osbench.py')
+    system.leave_command(f'sudo {VENV_PATH} src/osbench.py', returncode=True)
 

@@ -1,12 +1,16 @@
 
 import subprocess
 import signal
+import sys
 
+from pathlib import Path
 from abc import ABC, abstractmethod
 from typing import Union, Tuple
 from functools import wraps
 from os import linesep
 
+
+sys.path.insert(0, str(Path(__file__).parent))
 from osb_logger import log
 
 

@@ -2,7 +2,7 @@
 from os import chdir
 
 from lib import Test, system, status_check
-from logger import log
+from osb_logger import log
 from config.conf import (
     LOW_CONC,
     HIGH_CONC,

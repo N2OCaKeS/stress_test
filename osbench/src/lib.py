@@ -7,7 +7,7 @@ from typing import Union, Tuple
 from functools import wraps
 from os import linesep
 
-from logger import log
+from osb_logger import log
 
 
 
@@ -117,7 +117,7 @@ class system:
             process.wait()
             log.warning(f"Команда прервана пользователем: {command}")
             raise
-        
+
         log.info(f"Команда завершена с кодом: {process.returncode}")
 
         output = '\n'.join(output_lines)

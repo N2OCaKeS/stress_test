@@ -6,7 +6,7 @@ from os import path
 
 from src.lib import system
 from config.conf import VENV_PATH
-from src.logger import log
+from src.osb_logger import log
 
 
 log.setup(

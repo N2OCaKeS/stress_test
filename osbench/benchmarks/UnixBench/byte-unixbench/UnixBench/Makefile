@@ -142,14 +142,14 @@ SOURCES = arith.c big.c context1.c \
 	fstime.c hanoi.c \
 	pipe.c spawn.c \
 	syscall.c looper.c timeit.c time-polling.c \
-	dhry_1.c dhry_2.c dhry.h whets.c ubgears.c
+	dhry_1.c dhry_2.c dhry.h whets.c
 TESTS = sort.src cctest.c dc.dat large.txt
 
-ifneq (,$(GRAPHIC_TESTS))
-GRAPHIC_BINS = $(PROGDIR)/ubgears
-else
-GRAPHIC_BINS =
-endif
+#ifneq (,$(GRAPHIC_TESTS))
+#GRAPHIC_BINS = $(PROGDIR)/ubgears
+#else
+#GRAPHIC_BINS =
+#endif
 
 # Program binaries.
 BINS = $(PROGDIR)/arithoh $(PROGDIR)/register $(PROGDIR)/short \
@@ -279,8 +279,8 @@ $(PROGDIR)/context1: $(SRCDIR)/context1.c $(SRCDIR)/timeit.c
 
 $(PROGDIR)/looper: $(SRCDIR)/looper.c $(SRCDIR)/timeit.c
 
-$(PROGDIR)/ubgears: $(SRCDIR)/ubgears.c
-$(PROGDIR)/ubgears: LDFLAGS += -lm $(GL_LIBS)
+#$(PROGDIR)/ubgears: $(SRCDIR)/ubgears.c
+#$(PROGDIR)/ubgears: LDFLAGS += -lm $(GL_LIBS)
 
 $(PROGDIR)/dhry2: CFLAGS += -DHZ=${HZ}
 $(PROGDIR)/dhry2: $(SRCDIR)/dhry_1.c $(SRCDIR)/dhry_2.c \

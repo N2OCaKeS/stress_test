@@ -36,6 +36,8 @@ build_lmbench() {
 
 build_unixbench() {
     pushd benchmarks/UnixBench/byte-unixbench/UnixBench || { echo "❌ Папка не найдена"; exit 1; }
+    chmod +x pgms/*.sh
+    chmod +x Run
     make -j"$(nproc)" || { echo "❌ Ошибка сборки UnixBench"; exit 1; }
     popd
     echo "UnixBench собран."

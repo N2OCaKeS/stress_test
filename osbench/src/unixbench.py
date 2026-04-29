@@ -49,6 +49,8 @@ class UnixBench(Test):
         result, code = system.leave_command(f"./Run {run_cmd_args}")
         clean_result = _clean_output(result)
 
+        log.debug(f"code = {code}, type = {type(code)}")
+
         if code:
             log.info(clean_result)
             log.info("UnixBench: - тестирование завершено успешно")

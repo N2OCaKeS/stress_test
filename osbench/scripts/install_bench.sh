@@ -38,8 +38,6 @@ build_unixbench() {
     pushd benchmarks/UnixBench/byte-unixbench/UnixBench || { echo "❌ Папка не найдена"; exit 1; }
     chmod +x pgms/*.sh
     chmod +x Run
-    sudo locale-gen en_US.UTF-8
-    sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     make -j"$(nproc)" || { echo "❌ Ошибка сборки UnixBench"; exit 1; }
     popd
     echo "UnixBench собран."

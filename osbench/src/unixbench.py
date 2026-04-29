@@ -47,13 +47,14 @@ class UnixBench(Test):
         chdir(ub_dir)
         system.leave_command("sudo chmod +x Run")
         result, code = system.leave_command(f"./Run {run_cmd_args}")
+        clean_result = _clean_output(result)
 
         if code:
-            log.info(_clean_output(result))
+            log.info(clean_result)
             log.info("UnixBench: - тестирование завершено успешно")
             return result, True
         else:
-            log.error(_clean_output(result))
+            log.error(clean_result)
             log.error("UnixBench: - тестирование провалено")
             return result, False
 

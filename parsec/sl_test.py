@@ -20,7 +20,7 @@ class SpinlockImpactTest:
         output = check_output_command(
             f"grep -E '{SPINLOCK_PATTERN}' /proc/kallsyms | awk '{{print $3}}' | sort -u"
         )
-        return [f for f in output.split('\n') if f]
+        return [f for f in output.split('\n') if f and not f.startswith('__ksymtab_')]
 
     def filter_by_spinlock_function(self):
         with open('./libs/out_rare.perf', 'r') as r:

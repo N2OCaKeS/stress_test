@@ -31,6 +31,47 @@ def _to_response(user, dept_name: str | None) -> UserResponse:
     )
 
 
+async def list_users(
+    db: AsyncSession,
+    actor_id: str,
+    request_id: str | None = None,
+) -> list[UserResponse]:
+    user_repo = UserRepository(db)
+    dept_repo = DepartmentRepository(db)
+    users = await user_repo.list_all()
+    dept_names = {d.id: d.display_name for d in await dept_repo.list_all()}
+    audit_service.emit("user.list", actor_id, status="success", request_id=request_id)
+    return [_to_response(u, dept_names.get(u.department_id)) for u in users]
+
+
+async def list_users_by_department(
+    db: AsyncSession,
+    actor_id: str,
+    actor_role: str | None,
+    department_id: str,
+    request_id: str | None = None,
+) -> list[UserResponse]:
+    user_repo = UserRepository(db)
+    dept_repo = DepartmentRepository(db)
+
+    dept = await dept_repo.get_by_id(department_id)
+    if dept is None:
+        raise NotFoundError(error_code="DEPARTMENT_NOT_FOUND", message=f"Department '{department_id}' not found")
+
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        actor = await user_repo.get_by_id(actor_id)
+        if actor and actor.department_id != department_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_ACCESS_DENIED",
+                message="department_admin can only view users in their own department",
+            )
+
+    users = await user_repo.list_by_department(department_id)
+    audit_service.emit("user.list", actor_id, status="success",
+                       details={"department_id": department_id}, request_id=request_id)
+    return [_to_response(u, dept.display_name) for u in users]
+
+
 async def create_user(
     db: AsyncSession,
     actor_id: str,
@@ -52,7 +93,8 @@ async def create_user(
             raise AuthorizationError(error_code="DEPARTMENT_ACCESS_DENIED", message="department_admin can only create users in their own department")
 
     from src.core.constants import PlatformRole as PR
-    if platform_role != PR.ACCOUNT_ADMIN and not department_id:
+    _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN}
+    if platform_role not in _platform_admins and not department_id:
         raise DomainValidationError(error_code="MISSING_REQUIRED_FIELD", message="department_id is required for non-admin users")
 
     dept = await dept_repo.get_by_id(department_id) if department_id else None
@@ -117,6 +159,8 @@ async def update_user(
 
     allowed_fields = {"email", "department_id", "status", "platform_role"}
     filtered = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        filtered.pop("platform_role", None)
     await user_repo.update(user, **filtered)
     await db.commit()
 

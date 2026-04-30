@@ -37,8 +37,9 @@ def create_access_token(payload: dict, expires_delta: timedelta | None = None) -
 
     import time
     data = payload.copy()
-    data["exp"] = int(time.time()) + int(expires_delta.total_seconds())
-    data["iat"] = int(time.time())
+    now = int(time.time())
+    data["iat"] = now
+    data["exp"] = now + int(expires_delta.total_seconds())
     return jwt.encode(data, settings.secret_key, algorithm=_ALGORITHM)
 
 

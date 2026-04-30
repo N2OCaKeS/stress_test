@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
@@ -15,6 +16,7 @@ from src.core.exceptions import AppException
 from src.core.logging import configure_logging
 from src.dependencies.db import get_db
 from src.services import audit_service
+from src.services.audit_events import register_events
 from src.services.bootstrap_service import bootstrap_admin
 
 _HEALTH_PATHS = {"/api/auth/v1/health", "/api/auth/v1/ready"}
@@ -24,14 +26,24 @@ def create_application() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.app_log_level)
 
+    _is_prod = settings.app_env == "production"
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        async for db in get_db():
+            await bootstrap_admin(db)
+        asyncio.ensure_future(asyncio.to_thread(_startup_sequence))
+        yield
+
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url=None if _is_prod else "/docs",
+        redoc_url=None if _is_prod else "/redoc",
+        openapi_url=None if _is_prod else "/openapi.json",
         debug=settings.app_debug,
         swagger_ui_parameters={"persistAuthorization": True},
+        lifespan=lifespan,
     )
 
     @app.middleware("http")
@@ -62,15 +74,18 @@ def create_application() -> FastAPI:
         else:
             action, emit_status = "http.server_error", "failure"
 
+        actor_id, username = _extract_actor_info(request)
+
         asyncio.ensure_future(
             asyncio.to_thread(
                 audit_service.emit,
                 action,
-                None,
+                actor_id,
                 status=emit_status,
                 allowed=False,
                 details=details,
                 request_id=request_id,
+                username=username,
             )
         )
         return response
@@ -102,11 +117,6 @@ def create_application() -> FastAPI:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
-
-    @app.on_event("startup")
-    async def on_startup() -> None:
-        async for db in get_db():
-            await bootstrap_admin(db)
 
     app.include_router(api_router, prefix="/api")
 
@@ -142,6 +152,29 @@ def create_application() -> FastAPI:
 
     app.openapi = custom_openapi  # type: ignore[method-assign]
     return app
+
+
+def _startup_sequence() -> None:
+    """Run in a background thread after startup: register events, then emit service.started."""
+    register_events()
+    audit_service.emit("service.started", None, actor_type="service")
+
+
+def _extract_actor_info(request: Request) -> tuple[str | None, str | None]:
+    """Декодирует JWT для получения user_id + username (только для аудита).
+
+    Возвращает (actor_id, username). Ошибки игнорируются → (None, None).
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None, None
+    token = auth[7:]
+    try:
+        from src.core.security import decode_access_token
+        payload = decode_access_token(token)
+        return payload.get("sub"), payload.get("username")
+    except Exception:
+        return None, None
 
 
 def _http_status_to_category(status: int) -> str:

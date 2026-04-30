@@ -10,7 +10,7 @@
 #   make test-ci       # what CI runs: all tests, exit on first failure
 #   make test-down     # stop and remove test containers + volumes
 
-COMPOSE = docker compose -f docker-compose.test.yml
+COMPOSE = docker compose -f tests/docker-compose.test.yml
 RUNNER  = $(COMPOSE) run --rm test-runner
 
 .PHONY: test test-e2e test-all test-ci test-down test-build test-logs

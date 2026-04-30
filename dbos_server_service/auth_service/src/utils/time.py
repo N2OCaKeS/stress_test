@@ -12,4 +12,5 @@ def expires_at(*, minutes: int = 0, days: int = 0) -> datetime:
 
 
 def is_expired(dt: datetime) -> bool:
-    return dt.replace(tzinfo=timezone.utc) < utcnow()
+    aware = dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    return aware < utcnow()

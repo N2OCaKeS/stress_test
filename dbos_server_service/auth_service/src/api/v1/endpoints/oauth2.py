@@ -1,5 +1,7 @@
 """OAuth2 client management and token/authorize endpoints."""
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,7 +97,7 @@ async def authorize(
     )
     location = f"{redirect_uri}?code={code}"
     if state:
-        location += f"&state={state}"
+        location += f"&state={quote(state, safe='')}"
     return RedirectResponse(url=location, status_code=302)
 
 

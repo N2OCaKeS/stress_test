@@ -12,7 +12,7 @@ class InitialRoleAssignment(BaseModel):
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=128)
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=4)
     email: EmailStr | None = None
     # account_admin users have no department; required for all other roles
     department_id: str | None = None
@@ -48,6 +48,10 @@ class AssignRolesRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
+
+
+class AddUserToGroupRequest(BaseModel):
+    group_id: str
 
 
 class BanRequest(BaseModel):

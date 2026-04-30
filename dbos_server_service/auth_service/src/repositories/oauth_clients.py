@@ -68,6 +68,12 @@ class OAuthClientRepository:
         await self._db.flush()
         return client
 
+    async def list_all(self) -> list[OAuthClient]:
+        result = await self._db.scalars(
+            select(OAuthClient).where(OAuthClient.is_active.is_(True))
+        )
+        return list(result)
+
     async def deactivate(self, client: OAuthClient) -> None:
         client.is_active = False
         await self._db.flush()

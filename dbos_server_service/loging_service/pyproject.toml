@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "logging-service"
+version = "0.1.0"
+description = "DBOS centralised audit and logging service"
+authors = []
+readme = "README.md"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "0.115.12"
+uvicorn = { version = "0.34.0", extras = ["standard"] }
+sqlalchemy = "2.0.40"
+psycopg = { version = "3.2.6", extras = ["binary"] }
+pydantic = "2.11.3"
+pydantic-settings = "2.8.1"
+alembic = "1.15.2"
+python-multipart = ">=0.0.9"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "9.0.3"
+httpx = "0.28.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short -q"
+markers = [
+    "integration: tests that require a running PostgreSQL database",
+]

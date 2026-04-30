@@ -1,5 +1,6 @@
 """OAuth2 client management and token flow workflows."""
 
+import hmac
 import secrets
 from datetime import timedelta
 
@@ -106,7 +107,7 @@ async def list_clients(
     elif department_id:
         clients = await client_repo.list_by_department(department_id)
     else:
-        clients = await client_repo.list_by_department(department_id) if department_id else []
+        clients = await client_repo.list_all()
 
     audit_service.emit("oauth_client.list", actor_id, status="success", allowed=True, request_id=request_id)
     return [_to_response(c) for c in clients]
@@ -205,7 +206,7 @@ async def exchange_code(
     if client is None or not client.is_active:
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
 
-    if hash_opaque_token(client_secret) != client.client_secret_hash:
+    if not hmac.compare_digest(hash_opaque_token(client_secret), client.client_secret_hash):
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
 
     code_hash = hash_opaque_token(code)
@@ -277,7 +278,7 @@ async def client_credentials_token(
     if client is None or not client.is_active:
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
 
-    if hash_opaque_token(client_secret) != client.client_secret_hash:
+    if not hmac.compare_digest(hash_opaque_token(client_secret), client.client_secret_hash):
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
 
     if "client_credentials" not in client.grant_types:

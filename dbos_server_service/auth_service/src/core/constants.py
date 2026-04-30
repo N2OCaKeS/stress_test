@@ -13,6 +13,8 @@ class PlatformRole(StrEnum):
     """Auth-level roles managed exclusively by auth_service."""
     ACCOUNT_ADMIN = "account_admin"
     DEPARTMENT_ADMIN = "department_admin"
+    LOGING_ADMIN = "loging_admin"
+    LOGING_READER = "loging_reader"
 
 
 class ServiceRole(StrEnum):

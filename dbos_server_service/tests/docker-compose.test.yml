@@ -1,0 +1,107 @@
+version: "3.9"
+
+# Cross-service integration test stack.
+# Runs auth_service + logging_service together to verify end-to-end audit flow.
+#
+# Usage:
+#   docker compose -f tests/docker-compose.test.yml run --rm test-runner   # run all integration tests
+#   docker compose -f tests/docker-compose.test.yml down -v                 # cleanup
+
+services:
+
+  # ── Databases ─────────────────────────────────────────────────────────────
+
+  auth-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: auth_db_test
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d auth_db_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  logging-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: logging_db_test
+      POSTGRES_USER: logging_user
+      POSTGRES_PASSWORD: logging_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logging_user -d logging_db_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  # ── loging_service ────────────────────────────────────────────────────────
+
+  logging-service:
+    build:
+      context: ../loging_service
+      dockerfile: docker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://logging_user:logging_password@logging-postgres:5432/logging_db_test
+      SERVICE_API_KEY: test-logging-api-key
+      APP_LOG_LEVEL: WARNING
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8001"
+    depends_on:
+      logging-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/api/logging/v1/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # ── auth_service ──────────────────────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: ../auth_service
+      dockerfile: docker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@auth-postgres:5432/auth_db_test
+      SECRET_KEY: test-secret-key-for-integration-must-be-32-chars!
+      ACCESS_TOKEN_TTL_MINUTES: "10"
+      REFRESH_TOKEN_TTL_DAYS: "14"
+      LOGGING_SERVICE_URL: http://logging-service:8001
+      LOGGING_SERVICE_API_KEY: test-logging-api-key
+      E2E_ADMIN_USERNAME: e2e_admin
+      E2E_ADMIN_PASSWORD: E2eAdmin1234!
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             python src/scripts/seed_e2e.py &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      logging-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/auth/v1/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # ── Test runner ───────────────────────────────────────────────────────────
+
+  test-runner:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8000
+      LOGGING_SERVICE_URL: http://logging-service:8001
+      LOGGING_SERVICE_API_KEY: test-logging-api-key
+      E2E_ADMIN_USERNAME: e2e_admin
+      E2E_ADMIN_PASSWORD: E2eAdmin1234!
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      logging-service:
+        condition: service_healthy
+    command: ["pytest", "tests/", "-v", "--tb=short"]

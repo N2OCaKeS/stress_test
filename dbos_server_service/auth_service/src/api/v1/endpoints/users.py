@@ -7,10 +7,39 @@ from src.dependencies.auth import AccountAdmin, AnyAdmin, CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.groups import UserGroupsResponse
-from src.schemas.users import AssignRolesRequest, BanRequest, ResetPasswordRequest, UserCreate, UserResponse, UserUpdate
+from src.schemas.users import AddUserToGroupRequest, AssignRolesRequest, BanRequest, ResetPasswordRequest, UserCreate, UserResponse, UserUpdate
 from src.services import group_service, user_service
 
 router = APIRouter(prefix="/users")
+
+
+@router.get("", response_model=list[UserResponse])
+async def list_users(
+    request: Request,
+    identity: AccountAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> list[UserResponse]:
+    return await user_service.list_users(
+        db=db,
+        actor_id=identity.user_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
+@router.get("/department/{department_id}", response_model=list[UserResponse])
+async def list_users_by_department(
+    department_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> list[UserResponse]:
+    return await user_service.list_users_by_department(
+        db=db,
+        actor_id=identity.user_id,
+        actor_role=identity.platform_role,
+        department_id=department_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
 
 
 @router.post("", response_model=UserResponse, status_code=201)
@@ -128,7 +157,7 @@ async def list_user_groups(
 @router.post("/{user_id}/groups", response_model=OkResponse, status_code=201)
 async def add_user_to_group(
     user_id: str,
-    body: dict,
+    body: AddUserToGroupRequest,
     request: Request,
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
@@ -136,7 +165,7 @@ async def add_user_to_group(
     await group_service.add_member(
         db=db,
         identity=identity,
-        group_id=body["group_id"],
+        group_id=body.group_id,
         user_id=user_id,
         request_id=getattr(request.state, "request_id", None),
     )

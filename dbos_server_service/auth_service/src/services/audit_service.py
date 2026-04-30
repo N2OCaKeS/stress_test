@@ -1,5 +1,6 @@
 """Audit event publishing to logging_service."""
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -8,6 +9,19 @@ import httpx
 from src.core.config import get_settings
 
 logger = logging.getLogger("audit")
+
+
+async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> None:
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        try:
+            await client.post(
+                f"{url}/api/logging/v1/events",
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        except Exception as exc:
+            logger.warning("audit_service: failed to send event: %s", exc)
+            logger.info("audit_event_fallback %s", payload)
 
 
 def emit(
@@ -22,6 +36,7 @@ def emit(
     details: dict | None = None,
     request_id: str | None = None,
     department_id: str | None = None,
+    username: str | None = None,
 ) -> None:
     settings = get_settings()
     payload = {
@@ -30,6 +45,7 @@ def emit(
         "action": action,
         "actor_id": actor_id,
         "actor_type": actor_type,
+        "username": username,
         "department_id": department_id,
         "target_id": target_id,
         "target_type": target_type,
@@ -44,14 +60,19 @@ def emit(
 
     if logging_url and api_key:
         try:
-            httpx.post(
-                f"{logging_url}/api/logging/v1/events",
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=2.0,
-            )
-        except Exception as exc:
-            logger.warning("audit_service: failed to send event to logging_service: %s", exc)
-            logger.info("audit_event_fallback %s", payload)
+            loop = asyncio.get_running_loop()
+            loop.create_task(_send_to_logging_service(payload, logging_url, api_key))
+        except RuntimeError:
+            # Called from a sync context (e.g. asyncio.to_thread in middleware)
+            try:
+                httpx.post(
+                    f"{logging_url}/api/logging/v1/events",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=2.0,
+                )
+            except Exception as exc:
+                logger.warning("audit_service: failed to send event: %s", exc)
+                logger.info("audit_event_fallback %s", payload)
     else:
         logger.info("audit_event %s", payload)

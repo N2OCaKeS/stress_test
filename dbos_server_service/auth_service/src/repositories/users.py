@@ -20,8 +20,14 @@ class UserRepository:
     async def get_by_email(self, email: str) -> User | None:
         return await self._db.scalar(select(User).where(User.email == email))
 
+    async def list_all(self) -> list[User]:
+        result = await self._db.scalars(select(User).where(User.is_active.is_(True)))
+        return list(result)
+
     async def list_by_department(self, department_id: str) -> list[User]:
-        result = await self._db.scalars(select(User).where(User.department_id == department_id))
+        result = await self._db.scalars(
+            select(User).where(User.department_id == department_id, User.is_active.is_(True))
+        )
         return list(result)
 
     async def create(

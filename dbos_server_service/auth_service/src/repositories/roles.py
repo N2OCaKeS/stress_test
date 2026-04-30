@@ -92,16 +92,17 @@ class RoleRepository:
     async def bulk_assign(
         self, user_ids: list[str], service_name: str, role_name: str, assigned_by: str | None
     ) -> None:
-        for user_id in user_ids:
-            existing = await self._db.scalar(
-                select(UserServiceRole).where(
-                    UserServiceRole.user_id == user_id,
-                    UserServiceRole.service_name == service_name,
-                    UserServiceRole.role == role_name,
-                )
+        existing_rows = await self._db.scalars(
+            select(UserServiceRole).where(
+                UserServiceRole.user_id.in_(user_ids),
+                UserServiceRole.service_name == service_name,
+                UserServiceRole.role == role_name,
             )
-            if existing:
-                existing.is_active = True
+        )
+        existing_map = {r.user_id: r for r in existing_rows}
+        for user_id in user_ids:
+            if user_id in existing_map:
+                existing_map[user_id].is_active = True
             else:
                 self._db.add(UserServiceRole(
                     id=_new_id("usr_"),
@@ -113,9 +114,8 @@ class RoleRepository:
         await self._db.flush()
 
     async def bulk_revoke(self, user_ids: list[str], service_name: str, role_name: str) -> None:
-        from sqlalchemy import delete as _delete
         await self._db.execute(
-            _delete(UserServiceRole).where(
+            delete(UserServiceRole).where(
                 UserServiceRole.user_id.in_(user_ids),
                 UserServiceRole.service_name == service_name,
                 UserServiceRole.role == role_name,

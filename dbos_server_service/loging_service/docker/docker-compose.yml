@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  loging_service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: loging_service
+    environment:
+      APP_ENV: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8001
+      DATABASE_URL: postgresql+psycopg://logging_user:logging_password@logging_postgres:5432/logging_db
+      SERVICE_API_KEY: change-me-service-key
+    ports:
+      - "8001:8001"
+    volumes:
+      - ../src:/app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
+    depends_on:
+      - logging_postgres
+
+  logging_postgres:
+    image: postgres:16
+    container_name: logging_postgres
+    environment:
+      POSTGRES_DB: logging_db
+      POSTGRES_USER: logging_user
+      POSTGRES_PASSWORD: logging_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - logging_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  logging_postgres_data:

@@ -3,11 +3,9 @@
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import PlatformRole
 from src.core.security import decode_access_token
-from src.dependencies.db import get_db
 from src.schemas.auth import IdentityContext
 
 
@@ -31,7 +29,6 @@ def _payload_to_identity(payload: dict) -> IdentityContext:
 
 async def get_current_identity(
     request: Request,
-    db: AsyncSession = Depends(get_db),
 ) -> IdentityContext:
     """Resolve the current authenticated identity from Bearer JWT."""
     token = _extract_bearer(request)

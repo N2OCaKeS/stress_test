@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # logging_service integration (optional — falls back to local logger if not set)
     logging_service_url: str | None = Field(default=None, alias="LOGGING_SERVICE_URL")
     logging_service_api_key: str | None = Field(default=None, alias="LOGGING_SERVICE_API_KEY")
+
+    @model_validator(mode="after")
+    def _validate_production_secrets(self) -> "Settings":
+        if self.app_env == "production":
+            if self.secret_key == "change-me":
+                raise ValueError("SECRET_KEY must be changed in production")
+            if self.app_debug:
+                raise ValueError("APP_DEBUG must be false in production")
+        return self
 
     # Bootstrap account_admin (applied only when the users table is empty)
     initial_admin_username: str | None = Field(default=None, alias="INITIAL_ADMIN_USERNAME")

@@ -107,7 +107,7 @@
 
 Для репозитория подготовлен общий devcontainer:
 
-- [`.devcontainer`](~/dbos_server_manager/.devcontainer/README.md)
+- [`.devcontainer`](C:/Users/n2o_c/git/dbos_server_manager/.devcontainer/README.md)
 
 Он используется для всех сервисов и клиентских компонентов сразу, поднимает PostgreSQL автоматически и может автоматически применять Alembic-миграции для сервисов, где уже есть `alembic.ini`.
 

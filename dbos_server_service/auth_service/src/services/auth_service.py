@@ -94,8 +94,12 @@ async def login(
         audit_service.emit("user.login", None, status="failure", allowed=False, details={"username": username, "reason": "user_not_found"}, request_id=request_id)
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid username or password")
 
+    if user.locked_until and is_expired(user.locked_until):
+        await user_repo.reset_failed_attempts(user)
+
     if user.locked_until and not is_expired(user.locked_until):
-        retry_secs = int((user.locked_until.replace(tzinfo=timezone.utc) - utcnow()).total_seconds())
+        locked_dt = user.locked_until if user.locked_until.tzinfo else user.locked_until.replace(tzinfo=timezone.utc)
+        retry_secs = int((locked_dt - utcnow()).total_seconds())
         audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "account_locked"}, request_id=request_id)
         raise AuthorizationError(
             error_code="ACCOUNT_TEMPORARILY_LOCKED",
@@ -177,10 +181,18 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
         raise AuthenticationError(error_code="REFRESH_TOKEN_EXPIRED", message="Refresh token expired")
 
     user = await user_repo.get_by_id(sess.user_id)
-    if user is None or user.status in (UserStatus.BANNED, UserStatus.BLOCKED):
+    if user is None:
         await session_repo.revoke(sess)
         await db.commit()
-        raise AuthorizationError(error_code="USER_BANNED", message="User access denied")
+        raise AuthorizationError(error_code="USER_NOT_FOUND", message="User not found")
+    if user.status == UserStatus.BANNED:
+        await session_repo.revoke(sess)
+        await db.commit()
+        raise AuthorizationError(error_code="USER_BANNED", message="User is banned")
+    if user.status == UserStatus.BLOCKED:
+        await session_repo.revoke(sess)
+        await db.commit()
+        raise AuthorizationError(error_code="USER_BLOCKED", message="User is blocked")
 
     dept_services = await dept_repo.list_active_services(user.department_id)
     direct_roles = await role_repo.get_all_roles(user.id)

@@ -103,7 +103,7 @@ class UnixBenchParser:
         """
         Разбивает содержимое файла на отдельные итерации
         """
-        pattern = r"BYTE UNIX Benchmarks.*?(?=BYTE UNIX Benchmarks|$)"
+        pattern = r"Benchmark Run.*?(?=Benchmark Run|$)"
         iterations = re.findall(pattern, content, re.DOTALL)
         
         if not iterations:
@@ -216,11 +216,9 @@ class UnixBench(Test, UnixBenchParser):
         else:
             self._report_dir = report_dir
 
-        # Находим имя файла автоматически
-        if report_filename is None:
-            report_filename = self._find_result_file_without_extension(self._report_dir)
+        self._report_filename = report_filename
 
-        UnixBenchParser.__init__(self, self._report_dir, report_filename)
+        UnixBenchParser.__init__(self, self._report_dir, self._report_filename)
 
         self.low_concurrency = low_concurrency
         self.high_concurrency = high_concurrency
@@ -261,7 +259,17 @@ class UnixBench(Test, UnixBenchParser):
         """
         Получить результаты и сохранить в JSON
         """
-        filepath = f"{self.get_report_dir()}/{self.get_report_filename()}"
+        # Находим имя файла автоматически
+        if self._report_filename is None:
+            self._report_filename = self._find_result_file_without_extension(self._report_dir)
+            
+        if self._report_filename is None:
+            log.error("Не удалось определить файл с результатами")
+            return None
+        
+        self._results_by_copies = {} 
+        
+        filepath = f"{self._report_dir}/{self._report_filename}"
         if not path.exists(filepath):
             log.error(f"Файл с результатами не найден: {filepath}")
             return None

@@ -21,6 +21,7 @@ sudo apt-get install -y libcurl4-gnutls-dev
 sudo apt-get install -y rustc cargo
 sudo apt-get install -y python3-requests
 sudo apt-get install -y linux-tools-`uname -r`
+sudo apt-get install -y strace gcc make libpdp-dev
 
 
 sudo mkdir /home/u/python

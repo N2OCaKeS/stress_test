@@ -1,13 +1,15 @@
 from os import path
 
 
-VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
+VENV_PATH = "/home/u/python/Python-3.12.1/venv/bin/python3.12"
 MAIN_DIR = path.normpath(path.join(path.dirname(path.abspath(__file__)), '..'))
+RESULTS_MAIN_DIR = f"{MAIN_DIR}/results"
 
 
 #################################################################################
 # UNIXBENCH                                                                     #
 #################################################################################
+RESULT_UB_NAME = "unixbench_result.json"
 LOW_CONC = 4
 HIGH_CONC = 25
 STEP = 8

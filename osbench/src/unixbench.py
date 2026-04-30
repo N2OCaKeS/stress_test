@@ -1,7 +1,8 @@
 import re
+import json
 import pandas as pd
 
-from os import chdir, path, listdir
+from os import chdir, path, listdir, makedirs
 
 from lib import Test, system, status_check
 from osb_logger import log
@@ -14,7 +15,9 @@ from config.conf import (
     TEST_MEASURE,
     REGEXP_OVERALL_SCORE,
     REGEXP_PARALLEL_COPIES,
-    REGEXP_PARSERS
+    REGEXP_PARSERS,
+    RESULTS_MAIN_DIR,
+    RESULT_UB_NAME
 )
 
 
@@ -24,13 +27,10 @@ class UnixBenchParser:
                  report_dir, 
                  report_filename):
         
-        self.__report_dir = report_dir
-        self.__report_filename = report_filename
-        self.__raw_dict = {}
-        self.__raw_tables = {}
-        self.overall_score = None
-        self.parallel_copies = None
-        
+        self._report_dir = report_dir
+        self._report_filename = report_filename
+        self._results_by_copies = {}  
+              
 
     def _find_result_file_without_extension(self, report_dir):
         """
@@ -78,20 +78,17 @@ class UnixBenchParser:
         """
         Основной метод парсинга файла с результатами
         """
-        filepath = f"{self.__report_dir}/{self.__report_filename}"
+        filepath = f"{self._report_dir}/{self._report_filename}"
         
         try:
             with open(filepath, 'r') as file:
-                text = file.read()
+                content = file.read()
                 
-                # Парсим общую информацию
-                self._parse_system_info(text)
+                # Ищем все вхождения "BYTE UNIX Benchmarks"
+                iterations_text = self._split_into_iterations(content)
                 
-                # Парсим результаты тестов
-                self._parse_benchmark_results(text)
-                
-                # Создаем DataFrame'ы
-                self._create_dataframes()
+                for iter_text in iterations_text:
+                    self._parse_single_iteration(iter_text)
                 
                 return True
                 
@@ -101,114 +98,107 @@ class UnixBenchParser:
         except Exception as e:
             log.error(f"Ошибка при парсинге: {e}")
             return False
-    
-    def _parse_system_info(self, text):
-        """
-        Парсинг общей информации
-        """
-        # Количество параллельных копий
-        copies_match = re.search(REGEXP_PARALLEL_COPIES, text)
-        if copies_match:
-            self.parallel_copies = int(copies_match.group(1))
-            log.info(f"Параллельных копий: {self.parallel_copies}")
-                
-        # Общий score
-        score_match = re.search(REGEXP_OVERALL_SCORE, text)
-        if score_match:
-            self.overall_score = float(score_match.group(1))
-            log.info(f"Общий Score: {self.overall_score}")
-    
-    def _parse_benchmark_results(self, text):
-        """
-        Парсинг результатов бенчмарков
-        """
-        parallel_copies_value = float(self.parallel_copies) if self.parallel_copies is not None else 1.0
 
+    def _split_into_iterations(self, content):
+        """
+        Разбивает содержимое файла на отдельные итерации
+        """
+        pattern = r"BYTE UNIX Benchmarks.*?(?=BYTE UNIX Benchmarks|$)"
+        iterations = re.findall(pattern, content, re.DOTALL)
+        
+        if not iterations:
+            return [content]
+        
+        return iterations
+
+    def _parse_single_iteration(self, text):
+        """
+        Парсинг одной итерации (одного значения параллельных копий)
+        """
+        # Парсим parallel_copies для этой итерации
+        copies_match = re.search(REGEXP_PARALLEL_COPIES, text)
+        if not copies_match:
+            log.warning("Не найдено значение параллельных копий, пропускаем итерацию")
+            return
+        
+        parallel_copies = int(copies_match.group(1))
+        copies_key = str(parallel_copies)  
+        
+        log.info(f"Парсинг результатов для {parallel_copies} параллельных копий")
+        
+        # Парсим overall score
+        score_match = re.search(REGEXP_OVERALL_SCORE, text)
+        overall_score = float(score_match.group(1)) if score_match else None
+        
+        # Инициализируем структуру для этого количества копий
+        self._results_by_copies[copies_key] = {
+            'overall_score': overall_score,
+            'tests': {}
+        }
+        
+        # Парсим результаты тестов
         for test, regexp in REGEXP_PARSERS.items():
             result_tuples = re.findall(regexp, text)
             
             if result_tuples:
-                self.__raw_dict[test] = {
-                    'parallel_threads': [parallel_copies_value],
-                    'value': [float(result_tuple[0]) for result_tuple in result_tuples],
-                    'time': [float(result_tuple[1]) for result_tuple in result_tuples],
-                    'samples': [int(result_tuple[2]) for result_tuple in result_tuples],
+                result = result_tuples[0]
+                self._results_by_copies[copies_key]['tests'][test] = {
+                    'measure': TEST_MEASURE.get(test, 'unknown'),
+                    'value': float(result[0]),
+                    'time': float(result[1]),
+                    'samples': int(result[2])
                 }
-                
-                # Выводим информацию для отладки
-                log.debug(f"{test}: {result_tuples[0][0]} {TEST_MEASURE[test]} "
-                      f"(time: {result_tuples[0][1]}s, samples: {result_tuples[0][2]})")
+                log.debug(f"  {test}: {result[0]} {TEST_MEASURE.get(test, '')} "
+                          f"(time: {result[1]}s, samples: {result[2]})")
             else:
-                log.warning(f"Предупреждение: Тест '{test}' не найден в файле")
-                self.__raw_dict[test] = {
-                    'parallel_threads': [parallel_copies_value],
-                    'value': [0.0],
-                    'time': [0.0],
-                    'samples': [0],
+                log.warning(f"Тест '{test}' не найден для {parallel_copies} копий")
+                self._results_by_copies[copies_key]['tests'][test] = {
+                    'measure': TEST_MEASURE.get(test, 'unknown'),
+                    'value': 0.0,
+                    'time': 0.0,
+                    'samples': 0
                 }
+        
+    def get_results_by_copies(self):
+        """
+        Получить результаты, сгруппированные по количеству параллельных копий
+        """
+        return self._results_by_copies
     
-    def _create_dataframes(self):
+    def get_results_as_dataframe(self):
         """
-        Создание DataFrame'ов из распарсенных данных
-        """
-        parallel_copies_value = float(self.parallel_copies) if self.parallel_copies is not None else 0.0
-
-        for test in TEST_NAMES:
-            if test in self.__raw_dict:
-                self.__raw_tables[test] = pd.DataFrame(self.__raw_dict[test])
-            else:
-                # Создаем пустой DataFrame если тест отсутствует
-                self.__raw_tables[test] = pd.DataFrame({
-                    'parallel_threads': [parallel_copies_value],
-                    'value': [0.0],
-                    'time': [0.0],
-                    'samples': [0]
-                })
-    
-    def get_dataframe(self, test_name):
-        """
-        Получить DataFrame для конкретного теста
-        """
-        return self.__raw_tables.get(test_name)
-    
-    def get_all_results(self):
-        """
-        Получить все результаты в виде одного DataFrame
+        Получить все результаты в виде DataFrame (для удобного анализа)
         """
         all_data = []
-        for test in TEST_NAMES:
-            if test in self.__raw_dict and self.__raw_dict[test]['value'][0] > 0:
+        for copies, data in self._results_by_copies.items():
+            for test_name, test_data in data['tests'].items():
                 all_data.append({
-                    'test_name': test,
-                    'measure': TEST_MEASURE.get(test, 'unknown'),
-                    'value': self.__raw_dict[test]['value'][0],
-                    'time': self.__raw_dict[test]['time'][0],
-                    'samples': self.__raw_dict[test]['samples'][0],
+                    'parallel_copies': int(copies),
+                    'test_name': test_name,
+                    'measure': test_data['measure'],
+                    'value': test_data['value'],
+                    'time': test_data['time'],
+                    'samples': test_data['samples'],
+                    'overall_score': data['overall_score']
                 })
         return pd.DataFrame(all_data)
     
     def summary_info(self):
         """
-        Вывод краткой сводки результатов
+        Вывод краткой сводки результатов по всем параллельным копиям
         """
-        log.info("\n" + "="*60)
+        log.info("="*60)
         log.info("КРАТКАЯ СВОДКА РЕЗУЛЬТАТОВ")
         log.info("="*60)
         
-        if self.overall_score:
-            log.info(f"Общий индекс производительности: {self.overall_score:.2f}")
-        
-        if self.parallel_copies:
-            log.info(f"Параллельных копий: {self.parallel_copies}")
-        
-        log.info("\nРезультаты тестов:")
-        log.info("-" * 60)
-        
-        for test in TEST_NAMES:
-            if test in self.__raw_dict and self.__raw_dict[test]['value'][0] > 0:
-                value = self.__raw_dict[test]['value'][0]
-                measure = TEST_MEASURE.get(test, '')
-                log.info(f"{test:20}: {value:>12.2f} {measure}")
+        for copies, data in sorted(self._results_by_copies.items(), key=lambda x: int(x[0])):
+            log.info(f"--- {copies} параллельных копий ---")
+            log.info(f"Общий индекс производительности: {data['overall_score']:.2f}")
+            log.info("Результаты тестов:")
+            
+            for test_name, test_data in data['tests'].items():
+                if test_data['value'] > 0:
+                    log.info(f"  {test_name:20}: {test_data['value']:>12.2f} {test_data['measure']}")
 
 
 
@@ -222,19 +212,25 @@ class UnixBench(Test, UnixBenchParser):
                  step=STEP):
         
         if report_dir is None:
-            self.__report_dir = f"{MAIN_DIR}/benchmarks/UnixBench/byte-unixbench/UnixBench/results"
+            self._report_dir = f"{MAIN_DIR}/benchmarks/UnixBench/byte-unixbench/UnixBench/results"
         else:
-            self.__report_dir = report_dir
+            self._report_dir = report_dir
 
         # Находим имя файла автоматически
         if report_filename is None:
-            report_filename = self._find_result_file_without_extension(self.__report_dir)
+            report_filename = self._find_result_file_without_extension(self._report_dir)
 
-        UnixBenchParser.__init__(self, self.__report_dir, report_filename)
+        UnixBenchParser.__init__(self, self._report_dir, report_filename)
 
         self.low_concurrency = low_concurrency
         self.high_concurrency = high_concurrency
         self.step = step
+    
+    def get_report_dir(self):
+        return self._report_dir
+    
+    def get_report_filename(self):
+        return self._report_filename
 
 
     @status_check  
@@ -262,21 +258,30 @@ class UnixBench(Test, UnixBenchParser):
 
 
     def get_results(self):
-        # Проверяем существование файла перед парсингом
-        filepath = f"{self.__report_dir}/{self.__report_filename}"
+        """
+        Получить результаты и сохранить в JSON
+        """
+        filepath = f"{self.get_report_dir()}/{self.get_report_filename()}"
         if not path.exists(filepath):
             log.error(f"Файл с результатами не найден: {filepath}")
             return None
-    
+
         if self.parse():
             self.summary_info()
             
-            # Получаем DataFrame с результатами
-            results_df = self.get_all_results()
-            log.info("\n" + "="*60)
-            log.info("DataFrame со всеми результатами:")
-            log.info(f"\n{results_df}") 
-            return results_df
+            # Получаем структуру результатов
+            results_dict = self.get_results_by_copies()
+            
+            # Создаём директорию, если её нет
+            makedirs(RESULTS_MAIN_DIR, exist_ok=True)
+            
+            # Сохраняем в JSON
+            json_path = f"{RESULTS_MAIN_DIR}/{RESULT_UB_NAME}"
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(results_dict, f, indent=4, ensure_ascii=False)
+            log.info(f"Результаты сохранены в {json_path}")
+                        
+            return results_dict
         else:
             log.error("Не удалось распарсить результаты")
             return None

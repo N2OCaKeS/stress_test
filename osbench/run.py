@@ -1,6 +1,7 @@
 #!/bin/python3
 
 import argparse
+import subprocess
 
 from os import path
 
@@ -44,5 +45,5 @@ if args.PREP:
     system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True)
 elif args.RUN:
     log.info("\nНачало тестирования\n")
-    system.leave_command(f'sudo {VENV_PATH} src/osbench.py', returncode=True)
+    subprocess.run(f'sudo {VENV_PATH} src/osbench.py', shell=True)
 

@@ -31,6 +31,7 @@ from allta_cli.commands import mc as mc_cmd
 from allta_cli.commands import vm as vm_api
 from allta_cli.commands import vm_local as vm_local_api
 from allta_cli.commands import server as server_api
+from allta_cli.commands import jira as jira_api
 
 COMMANDS_NO_AUTH = (
     "login",
@@ -52,6 +53,7 @@ COMMANDS_WITH_AUTH = (
     "ssh",
     "server",
     "vm",
+    "jira",
 )
 
 COMMAND_SHORTCUTS = {
@@ -67,6 +69,7 @@ COMMAND_SHORTCUTS = {
     "py": "python",
     "srv": "server",
     "lc": "local",
+    "j": "jira",
 }
 COMMAND_SHORTCUT_NAMES = tuple(COMMAND_SHORTCUTS.keys())
 
@@ -297,6 +300,12 @@ class ServerPasswordGroup(NoUsageGroup):
         if cmd_name in {"add"}:
             cmd_name = "set"
         return super().get_command(ctx, cmd_name)
+
+
+class JiraGroup(SectionedGroup):
+    command_sections = (
+        ("Создание задач", ("service", "testcase")),
+    )
 
 
 class TokensGroup(NoUsageGroup):
@@ -727,6 +736,8 @@ CONTEXT_SETTINGS = dict(
         "  allta creds -up nexus -p new-secret\n"
         "  allta vm start vm1 vm2\n"
         "  allta vm stop --vms vm1,vm2 vm3\n"
+        "  allta jira service --dry-run\n"
+        "  allta jira testcase --dry-run\n"
         "  allta file releases.json\n"
         "  allta i 12\n"
         "  allta g\n"
@@ -1110,6 +1121,61 @@ def local_vm_group():
 @cli.group("server", cls=ServerGroup, short_help="Управление физическими серверами.", context_settings=CONTEXT_SETTINGS)
 def server_group():
     _ensure_authenticated_or_exit()
+
+
+@cli.group("jira", cls=JiraGroup, short_help="Создание задач в Jira.", context_settings=CONTEXT_SETTINGS)
+def jira_group():
+    pass
+
+
+@jira_group.command("service", short_help="Создать сервисные задачи спринта.")
+@click.argument("sprint_arg", type=int, required=False, metavar="SPRINT")
+@click.option("--sprint", type=int, default=None, show_default=False, help="Номер спринта.")
+@click.option("--dry-run", is_flag=True, help="Показать задачи без создания в Jira.")
+@with_section("JIRA SERVICE")
+def jira_service_cmd(sprint_arg: int | None, sprint: int | None, dry_run: bool):
+    sys.exit(jira_api.service_cmd(sprint=sprint_arg or sprint, dry_run=dry_run))
+
+
+@jira_group.command("testcase", short_help="Создать набор задач для тесткейса.")
+@click.option("--epic", default=None, show_default=False, help="Код эпика: DEVQA-1234 или только 1234.")
+@click.option("--name", "task_name", default=None, show_default=False, help="Название задачи.")
+@click.option(
+    "--component",
+    default=None,
+    show_default=False,
+    help="Компонент для всех задач: 1/2, sprint/main или полное название.",
+)
+@click.option("--component-per-task", is_flag=True, help="Выбирать компонент отдельно для каждой задачи.")
+@click.option(
+    "--assignee",
+    default=None,
+    show_default=False,
+    help="Исполнитель для всех задач: 1/2/3 или mfilippenko/dtimonin/ivelikanov.",
+)
+@click.option("--assignee-per-task", is_flag=True, help="Выбирать исполнителя отдельно для каждой задачи.")
+@click.option("--dry-run", is_flag=True, help="Показать задачи без создания в Jira.")
+@with_section("JIRA TESTCASE")
+def jira_testcase_cmd(
+    epic: str | None,
+    task_name: str | None,
+    component: str | None,
+    component_per_task: bool,
+    assignee: str | None,
+    assignee_per_task: bool,
+    dry_run: bool,
+):
+    sys.exit(
+        jira_api.testcase_cmd(
+            epic=epic,
+            name=task_name,
+            component=component,
+            component_per_task=component_per_task,
+            assignee=assignee,
+            assignee_per_task=assignee_per_task,
+            dry_run=dry_run,
+        )
+    )
 
 
 @server_group.group("password", cls=ServerPasswordGroup, short_help="CRUD паролей для снимков/ОС.")

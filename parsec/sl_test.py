@@ -3,7 +3,7 @@ from os.path import isdir
 from os import mkdir
 from re import findall
 from sl_conf import (REPORT_PATH, FLAMEGRAPH_NAME, REPORT_FILENAME,
-                     TOTALDF_NAME, DETAILDF_NAME,
+                     TIMEDF_NAME, TOTALDF_NAME, DETAILDF_NAME,
                      UB_PATH, UB_CONCURRENCY, PERF_FREQ, SPINLOCK_PATTERN)
 from json import dumps, loads
 import pandas as pd
@@ -14,6 +14,8 @@ import signal
 class SpinlockImpactTest:
     def __init__(self):
         self.flamegraph_name = FLAMEGRAPH_NAME
+        self.ub_time_results_name = 'ub_time_results.txt'
+        self.find_args = ['real', 'user', 'sys']
         self.spinlock_functions = self._get_spinlock_functions()
 
     def _get_spinlock_functions(self):
@@ -64,7 +66,7 @@ class SpinlockImpactTest:
         )
 
         print(f'Running UnixBench with {UB_CONCURRENCY} workers...')
-        command(f'cd {UB_PATH} && ./Run -c {UB_CONCURRENCY}')
+        command(f'(/usr/bin/time -p sh -c "cd {UB_PATH} && ./Run -c {UB_CONCURRENCY}") 2> libs/{self.ub_time_results_name}')
 
         print('Stopping perf...')
         perf_proc.send_signal(signal.SIGINT)
@@ -101,8 +103,20 @@ class SpinlockImpactTest:
         total_used = round(sum(sum(v) for v in used_cpu_dict.values()), 2)
         print(f'\nTotal spinlock CPU: {total_used}%\n')
 
+        with open(f'libs/{self.ub_time_results_name}', 'r') as r:
+            time_raw = r.read()
+
+        load_results = {
+            parts[0]: {'Seconds': parts[1]}
+            for line in time_raw.strip().split('\n')
+            for parts in [line.split()]
+            if parts and parts[0] in self.find_args
+        }
+        print(load_results)
+
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as f:
             f.write(dumps({
+                'time': load_results,
                 'total': {'%': {'Total spinlock CPU': total_used}},
                 'detail': {'%': used_cpu_dict}
             }, indent=4))
@@ -110,8 +124,10 @@ class SpinlockImpactTest:
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'r') as f:
             data = loads(f.read())
 
+        time_df = pd.DataFrame(data['time'])
         total_df = pd.DataFrame(data['total'])
         detail_df = pd.DataFrame(data['detail'])
+        time_df.to_html(TIMEDF_NAME)
         total_df.to_html(TOTALDF_NAME)
         detail_df.to_html(DETAILDF_NAME)
         info_list()

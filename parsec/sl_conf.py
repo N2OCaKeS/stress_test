@@ -13,6 +13,7 @@ TEMPLATE_PATH = f'{SCRIPT_DIR}/templates'
 
 FLAMEGRAPH_NAME = 'spinlock_flamegraph.svg'
 REPORT_FILENAME = 'spinlock_results.json'
+TIMEDF_NAME = f'{TEMPLATE_PATH}/sl_timedf.html'
 TOTALDF_NAME = f'{TEMPLATE_PATH}/sl_totaldf.html'
 DETAILDF_NAME = f'{TEMPLATE_PATH}/sl_detaildf.html'
 

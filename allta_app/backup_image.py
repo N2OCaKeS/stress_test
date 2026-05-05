@@ -375,6 +375,9 @@ elif args.PARSEC_IMPACT or args.PARSEC_IMPACT_AO:
 elif args.TEST == 'digsig-cdt':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -ds'
+elif args.TEST == 'raw-spin-lock':
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} -rsl'
 elif args.TEST == 'docker-wa':
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} -wa'

@@ -11,7 +11,6 @@ from config.conf import (
     HIGH_CONC,
     STEP,
     MAIN_DIR,
-    TEST_NAMES,
     TEST_MEASURE,
     REGEXP_OVERALL_SCORE,
     REGEXP_PARALLEL_COPIES,

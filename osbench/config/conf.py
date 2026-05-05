@@ -14,21 +14,6 @@ LOW_CONC = 4
 HIGH_CONC = 25
 STEP = 8
 
-TEST_NAMES = (
-    'dhry2reg',
-    'whetstone-double',
-    'execl',
-    'fstime',
-    'fsbuffer',
-    'fsdisk',
-    'pipe',
-    'context1',
-    'spawn',
-    'shell1',
-    'shell8',
-    'syscall'
-)
-
 # Регулярные выражения для парсинга результатов каждого теста
 REGEXP_PARSERS = {
     'dhry2reg': r'Dhrystone\s2\susing\sregister\svariables\s*([\d.]+)\slps\s*\(([\d.]+)\ss,\s(\d+)\ssamples',
@@ -70,3 +55,17 @@ TEST_MEASURE = {
     'syscall': 'lps',
 }
 
+
+
+#################################################################################
+# FS_MARK                                                                       #
+#################################################################################
+FILES = 10000
+FILES_STEP = 10000
+FILES_LIMIT = 100001
+
+FILE_SIZE = 1024
+
+FS = 'xfs'
+STORAGE_MOUNT_DIR = '/mnt'
+INODE_COUNT = '-N 1100000'

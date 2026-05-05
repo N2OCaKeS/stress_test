@@ -81,12 +81,8 @@ class system:
         output, errors = result.communicate()
         output = linesep.join([s for s in output.splitlines() if s])
         errors = linesep.join([s for s in errors.splitlines() if s])
-        code = result.returncode == 0
         if returncode:
-            if not errors:
-               return output, code
-            else:
-               return errors, code
+               return result.returncode
         else:
             if not errors:
                  return output, True

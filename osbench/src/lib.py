@@ -85,9 +85,9 @@ class system:
                return result.returncode
         else:
             if not errors:
-                 return output, True
+                 return output
             else:
-                 return errors, False
+                 return errors
             
 
     @staticmethod

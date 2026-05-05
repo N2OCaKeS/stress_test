@@ -19,6 +19,15 @@ DIGSIG_NAME = f'{TEMPLATE_PATH}/digsig.html'
 INFO_FILENAME = 'ps_info.txt'
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
+# INFO_FILENAME = 'sl_info.txt'
+
+UB_PATH = '/home/u/git/stress_test/parsec/byte-unixbench-master/UnixBench'
+UB_CONCURRENCY = 4
+
+PERF_FREQ = 99
+
+SPINLOCK_PATTERN = r'_raw_spin_lock|queued_spin_lock|_raw_spin_trylock'
+
 #количество создаваемых потоков 
 CONC = 35
 #количество циклов для каждого потока

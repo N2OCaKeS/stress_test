@@ -2,7 +2,7 @@ from libs.libparsec import check_output_command, command, info_list
 from os.path import isdir
 from os import mkdir
 from re import findall
-from sl_conf import (REPORT_PATH, FLAMEGRAPH_NAME, REPORT_FILENAME,
+from ps_conf import (REPORT_PATH, FLAMEGRAPH_NAME, REPORT_FILENAME,
                      TIMEDF_NAME, TOTALDF_NAME, DETAILDF_NAME,
                      UB_PATH, UB_CONCURRENCY, PERF_FREQ, SPINLOCK_PATTERN)
 from json import dumps, loads

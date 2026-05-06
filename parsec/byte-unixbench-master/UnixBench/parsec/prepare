@@ -1,0 +1,21 @@
+#!/usr/bin/bash
+
+# Read configuration
+for v in `cat $(dirname "$0")/config`; do
+  export $v
+done
+
+# Create and setup working directory
+if [ ! -d "$parsec_workdir" ]; then
+  sudo mkdir $parsec_workdir
+  sudo chown $USER:$(id -gn $USER) $parsec_workdir
+fi
+sudo pdpl-file -R $parsec_workdir_label $parsec_workdir
+
+# Create and setup bin directory
+if [ ! -d "$parsec_workdir/bin" ]; then
+  sudo mkdir $parsec_workdir/bin
+  sudo chown $USER:$(id -gn $USER) $parsec_workdir/bin
+fi
+sudo pdpl-file -R $parsec_workdir_label $parsec_workdir/bin
+

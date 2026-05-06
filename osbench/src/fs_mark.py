@@ -123,7 +123,7 @@ class FsMarkParser:
        
 
 
-class FsMark(Test, FsMarkParser):
+class FSMark(Test, FsMarkParser):
     """
     FS_MARK
     """

@@ -95,7 +95,7 @@ class system:
         """
         Построчный вывод в терминал/лог
         """
-        log.info(f"Выполняется команда: {command}")
+        log.debug(f"Выполняется команда: {command}")
 
         output_lines = []
         error_lines = []
@@ -118,7 +118,7 @@ class system:
             log.warning(f"Команда прервана пользователем: {command}")
             raise
 
-        log.info(f"Команда '{command}' завершена с кодом: {process.returncode}")
+        log.debug(f"Команда '{command}' завершена с кодом: {process.returncode}")
 
         output = '\n'.join(output_lines)
         errors = '\n'.join(error_lines)

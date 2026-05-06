@@ -5,7 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from unixbench import UnixBench
-from fs_mark import FsMark
+from fs_mark import FSMark
+from lmbench import LMBench
 
 
 """
@@ -22,7 +23,8 @@ from fs_mark import FsMark
 
 # ==================== БЛОК ИНИЦИАЛИЗАЦИИ ====================
 unixbench_test = UnixBench()
-fsmark_test = FsMark()
+fsmark_test = FSMark()
+lmbench_test = LMBench()
 
 
 # ==================== БЛОК UNIXBENCH ========================
@@ -33,4 +35,7 @@ unixbench_test.get_results()
 fsmark_test.start_test()
 fsmark_test.get_results()
 
-    
+# ==================== БЛОК LMbench ==========================
+lmbench_test.start_test()
+lmbench_test.get_results()
+

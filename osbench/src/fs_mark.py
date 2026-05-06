@@ -220,7 +220,7 @@ class FsMark(Test, FsMarkParser):
         Получить результаты и сохранить в JSON
         """
         results = self.parse_results()
-        if results:
+        if results is not None and not results.empty:
             log.debug("DataFrame с результатами:")
             log.debug(results)
 

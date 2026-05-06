@@ -10,8 +10,8 @@ from fs_mark import FsMark
 
 """
 Назначение:
-    Данный скрипт вызывается из главного модуля run.py при передаче аргумента --run.
-    Он выполняет непосредственный запуск всех зарегистрированных тестов производительности.
+    Скрипт выполняет непосредственный запуск всех зарегистрированных тестов производительности.
+    Вызывается из главного модуля run.py.
 
 Порядок работы:
     1. Инициализация объектов тестов 
@@ -21,16 +21,16 @@ from fs_mark import FsMark
 
 
 # ==================== БЛОК ИНИЦИАЛИЗАЦИИ ====================
-ub_test = UnixBench()
-fs_mark = FsMark()
+unixbench_test = UnixBench()
+fsmark_test = FsMark()
 
 
 # ==================== БЛОК UNIXBENCH ========================
-ub_test.start_test()
-ub_test.get_results()
+unixbench_test.start_test()
+unixbench_test.get_results()
 
 # ==================== БЛОК FS_MARK ==========================
-fs_mark.start_test()
-fs_mark.get_results()
+fsmark_test.start_test()
+fsmark_test.get_results()
 
     

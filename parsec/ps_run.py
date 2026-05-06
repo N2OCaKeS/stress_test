@@ -4,6 +4,7 @@ from ps_test import ParsecImpactTest
 from libs.zefir import UploaderZC
 from digsig_test import Digsig
 from ps_conf import DIGSIG_NAME
+from sl_test import SpinlockImpactTest
 
 
 test = ParsecImpactTest()
@@ -81,6 +82,12 @@ parser.add_argument('-ds', '--digsig',
                     help='testname',
                     dest='DIGSIG')
 
+parser.add_argument('-rsl', '--raw-spin-lock',
+                    action='store_true',
+                    required=False,
+                    help='testname',
+                    dest='RSL')
+
 args = parser.parse_args()
 
 uzs = UploaderZC(folder_tree_id=args.FTI,
@@ -104,6 +111,9 @@ digsig = Digsig(kernel=str(args.TCYC).split('_')[2],
 uzs.upload_test_cycle_status(zefir_status='progress')
 if args.DIGSIG:
     digsig.run_test()
+elif args.RSL:
+    rsl_test = SpinlockImpactTest()
+    rsl_test.spinlock_impact_by_unixbench()
 else:
     test.parsec_impact_by_fs_load()
 uzs.public = True

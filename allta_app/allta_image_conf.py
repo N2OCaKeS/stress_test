@@ -521,7 +521,7 @@ testname_columns = {
                     'postgresql benchmark olap':'PSQL_OLAP-hq',
                     'freeipa plugin test':'FreeIPA_plugin',
                     'xfs memory leak':'XFS_mem_leak',
-                    'Raw spin lock benchmark': 'raw-spin-lock'
+                    'Raw spin lock benchmark': 'Raw_spin-lock'
                     }
 
 

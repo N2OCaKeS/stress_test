@@ -63,7 +63,7 @@
             "InitOnFree": "1:03:50",
             "SegFault": "1:09:32",
             "PSQL_OLAP-hq": "2:28:15",
-            "XFS mem leak": "2:00:00",            
+            "XFS mem leak": "2:00:00",
             "Total time": "0:00:00"
         },
         "stand13": {
@@ -107,7 +107,7 @@
             "CEPH fio": "1:45:08",
             "Total time": "0:00:00",
             "CEPH parsec": "3:26:37",
-            "raw-spin-lock": "0:31:59"
+            "raw-spin-lock": "1:07:47"
         },
         "stand11": {
             "parsec impact-fs": "0:31:59",
@@ -137,7 +137,6 @@
             "PSQL_OLAP-hq": "2:28:15",
             "Total time": "0:00:00",
             "XFS mem leak": "2:00:00",
-
             "PSQL OLAP-hq": "2:32:54"
         },
         "stand13": {

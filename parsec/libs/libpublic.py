@@ -21,7 +21,8 @@ class Public:
                  storage=False,
                  kernel_check=False,
                  balance=False,
-                 digsig=False):
+                 digsig=False,
+                 rsl=False):
     
         self.username = username
         self.token = token
@@ -35,6 +36,7 @@ class Public:
         self.kernel_check = kernel_check
         self.balance = balance
         self.digsig = digsig
+        self.rsl = rsl
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -178,8 +180,15 @@ class Public:
             with open(f'{DETAILDF_NAME}', 'r') as file:
                 impact_table_detail = file.read()
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты утилизации CPU утилитой "time":</b></h3></p>'
-            head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции модуля Parsec:</b></h3></p>'
+            
+            
+            if self.rsl:
+                head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты измерения времени выполнения утилитой "time":</b></h3></p>'
+                head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции спинлоков ядра:</b></h3></p>'
+            else:
+                head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты утилизации CPU утилитой "time":</b></h3></p>'
+                head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции модуля Parsec:</b></h3></p>'
+            
             html_page = '\n'.join([header_table, head_row, impact_table_total, head_row2, impact_table_time, head_row3, impact_table_detail])
         
 

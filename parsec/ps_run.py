@@ -101,7 +101,8 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
                 conf_new_page_name=args.NPAGE,
-                digsig=args.DIGSIG)
+                digsig=args.DIGSIG,
+                rsl=args.RSL)
 
 digsig = Digsig(kernel=str(args.TCYC).split('_')[2],
                 rc=str(args.TCYC).split('_')[0],

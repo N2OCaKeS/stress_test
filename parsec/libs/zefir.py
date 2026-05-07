@@ -36,7 +36,8 @@ class UploaderZC(Public, ParsecStatistics):
                  storage=False,
                  kernel_check=False,
                  balance=False,
-                 digsig=False):
+                 digsig=False,
+                 rsl=False):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -56,6 +57,7 @@ class UploaderZC(Public, ParsecStatistics):
         self.kernel_check = kernel_check
         self.balance = balance
         self.digsig = digsig
+        self.rsl = rsl
 
     def test_cycle_status_changer(self, status):
 
@@ -71,7 +73,8 @@ class UploaderZC(Public, ParsecStatistics):
                             storage=self.storage,
                             kernel_check=self.kernel_check,
                             balance=self.balance,
-                            digsig=self.digsig)
+                            digsig=self.digsig,
+                            rsl=self.rsl)
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,

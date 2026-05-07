@@ -19,7 +19,10 @@ class LMBench(Test):
         self.bin_path = f"{self.lmbench_dir}/bin/x86_64-linux-gnu"
         self.results_dir = f"{self.lmbench_dir}/results"
         self.results_file = f"{self.results_dir}/lmbench_result.txt"
+        self.test_dir = f"{self.lmbench_dir}/testdir"
+        self.test_file = f"{self.test_dir}/testfile"
         makedirs(self.results_dir, exist_ok=True)
+        makedirs(self.test_dir, exist_ok=True)
 
         if report_filename is None:
             self._report_filename = f"{MAIN_DIR}/benchmarks/LMbench/lmbench/"
@@ -51,7 +54,15 @@ class LMBench(Test):
     def start_test(self):
 
         log.info("Запуск LMbench")
+        log.warning("=" * 60)
+        log.warning("⚠️ ПРИМЕЧАНИЕ:")
+        log.warning("LMbench выводит результаты тестов в stderr")
+        log.warning("Это НЕ ошибки, а нормальное поведение бенчмарка")
+        log.warning("=" * 60)
         status_code_list = []
+
+        log.info(f"Создание тестового файла: {self.test_file}")
+        system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True)
 
         tests = [
             # Ядро
@@ -67,7 +78,7 @@ class LMBench(Test):
             ("bw_mem", "64M cp"),
             ("bw_mem", "64M rd"),
             ("bw_mem", "64M wr"),
-            ("bw_mem", "16G cp"),
+            ("bw_mem", "16384M cp"),
             
             # IPC
             ("lat_pipe", ""),
@@ -78,7 +89,7 @@ class LMBench(Test):
             # Файловая система
             ("lat_fs", "0K"),
             ("lat_fs", "10K"),
-            ("bw_file_rd", "65536 64M"),
+            ("bw_file_rd", f"65536 open2close {self.test_file}"),
         ]
 
         with open(self.results_file, 'w') as f:

@@ -31,6 +31,7 @@ class PreConfigure:
                 "sshpass",
             ],
             "dcfreeipa": ["astra-freeipa-server"],
+            # "g_web": ["apache2", "libapache2-mod-auth-gssapi"],  # mod-auth-gssapi для Kerberos
         }
         self.provider.apt.install(
             apt_structure=apt_install,

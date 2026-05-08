@@ -8,6 +8,7 @@ from new_balance.roles.task.pre_configure import PreConfigure
 from new_balance.roles.task.test import Test
 from new_balance.roles.vm_info import VERSION_OS, VMS, VMS_DATES, PROVIDER
 
+# from new_balance.roles.web.apache import ApacheVM
 
 def balance(rc, sec_mode="s"):
     provider = PROVIDER
@@ -46,6 +47,9 @@ def balance(rc, sec_mode="s"):
 
     load_balancer = LoadBalancer()
     load_balancer.load()
+
+    # web = ApacheVM()            # <-- после domain, чтобы Kerberos уже работал
+    # web.settings()
 
     test = Test()
     test.test()

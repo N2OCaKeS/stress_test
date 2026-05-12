@@ -1,10 +1,14 @@
+import json
 
 from os import makedirs
+from pathlib import Path
 
 from lib import Test, system, status_check
-from osb_logger import log
+from osb_logger import log, Colors
 from config.conf import (
-    MAIN_DIR
+    MAIN_DIR,
+    RESULTS_MAIN_DIR,
+    RESULT_LMBENCH_NAME
 )
 
 
@@ -15,6 +19,7 @@ class LMBench(Test):
     def __init__(self,
                  report_filename=None):
         
+        self.test_success = False
         self.lmbench_dir = f"{MAIN_DIR}/benchmarks/LMbench/lmbench/"
         self.bin_path = f"{self.lmbench_dir}/bin/x86_64-linux-gnu"
         self.results_dir = f"{self.lmbench_dir}/results"
@@ -59,7 +64,7 @@ class LMBench(Test):
         log.warning("LMbench выводит результаты тестов в stderr")
         log.warning("Это НЕ ошибки, а нормальное поведение бенчмарка")
         log.warning("=" * 60)
-        status_code_list = []
+        status_code_dict = {}
 
         log.info(f"Создание тестового файла: {self.test_file}")
         system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True)
@@ -70,8 +75,8 @@ class LMBench(Test):
             ("lat_syscall", "read"),
             ("lat_syscall", "write"),
             ("lat_ctx", "-s 0 2 4 8 16 24 32 64 128"),
-            ("lat_sig", "inst"),
-            ("lat_sig", "hndl"),
+            ("lat_sig", "install"),
+            ("lat_sig", "catch"),
             
             # Память
             ("lat_mem_rd", "16384 512"),
@@ -100,13 +105,18 @@ class LMBench(Test):
         for test_name, args in tests:
             log.info(f"Running {test_name} {args}...")
             output, code = self.run_test(test_name, args)
-            status_code_list.append(code)
+            status_code_dict[test_name] = code
 
-        if all(code for code in status_code_list):
+        if all(code for code in status_code_dict.values()):
             log.info("LMbench: - тестирование завершено успешно")
+            log.debug(f"{Colors.GREEN}Все тесты успешны: {status_code_dict}{Colors.RESET}")
+            self.test_success = True
             return True, True
         else:
-            log.error("LMbench: - тестирование провалено")
+            failed_tests = [name for name, code in status_code_dict.items() if not code]
+            log.error(f"LMbench: - тестирование провалено. Проваленные тесты: {failed_tests}")
+            log.debug(f"{Colors.RED}Статусы: {status_code_dict}{Colors.RESET}")
+            self.test_success = False
             return True, False
 
         
@@ -115,4 +125,38 @@ class LMBench(Test):
         """
         Получить результаты и сохранить в JSON
         """
+
+        if not self.test_success:
+            log.warning(f"{Colors.RED}LMbench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
+            return True, False
+        
+        log.info("Сохранение результатов LMbench")
+        
+        # Проверяем существование файла с результатами
+        if not Path(self.results_file).exists():
+            log.error(f"Файл с результатами не найден: {self.results_file}")
+            return True, False
+        
+        try:
+            with open(self.results_file, 'r') as f:
+                results_text = f.read()
+            
+            makedirs(RESULTS_MAIN_DIR, exist_ok=True)
+            
+            # Сохраняем в JSON
+            json_path = f"{RESULTS_MAIN_DIR}/{RESULT_LMBENCH_NAME}"
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'test_name': 'LMbench',
+                    'results_file': str(self.results_file),
+                    'raw_output': results_text,
+                    'timestamp': system.leave_command('date', returncode=True)[0]
+                }, f, indent=4, ensure_ascii=False)
+            
+            log.info(f"LMbench: - результаты сохранены в {json_path}")
+            return True, True
+            
+        except Exception as e:
+            log.error(f"LMbench: - ошибка при сохранении результатов: {e}")
+            return True, False
 

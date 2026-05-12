@@ -9,7 +9,7 @@ RESULTS_MAIN_DIR = f"{MAIN_DIR}/results"
 #################################################################################
 # UNIXBENCH                                                                     #
 #################################################################################
-RESULT_UB_NAME = "unixbench_result.json"
+RESULT_UB_NAME = "unixbench_results.json"
 LOW_CONC = 4
 HIGH_CONC = 25
 STEP = 8
@@ -60,7 +60,7 @@ TEST_MEASURE = {
 #################################################################################
 # FS_MARK                                                                       #
 #################################################################################
-RESULT_FSMARK_NAME = "fs_mark.json"
+RESULT_FSMARK_NAME = "fs_mark_results.json"
 FILES = 10000
 FILES_STEP = 10000
 FILES_LIMIT = 100001
@@ -76,4 +76,4 @@ INODE_COUNT = '-N 1100000'
 #################################################################################
 # LMBench                                                                       #
 #################################################################################
-
+RESULT_LMBENCH_NAME = "lmbench_results.json"

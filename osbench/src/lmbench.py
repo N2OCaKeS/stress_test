@@ -1,3 +1,4 @@
+import re
 import json
 
 from os import makedirs
@@ -109,12 +110,12 @@ class LMBench(Test):
 
         if all(code for code in status_code_dict.values()):
             log.info("LMbench: - тестирование завершено успешно")
-            log.debug(f"{Colors.GREEN}Все тесты успешны: {status_code_dict}{Colors.RESET}")
+            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
             self.test_success = True
             return True, True
         else:
             failed_tests = [name for name, code in status_code_dict.items() if not code]
-            log.error(f"LMbench: - тестирование провалено. Проваленные тесты: {failed_tests}")
+            log.critical(f"LMbench: - тестирование провалено. Проваленные тесты: {failed_tests}")
             log.debug(f"{Colors.RED}Статусы: {status_code_dict}{Colors.RESET}")
             self.test_success = False
             return True, False
@@ -127,7 +128,7 @@ class LMBench(Test):
         """
 
         if not self.test_success:
-            log.warning(f"{Colors.RED}LMbench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
+            log.critical(f"{Colors.RED}LMbench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
             return True, False
         
         log.info("Сохранение результатов LMbench")
@@ -139,24 +140,119 @@ class LMBench(Test):
         
         try:
             with open(self.results_file, 'r') as f:
-                results_text = f.read()
+                content  = f.read()
             
             makedirs(RESULTS_MAIN_DIR, exist_ok=True)
             
-            # Сохраняем в JSON
+            results = {}
+            
+            # Разбиваем на тесты
+            test_blocks = re.findall(r'Test: (.+?)\n=+\n(.*?)\n=+', content, re.DOTALL)
+            
+            for test_name, result_text in test_blocks:
+                test_name = test_name.strip()
+                
+                # Определяем тип теста и единицы измерения
+                if 'lat_mem_rd' in test_name:
+                    numbers = re.findall(r'[\d\.]+\s+([\d\.]+)', result_text)
+                    if numbers:
+                        results[test_name] = {
+                            "value": float(numbers[-1]),
+                            "unit": "nanoseconds"
+                        }
+                        
+                elif 'lat_ctx' in test_name:
+                    numbers = re.findall(r'(\d+)\s+([\d\.]+)', result_text)
+                    if numbers:
+                        results[test_name] = {
+                            "value": float(numbers[-1][1]),
+                            "unit": "microseconds"
+                        }
+                        
+                elif 'lat_fs' in test_name:
+                    match = re.search(r'10k\s+(\d+)', result_text, re.IGNORECASE)
+                    if match:
+                        results[test_name] = {
+                            "value": int(match.group(1)),
+                            "unit": "operations/sec"
+                        }
+                        
+                elif 'bw_mem' in test_name:
+                    numbers = re.findall(r'[\d\.]+\s+([\d\.]+)', result_text)
+                    if numbers:
+                        results[test_name] = {
+                            "value": float(numbers[-1]),
+                            "unit": "MB/s"
+                        }
+                        
+                elif 'bw_file_rd' in test_name:
+                    match = re.search(r'[\d\.]+\s+([\d\.]+)', result_text)
+                    if match:
+                        results[test_name] = {
+                            "value": float(match.group(1)),
+                            "unit": "MB/s"
+                        }
+                        
+                elif 'lat_pipe' in test_name:
+                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+                    if match:
+                        results[test_name] = {
+                            "value": float(match.group(1)),
+                            "unit": "microseconds"
+                        }
+                        
+                elif 'bw_pipe' in test_name:
+                    match = re.search(r'([\d\.]+)\s+MB/sec', result_text)
+                    if match:
+                        results[test_name] = {
+                            "value": float(match.group(1)),
+                            "unit": "MB/s"
+                        }
+                        
+                elif 'lat_proc' in test_name:
+                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+                    if match:
+                        results[test_name] = {
+                            "value": float(match.group(1)),
+                            "unit": "microseconds"
+                        }
+                        
+                elif 'lat_sig' in test_name:
+                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+                    if match:
+                        results[test_name] = {
+                            "value": float(match.group(1)),
+                            "unit": "microseconds"
+                        }
+                        
+                elif 'lat_syscall' in test_name:
+                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+                    if match:
+                        results[test_name] = {
+                            "value": float(match.group(1)),
+                            "unit": "microseconds"
+                        }
+                else:
+                    numbers = re.findall(r'([\d\.]+)', result_text)
+                    if numbers:
+                        results[test_name] = {
+                            "value": float(numbers[0]),
+                            "unit": "unknown"
+                        }
+            
+            makedirs(RESULTS_MAIN_DIR, exist_ok=True)
             json_path = f"{RESULTS_MAIN_DIR}/{RESULT_LMBENCH_NAME}"
             with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'test_name': 'LMbench',
-                    'results_file': str(self.results_file),
-                    'raw_output': results_text,
-                    'timestamp': system.leave_command('date', returncode=True)[0]
-                }, f, indent=4, ensure_ascii=False)
+                json.dump(results, f, indent=4, ensure_ascii=False)
             
             log.info(f"LMbench: - результаты сохранены в {json_path}")
+            log.info(f"Собрано результатов: {len(results)}")
+            
             return True, True
             
         except Exception as e:
-            log.error(f"LMbench: - ошибка при сохранении результатов: {e}")
+            log.critical(f"LMbench: - ошибка при сохранении результатов: {e}")
+            import traceback
+            log.critical(traceback.format_exc())
             return True, False
 

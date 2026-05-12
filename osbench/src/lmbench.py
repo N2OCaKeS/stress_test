@@ -21,7 +21,7 @@ class LMBench(Test):
                  report_filename=None):
         
         self.test_success = False
-        self.lmbench_dir = f"{MAIN_DIR}/benchmarks/LMbench/lmbench/"
+        self.lmbench_dir = f"{MAIN_DIR}/benchmarks/LMbench/lmbench"
         self.bin_path = f"{self.lmbench_dir}/bin/x86_64-linux-gnu"
         self.results_dir = f"{self.lmbench_dir}/results"
         self.results_file = f"{self.results_dir}/lmbench_result.txt"

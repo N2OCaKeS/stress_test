@@ -52,3 +52,33 @@ async def test_dept_admin_cannot_delete_service(client, dept_admin_a_token, serv
     resp = await client.delete(f"{URL}/{service_x.service_name}",
                                 headers={"Authorization": f"Bearer {dept_admin_a_token}"})
     assert resp.status_code == 403
+
+
+# ── Cascade after delete ──────────────────────────────────────────────────────
+
+ME_URL = "/api/auth/v1/me"
+
+
+async def test_delete_service_revokes_department_access(client, admin_token, user_a, user_a_token, service_x):
+    """После удаления сервиса у отдела не остаётся к нему доступа — /me не показывает service."""
+    # Sanity: до удаления user_a (из dept_a с грантом на service_x) видит service_x
+    before = (await client.get(ME_URL, headers={"Authorization": f"Bearer {user_a_token}"})).json()
+    assert service_x.service_name in before["allowed_services"]
+
+    await client.delete(f"{URL}/{service_x.service_name}",
+                        headers={"Authorization": f"Bearer {admin_token}"})
+
+    after = (await client.get(ME_URL, headers={"Authorization": f"Bearer {user_a_token}"})).json()
+    assert service_x.service_name not in after["allowed_services"]
+
+
+async def test_delete_service_deactivates_user_service_roles(client, admin_token, user_a, user_a_token, service_x):
+    """После удаления сервиса роли пользователя по нему деактивируются — /me не показывает roles."""
+    before = (await client.get(ME_URL, headers={"Authorization": f"Bearer {user_a_token}"})).json()
+    assert service_x.service_name in before["service_roles"]
+
+    await client.delete(f"{URL}/{service_x.service_name}",
+                        headers={"Authorization": f"Bearer {admin_token}"})
+
+    after = (await client.get(ME_URL, headers={"Authorization": f"Bearer {user_a_token}"})).json()
+    assert service_x.service_name not in after["service_roles"]

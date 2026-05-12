@@ -2,9 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, Request
 
 from src.core.constants import PlatformRole
+from src.core.exceptions import AuthenticationError, AuthorizationError
 from src.core.security import decode_access_token
 from src.schemas.auth import IdentityContext
 
@@ -33,12 +34,18 @@ async def get_current_identity(
     """Resolve the current authenticated identity from Bearer JWT."""
     token = _extract_bearer(request)
     if token is None:
-        raise HTTPException(status_code=401, detail={"error": "unauthorized", "error_code": "ACCESS_TOKEN_EXPIRED", "message": "Missing bearer token"})
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_EXPIRED",
+            message="Missing bearer token",
+        )
     try:
         payload = decode_access_token(token)
         return _payload_to_identity(payload)
     except Exception:
-        raise HTTPException(status_code=401, detail={"error": "unauthorized", "error_code": "ACCESS_TOKEN_EXPIRED", "message": "Invalid or expired token"})
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_EXPIRED",
+            message="Invalid or expired token",
+        )
 
 
 CurrentIdentity = Annotated[IdentityContext, Depends(get_current_identity)]
@@ -46,13 +53,19 @@ CurrentIdentity = Annotated[IdentityContext, Depends(get_current_identity)]
 
 def require_account_admin(identity: CurrentIdentity) -> IdentityContext:
     if identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
-        raise HTTPException(status_code=403, detail={"error": "forbidden", "error_code": "ROLE_REQUIRED", "message": "account_admin role required"})
+        raise AuthorizationError(
+            error_code="ROLE_REQUIRED",
+            message="account_admin role required",
+        )
     return identity
 
 
 def require_any_admin(identity: CurrentIdentity) -> IdentityContext:
     if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
-        raise HTTPException(status_code=403, detail={"error": "forbidden", "error_code": "ROLE_REQUIRED", "message": "Admin role required"})
+        raise AuthorizationError(
+            error_code="ROLE_REQUIRED",
+            message="Admin role required",
+        )
     return identity
 
 

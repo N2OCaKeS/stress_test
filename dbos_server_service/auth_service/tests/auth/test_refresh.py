@@ -1,5 +1,12 @@
 """Тесты: POST /api/auth/v1/refresh — обновление access-токена."""
 
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import update
+
+from src.core.security import hash_refresh_token
+from src.models import Session
+
 URL = "/api/auth/v1/refresh"
 
 
@@ -42,3 +49,20 @@ async def test_refresh_expired_token_returns_401(client, account_admin):
     resp = await client.post(URL, json={"refresh_token": "completely_fake_token"})
     assert resp.status_code == 401
     assert resp.json()["error_code"] in ("REFRESH_TOKEN_INVALID", "REFRESH_TOKEN_EXPIRED")
+
+
+async def test_refresh_truly_expired_session_returns_expired_error(client, account_admin, db):
+    """Истёкший по времени refresh_token (Session.expires_at в прошлом) → 401 REFRESH_TOKEN_EXPIRED."""
+    data = await _login(client)
+    raw = data["refresh_token"]
+
+    await db.execute(
+        update(Session)
+        .where(Session.refresh_token_hash == hash_refresh_token(raw))
+        .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=10))
+    )
+    await db.commit()
+
+    resp = await client.post(URL, json={"refresh_token": raw})
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "REFRESH_TOKEN_EXPIRED"

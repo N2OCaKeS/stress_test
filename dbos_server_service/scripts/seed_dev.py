@@ -10,12 +10,13 @@
   Правила логов: 5 правил из коробки
 """
 
+import os
 import sys
 import time
 import httpx
 
-AUTH_URL    = "http://localhost:8000"
-LOG_URL     = "http://localhost:8001"
+AUTH_URL    = os.environ.get("AUTH_URL", "http://localhost:8000")
+LOG_URL     = os.environ.get("LOG_URL", "http://localhost:8001")
 ADMIN_USER  = "admin"
 ADMIN_PASS  = "1234"
 LOG_API_KEY = "dev-logging-api-key"

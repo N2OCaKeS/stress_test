@@ -288,3 +288,112 @@ async def test_unsupported_grant_type_returns_error(client):
     })
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "UNSUPPORTED_GRANT_TYPE"
+
+
+# ── Authorize: дополнительные пути ────────────────────────────────────────────
+
+async def test_authorize_without_jwt_returns_401(client, admin_token, dept_a):
+    """/authorize требует CurrentIdentity — без Bearer JWT → 401."""
+    created = (await _create_client(client, admin_token, dept_a.id, name="noauth_app",
+                                     grant_types=["authorization_code"])).json()
+    resp = await client.get(AUTHORIZE_URL,
+                            params={
+                                "client_id": created["client_id"],
+                                "redirect_uri": "https://app.example.com/callback",
+                                "response_type": "code",
+                            },
+                            follow_redirects=False)
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "ACCESS_TOKEN_EXPIRED"
+
+
+async def test_authorize_with_deleted_client_returns_401(client, admin_token, user_a_token, dept_a):
+    """После удаления клиента /authorize не должен выдавать код."""
+    created = (await _create_client(client, admin_token, dept_a.id, name="zombie_app",
+                                     grant_types=["authorization_code"])).json()
+    await client.delete(f"{CLIENTS_URL}/{created['id']}",
+                        headers={"Authorization": f"Bearer {admin_token}"})
+
+    resp = await client.get(AUTHORIZE_URL,
+                            headers={"Authorization": f"Bearer {user_a_token}"},
+                            params={
+                                "client_id": created["client_id"],
+                                "redirect_uri": "https://app.example.com/callback",
+                                "response_type": "code",
+                            },
+                            follow_redirects=False)
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "OAUTH_CLIENT_INVALID"
+
+
+# ── Exchange code: проверки на этапе обмена ───────────────────────────────────
+
+
+async def _issue_code(client, admin_token, user_a_token, dept_id, name, redirect_uri="https://app.example.com/callback"):
+    created = (await _create_client(client, admin_token, dept_id, name=name,
+                                     grant_types=["authorization_code"],
+                                     redirect_uris=[redirect_uri])).json()
+    auth_resp = await client.get(AUTHORIZE_URL,
+                                  headers={"Authorization": f"Bearer {user_a_token}"},
+                                  params={
+                                      "client_id": created["client_id"],
+                                      "redirect_uri": redirect_uri,
+                                      "response_type": "code",
+                                  },
+                                  follow_redirects=False)
+    code = auth_resp.headers["location"].split("code=")[1].split("&")[0]
+    return created, code
+
+
+async def test_exchange_wrong_client_secret_returns_401(client, admin_token, user_a_token, dept_a):
+    created, code = await _issue_code(client, admin_token, user_a_token, dept_a.id, "wrong_secret_app")
+    resp = await client.post(TOKEN_URL, json={
+        "grant_type": "authorization_code",
+        "client_id": created["client_id"],
+        "client_secret": "cs_wrong_secret_value",
+        "code": code,
+        "redirect_uri": "https://app.example.com/callback",
+    })
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "OAUTH_CLIENT_INVALID"
+
+
+async def test_exchange_unknown_client_id_returns_401(client, admin_token, user_a_token, dept_a):
+    _, code = await _issue_code(client, admin_token, user_a_token, dept_a.id, "unknown_cid_app")
+    resp = await client.post(TOKEN_URL, json={
+        "grant_type": "authorization_code",
+        "client_id": "completely_unknown_client_id",
+        "client_secret": "cs_anything",
+        "code": code,
+        "redirect_uri": "https://app.example.com/callback",
+    })
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "OAUTH_CLIENT_INVALID"
+
+
+async def test_exchange_redirect_uri_mismatch_returns_403(client, admin_token, user_a_token, dept_a):
+    """Код выдан под redirect_uri=callback, обмен с другим uri → 403 REDIRECT_URI_MISMATCH."""
+    created, code = await _issue_code(client, admin_token, user_a_token, dept_a.id, "uri_mismatch_app")
+    resp = await client.post(TOKEN_URL, json={
+        "grant_type": "authorization_code",
+        "client_id": created["client_id"],
+        "client_secret": created["client_secret"],
+        "code": code,
+        "redirect_uri": "https://different.example.com/callback",
+    })
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "REDIRECT_URI_MISMATCH"
+
+
+async def test_exchange_with_unknown_code_returns_401(client, admin_token, dept_a):
+    created = (await _create_client(client, admin_token, dept_a.id, name="bad_code_app",
+                                     grant_types=["authorization_code"])).json()
+    resp = await client.post(TOKEN_URL, json={
+        "grant_type": "authorization_code",
+        "client_id": created["client_id"],
+        "client_secret": created["client_secret"],
+        "code": "code_never_issued",
+        "redirect_uri": "https://app.example.com/callback",
+    })
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "OAUTH_CODE_INVALID"

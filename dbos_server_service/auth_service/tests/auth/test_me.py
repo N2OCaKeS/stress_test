@@ -1,5 +1,9 @@
 """Тесты: GET /api/auth/v1/me — текущий пользователь."""
 
+from datetime import timedelta
+
+from src.core.security import create_access_token
+
 URL = "/api/auth/v1/me"
 
 
@@ -35,6 +39,17 @@ async def test_me_without_token_returns_401(client, account_admin):
 async def test_me_with_invalid_token_returns_401(client, account_admin):
     resp = await client.get(URL, headers={"Authorization": "Bearer invalid.jwt.token"})
     assert resp.status_code == 401
+
+
+async def test_me_with_truly_expired_jwt_returns_401(client, user_a):
+    """JWT с exp в прошлом, но валидной подписью → 401 ACCESS_TOKEN_EXPIRED (плоский envelope)."""
+    expired = create_access_token(
+        {"sub": user_a.id, "username": user_a.username},
+        expires_delta=timedelta(seconds=-1),
+    )
+    resp = await client.get(URL, headers={"Authorization": f"Bearer {expired}"})
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "ACCESS_TOKEN_EXPIRED"
 
 
 async def test_me_department_admin_has_dept_id(client, dept_admin_a, dept_admin_a_token, dept_a):

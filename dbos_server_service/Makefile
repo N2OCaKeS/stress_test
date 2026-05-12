@@ -1,11 +1,27 @@
 # DBOS Server Manager
 #
-# Dev-окружение (общая БД devcontainer, данные сохраняются):
+# Два режима ручной отладки:
+#
+#   A) Dev-стек В КОНТЕЙНЕРАХ (без devcontainer, с хоста) — make up / make seed / make down
+#   B) Dev-окружение внутри devcontainer (Python на хосте devcontainer'a) — make dev / make dev-stop
+#
+# Dev-стек в Docker (постгрес + оба сервиса в контейнерах, hot reload через mount src/):
+#   make up                # поднять стек (данные сохраняются)
+#   make up-build          # пересобрать образы и поднять
+#   make seed              # ЧИСТАЯ БД + наполнить dev-данными (down -v + up + seed_dev.py)
+#   make logs              # tail логи auth + logging
+#   make ps                # статус контейнеров
+#   make sh-auth           # shell в контейнере auth_service
+#   make sh-logging        # shell в контейнере loging_service
+#   make down              # остановить (данные сохраняются)
+#   make down-v            # остановить + удалить том postgres
+#
+# Devcontainer dev-окружение (общая БД devcontainer, данные сохраняются):
 #   make dev               # применить миграции и запустить auth + logging в фоне
 #   make dev-stop          # остановить оба сервиса (данные остаются)
 #   make dev-logs          # следить за логами обоих сервисов
 #
-# Запуск отдельного сервиса (foreground, авто-перезагрузка):
+# Запуск отдельного сервиса (foreground, авто-перезагрузка, devcontainer):
 #   make run-auth          # запустить auth_service на :8000
 #   make run-logging       # запустить loging_service на :8001
 #
@@ -14,7 +30,7 @@
 #   make test-local-integration  # кросс-сервисные интеграционные тесты
 #   make test-devcont-all        # всё: unit + integration + E2E docker registry
 #
-# Тесты — Docker-режим (CI / полная изоляция):
+# Тесты — Docker-режим (CI / полная изоляция, работает с хоста без devcontainer):
 #   make test-auth           # тесты auth_service в Docker
 #   make test-logging        # тесты loging_service в Docker
 #   make test-integration    # кросс-сервисные тесты в Docker
@@ -24,9 +40,10 @@
 AUTH    = docker compose -f auth_service/tests/docker-compose.test.yml
 LOGGING = docker compose -f loging_service/tests/docker-compose.test.yml
 ROOT    = docker compose -f tests/docker-compose.test.yml
+DEV     = docker compose -f docker-compose.dev.yml
 
 # ── Dev-параметры (devcontainer postgres) ─────────────────────────────────────
-_DEV_PG         = postgresql+psycopg://app_user:app_password@postgres:5432
+_DEV_PG         = postgresql+psycopg://app_user:app_password@postgres:5432в
 _DEV_AUTH_DB    = $(_DEV_PG)/dev_auth
 _DEV_LOG_DB     = $(_DEV_PG)/dev_logging
 _DEV_LOG_KEY    = dev-logging-api-key
@@ -36,6 +53,7 @@ _DEV_ADMIN_PASS = 1234
 _DEV_ADMIN_EMAIL = admin@example.com
 
 .PHONY: help \
+        up up-build seed down down-v logs ps sh-auth sh-logging \
         dev dev-stop dev-logs \
         run-auth run-logging \
         test-dev test-dev-auth test-dev-logging test-dev-integration test-dev-all \
@@ -43,7 +61,43 @@ _DEV_ADMIN_EMAIL = admin@example.com
         test-devcont-all install-registry \
         test-integration test-auth test-auth-e2e test-logging test-all test-down test-build
 
-# ── Dev-окружение ─────────────────────────────────────────────────────────────
+# ── Dev-стек в Docker (без devcontainer) ──────────────────────────────────────
+
+up: ## Поднять dev-стек в Docker (postgres + auth :8000 + logging :8001). Данные сохраняются.
+	@$(DEV) up -d --wait postgres loging_service auth_service
+	@echo ""
+	@echo "  auth_service    →  http://localhost:8000/docs    (admin / 1234)"
+	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin / 1234 после make seed)"
+	@echo ""
+	@echo "  Первый запуск: сделай 'make seed' чтобы наполнить БД dev-данными."
+
+up-build: ## Пересобрать образы auth/logging и поднять dev-стек
+	$(DEV) up -d --wait --build postgres loging_service auth_service
+
+seed: ## Чистая dev-БД + наполнение через scripts/seed_dev.py (down -v → up → seeder)
+	$(DEV) down -v
+	$(DEV) up -d --wait postgres loging_service auth_service
+	$(DEV) run --rm seeder
+
+down: ## Остановить dev-стек (данные в томе postgres сохраняются)
+	$(DEV) down
+
+down-v: ## Остановить и удалить том postgres (полная очистка БД)
+	$(DEV) down -v
+
+logs: ## tail -f логов обоих сервисов (Ctrl+C для выхода)
+	$(DEV) logs -f loging_service auth_service
+
+ps: ## Статус контейнеров dev-стека
+	$(DEV) ps
+
+sh-auth: ## Shell внутри контейнера auth_service
+	$(DEV) exec auth_service /bin/bash
+
+sh-logging: ## Shell внутри контейнера loging_service
+	$(DEV) exec loging_service /bin/bash
+
+# ── Dev-окружение (devcontainer) ──────────────────────────────────────────────
 
 dev: ## Применить миграции и запустить auth + logging на общей dev-БД (данные сохраняются)
 	@$(MAKE) dev-stop --no-print-directory 2>/dev/null; true
@@ -178,11 +232,11 @@ install-registry: ## Установить бинарник registry v2.8.3 (ну
 
 # ── Тесты: Docker-режим ───────────────────────────────────────────────────────
 
-test-auth: ## Тесты auth_service в Docker (без E2E docker-registry)
+test-auth: ## Тесты auth_service в Docker (без E2E docker-registry — быстрый прогон)
 	$(AUTH) run --rm test-runner pytest tests/ -m "not e2e" -v --tb=short
 
-test-auth-e2e: ## Тесты auth_service в Docker включая E2E docker-registry
-	$(AUTH) run --rm test-runner pytest tests/ -v --tb=short
+test-auth-e2e: ## Тесты auth_service в Docker включая E2E docker-registry (поднимает auth-service-e2e + registry)
+	$(AUTH) --profile e2e run --rm test-runner pytest tests/ -v --tb=short
 
 test-logging: ## Тесты loging_service в Docker
 	$(LOGGING) run --rm test-runner pytest tests/ -v --tb=short

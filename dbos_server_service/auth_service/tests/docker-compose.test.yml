@@ -23,6 +23,7 @@ services:
 
   # ── auth_service (real HTTP server for E2E) ───────────────────────────────
   auth-service-e2e:
+    profiles: ["e2e"]
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -52,6 +53,7 @@ services:
 
   # ── One-shot: fetch RSA public cert from auth_service ────────────────────
   fetch-cert:
+    profiles: ["e2e"]
     image: curlimages/curl:latest
     volumes:
       - e2e-certs:/certs
@@ -67,6 +69,7 @@ services:
 
   # ── Docker registry with token auth ──────────────────────────────────────
   docker-registry:
+    profiles: ["e2e"]
     image: registry:2
     environment:
       REGISTRY_AUTH: token
@@ -104,8 +107,12 @@ services:
     depends_on:
       test-postgres:
         condition: service_healthy
-      docker-registry:
-        condition: service_healthy
+      # docker-registry is only needed for -m e2e tests; activate via `--profile e2e`
+    # Bind tests/ and src/ for fast iteration (no rebuild on new test files).
+    # Paths are relative to this compose file (auth_service/tests/).
+    volumes:
+      - .:/app/tests
+      - ../src:/app/src
     # Default: run all tests. Override via `run --rm test-runner pytest ...`
     command: ["pytest", "tests/", "-v", "--tb=short"]
 

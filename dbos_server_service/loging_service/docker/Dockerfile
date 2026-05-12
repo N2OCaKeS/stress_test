@@ -3,6 +3,9 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+# Install dependencies into system Python (no venv) so `python -m alembic`
+# and `uvicorn` in CMD work without `poetry run`.
+ENV POETRY_VIRTUALENVS_CREATE=false
 ENV POETRY_NO_INTERACTION=1
 
 WORKDIR /app
@@ -18,6 +21,7 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry install --only main --no-root
 
 COPY src ./src
+COPY alembic.ini ./
 
 EXPOSE 8001
 

@@ -110,6 +110,82 @@ async def test_revoked_bot_token_inactive_in_introspect(client, admin_token, dep
     assert resp.json()["active"] is False
 
 
+# ── PATCH bot ─────────────────────────────────────────────────────────────────
+
+
+async def test_admin_updates_bot_description(client, admin_token, dept_a):
+    bot_id = (await _create_bot(client, admin_token, dept_a.id, name="patch_bot")).json()["bot_id"]
+    resp = await client.patch(f"{BOTS_URL}/{bot_id}",
+                              headers={"Authorization": f"Bearer {admin_token}"},
+                              json={"description": "обновлённое описание"})
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "обновлённое описание"
+
+
+async def test_admin_updates_bot_status(client, admin_token, dept_a):
+    bot_id = (await _create_bot(client, admin_token, dept_a.id, name="status_bot")).json()["bot_id"]
+    resp = await client.patch(f"{BOTS_URL}/{bot_id}",
+                              headers={"Authorization": f"Bearer {admin_token}"},
+                              json={"status": "disabled"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "disabled"
+
+
+async def test_dept_admin_a_cannot_update_bot_in_dept_b(client, dept_admin_a_token, admin_token, dept_b):
+    bot_id = (await _create_bot(client, admin_token, dept_b.id, name="cross_patch_bot")).json()["bot_id"]
+    resp = await client.patch(f"{BOTS_URL}/{bot_id}",
+                              headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+                              json={"description": "hijack"})
+    assert resp.status_code == 403
+
+
+# ── List bot tokens ───────────────────────────────────────────────────────────
+
+
+async def test_list_bot_tokens_excludes_raw_secret(client, admin_token, dept_a):
+    bot_id = (await _create_bot(client, admin_token, dept_a.id, name="list_tok_bot")).json()["bot_id"]
+    raw = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
+                              headers={"Authorization": f"Bearer {admin_token}"},
+                              json={"name": "ls_tok"})).json()["token"]
+    resp = await client.get(f"{BOTS_URL}/{bot_id}/tokens",
+                            headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1
+    for it in items:
+        assert "token" not in it
+        assert "token_hash" not in it
+        assert it.get("token_prefix") and not it["token_prefix"].endswith(raw[12:])
+
+
+# ── Revoke bot token ──────────────────────────────────────────────────────────
+
+
+async def test_revoke_bot_token_returns_200(client, admin_token, dept_a):
+    bot_id = (await _create_bot(client, admin_token, dept_a.id, name="rev200_bot")).json()["bot_id"]
+    tok_id = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
+                                 headers={"Authorization": f"Bearer {admin_token}"},
+                                 json={"name": "to_kill"})).json()["token_id"]
+    resp = await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_id}",
+                               headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 200
+
+
+async def test_double_revoke_bot_token_returns_409(client, admin_token, dept_a):
+    bot_id = (await _create_bot(client, admin_token, dept_a.id, name="rev409_bot")).json()["bot_id"]
+    tok_id = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
+                                 headers={"Authorization": f"Bearer {admin_token}"},
+                                 json={"name": "dbl_kill"})).json()["token_id"]
+    await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_id}",
+                        headers={"Authorization": f"Bearer {admin_token}"})
+    resp = await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_id}",
+                               headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 409
+
+
+# ── Scope (existing) ──────────────────────────────────────────────────────────
+
+
 async def test_bot_token_scope_limited_by_dept_access(client, admin_token, dept_a_with_service, service_x, db):
     """After dept service revoke, bot token introspect should no longer include the service."""
     bot_id = (await _create_bot(client, admin_token, dept_a_with_service.id,

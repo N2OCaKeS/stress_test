@@ -122,6 +122,64 @@ async def test_push_allowed_for_listed_user(client, admin_token, user_a, dept_a)
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
                       params={"service": "registry.test", "scope": "repository:myapp:push"})
     assert resp.status_code == 200
+    access = _decode_access(resp.json()["access_token"])
+    assert any("push" in entry.get("actions", []) for entry in access)
+
+
+# ── pull_policy=restricted push semantics ─────────────────────────────────────
+
+
+import jwt as _jwt
+
+
+def _decode_access(token: str) -> list[dict]:
+    """Decode docker JWT (RS256) without verifying signature — tests just need access claim."""
+    return _jwt.decode(token, options={"verify_signature": False}).get("access", [])
+
+
+async def test_push_denied_for_user_not_in_push_list(client, admin_token, user_a, dept_a):
+    """user_a в pull_user_ids, но НЕ в push_user_ids — push action не должен попасть в токен."""
+    await _enable_docker(client, admin_token, dept_a.id,
+                         pull_policy="restricted",
+                         pull_user_ids=[user_a.id], push_user_ids=[])
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+                            params={"service": "registry.test", "scope": "repository:myapp:push"})
+    assert resp.status_code == 200
+    access = _decode_access(resp.json()["access_token"])
+    # либо нет совпавшего entry, либо есть entry, но без 'push' в actions
+    assert all("push" not in entry.get("actions", []) for entry in access)
+
+
+async def test_push_denied_for_user_in_other_dept(client, admin_token, user_b, dept_a, dept_b):
+    """user_b живёт в dept_b, конфиг включён только в dept_a → push отказан."""
+    await _enable_docker(client, admin_token, dept_a.id, push_user_ids=[user_b.id])
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_b", "User1234!"),
+                            params={"service": "registry.test", "scope": "repository:myapp:push"})
+    # dept_b не имеет docker_registry конфига → 403
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "DOCKER_ACCESS_DENIED"
+
+
+async def test_push_pull_combined_scope_returns_only_allowed_actions(client, admin_token, user_a, dept_a):
+    """scope='repository:x:pull,push' для user_a с pull-only — токен содержит только pull."""
+    await _enable_docker(client, admin_token, dept_a.id,
+                         pull_policy="all", push_user_ids=[])
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+                            params={"service": "registry.test", "scope": "repository:myapp:pull,push"})
+    assert resp.status_code == 200
+    access = _decode_access(resp.json()["access_token"])
+    assert len(access) == 1
+    assert set(access[0]["actions"]) == {"pull"}
+
+
+async def test_empty_push_user_ids_nobody_can_push(client, admin_token, user_a, dept_a):
+    """push_user_ids=[] — никто не имеет push, токен возвращается без push в access."""
+    await _enable_docker(client, admin_token, dept_a.id, push_user_ids=[])
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+                            params={"service": "registry.test", "scope": "repository:myapp:push"})
+    assert resp.status_code == 200
+    access = _decode_access(resp.json()["access_token"])
+    assert all("push" not in entry.get("actions", []) for entry in access)
 
 
 # ── PAT as Docker password ────────────────────────────────────────────────────

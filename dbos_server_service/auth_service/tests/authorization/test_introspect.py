@@ -1,5 +1,12 @@
 """Тесты: POST /api/auth/v1/authorization/introspect и /service-access — проверка токенов и доступа к сервисам."""
 
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import update
+
+from src.core.security import create_access_token, hash_opaque_token
+from src.models import PersonalAccessToken
+
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 ACCESS_URL = "/api/auth/v1/authorization/service-access"
 LOGIN_URL = "/api/auth/v1/login"
@@ -37,6 +44,17 @@ async def test_account_admin_jwt_has_no_services(client, admin_token):
     assert resp.json()["allowed_services"] == []
 
 
+async def test_expired_jwt_is_inactive(client, user_a):
+    """Валидно подписанный JWT с exp в прошлом → active=false."""
+    expired = create_access_token(
+        {"sub": user_a.id, "username": user_a.username},
+        expires_delta=timedelta(seconds=-1),
+    )
+    resp = await client.post(INTROSPECT_URL, json={"token": expired})
+    assert resp.status_code == 200
+    assert resp.json()["active"] is False
+
+
 # ── PAT introspect ────────────────────────────────────────────────────────────
 
 async def test_pat_is_active(client, user_a_token):
@@ -45,6 +63,23 @@ async def test_pat_is_active(client, user_a_token):
     resp = await client.post(INTROSPECT_URL, json={"token": raw})
     assert resp.json()["active"] is True
     assert resp.json()["subject_type"] == "user"
+
+
+async def test_expired_pat_is_inactive(client, user_a_token, db):
+    """PAT с expires_at в прошлом → active=false."""
+    raw = (await client.post(TOKENS_URL, headers={"Authorization": f"Bearer {user_a_token}"},
+                              json={"name": "expired_pat", "allowed_services": []})).json()["token"]
+
+    await db.execute(
+        update(PersonalAccessToken)
+        .where(PersonalAccessToken.token_hash == hash_opaque_token(raw))
+        .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=10))
+    )
+    await db.commit()
+
+    resp = await client.post(INTROSPECT_URL, json={"token": raw})
+    assert resp.status_code == 200
+    assert resp.json()["active"] is False
 
 
 # ── Bot token introspect ──────────────────────────────────────────────────────

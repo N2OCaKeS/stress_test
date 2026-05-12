@@ -118,9 +118,9 @@ if args.TESTNAME == 'segfault':
     sigmentation_fault.vms_destroy()
 
     if status:
-        uzs.upload_test_cycle_status(zefir_status='pass')
-    else:
         uzs.upload_test_cycle_status(zefir_status='fail')
+    else:
+        uzs.upload_test_cycle_status(zefir_status='pass')
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())

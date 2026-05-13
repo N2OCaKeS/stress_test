@@ -34,6 +34,7 @@ from allta_cli.commands import server as server_api
 from allta_cli.commands import jira as jira_api
 from allta_cli.commands import kernel as kernel_api
 from allta_cli.commands import modeswitch as modeswitch_api
+from allta_cli.commands import upgrade as upgrade_api
 
 COMMANDS_NO_AUTH = (
     "login",
@@ -45,6 +46,7 @@ COMMANDS_NO_AUTH = (
     "venv",
     "kernel",
     "modeswitch",
+    "upgrade",
 )
 
 COMMANDS_WITH_AUTH = (
@@ -76,6 +78,7 @@ COMMAND_SHORTCUTS = {
     "j": "jira",
     "k": "kernel",
     "ms": "modeswitch",
+    "up": "upgrade",
 }
 COMMAND_SHORTCUT_NAMES = tuple(COMMAND_SHORTCUTS.keys())
 
@@ -765,6 +768,8 @@ CONTEXT_SETTINGS = dict(
         "  allta kernel                                   выбрать ядро для установки + дефолт в GRUB\n"
         "  allta modeswitch o                             переключить Astra Linux в режим Орёл\n"
         "  allta modeswitch s                             переключить Astra Linux в режим Смоленск\n"
+        "  allta upgrade                                  обновить пакет allta до последней версии\n"
+        "  allta upgrade --check                          только показать доступную версию\n"
     ),
 )
 @click.version_option(version="0.1.0", prog_name="allta")
@@ -1140,6 +1145,24 @@ def kernel_cli(kernel_name: str | None):
 @with_section("MODESWITCH")
 def modeswitch_cli(mode: str):
     rc = modeswitch_api.modeswitch_cmd(mode)
+    sys.exit(rc)
+
+
+@cli.command(
+    "upgrade",
+    short_help="Обновить пакет allta до последней версии с внутреннего FTP.",
+    help=(
+        "Скачивает свежий .deb-пакет allta с анонимного FTP "
+        "(10.177.103.10) и устанавливает его поверх текущего через apt-get. "
+        "Версии сравниваются нативным dpkg. По умолчанию ничего не делает, если "
+        "установленная версия уже совпадает с актуальной."
+    ),
+)
+@click.option("--check", "-n", is_flag=True, help="Только показать доступную версию, не качать и не ставить.")
+@click.option("--force", is_flag=True, help="Поставить даже если версия совпадает или у вас новее.")
+@with_section("UPGRADE")
+def upgrade_cli(check: bool, force: bool):
+    rc = upgrade_api.upgrade_cmd(check=check, force=force)
     sys.exit(rc)
 
 

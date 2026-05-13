@@ -28,37 +28,29 @@ class PerfBenchParser:
         """
         result = {"test": test_name, "value": None, "unit": "seconds"}
         
-        # Ищем время выполнения
-        # Average of 3 runs: 0.123 seconds
-        match = re.search(r'Average.*?([\d\.]+)\s+seconds', output)
-        if not match:
-            # Альтернативный формат: "Runtime: 0.123 seconds"
-            match = re.search(r'Runtime:\s*([\d\.]+)\s+seconds', output)
-        if not match:
-            # Число в конце строки с секундами
-            match = re.search(r'([\d\.]+)\s+seconds', output)
-        
+        # Ищем Total time
+        match = re.search(r'Total time:\s*([\d\.]+)\s*\[sec\]', output)
         if match:
             result["value"] = float(match.group(1))
-        else:
-            log.warning(f"Не удалось распарсить {test_name}: {output[:100]}")
+            return result
         
+        log.warning(f"Не удалось распарсить {test_name}")
         return result
     
     def parse_mem_output(self, output: str, test_name: str) -> dict:
         """
         Парсинг результатов mem тестов
         """
-        result = {"test": test_name, "value": None, "unit": "MB/sec"}
+        result = {"test": test_name, "value": None, "unit": "GB/sec"}
         
-        # Ищем пропускную способность
-        # Пример: "74688.000 MB/sec"
-        match = re.search(r'([\d\.]+)\s+MB/sec', output)
-        if match:
-            result["value"] = float(match.group(1))
-        else:
-            log.warning(f"Не удалось распарсить {test_name}: {output[:100]}")
+        # Ищем все значения GB/sec 
+        matches = re.findall(r'(\d+),(\d+)\s+GB/sec', output)
+        if matches:
+            values = [float(f"{m[0]}.{m[1]}") for m in matches]
+            result["value"] = max(values)
+            return result
         
+        log.warning(f"Не удалось распарсить {test_name}")
         return result
     
     def parse_futex_output(self, output: str, test_name: str) -> dict:
@@ -67,17 +59,22 @@ class PerfBenchParser:
         """
         result = {"test": test_name, "value": None, "unit": "ops/sec"}
         
-        # Пример: "Average ops/sec: 1234567.89"
-        match = re.search(r'Average ops/sec:\s*([\d\.]+)', output)
-        if not match:
-            # Альтернативный формат: "1234567.89 ops/sec"
-            match = re.search(r'([\d\.]+)\s+ops/sec', output)
-        
-        if match:
-            result["value"] = float(match.group(1))
+        if "hash" in test_name.lower():
+            # Для futex hash
+            match = re.search(r'Averaged\s+(\d+)\s+operations/sec', output)
+            if match:
+                result["value"] = float(match.group(1))
+                return result
         else:
-            log.warning(f"Не удалось распарсить {test_name}: {output[:100]}")
+            # Для futex wake/requeue берём среднее время
+            match = re.search(r'in\s+(\d+),(\d+)\s+ms', output)
+            if match:
+                value = float(f"{match.group(1)}.{match.group(2)}")
+                result["value"] = value
+                result["unit"] = "milliseconds"
+                return result
         
+        log.warning(f"Не удалось распарсить {test_name}")
         return result
     
     def parse_epoll_output(self, output: str, test_name: str) -> dict:
@@ -86,29 +83,34 @@ class PerfBenchParser:
         """
         result = {"test": test_name, "value": None, "unit": "ops/sec"}
         
-        # Пример: "Average ops/sec: 1234567.89"
-        match = re.search(r'Average ops/sec:\s*([\d\.]+)', output)
-        if not match:
-            match = re.search(r'([\d\.]+)\s+ops/sec', output)
-        
-        if match:
-            result["value"] = float(match.group(1))
+        if "wait" in test_name.lower():
+            # Для epoll wait
+            match = re.search(r'Averaged\s+(\d+)\s+operations/sec', output)
+            if match:
+                result["value"] = float(match.group(1))
+                return result
         else:
-            log.warning(f"Не удалось распарсить {test_name}: {output[:100]}")
+            # Для epoll ctl
+            match = re.search(r'Averaged\s+(\d+)\s+ADD\s+operations', output)
+            if match:
+                result["value"] = float(match.group(1))
+                result["unit"] = "operations/sec"
+                return result
         
+        log.warning(f"Не удалось распарсить {test_name}")
         return result
     
     def parse(self, test_name: str, output: str) -> dict:
         """
         Основной метод парсинга в зависимости от типа теста
         """
-        if 'sched' in test_name:
+        if 'sched' in test_name.lower():
             return self.parse_sched_output(output, test_name)
-        elif 'mem' in test_name:
+        elif 'mem' in test_name.lower():
             return self.parse_mem_output(output, test_name)
-        elif 'futex' in test_name:
+        elif 'futex' in test_name.lower():
             return self.parse_futex_output(output, test_name)
-        elif 'epoll' in test_name:
+        elif 'epoll' in test_name.lower():
             return self.parse_epoll_output(output, test_name)
         else:
             return {"test": test_name, "value": None, "unit": "unknown"}
@@ -132,7 +134,7 @@ class PerfBench(Test):
     
     def __init__(self):
         self.test_success = False
-        self.perf_dir = f"{MAIN_DIR}/benchmarks/perf bench"
+        self.perf_dir = f"{MAIN_DIR}/benchmarks/perfbench"
         self.results_file = f"{self.perf_dir}/perf_bench_result.txt"
         self.writer = Writer(file_name=RESULTS_STATUS)
         self.parser = PerfBenchParser()
@@ -162,22 +164,20 @@ class PerfBench(Test):
         
         tests = [
             # Sched тесты (планировщик и IPC)
-            ("sched pipe", "sched pipe", "sched"),
-            ("sched messaging", "sched messaging", "sched"),
+            ("sched pipe", "sched pipe"),
+            ("sched messaging", "sched messaging"),
             
             # Mem тесты (производительность памяти)
-            ("memcpy", "mem memcpy", "mem"),
-            ("memcpy 1M", "mem memcpy -l 1M", "mem"),
-            ("memcpy 10M", "mem memcpy -l 10M", "mem"),
+            ("memcpy", "mem memcpy"),
             
             # Futex тесты (быстрые блокировки)
-            ("futex hash", "futex hash", "futex"),
-            ("futex wake", "futex wake", "futex"),
-            ("futex requeue", "futex requeue", "futex"),
+            ("futex hash", "futex hash"),
+            ("futex wake", "futex wake"),
+            ("futex requeue", "futex requeue"),
             
             # Epoll тесты (опрос событий)
-            ("epoll wait", "epoll wait", "epoll"),
-            ("epoll ctl", "epoll ctl", "epoll"),
+            ("epoll wait", "epoll wait"),
+            ("epoll ctl", "epoll ctl"),
         ]
         
         status_codes = []
@@ -188,7 +188,7 @@ class PerfBench(Test):
             f.write(f"Started: {system.leave_command('date', returncode=True)[0]}\n")
             f.write(f"{'='*60}\n\n")
         
-        for display_name, test_args, test_type in tests:
+        for display_name, test_args in tests:
             log.info(f"Running: {display_name}...")
             
             output, code = self.run_perf_test(test_args)
@@ -204,19 +204,20 @@ class PerfBench(Test):
                 f.write(f"\n{'='*60}\n\n")
             
             # Парсим результат
-            parsed = self.parser.parse(display_name, output)
-            self.parser.add_result(display_name, parsed)
-            
-            if parsed["value"]:
-                log.debug(f"  Result: {parsed['value']} {parsed['unit']}")
-            
-            self.writer.wrs(
-                cl=self.__class__,
-                method=self.start_test.__name__,
-                test=display_name,
-                status=code,
-                message=f"Result: {parsed['value']} {parsed['unit']}" if parsed['value'] else ""
-            )
+            if code:
+                parsed = self.parser.parse(display_name, output)
+                self.parser.add_result(display_name, parsed)
+                
+                if parsed["value"]:
+                    log.debug(f"  Result: {parsed['value']} {parsed['unit']}")
+                
+                self.writer.wrs(
+                    cl=self.__class__,
+                    method=self.start_test.__name__,
+                    test=display_name,
+                    status=code,
+                    message=f"Result: {parsed['value']} {parsed['unit']}" if parsed['value'] else ""
+                )
         
         all_success = all(status_codes)
         

@@ -16,7 +16,7 @@ install_deps() {
 
 install_perf() {
     if command -v apt-get &> /dev/null; then
-        sudo apt-get install -y linux-tools-common linux-tools-$(uname -r) || sudo apt-get install -y linux-tools-common
+        sudo apt-get install -y linux-tools-$(uname -r) || sudo apt-get install -y linux-tools-common
     elif command -v dnf &> /dev/null; then
         sudo dnf install -y perf
     elif command -v pacman &> /dev/null; then

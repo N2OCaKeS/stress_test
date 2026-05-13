@@ -101,8 +101,19 @@ async def create_or_replace_config(
         )
 
     await db.commit()
-    audit_service.emit("docker_registry.configure", actor_id, target_type="docker_registry",
-                       details={"department_id": department_id}, request_id=request_id)
+    audit_service.emit(
+        "docker_registry.configure", actor_id, target_type="docker_registry",
+        details={
+            "department_id": department_id,
+            "department_name": dept.display_name,
+            "pull_policy": data.pull_policy,
+            "pull_user_ids": list(data.pull_user_ids or []),
+            "push_user_ids": list(data.push_user_ids or []),
+            "pull_user_count": len(data.pull_user_ids or []),
+            "push_user_count": len(data.push_user_ids or []),
+        },
+        request_id=request_id,
+    )
     return _cfg_to_response(cfg)
 
 
@@ -146,8 +157,15 @@ async def update_config(
     await docker_repo.update(cfg, **updates)
     await db.commit()
     await db.refresh(cfg)
-    audit_service.emit("docker_registry.update", actor_id, target_type="docker_registry",
-                       details={"department_id": department_id}, request_id=request_id)
+    audit_service.emit(
+        "docker_registry.update", actor_id, target_type="docker_registry",
+        details={
+            "department_id": department_id,
+            "changes": updates,
+            "fields_changed": sorted(updates.keys()),
+        },
+        request_id=request_id,
+    )
     return _cfg_to_response(cfg)
 
 
@@ -162,7 +180,13 @@ async def get_config(db: AsyncSession, department_id: str, actor_id: str | None 
     from src.services import audit_service
     audit_service.emit(
         "docker_registry.get_config", actor_id, department_id=department_id,
-        target_type="docker_registry", status="success", allowed=True, request_id=request_id,
+        target_type="docker_registry", status="success", allowed=True,
+        details={
+            "department_id": department_id,
+            "is_enabled": cfg.is_enabled,
+            "pull_policy": cfg.pull_policy,
+        },
+        request_id=request_id,
     )
     return _cfg_to_response(cfg)
 
@@ -195,8 +219,11 @@ async def delete_config(
 
     await docker_repo.update(cfg, is_enabled=False)
     await db.commit()
-    audit_service.emit("docker_registry.disable", actor_id, target_type="docker_registry",
-                       details={"department_id": department_id}, request_id=request_id)
+    audit_service.emit(
+        "docker_registry.disable", actor_id, target_type="docker_registry",
+        details={"department_id": department_id, "previous_pull_policy": cfg.pull_policy},
+        request_id=request_id,
+    )
 
 
 # ── Token issuance ────────────────────────────────────────────────────────────
@@ -311,7 +338,15 @@ async def issue_token(
         target_type="docker_registry",
         status="success",
         allowed=True,
-        details={"scope": scope, "access": allowed_access},
+        details={
+            "username": username,
+            "service": service or settings.docker_registry_service,
+            "requested_scope": scope,
+            "requested_access": requested_access,
+            "granted_access": allowed_access,
+            "granted_action_count": sum(len(a["actions"]) for a in allowed_access),
+            "ttl_seconds": int(ttl.total_seconds()),
+        },
         request_id=request_id,
     )
     return DockerTokenResponse(

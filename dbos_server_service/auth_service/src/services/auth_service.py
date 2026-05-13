@@ -21,7 +21,7 @@ from src.repositories.roles import RoleRepository
 from src.repositories.sessions import SessionRepository
 from src.repositories.users import UserRepository
 from src.schemas.auth import IdentityContext, LoginResponse, RefreshResponse
-from src.services import audit_service
+from src.services import audit_context, audit_service
 from src.utils.time import expires_at, is_expired, utcnow
 
 _MAX_FAILED_ATTEMPTS = 5
@@ -100,7 +100,7 @@ async def login(
     if user.locked_until and not is_expired(user.locked_until):
         locked_dt = user.locked_until if user.locked_until.tzinfo else user.locked_until.replace(tzinfo=timezone.utc)
         retry_secs = int((locked_dt - utcnow()).total_seconds())
-        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "account_locked"}, request_id=request_id)
+        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "account_locked", "username": user.username, "retry_after_seconds": retry_secs}, request_id=request_id)
         raise AuthorizationError(
             error_code="ACCOUNT_TEMPORARILY_LOCKED",
             message="Account is temporarily locked",
@@ -109,11 +109,11 @@ async def login(
         )
 
     if user.status == UserStatus.BANNED:
-        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "banned"}, request_id=request_id)
+        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "banned", "username": user.username}, request_id=request_id)
         raise AuthorizationError(error_code="USER_BANNED", message="User is banned")
 
     if user.status == UserStatus.BLOCKED:
-        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "blocked"}, request_id=request_id)
+        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "blocked", "username": user.username}, request_id=request_id)
         raise AuthorizationError(error_code="USER_BLOCKED", message="User is blocked")
 
     if not verify_password(password, user.password_hash):
@@ -121,7 +121,7 @@ async def login(
         if user.failed_login_attempts >= _MAX_FAILED_ATTEMPTS:
             user.locked_until = expires_at(minutes=_LOCKOUT_MINUTES)
             await db.flush()
-        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "invalid_password", "attempts": user.failed_login_attempts}, request_id=request_id)
+        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "invalid_password", "username": user.username, "attempts": user.failed_login_attempts, "max_attempts": _MAX_FAILED_ATTEMPTS}, request_id=request_id)
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid username or password")
 
     await user_repo.reset_failed_attempts(user)
@@ -146,7 +146,19 @@ async def login(
     access_token = _build_access_token(user, allowed_services, service_roles)
     await db.commit()
 
-    audit_service.emit("user.login", user.id, status="success", request_id=request_id)
+    audit_context.update_context(
+        actor_id=user.id, username=user.username, department_id=user.department_id,
+    )
+    audit_service.emit(
+        "user.login", user.id, status="success", request_id=request_id,
+        details={
+            "username": username,
+            "department_id": user.department_id,
+            "platform_role": user.platform_role,
+            "allowed_services_count": len(allowed_services),
+            "service_roles_summary": {k: list(v) for k, v in service_roles.items()},
+        },
+    )
     return LoginResponse(
         access_token=access_token,
         refresh_token=raw_refresh,
@@ -207,7 +219,17 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
     access_token = _build_access_token(user, allowed_services, service_roles)
     await db.commit()
 
-    audit_service.emit("user.refresh", user.id, status="success", request_id=request_id)
+    audit_context.update_context(
+        actor_id=user.id, username=user.username, department_id=user.department_id,
+    )
+    audit_service.emit(
+        "user.refresh", user.id, status="success", request_id=request_id,
+        details={
+            "session_id": sess.id,
+            "username": user.username,
+            "department_id": user.department_id,
+        },
+    )
     return RefreshResponse(
         access_token=access_token,
         refresh_token=new_raw,
@@ -223,7 +245,10 @@ async def logout(db: AsyncSession, raw_refresh_token: str, request_id: str | Non
         user_id = sess.user_id
         await session_repo.revoke(sess)
         await db.commit()
-        audit_service.emit("user.logout", user_id, status="success", request_id=request_id)
+        audit_service.emit(
+            "user.logout", user_id, status="success", request_id=request_id,
+            details={"session_id": sess.id},
+        )
 
 
 async def get_identity(db: AsyncSession, user_id: str, request_id: str | None = None) -> IdentityContext:
@@ -243,7 +268,15 @@ async def get_identity(db: AsyncSession, user_id: str, request_id: str | None = 
     allowed_services, service_roles = _merge_permissions(dept_services, direct_roles, group_services, group_roles)
     dept = await dept_repo.get_by_id(user.department_id) if user.department_id else None
 
-    audit_service.emit("user.me", user_id, status="success", allowed=True, request_id=request_id)
+    audit_service.emit(
+        "user.me", user_id, status="success", allowed=True, request_id=request_id,
+        details={
+            "username": user.username,
+            "department_id": user.department_id,
+            "platform_role": user.platform_role,
+            "allowed_services_count": len(allowed_services),
+        },
+    )
     return _build_identity(user, dept.display_name if dept else None, allowed_services, service_roles)
 
 

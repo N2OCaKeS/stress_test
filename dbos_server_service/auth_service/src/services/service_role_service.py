@@ -81,8 +81,17 @@ async def create_role(
         created_by=identity.user_id,
     )
     await db.commit()
-    audit_service.emit("service_role.create", identity.user_id, target_id=service_name,
-                       target_type="service_role", details={"role_name": role_name}, request_id=request_id)
+    audit_service.emit(
+        "service_role.create", identity.user_id, target_id=service_name,
+        target_type="service_role",
+        details={
+            "service_name": service_name,
+            "role_name": role_name,
+            "display_name": display_name,
+            "description": description,
+        },
+        request_id=request_id,
+    )
     return _to_response(obj)
 
 
@@ -105,8 +114,16 @@ async def update_role(
         )
     await repo.update(obj, display_name=display_name, description=description)
     await db.commit()
-    audit_service.emit("service_role.update", identity.user_id, target_id=service_name,
-                       target_type="service_role", details={"role_name": role_name}, request_id=request_id)
+    audit_service.emit(
+        "service_role.update", identity.user_id, target_id=service_name,
+        target_type="service_role",
+        details={
+            "service_name": service_name,
+            "role_name": role_name,
+            "changes": {k: v for k, v in {"display_name": display_name, "description": description}.items() if v is not None},
+        },
+        request_id=request_id,
+    )
     return _to_response(obj)
 
 
@@ -132,8 +149,17 @@ async def delete_role(
     group_repo = GroupRepository(db)
     await group_repo.deactivate_roles_by_role_name(service_name, role_name)
     await db.commit()
-    audit_service.emit("service_role.delete", identity.user_id, target_id=service_name,
-                       target_type="service_role", details={"role_name": role_name}, request_id=request_id)
+    audit_service.emit(
+        "service_role.delete", identity.user_id, target_id=service_name,
+        target_type="service_role",
+        details={
+            "service_name": service_name,
+            "role_name": role_name,
+            "auto_revoked_from_users": True,
+            "auto_revoked_from_groups": True,
+        },
+        request_id=request_id,
+    )
 
 
 async def bulk_assign(
@@ -164,8 +190,16 @@ async def bulk_assign(
                      message=f"User '{user_id}' department has no access to '{service_name}'")
     await role_repo.bulk_assign(user_ids, service_name, role_name, assigned_by=identity.user_id)
     await db.commit()
-    audit_service.emit("service_role.bulk_assign", identity.user_id, target_id=service_name,
-                       details={"role_name": role_name, "user_ids": user_ids}, request_id=request_id)
+    audit_service.emit(
+        "service_role.bulk_assign", identity.user_id, target_id=service_name,
+        details={
+            "service_name": service_name,
+            "role_name": role_name,
+            "user_ids": list(user_ids),
+            "user_count": len(user_ids),
+        },
+        request_id=request_id,
+    )
 
 
 async def bulk_revoke(
@@ -180,5 +214,13 @@ async def bulk_revoke(
     role_repo = RoleRepository(db)
     await role_repo.bulk_revoke(user_ids, service_name, role_name)
     await db.commit()
-    audit_service.emit("service_role.bulk_revoke", identity.user_id, target_id=service_name,
-                       details={"role_name": role_name, "user_ids": user_ids}, request_id=request_id)
+    audit_service.emit(
+        "service_role.bulk_revoke", identity.user_id, target_id=service_name,
+        details={
+            "service_name": service_name,
+            "role_name": role_name,
+            "user_ids": list(user_ids),
+            "user_count": len(user_ids),
+        },
+        request_id=request_id,
+    )

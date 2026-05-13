@@ -33,7 +33,16 @@ async def create_service(
         created_by=actor_id,
     )
     await db.commit()
-    audit_service.emit("service.create", actor_id, target_id=service_name, target_type="service", request_id=request_id)
+    audit_service.emit(
+        "service.create", actor_id, target_id=service_name, target_type="service",
+        request_id=request_id,
+        details={
+            "service_name": service_name,
+            "display_name": display_name,
+            "description": description,
+            "auto_created_roles": ["admin"],
+        },
+    )
     return ServiceResponse(
         service_name=svc.service_name,
         display_name=svc.display_name,
@@ -67,7 +76,16 @@ async def delete_service(
     await role_def_repo.deactivate_all_for_service(service_name)
     await svc_repo.deactivate(svc)
     await db.commit()
-    audit_service.emit("service.delete", actor_id, target_id=service_name, target_type="service", request_id=request_id)
+    audit_service.emit(
+        "service.delete", actor_id, target_id=service_name, target_type="service",
+        request_id=request_id,
+        details={
+            "service_name": service_name,
+            "display_name": svc.display_name,
+            "cascade_revoked_department_access": True,
+            "cascade_deactivated_roles": True,
+        },
+    )
 
 
 async def list_services(
@@ -86,5 +104,9 @@ async def list_services(
         )
         for s in await repo.list_active()
     ]
-    audit_service.emit("service.list", actor_id, status="success", allowed=True, request_id=request_id)
+    audit_service.emit(
+        "service.list", actor_id, status="success", allowed=True,
+        request_id=request_id,
+        details={"count": len(result)},
+    )
     return result

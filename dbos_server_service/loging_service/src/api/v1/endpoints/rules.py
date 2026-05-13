@@ -112,7 +112,18 @@ def update_rule(
         raise HTTPException(
             status_code=422, detail="effect_severity обязателен при effect=OVERRIDE_SEVERITY"
         )
-    updated = rule_repo.update(db, rule, payload)
+    if new_effect != "OVERRIDE_SEVERITY" and new_effect_severity:
+        raise HTTPException(
+            status_code=422,
+            detail="effect_severity используется только с effect=OVERRIDE_SEVERITY",
+        )
+    try:
+        updated = rule_repo.update(db, rule, payload)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail=f"Правило с именем '{payload.name}' уже существует"
+        )
     rule_service.invalidate_cache()
     _audit(db, identity, "logging_rule.update", {"rule_id": rule_id, "changes": payload.model_dump(exclude_unset=True)})
     return RuleResponse.model_validate(updated)

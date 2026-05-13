@@ -50,7 +50,11 @@ async def create_group(
         raise ConflictError(error_code="GROUP_ALREADY_EXISTS", message=f"Group '{name}' already exists")
     grp = await repo.create(name, display_name, description, created_by=identity.user_id)
     await db.commit()
-    audit_service.emit("group.create", identity.user_id, target_id=grp.id, target_type="group", request_id=request_id)
+    audit_service.emit(
+        "group.create", identity.user_id, target_id=grp.id, target_type="group",
+        request_id=request_id,
+        details={"name": name, "display_name": display_name, "description": description},
+    )
     return _grp_response(grp)
 
 
@@ -65,7 +69,14 @@ async def update_group(
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     await repo.update(grp, display_name=display_name, description=description)
     await db.commit()
-    audit_service.emit("group.update", identity.user_id, target_id=group_id, target_type="group", request_id=request_id)
+    audit_service.emit(
+        "group.update", identity.user_id, target_id=group_id, target_type="group",
+        request_id=request_id,
+        details={
+            "group_name": grp.name,
+            "changes": {k: v for k, v in {"display_name": display_name, "description": description}.items() if v is not None},
+        },
+    )
     return _grp_response(grp)
 
 
@@ -77,7 +88,11 @@ async def delete_group(db: AsyncSession, identity, group_id: str, request_id=Non
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     await repo.deactivate(grp)
     await db.commit()
-    audit_service.emit("group.delete", identity.user_id, target_id=group_id, target_type="group", request_id=request_id)
+    audit_service.emit(
+        "group.delete", identity.user_id, target_id=group_id, target_type="group",
+        request_id=request_id,
+        details={"group_name": grp.name, "display_name": grp.display_name},
+    )
 
 
 # ── Membership ────────────────────────────────────────────────────────────────
@@ -125,8 +140,16 @@ async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, re
 
     m = await repo.add_member(group_id, user_id, added_by=identity.user_id)
     await db.commit()
-    audit_service.emit("group.member_add", identity.user_id, target_id=group_id, target_type="group",
-                       details={"user_id": user_id}, request_id=request_id)
+    audit_service.emit(
+        "group.member_add", identity.user_id, target_id=group_id, target_type="group",
+        details={
+            "group_name": grp.name,
+            "user_id": user_id,
+            "target_username": user.username,
+            "target_department_id": user.department_id,
+        },
+        request_id=request_id,
+    )
     return MemberResponse(user_id=user.id, username=user.username, added_at=m.added_at)
 
 
@@ -152,8 +175,11 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
 
     await repo.remove_member(m)
     await db.commit()
-    audit_service.emit("group.member_remove", identity.user_id, target_id=group_id, target_type="group",
-                       details={"user_id": user_id}, request_id=request_id)
+    audit_service.emit(
+        "group.member_remove", identity.user_id, target_id=group_id, target_type="group",
+        details={"group_name": grp.name, "user_id": user_id},
+        request_id=request_id,
+    )
 
 
 async def list_user_groups(db: AsyncSession, identity, user_id: str, request_id=None) -> list[UserGroupsResponse]:
@@ -218,8 +244,15 @@ async def grant_service_to_group(
     else:
         obj = await repo.grant_service(group_id, service_name, granted_by=identity.user_id)
     await db.commit()
-    audit_service.emit("group.service_grant", identity.user_id, target_id=group_id,
-                       details={"service_name": service_name}, request_id=request_id)
+    audit_service.emit(
+        "group.service_grant", identity.user_id, target_id=group_id,
+        details={
+            "group_name": grp.name,
+            "service_name": service_name,
+            "reactivated": bool(existing and existing is obj),
+        },
+        request_id=request_id,
+    )
     return GroupServiceAccessResponse(
         service_name=obj.service_name, is_active=obj.is_active,
         granted_at=obj.granted_at, granted_by=obj.granted_by,
@@ -240,8 +273,11 @@ async def revoke_service_from_group(
                             message=f"Group does not have access to '{service_name}'")
     await repo.revoke_service(access)
     await db.commit()
-    audit_service.emit("group.service_revoke", identity.user_id, target_id=group_id,
-                       details={"service_name": service_name}, request_id=request_id)
+    audit_service.emit(
+        "group.service_revoke", identity.user_id, target_id=group_id,
+        details={"group_name": grp.name, "service_name": service_name},
+        request_id=request_id,
+    )
 
 
 # ── Group service roles ───────────────────────────────────────────────────────
@@ -286,8 +322,15 @@ async def assign_group_roles(
 
     await repo.set_roles(group_id, service_name, roles, assigned_by=identity.user_id)
     await db.commit()
-    audit_service.emit("group.roles_assign", identity.user_id, target_id=group_id,
-                       details={"service_name": service_name, "roles": roles}, request_id=request_id)
+    audit_service.emit(
+        "group.roles_assign", identity.user_id, target_id=group_id,
+        details={
+            "group_name": grp.name,
+            "service_name": service_name,
+            "roles": list(roles),
+        },
+        request_id=request_id,
+    )
     return GroupRoleResponse(service_name=service_name, roles=roles)
 
 
@@ -301,5 +344,8 @@ async def revoke_group_roles(
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     await repo.clear_roles_for_service(group_id, service_name)
     await db.commit()
-    audit_service.emit("group.roles_revoke", identity.user_id, target_id=group_id,
-                       details={"service_name": service_name}, request_id=request_id)
+    audit_service.emit(
+        "group.roles_revoke", identity.user_id, target_id=group_id,
+        details={"group_name": grp.name, "service_name": service_name},
+        request_id=request_id,
+    )

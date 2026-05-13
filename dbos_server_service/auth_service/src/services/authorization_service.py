@@ -30,7 +30,13 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             department_id=dept_id,
             status="success",
             allowed=True,
-            details={"token_type": "jwt"},
+            details={
+                "token_type": "jwt",
+                "username": payload.get("username"),
+                "platform_role": payload.get("platform_role"),
+                "allowed_services": payload.get("allowed_services", []),
+                "exp": payload.get("exp"),
+            },
             request_id=request_id,
         )
         return IntrospectResponse(
@@ -53,7 +59,14 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
         if pat.expires_at and is_expired(pat.expires_at):
             audit_service.emit(
                 "token.introspect", pat.user_id, status="failure", allowed=False,
-                details={"token_type": "pat", "reason": "expired"}, request_id=request_id,
+                details={
+                    "token_type": "pat",
+                    "reason": "expired",
+                    "pat_id": pat.id,
+                    "pat_name": pat.name,
+                    "token_prefix": pat.token_prefix,
+                },
+                request_id=request_id,
             )
             return IntrospectResponse(active=False)
         await token_repo.touch(pat)
@@ -77,7 +90,14 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             target_type="pat",
             status="success",
             allowed=True,
-            details={"token_type": "pat"},
+            details={
+                "token_type": "pat",
+                "username": user.username,
+                "pat_id": pat.id,
+                "pat_name": pat.name,
+                "token_prefix": pat.token_prefix,
+                "effective_services": effective_services,
+            },
             request_id=request_id,
         )
         return IntrospectResponse(
@@ -97,7 +117,14 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             audit_service.emit(
                 "token.introspect", bot_token.bot_id, actor_type="bot",
                 status="failure", allowed=False,
-                details={"token_type": "bot_token", "reason": "expired"}, request_id=request_id,
+                details={
+                    "token_type": "bot_token",
+                    "reason": "expired",
+                    "bot_token_id": bot_token.id,
+                    "token_name": bot_token.name,
+                    "token_prefix": bot_token.token_prefix,
+                },
+                request_id=request_id,
             )
             return IntrospectResponse(active=False)
         await bot_token_repo.touch(bot_token)
@@ -107,7 +134,14 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             audit_service.emit(
                 "token.introspect", bot_token.bot_id, actor_type="bot",
                 status="failure", allowed=False,
-                details={"token_type": "bot_token", "reason": "bot_inactive"}, request_id=request_id,
+                details={
+                    "token_type": "bot_token",
+                    "reason": "bot_inactive",
+                    "bot_id": bot_token.bot_id,
+                    "bot_token_id": bot_token.id,
+                    "token_prefix": bot_token.token_prefix,
+                },
+                request_id=request_id,
             )
             return IntrospectResponse(active=False)
         dept_repo = DepartmentRepository(db)
@@ -123,7 +157,14 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             target_type="bot_token",
             status="success",
             allowed=True,
-            details={"token_type": "bot_token"},
+            details={
+                "token_type": "bot_token",
+                "bot_name": bot.name,
+                "bot_token_id": bot_token.id,
+                "token_name": bot_token.name,
+                "token_prefix": bot_token.token_prefix,
+                "effective_services": effective_services,
+            },
             request_id=request_id,
         )
         return IntrospectResponse(
@@ -140,7 +181,7 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
         None,
         status="failure",
         allowed=False,
-        details={"reason": "no_valid_token"},
+        details={"reason": "no_valid_token", "token_length": len(token) if token else 0},
         request_id=request_id,
     )
     return IntrospectResponse(active=False)
@@ -166,7 +207,12 @@ async def check_service_access(
             target_type="service",
             status="denied",
             allowed=False,
-            details={"reason": "department_no_access"},
+            details={
+                "reason": "department_no_access",
+                "service_name": service_name,
+                "subject_id": result.sub,
+                "department_id": result.department_id,
+            },
             request_id=request_id,
         )
         return ServiceAccessResponse(allowed=False, department_id=result.department_id, service_roles=[])
@@ -180,7 +226,12 @@ async def check_service_access(
             target_type="service",
             status="denied",
             allowed=False,
-            details={"reason": "service_not_in_token"},
+            details={
+                "reason": "service_not_in_token",
+                "service_name": service_name,
+                "subject_id": result.sub,
+                "allowed_services": list(result.allowed_services or []),
+            },
             request_id=request_id,
         )
         return ServiceAccessResponse(allowed=False, department_id=result.department_id, service_roles=[])
@@ -194,7 +245,11 @@ async def check_service_access(
         target_type="service",
         status="success",
         allowed=True,
-        details={"roles": roles},
+        details={
+            "service_name": service_name,
+            "subject_id": result.sub,
+            "roles": list(roles),
+        },
         request_id=request_id,
     )
     return ServiceAccessResponse(allowed=True, department_id=result.department_id, service_roles=roles)

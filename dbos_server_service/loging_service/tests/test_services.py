@@ -240,3 +240,45 @@ class TestRuleMatchActionValidation:
             "match_action": "user.login",
         })
         assert r.status_code == 201
+
+    def test_glob_matching_registered_action_allowed(
+        self, client, admin_client, auth_headers
+    ):
+        """Glob, который реально матчит хотя бы один зарегистрированный action."""
+        client.post(f"{SERVICES_URL}/auth_service/events",
+                    json={"events": [make_event_def(action="user.login")]},
+                    headers=auth_headers)
+        r = admin_client.post("/api/logging/v1/rules", json={
+            "name": "glob-match", "effect": "SUPPRESS", "match_action": "user.*",
+        })
+        assert r.status_code == 201
+
+    def test_glob_not_matching_any_action_still_allowed(
+        self, client, admin_client, auth_headers
+    ):
+        """Glob, который НЕ матчит ничего из реестра — всё равно проходит
+        (валидация для glob отключена)."""
+        client.post(f"{SERVICES_URL}/auth_service/events",
+                    json={"events": [make_event_def(action="user.login")]},
+                    headers=auth_headers)
+        r = admin_client.post("/api/logging/v1/rules", json={
+            "name": "glob-orphan", "effect": "SUPPRESS",
+            "match_action": "nonexistent.*",
+        })
+        assert r.status_code == 201
+
+    def test_action_is_registered_glob_helper(self, client, auth_headers, db):
+        """Точечный unit-тест на se_repo.action_is_registered для glob."""
+        from src.repositories import service_events as se_repo
+        client.post(f"{SERVICES_URL}/auth_service/events",
+                    json={"events": [
+                        make_event_def(action="user.login"),
+                        make_event_def(action="user.logout"),
+                        make_event_def(action="bot.create"),
+                    ]},
+                    headers=auth_headers)
+        assert se_repo.action_is_registered(db, "user.*") is True
+        assert se_repo.action_is_registered(db, "bot.*") is True
+        assert se_repo.action_is_registered(db, "missing.*") is False
+        assert se_repo.action_is_registered(db, "user.login") is True
+        assert se_repo.action_is_registered(db, "user.unknown") is False

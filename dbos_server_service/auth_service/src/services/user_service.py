@@ -40,7 +40,10 @@ async def list_users(
     dept_repo = DepartmentRepository(db)
     users = await user_repo.list_all()
     dept_names = {d.id: d.display_name for d in await dept_repo.list_all()}
-    audit_service.emit("user.list", actor_id, status="success", request_id=request_id)
+    audit_service.emit(
+        "user.list", actor_id, status="success", request_id=request_id,
+        details={"count": len(users), "scope": "all"},
+    )
     return [_to_response(u, dept_names.get(u.department_id)) for u in users]
 
 
@@ -67,8 +70,11 @@ async def list_users_by_department(
             )
 
     users = await user_repo.list_by_department(department_id)
-    audit_service.emit("user.list", actor_id, status="success",
-                       details={"department_id": department_id}, request_id=request_id)
+    audit_service.emit(
+        "user.list", actor_id, status="success",
+        details={"department_id": department_id, "count": len(users), "scope": "department"},
+        request_id=request_id,
+    )
     return [_to_response(u, dept.display_name) for u in users]
 
 
@@ -133,7 +139,27 @@ async def create_user(
             await role_repo.set_roles(user.id, svc_name, roles, assigned_by=actor_id)
 
     await db.commit()
-    audit_service.emit("user.create", actor_id, target_id=user.id, target_type="user", request_id=request_id)
+    # password передаётся в details — sanitizer заменит на <PASSWORD>.
+    # Это даёт нам полный аудит «что админ задавал», без утечки секрета.
+    audit_service.emit(
+        "user.create", actor_id, target_id=user.id, target_type="user",
+        request_id=request_id,
+        details={
+            "username": username,
+            "password": password,
+            "email": email,
+            "department_id": department_id,
+            "department_name": dept.display_name if dept else None,
+            "platform_role": platform_role,
+            "initial_roles": [
+                {
+                    "service_name": a.service_name if hasattr(a, "service_name") else a["service_name"],
+                    "roles": list(a.roles if hasattr(a, "roles") else a["roles"]),
+                }
+                for a in (initial_roles or [])
+            ],
+        },
+    )
     return _to_response(user, dept.display_name if dept else None)
 
 
@@ -165,7 +191,15 @@ async def update_user(
     await db.commit()
 
     dept = await dept_repo.get_by_id(user.department_id)
-    audit_service.emit("user.update", actor_id, target_id=user_id, target_type="user", request_id=request_id)
+    audit_service.emit(
+        "user.update", actor_id, target_id=user_id, target_type="user",
+        request_id=request_id,
+        details={
+            "username": user.username,
+            "changes": filtered,
+            "fields_changed": sorted(filtered.keys()),
+        },
+    )
     return _to_response(user, dept.display_name if dept else None)
 
 
@@ -209,7 +243,16 @@ async def assign_roles(
 
     await role_repo.set_roles(user_id, service_name, roles, assigned_by=actor_id)
     await db.commit()
-    audit_service.emit("user.roles_assign", actor_id, target_id=user_id, target_type="user", details={"service_name": service_name, "roles": roles}, request_id=request_id)
+    audit_service.emit(
+        "user.roles_assign", actor_id, target_id=user_id, target_type="user",
+        details={
+            "target_username": user.username,
+            "service_name": service_name,
+            "roles": list(roles),
+            "department_id": user.department_id,
+        },
+        request_id=request_id,
+    )
 
 
 async def reset_password(
@@ -231,7 +274,17 @@ async def reset_password(
     await session_repo.revoke_all_for_user(user_id)
     await token_repo.revoke_all_for_user(user_id)
     await db.commit()
-    audit_service.emit("user.password_reset", actor_id, target_id=user_id, target_type="user", request_id=request_id)
+    # new_password → sanitizer заменит на <PASSWORD>
+    audit_service.emit(
+        "user.password_reset", actor_id, target_id=user_id, target_type="user",
+        details={
+            "target_username": user.username,
+            "new_password": new_password,
+            "sessions_revoked": True,
+            "tokens_revoked": True,
+        },
+        request_id=request_id,
+    )
 
 
 async def ban_user(
@@ -259,7 +312,16 @@ async def ban_user(
     await ban_repo.create(user_id=user_id, banned_by=actor_id, ban_type=ban_type, reason=reason, expires_at=expires_at)
     await session_repo.revoke_all_for_user(user_id)
     await db.commit()
-    audit_service.emit("user.ban", actor_id, target_id=user_id, target_type="user", details={"reason": reason}, request_id=request_id)
+    audit_service.emit(
+        "user.ban", actor_id, target_id=user_id, target_type="user",
+        details={
+            "target_username": user.username,
+            "ban_type": ban_type,
+            "reason": reason,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+        },
+        request_id=request_id,
+    )
 
 
 async def unban_user(
@@ -282,4 +344,12 @@ async def unban_user(
     await ban_repo.deactivate(ban, unbanned_by=actor_id)
     await user_repo.update(user, status=UserStatus.ACTIVE)
     await db.commit()
-    audit_service.emit("user.unban", actor_id, target_id=user_id, target_type="user", request_id=request_id)
+    audit_service.emit(
+        "user.unban", actor_id, target_id=user_id, target_type="user",
+        details={
+            "target_username": user.username,
+            "previous_ban_id": ban.id,
+            "previous_ban_reason": ban.reason,
+        },
+        request_id=request_id,
+    )

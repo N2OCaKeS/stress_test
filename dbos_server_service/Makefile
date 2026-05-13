@@ -41,6 +41,7 @@ AUTH    = docker compose -f auth_service/tests/docker-compose.test.yml
 LOGGING = docker compose -f loging_service/tests/docker-compose.test.yml
 ROOT    = docker compose -f tests/docker-compose.test.yml
 DEV     = docker compose -f docker-compose.dev.yml
+K8S     = kubectl -n dbos
 
 # ── Dev-параметры (devcontainer postgres) ─────────────────────────────────────
 _DEV_PG         = postgresql+psycopg://app_user:app_password@postgres:5432в
@@ -59,9 +60,11 @@ _DEV_ADMIN_EMAIL = admin@example.com
         test-dev test-dev-auth test-dev-logging test-dev-integration test-dev-all \
         test-local test-local-auth test-local-logging test-local-integration test-local-all \
         test-devcont-all install-registry \
-        test-integration test-auth test-auth-e2e test-logging test-all test-down test-build
+        test-integration test-auth test-auth-e2e test-logging test-all test-down test-build \
+        k8s-install k8s-secrets k8s-build k8s-deploy k8s-rollout k8s-rollback \
+        k8s-logs k8s-status k8s-backup k8s-destroy
 
-# ── Dev-стек в Docker (без devcontainer) ──────────────────────────────────────
+##@ Dev: стек в Docker (без devcontainer)
 
 up: ## Поднять dev-стек в Docker (postgres + auth :8000 + logging :8001). Данные сохраняются.
 	@$(DEV) up -d --wait postgres loging_service auth_service
@@ -97,7 +100,7 @@ sh-auth: ## Shell внутри контейнера auth_service
 sh-logging: ## Shell внутри контейнера loging_service
 	$(DEV) exec loging_service /bin/bash
 
-# ── Dev-окружение (devcontainer) ──────────────────────────────────────────────
+##@ Dev: внутри devcontainer
 
 dev: ## Применить миграции и запустить auth + logging на общей dev-БД (данные сохраняются)
 	@$(MAKE) dev-stop --no-print-directory 2>/dev/null; true
@@ -151,25 +154,13 @@ dev-stop: ## Остановить оба dev-сервиса (данные в Б�
 dev-logs: ## Следить за логами обоих dev-сервисов (Ctrl+C для выхода)
 	@tail -f $(CURDIR)/.dev/auth.log $(CURDIR)/.dev/logging.log
 
-# ── Справка ───────────────────────────────────────────────────────────────────
-
-help: ## Показать список всех команд
-	@echo ""
-	@echo "  DBOS Server Manager — доступные команды:"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-28s\033[0m %s\n", $$1, $$2}'
-	@echo ""
-
-# ── Запуск сервисов ───────────────────────────────────────────────────────────
-
-run-auth: ## Запустить auth_service локально (порт 8000, авто-перезагрузка)
+run-auth: ## Запустить auth_service локально (devcontainer, порт 8000, авто-перезагрузка)
 	cd auth_service && PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
-run-logging: ## Запустить loging_service локально (порт 8001, авто-перезагрузка)
+run-logging: ## Запустить loging_service локально (devcontainer, порт 8001, авто-перезагрузка)
 	cd loging_service && PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8001
 
-# ── Тесты в devcontainer ──────────────────────────────────────────────────────
+##@ Тесты: в devcontainer
 # Все команды работают только внутри devcontainer (нет Docker).
 #
 # Запуск конкретного теста/файла/директории:
@@ -216,7 +207,13 @@ test-dev-integration: ## Кросс-сервисные интеграционн�
 
 test-dev-all: test-dev-auth test-dev-logging test-dev-integration ## Все тесты в devcontainer
 
-# ── Тесты: локальный режим (алиасы для обратной совместимости) ────────────────
+test-devcont-all: ## Полный набор в devcontainer: unit + integration + E2E docker registry
+	python tests/scripts/run_devcont_tests.py
+
+install-registry: ## Установить бинарник registry v2.8.3 (нужно выполнить один раз)
+	bash tests/scripts/install_registry.sh
+
+##@ Тесты: алиасы (обратная совместимость)
 
 test-local-auth: test-dev-auth ## = test-dev-auth
 test-local-logging: test-dev-logging ## = test-dev-logging
@@ -224,13 +221,7 @@ test-local: test-dev-auth test-dev-logging ## = test-dev-auth + test-dev-logging
 test-local-integration: test-dev-integration ## = test-dev-integration
 test-local-all: test-dev-all ## = test-dev-all
 
-test-devcont-all: ## Полный набор в devcontainer: unit + integration + E2E docker registry
-	python tests/scripts/run_devcont_tests.py
-
-install-registry: ## Установить бинарник registry v2.8.3 (нужно выполнить один раз)
-	bash tests/scripts/install_registry.sh
-
-# ── Тесты: Docker-режим ───────────────────────────────────────────────────────
+##@ Тесты: Docker-режим (CI / с хоста)
 
 test-auth: ## Тесты auth_service в Docker (без E2E docker-registry — быстрый прогон)
 	$(AUTH) run --rm test-runner pytest tests/ -m "not e2e" -v --tb=short
@@ -255,3 +246,50 @@ test-down: ## Удалить тестовые контейнеры и тома
 	$(AUTH) down -v --remove-orphans
 	$(LOGGING) down -v --remove-orphans
 	$(ROOT) down -v --remove-orphans
+
+##@ k8s: production деплой в k3s на VM
+# Полный цикл деплоя: install_k3s → gen_secrets → build_and_import → deploy.
+# Подробный runbook — в k8s/README.md.
+
+k8s-install: ## [VM, sudo] Установить k3s на текущий хост (Astra Linux SE)
+	sudo bash scripts/k8s/install_k3s.sh
+
+k8s-secrets: ## Сгенерировать k8s/20-secrets.yaml со случайными prod-значениями
+	bash scripts/k8s/gen_secrets.sh
+
+k8s-build: ## [VM] Собрать образы auth/logging и импортировать в k3s
+	bash scripts/k8s/build_and_import.sh
+
+k8s-deploy: ## Применить все манифесты (kubectl apply -k k8s/) и подождать готовности
+	bash scripts/k8s/deploy.sh
+
+k8s-rollout: ## Пересобрать образы и сделать rolling update. SVC=auth|logging|all (default: all)
+	bash scripts/k8s/rollout.sh $(SVC)
+
+k8s-rollback: ## Откатить deployment. SVC=auth|logging, REV=<revision> (по умолчанию предыдущая)
+	bash scripts/k8s/rollback.sh $(SVC) $(REV)
+
+k8s-logs: ## Логи pods. SVC=auth|logging (default: auth)
+	$(K8S) logs -f -l app=$(if $(SVC),$(SVC),auth)-service --tail=100
+
+k8s-status: ## Статус всех ресурсов в namespace dbos
+	$(K8S) get pods,svc,deploy,pvc -o wide
+
+k8s-backup: ## pg_dump обеих БД через kubectl exec. DEST=path (default: ./k8s/backups)
+	bash scripts/k8s/backup_pg.sh $(if $(DEST),$(DEST),./k8s/backups)
+
+k8s-destroy: ## ОПАСНО: удалить весь namespace dbos (включая PVC и данные)
+	@echo "Это удалит ВСЕ данные. Подтвердить: 'y' для продолжения"
+	@read confirm && [ "$$confirm" = "y" ] && $(K8S) delete namespace dbos
+
+##@ Справка
+
+help: ## Показать список всех команд (сгруппировано)
+	@awk 'BEGIN { \
+	  FS = ":.*?##"; \
+	  printf "\n  \033[1mDBOS Server Manager\033[0m — доступные команды:\n"; \
+	} \
+	/^##@/ { printf "\n  \033[1;33m%s\033[0m\n", substr($$0, 5); next } \
+	/^[a-zA-Z0-9_-]+:.*?##/ { printf "    \033[36m%-26s\033[0m %s\n", $$1, $$2 } \
+	' $(MAKEFILE_LIST)
+	@echo ""

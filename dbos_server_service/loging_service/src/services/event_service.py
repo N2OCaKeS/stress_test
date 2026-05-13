@@ -8,10 +8,24 @@ from src.models.audit_event import AuditEvent
 from src.repositories import events as event_repo
 from src.schemas.events import EventCreate, EventListResponse, EventDetail
 from src.services import rule_service
+from src.utils.redaction import redact
+
+
+def _redact_payload(payload: EventCreate) -> EventCreate:
+    """Применяет defense-in-depth маскировку к payload.details.
+    Если details пуст или после маскировки не изменился — возвращает исходный объект.
+    """
+    if not payload.details:
+        return payload
+    cleaned = redact(payload.details)
+    if cleaned == payload.details:
+        return payload
+    return payload.model_copy(update={"details": cleaned})
 
 
 def record(db: Session, payload: EventCreate) -> AuditEvent | None:
     """Применяет правила и сохраняет событие. Возвращает None если событие подавлено."""
+    payload = _redact_payload(payload)
     modified = rule_service.apply_rules(db, payload)
     if modified is None:
         return None
@@ -24,6 +38,7 @@ def record_admin_action(db: Session, payload: EventCreate) -> AuditEvent:
     severity назначается из _DEFAULT_SEVERITY если не задан явно.
     """
     from src.services.rule_service import _resolve_default_severity
+    payload = _redact_payload(payload)
     if payload.severity is None:
         payload = payload.model_copy(
             update={"severity": _resolve_default_severity(payload.action, payload.status)}

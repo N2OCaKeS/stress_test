@@ -1,4 +1,4 @@
-version: "3.9"
+name: loging-tests
 
 # loging_service isolated test stack.
 #
@@ -28,6 +28,11 @@ services:
       TEST_DATABASE_URL: postgresql+psycopg://logging_user:logging_password@test-postgres:5432/logging_db_test
       SERVICE_API_KEY: test-service-api-key
       PYTHONPATH: /app
+    # Bind tests/ and src/ for fast iteration (no rebuild on changes).
+    # Paths are relative to this compose file (loging_service/tests/).
+    volumes:
+      - .:/app/tests
+      - ../src:/app/src
     depends_on:
       test-postgres:
         condition: service_healthy

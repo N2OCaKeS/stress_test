@@ -86,7 +86,22 @@ async def create_client(
         created_by=actor_id,
     )
     await db.commit()
-    audit_service.emit("oauth_client.create", actor_id, target_id=client.id, target_type="oauth_client", request_id=request_id)
+    # raw_secret попадёт в details — sanitizer заменит на <SECRET> по ключу client_secret
+    audit_service.emit(
+        "oauth_client.create", actor_id, target_id=client.id, target_type="oauth_client",
+        request_id=request_id,
+        details={
+            "name": data.name,
+            "department_id": data.department_id,
+            "department_name": dept.display_name,
+            "redirect_uris": list(data.redirect_uris),
+            "allowed_scopes": list(data.allowed_scopes),
+            "grant_types": list(data.grant_types),
+            "client_secret_prefix": secret_prefix,
+            "client_secret": raw_secret,
+            "description": data.description,
+        },
+    )
     return OAuthClientCreatedResponse(**_to_response(client).model_dump(), client_secret=raw_secret)
 
 
@@ -109,7 +124,15 @@ async def list_clients(
     else:
         clients = await client_repo.list_all()
 
-    audit_service.emit("oauth_client.list", actor_id, status="success", allowed=True, request_id=request_id)
+    audit_service.emit(
+        "oauth_client.list", actor_id, status="success", allowed=True,
+        request_id=request_id,
+        details={
+            "count": len(clients),
+            "filter_department_id": department_id,
+            "scope": "department" if (actor_role == PlatformRole.DEPARTMENT_ADMIN or department_id) else "all",
+        },
+    )
     return [_to_response(c) for c in clients]
 
 
@@ -137,7 +160,15 @@ async def delete_client(
 
     await client_repo.deactivate(client)
     await db.commit()
-    audit_service.emit("oauth_client.delete", actor_id, target_id=client_db_id, target_type="oauth_client", request_id=request_id)
+    audit_service.emit(
+        "oauth_client.delete", actor_id, target_id=client_db_id, target_type="oauth_client",
+        request_id=request_id,
+        details={
+            "name": client.name,
+            "client_id": client.client_id,
+            "department_id": client.department_id,
+        },
+    )
 
 
 # ── Authorization code flow ───────────────────────────────────────────────────
@@ -186,7 +217,14 @@ async def issue_authorization_code(
         target_type="oauth_client",
         status="success",
         allowed=True,
-        details={"scopes": effective_scopes},
+        details={
+            "client_id": client_id,
+            "client_name": client.name,
+            "redirect_uri": redirect_uri,
+            "requested_scopes": list(scopes),
+            "granted_scopes": effective_scopes,
+            "code_ttl_seconds": settings.oauth_code_ttl_seconds,
+        },
         request_id=request_id,
     )
     return raw_code
@@ -256,7 +294,15 @@ async def exchange_code(
         target_type="oauth_client",
         status="success",
         allowed=True,
-        details={"scopes": auth_code.scopes},
+        details={
+            "client_id": client_id,
+            "client_name": client.name,
+            "username": user.username,
+            "department_id": user.department_id,
+            "scopes": list(auth_code.scopes),
+            "redirect_uri": redirect_uri,
+            "ttl_seconds": int(ttl.total_seconds()),
+        },
         request_id=request_id,
     )
     return OAuthTokenResponse(
@@ -309,7 +355,14 @@ async def client_credentials_token(
         target_type="oauth_client",
         status="success",
         allowed=True,
-        details={"scopes": effective},
+        details={
+            "client_id": client_id,
+            "client_name": client.name,
+            "department_id": client.department_id,
+            "allowed_scopes": list(client.allowed_scopes),
+            "granted_scopes": effective,
+            "ttl_seconds": int(ttl.total_seconds()),
+        },
         request_id=request_id,
     )
     return OAuthTokenResponse(

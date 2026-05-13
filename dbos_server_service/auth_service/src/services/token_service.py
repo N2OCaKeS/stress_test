@@ -35,7 +35,18 @@ async def create_pat(
         expires_at=expires_at,
     )
     await db.commit()
-    audit_service.emit("pat.create", actor_id, target_id=pat.id, target_type="pat", request_id=request_id)
+    # raw PAT передаётся в details — sanitizer заменит на <TOKEN> (по эвристике dbos_pat_…).
+    audit_service.emit(
+        "pat.create", actor_id, target_id=pat.id, target_type="pat",
+        request_id=request_id,
+        details={
+            "name": name,
+            "token_prefix": prefix,
+            "token": raw,
+            "allowed_services": list(allowed_services),
+            "expires_at": expires_at.isoformat() if expires_at else None,
+        },
+    )
     return PATCreateResponse(token_id=pat.id, token=raw, name=pat.name, expires_at=pat.expires_at)
 
 
@@ -54,7 +65,10 @@ async def list_pats(db: AsyncSession, actor_id: str, request_id: str | None = No
         )
         for p in await token_repo.list_for_user(actor_id)
     ]
-    audit_service.emit("pat.list", actor_id, status="success", allowed=True, request_id=request_id)
+    audit_service.emit(
+        "pat.list", actor_id, status="success", allowed=True, request_id=request_id,
+        details={"count": len(result)},
+    )
     return result
 
 
@@ -75,4 +89,8 @@ async def revoke_pat(
 
     await token_repo.revoke(pat)
     await db.commit()
-    audit_service.emit("pat.revoke", actor_id, target_id=token_id, target_type="pat", request_id=request_id)
+    audit_service.emit(
+        "pat.revoke", actor_id, target_id=token_id, target_type="pat",
+        request_id=request_id,
+        details={"name": pat.name, "token_prefix": pat.token_prefix},
+    )

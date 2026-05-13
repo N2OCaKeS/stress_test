@@ -75,7 +75,17 @@ async def create_bot(
         created_by=actor_id,
     )
     await db.commit()
-    audit_service.emit("bot.create", actor_id, target_id=bot.id, target_type="bot", request_id=request_id)
+    audit_service.emit(
+        "bot.create", actor_id, target_id=bot.id, target_type="bot",
+        request_id=request_id,
+        details={
+            "name": data.name,
+            "department_id": data.department_id,
+            "department_name": dept.display_name,
+            "allowed_services": list(data.allowed_services),
+            "description": data.description,
+        },
+    )
     return _to_response(bot)
 
 
@@ -92,7 +102,14 @@ async def list_bots(db: AsyncSession, actor_id: str, actor_role: str | None, dep
     else:
         bots = await bot_repo.list_all()
 
-    audit_service.emit("bot.list", actor_id, status="success", allowed=True, request_id=request_id)
+    audit_service.emit(
+        "bot.list", actor_id, status="success", allowed=True, request_id=request_id,
+        details={
+            "count": len(bots),
+            "filter_department_id": department_id,
+            "scope": "department" if (actor_role == PlatformRole.DEPARTMENT_ADMIN or department_id) else "all",
+        },
+    )
     return [_to_response(b) for b in bots]
 
 
@@ -124,7 +141,16 @@ async def update_bot(
         updates["is_active"] = updates["status"] == "active"
     await bot_repo.update(bot, **updates)
     await db.commit()
-    audit_service.emit("bot.update", actor_id, target_id=bot_id, target_type="bot", request_id=request_id)
+    audit_service.emit(
+        "bot.update", actor_id, target_id=bot_id, target_type="bot",
+        request_id=request_id,
+        details={
+            "bot_name": bot.name,
+            "department_id": bot.department_id,
+            "changes": updates,
+            "fields_changed": sorted(updates.keys()),
+        },
+    )
     return _to_response(bot)
 
 
@@ -155,7 +181,19 @@ async def create_bot_token(
         expires_at=expires_at,
     )
     await db.commit()
-    audit_service.emit("bot.token_create", actor_id, target_id=token.id, target_type="bot_token", details={"bot_id": bot_id}, request_id=request_id)
+    # raw bot-token → sanitizer заменит на <TOKEN> (по эвристике dbos_bot_…)
+    audit_service.emit(
+        "bot.token_create", actor_id, target_id=token.id, target_type="bot_token",
+        details={
+            "bot_id": bot_id,
+            "bot_name": bot.name,
+            "token_name": name,
+            "token_prefix": prefix,
+            "token": raw,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+        },
+        request_id=request_id,
+    )
     return BotTokenCreateResponse(token_id=token.id, token=raw, name=token.name, expires_at=token.expires_at)
 
 
@@ -173,7 +211,11 @@ async def list_bot_tokens(db: AsyncSession, bot_id: str, actor_id: str | None = 
         )
         for t in await token_repo.list_for_bot(bot_id)
     ]
-    audit_service.emit("bot.token_list", actor_id, target_id=bot_id, target_type="bot", status="success", allowed=True, request_id=request_id)
+    audit_service.emit(
+        "bot.token_list", actor_id, target_id=bot_id, target_type="bot",
+        status="success", allowed=True, request_id=request_id,
+        details={"count": len(result)},
+    )
     return result
 
 
@@ -195,4 +237,12 @@ async def revoke_bot_token(
 
     await token_repo.revoke(token)
     await db.commit()
-    audit_service.emit("bot.token_revoke", actor_id, target_id=token_id, target_type="bot_token", request_id=request_id)
+    audit_service.emit(
+        "bot.token_revoke", actor_id, target_id=token_id, target_type="bot_token",
+        request_id=request_id,
+        details={
+            "bot_id": bot_id,
+            "token_name": token.name,
+            "token_prefix": token.token_prefix,
+        },
+    )

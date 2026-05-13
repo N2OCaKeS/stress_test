@@ -19,7 +19,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from src.db.base import Base
-from src.dependencies.auth import require_admin
+from src.dependencies.auth import require_admin, require_reader
 from src.dependencies.db import get_db
 from src.main import app
 
@@ -37,6 +37,9 @@ ADMIN_IDENTITY = {
     "department_id": None,
     "allowed_services": [],
     "service_roles": {},
+    # loging_admin не привязан к отделу — видит все события
+    "_dept_scope": None,
+    "_loging_service_roles": [],
 }
 
 
@@ -140,7 +143,9 @@ def admin_client(db, monkeypatch):
     get_settings.cache_clear()
 
     app.dependency_overrides[get_db] = _db_override(db)
+    # Админ имеет и admin, и reader-доступ — переопределяем обе зависимости.
     app.dependency_overrides[require_admin] = lambda: ADMIN_IDENTITY
+    app.dependency_overrides[require_reader] = lambda: ADMIN_IDENTITY
 
     with TestClient(app) as c:
         yield c

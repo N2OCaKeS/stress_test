@@ -33,12 +33,17 @@ class TestRequireAdmin:
         assert r.status_code == 401
 
     def test_wrong_platform_role_returns_403(self, client):
+        """account_admin не может управлять правилами (POST /rules → require_admin требует loging_admin)."""
         with patch("src.dependencies.auth.httpx.get") as mock_get:
             mock_get.return_value = MagicMock(
                 status_code=200,
                 json=lambda: {"user_id": "usr_1", "username": "u", "platform_role": "account_admin"},
             )
-            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer some-jwt"})
+            r = client.post(
+                RULES_URL,
+                headers={"Authorization": "Bearer some-jwt"},
+                json={"name": "x", "effect": "SUPPRESS", "priority": 100},
+            )
         assert r.status_code == 403
         assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 

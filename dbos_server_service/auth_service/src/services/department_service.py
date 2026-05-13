@@ -23,7 +23,11 @@ async def create_department(
 
     dept = await repo.create(name, display_name)
     await db.commit()
-    audit_service.emit("department.create", actor_id, target_id=dept.id, target_type="department", request_id=request_id)
+    audit_service.emit(
+        "department.create", actor_id, target_id=dept.id, target_type="department",
+        request_id=request_id,
+        details={"name": name, "display_name": display_name},
+    )
     return DepartmentResponse(department_id=dept.id, name=dept.name, display_name=dept.display_name, is_active=dept.is_active, created_at=dept.created_at)
 
 
@@ -37,7 +41,11 @@ async def list_departments(
         DepartmentResponse(department_id=d.id, name=d.name, display_name=d.display_name, is_active=d.is_active, created_at=d.created_at)
         for d in await repo.list_all()
     ]
-    audit_service.emit("department.list", actor_id, status="success", allowed=True, request_id=request_id)
+    audit_service.emit(
+        "department.list", actor_id, status="success", allowed=True,
+        request_id=request_id,
+        details={"count": len(result)},
+    )
     return result
 
 
@@ -72,7 +80,15 @@ async def grant_service_access(
         await dept_repo.grant_access(department_id, service_name, granted_by=actor_id)
 
     await db.commit()
-    audit_service.emit("department.service_grant", actor_id, target_id=department_id, target_type="department", details={"service_name": service_name}, request_id=request_id)
+    audit_service.emit(
+        "department.service_grant", actor_id, target_id=department_id, target_type="department",
+        details={
+            "department_name": dept.display_name,
+            "service_name": service_name,
+            "reactivated": bool(existing and not existing.is_active),
+        },
+        request_id=request_id,
+    )
     return ServiceAccessResponse(department_id=department_id, service_name=service_name, enabled=True)
 
 
@@ -92,4 +108,8 @@ async def revoke_service_access(
 
     await dept_repo.revoke_access(access, revoked_by=actor_id)
     await db.commit()
-    audit_service.emit("department.service_revoke", actor_id, target_id=department_id, target_type="department", details={"service_name": service_name}, request_id=request_id)
+    audit_service.emit(
+        "department.service_revoke", actor_id, target_id=department_id, target_type="department",
+        details={"service_name": service_name},
+        request_id=request_id,
+    )

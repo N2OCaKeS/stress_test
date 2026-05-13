@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
-import requests
-
 from allta_cli.utils import ui
+
+if TYPE_CHECKING:
+    import requests
 
 
 def _replace_scheme(url: str, scheme: str) -> str:
@@ -40,7 +41,9 @@ def request_with_http_fallback(
     *,
     log: bool = False,
     **kwargs: Any,
-) -> requests.Response:
+) -> "requests.Response":
+    import requests
+
     primary_url = prefer_https_url(url)
     fallback_url = http_fallback_url(primary_url)
 

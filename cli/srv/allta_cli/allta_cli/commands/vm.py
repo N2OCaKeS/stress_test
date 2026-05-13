@@ -3,11 +3,10 @@ from __future__ import annotations
 import re
 from typing import Dict, Any, List
 
-import requests
-
 from allta_cli.utils import auth
 from allta_cli.utils.config import VM_API_BASE
 from allta_cli.utils.http_fallback import request_with_http_fallback
+from allta_cli.utils.lazy import requests
 
 
 class VMError(RuntimeError):

@@ -18,11 +18,13 @@ This file is auto-generated from Click decorators in `cli.py` and is meant for m
 - `py` -> `python`
 - `srv` -> `server`
 - `lc` -> `local`
+- `j` -> `jira`
+- `k` -> `kernel`
 
 ## Root Sections
 
-- `COMMANDS_NO_AUTH`: `login`, `boxes`, `releases`, `mc`, `local`, `python`, `venv`
-- `COMMANDS_WITH_AUTH`: `logout`, `git`, `tokens`, `ilo`, `creds`, `file`, `ssh`, `server`, `vm`
+- `COMMANDS_NO_AUTH`: `login`, `boxes`, `releases`, `mc`, `local`, `python`, `venv`, `kernel`
+- `COMMANDS_WITH_AUTH`: `logout`, `git`, `tokens`, `ilo`, `creds`, `file`, `ssh`, `server`, `vm`, `jira`
 
 ## Command Tree
 

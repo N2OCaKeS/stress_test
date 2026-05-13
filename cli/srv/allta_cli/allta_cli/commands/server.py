@@ -5,11 +5,10 @@ import re
 import shutil
 from typing import Any, Dict, List, TypedDict
 
-import requests
-
 from allta_cli.utils import auth
 from allta_cli.utils.config import SERVER_API_BASE
 from allta_cli.utils.http_fallback import request_with_http_fallback
+from allta_cli.utils.lazy import requests
 from allta_cli.utils.runtime_env import system_ld_library_path_scope
 
 

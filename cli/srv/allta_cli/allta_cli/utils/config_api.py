@@ -1,9 +1,8 @@
 from __future__ import annotations
 from typing import Any, Optional, Union, Dict, TypedDict
 
-import requests
-
 from allta_cli.utils import ui
+from allta_cli.utils.lazy import requests
 from allta_cli.utils.auth import load_token
 from allta_cli.utils.config import CONFIG_API_BASE, SERVER_API_BASE
 from allta_cli.utils.http_fallback import request_with_http_fallback

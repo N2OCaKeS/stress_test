@@ -3,14 +3,13 @@ import json
 import re
 from io import BytesIO
 from urllib.parse import urlparse
-from ftplib import FTP
-import requests
 from urllib.error import URLError, HTTPError, ContentTooShortError
 
 from allta_cli.utils import ui
 from allta_cli.utils.config_api import files as fetch_file, ConfigApiError, ConfigApiFileNotFound
 from allta_cli.utils.auth import AuthError, TokenExpiredError, NotAuthenticatedError
 from allta_cli.utils.http_fallback import request_with_http_fallback
+from allta_cli.utils.lazy import requests
 
 
 def _dump_json_like(filename: str, data: dict) -> None:
@@ -74,6 +73,8 @@ def _fetch_json_from_ftp(url: str, timeout: int = 20) -> dict:
     path = u.path or ""
     if not path or path == "/":
         raise ValueError("FTP URL не содержит путь к файлу.")
+
+    from ftplib import FTP
 
     buf = BytesIO()
     with FTP() as ftp:

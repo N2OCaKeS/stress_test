@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import click
-import requests
 
 from allta_cli.utils import ui
+from allta_cli.utils import auth as auth_utils
+from allta_cli.utils.lazy import requests
 from allta_cli.utils.auth import AuthError, NotAuthenticatedError, TokenExpiredError
 from allta_cli.utils.config import (
     JIRA_AUTH_MODE,
@@ -17,6 +18,7 @@ from allta_cli.utils.config import (
     JIRA_ISSUE_TYPE_NAME,
     JIRA_PRIORITY_ID,
     JIRA_PROJECT_KEY,
+    JIRA_SERVICE_USERS,
     JIRA_STORY_POINTS_FIELD,
 )
 from allta_cli.utils.config_api import ConfigApiError, get_token_credential
@@ -27,7 +29,6 @@ TESTCASE_COMPONENTS = ("НТ. Sprint backlog", "НТ. main Backlog")
 TESTCASE_COMPONENT_ALIASES = {
     "НТ. main Backlog": "Нагрузочное тестирование",
 }
-TESTCASE_ASSIGNEES = ("mfilippenko", "dtimonin", "ivelikanov")
 
 
 class JiraError(RuntimeError):
@@ -128,14 +129,22 @@ class JiraClient:
             raise JiraError(f"Jira вернула не-JSON при операции: {context}.") from e
 
 
-def service_cmd(*, sprint: int | None = None, dry_run: bool = False) -> int:
+def service_cmd(*, sprint: int | None = None, assignee: str | None = None, dry_run: bool = False) -> int:
     sprint_number = sprint if sprint is not None else click.prompt("Номер спринта", type=int)
     if sprint_number <= 0:
         ui.err("Номер спринта должен быть положительным числом.")
         return 1
 
     creds = _jira_credentials()
-    specs = build_service_tasks(sprint_number=sprint_number, assignee=creds.username)
+    users = _load_jira_users()
+    default_assignee = creds.username if creds.username in users else (users[0] if users else "")
+
+    if assignee:
+        chosen = _resolve_assignee(assignee, users)
+    else:
+        chosen = _prompt_assignee("Исполнитель для service-задач", users, default=default_assignee)
+
+    specs = build_service_tasks(sprint_number=sprint_number, assignee=chosen)
     return _run_task_batch(specs, dry_run=dry_run, creds=creds)
 
 
@@ -156,6 +165,7 @@ def testcase_cmd(
         return 1
 
     creds = _jira_credentials()
+    users = _load_jira_users()
     specs = build_testcase_tasks(
         task_name=task_name,
         epic_key=epic_key,
@@ -163,8 +173,29 @@ def testcase_cmd(
         component_per_task=component_per_task,
         assignee=assignee,
         assignee_per_task=assignee_per_task,
+        users=users,
+        default_assignee=creds.username if creds.username in users else (users[0] if users else None),
     )
     return _run_task_batch(specs, dry_run=dry_run, creds=creds)
+
+
+def _load_jira_users() -> list[str]:
+    """Возвращает список логинов из auth API с отфильтрованными служебными аккаунтами,
+    отсортированный по login. На ошибку API падает с JiraError."""
+    try:
+        users = auth_utils.list_users(verbose=False)
+    except (AuthError, NotAuthenticatedError, TokenExpiredError) as e:
+        raise JiraError(f"Не удалось получить список пользователей из auth API: {e}") from e
+    logins: list[str] = []
+    for u in users:
+        login = str(u.get("login") or "").strip()
+        if not login or login in JIRA_SERVICE_USERS:
+            continue
+        logins.append(login)
+    logins.sort(key=str.lower)
+    if not logins:
+        raise JiraError("Список пользователей пуст после фильтрации служебных аккаунтов.")
+    return logins
 
 
 def build_service_tasks(*, sprint_number: int, assignee: str) -> list[JiraTaskSpec]:
@@ -184,6 +215,8 @@ def build_testcase_tasks(
     component_per_task: bool,
     assignee: str | None,
     assignee_per_task: bool,
+    users: list[str],
+    default_assignee: str | None = None,
 ) -> list[JiraTaskSpec]:
     all_summaries: list[tuple[str, float | int | None]] = [
         (f"НТ. {task_name}. Подготовка окружения.", None),
@@ -211,7 +244,7 @@ def build_testcase_tasks(
         component_mode = _prompt_mode("Компоненты", "Назначить один компонент всем задачам", "Настроить компонент точечно")
         default_component = _prompt_component("Компонент для всех задач") if component_mode == "all" else None
 
-    default_assignee = _resolve_assignee(assignee) if assignee and not assignee_per_task else None
+    chosen_assignee = _resolve_assignee(assignee, users) if assignee and not assignee_per_task else None
     if assignee and assignee_per_task:
         raise click.UsageError("Нельзя одновременно использовать --assignee и --assignee-per-task.")
     if assignee_per_task:
@@ -221,7 +254,7 @@ def build_testcase_tasks(
     else:
         assignee_mode = _prompt_mode("Исполнители", "Назначить все задачи одному пользователю", "Настроить исполнителей точечно")
         if assignee_mode == "all":
-            default_assignee = _prompt_assignee("Исполнитель для всех задач")
+            chosen_assignee = _prompt_assignee("Исполнитель для всех задач", users, default=default_assignee)
 
     per_task = component_mode == "per_task" or assignee_mode == "per_task"
     both_per_task = component_mode == "per_task" and assignee_mode == "per_task"
@@ -241,15 +274,15 @@ def build_testcase_tasks(
             _print_minor_sep()
 
         if assignee_mode == "per_task":
-            task_assignee = _prompt_assignee("Исполнитель")
+            task_assignee = _prompt_assignee("Исполнитель", users, default=default_assignee)
         else:
-            task_assignee = default_assignee
+            task_assignee = chosen_assignee
 
         specs.append(
             JiraTaskSpec(
                 summary=summary,
                 component=task_component or SERVICE_COMPONENT,
-                assignee=task_assignee or TESTCASE_ASSIGNEES[0],
+                assignee=task_assignee or (users[0] if users else ""),
                 story_points=story_points,
                 epic_key=epic_key,
             )
@@ -368,15 +401,23 @@ def _prompt_component(label: str) -> str:
     return _resolve_component(click.prompt("Выбор", type=click.Choice(["1", "2"]), default="1", show_default=True))
 
 
-def _resolve_assignee(value: str) -> str:
+def _resolve_assignee(value: str, users: list[str]) -> str:
+    if not users:
+        raise click.UsageError("Список пользователей пуст — некого назначить исполнителем.")
     normalized = value.strip()
-    if normalized in {"1", TESTCASE_ASSIGNEES[0]}:
-        return TESTCASE_ASSIGNEES[0]
-    if normalized in {"2", TESTCASE_ASSIGNEES[1]}:
-        return TESTCASE_ASSIGNEES[1]
-    if normalized in {"3", TESTCASE_ASSIGNEES[2]}:
-        return TESTCASE_ASSIGNEES[2]
-    raise click.UsageError("Исполнитель должен быть 1/2/3 или mfilippenko/dtimonin/ivelikanov.")
+    if not normalized:
+        raise click.UsageError("Исполнитель не должен быть пустым.")
+    if normalized.isdigit():
+        idx = int(normalized)
+        if 1 <= idx <= len(users):
+            return users[idx - 1]
+        raise click.UsageError(f"Номер исполнителя должен быть от 1 до {len(users)}.")
+    lookup = {u.lower(): u for u in users}
+    real = lookup.get(normalized.lower())
+    if real:
+        return real
+    allowed = ", ".join(users)
+    raise click.UsageError(f"Неизвестный исполнитель '{normalized}'. Доступны: {allowed}.")
 
 
 _SEP_TASK = "─" * 44
@@ -431,9 +472,20 @@ def _prompt_mode(title: str, all_label: str, per_task_label: str) -> str:
     return "all" if choice == "1" else "per_task"
 
 
-def _prompt_assignee(label: str) -> str:
-    ui.echo(f"{label}: 1) {TESTCASE_ASSIGNEES[0]}  2) {TESTCASE_ASSIGNEES[1]}  3) {TESTCASE_ASSIGNEES[2]}")
-    return _resolve_assignee(click.prompt("Выбор", type=click.Choice(["1", "2", "3"]), default="1", show_default=True))
+def _prompt_assignee(label: str, users: list[str], *, default: str | None = None) -> str:
+    if not users:
+        raise click.UsageError("Список пользователей пуст — некого назначить исполнителем.")
+    ui.echo(label + ":")
+    for i, login in enumerate(users, start=1):
+        marker = "  ← по умолчанию" if default and login == default else ""
+        ui.echo(f"  {i}) {login}{marker}")
+    default_value: str
+    if default and default in users:
+        default_value = str(users.index(default) + 1)
+    else:
+        default_value = "1"
+    raw = click.prompt("Выбор (номер или login)", type=str, default=default_value, show_default=True)
+    return _resolve_assignee(raw, users)
 
 
 def _print_preview(specs: list[JiraTaskSpec]) -> None:

@@ -32,6 +32,7 @@ from allta_cli.commands import vm as vm_api
 from allta_cli.commands import vm_local as vm_local_api
 from allta_cli.commands import server as server_api
 from allta_cli.commands import jira as jira_api
+from allta_cli.commands import kernel as kernel_api
 
 COMMANDS_NO_AUTH = (
     "login",
@@ -41,6 +42,7 @@ COMMANDS_NO_AUTH = (
     "local",
     "python",
     "venv",
+    "kernel",
 )
 
 COMMANDS_WITH_AUTH = (
@@ -70,6 +72,7 @@ COMMAND_SHORTCUTS = {
     "srv": "server",
     "lc": "local",
     "j": "jira",
+    "k": "kernel",
 }
 COMMAND_SHORTCUT_NAMES = tuple(COMMAND_SHORTCUTS.keys())
 
@@ -225,9 +228,20 @@ class OrderedGroup(NoUsageGroup):
             return super().get_command(ctx, alias_target)
         return super().get_command(ctx, cmd_name)
 
+    def format_epilog(self, ctx, formatter):
+        if not self.epilog:
+            return
+        formatter.write_paragraph()
+        for line in self.epilog.splitlines():
+            formatter.write(line + "\n")
+
     def format_commands(self, ctx, formatter):
         base_get_command = super(OrderedGroup, self).get_command
         commands = {name: base_get_command(ctx, name) for name in self.list_commands(ctx)}
+
+        aliases_for: dict[str, list[str]] = {}
+        for alias, target in COMMAND_SHORTCUTS.items():
+            aliases_for.setdefault(target, []).append(alias)
 
         sections = [
             ("Команды без входа", COMMANDS_NO_AUTH),
@@ -239,20 +253,12 @@ class OrderedGroup(NoUsageGroup):
                 cmd = commands.get(name)
                 if cmd is None or cmd.hidden:
                     continue
-                rows.append((name, cmd.get_short_help_str()))
+                aliases = aliases_for.get(name) or []
+                label = ", ".join([name, *aliases])
+                rows.append((label, cmd.get_short_help_str()))
             if rows:
                 with formatter.section(title):
                     formatter.write_dl(rows)
-
-        shortcut_rows = []
-        for alias in COMMAND_SHORTCUT_NAMES:
-            cmd = commands.get(alias)
-            if cmd is None or cmd.hidden:
-                continue
-            shortcut_rows.append((alias, f"Шорткат для '{COMMAND_SHORTCUTS[alias]}'"))
-        if shortcut_rows:
-            with formatter.section("Шорткаты"):
-                formatter.write_dl(shortcut_rows)
 
 
 class VmGroup(SectionedGroup):
@@ -473,6 +479,18 @@ def _ensure_authenticated_or_exit() -> None:
         raise SystemExit(1)
     except auth_utils.AuthError as e:
         ui.err(f"Ошибка авторизации: {e}")
+        raise SystemExit(1)
+
+
+def _ensure_admin_or_exit() -> None:
+    _ensure_authenticated_or_exit()
+    try:
+        auth_utils.ensure_admin(verbose=False)
+    except auth_utils.TokenExpiredError as e:
+        ui.err(f"{e} Выполните вход заново: allta login <login>")
+        raise SystemExit(1)
+    except auth_utils.AuthError as e:
+        ui.err(str(e))
         raise SystemExit(1)
 
 
@@ -706,41 +724,42 @@ CONTEXT_SETTINGS = dict(
     invoke_without_command=True,
     help=(
         "allta — CLI для вспомогательных действий (авторизация, файлы, токены, git, Python).\n\n"
-        "Команды без входа:\n"
-        "  allta boxes | allta -b\n"
-        "  allta releases | allta -r\n"
-        "  allta login [USERNAME] [PASSWORD]\n"
-        "  allta local vm ...\n\n"
-        "Команды после входа:\n"
-        "  allta ilo [STAND]\n"
-        "  allta creds [SERVICE_NAME]\n"
-        "  allta tokens [KEY]\n"
-        "  allta file FILENAME\n\n"
-        "Шорткаты команд:\n"
-        "  lg -> login, lo -> logout, g -> git, t -> tokens\n"
-        "  i -> ilo, cr -> creds, f -> file, bx -> boxes, rel -> releases, py -> python\n\n"
         "Шорткат входа:\n"
         "  allta -l [OPTIONS] USERNAME [PASSWORD] [OPTIONS]\n"
     ),
     epilog=(
         "Примеры:\n"
-        "  allta login\n"
-        "  allta login user secret -t\n"
-        "  allta -l -t user secret\n"
+        "\n"
+        "  ── Авторизация ──────────────────────────────────────────────────\n"
+        "  allta login                                    интерактивный вход\n"
+        "  allta login user secret -t                     войти и сразу получить tokens.json\n"
+        "  allta -l -t user secret                        шорткат: вход + tokens.json\n"
         "  ALLTA_PASSWORD=secret allta login user -k git_token -i\n"
-        "  ALLTA_API_TOKEN=jwt allta login user --token\n"
-        "  allta -l user --token -s 12 -f releases.json\n"
-        "  allta creds\n"
-        "  allta creds -s nexus\n"
-        "  allta creds -a nexus -u admin -p secret\n"
-        "  allta creds -up nexus -p new-secret\n"
-        "  allta vm start vm1 vm2\n"
-        "  allta vm stop --vms vm1,vm2 vm3\n"
-        "  allta jira service --dry-run\n"
-        "  allta jira testcase --dry-run\n"
-        "  allta file releases.json\n"
-        "  allta i 12\n"
-        "  allta g\n"
+        "                                                 пароль из env, после входа: токен git + iLO\n"
+        "  ALLTA_API_TOKEN=jwt allta login user --token   вход по API-токену из env\n"
+        "  allta -l user --token -s 12 -f releases.json   вход по токену + iLO стенда 12 + файл\n"
+        "\n"
+        "  ── Креды, токены и файлы ────────────────────────────────────────\n"
+        "  allta creds                                    список всех сервисных кредов\n"
+        "  allta creds nexus                              креды конкретного сервиса\n"
+        "  allta creds set nexus -u admin -p secret       создать/обновить креды сервиса\n"
+        "  allta creds upd nexus -p new-secret            обновить только пароль\n"
+        "  allta tokens                                   все токены\n"
+        "  allta tokens git_token                         один токен по ключу\n"
+        "  allta file releases.json                       скачать JSON из config-API\n"
+        "  allta i 12                                     iLO-креды стенда 12\n"
+        "\n"
+        "  ── Виртуальные машины ──────────────────────────────────────────\n"
+        "  allta vm start vm1 vm2                         запустить указанные ВМ\n"
+        "  allta vm stop --vms vm1,vm2 vm3                остановить (через флаг и позиционно)\n"
+        "\n"
+        "  ── Jira (только admin) ─────────────────────────────────────────\n"
+        "  allta jira service --dry-run                   черновик service-задач спринта\n"
+        "  allta jira testcase --dry-run                  черновик задач для тесткейса\n"
+        "\n"
+        "  ── Прочее ──────────────────────────────────────────────────────\n"
+        "  allta g                                        клонировать репозиторий\n"
+        "  allta kernel                                   выбрать ядро для установки + дефолт в GRUB\n"
     ),
 )
 @click.version_option(version="0.1.0", prog_name="allta")
@@ -1080,6 +1099,25 @@ def venv_cmd(venv_path: str | None):
     rc = create_venv(venv_path, enter_shell=True)
     sys.exit(rc)
 
+
+@cli.command(
+    "kernel",
+    short_help="Установить ядро Linux и сделать его дефолтным в GRUB.",
+    help=(
+        "Установить ядро через apt-get и выставить его дефолтным в GRUB.\n\n"
+        "Без аргумента — интерактивный режим: показывается список доступных и установленных ядер, "
+        "пользователь выбирает номер, далее команда ставит пакет (если ещё не установлен), правит "
+        "GRUB_DEFAULT в /etc/default/grub, запускает update-grub и предлагает перезагрузку.\n\n"
+        "С аргументом — устанавливается указанное ядро (имя версии или полное имя пакета "
+        "linux-image-*), GRUB обновляется, выводится сообщение о необходимости перезагрузки."
+    ),
+)
+@click.argument("kernel_name", required=False, metavar="[KERNEL]")
+@with_section("KERNEL")
+def kernel_cli(kernel_name: str | None):
+    rc = kernel_api.kernel_cmd(version=kernel_name)
+    sys.exit(rc)
+
 @cli.group("mc", short_help="Открыть MC на преднастроенных FTP.", context_settings=CONTEXT_SETTINGS)
 def mc_group():
     """Открыть Midnight Commander на преднастроенных FTP-хостах."""
@@ -1123,18 +1161,29 @@ def server_group():
     _ensure_authenticated_or_exit()
 
 
-@cli.group("jira", cls=JiraGroup, short_help="Создание задач в Jira.", context_settings=CONTEXT_SETTINGS)
-def jira_group():
-    pass
+@cli.group("jira", cls=JiraGroup, short_help="Создание задач в Jira (только admin).", context_settings=CONTEXT_SETTINGS)
+@click.pass_context
+def jira_group(ctx: click.Context):
+    if ctx.invoked_subcommand is None:
+        return
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        return
+    _ensure_admin_or_exit()
 
 
 @jira_group.command("service", short_help="Создать сервисные задачи спринта.")
 @click.argument("sprint_arg", type=int, required=False, metavar="SPRINT")
 @click.option("--sprint", type=int, default=None, show_default=False, help="Номер спринта.")
+@click.option(
+    "--assignee",
+    default=None,
+    show_default=False,
+    help="Исполнитель: номер в списке или login. Если не задан — спросит интерактивно.",
+)
 @click.option("--dry-run", is_flag=True, help="Показать задачи без создания в Jira.")
 @with_section("JIRA SERVICE")
-def jira_service_cmd(sprint_arg: int | None, sprint: int | None, dry_run: bool):
-    sys.exit(jira_api.service_cmd(sprint=sprint_arg or sprint, dry_run=dry_run))
+def jira_service_cmd(sprint_arg: int | None, sprint: int | None, assignee: str | None, dry_run: bool):
+    sys.exit(jira_api.service_cmd(sprint=sprint_arg or sprint, assignee=assignee, dry_run=dry_run))
 
 
 @jira_group.command("testcase", short_help="Создать набор задач для тесткейса.")
@@ -1151,7 +1200,7 @@ def jira_service_cmd(sprint_arg: int | None, sprint: int | None, dry_run: bool):
     "--assignee",
     default=None,
     show_default=False,
-    help="Исполнитель для всех задач: 1/2/3 или mfilippenko/dtimonin/ivelikanov.",
+    help="Исполнитель для всех задач: номер в списке или login (например, mfilippenko).",
 )
 @click.option("--assignee-per-task", is_flag=True, help="Выбирать исполнителя отдельно для каждой задачи.")
 @click.option("--dry-run", is_flag=True, help="Показать задачи без создания в Jira.")

@@ -574,7 +574,8 @@ known_bugs = {
     },
     "Файловые системы": {
         "BT-38366": "https://jira.astralinux.ru/browse/BT-38366",
-        "BT-54712": "https://jira.astralinux.ru/browse/BT-54712"
+        "BT-54712": "https://jira.astralinux.ru/browse/BT-54712",
+        "BT-99593": "https://jira.astralinux.ru/browse/BT-99593"
     },
     "Parsec": {
         "BT-61530": "https://jira.astralinux.ru/browse/BT-61530",

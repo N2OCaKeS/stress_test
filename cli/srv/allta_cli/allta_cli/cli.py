@@ -1159,7 +1159,14 @@ def modeswitch_cli(mode: str):
     ),
 )
 @click.option("--check", "-n", is_flag=True, help="Только показать доступную версию, не качать и не ставить.")
-@click.option("--force", is_flag=True, help="Поставить даже если версия совпадает или у вас новее.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help=(
+        "Поставить, даже если версия совпадает (переустановка) или установленная новее (откат "
+        "через apt-get --allow-downgrades)."
+    ),
+)
 @with_section("UPGRADE")
 def upgrade_cli(check: bool, force: bool):
     rc = upgrade_api.upgrade_cmd(check=check, force=force)

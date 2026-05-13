@@ -146,8 +146,16 @@ def upgrade_cmd(*, check: bool = False, force: bool = False) -> int:
     ui.ok(f"Скачано: {size / 1024 / 1024:.1f} MB")
 
     sudo = _sudo()
+    extra = ""
+    if installed and force:
+        cmp_now = _compare_versions(installed, remote_version)
+        if cmp_now == 0:
+            extra = " --reinstall"
+        elif cmp_now > 0:
+            extra = " --allow-downgrades"
+            ui.warn(f"Откат: {installed} → {remote_version}.")
     ui.step("Устанавливаю через apt-get (он сам заменит старую версию)…")
-    rc = _run(f"{sudo}apt-get install -y {dest}", f"установка {deb_name}")
+    rc = _run(f"{sudo}apt-get install{extra} -y {dest}", f"установка {deb_name}")
     if rc != 0:
         return rc
 

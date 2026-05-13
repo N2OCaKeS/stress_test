@@ -4,6 +4,7 @@ from os import path
 VENV_PATH = "/home/u/python/Python-3.12.1/venv/bin/python3.12"
 MAIN_DIR = path.normpath(path.join(path.dirname(path.abspath(__file__)), '..'))
 RESULTS_MAIN_DIR = f"{MAIN_DIR}/results"
+RESULTS_STATUS = f"{MAIN_DIR}/logs/test_status.log"
 
 
 #################################################################################

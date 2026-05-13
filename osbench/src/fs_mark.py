@@ -4,8 +4,8 @@ import pandas as pd
 
 from os import chdir, mkdir, makedirs, path
 
-from lib import Test, system, status_check
-from osb_logger import log
+from lib import Test, system, status_check, Writer
+from osb_logger import log, Colors
 from config.conf import (
     FILE_SIZE,
     FILES,
@@ -16,7 +16,8 @@ from config.conf import (
     STORAGE_MOUNT_DIR,
     INODE_COUNT,
     RESULTS_MAIN_DIR,
-    RESULT_FSMARK_NAME
+    RESULT_FSMARK_NAME,
+    RESULTS_STATUS
 )
 
 
@@ -135,6 +136,7 @@ class FSMark(Test, FsMarkParser):
                  f_limit=FILES_LIMIT,
                  fs=FS):
         
+        self.test_success = False
         self.f_size = f_size
         self.f_count = f_count
         self.f_step = f_step
@@ -144,6 +146,7 @@ class FSMark(Test, FsMarkParser):
         self.t_dir1 = "test1"
         self.t_dir2 = "test2"
         self.t_dir3 = "test3"
+        self.writer = Writer(file_name=RESULTS_STATUS)
 
         if report_filename is None:
             self._report_filename = f"{MAIN_DIR}/benchmarks/fs_mark/fs_log.txt"
@@ -204,13 +207,25 @@ class FSMark(Test, FsMarkParser):
             ), returncode=True)
             status.append(code)
 
+            self.writer.wrs(
+                cl=self.__class__,
+                method=self.start_test.__name__,
+                test=f"fs_mark -n {count} -s {self.f_size}",
+                status=code,
+                message=f"Files: {count}, Size: {self.f_size}KB"
+            )
+
         log.debug(f"Codes status: {status}")
 
         if all(code for code in status):
             log.info("fs_mark: - тестирование завершено успешно")
+            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status}{Colors.RESET}")
+            self.test_success = True
             return True, True
         else:
-            log.error("fs_mark: - тестирование провалено")
+            log.critical("fs_mark: - тестирование провалено")
+            log.debug(f"{Colors.RED}Статусы: {status}{Colors.RESET}")
+            self.test_success = False
             return True, False
 
 
@@ -219,6 +234,10 @@ class FSMark(Test, FsMarkParser):
         """
         Получить результаты и сохранить в JSON
         """
+        if not self.test_success:
+            log.critical(f"{Colors.RED}fs_mark: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
+            return True, False
+        
         results = self.parse_results()
         if results is not None and not results.empty:
             log.debug("DataFrame с результатами:")

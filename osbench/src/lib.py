@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Union, Tuple
 from functools import wraps
 from os import linesep
+from datetime import datetime
 
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -135,3 +136,66 @@ class system:
             else:
                 return errors, False
             
+
+
+class Writer:
+    """
+    Класс для записи результатов тестов в файл.
+    """
+    
+    def __init__(self, 
+                 file_name=None):
+        """
+        Инициализация Writer
+        
+        Args:
+            file_name: путь к файлу для записи
+        """
+        self.fn = file_name
+        
+        if self.fn:
+            Path(self.fn).parent.mkdir(parents=True, exist_ok=True)
+    
+    def wrs(self, cl=None, method=None, test=None, status=None, message=None):
+        """
+        Запись статуса выполнения теста
+        
+        Args:
+            cl: класс (object или строка)
+            method: метод (object или строка)
+            test: имя теста (строка)
+            status: статус выполнения (True/False или строка)
+            message: дополнительное сообщение
+        """
+
+        cl_name = cl.__name__ if hasattr(cl, '__name__') else str(cl)
+        method_name = method.__name__ if hasattr(method, '__name__') else str(method)
+
+        status_str = "SUCCESS" if status else "FAILED"
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        record = {
+            "timestamp": timestamp,
+            "class": cl_name,
+            "method": method_name,
+            "test": test,
+            "status": status_str,
+            "code": status,
+            "message": message or ""
+        }
+        
+        self._write_txt(record)
+    
+    def _write_txt(self, record):
+        """
+        Запись в текстовом формате
+        """
+        with open(self.fn, 'a', encoding='utf-8') as f:
+            f.write(f"{record['timestamp']} - {record['class']} - {record['method']}: {record['test']} - {record['status']}")
+            if record['message']:
+                f.write(f" - {record['message']}")
+            f.write("\n")
+
+
+

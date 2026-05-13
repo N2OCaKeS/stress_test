@@ -4,8 +4,8 @@ import pandas as pd
 
 from os import chdir, path, listdir, makedirs
 
-from lib import Test, system, status_check
-from osb_logger import log
+from lib import Test, system, status_check, Writer
+from osb_logger import log, Colors
 from config.conf import (
     LOW_CONC,
     HIGH_CONC,
@@ -16,7 +16,8 @@ from config.conf import (
     REGEXP_PARALLEL_COPIES,
     REGEXP_PARSERS,
     RESULTS_MAIN_DIR,
-    RESULT_UB_NAME
+    RESULT_UB_NAME,
+    RESULTS_STATUS
 )
 
 
@@ -215,7 +216,9 @@ class UnixBench(Test, UnixBenchParser):
         else:
             self._report_dir = report_dir
 
+        self.test_success = False
         self._report_filename = report_filename
+        self.writer = Writer(file_name=RESULTS_STATUS)
 
         UnixBenchParser.__init__(self, self._report_dir, self._report_filename)
 
@@ -242,15 +245,26 @@ class UnixBench(Test, UnixBenchParser):
         system.leave_command("sudo chmod +x Run", returncode=True)
         result, code = system.leave_command(f"./Run {run_cmd_args}", returncode=True)
 
+        self.writer.wrs(cl=self.__class__,
+                        method=self.start_test.__name__,
+                        test="ALL_TESTS",
+                        status=code,
+                        message=f"{'SUCCESS' if code else 'FAILURE'}"
+)
+
         log.debug(f"code = {code}, type = {type(code)}")
 
         if code:
             log.info(result)
             log.info("UnixBench: - тестирование завершено успешно")
+            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {code}{Colors.RESET}")
+            self.test_success = True
             return result, True
         else:
             log.error(result)
             log.error("UnixBench: - тестирование провалено")
+            log.debug(f"{Colors.RED}Статусы: {code}{Colors.RESET}")
+            self.test_success = False
             return result, False
 
 
@@ -258,6 +272,10 @@ class UnixBench(Test, UnixBenchParser):
         """
         Получить результаты и сохранить в JSON
         """
+        if not self.test_success:
+            log.critical(f"{Colors.RED}UnixBench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
+            return True, False
+        
         # Находим имя файла автоматически
         if self._report_filename is None:
             self._report_filename = self._find_result_file_without_extension(self._report_dir)

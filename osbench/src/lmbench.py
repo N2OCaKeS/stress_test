@@ -4,12 +4,13 @@ import json
 from os import makedirs
 from pathlib import Path
 
-from lib import Test, system, status_check
+from lib import Test, system, status_check, Writer
 from osb_logger import log, Colors
 from config.conf import (
     MAIN_DIR,
     RESULTS_MAIN_DIR,
-    RESULT_LMBENCH_NAME
+    RESULT_LMBENCH_NAME,
+    RESULTS_STATUS
 )
 
 
@@ -27,6 +28,7 @@ class LMBench(Test):
         self.results_file = f"{self.results_dir}/lmbench_result.txt"
         self.test_dir = f"{self.lmbench_dir}/testdir"
         self.test_file = f"{self.test_dir}/testfile"
+        self.writer = Writer(file_name=RESULTS_STATUS)
         makedirs(self.results_dir, exist_ok=True)
         makedirs(self.test_dir, exist_ok=True)
 
@@ -107,6 +109,11 @@ class LMBench(Test):
             log.info(f"Running {test_name} {args}...")
             output, code = self.run_test(test_name, args)
             status_code_dict[test_name] = code
+
+            self.writer.wrs(cl=self.__class__,
+                            method=self.start_test.__name__,
+                            test=f"{test_name} {args}",
+                            status=code)
 
         if all(code for code in status_code_dict.values()):
             log.info("LMbench: - тестирование завершено успешно")

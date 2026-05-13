@@ -10,7 +10,7 @@ from allta_cli.cli import COMMAND_SHORTCUTS, cli, run_login_shortcut_argv
 # Commands that never talk to the allta API and therefore don't need the TLS
 # bootstrap (which makes a network call to fetch the API cert). Listed by their
 # canonical click names — shortcuts are expanded before this check.
-_NO_TLS_COMMANDS = frozenset({"kernel", "mc", "local", "python", "venv"})
+_NO_TLS_COMMANDS = frozenset({"kernel", "modeswitch", "mc", "local", "python", "venv"})
 
 
 def _should_handle_login_shortcut(args: list[str]) -> bool:

@@ -33,6 +33,7 @@ from allta_cli.commands import vm_local as vm_local_api
 from allta_cli.commands import server as server_api
 from allta_cli.commands import jira as jira_api
 from allta_cli.commands import kernel as kernel_api
+from allta_cli.commands import modeswitch as modeswitch_api
 
 COMMANDS_NO_AUTH = (
     "login",
@@ -43,6 +44,7 @@ COMMANDS_NO_AUTH = (
     "python",
     "venv",
     "kernel",
+    "modeswitch",
 )
 
 COMMANDS_WITH_AUTH = (
@@ -73,6 +75,7 @@ COMMAND_SHORTCUTS = {
     "lc": "local",
     "j": "jira",
     "k": "kernel",
+    "ms": "modeswitch",
 }
 COMMAND_SHORTCUT_NAMES = tuple(COMMAND_SHORTCUTS.keys())
 
@@ -760,6 +763,8 @@ CONTEXT_SETTINGS = dict(
         "  ── Прочее ──────────────────────────────────────────────────────\n"
         "  allta g                                        клонировать репозиторий\n"
         "  allta kernel                                   выбрать ядро для установки + дефолт в GRUB\n"
+        "  allta modeswitch o                             переключить Astra Linux в режим Орёл\n"
+        "  allta modeswitch s                             переключить Astra Linux в режим Смоленск\n"
     ),
 )
 @click.version_option(version="0.1.0", prog_name="allta")
@@ -1117,6 +1122,26 @@ def venv_cmd(venv_path: str | None):
 def kernel_cli(kernel_name: str | None):
     rc = kernel_api.kernel_cmd(version=kernel_name)
     sys.exit(rc)
+
+
+@cli.command(
+    "modeswitch",
+    short_help="Переключить режим защищённости Astra Linux (Орёл/Смоленск).",
+    help=(
+        "Переключение режима защищённости Astra Linux SE.\n\n"
+        "Аргумент:\n"
+        "  o — Орёл: выполняется 'astra-modeswitch set 0'.\n"
+        "  s — Смоленск: выполняются 'astra-modeswitch set 2', 'astra-mic-control enable',\n"
+        "      'astra-mac-control enable'.\n\n"
+        "После переключения выводится напоминание о необходимости перезагрузки."
+    ),
+)
+@click.argument("mode", required=True, metavar="<o|s>")
+@with_section("MODESWITCH")
+def modeswitch_cli(mode: str):
+    rc = modeswitch_api.modeswitch_cmd(mode)
+    sys.exit(rc)
+
 
 @cli.group("mc", short_help="Открыть MC на преднастроенных FTP.", context_settings=CONTEXT_SETTINGS)
 def mc_group():

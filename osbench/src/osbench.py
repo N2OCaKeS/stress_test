@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from unixbench import UnixBench
 from fs_mark import FSMark
 from lmbench import LMBench
+from perfbench import PerfBench
 
 
 """
@@ -25,6 +26,7 @@ from lmbench import LMBench
 unixbench_test = UnixBench()
 fsmark_test = FSMark()
 lmbench_test = LMBench()
+perf = PerfBench()
 
 
 # ==================== БЛОК UNIXBENCH ========================
@@ -39,3 +41,6 @@ fsmark_test.get_results()
 lmbench_test.start_test()
 lmbench_test.get_results()
 
+# ==================== БЛОК Perf Bench ==========================
+perf.start_test()
+perf.get_results()

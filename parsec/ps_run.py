@@ -115,6 +115,8 @@ if args.DIGSIG:
 elif args.RSL:
     rsl_test = SpinlockImpactTest()
     rsl_test.spinlock_impact_by_unixbench()
+    rsl_test.spinlock_impact_by_fs_mark()
+    rsl_test.spinlock_impact_by_load2noarch()
 else:
     test.parsec_impact_by_fs_load()
 uzs.public = True

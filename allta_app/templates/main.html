@@ -1731,36 +1731,131 @@
             </div>
         </div>
 
+
         <div style="display: flex; align-items: center;">
-          <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" role="switch" id="testenvSwitch" onchange="testenvSwitchfunc(this.checked)">
-            <label class="form-check-label" for="testenvSwitch"></label>
-          </div>
-            <div style="margin-left: 10px;">
-              <p style="margin: 0; line-height: 1.2; color: #c8c9c9;">Стандартный запуск | Тестовое окружение</p>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="testenvSwitch" onchange="testenvSwitchfunc(this.checked)">
+                <label class="form-check-label" for="testenvSwitch">
+                    <span id="modeLabel" style="color: #c8c9c9; margin-left: 8px;">Тестовое окружение</span>
+                </label>
+            </div>
+            <div style="margin-left: 15px;">
+                <span id="syncStatusIcon" style="font-size: 14px; color: #c8c9c9;"></span>
             </div>
         </div>
+        <div id="statusMessage" style="font-size: 12px; color: #c8c9c9; margin-top: 5px; margin-left: 45px;"></div>
 
         <script>
-          function testenvSwitchfunc(isChecked) {
-              // Отправляем AJAX-запрос с текущим состоянием переключателя
-              $.ajax({
-                  url: '/testenv-switch',
-                  method: 'POST',
-                  contentType: 'application/json',
-                  data: JSON.stringify({ state: isChecked ? 'on' : 'off' }),
-                  success: function(response) {
-                      console.log('Test environment switched:', response.message);
-                  },
-                  error: function(error) {
-                      console.error('Error switching test environment:', error.responseText);
-                  }
-              });
-          }
+            let isUpdating = false;
+            let messageTimeout = null;
+
+            function updateSwitchUI(isChecked, synced = true) {
+                const switchElement = $('#testenvSwitch');
+                const modeLabel = $('#modeLabel');
+                const statusMessage = $('#statusMessage');
+                
+                // Очищаем предыдущий таймер
+                if (messageTimeout) {
+                    clearTimeout(messageTimeout);
+                }
+                
+                if (switchElement.prop('checked') !== isChecked && !isUpdating) {
+                    switchElement.prop('checked', isChecked);
+                }
+                
+                if (isChecked) {
+                    modeLabel.html('<span style="color: #e0e0e0; margin-left: 8px;">Тестовое окружение</span>');
+                    statusMessage.html('Запуск подготовки окружения на стенде для одного теста');
+                    statusMessage.css('color', '#e0e0e0');
+                    statusMessage.show();
+                    
+                    messageTimeout = setTimeout(() => {
+                        statusMessage.fadeOut(500);
+                    }, 3000);
+                } else {
+                    modeLabel.html('<span style="color: #c8c9c9; margin-left: 8px;">Стандартный запуск</span>');
+                    statusMessage.html('Стандартный запуск прогона');
+                    statusMessage.css('color', '#c8c9c9');
+                    statusMessage.show();
+                    
+                    messageTimeout = setTimeout(() => {
+                        statusMessage.fadeOut(500);
+                    }, 3000);
+                }
+                
+                if (!synced) {
+                    statusMessage.show();
+                    statusMessage.html(statusMessage.html() + ' <span style="color: #ffaa00;">⟳ синхронизация...</span>');
+                    if (messageTimeout) clearTimeout(messageTimeout);
+                    messageTimeout = setTimeout(() => {
+                        statusMessage.fadeOut(500);
+                    }, 3000);
+                }
+            }
+
+            function fetchTestenvStatus() {
+                if (isUpdating) return;
+                
+                $.ajax({
+                    url: '/testenv-status',
+                    method: 'GET',
+                    success: function(response) {
+                        const isChecked = response.state === 'on';
+                        updateSwitchUI(isChecked, true);
+                        $('#syncStatusIcon').html('🔄').fadeOut(500, function() {
+                            $(this).html('✓').fadeIn(500);
+                        });
+                        
+                        const statusMessage = $('#statusMessage');
+                        statusMessage.show();
+                        statusMessage.html('🔄 Статус синхронизирован с сервером');
+                        statusMessage.css('color', '#a0a0a0');
+                        setTimeout(() => {
+                            statusMessage.fadeOut(500);
+                        }, 2000);
+                    },
+                    error: function(error) {
+                        console.error('Error fetching status:', error);
+                        $('#syncStatusIcon').html('⚠️').fadeOut(300).fadeIn(300);
+                    }
+                });
+            }
+            
+            function testenvSwitchfunc(isChecked) {
+                if (isUpdating) {
+                    fetchTestenvStatus();
+                    return;
+                }
+                
+                isUpdating = true;
+                updateSwitchUI(isChecked, false);
+                $('#syncStatusIcon').html('⟳');
+                
+                $.ajax({
+                    url: '/testenv-switch',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ state: isChecked ? 'on' : 'off' }),
+                    success: function(response) {
+                        console.log('Switched:', response.message);
+                        fetchTestenvStatus();
+                    },
+                    error: function(error) {
+                        console.error('Error:', error);
+                        $('#syncStatusIcon').html('❌');
+                        setTimeout(() => fetchTestenvStatus(), 1000);
+                    },
+                    complete: function() {
+                        setTimeout(() => { isUpdating = false; }, 500);
+                    }
+                });
+            }
+            
+            $(document).ready(function() {
+                fetchTestenvStatus();
+                setInterval(fetchTestenvStatus, 5000);
+            });
         </script>
-
-
-
 
 
 

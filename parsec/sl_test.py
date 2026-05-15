@@ -109,7 +109,7 @@ class SpinlockImpactTest:
         total_used = round(sum(sum(v) for v in used_cpu_dict.values()), 2)
         spinlock_seconds = round((total_used / 100) * elapsed, 3)
 
-        print(f'\nTotal spinlock CPU: {total_used}%')
+        print(f'\nTotal spinlock CPU share: {total_used}%')
         print(f'Elapsed: {elapsed} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
@@ -119,7 +119,7 @@ class SpinlockImpactTest:
                     'elapsed': {'Seconds': elapsed},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
-                'total': {'%': {'Total spinlock CPU': total_used}},
+                'total': {'%': {'Total spinlock CPU share': total_used}},
                 'detail': {'%': used_cpu_dict}
             }, indent=4))
 
@@ -194,7 +194,7 @@ class SpinlockImpactTest:
         total_used = round(sum(sum(v) for v in used_cpu_dict.values()), 2)
         spinlock_seconds = round((total_used / 100) * elapsed, 3)
 
-        print(f'\nTotal spinlock CPU: {total_used}%')
+        print(f'\nTotal spinlock CPU share: {total_used}%')
         print(f'Elapsed: {elapsed} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
@@ -204,7 +204,7 @@ class SpinlockImpactTest:
                     'elapsed': {'Seconds': elapsed},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
-                'total': {'%': {'Total spinlock CPU': total_used}},
+                'total': {'%': {'Total spinlock CPU share': total_used}},
                 'detail': {'%': used_cpu_dict}
             }, indent=4))
 
@@ -269,7 +269,7 @@ class SpinlockImpactTest:
         total_used = round(sum(sum(v) for v in used_cpu_dict.values()), 2)
         spinlock_seconds = round((total_used / 100) * elapsed, 3)
 
-        print(f'\nTotal spinlock CPU: {total_used}%')
+        print(f'\nTotal spinlock CPU share: {total_used}%')
         print(f'Elapsed: {elapsed} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
@@ -279,7 +279,7 @@ class SpinlockImpactTest:
                     'elapsed': {'Seconds': elapsed},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
-                'total': {'%': {'Total spinlock CPU': total_used}},
+                'total': {'%': {'Total spinlock CPU share': total_used}},
                 'detail': {'%': used_cpu_dict}
             }, indent=4))
 

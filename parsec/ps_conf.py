@@ -16,6 +16,14 @@ TIMEDF_NAME = f'{TEMPLATE_PATH}/timedf.html'
 TOTALDF_NAME = f'{TEMPLATE_PATH}/totaldf.html'
 DETAILDF_NAME = f'{TEMPLATE_PATH}/detaildf.html'
 DIGSIG_NAME = f'{TEMPLATE_PATH}/digsig.html'
+
+FS_TIMEDF_NAME = f'{TEMPLATE_PATH}/fs_timedf.html'
+FS_TOTALDF_NAME = f'{TEMPLATE_PATH}/fs_totaldf.html'
+FS_DETAILDF_NAME = f'{TEMPLATE_PATH}/fs_detaildf.html'
+
+L2_TIMEDF_NAME = f'{TEMPLATE_PATH}/l2_timedf.html'
+L2_TOTALDF_NAME = f'{TEMPLATE_PATH}/l2_totaldf.html'
+L2_DETAILDF_NAME = f'{TEMPLATE_PATH}/l2_detaildf.html'
 INFO_FILENAME = 'ps_info.txt'
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
@@ -23,6 +31,22 @@ VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
 
 UB_PATH = '/home/u/git/stress_test/parsec/byte-unixbench-master/UnixBench'
 UB_CONCURRENCY = 4
+
+FS_MARK_PATH = f'{SCRIPT_DIR}/fs_mark-3.3/fs_mark'
+FS_MARK_DIR1 = '/tmp/fs_mark_test1'
+FS_MARK_DIR2 = '/tmp/fs_mark_test2'
+FS_MARK_DIR3 = '/tmp/fs_mark_test3'
+FS_MARK_DIR4 = '/tmp/fs_mark_test4'
+FS_MARK_DIR5 = '/tmp/fs_mark_test5'
+
+FS_MARK_SIZE = 10240
+FS_MARK_COUNT = 100000
+
+LOAD2_PATH = f'{SCRIPT_DIR}/load2noarch'
+LOAD2_DIR = '/tmp/load2_test'
+LOAD2_WORKERS = 150
+LOAD2_LOOPS = 20000
+LOAD2_ARCHIVE_LOOPS = 5
 
 PERF_FREQ = 99
 

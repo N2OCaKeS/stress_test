@@ -1,0 +1,41 @@
+<p>
+    <table border="1">
+      <tbody>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Astra version</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{av}</td>
+        </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Kernel</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{kernel}</td>
+        </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>Threads/cycles counts</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{concurency}/{counter}</td>
+        </tr>
+        <tr>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>File System</b></td>
+            <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">{fs}</td>
+        </tr>
+        <tr>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto"><b>ARM</b></td>
+          <td style = "background-color: #D9E1F2;font-family: Century Gothic, sans-serif;font-size: medium;text-align: left;padding: 10px 20px 10px 10px;width: auto">
+              <a href="https://life.astralinux.ru/pages/viewpage.action?pageId=192234259">{arm_num}</a>
+              <ul>
+                  <li>Processor: {arm_proc}</li>
+                  <li>Memory: {arm_mem}</li>
+                  <li>Storage: {arm_st}</li>
+              </ul>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+</p>
+<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
+    <h2>Описание</h2>
+</p>
+<p style="font-family: Century Gothic, sans-serif; font-size: 14px;">
+    Целью данного теста является оценка влияния механизмов синхронизации на производительность CPU в сценариях с интенсивной нагрузкой: unixbench; на файловую систему; load2noarch<br/>
+    В частности, измеряется время, затрачиваемое CPU на ожидание в спин-блокировках (spin-lock), которые возникают при конкурентном доступе к ресурсам.<br/>
+    Flamegraph находится в приложении к данному отчету.
+</p>

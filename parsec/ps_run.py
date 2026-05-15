@@ -101,7 +101,8 @@ uzs = UploaderZC(folder_tree_id=args.FTI,
                 conf_space=args.SPACE,
                 conf_parent_page=args.PPAGE,
                 conf_new_page_name=args.NPAGE,
-                digsig=args.DIGSIG)
+                digsig=args.DIGSIG,
+                rsl=args.RSL)
 
 digsig = Digsig(kernel=str(args.TCYC).split('_')[2],
                 rc=str(args.TCYC).split('_')[0],
@@ -114,6 +115,8 @@ if args.DIGSIG:
 elif args.RSL:
     rsl_test = SpinlockImpactTest()
     rsl_test.spinlock_impact_by_unixbench()
+    rsl_test.spinlock_impact_by_fs_mark()
+    rsl_test.spinlock_impact_by_load2noarch()
 else:
     test.parsec_impact_by_fs_load()
 uzs.public = True

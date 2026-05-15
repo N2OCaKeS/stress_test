@@ -1,7 +1,9 @@
 import os
 from libs.libreport import ReportToConfluence
 from ps_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, FILE_SYSTEM, CONC, COUNTER, \
-                    REPORT_FILENAME, FLAMEGRAPH_NAME, TIMEDF_NAME, TOTALDF_NAME, DETAILDF_NAME
+                    REPORT_FILENAME, FLAMEGRAPH_NAME, TIMEDF_NAME, TOTALDF_NAME, DETAILDF_NAME, \
+                    FS_TIMEDF_NAME, FS_TOTALDF_NAME, FS_DETAILDF_NAME, \
+                    L2_TIMEDF_NAME, L2_TOTALDF_NAME, L2_DETAILDF_NAME
 
 
 
@@ -21,7 +23,8 @@ class Public:
                  storage=False,
                  kernel_check=False,
                  balance=False,
-                 digsig=False):
+                 digsig=False,
+                 rsl=False):
     
         self.username = username
         self.token = token
@@ -35,6 +38,7 @@ class Public:
         self.kernel_check = kernel_check
         self.balance = balance
         self.digsig = digsig
+        self.rsl = rsl
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -147,6 +151,69 @@ class Public:
             
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             html_page = '\n'.join([header_table, head_row, digsig_table])
+        elif self.rsl:
+            #прикрепить файлы к странице confluence
+            for file in os.listdir(REPORT_PATH):
+                confluence_report.attache_files('{}/{}'.format(REPORT_PATH, file),
+                                                self.c_space,
+                                                c_np)
+            
+            
+            # генерация вступительной таблицы
+            with open(INFO_FILENAME) as info:
+                info_lst = info.read().split('\n')
+            
+            with open(f'{TEMPLATE_PATH}/rsl_header_table_template.html', 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],                                                    
+                                                        concurency=CONC,
+                                                        counter=COUNTER,
+                                                        fs=FILE_SYSTEM,
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
+                
+            # unixbench
+            with open(f'{TIMEDF_NAME}', 'r') as file:
+                impact_table_time = file.read()
+            with open(f'{TOTALDF_NAME}', 'r') as file:
+                impact_table_total = file.read()
+            with open(f'{DETAILDF_NAME}', 'r') as file:
+                impact_table_detail = file.read()
+
+            # fs_mark
+
+            with open(f'{FS_TIMEDF_NAME}', 'r') as file:
+                impact_table_fs_mark_time = file.read()
+            with open(f'{FS_TOTALDF_NAME}', 'r') as file:
+                impact_table_fs_mark_total = file.read()
+            with open(f'{FS_DETAILDF_NAME}', 'r') as file:
+                impact_table_fs_mark_detail = file.read()
+
+            # load2noarch
+
+            with open(f'{L2_TIMEDF_NAME}', 'r') as file:
+                impact_table_noarch_time = file.read()
+            with open(f'{L2_TOTALDF_NAME}', 'r') as file:
+                impact_table_noarch_total = file.read()
+            with open(f'{L2_DETAILDF_NAME}', 'r') as file:
+                impact_table_noarch_detail = file.read()
+            
+            head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты измерения времени:</b></h3></p>'
+            head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции:</b></h3></p>'
+            
+            html_page = '\n'.join([
+                header_table,
+                "<p><h2 style=\"font-family: Century Gothic, sans-serif;\"><b>Результаты теста unixbench:</b></h2></p>",
+                impact_table_total, head_row2, impact_table_time, head_row3, impact_table_detail,
+                "<p><h2 style=\"font-family: Century Gothic, sans-serif;\"><b>Результаты теста fs_mark:</b></h2></p>",
+                impact_table_fs_mark_total, head_row2, impact_table_fs_mark_time, head_row3, impact_table_fs_mark_detail,
+                "<p><h2 style=\"font-family: Century Gothic, sans-serif;\"><b>Результаты теста load2noarch:</b></h2></p>",
+                impact_table_noarch_total, head_row2, impact_table_noarch_time, head_row3, impact_table_noarch_detail
+                ])
+
         else:
             #прикрепить файлы к странице confluence
             for file in os.listdir(REPORT_PATH):
@@ -178,8 +245,15 @@ class Public:
             with open(f'{DETAILDF_NAME}', 'r') as file:
                 impact_table_detail = file.read()
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты утилизации CPU утилитой "time":</b></h3></p>'
-            head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции модуля Parsec:</b></h3></p>'
+            
+            
+            if self.rsl:
+                head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты измерения времени выполнения утилитой "time":</b></h3></p>'
+                head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции спинлоков ядра:</b></h3></p>'
+            else:
+                head_row2 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Результаты утилизации CPU утилитой "time":</b></h3></p>'
+                head_row3 = '<p><h3 style="font-family: Century Gothic, sans-serif;"><b>Используемые функции модуля Parsec:</b></h3></p>'
+            
             html_page = '\n'.join([header_table, head_row, impact_table_total, head_row2, impact_table_time, head_row3, impact_table_detail])
         
 

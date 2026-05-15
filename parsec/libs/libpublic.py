@@ -3,7 +3,7 @@ from libs.libreport import ReportToConfluence
 from ps_conf import REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, FILE_SYSTEM, CONC, COUNTER, \
                     REPORT_FILENAME, FLAMEGRAPH_NAME, TIMEDF_NAME, TOTALDF_NAME, DETAILDF_NAME, \
                     FS_TIMEDF_NAME, FS_TOTALDF_NAME, FS_DETAILDF_NAME, \
-                    L2_TIMEDF_NAME, L2_TOTALDF_NAME, L2_DETAILDF_NAME
+                    L2_TIMEDF_NAME, L2_TOTALDF_NAME, L2_DETAILDF_NAME, UB_CONCURRENCY, FS_MARK_SIZE, FS_MARK_COUNT, LOAD2_WORKERS, LOAD2_LOOPS, LOAD2_ARCHIVE_LOOPS
 
 
 
@@ -167,9 +167,13 @@ class Public:
                 header_table_temp = file.read()
                 header_table = header_table_temp.format(av=info_lst[0],
                                                         kernel=info_lst[1],                                                    
-                                                        concurency=CONC,
-                                                        counter=COUNTER,
-                                                        fs=FILE_SYSTEM,
+                                                        ub_concurrency=UB_CONCURRENCY,
+                                                        fs_mark_concurrency=30,
+                                                        fs_mark_size=FS_MARK_SIZE,
+                                                        fs_mark_count=FS_MARK_COUNT,
+                                                        load2_workers=LOAD2_WORKERS,
+                                                        load2_loops=LOAD2_LOOPS,
+                                                        load2_archive_loops=LOAD2_ARCHIVE_LOOPS,
                                                         arm_num=self.stands[self.grade_stand]['grade'],
                                                         arm_proc=self.stands[self.grade_stand]['cpu'],
                                                         arm_mem=self.stands[self.grade_stand]['ram'],

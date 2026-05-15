@@ -110,13 +110,13 @@ class SpinlockImpactTest:
         spinlock_seconds = round((total_used / 100) * elapsed, 3)
 
         print(f'\nTotal spinlock CPU share: {total_used}%')
-        print(f'Elapsed: {elapsed} sec')
+        print(f'Duration: {elapsed} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as f:
             f.write(dumps({
                 'time': {
-                    'elapsed': {'Seconds': elapsed},
+                    'duration': {'Seconds': elapsed},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
                 'total': {'%': {'Total spinlock CPU share': total_used}},
@@ -195,13 +195,13 @@ class SpinlockImpactTest:
         spinlock_seconds = round((total_used / 100) * elapsed, 3)
 
         print(f'\nTotal spinlock CPU share: {total_used}%')
-        print(f'Elapsed: {elapsed} sec')
+        print(f'Duration: {elapsed} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as f:
             f.write(dumps({
                 'time': {
-                    'elapsed': {'Seconds': elapsed},
+                    'duration': {'Seconds': elapsed},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
                 'total': {'%': {'Total spinlock CPU share': total_used}},
@@ -270,13 +270,13 @@ class SpinlockImpactTest:
         spinlock_seconds = round((total_used / 100) * elapsed, 3)
 
         print(f'\nTotal spinlock CPU share: {total_used}%')
-        print(f'Elapsed: {elapsed} sec')
+        print(f'Duration: {elapsed} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as f:
             f.write(dumps({
                 'time': {
-                    'elapsed': {'Seconds': elapsed},
+                    'duration': {'Seconds': elapsed},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
                 'total': {'%': {'Total spinlock CPU share': total_used}},

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Сборки — Protopack{% endblock %}
+
+{% block content %}
+<h1>Список сборок</h1>
+<p class="meta">
+  Отображаются сборки, доступные на вашем уровне МРД.
+  Строки с более высокой меткой скрыты ЗСУБД автоматически.
+</p>
+
+{% if builds %}
+<table>
+  <thead>
+    <tr>
+      <th>Сборка</th>
+      <th>Тип</th>
+      <th>Релиз</th>
+      <th>Дата создания</th>
+      <th>Пакетов</th>
+      <th>Источники</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in builds %}
+    <tr>
+      <td>
+        <a class="row-link" href="{{ url_for('build_detail', build_id=b.build) }}">{{ b.build }}</a>
+      </td>
+      <td>
+        {% if b.build_type %}
+          {% for t in b.build_type %}<span class="tag">{{ t }}</span>{% endfor %}
+        {% endif %}
+      </td>
+      <td>{{ b.rel or '—' }}</td>
+      <td>{{ b.create_utc.strftime('%Y-%m-%d %H:%M') if b.create_utc else '—' }}</td>
+      <td>{{ b.count_packages or 0 }}</td>
+      <td>
+        <a class="row-link" href="{{ url_for('build_sources', build_id=b.build) }}">исходники</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Нет доступных сборок на вашем уровне МРД.</p>
+{% endif %}
+{% endblock %}

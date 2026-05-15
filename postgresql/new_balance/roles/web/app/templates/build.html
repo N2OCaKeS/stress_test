@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}{{ build_info.build }} — Protopack{% endblock %}
+
+{% block breadcrumb %}{{ build_info.build }}{% endblock %}
+
+{% block content %}
+<h1>{{ build_info.build }}</h1>
+
+<table style="width: auto; margin-bottom: 24px;">
+  <tr><th>Тип</th><td>
+    {% if build_info.build_type %}
+      {% for t in build_info.build_type %}<span class="tag">{{ t }}</span>{% endfor %}
+    {% else %}—{% endif %}
+  </td></tr>
+  <tr><th>Релиз</th><td>{{ build_info.rel or '—' }}</td></tr>
+  <tr><th>Дата создания</th><td>{{ build_info.create_utc.strftime('%Y-%m-%d %H:%M UTC') if build_info.create_utc else '—' }}</td></tr>
+  <tr><th>Пакетов</th><td>{{ build_info.count_packages or 0 }}</td></tr>
+</table>
+
+<p style="margin-bottom:12px;">
+  <a class="row-link" href="{{ url_for('build_sources', build_id=build_info.build) }}">Перейти к исходникам &rarr;</a>
+</p>
+
+<h2>Пакеты ({{ packages|length }})</h2>
+
+{% if packages %}
+<table>
+  <thead>
+    <tr>
+      <th>Компонент</th>
+      <th>Пакет</th>
+      <th>Версия</th>
+      <th>Исходник</th>
+      <th>Секция</th>
+      <th>Отдел</th>
+      <th>Ответственный</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in packages %}
+    <tr>
+      <td>{{ p.component or '—' }}</td>
+      <td>{{ p.binary }}</td>
+      <td>{{ p.binary_version }}</td>
+      <td>{{ p.source or '—' }}</td>
+      <td>{{ p.section or '—' }}</td>
+      <td>{{ p.department or '—' }}</td>
+      <td>{{ p.responsible or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Пакеты не найдены или недоступны на вашем уровне МРД.</p>
+{% endif %}
+{% endblock %}

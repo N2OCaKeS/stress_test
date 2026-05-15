@@ -72,7 +72,7 @@ class SpinlockImpactTest:
         print(f'Running UnixBench with {UB_CONCURRENCY} workers...')
         start = time.perf_counter()
         command(f'cd {UB_PATH} && ./Run -c {UB_CONCURRENCY}')
-        elapsed = round(time.perf_counter() - start, 3)
+        duration = round(time.perf_counter() - start, 3)
 
         print('Stopping perf...')
         perf_proc.send_signal(signal.SIGINT)
@@ -107,16 +107,16 @@ class SpinlockImpactTest:
             print(f'{key}: {value[0]}%')
 
         total_used = round(sum(sum(v) for v in used_cpu_dict.values()), 2)
-        spinlock_seconds = round((total_used / 100) * elapsed, 3)
+        spinlock_seconds = round((total_used / 100) * duration, 3)
 
         print(f'\nTotal spinlock CPU share: {total_used}%')
-        print(f'Duration: {elapsed} sec')
+        print(f'Duration: {duration} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as f:
             f.write(dumps({
                 'time': {
-                    'duration': {'Seconds': elapsed},
+                    'duration': {'Seconds': duration},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
                 'total': {'%': {'Total spinlock CPU share': total_used}},
@@ -159,7 +159,7 @@ class SpinlockImpactTest:
         command(
             f'{FS_MARK_PATH} -t 30 -d {FS_MARK_DIR1} -d {FS_MARK_DIR2} -d {FS_MARK_DIR3} -d {FS_MARK_DIR4} -d {FS_MARK_DIR5} -s {FS_MARK_SIZE} -n {FS_MARK_COUNT}'
         )
-        elapsed = round(time.perf_counter() - start, 3)
+        duration = round(time.perf_counter() - start, 3)
 
         print('Stopping perf...')
         perf_proc.send_signal(signal.SIGINT)
@@ -192,16 +192,16 @@ class SpinlockImpactTest:
             print(f'{key}: {value[0]}%')
 
         total_used = round(sum(sum(v) for v in used_cpu_dict.values()), 2)
-        spinlock_seconds = round((total_used / 100) * elapsed, 3)
+        spinlock_seconds = round((total_used / 100) * duration, 3)
 
         print(f'\nTotal spinlock CPU share: {total_used}%')
-        print(f'Duration: {elapsed} sec')
+        print(f'Duration: {duration} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as f:
             f.write(dumps({
                 'time': {
-                    'duration': {'Seconds': elapsed},
+                    'duration': {'Seconds': duration},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
                 'total': {'%': {'Total spinlock CPU share': total_used}},
@@ -234,7 +234,7 @@ class SpinlockImpactTest:
         print(f'Running load2noarch (workers={LOAD2_WORKERS}, loops={LOAD2_LOOPS}, archive_loops={LOAD2_ARCHIVE_LOOPS})...')
         start = time.perf_counter()
         command(f'{LOAD2_PATH} {LOAD2_DIR} {LOAD2_WORKERS} {LOAD2_LOOPS} {LOAD2_ARCHIVE_LOOPS}')
-        elapsed = round(time.perf_counter() - start, 3)
+        duration = round(time.perf_counter() - start, 3)
 
         print('Stopping perf...')
         perf_proc.send_signal(signal.SIGINT)
@@ -267,16 +267,16 @@ class SpinlockImpactTest:
             print(f'{key}: {value[0]}%')
 
         total_used = round(sum(sum(v) for v in used_cpu_dict.values()), 2)
-        spinlock_seconds = round((total_used / 100) * elapsed, 3)
+        spinlock_seconds = round((total_used / 100) * duration, 3)
 
         print(f'\nTotal spinlock CPU share: {total_used}%')
-        print(f'Duration: {elapsed} sec')
+        print(f'Duration: {duration} sec')
         print(f'Spinlock time: {spinlock_seconds} sec\n')
 
         with open(f'{REPORT_PATH}/{REPORT_FILENAME}', 'w') as f:
             f.write(dumps({
                 'time': {
-                    'duration': {'Seconds': elapsed},
+                    'duration': {'Seconds': duration},
                     'spinlock': {'Seconds': spinlock_seconds}
                 },
                 'total': {'%': {'Total spinlock CPU share': total_used}},

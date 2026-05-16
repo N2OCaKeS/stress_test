@@ -90,7 +90,7 @@ class IDRACController:
         self._login()
         try:
             body = {
-                "ResetType": "ForceOff"
+                "ResetType": "On"
             }
             response = self.client.post('/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset', body=body)
             if response.status in [200, 204]:

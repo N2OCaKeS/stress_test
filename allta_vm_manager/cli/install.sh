@@ -135,7 +135,7 @@ upload() {
 
     echo "Обновляю пакет на ${username}@${UPLOAD_HOST}:/srv/ftp"
     ssh "${username}@${UPLOAD_HOST}" \
-        "sudo rm -f /srv/ftp/boxes/allta-vm*.deb && sudo mv \"\$HOME/${deb_name}\" /srv/ftp/boxes/ && sudo chmod 640 /srv/ftp/boxes/allta-vm*.deb"
+        "sudo rm -f /srv/ftp/boxes/allta-vm*.deb && sudo mv \"\$HOME/${deb_name}\" /srv/ftp/boxes/ && sudo chmod 644 /srv/ftp/boxes/allta-vm*.deb"
 }
 
 usage() {

@@ -38,7 +38,7 @@ class ILOController:
         subprocess.run(f"{self.ssh_command} power on", shell=True, check=False)
 
     def power_off(self):
-        subprocess.run(f"{self.ssh_command} power off", shell=True, check=False)
+        subprocess.run(f"{self.ssh_command} power off hard", shell=True, check=False)
 
     def reboot(self):
         subprocess.run(f"{self.ssh_command} reset /system1", shell=True, check=False)

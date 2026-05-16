@@ -32,8 +32,8 @@ def power_on_server(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    ServerPowerService(server=server)
-    ServerPowerService.power_on()
+    service = ServerPowerService(server=server)
+    service.power_on()
 
     return server
 
@@ -57,8 +57,8 @@ def power_off_server(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    ServerPowerService(server=server)
-    ServerPowerService.power_off()    
+    service = ServerPowerService(server=server)
+    service.power_off()
 
     return server
 
@@ -82,7 +82,7 @@ def reboot_server(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    ServerPowerService(server=server)
-    ServerPowerService.set_boot_order()
+    service = ServerPowerService(server=server)
+    service.set_boot_order()
 
     return server

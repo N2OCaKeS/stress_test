@@ -13,7 +13,7 @@ class ILOController:
         self.login = server.admin_panel_user
         self.password = server.admin_panel_pass
         self.no_fprint = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-        self.old_mode_key = '-oKexAlgorithms=+diffie-hellman-group1-sha1'
+        self.old_mode_key = '-oKexAlgorithms=+diffie-hellman-group1-sha1 -oHostKeyAlgorithms=+ssh-rsa,ssh-dss -oPubkeyAcceptedAlgorithms=+ssh-rsa'
         self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
 
     def set_boot_order(self):        

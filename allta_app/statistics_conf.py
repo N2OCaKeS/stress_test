@@ -6,7 +6,7 @@ statistics_conf = {
         "set_of_test_types": ['FreeIPA auth', 'FreeIPA c-users', 'FreeIPA plugin']
     },
     "Parsec": {
-        "set_of_test_types": ['parsec impact-fs', 'parsec impact-fs aud-off'],
+        "set_of_test_types": ['parsec impact-fs', 'parsec impact-fs aud-off', 'raw-spin-lock', 'digsig-cdt'],
         "comparison_list": [["parsec impact-fs", "parsec impact-fs aud-off"]]
     },
     "PostgreSQL": {

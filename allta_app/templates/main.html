@@ -1765,7 +1765,15 @@
                 
                 if (isChecked) {
                     modeLabel.html('<span style="color: #e0e0e0; margin-left: 8px;">Тестовое окружение</span>');
-                    statusMessage.html('Запуск подготовки окружения на стенде для одного теста');
+                    // Для тестового окружения - показываем сообщение всегда (при каждой синхронизации)
+                    let message = 'Запуск подготовки окружения на стенде для одного теста';
+                    
+                    // Добавляем индикатор синхронизации, если это не просто синхронизация статуса
+                    if (!synced) {
+                        message += ' <span style="color: #ffaa00;">⟳ синхронизация...</span>';
+                    }
+                    
+                    statusMessage.html(message);
                     statusMessage.css('color', '#e0e0e0');
                     statusMessage.show();
                     
@@ -1774,22 +1782,19 @@
                     }, 3000);
                 } else {
                     modeLabel.html('<span style="color: #c8c9c9; margin-left: 8px;">Стандартный запуск</span>');
-                    statusMessage.html('Стандартный запуск прогона');
-                    statusMessage.css('color', '#c8c9c9');
-                    statusMessage.show();
-                    
-                    messageTimeout = setTimeout(() => {
-                        statusMessage.fadeOut(500);
-                    }, 3000);
-                }
-                
-                if (!synced) {
-                    statusMessage.show();
-                    statusMessage.html(statusMessage.html() + ' <span style="color: #ffaa00;">⟳ синхронизация...</span>');
-                    if (messageTimeout) clearTimeout(messageTimeout);
-                    messageTimeout = setTimeout(() => {
-                        statusMessage.fadeOut(500);
-                    }, 3000);
+                    // Для стандартного запуска - показываем сообщение только при реальном переключении (synced = false)
+                    if (!synced) {
+                        let message = 'Стандартный запуск прогона';
+                        message += ' <span style="color: #ffaa00;">⟳ синхронизация...</span>';
+                        
+                        statusMessage.html(message);
+                        statusMessage.css('color', '#c8c9c9');
+                        statusMessage.show();
+                        
+                        messageTimeout = setTimeout(() => {
+                            statusMessage.fadeOut(500);
+                        }, 3000);
+                    }
                 }
             }
 

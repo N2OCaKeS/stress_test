@@ -987,6 +987,13 @@ def testenv_switch():
     return jsonify({'message': f'Set to {switch_state}'})
 
 
+@app.route('/testenv-status', methods=['GET'])
+def testenv_status():
+    """Получить текущий статус тестового окружения"""
+    status = prepare_testenv_status(method='get')
+    return jsonify({'state': status})
+
+
 @app.route('/services-health-status', methods=['GET'])
 def update_services_health_status():
     return services_health_status()

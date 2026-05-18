@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ALLTA · Управление нагрузочным тестированием</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { transition: all 0.2s ease; }
+        body { background: #0b1620; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #eef2ff; height: 100vh; overflow: hidden; }
+        
+        /* Левая панель */
+        .stands-sidebar {
+            background: rgba(10, 17, 28, 0.96);
+            border-right: 1px solid rgba(66, 153, 225, 0.25);
+            height: 100vh;
+            overflow-y: auto;
+            padding: 20px 14px;
+        }
+        
+        .stand-item {
+            background: rgba(18, 28, 40, 0.65);
+            border: 1px solid rgba(66, 153, 225, 0.2);
+            border-radius: 24px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .stand-item:hover { background: rgba(255, 123, 44, 0.12); border-color: #ff7b2c; transform: translateX(4px); }
+        .stand-item.active { background: rgba(255, 123, 44, 0.22); border-color: #ff7b2c; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        
+        .stand-status-led { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 10px; }
+        .stand-status-running { background-color: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
+        .stand-status-stopped { background-color: #e74c3c; box-shadow: none; }
+        
+        .stand-cpu-bar { height: 4px; background: #1e2a3a; border-radius: 4px; overflow: hidden; width: 60px; display: inline-block; margin-left: 8px; }
+        .stand-cpu-fill { height: 100%; background: #ff7b2c; width: 0%; border-radius: 4px; }
+        
+        /* Правая панель */
+        .detail-panel {
+            height: 100vh;
+            overflow-y: auto;
+            padding: 24px 28px;
+        }
+        
+        .glass-card { background: rgba(18, 28, 40, 0.7); backdrop-filter: blur(2px); border: 1px solid rgba(66, 153, 225, 0.2); border-radius: 28px; }
+        
+        /* Компактный индикатор прогресса */
+        .progress-compact {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.45);
+            padding: 6px 14px;
+            border-radius: 40px;
+            cursor: pointer;
+            transition: 0.2s;
+            border: 1px solid rgba(255, 123, 44, 0.4);
+        }
+        .progress-compact:hover {
+            background: rgba(255, 123, 44, 0.2);
+            border-color: #ff7b2c;
+            transform: scale(1.02);
+        }
+        .progress-ring {
+            width: 28px;
+            height: 28px;
+            position: relative;
+        }
+        .progress-ring-circle {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: conic-gradient(#ff7b2c 0deg, #2d3748 0deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+            color: white;
+        }
+        .progress-text {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #ff9a5a;
+        }
+
+        /* Стили для модальных окон в темной теме */
+        .modal-content.bg-dark-custom {
+            background: linear-gradient(145deg, #0f172a 0%, #0a0f1a 100%) !important;
+            border: 1px solid rgba(255, 123, 44, 0.3) !important;
+            border-radius: 28px !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+        }
+
+        .modal-header.border-orange {
+            border-bottom: 1px solid rgba(255, 123, 44, 0.3) !important;
+            padding: 1.25rem 1.5rem !important;
+        }
+
+        .modal-header .modal-title {
+            color: #ff9a5a !important;
+            font-weight: 600 !important;
+            font-size: 1.25rem !important;
+        }
+
+        .modal-header .btn-close-white {
+            filter: brightness(0) invert(1);
+            opacity: 0.7;
+            transition: all 0.2s;
+        }
+
+        .modal-header .btn-close-white:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        .modal-body.bg-dark-custom {
+            background: transparent !important;
+            padding: 1.5rem !important;
+            color: #e2e8f0 !important;
+        }
+
+        .modal-footer.border-orange {
+            border-top: 1px solid rgba(255, 123, 44, 0.3) !important;
+            padding: 1rem 1.5rem !important;
+            background: transparent !important;
+        }
+
+        .modal-footer .btn-secondary {
+            background: rgba(30, 41, 59, 0.8) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #cbd5e6 !important;
+            border-radius: 40px !important;
+            padding: 0.5rem 1.5rem !important;
+            transition: all 0.2s !important;
+        }
+
+        .modal-footer .btn-secondary:hover {
+            background: #ff7b2c !important;
+            border-color: #ff7b2c !important;
+            color: #0b1620 !important;
+        }
+
+        /* Стили для форм внутри модалок */
+        .modal-body .form-label {
+            color: #94a3b8 !important;
+            font-weight: 500 !important;
+            margin-bottom: 0.5rem !important;
+        }
+
+        .modal-body .form-control,
+        .modal-body .form-select {
+            background: rgba(15, 23, 42, 0.9) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #f1f5f9 !important;
+            border-radius: 16px !important;
+            padding: 0.6rem 1rem !important;
+            transition: all 0.2s !important;
+        }
+
+        .modal-body .form-control:focus,
+        .modal-body .form-select:focus {
+            border-color: #ff7b2c !important;
+            box-shadow: 0 0 0 3px rgba(255, 123, 44, 0.2) !important;
+            outline: none !important;
+        }
+
+        .modal-body .form-control::placeholder {
+            color: #475569 !important;
+        }
+
+        /* Аккордеоны внутри модалок */
+        .modal-body .accordion-item {
+            background: rgba(15, 23, 42, 0.6) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            border-radius: 20px !important;
+            margin-bottom: 1rem !important;
+            overflow: hidden !important;
+        }
+
+        .modal-body .accordion-button {
+            background: rgba(30, 41, 59, 0.8) !important;
+            color: #e2e8f0 !important;
+            font-weight: 500 !important;
+            padding: 1rem 1.25rem !important;
+        }
+
+        .modal-body .accordion-button:not(.collapsed) {
+            background: #ff7b2c !important;
+            color: #0b1620 !important;
+        }
+
+        .modal-body .accordion-button:focus {
+            box-shadow: none !important;
+            border-color: transparent !important;
+        }
+
+        .modal-body .accordion-body {
+            background: rgba(15, 23, 42, 0.9) !important;
+            color: #cbd5e6 !important;
+            padding: 1.25rem !important;
+        }
+
+        /* Чекбоксы и радио-кнопки в модалках */
+        .modal-body input[type="checkbox"],
+        .modal-body input[type="radio"] {
+            accent-color: #ff7b2c !important;
+            width: 18px !important;
+            height: 18px !important;
+            margin-right: 8px !important;
+            vertical-align: middle !important;
+        }
+
+        .modal-body label {
+            color: #cbd5e6 !important;
+            margin-right: 16px !important;
+            font-size: 0.9rem !important;
+            vertical-align: middle !important;
+        }
+
+        /* Кнопки внутри модалок */
+        .modal-body .cst-btn-secondary {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+            border: 1px solid rgba(255, 123, 44, 0.5) !important;
+            color: #ff9a5a !important;
+            border-radius: 40px !important;
+            padding: 0.5rem 1.75rem !important;
+            transition: all 0.2s !important;
+        }
+
+        .modal-body .cst-btn-secondary:hover {
+            background: #ff7b2c !important;
+            border-color: #ff7b2c !important;
+            color: #0b1620 !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* Alerts внутри модалок */
+        .modal-body .alert {
+            border-radius: 16px !important;
+            background: rgba(15, 23, 42, 0.95) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            margin-top: 1rem !important;
+        }
+
+        .modal-body .alert-success {
+            color: #2ecc71 !important;
+            border-left: 3px solid #2ecc71 !important;
+        }
+
+        .modal-body .alert-danger {
+            color: #e74c3c !important;
+            border-left: 3px solid #e74c3c !important;
+        }
+
+        .modal-body .alert-info {
+            color: #3498db !important;
+            border-left: 3px solid #3498db !important;
+        }
+
+        /* Иконки в navbar */
+        .navbar-custom .btn-link {
+            text-decoration: none;
+            transition: all 0.2s;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+        }
+
+        .navbar-custom .btn-link:hover {
+            background: rgba(255, 123, 44, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .navbar-custom .btn-link i {
+            font-size: 1.2rem;
+        }
+
+        /* Выпадающие меню в темной теме */
+        .dropdown-menu-dark {
+            background: #0f172a !important;
+            border: 1px solid rgba(255, 123, 44, 0.3) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+            margin-top: 8px !important;
+        }
+
+        .dropdown-menu-dark .dropdown-item {
+            color: #cbd5e6 !important;
+            padding: 8px 20px !important;
+            transition: all 0.15s !important;
+        }
+
+        .dropdown-menu-dark .dropdown-item:hover {
+            background: #ff7b2c !important;
+            color: #0b1620 !important;
+        }
+
+        .dropdown-menu-dark .dropdown-divider {
+            border-color: rgba(255, 123, 44, 0.2) !important;
+        }
+        
+        .progress-micro { height: 6px; background: #1e2a3a; border-radius: 10px; overflow: hidden; width: 100%; }
+        .progress-fill { height: 100%; background: #ff7b2c; width: 0%; border-radius: 10px; }
+        
+        .test-control-btn { background: rgba(18, 28, 40, 0.9); border: 1px solid rgba(66, 153, 225, 0.5); color: #cbd5e6; border-radius: 40px; padding: 6px 18px; font-size: 0.8rem; transition: 0.2s; }
+        .test-control-btn:hover { background: #ff7b2c; border-color: #ff7b2c; color: #0b1620; }
+        .test-control-start { border-color: #2ecc71; color: #2ecc71; }
+        .test-control-start:hover { background: #2ecc71; color: #0b1620; }
+        .test-control-stop { border-color: #e74c3c; color: #e74c3c; }
+        .test-control-stop:hover { background: #e74c3c; color: #0b1620; }
+        .test-control-ok { border-color: #f1c40f; color: #f1c40f; }
+        .test-control-ok:hover { background: #f1c40f; color: #0b1620; }
+        
+        .health-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(18, 28, 40, 0.7); padding: 4px 12px; border-radius: 40px; font-size: 0.75rem; }
+        .btn-outline-accent { border-color: #ff7b2c; color: #ff9a5a; }
+        .btn-outline-accent:hover { background: #ff7b2c; color: #0b1620; }
+        
+        .filter-group { background: rgba(18, 28, 40, 0.6); border-radius: 40px; padding: 4px 12px; }
+        .filter-select { background: #0f1722; border: 1px solid #2d3a4a; color: #eef2ff; border-radius: 30px; padding: 4px 12px; font-size: 0.75rem; }
+        .filter-select:focus { outline: none; border-color: #ff7b2c; }
+        
+        /* Аккордеоны внутри модалок */
+        .customAccordion .accordion-button, .customAccordionnew .accordion-button {
+            background-color: #1e2a3a;
+            color: white;
+            border: 1px solid rgba(66, 153, 225, 0.3);
+        }
+        .customAccordion .accordion-button:not(.collapsed), .customAccordionnew .accordion-button:not(.collapsed) {
+            background-color: #ff7b2c;
+            color: white;
+        }
+        .customAccordion .accordion-body, .customAccordionnew .accordion-body {
+            background-color: rgba(18, 28, 40, 0.95);
+        }
+        
+        .cst-btn-secondary { background-color: #292d30; color: white; border: 1px solid white; }
+        .cst-btn-secondary:hover { background-color: #ff7b00; }             
+        .cst-btn-secondary:active { background-color: #3e8e41; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e2a3a; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #ff7b2c; border-radius: 10px; }
+        
+        .navbar-custom { background: #0a111c; border-bottom: 1px solid #1e2f3c; padding: 8px 24px; }
+        .status-led { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+        .status-running { background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
+        .status-stopped { background: #e74c3c; }
+        
+        /* таблица в модалке прогресса */
+        .progress-modal-table { font-size: 0.85rem; }
+        .progress-modal-table tbody tr:hover { background: rgba(255, 123, 44, 0.1); }
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 30px; font-size: 0.75rem; }
+        .status-success { background: rgba(46, 204, 113, 0.2); color: #2ecc71; }
+        .status-error { background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
+        .status-running { background: rgba(241, 196, 15, 0.2); color: #f1c40f; }
+    </style>
+</head>
+<body>
+
+<div class="navbar-custom d-flex justify-content-between align-items-center">
+    <a class="navbar-brand fs-4" href="#"><i class="fas fa-chart-simple me-2" style="color: #ff7b2c;"></i>ALLTA</a>
+    
+    <div class="d-flex gap-3 align-items-center">
+        <!-- Версии -->
+        <div class="dropdown">
+            <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown" title="Версии">
+                <i class="fas fa-code-branch fs-5"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark">
+                <li><a class="dropdown-item" href="#">Основная версия</a></li>
+                <!-- <li><a class="dropdown-item" href="{{ mobile_url }}">Мобильная версия</a></li>
+                <li><a class="dropdown-item" href="{{ brest_url }}">Брест</a></li> -->
+            </ul>
+        </div>
+
+        <!-- Обновить СТП -->
+        <div class="dropdown">
+            <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown" title="Обновить СТП">
+                <i class="fas fa-sync-alt fs-5"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark">
+                {% for version in stp_versions %}
+                <li><a class="dropdown-item" href="javascript:update('{{version}}')">{{version}}</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Список ядер -->
+        <div class="dropdown">
+            <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown" title="Список ядер">
+                <i class="fas fa-microchip fs-5"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark">
+                {% for version in repo_path %}
+                <li><a class="dropdown-item" href="#" onclick="updateBlockKernels('{{version}}'); return false;">{{version}}</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Changelog -->
+        <div class="dropdown">
+            <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown" title="Changelog">
+                <i class="fas fa-history fs-5"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark">
+                {% for version in repo_path %}
+                <li><a class="dropdown-item" href="#" onclick="updateBlockChangelog('{{version}}'); return false;">{{version}}</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Статистика -->
+        <div class="dropdown">
+            <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown" title="Статистика">
+                <i class="fas fa-chart-line fs-5"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark">
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=281996315" target="_blank">Apache</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=275474220" target="_blank">FreeIPA</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=278363725" target="_blank">Parsec</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=192223322" target="_blank">PostgreSQL</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=322828924" target="_blank">Qemu/KVM/Libvirt</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=211556323" target="_blank">UnixBench</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=199461694" target="_blank">Системные службы</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=192223141" target="_blank">Файловые системы</a></li>
+            </ul>
+        </div>
+
+        <!-- Сервис -->
+        <div class="dropdown">
+            <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown" title="Сервис">
+                <i class="fas fa-cogs fs-5"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark" style="max-height: 400px; overflow-y: auto;">
+                <li><a class="dropdown-item" href="http://10.177.103.10:9999/docs" target="_blank">ACS</a></li>
+                <li><a class="dropdown-item" href="http://10.177.103.10:8888" target="_blank">ACS tasks</a></li>
+                <li><a class="dropdown-item" href="http://allta.devos.astralinux.ru:21500/api/docs/" target="_blank">Auth API</a></li>
+                <li><a class="dropdown-item" href="http://allta.devos.astralinux.ru:21501/service/flower/" target="_blank">VMManager tasks</a></li>
+                <li><a class="dropdown-item" href="http://allta.devos.astralinux.ru:21501/service/redis/" target="_blank">VMManager redis</a></li>
+                <li><a class="dropdown-item" href="http://10.177.103.10:3141/root/release/allta" target="_blank">DEVPI ALLTA</a></li>
+                <li><a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.10/allta" target="_blank">ALLTA Dashboard</a></li>
+                <li><a class="dropdown-item" href="https://allta.devos.astralinux.ru:9443/" target="_blank">ALLTA Portainer</a></li>
+                <li><a class="dropdown-item" href="http://allta.devos.astralinux.ru:21502/" target="_blank">ALLTA Docker Registry UI</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#allstatisticsModal">📊 Пересчитать всю статистику</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#apachestatisticsModal">Пересчитать статистику Apache</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#freeipastatisticsModal">Пересчитать статистику FreeIPA</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#parsecstatisticsModal">Пересчитать статистику Parsec</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#postgresqlstatisticsModal">Пересчитать статистику PostgreSQL</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#virtstatisticsModal">Пересчитать статистику Qemu/KVM/Libvirt</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#unixstatisticsModal">Пересчитать статистику UnixBench</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#sysstatisticsModal">Пересчитать статистику Системные службы</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#fsstatisticsModal">Пересчитать статистику Файловые системы</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="javascript:update_cpumeminfo()">🔄 Перезапустить мониторинг ресурсов</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#backupcredsModal">💾 ALLTA Backup. Основные компоненты</a></li>
+            </ul>
+        </div>
+
+        <!-- О проекте / Пользователь -->
+        <div class="dropdown">
+            <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown" title="Меню">
+                <i class="fas fa-user-circle fs-5"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark">
+                <li><a class="dropdown-item" href="http://allta.devos.astralinux.ru:7777/docs" target="_blank">📈 Статистика</a></li>
+                <li><a class="dropdown-item" href="https://jira.astralinux.ru/secure/Tests.jspa#/v2/testCycles?projectId=11200" target="_blank">🔄 Прогоны</a></li>
+                <li><a class="dropdown-item" href="https://life.astralinux.ru/pages/viewpage.action?pageId=154351118" target="_blank">📋 СТП</a></li>
+                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#alltaVersionModal">ℹ️ О проекте</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item text-danger" href="http://allta.devos.astralinux.ru/logout"><i class="fas fa-sign-out-alt"></i> Выйти</a></li>
+            </ul>
+        </div>
+
+        <!-- Кнопки действий -->
+        <button class="btn btn-sm btn-outline-accent" data-bs-toggle="modal" data-bs-target="#queueModal">
+            <i class="fas fa-plus-circle"></i> Создать очередь
+        </button>
+        <button class="btn btn-sm btn-outline-accent" data-bs-toggle="modal" data-bs-target="#createRunModal">
+            <i class="fas fa-rocket"></i> Создать прогон
+        </button>
+    </div>
+</div>
+
+<div class="container-fluid p-0 h-100" style="height: calc(100vh - 57px);">
+    <div class="row g-0 h-100">
+        <!-- ЛЕВАЯ ПАНЕЛЬ: СПИСОК СТЕНДОВ -->
+        <div class="col-12 col-lg-4 col-xl-3 stands-sidebar">
+            <div class="d-flex justify-content-between align-items-center mb-4 px-2">
+                <h5 class="m-0"><i class="fas fa-server me-2"></i>Инфраструктура</h5>
+                <span class="badge bg-secondary" id="standsCount">0</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-3 px-2">
+                <select id="filterType" class="filter-select"><option value="all">🏷️ Все типы</option><option value="vm">🖥️ VM</option><option value="physical">🖧 Физические</option></select>
+                <select id="filterStatus" class="filter-select"><option value="all">📊 Все статусы</option><option value="running">🟢 Активные</option><option value="stopped">🔴 Остановлены</option></select>
+                <select id="filterOwner" class="filter-select"><option value="all">👥 Все владельцы</option><option value="free">🆓 Свободные</option><option value="busy">🔒 Занятые</option></select>
+            </div>
+            <div id="standsList" class="scrollable" style="max-height: calc(100vh - 200px);"></div>
+        </div>
+        
+        <!-- ПРАВАЯ ПАНЕЛЬ: ДЕТАЛИ -->
+        <div class="col-12 col-lg-8 col-xl-9 detail-panel">
+            <div class="row g-3 mb-4">
+                <div class="col-md-4"><div class="glass-card p-3 h-100"><h6><i class="fas fa-hard-drive"></i> Хранилища</h6><div class="mb-2"><div class="d-flex justify-content-between small"><span>Системный</span><span id="sysDiskUsed">0%</span></div><div class="progress-micro mt-1"><div id="sysDiskBar" style="width:0%; background:#34d399;"></div></div></div><div class="mb-2"><div class="d-flex justify-content-between small"><span>FTP</span><span id="ftpDiskUsed">0%</span></div><div class="progress-micro mt-1"><div id="ftpDiskBar" style="width:0%; background:#f97316;"></div></div></div><div><div class="d-flex justify-content-between small"><span>Partimag</span><span id="partimagDiskUsed">0%</span></div><div class="progress-micro mt-1"><div id="partimagDiskBar" style="width:0%; background:#ff4d4d;"></div></div></div></div></div>
+                <div class="col-md-4"><div class="glass-card p-3 h-100"><div class="d-flex justify-content-between align-items-center"><h6><i class="fas fa-heartbeat me-1"></i> ALLTA Services</h6><button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#alltaServicesModal"><i class="fas fa-external-link-alt"></i></button></div><div class="health-summary mt-2"><span class="health-badge"><i class="fas fa-check-circle text-success"></i> running: <span id="alltaRunningCount">0</span></span><span class="health-badge"><i class="fas fa-pause-circle text-warning"></i> exited: <span id="alltaExitedCount">0</span></span></div></div></div>
+                <div class="col-md-4"><div class="glass-card p-3 h-100"><div class="d-flex justify-content-between align-items-center"><h6><i class="fas fa-shield-alt me-1"></i> Astra Services</h6><button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#astraServicesModal"><i class="fas fa-external-link-alt"></i></button></div><div class="health-summary mt-2"><span class="health-badge"><i class="fas fa-check-circle text-success"></i> ok: <span id="astraOkCount">0</span></span><span class="health-badge"><i class="fas fa-exclamation-circle text-danger"></i> fail: <span id="astraFailCount">0</span></span></div></div></div>
+            </div>
+            <div id="selectedStandDetails" class="glass-card p-4"><div class="text-center py-5"><i class="fas fa-arrow-left me-2"></i> Выберите стенд из левого списка</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Модалки: Health -->
+<div class="modal fade" id="alltaServicesModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark-custom">
+            <div class="modal-header border-orange">
+                <h5 class="modal-title"><i class="fas fa-heartbeat me-2"></i> ALLTA Services Health</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-dark-custom" id="alltaServicesDetail"></div>
+            <div class="modal-footer border-orange">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="astraServicesModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark-custom">
+            <div class="modal-header border-orange">
+                <h5 class="modal-title"><i class="fas fa-shield-alt me-2"></i> Astra Services Health</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-dark-custom" id="astraServicesDetail"></div>
+            <div class="modal-footer border-orange">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка деталей прогресса (500+ строк) -->
+<div class="modal fade" id="progressModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content bg-dark-custom">
+            <div class="modal-header border-orange">
+                <h5 class="modal-title"><i class="fas fa-chart-line me-2"></i> Детали прогресса: <span id="progressModalStandName">—</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-dark-custom">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="glass-card p-2 text-center">
+                            <small class="text-secondary">Общий прогресс</small>
+                            <h3 id="modalOverallProgress" class="mb-0">0%</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="glass-card p-2">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span><i class="fas fa-check-circle text-success"></i> Успешно: <span id="modalSuccessCount">0</span></span>
+                                <span><i class="fas fa-times-circle text-danger"></i> Ошибок: <span id="modalErrorCount">0</span></span>
+                                <span><i class="fas fa-spinner text-warning"></i> Выполняется: <span id="modalRunningCount">0</span></span>
+                            </div>
+                            <div class="progress-micro">
+                                <div id="modalProgressBar" class="progress-fill" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <input type="text" id="progressSearchInput" class="form-control bg-dark-custom" placeholder="🔍 Фильтр задач...">
+                </div>
+                
+                <div style="max-height: 50vh; overflow-y: auto;">
+                    <table class="table table-dark table-hover progress-modal-table">
+                        <thead class="sticky-top bg-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>Задача</th>
+                                <th>Статус</th>
+                                <th>Время выполнения</th>
+                            </tr>
+                        </thead>
+                        <tbody id="progressModalBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-orange">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО "Создать очередь" (полный функционал из оригинального приложения) -->
+<div class="modal fade" id="queueModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark-custom">
+            <div class="modal-header border-orange">
+                <h5 class="modal-title"><i class="fas fa-tasks me-2"></i> Параметры запуска тестов</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-dark-custom">
+                <form id="queueForm" method="POST" action="/rest/api/queue-stand/add">
+                    <div class="accordion customAccordion" id="settingsAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTests">
+                                    Доступные тесты
+                                </button>
+                            </h2>
+                            <div id="collapseTests" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                <div class="accordion-body" id="tests-container">
+                                    {% for value in options %}
+                                        <input type="checkbox" id="{{ value }}" name="options" value="{{ value }}">
+                                        <label for="{{ value }}">{{ value }}</label><br>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleases">
+                                    Доступные Релизы
+                                </button>
+                            </h2>
+                            <div id="collapseReleases" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                <div class="accordion-body" id="releases-container">
+                                    {% for value in releases %}
+                                        <input type="radio" id="{{ value }}" name="releas" value="{{ value }}">
+                                        <label for="{{ value }}">{{ value }}</label><br>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKernels">
+                                    Доступные ядра
+                                </button>
+                            </h2>
+                            <div id="collapseKernels" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                <div class="accordion-body" id="dinamic-kernels-container">
+                                    <!-- Ядра загружаются динамически через AJAX -->
+                                    <div class="text-secondary">Выберите релиз для загрузки ядер</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseStandsQueue">
+                                    Доступные стенды
+                                </button>
+                            </h2>
+                            <div id="collapseStandsQueue" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                <div class="accordion-body">
+                                    <div class="mb-3">
+                                        <label for="StandSelectQueue" class="form-label">Stands:</label>
+                                        <select class="form-select" id="StandSelectQueue" name="stand_num">
+                                            <option value="" disabled selected>Выберите значение</option>
+                                            <option value="3">stand3</option>
+                                            <option value="4">stand4</option>
+                                            <option value="10">stand10</option>
+                                            <option value="11">stand11</option>
+                                            <option value="12">stand12</option>
+                                            <option value="13">stand13</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <br>
+                    <div style="text-align: center;">
+                        <button id="mainSaveButton" class="btn cst-btn-secondary" type="submit">
+                            <i class="fas fa-plus-circle"></i> Добавить в очередь
+                        </button>
+                    </div>
+                </form>
+                <div id="queueResult" class="mt-3"></div>
+            </div>
+            <div class="modal-footer border-orange">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- МОДАЛЬНОЕ ОКНО "Создать прогон" (со всеми оригинальными элементами) -->
+<div class="modal fade" id="createRunModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark-custom">
+            <div class="modal-header border-orange">
+                <h5 class="modal-title"><i class="fas fa-rocket me-2"></i> Параметры создания прогона</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-dark-custom">
+                <form id="createRunForm" method="POST" action="/{{ main_url }}">
+                    <div class="accordion customAccordionnew" id="settingsAccordionnew">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAddRC">
+                                    Добавить новый RC
+                                </button>
+                            </h2>
+                            <div id="collapseAddRC" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                                <div class="accordion-body">
+                                    <div class="mb-3">
+                                        <label for="buildInput" class="form-label">Build version:</label>
+                                        <input type="text" class="form-control" id="buildInput" placeholder="Пример: 1.7.10.52">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="rcInput" class="form-label">RC:</label>
+                                        <input type="text" class="form-control" id="rcInput" placeholder="Пример: RC1">
+                                    </div>
+                                    <div style="text-align: center;">
+                                        <button type="button" class="btn cst-btn-secondary" onclick="addRC()">Добавить</button>
+                                    </div>
+                                    <div id="addRcResult" class="mt-3"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAdduuRC">
+                                    Добавить новый UU RC
+                                </button>
+                            </h2>
+                            <div id="collapseAdduuRC" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                                <div class="accordion-body">
+                                    <div class="mb-3">
+                                        <label for="uuVersionInput" class="form-label">UU version:</label>
+                                        <input type="text" class="form-control" id="uuVersionInput" placeholder="Пример: 1.8.3.UU.1.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="builduuInput" class="form-label">Build version:</label>
+                                        <input type="text" class="form-control" id="builduuInput" placeholder="Пример: 1.8.3.8">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="uurcInput" class="form-label">RC:</label>
+                                        <input type="text" class="form-control" id="uurcInput" placeholder="Пример: RC1">
+                                    </div>
+                                    <div style="text-align: center;">
+                                        <button type="button" class="btn cst-btn-secondary" onclick="adduuRC()">Добавить</button>
+                                    </div>
+                                    <div id="adduuRcResult" class="mt-3"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseRC">
+                                    Доступные RC
+                                </button>
+                            </h2>
+                            <div id="collapseRC" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                                <div class="accordion-body" id="rc-container">
+                                    {% for value in rc %}
+                                        <input type="radio" id="{{ value }}" name="rc" value="{{ value }}">
+                                        <label for="{{ value }}">{{ value }}</label><br>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleaseslist">
+                                    Доступные Релизы
+                                </button>
+                            </h2>
+                            <div id="collapseReleaseslist" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                                <div class="accordion-body" id="releaseslist-container">
+                                    {% for value in releaseslist %}
+                                        <input type="radio" id="{{ value }}" name="releaseslist" value="{{ value }}">
+                                        <label for="{{ value }}">{{ value }}</label><br>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseStands">
+                                    Доступные Стенды
+                                </button>
+                            </h2>
+                            <div id="collapseStands" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                                <div class="accordion-body" id="stands-container">
+                                    {% for value in stands %}
+                                        <input type="checkbox" id="{{ value }}" name="stands" value="{{ value }}">
+                                        <label for="{{ value }}">{{ value }}</label><br>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKernelslist">
+                                    Доступные ядра
+                                </button>
+                            </h2>
+                            <div id="collapseKernelslist" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                                <div class="accordion-body" id="dinamic-kernels-containerlist">
+                                    <div class="text-secondary">Выберите релиз для загрузки ядер</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCreateTestrun">
+                                    Создать прогон по Changelog
+                                </button>
+                            </h2>
+                            <div id="collapseCreateTestrun" class="accordion-collapse collapse" data-bs-parent="#settingsAccordionnew">
+                                <div class="accordion-body">
+                                    <div class="mb-3">
+                                        <label for="rcTestrunInput" class="form-label">Version:</label>
+                                        <input type="text" class="form-control" id="rcTestrunInput" placeholder="Пример: 1.7.10.52 | 1.8.3.UU.1.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="ChangelogSelect" class="form-label">Changelog:</label>
+                                        <select class="form-select" id="ChangelogSelect">
+                                            <option value="" disabled selected>Выберите значение</option>
+                                            <option value="final">final</option>
+                                            <option value="notfinal">notfinal</option>
+                                        </select>
+                                    </div>
+                                    <div style="text-align: center;">
+                                        <button type="button" class="btn cst-btn-secondary" onclick="CreateChangelogTestrun()">Создать</button>
+                                    </div>
+                                    <div id="addChangelogInputResult" class="mt-3"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <br>
+                    <div style="text-align: center;">
+                        <button id="mainSaveButtonnew" class="btn cst-btn-secondary" type="submit">Создать</button>
+                    </div>
+                </form>
+                <div id="createRunResult" class="mt-3"></div>
+            </div>
+            <div class="modal-footer border-orange">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script>
+// ---------- МИКРО-УТИЛИТЫ ----------
+function showToast(msg, type='success') { const cont = document.getElementById('toastContainer'); const toast = document.createElement('div'); toast.className = `alert alert-${type} alert-dismissible fade show shadow-sm`; toast.innerHTML = `${msg} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`; cont.appendChild(toast); setTimeout(() => toast.remove(), 2800); }
+function updateStorage() { ['sysDiskUsed','ftpDiskUsed','partimagDiskUsed'].forEach(id => { let v = Math.floor(20+Math.random()*70); document.getElementById(id).innerText = v+'%'; document.getElementById(id.replace('Used','Bar')).style.width = v+'%'; }); }
+// Демо-данные для левого списка (в проде будут данные с сервера, но логика переключения стендов + статусы)
+
+let standsData = [
+    { id:1, name:'stand1-201', type:'VM WorkStation', category:'vm', cpu:24, ram:38, io:12, status:'running', lastTask:'UnixBench', progress:'100%', powerStatus:true, testStatus:'running', owner:'dtimonin', snapshots:['2025-01-01'],
+      load_cpu:'24%', load_cpu_user:'15%', load_cpu_system:'9%', temp_cpu:'42°C', load_ram:'38%', load_nvme:'12%', load_sda:'8%',
+      ip:'10.177.103.201', hardware:{ cores:'16 vCPU', ram:'128 GB', storage:'100 GB - системный', details:'Хранилище: 1. 100GB NVMe' } },
+    { id:2, name:'stand2-202', type:'VM WorkStation', category:'vm', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[],
+      load_cpu:'0%', load_cpu_user:'0%', load_cpu_system:'0%', temp_cpu:'—', load_ram:'0%', load_nvme:'0%', load_sda:'0%',
+      ip:'10.177.103.202', hardware:{ cores:'16 vCPU', ram:'128 GB', storage:'100 GB - системный', details:'Хранилище: 1. 100GB NVMe' } },
+    { id:3, name:'stand3-59-204', type:'LowServer', category:'physical', cpu:68, ram:54, io:89, status:'running', lastTask:'Parsec', progress:'70%', powerStatus:true, testStatus:'running', owner:'ivelikanov', snapshots:['2025-01-15'],
+      load_cpu:'68%', load_cpu_user:'41%', load_cpu_system:'27%', temp_cpu:'58°C', load_ram:'54%', load_nvme:'89%', load_sda:'45%',
+      ip:'10.177.103.204', hardware:{ cores:'2x Intel Xeon Silver 4110 (16C/32T)', ram:'128 GB', storage:'3.2TB NVMe + 3.8TB SSD', details:'SAS NVMe 3.2TB Samsung MZPLJ3T2HBJR-00007 (системный) | SAS SSD 3.8TB Samsung P1633N38' } },
+    { id:4, name:'stand4-58-203', type:'MiddleServer', category:'physical', cpu:45, ram:61, io:34, status:'running', lastTask:'fs_mark', progress:'100%', powerStatus:true, testStatus:'stopped', owner:'', snapshots:[],
+      load_cpu:'45%', load_cpu_user:'28%', load_cpu_system:'17%', temp_cpu:'52°C', load_ram:'61%', load_nvme:'34%', load_sda:'22%',
+      ip:'10.177.103.203', hardware:{ cores:'2x Intel Xeon E5-2697 v3 (28C/56T)', ram:'256 GB', storage:'3.2TB NVMe + 3.8TB SSD + 1.2TB HDD', details:'SAS NVMe 3.2TB (системный) | SAS SSD 3.8TB | SAS HDD 1.2TB' } },
+    { id:5, name:'stand5-91-205', type:'HighServer', category:'physical', cpu:92, ram:85, io:73, status:'running', lastTask:'PostgreSQL', progress:'45%', powerStatus:true, testStatus:'running', owner:'amedvedev', snapshots:['2025-02-01'],
+      load_cpu:'92%', load_cpu_user:'58%', load_cpu_system:'34%', temp_cpu:'65°C', load_ram:'85%', load_nvme:'73%', load_sda:'51%',
+      ip:'10.177.103.205', hardware:{ cores:'2x Intel Xeon Gold 5320 (52C/104T)', ram:'1024 GB', storage:'3.2TB NVMe + 3.8TB SSD', details:'PCI NVMe 3.2TB Samsung PM173X (системный) | SAS SSD 3.8TB Kioxia' } },
+    { id:6, name:'stand6-101', type:'VM TestStation', category:'vm', cpu:12, ram:28, io:5, status:'running', lastTask:'sysbench', progress:'30%', powerStatus:true, testStatus:'running', owner:'mfilippenko', snapshots:[],
+      load_cpu:'12%', load_cpu_user:'7%', load_cpu_system:'5%', temp_cpu:'38°C', load_ram:'28%', load_nvme:'5%', load_sda:'3%',
+      ip:'10.177.103.101', hardware:{ cores:'16 vCPU', ram:'128 GB', storage:'100 GB - системный', details:'Хранилище: 1. 100GB NVMe' } },
+    { id:7, name:'stand7-102', type:'VM TestStation', category:'vm', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[],
+      load_cpu:'0%', load_cpu_user:'0%', load_cpu_system:'0%', temp_cpu:'—', load_ram:'0%', load_nvme:'0%', load_sda:'0%',
+      ip:'10.177.103.102', hardware:{ cores:'16 vCPU', ram:'128 GB', storage:'100 GB - системный', details:'Хранилище: 1. 100GB NVMe' } },
+    { id:8, name:'stand8-103', type:'VM TestStation', category:'vm', cpu:8, ram:15, io:2, status:'running', lastTask:'iperf', progress:'60%', powerStatus:true, testStatus:'running', owner:'dtimonin', snapshots:[],
+      load_cpu:'8%', load_cpu_user:'5%', load_cpu_system:'3%', temp_cpu:'35°C', load_ram:'15%', load_nvme:'2%', load_sda:'1%',
+      ip:'10.177.103.103', hardware:{ cores:'16 vCPU', ram:'128 GB', storage:'100 GB - системный', details:'Хранилище: 1. 100GB NVMe' } },
+    { id:9, name:'stand9-104', type:'VM TestStation', category:'vm', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[],
+      load_cpu:'0%', load_cpu_user:'0%', load_cpu_system:'0%', temp_cpu:'—', load_ram:'0%', load_nvme:'0%', load_sda:'0%',
+      ip:'10.177.103.104', hardware:{ cores:'16 vCPU', ram:'128 GB', storage:'100 GB - системный', details:'Хранилище: 1. 100GB NVMe' } },
+    { id:10, name:'stand10-0-206', type:'LowServer', category:'physical', cpu:34, ram:42, io:18, status:'running', lastTask:'netperf', progress:'80%', powerStatus:true, testStatus:'running', owner:'ivelikanov', snapshots:['2025-01-20'],
+      load_cpu:'34%', load_cpu_user:'21%', load_cpu_system:'13%', temp_cpu:'48°C', load_ram:'42%', load_nvme:'18%', load_sda:'12%',
+      ip:'10.177.103.206', hardware:{ cores:'2x Intel Xeon Silver 4210 (20C/40T)', ram:'128 GB', storage:'3.2TB NVMe + 3.8TB SSD', details:'SAS NVMe 3.2TB Samsung MZPLJ3T2HBJR-000H3 (системный) | SAS SSD 3.8TB Samsung MZILG3T8HCLS' } },
+    { id:11, name:'stand11-0-207', type:'LowServer', category:'physical', cpu:56, ram:48, io:27, status:'running', lastTask:'fio', progress:'55%', powerStatus:true, testStatus:'running', owner:'amedvedev', snapshots:[],
+      load_cpu:'56%', load_cpu_user:'34%', load_cpu_system:'22%', temp_cpu:'54°C', load_ram:'48%', load_nvme:'27%', load_sda:'19%',
+      ip:'10.177.103.207', hardware:{ cores:'2x Intel Xeon Silver 4210 (20C/40T)', ram:'128 GB', storage:'3.2TB NVMe + 3.8TB SSD', details:'SAS NVMe 3.2TB (системный) | SAS SSD 3.8TB' } },
+    { id:12, name:'stand12-0-208', type:'LowServer', category:'physical', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[],
+      load_cpu:'0%', load_cpu_user:'0%', load_cpu_system:'0%', temp_cpu:'—', load_ram:'0%', load_nvme:'0%', load_sda:'0%',
+      ip:'10.177.103.208', hardware:{ cores:'2x Intel Xeon Silver 4210 (20C/40T)', ram:'128 GB', storage:'3.2TB NVMe + 3.8TB SSD', details:'SAS NVMe 3.2TB (системный) | SAS SSD 3.8TB' } },
+    { id:13, name:'stand13-0-209', type:'LowServer', category:'physical', cpu:72, ram:63, io:41, status:'running', lastTask:'Parsec', progress:'25%', powerStatus:true, testStatus:'running', owner:'mfilippenko', snapshots:['2025-02-10'],
+      load_cpu:'72%', load_cpu_user:'45%', load_cpu_system:'27%', temp_cpu:'61°C', load_ram:'63%', load_nvme:'41%', load_sda:'28%',
+      ip:'10.177.103.209', hardware:{ cores:'2x Intel Xeon Silver 4210 (20C/40T)', ram:'128 GB', storage:'3.2TB NVMe + 3.8TB SSD', details:'SAS NVMe 3.2TB (системный) | SAS SSD 3.8TB' } }
+];
+let selectedStandId = 1;
+let currentFilters = { type: 'all', status: 'all', owner: 'all' };
+
+const alltaServices = [{ name:'acs.service', status:'active (running)' },{ name:'allta.service', status:'active (running)' },{ name:'allta_auth.service', status:'active (exited)' },{ name:'statistics.service', status:'active (running)' }];
+const astraServices = [{ name:'Astra Linux Health', status:'ok' },{ name:'Parsec Core', status:'ok' },{ name:'Security Module', status:'fail' }];
+function renderServicesDetails() { document.getElementById('alltaServicesDetail').innerHTML = alltaServices.map(s => `<div class="d-flex justify-content-between py-2 border-bottom"><span><i class="fas fa-circle ${s.status.includes('running')?'text-success':'text-warning'} fa-2xs me-2"></i>${s.name}</span><span>${s.status.includes('running')?'✅ running':'⏺ exited'}</span></div>`).join(''); document.getElementById('astraServicesDetail').innerHTML = astraServices.map(s => `<div class="d-flex justify-content-between py-2 border-bottom"><span><i class="fas fa-circle ${s.status==='ok'?'text-success':'text-danger'} fa-2xs me-2"></i>${s.name}</span><span>${s.status==='ok'?'✅ ok':'❌ fail'}</span></div>`).join(''); }
+function updateHealthSummaries() { document.getElementById('alltaRunningCount').innerText = alltaServices.filter(s=>s.status.includes('running')).length; document.getElementById('alltaExitedCount').innerText = alltaServices.filter(s=>s.status.includes('exited')).length; document.getElementById('astraOkCount').innerText = astraServices.filter(s=>s.status==='ok').length; document.getElementById('astraFailCount').innerText = astraServices.filter(s=>s.status==='fail').length; }
+
+function filterStands() { let filtered = [...standsData]; if(currentFilters.type!=='all') filtered = filtered.filter(s=>s.category===currentFilters.type); if(currentFilters.status!=='all') filtered = filtered.filter(s=>s.status===currentFilters.status); if(currentFilters.owner!=='all') { if(currentFilters.owner==='free') filtered = filtered.filter(s=>!s.owner); else if(currentFilters.owner==='busy') filtered = filtered.filter(s=>s.owner); } return filtered; }
+function renderStandsList() { const filtered = filterStands(); const container = document.getElementById('standsList'); container.innerHTML=''; filtered.forEach(s => { const statusClass = s.status==='running'?'stand-status-running':'stand-status-stopped'; const item = document.createElement('div'); item.className = `stand-item ${selectedStandId==s.id?'active':''}`; item.dataset.id=s.id; item.innerHTML = `<div class="d-flex justify-content-between"><div><span class="stand-status-led ${statusClass}"></span><strong>${s.name}</strong></div><div class="small text-secondary">${s.type}</div></div><div class="d-flex justify-content-between mt-1"><span class="small">CPU ${s.cpu}%</span><div class="stand-cpu-bar"><div class="stand-cpu-fill" style="width:${s.cpu}%;"></div></div></div><div class="small text-secondary mt-1"><i class="fas fa-user"></i> ${s.owner || '—'}</div>`; item.addEventListener('click',()=>{ selectedStandId = s.id; renderStandsList(); renderSelectedStandDetails(); }); container.appendChild(item); }); document.getElementById('standsCount').innerText = filtered.length; if(filtered.length===0) container.innerHTML='<div class="text-center text-secondary py-4">Нет стендов по фильтрам</div>'; }
+
+function generateProgressData(standId, standName) { const tasks = []; for(let i=1;i<=520;i++) { let status; if(i<=208) status='success'; else if(i<=364) status='error'; else status='running'; tasks.push({ id:i, name:`Тест ${i}: ${['сеть','CPU','RAM','диск','стабильность'][i%5]}`, status:status, duration:`${Math.floor(Math.random()*120)+1} сек` }); } return tasks; }
+let progressCache = {};
+function getProgressForStand(id,name) { if(!progressCache[id]) progressCache[id]=generateProgressData(id,name); return progressCache[id]; }
+function calculateOverallProgress(tasks) { const completed = tasks.filter(t=>t.status!=='running').length; return Math.round((completed/tasks.length)*100); }
+function renderProgressTable(tasks,search='') { const filtered = tasks.filter(t=>t.name.toLowerCase().includes(search) || t.id.toString().includes(search)); const tbody = document.getElementById('progressModalBody'); tbody.innerHTML=''; filtered.forEach(t=>{ let badge=''; if(t.status==='success') badge='<span class="status-badge status-success"><i class="fas fa-check-circle"></i> Успешно</span>'; else if(t.status==='error') badge='<span class="status-badge status-error"><i class="fas fa-times-circle"></i> Ошибка</span>'; else badge='<span class="status-badge status-running"><i class="fas fa-spinner fa-pulse"></i> Выполняется</span>'; tbody.innerHTML+=`<tr><td>${t.id}</td><td>${t.name}</td><td>${badge}</td><td>${t.duration}</td></tr>`; }); }
+function showProgressModal(standId, standName) { const tasks = getProgressForStand(standId, standName); const overall = calculateOverallProgress(tasks); const successCount = tasks.filter(t=>t.status==='success').length; const errorCount = tasks.filter(t=>t.status==='error').length; const runningCount = tasks.filter(t=>t.status==='running').length; document.getElementById('progressModalStandName').innerText = standName; document.getElementById('modalOverallProgress').innerText = `${overall}%`; document.getElementById('modalSuccessCount').innerText = successCount; document.getElementById('modalErrorCount').innerText = errorCount; document.getElementById('modalRunningCount').innerText = runningCount; document.getElementById('modalProgressBar').style.width = `${overall}%`; window.currentProgressTasks = tasks; renderProgressTable(tasks,''); document.getElementById('progressSearchInput').value=''; new bootstrap.Modal(document.getElementById('progressModal')).show(); }
+document.getElementById('progressSearchInput')?.addEventListener('input',(e)=> { if(window.currentProgressTasks) renderProgressTable(window.currentProgressTasks, e.target.value.toLowerCase()); });
+
+// Функции для управления питанием стендов (из старого кода)
+function powerCommand_stand1(command) {
+    document.getElementById('loading-spinner')?.style.setProperty('display', 'block');
+    fetch(command, { method: 'POST' })
+        .then(response => response.text())
+        .then(data => { document.getElementById('loading-spinner')?.style.setProperty('display', 'none'); showToast(`✅ ${command} выполнен`, 'success'); })
+        .catch((error) => { document.getElementById('loading-spinner')?.style.setProperty('display', 'none'); showToast(`❌ Ошибка: ${error}`, 'danger'); });
+}
+function powerCommand_stand2(command) { powerCommand_stand1(command); }
+function powerCommand_stand3(command) { powerCommand_stand1(command); }
+function powerCommand_stand4(command) { powerCommand_stand1(command); }
+function powerCommand_stand5(command) { powerCommand_stand1(command); }
+function powerCommand_stand6(command) { powerCommand_stand1(command); }
+function powerCommand_stand7(command) { powerCommand_stand1(command); }
+function powerCommand_stand8(command) { powerCommand_stand1(command); }
+function powerCommand_stand9(command) { powerCommand_stand1(command); }
+function powerCommand_stand10(command) { powerCommand_stand1(command); }
+function powerCommand_stand11(command) { powerCommand_stand1(command); }
+function powerCommand_stand12(command) { powerCommand_stand1(command); }
+function powerCommand_stand13(command) { powerCommand_stand1(command); }
+
+// Функции для бэкапа снимков (из старого кода)
+function backup_snapshot_stand1(version) { showToast(`💾 Бэкап stand1: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand2(version) { showToast(`💾 Бэкап stand2: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand3(version) { showToast(`💾 Бэкап stand3: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand4(version) { showToast(`💾 Бэкап stand4: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand5(version) { showToast(`💾 Бэкап stand5: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand6(version) { showToast(`💾 Бэкап stand6: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand7(version) { showToast(`💾 Бэкап stand7: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand8(version) { showToast(`💾 Бэкап stand8: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand9(version) { showToast(`💾 Бэкап stand9: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand10(version) { showToast(`💾 Бэкап stand10: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand11(version) { showToast(`💾 Бэкап stand11: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand12(version) { showToast(`💾 Бэкап stand12: ${version} (демо)`, 'info'); }
+function backup_snapshot_stand13(version) { showToast(`💾 Бэкап stand13: ${version} (демо)`, 'info'); }
+
+// Функция для переключения статуса владельца
+function toggleStatus(standNumber, name) {
+    showToast(`🔄 Смена владельца стенда ${standNumber}: ${name || 'stop'} (демо)`, 'info');
+    if(name === 'stop') {
+        standsData.find(s=>s.id==standNumber).owner = '';
+    } else {
+        standsData.find(s=>s.id==standNumber).owner = name;
+    }
+    renderStandsList();
+    renderSelectedStandDetails();
+}
+
+function renderSelectedStandDetails() { 
+    const s = standsData.find(s=>s.id==selectedStandId); 
+    if(!s) { 
+        document.getElementById('selectedStandDetails').innerHTML='<div class="text-center py-5">Выберите стенд</div>'; 
+        return; 
+    } 
+    const tasks = getProgressForStand(s.id,s.name); 
+    const overall = calculateOverallProgress(tasks); 
+    const showStart = (s.testStatus==='stopped'||s.testStatus==='') && s.powerStatus; 
+    const showStop = s.testStatus==='running'; 
+    const showOk = s.testStatus==='ready'; 
+    const backupItems = (s.snapshots&&s.snapshots.length)?s.snapshots.map(v=>`<li><a class="dropdown-item" href="#" onclick="backup_snapshot_stand${selectedStandId}('${v}'); return false;">${v}</a></li>`).join(''):'<li><a class="dropdown-item">Нет снимков</a></li>'; 
+    const userItems = s.owner?`<li><a class="dropdown-item" href="#" onclick="toggleStatus(${selectedStandId}, 'stop'); return false;">Остановить</a></li>`:`<li><a class="dropdown-item" href="#" onclick="toggleStatus(${selectedStandId}, 'dtimonin'); return false;">dtimonin</a><a class="dropdown-item" href="#" onclick="toggleStatus(${selectedStandId}, 'ivelikanov'); return false;">ivelikanov</a><a class="dropdown-item" href="#" onclick="toggleStatus(${selectedStandId}, 'mfilippenko'); return false;">mfilippenko</a><a class="dropdown-item" href="#" onclick="toggleStatus(${selectedStandId}, 'amedvedev'); return false;">amedvedev</a></li>`; 
+    
+    document.getElementById('selectedStandDetails').innerHTML = `
+        <div class="d-flex justify-content-between">
+            <div>
+                <h3><i class="fas fa-server me-2"></i>${s.name}</h3>
+                <p class="text-secondary">${s.type} · ${s.ip || '10.177.103.' + (200 + s.id)}</p>
+            </div>
+            <div>
+                <span class="status-led ${s.status==='running'?'status-running':'status-stopped'}"></span>
+                <span class="badge ${s.status==='running'?'bg-success':'bg-secondary'}">${s.status==='running'?'Активен':'Остановлен'}</span>
+            </div>
+        </div>
+        
+        <!-- Hardware overview -->
+        <div class="glass-card p-3 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0"><i class="fas fa-microchip me-2"></i>Hardware overview</h6>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#standModal${s.id}">
+                    <i class="fas fa-info-circle"></i>
+                </button>
+            </div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>vCPU / Cores</span>
+                        <span id="hardwareCores_${s.id}">${s.hardware?.cores || '—'}</span>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>RAM</span>
+                        <span id="hardwareRam_${s.id}">${s.hardware?.ram || '—'}</span>
+                    </div>
+                    <div class="d-flex justify-content-between small">
+                        <span>STORAGE</span>
+                        <span id="hardwareStorage_${s.id}">${s.hardware?.storage || '—'}</span>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div class="small text-secondary" id="hardwareDetails_${s.id}">
+                        ${s.hardware?.details || 'Нажмите на иконку для просмотра деталей'}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- CPU/Mem/IO info - подробная таблица -->
+        <div class="glass-card p-3 mb-4">
+            <h6 class="mb-3"><i class="fas fa-chart-line me-2"></i>CPU / Memory / IO info</h6>
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table table-borderless table-sm text-light mb-0">
+                        <tbody>
+                            <tr><td style="width: 40%;">CPU load:</td><td><strong id="load_cpu_stand${s.id}">${s.load_cpu || '0%'}</strong></td></tr>
+                            <tr><td>CPU user mode:</td><td><strong id="load_cpu_user_stand${s.id}">${s.load_cpu_user || '0%'}</strong></td></tr>
+                            <tr><td>CPU system mode:</td><td><strong id="load_cpu_system_stand${s.id}">${s.load_cpu_system || '0%'}</strong></td></tr>
+                            <tr><td>CPU temp:</td><td><strong id="temp_cpu_stand${s.id}">${s.temp_cpu || '—'}</strong></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-borderless table-sm text-light mb-0">
+                        <tbody>
+                            <tr><td style="width: 40%;">RAM load:</td><td><strong id="load_ram_stand${s.id}">${s.load_ram || '0%'}</strong></td></tr>
+                            <tr><td>NVMe load:</td><td><strong id="load_nvme_stand${s.id}">${s.load_nvme || '0%'}</strong></td></tr>
+                            <tr><td>SDA load:</td><td><strong id="load_sda_stand${s.id}">${s.load_sda || '0%'}</strong></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Прогресс и питание -->
+        <div class="glass-card p-3 mb-4">
+            <div class="row align-items-center">
+                <div class="col-6">
+                    <i class="fas fa-plug me-1"></i> Питание: 
+                    <span class="badge ${s.powerStatus?'bg-success':'bg-secondary'}">${s.powerStatus?'Включен':'Выключен'}</span>
+                </div>
+                <div class="col-6">
+                    <div class="progress-compact" data-stand-id="${s.id}" data-stand-name="${s.name}">
+                        <div class="progress-ring">
+                            <div class="progress-ring-circle" style="background: conic-gradient(#ff7b2c ${overall*3.6}deg, #2d3748 0deg);">
+                                <span style="font-size:9px;">${overall}%</span>
+                            </div>
+                        </div>
+                        <span class="progress-text"><i class="fas fa-tasks"></i> Прогресс: ${overall}%</span>
+                        <i class="fas fa-chevron-right"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Управление -->
+        <div class="d-flex gap-2 flex-wrap mb-4">
+            ${showStart?`<button class="test-control-btn test-control-start start-test-btn" data-id="${s.id}"><i class="fas fa-play"></i> Запустить тест</button>`:''}
+            ${showStop?`<button class="test-control-btn test-control-stop stop-test-btn" data-id="${s.id}"><i class="fas fa-stop"></i> Остановить тест</button>`:''}
+            ${showOk?`<button class="test-control-btn test-control-ok ok-test-btn" data-id="${s.id}"><i class="fas fa-check"></i> Ок</button>`:''}
+            <button class="test-control-btn reboot-btn" data-id="${s.id}"><i class="fas fa-sync-alt"></i> Reboot</button>
+            <button class="test-control-btn poweroff-btn" data-id="${s.id}"><i class="fas fa-power-off"></i> Power off</button>
+            <div class="dropdown d-inline-block">
+                <button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Backup</button>
+                <ul class="dropdown-menu dropdown-menu-dark">${backupItems}</ul>
+            </div>
+            <div class="dropdown d-inline-block">
+                <button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Status</button>
+                <ul class="dropdown-menu dropdown-menu-dark">${userItems}</ul>
+            </div>
+            <div class="dropdown d-inline-block">
+                <button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Dashboards</button>
+                <ul class="dropdown-menu dropdown-menu-dark">
+                    <li><a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.${200+s.id}/allta" target="_blank">ALLTA</a></li>
+                    <li><a class="dropdown-item" href="http://10.177.103.10:18181/rest/api/dashboard/10.177.103.${200+s.id}/full" target="_blank">Full</a></li>
+                </ul>
+            </div>
+            <a class="test-control-btn" href="#" target="_blank">IPMI</a>
+            <div class="dropdown d-inline-block">
+                <button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Broker</button>
+                <ul class="dropdown-menu dropdown-menu-dark">
+                    <li><a class="dropdown-item queue-status" data-stand="${s.id}">📊 Статус очереди</a></li>
+                    <li><a class="dropdown-item" onclick="showAllTasks('${s.id}')">📋 Все задачи</a></li>
+                    <li><a class="dropdown-item" onclick="showFailedTasks('${s.id}')">❌ Проваленные задачи</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" onclick="window.open('/rest/api/stand${s.id}/logpage', '_blank')">📄 Просмотр лога</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item queue-action" data-stand="${s.id}" data-action="stop">⏹ Остановить очередь</a></li>
+                    <li><a class="dropdown-item" onclick="retryFailedTasks('${s.id}')">🔄 Возобновить проваленные</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item queue-action" data-stand="${s.id}" data-action="clear">🗑 Очистить очередь</a></li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Активность и владелец -->
+        <div class="glass-card p-3">
+            <div class="row">
+                <div class="col-6">
+                    <i class="fas fa-tasks me-1"></i> Активность: ${s.lastTask || '—'}
+                </div>
+                <div class="col-6">
+                    <i class="fas fa-user me-1"></i> Владелец: ${s.owner || '—'}
+                </div>
+            </div>
+        </div>
+    `; 
+    
+    // Привязываем обработчики
+    document.querySelectorAll('.progress-compact').forEach(el=>el.addEventListener('click',(e)=>{ 
+        e.stopPropagation(); 
+        showProgressModal(parseInt(el.dataset.standId),el.dataset.standName); 
+    })); 
+    
+    document.querySelectorAll('.start-test-btn').forEach(btn=>btn.addEventListener('click',()=>{ 
+        showToast(`🚀 Запуск тестов на стенде ${selectedStandId}`,'success'); 
+        standsData.find(s=>s.id==selectedStandId).testStatus='running'; 
+        standsData.find(s=>s.id==selectedStandId).status='running'; 
+        renderStandsList(); 
+        renderSelectedStandDetails(); 
+    })); 
+    
+    document.querySelectorAll('.stop-test-btn').forEach(btn=>btn.addEventListener('click',()=>{ 
+        showToast(`⏹ Остановка тестов на стенде ${selectedStandId}`,'warning'); 
+        standsData.find(s=>s.id==selectedStandId).testStatus='stopped'; 
+        standsData.find(s=>s.id==selectedStandId).status='stopped'; 
+        renderStandsList(); 
+        renderSelectedStandDetails(); 
+    })); 
+    
+    document.querySelectorAll('.reboot-btn').forEach(btn=>btn.addEventListener('click',()=>{
+        showToast(`🔄 Reboot стенда ${selectedStandId}`,'info');
+        if(window['powerCommand_stand' + selectedStandId]) window['powerCommand_stand' + selectedStandId]('/reboot/stand' + selectedStandId);
+    }));
+    
+    document.querySelectorAll('.poweroff-btn').forEach(btn=>btn.addEventListener('click',()=>{ 
+        showToast(`⚡ Power off стенда ${selectedStandId}`,'warning'); 
+        let st=standsData.find(s=>s.id==selectedStandId); 
+        st.powerStatus=false; 
+        st.testStatus='stopped'; 
+        st.status='stopped'; 
+        renderStandsList(); 
+        renderSelectedStandDetails(); 
+        if(window['powerCommand_stand' + selectedStandId]) window['powerCommand_stand' + selectedStandId]('/poweroff/stand' + selectedStandId);
+    })); 
+}
+
+// Фильтры и инициализация
+document.getElementById('filterType').addEventListener('change',(e)=>{currentFilters.type=e.target.value; renderStandsList();});
+document.getElementById('filterStatus').addEventListener('change',(e)=>{currentFilters.status=e.target.value; renderStandsList();});
+document.getElementById('filterOwner').addEventListener('change',(e)=>{currentFilters.owner=e.target.value; renderStandsList();});
+setInterval(()=>{ standsData.forEach(s=>{ if(s.status==='running'){ s.cpu=Math.min(98,Math.max(5,s.cpu+Math.floor(Math.random()*12)-6)); s.ram=Math.min(96,Math.max(8,s.ram+Math.floor(Math.random()*10)-4)); s.io=Math.min(90,Math.max(2,s.io+Math.floor(Math.random()*14)-7)); } }); renderStandsList(); if(selectedStandId) renderSelectedStandDetails(); updateStorage(); },5000);
+
+updateHealthSummaries(); renderServicesDetails(); updateStorage(); renderStandsList(); renderSelectedStandDetails();
+
+// Сохраняем AJAX-функции из старого приложения (показ уведомлений, обновление очереди и т.п.)
+window.showNotification = function(message, type='info', timeout=5000) { showToast(message, type); };
+window.updateQueueStatus = function(stand) { showToast(`📊 Запрос статуса очереди стенда ${stand} (демо)`,'info'); };
+// Кнопки модалок создания RC, UU RC, прогонов (демо-ответы)
+window.addRC = function() { document.getElementById('addRcResult').innerHTML='<div class="alert alert-success">✅ RC добавлен (демо)</div>'; setTimeout(()=>document.getElementById('addRcResult').innerHTML='',3000); };
+window.adduuRC = function() { document.getElementById('adduuRcResult').innerHTML='<div class="alert alert-success">✅ UU RC добавлен (демо)</div>'; setTimeout(()=>document.getElementById('adduuRcResult').innerHTML='',3000); };
+window.CreateChangelogTestrun = function() { document.getElementById('addChangelogInputResult').innerHTML='<div class="alert alert-success">🚀 Прогон создан (демо)</div>'; setTimeout(()=>document.getElementById('addChangelogInputResult').innerHTML='',3000); };
+// Динамические ядра для аккордеонов (имитация)
+$(document).on('change','input[name=releas]',function(){ $('#dinamic-kernels-container').html('<input type="checkbox">kernel-demo1<br><input type="checkbox">kernel-demo2'); });
+$(document).on('change','input[name=releaseslist]',function(){ $('#dinamic-kernels-containerlist').html('<input type="checkbox">kernel-demo1<br><input type="checkbox">kernel-demo2'); });
+</script>
+</body>
+</html>

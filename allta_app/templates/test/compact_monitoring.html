@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ALLTA · Компактный мониторинг стендов</title>
+    <!-- Bootstrap 5 (темная тема) + иконки + шрифты -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { transition: all 0.2s ease; }
+        body { background: #0b1620; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; color: #eef2ff; padding-bottom: 2rem; }
+        /* Стили карточек */
+        .stand-card {
+            background: rgba(18, 28, 40, 0.7);
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(66, 153, 225, 0.2);
+            border-radius: 28px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .stand-card:hover { border-color: #ff7b2c; transform: translateY(-3px); }
+        .status-led {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-running { background-color: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
+        .status-stopped { background-color: #e74c3c; }
+        .progress-micro { height: 4px; background: #1e2a3a; border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #ff7b2c; width: 0%; border-radius: 4px; }
+        .badge-soft { background: #10b98120; color: #34d399; border-radius: 40px; padding: 4px 12px; font-size: 0.7rem; }
+        .btn-outline-accent { border-color: #ff7b2c; color: #ff9a5a; }
+        .btn-outline-accent:hover { background: #ff7b2c; color: #0b1620; }
+        .dropdown-menu-dark { background-color: #0f1722; border-color: #2d3a4a; }
+        .glow-text { color: #cbd5e6; }
+        /* Уведомления */
+        .toast-notify {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1100;
+            min-width: 260px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ====================== NAVBAR = ИКОНКИ + ВСЕ ВЫПАДАЮЩИЕ МЕНЮ ====================== -->
+<nav class="navbar navbar-dark px-3 py-2" style="background: #0a111c; border-bottom: 1px solid #1e2f3c;">
+    <div class="container-fluid">
+        <a class="navbar-brand fs-3" href="#"><i class="fas fa-chart-simple me-2" style="color: #ff7b2c;"></i>ALLTA · Компактный мониторинг</a>
+        <div class="d-flex gap-3 align-items-center">
+            <!-- Уведомления (простой toaster) -->
+            <div class="dropdown">
+                <button class="btn btn-link text-light p-0 position-relative" id="notifyBell">
+                    <i class="fas fa-bell fs-5"></i>
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;" id="notifyBadge">3</span>
+                </button>
+            </div>
+            <!-- Статистика (выпадающее меню) -->
+            <div class="dropdown">
+                <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown"><i class="fas fa-chart-line fs-5"></i></button>
+                <ul class="dropdown-menu dropdown-menu-dark">
+                    <li><a class="dropdown-item" href="#">Apache Bench</a></li><li><a class="dropdown-item" href="#">FreeIPA</a></li>
+                    <li><a class="dropdown-item" href="#">Parsec</a></li><li><a class="dropdown-item" href="#">PostgreSQL</a></li>
+                    <li><a class="dropdown-item" href="#">UnixBench</a></li>
+                </ul>
+            </div>
+            <!-- Сервис (выпадающее меню) -->
+            <div class="dropdown">
+                <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown"><i class="fas fa-cogs fs-5"></i></button>
+                <ul class="dropdown-menu dropdown-menu-dark">
+                    <li><a class="dropdown-item" href="#">ACS</a></li><li><a class="dropdown-item" href="#">ACS tasks</a></li>
+                    <li><a class="dropdown-item" href="#">Auth API</a></li><li><a class="dropdown-item" href="#">VMManager</a></li>
+                    <li><hr class="dropdown-divider"></li><li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#allstatisticsModal">Пересчитать статистику</a></li>
+                </ul>
+            </div>
+            <!-- Профиль / О проекте -->
+            <div class="dropdown">
+                <button class="btn btn-link text-light p-0" data-bs-toggle="dropdown"><i class="fas fa-user-circle fs-5"></i></button>
+                <ul class="dropdown-menu dropdown-menu-dark">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#aboutModal">О проекте</a></li>
+                    <li><a class="dropdown-item" href="#">Прогоны</a></li><li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="#">Выйти</a></li>
+                </ul>
+            </div>
+            <!-- Кнопка запуска тестов (глобальная) -->
+            <button class="btn btn-sm btn-outline-accent" data-bs-toggle="modal" data-bs-target="#testWizardModal"><i class="fas fa-flask"></i> Запустить тесты</button>
+        </div>
+    </div>
+</nav>
+
+<!-- Уведомления (toast) -->
+<div class="toast-notify" id="toastContainer"></div>
+
+<!-- ========== ОСНОВНАЯ СЕТКА КАРТОЧЕК СТЕНДОВ ========== -->
+<div class="container-fluid px-4 mt-4">
+    <div class="row g-4" id="standsGrid">
+        <!-- Карточки будут добавлены через JS -->
+    </div>
+</div>
+
+<!-- ========== МОДАЛЬНОЕ ОКНО (ДЕТАЛИ СТЕНДА) ========== -->
+<div class="modal fade" id="standDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header"><h5 class="modal-title" id="detailsModalTitle">Детали стенда</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="detailsModalBody"><div class="text-center"><i class="fas fa-spinner fa-pulse"></i> Загрузка...</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== МОДАЛЬНОЕ ОКНО "ЗАПУСК ТЕСТОВ" (АККОРДЕОНЫ) ========== -->
+<div class="modal fade" id="testWizardModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header"><h5><i class="fas fa-vial"></i> Запуск тестов (расширенный)</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="accordion" id="testAccordion">
+                    <div class="accordion-item bg-dark text-light border-secondary">
+                        <h2 class="accordion-header"><button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTests">Доступные тесты</button></h2>
+                        <div id="collapseTests" class="accordion-collapse collapse" data-bs-parent="#testAccordion"><div class="accordion-body"><div class="form-check"><input class="form-check-input" type="checkbox" value="UnixBench" id="chUnixBench"><label class="form-check-label">UnixBench</label></div><div class="form-check"><input class="form-check-input" type="checkbox" value="fs_mark" id="chFsMark"><label class="form-check-label">fs_mark</label></div><div class="form-check"><input class="form-check-input" type="checkbox" value="sysbench" id="chSysbench"><label class="form-check-label">sysbench (CPU)</label></div></div></div>
+                    </div>
+                    <div class="accordion-item bg-dark text-light border-secondary">
+                        <h2 class="accordion-header"><button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReleases">Доступные релизы</button></h2>
+                        <div id="collapseReleases" class="accordion-collapse collapse"><div class="accordion-body"><div class="form-check"><input class="form-check-input" type="radio" name="release" value="1.7.10.52"> 1.7.10.52</div><div class="form-check"><input class="form-check-input" type="radio" name="release" value="1.8.3.UU.1.1"> 1.8.3.UU.1.1</div></div></div>
+                    </div>
+                    <div class="accordion-item bg-dark text-light border-secondary">
+                        <h2 class="accordion-header"><button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKernels">Доступные ядра</button></h2>
+                        <div id="collapseKernels" class="accordion-collapse collapse"><div class="accordion-body"><div class="form-check"><input class="form-check-input" type="checkbox" value="6.1.0-18-amd64"> 6.1.0-18-amd64</div><div class="form-check"><input class="form-check-input" type="checkbox" value="5.15.0-91-generic"> 5.15.0-91-generic</div></div></div>
+                    </div>
+                </div>
+                <div class="mt-4"><label class="form-label">Выбрать стенд</label><select class="form-select bg-dark text-light border-secondary" id="targetStandSelect"></select></div>
+                <button class="btn btn-outline-accent w-100 mt-4" id="execTestBtn"><i class="fas fa-play"></i> Демо-запуск (имитация)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка "О проекте" -->
+<div class="modal fade" id="aboutModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content bg-dark text-light"><div class="modal-header"><h5>ALLTA Platform</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><i class="fas fa-chart-line"></i> Версия 2.4.1 · Компактный мониторинг<br>© QA Team13</div></div></div></div>
+<div class="modal fade" id="allstatisticsModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content bg-dark text-light"><div class="modal-header"><h5>Пересчёт статистики</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">Демо-режим — отправка команды на пересчёт.</div></div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // ======================= ДЕМО-ДАННЫЕ (СТЕНДЫ) =======================
+    const standsData = [
+        { id: 1, name: 'stand1-201', host: '10.177.103.201', type: 'VM WorkStation', cpu: 23, ram: 41, io: 12, status: 'running', lastTask: 'UnixBench' },
+        { id: 2, name: 'stand2-202', host: '10.177.103.202', type: 'VM WorkStation', cpu: 7, ram: 19, io: 5, status: 'stopped', lastTask: '' },
+        { id: 3, name: 'stand3-59-204', host: '10.177.103.204', type: 'LowServer', cpu: 68, ram: 54, io: 89, status: 'running', lastTask: 'Parsec нагрузка' },
+        { id: 4, name: 'stand4-58-203', host: '10.177.103.203', type: 'MiddleServer', cpu: 45, ram: 61, io: 34, status: 'running', lastTask: 'fs_mark' },
+        { id: 5, name: 'stand5-91-205', host: '10.177.103.205', type: 'HighServer', cpu: 92, ram: 85, io: 73, status: 'running', lastTask: 'PostgreSQL TPC-C' },
+        { id: 6, name: 'stand6-101', host: '10.177.103.101', type: 'VM TestStation', cpu: 0, ram: 0, io: 0, status: 'stopped', lastTask: '' },
+        { id: 7, name: 'stand7-102', host: '10.177.103.102', type: 'VM TestStation', cpu: 0, ram: 0, io: 0, status: 'stopped', lastTask: '' }
+    ];
+
+    // Вспомогательные функции
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toastEl = document.createElement('div');
+        toastEl.className = `alert alert-${type} alert-dismissible fade show shadow`;
+        toastEl.role = 'alert';
+        toastEl.innerHTML = `${message} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+        container.appendChild(toastEl);
+        setTimeout(() => toastEl.remove(), 2800);
+    }
+
+    function updateNotifyBadge() {
+        const failed = standsData.filter(s => s.status === 'running' && s.cpu > 85).length;
+        document.getElementById('notifyBadge').innerText = failed;
+        if(failed>0) showToast(`⚠️ Обнаружена высокая нагрузка CPU на ${failed} стендах`, 'warning');
+    }
+
+    // Отрисовка карточек
+    function renderCards() {
+        const grid = document.getElementById('standsGrid');
+        grid.innerHTML = '';
+        standsData.forEach(s => {
+            const statusClass = s.status === 'running' ? 'status-running' : 'status-stopped';
+            const statusText = s.status === 'running' ? 'Активен' : 'Остановлен';
+            const cpuPercent = s.cpu;
+            const ramPercent = s.ram;
+            const ioPercent = s.io;
+            const card = document.createElement('div');
+            card.className = 'col-md-6 col-xl-4 col-xxl-3';
+            card.innerHTML = `
+                <div class="stand-card p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div><i class="fas fa-server me-1 text-secondary"></i><strong class="fs-5">${s.name}</strong><br><span class="small text-secondary">${s.type}</span></div>
+                        <div><span class="status-led ${statusClass}"></span><span class="small">${statusText}</span></div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between small"><span>CPU</span><span>${cpuPercent}%</span></div><div class="progress-micro mt-1"><div class="progress-fill" style="width:${cpuPercent}%;"></div></div>
+                        <div class="d-flex justify-content-between small mt-2"><span>RAM</span><span>${ramPercent}%</span></div><div class="progress-micro mt-1"><div class="progress-fill" style="width:${ramPercent}%; background:#38bdf8;"></div></div>
+                        <div class="d-flex justify-content-between small mt-2"><span>IO (NVME)</span><span>${ioPercent}%</span></div><div class="progress-micro mt-1"><div class="progress-fill" style="width:${ioPercent}%; background:#f97316;"></div></div>
+                    </div>
+                    <div class="mt-3 d-flex gap-2 flex-wrap">
+                        <button class="btn btn-sm btn-outline-secondary reboot-btn" data-id="${s.id}"><i class="fas fa-sync-alt"></i> Reboot</button>
+                        <button class="btn btn-sm btn-outline-secondary power-btn" data-id="${s.id}"><i class="fas fa-power-off"></i> Power</button>
+                        <button class="btn btn-sm btn-outline-info details-btn" data-id="${s.id}"><i class="fas fa-info-circle"></i> Details</button>
+                    </div>
+                    <div class="mt-2 small text-secondary">${s.lastTask ? 'Последний тест: ' + s.lastTask : '—'}</div>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+        // события кнопок
+        document.querySelectorAll('.reboot-btn').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); showToast(`🔄 Reboot на стенде ${btn.dataset.id} (демо)`, 'info'); }));
+        document.querySelectorAll('.power-btn').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); showToast(`⚡ Power action на стенде ${btn.dataset.id} (демо)`, 'warning'); }));
+        document.querySelectorAll('.details-btn').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); showStandDetails(parseInt(btn.dataset.id)); }));
+    }
+
+    // Модальное окно с деталями (полная информация)
+    function showStandDetails(standId) {
+        const stand = standsData.find(s => s.id === standId);
+        if (!stand) return;
+        document.getElementById('detailsModalTitle').innerText = `Стенд ${stand.name} — подробно`;
+        const modalBody = document.getElementById('detailsModalBody');
+        modalBody.innerHTML = `
+            <div><i class="fas fa-microchip"></i> <strong>CPU</strong>: ${stand.cpu}% <div class="progress-micro w-100 mt-1"><div class="progress-fill" style="width:${stand.cpu}%"></div></div></div>
+            <div class="mt-2"><i class="fas fa-memory"></i> <strong>RAM</strong>: ${stand.ram}% <div class="progress-micro mt-1"><div class="progress-fill" style="width:${stand.ram}%; background:#38bdf8;"></div></div></div>
+            <div class="mt-2"><i class="fas fa-hdd"></i> <strong>NVME / IO</strong>: ${stand.io}% <div class="progress-micro mt-1"><div class="progress-fill" style="width:${stand.io}%; background:#f97316;"></div></div></div>
+            <hr><div><i class="fas fa-history"></i> <strong>Лог (последние события)</strong><br><pre class="small bg-dark p-2 rounded" style="color:#aaa;">[${new Date().toLocaleTimeString()}] Проверка ресурсов стенда<br>[${new Date().toLocaleTimeString()}] Последний тест: ${stand.lastTask || 'нет данных'}</pre></div>
+            <div class="mt-2"><i class="fas fa-chart-line"></i> <strong>Прогресс текущих задач:</strong> ${stand.status === 'running' ? 'Выполняется нагрузочное тестирование' : 'Ожидание'}</div>
+        `;
+        new bootstrap.Modal(document.getElementById('standDetailsModal')).show();
+    }
+
+    // Имитация живой нагрузки (обновление каждые 4 секунды)
+    function simulateLiveLoad() {
+        standsData.forEach(s => {
+            if (s.status === 'running') {
+                s.cpu = Math.min(98, Math.max(5, s.cpu + Math.floor(Math.random() * 12) - 6));
+                s.ram = Math.min(96, Math.max(8, s.ram + Math.floor(Math.random() * 10) - 4));
+                s.io = Math.min(90, Math.max(2, s.io + Math.floor(Math.random() * 14) - 7));
+            } else {
+                s.cpu = 0; s.ram = 0; s.io = 0;
+            }
+        });
+        renderCards();
+        updateNotifyBadge();
+    }
+
+    // Заполнить селект стенда в модалке тестов
+    function fillStandSelect() {
+        const select = document.getElementById('targetStandSelect');
+        select.innerHTML = '';
+        standsData.forEach(s => { const opt = document.createElement('option'); opt.value = s.id; opt.innerText = `${s.name} (${s.type})`; select.appendChild(opt); });
+    }
+
+    // Демо-запуск тестов
+    document.getElementById('execTestBtn')?.addEventListener('click', () => {
+        const standId = document.getElementById('targetStandSelect').value;
+        const selectedTests = Array.from(document.querySelectorAll('#collapseTests .form-check-input:checked')).map(cb => cb.value);
+        if(selectedTests.length === 0) { showToast('Выберите хотя бы один тест', 'danger'); return; }
+        showToast(`✅ Тест (${selectedTests.join(', ')}) добавлен в очередь для стенда ${standId}`, 'success');
+        const modal = bootstrap.Modal.getInstance(document.getElementById('testWizardModal'));
+        if(modal) modal.hide();
+    });
+
+    // Инициализация страницы
+    renderCards();
+    fillStandSelect();
+    updateNotifyBadge();
+    setInterval(simulateLiveLoad, 4500);
+    // Уведомление при старте
+    setTimeout(() => showToast('💡 Дашборд работает. Нагрузка CPU/RAM обновляется автоматически.', 'info'), 800);
+</script>
+</body>
+</html>

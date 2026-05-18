@@ -1802,21 +1802,29 @@
                     success: function(response) {
                         const isChecked = response.state === 'on';
                         updateSwitchUI(isChecked, true);
-                        $('#syncStatusIcon').html('🔄').fadeOut(500, function() {
+                        $('#syncStatusIcon').html('⟳').fadeOut(500, function() {
                             $(this).html('✓').fadeIn(500);
                         });
                         
-                        const statusMessage = $('#statusMessage');
-                        statusMessage.show();
-                        statusMessage.html('🔄 Статус синхронизирован с сервером');
-                        statusMessage.css('color', '#a0a0a0');
-                        setTimeout(() => {
-                            statusMessage.fadeOut(500);
-                        }, 2000);
+                        //const statusMessage = $('#statusMessage');
+                        //statusMessage.show();
+                        //statusMessage.html('🔄 Статус синхронизирован с сервером');
+                        //statusMessage.css('color', '#a0a0a0');
+                        //setTimeout(() => {
+                        //    statusMessage.fadeOut(500);
+                        //}, 2000);
                     },
                     error: function(error) {
                         console.error('Error fetching status:', error);
                         $('#syncStatusIcon').html('⚠️').fadeOut(300).fadeIn(300);
+
+                        const statusMessage = $('#statusMessage');
+                        statusMessage.show();
+                        statusMessage.html('⚠️ Ошибка синхронизации с сервером');
+                        statusMessage.css('color', '#ffaa00');
+                        setTimeout(() => {
+                            statusMessage.fadeOut(500);
+                        }, 3000);
                     }
                 });
             }
@@ -1853,7 +1861,7 @@
             
             $(document).ready(function() {
                 fetchTestenvStatus();
-                setInterval(fetchTestenvStatus, 5000);
+                setInterval(fetchTestenvStatus, 15000);
             });
         </script>
 

@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css"-->
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/latest/js/bootstrap.bundle.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css">
-
+<link rel="stylesheet" href="/static/style.css">
 
 </head>
 <body style="background-color: #00121a ;">
@@ -23,20 +23,6 @@
 <!-- <img src=http://127.0.0.1:8000/static/team.gif alt="ALLTA"> -->
 
 
-<style>
-  .dropdown-item {
-    color: white; 
-}
-  .dropdown-menu {
-    background-color: #292d30;
-    color: white;
-}
-
-.dropdown-menu .dropdown-item:hover {
-    background-color: #ff7b00;
-    color: white;
-}
-</style>
 <ul class="nav nav-tabs">
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Версии</a>
@@ -430,19 +416,6 @@
   </div>
 </div>
 
-
-<style>
-.allta-version-content {
-  background-color: #292d30;
-  color: white !important;
-}
-
-.allta-version-header,
-.allta-version-title,
-.allta-version-body {
-  color: white !important;
-}
-</style>
 
 <div class="modal fade" id="alltaVersionModal" tabindex="-1" aria-labelledby="alltaVersionModalLabel" aria-hidden="true">
   <div class="modal-dialog" role="document">
@@ -939,25 +912,7 @@
           window.onload = updateBlock;
         </script>
   
-        <style>
-          .customAccordion .accordion-item .accordion-header {
-            background-color: #002534; 
-          }
-          .customAccordion .accordion-button {
-            background-color: #002534;
-            color: #f8f9f9;
-            border-color: #606465;
-          }
-          .customAccordion .accordion-button:not(.collapsed) {
-            background-color: #ff7b00;
-            color: #333;
-            border-color: #de425a;
-          }
-          .customAccordion .accordion-body {
-            background-color: #292d30;
-            color: #f8f9f9;
-          }
-          </style>
+
         <div id="accordionBlock1" class="card text-bg-dark mb-3" style="max-width: 27rem;">
           <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Параметры запуска тестов</div>
           <div class="card-body">
@@ -1034,19 +989,7 @@
                 </div>
               </div>
 
-              <style>
-                .cst-btn-secondary {
-                    background-color: #292d30; 
-                    color: white; 
-                    border: 1px solid white;
-                }
-                .cst-btn-secondary:hover {
-                    background-color: #ff7b00; 
-                }             
-                .cst-btn-secondary:active {
-                    background-color: #3e8e41; 
-                }
-              </style>
+              
               <br></br>
               <div style="text-align: center;">
                 <button id="mainSaveButton" class="btn cst-btn-secondary" type="submit">Добавить в очередь</button>
@@ -1134,25 +1077,6 @@
                                      
 
 
-        <style>
-          .customAccordionnew .accordion-item .accordion-header {
-            background-color: #002534; 
-          }
-          .customAccordionnew .accordion-button {
-            background-color: #002534;
-            color: #f8f9f9;
-            border-color: #606465;
-          }
-          .customAccordionnew .accordion-button:not(.collapsed) {
-            background-color: #ff7b00;
-            color: #333;
-            border-color: #de425a;
-          }
-          .customAccordionnew .accordion-body {
-            background-color: #292d30;
-            color: #f8f9f9;
-          }
-          </style>
         <div id="accordionBlock2" class="card text-bg-dark mb-3" style="max-width: 27rem; display: none;">
           <div class="card-header" style="background: #002534; color: #f8f9f9 ;">Параметры создания прогона</div>
           <div class="card-body">
@@ -1329,19 +1253,7 @@
                     </div>
                 </div>
               </div>
-              <style>
-                .cst-btn-secondary {
-                    background-color: #292d30; 
-                    color: white; 
-                    border: 1px solid white;
-                }
-                .cst-btn-secondary:hover {
-                    background-color: #ff7b00; 
-                }             
-                .cst-btn-secondary:active {
-                    background-color: #3e8e41; 
-                }
-              </style>
+              
               <br></br>
               <div style="text-align: center;">
                 <button id="mainSaveButtonnew" class="btn cst-btn-secondary" type="submit">Создать</button>
@@ -1691,33 +1603,7 @@
           });
         </script>
 
-        
-
-        <style>
-          #toggleSwitch:checked {
-            background-color: #ff7b00; 
-            border-color: #333; 
-          }
-
-          #toggleSwitch {
-            background-color: #333; 
-            border-color: white; 
-          }
-        </style>
-        <style>
-          #testenvSwitch:checked {
-            background-color: #ff7b00; 
-            border-color: #333; 
-          }
-
-          #testenvSwitch {
-            background-color: #333; 
-            border-color: white; 
-          }
-        </style>
-        
-
-        
+            
         <div style="display: flex; align-items: center;">
           <!-- <button id="toggleButton" onclick="toggleAccordion()" style="padding: 0; border: none; background: none;">
               <img src="http://10.177.103.10:8000/static/settings.gif" alt="Settings" style="width: 100%; height: 100%;">
@@ -1871,114 +1757,6 @@
         </script>
 
 
-
-        <style>
-        /* Стили для модального окна services-health-modal */
-        .services-health-modal {
-            background-color: #2d2d2d;
-            color: #d4d4d4;
-            border: 1px solid #3e3e42;
-            border-radius: 8px;
-        }
-
-        .services-health-modal .modal-header {
-            background-color: #252526;
-            border-bottom: 1px solid #3e3e42;
-            padding: 12px 20px;
-        }
-
-        .services-health-modal .modal-header .modal-title {
-            color: #ff7b00;
-            font-family: 'Segoe UI', sans-serif;
-            font-weight: bold;
-        }
-
-        .services-health-modal .modal-header .btn-close {
-            filter: invert(1);
-            opacity: 0.8;
-        }
-
-        .services-health-modal .modal-header .btn-close:hover {
-            opacity: 1;
-        }
-
-        .services-health-modal .modal-body {
-            background-color: #1e1e1e;
-            padding: 20px;
-            font-family: 'Courier New', 'Consolas', monospace;
-            font-size: 15px;
-            line-height: 1.4;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-
-        .services-health-modal .modal-footer {
-            background-color: #252526;
-            border-top: 1px solid #3e3e42;
-            padding: 12px 20px;
-        }
-
-        .services-health-modal .modal-footer .btn-secondary {
-            background-color: #3e3e42;
-            border: none;
-            color: #d4d4d4;
-            padding: 6px 16px;
-            border-radius: 4px;
-            transition: all 0.2s;
-        }
-
-        .services-health-modal .modal-footer .btn-secondary:hover {
-            background-color: #ff7b00;
-            color: white;
-        }
-
-        /* Стили для строк в модальном окне */
-        .services-health-modal .service-line {
-            display: flex;
-            padding: 4px 0;
-            border-left: 3px solid transparent;
-            margin-bottom: 2px;
-        }
-
-        .services-health-modal .service-line:hover {
-            background-color: #2a2a2a;
-            border-left-color: #ff7b00;
-        }
-
-        .services-health-modal .services-health-pre {
-            margin: 0;
-            padding: 8px;
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            font-family: 'Courier New', 'Consolas', monospace;
-            font-size: 15px;
-            line-height: 1.4;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-x: auto;
-        }
-
-        .services-health-modal .service-name {
-            color: #9cdcfe;
-            font-weight: 500;
-        }
-
-        .services-health-modal .service-status-running {
-            color: #6a9955;
-        }
-
-        .services-health-modal .service-status-exited {
-            color: #dcdcaa;
-        }
-
-        .services-health-modal .service-status-failed {
-            color: #f48771;
-        }
-
-        .services-health-modal .service-status-inactive {
-            color: #858585;
-        }
-    </style>
         <div class="modal fade" id="servicesHealthModal" tabindex="-1" aria-labelledby="servicesHealthModalLabel" aria-hidden="true">
           <div class="modal-dialog" role="document">
             <div class="modal-content services-health-modal">
@@ -2267,115 +2045,6 @@
 
 
 
-
-
-
-    <style>
-      .stands .card-header {
-        background-color: #002534; 
-      }
-      .accordion-button {
-        background-color: #ff7b00;
-        color: #333;
-        border-color: #496f6b;
-      }
-      .accordion-button:not(.collapsed) {
-        background-color: #bec720;
-        color: #333;
-        border-color: #de425a;
-      }
-      .global-accordion-button {
-        background-color: #212529;
-        color: white;
-        border-color: #496f6b;
-      }
-      .global-accordion-button.collapsed {
-        background-color: #212529;
-        color: white;
-        border-color: #496f6b;
-      }
-      .global-accordion-button:not(.collapsed) {
-        background-color: #212529;
-        color: #333;
-        border-color: #de425a;
-      }
-      .accordion-body {
-        background-color: #606465;
-      }
-      .accordion-body-global {
-        background-color: #00121a;
-      }
-      .accordion-item {
-        background-color: #00121a;
-      }
-    </style>
-
-    <style>
-      .modal-body {
-        color: #000000; 
-      }
-      .modal-title {
-        color: #000000; 
-      }
-      .info-button {
-        margin-left: 30px;
-      }
-      .infoButton {
-        background-color: #002534;
-      }
-    </style>
-
-    <style>
-        .accordion-table {
-          width: 100%;
-          table-layout: fixed; 
-          border-collapse: collapse;
-          margin: 0;
-          padding: 0;
-          background-color: #212529;
-          color: white;
-        }
-
-        .accordion-table td {
-          padding: 3px; 
-        }
-
-        .accordion-table .col1 {
-          width: 10%; 
-          text-align: left;
-        }
-
-        .accordion-table .col2 {
-          width: 10%; 
-          text-align: left;
-        }
-
-        .accordion-table .col3 {
-          width: 40%; 
-          text-align: left;
-        }
-
-        .accordion-table .col4 {
-          width: 10%; 
-          text-align: right;
-        }
-
-        .accordion-table .col5 {
-          width: 15%; 
-          text-align: center;
-        }
-
-        .accordion-table .col6 {
-          width: 15%; 
-          text-align: center;
-        }
-    </style>
-    
-
-
-
-
-
     <!-- WorkStation block -->
 
     <div class="col accordion">
@@ -2439,21 +2108,7 @@
             </div>
           
         
-      
-            
-  
-            <style>
-              .btn {
-                  margin-right: 5px;                 
-                  color: white; 
-              }
-              .btn:hover {
-                  background-color: #ff7b00; 
-              }             
-              .btn:active {
-                  background-color: #3e8e41;
-              }
-          </style>
+
             <div class="btn-group" role="group">
               <button class="commandButton1 btn btn-dark" data-command="/reboot/stand1">Reboot</button>
               <button id="powerButton1" class="commandButton1 btn btn-dark" data-command="/poweroff/stand1">Power off</button>
@@ -3421,36 +3076,7 @@
   
   
               <form method="POST" action="/rest/api/run-command-stand3">
-                <style>
-                    .btn-start, .btn-stop, .btn-ok {
-                        color: #ffffff;
-                    }
-                    .btn-start {
-                        background-color: #465645;
-                    }
-                    .btn-start:hover {
-                        background-color: #47ca6a;
-                    }
-                    .btn-stop {
-                        background-color: #564745;
-                    }
-                    .btn-stop:hover {
-                        background-color: #ca5747;
-                    }
-                    .btn-ok {
-                        background-color: #465645;
-                    }
-                    .btn-ok:hover {
-                        background-color: #47ca6a;
-                    }
-                    .btn-group-specific {
-                      display: flex;
-                      justify-content: center;
-                      max-width: 250px; 
-                      margin: 0 auto;
-                    }
-                </style>
-                
+               
                 <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
                     <button id="start-btn3" class="btn btn-start" name="command3" type="submit" value="start">Запустить</button>
                     <button id="stop-btn3" class="btn btn-stop" name="command3" type="submit" value="stop">Остановить</button>
@@ -4324,21 +3950,7 @@
             </div>
           
         
-      
-            
-  
-            <style>
-              .btn {
-                  margin-right: 5px;                 
-                  color: white; 
-              }
-              .btn:hover {
-                  background-color: #ff7b00; 
-              }             
-              .btn:active {
-                  background-color: #3e8e41;
-              }
-          </style>
+
             <div class="btn-group" role="group">
               <button class="commandButton6 btn btn-dark" data-command="/reboot/stand6">Reboot</button>
               <button id="powerButton6" class="commandButton6 btn btn-dark" data-command="/poweroff/stand6">Power off</button>
@@ -4687,20 +4299,6 @@
         
       
     
-          
-
-          <style>
-            .btn {
-                margin-right: 5px;                 
-                color: white; 
-            }
-            .btn:hover {
-                background-color: #ff7b00; 
-            }             
-            .btn:active {
-                background-color: #3e8e41;
-            }
-        </style>
           <div class="btn-group" role="group">
             <button class="commandButton7 btn btn-dark" data-command="/reboot/stand7">Reboot</button>
             <button id="powerButton7" class="commandButton7 btn btn-dark" data-command="/poweroff/stand7">Power off</button>
@@ -5046,22 +4644,9 @@
           </div>
         </div>
       
-    
-  
-        
+       
 
-        <style>
-          .btn {
-              margin-right: 5px;                 
-              color: white; 
-          }
-          .btn:hover {
-              background-color: #ff7b00; 
-          }             
-          .btn:active {
-              background-color: #3e8e41;
-          }
-      </style>
+       
         <div class="btn-group" role="group">
           <button class="commandButton8 btn btn-dark" data-command="/reboot/stand8">Reboot</button>
           <button id="powerButton8" class="commandButton8 btn btn-dark" data-command="/poweroff/stand8">Power off</button>
@@ -5408,21 +4993,8 @@
         </div>
       
     
-  
-        
 
-        <style>
-          .btn {
-              margin-right: 5px;                 
-              color: white; 
-          }
-          .btn:hover {
-              background-color: #ff7b00; 
-          }             
-          .btn:active {
-              background-color: #3e8e41;
-          }
-      </style>
+        
         <div class="btn-group" role="group">
           <button class="commandButton9 btn btn-dark" data-command="/reboot/stand9">Reboot</button>
           <button id="powerButton9" class="commandButton9 btn btn-dark" data-command="/poweroff/stand9">Power off</button>
@@ -6051,35 +5623,6 @@
 
 
       <form method="POST" action="/rest/api/run-command-stand10">
-        <style>
-            .btn-start, .btn-stop, .btn-ok {
-                color: #ffffff;
-            }
-            .btn-start {
-                background-color: #465645;
-            }
-            .btn-start:hover {
-                background-color: #47ca6a;
-            }
-            .btn-stop {
-                background-color: #564745;
-            }
-            .btn-stop:hover {
-                background-color: #ca5747;
-            }
-            .btn-ok {
-                background-color: #465645;
-            }
-            .btn-ok:hover {
-                background-color: #47ca6a;
-            }
-            .btn-group-specific {
-              display: flex;
-              justify-content: center;
-              max-width: 250px; 
-              margin: 0 auto;
-            }
-        </style>
         
         <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
             <button id="start-btn10" class="btn btn-start" name="command10" type="submit" value="start">Запустить</button>
@@ -6096,8 +5639,6 @@
 </div>
 </div>
 </div>
-
-
 
 
 
@@ -6441,35 +5982,6 @@
 
 
       <form method="POST" action="/rest/api/run-command-stand11">
-        <style>
-            .btn-start, .btn-stop, .btn-ok {
-                color: #ffffff;
-            }
-            .btn-start {
-                background-color: #465645;
-            }
-            .btn-start:hover {
-                background-color: #47ca6a;
-            }
-            .btn-stop {
-                background-color: #564745;
-            }
-            .btn-stop:hover {
-                background-color: #ca5747;
-            }
-            .btn-ok {
-                background-color: #465645;
-            }
-            .btn-ok:hover {
-                background-color: #47ca6a;
-            }
-            .btn-group-specific {
-              display: flex;
-              justify-content: center;
-              max-width: 250px; 
-              margin: 0 auto;
-            }
-        </style>
         
         <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
             <button id="start-btn11" class="btn btn-start" name="command11" type="submit" value="start">Запустить</button>
@@ -6830,36 +6342,7 @@
 
 
       <form method="POST" action="/run-command-stand12">
-        <style>
-            .btn-start, .btn-stop, .btn-ok {
-                color: #ffffff;
-            }
-            .btn-start {
-                background-color: #465645;
-            }
-            .btn-start:hover {
-                background-color: #47ca6a;
-            }
-            .btn-stop {
-                background-color: #564745;
-            }
-            .btn-stop:hover {
-                background-color: #ca5747;
-            }
-            .btn-ok {
-                background-color: #465645;
-            }
-            .btn-ok:hover {
-                background-color: #47ca6a;
-            }
-            .btn-group-specific {
-              display: flex;
-              justify-content: center;
-              max-width: 250px; 
-              margin: 0 auto;
-            }
-        </style>
-        
+                
         <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
             <button id="start-btn12" class="btn btn-start" name="command12" type="submit" value="start">Запустить</button>
             <button id="stop-btn12" class="btn btn-stop" name="command12" type="submit" value="stop">Остановить</button>
@@ -7220,35 +6703,6 @@
 
 
       <form method="POST" action="/rest/api/run-command-stand13">
-        <style>
-            .btn-start, .btn-stop, .btn-ok {
-                color: #ffffff;
-            }
-            .btn-start {
-                background-color: #465645;
-            }
-            .btn-start:hover {
-                background-color: #47ca6a;
-            }
-            .btn-stop {
-                background-color: #564745;
-            }
-            .btn-stop:hover {
-                background-color: #ca5747;
-            }
-            .btn-ok {
-                background-color: #465645;
-            }
-            .btn-ok:hover {
-                background-color: #47ca6a;
-            }
-            .btn-group-specific {
-              display: flex;
-              justify-content: center;
-              max-width: 250px; 
-              margin: 0 auto;
-            }
-        </style>
         
         <div class="btn-group btn-group-specific" role="group" aria-label="Basic example">
             <button id="start-btn13" class="btn btn-start" name="command13" type="submit" value="start">Запустить</button>

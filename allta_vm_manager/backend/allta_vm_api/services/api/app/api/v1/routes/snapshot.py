@@ -16,7 +16,7 @@ from app.api.v1.schemas.vm_snapshot import (
     SnapshotTaskEnvelope,
     SnapshotTaskOperation,
 )
-from app.api.v1.schemas.vm import ServerTaskInfo
+from app.api.v1.schemas.vm import ServerTaskInfo, strip_stand_prefix
 from app.api.v1.dependencies import (
     AuthVerifyResponse,
     get_current_admin_user,
@@ -147,7 +147,8 @@ async def list_snapshots(
         if not vm:
             raise HTTPException(status_code=404, detail=f"VM id={vm_id} not found")
     else:
-        res = await db.execute(select(VirtualMachine).where(VirtualMachine.name == vm_name))
+        db_name = strip_stand_prefix(vm_name)
+        res = await db.execute(select(VirtualMachine).where(VirtualMachine.name == db_name))
         vm = res.scalar_one_or_none()
         if not vm:
             raise HTTPException(status_code=404, detail=f"VM name='{vm_name}' not found")

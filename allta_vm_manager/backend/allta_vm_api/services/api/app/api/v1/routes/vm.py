@@ -1,6 +1,7 @@
 # app/api/v1/routes/vm.py
 from __future__ import annotations
 from ipaddress import ip_address
+import re
 from typing import Any, Dict, List, Optional, Set, cast
 import uuid
 
@@ -16,6 +17,7 @@ from app.api.v1.schemas.vm import (
     VMDeleteRequest, AstraUpdateRequest, CreateDefaultVMsRequest,
     AlltaUpdateRequest, PasswdRefreshRequest, TaskEnvelope, TaskOperation,
     ServerTaskInfo, VMSpec, normalize_status,
+    format_stand_api_name, strip_stand_prefix,
 )
 from app.api.v1.dependencies import (
     AuthVerifyResponse,
@@ -40,15 +42,28 @@ from app.utils.config import settings
 router = APIRouter(prefix="/vm", tags=["VM"])
 _CRYPTO = Crypto()
 
+# Канонические preset-ВМ. `stand_no` — фиксированный номер стенда для API-имени:
+# work-station1/2 закреплены за stand1/2, virtual-station1..4 — за stand6..9.
+# Имя в БД остаётся как есть; префикс `stand<N>_` появляется только в API.
 PRESET_VMS: Dict[str, Dict[str, Any]] = {
-    "virtual-station1": {"ip": "10.177.103.101", "cpu": 16, "ram": 131072},
-    "virtual-station2": {"ip": "10.177.103.102", "cpu": 16, "ram": 131072},
-    "virtual-station3": {"ip": "10.177.103.103", "cpu": 16, "ram": 131072},
-    "virtual-station4": {"ip": "10.177.103.104", "cpu": 16, "ram": 131072},
-    "work-station1":    {"ip": "10.177.103.201", "cpu": 16, "ram": 131072},
-    "work-station2":    {"ip": "10.177.103.202", "cpu": 16, "ram": 131072},
+    "virtual-station1": {"ip": "10.177.103.101", "cpu": 16, "ram": 131072, "stand_no": 6},
+    "virtual-station2": {"ip": "10.177.103.102", "cpu": 16, "ram": 131072, "stand_no": 7},
+    "virtual-station3": {"ip": "10.177.103.103", "cpu": 16, "ram": 131072, "stand_no": 8},
+    "virtual-station4": {"ip": "10.177.103.104", "cpu": 16, "ram": 131072, "stand_no": 9},
+    "work-station1":    {"ip": "10.177.103.201", "cpu": 16, "ram": 131072, "stand_no": 1},
+    "work-station2":    {"ip": "10.177.103.202", "cpu": 16, "ram": 131072, "stand_no": 2},
 }
 PRESET_NAMES: Set[str] = set(PRESET_VMS.keys())
+
+# Извлечение stand-номера из имени физсервера вида `stand12_srv-main`.
+_SERVER_STAND_RE = re.compile(r"^stand(\d+)_")
+
+
+def _server_stand_no(server_name: Optional[str]) -> Optional[int]:
+    if not server_name:
+        return None
+    match = _SERVER_STAND_RE.match(server_name.strip())
+    return int(match.group(1)) if match else None
 
 
 def _uuid_task() -> str:
@@ -125,6 +140,11 @@ def _vm_status(vm: VirtualMachine) -> Optional[str]:
     return cast(Optional[str], vm.status)
 
 
+def _vm_stand_no(vm: VirtualMachine) -> Optional[int]:
+    value = getattr(vm, "stand_no", None)
+    return None if value is None else int(value)
+
+
 def _resolve_server_ref_from_payload(payload: BatchVMCreateRequest) -> int | str:
     if payload.server_id is not None:
         return payload.server_id
@@ -137,21 +157,23 @@ def _resolve_server_ref_from_payload(payload: BatchVMCreateRequest) -> int | str
 
 
 async def _get_vm_by_ref(db: AsyncSession, vm_ref: str) -> VirtualMachine:
-    normalized_ref = vm_ref.strip()
+    normalized_ref = (vm_ref or "").strip()
     if not normalized_ref:
         raise HTTPException(status_code=404, detail="VM not found")
+    # Допускаем как `stand<N>_<db_name>`, так и чистое db-имя — в БД ищем по db-имени.
+    db_ref = strip_stand_prefix(normalized_ref)
 
     vm: Optional[VirtualMachine] = None
 
-    if normalized_ref.isdigit():
+    if db_ref.isdigit():
         res = await db.execute(
-            select(VirtualMachine).where(VirtualMachine.id == int(normalized_ref))
+            select(VirtualMachine).where(VirtualMachine.id == int(db_ref))
         )
         vm = res.scalar_one_or_none()
 
     if vm is None:
         res = await db.execute(
-            select(VirtualMachine).where(VirtualMachine.name == normalized_ref)
+            select(VirtualMachine).where(VirtualMachine.name == db_ref)
         )
         vm = res.scalar_one_or_none()
 
@@ -164,14 +186,16 @@ async def _get_vm_by_ref(db: AsyncSession, vm_ref: str) -> VirtualMachine:
 
 
 def _vm_to_read(vm: VirtualMachine, *, password: Optional[str]) -> VMRead:
+    stand_no = _vm_stand_no(vm)
     return VMRead(
         id=_vm_id(vm),
-        name=_vm_name(vm),
+        name=format_stand_api_name(_vm_name(vm), stand_no),
         cpu=_vm_cpu(vm),
         ram=_vm_ram(vm),
         ip_address=ip_address(str(cast(Any, vm.ip_address))),
         server_id=_vm_server_id(vm),
         status=_vm_status(vm),
+        stand_no=stand_no,
         password=password,
     )
 
@@ -253,10 +277,13 @@ async def _build_vms_full_for_create(
     db: AsyncSession,
     payload: BatchVMCreateRequest,
     server_id: int,
+    *,
+    stand_no: Optional[int],
 ) -> Dict[str, VMSpec]:
     """
     Проверяет пул IP (существование), границы диапазона,
-    уникальность имени/адреса и собирает vms_full.
+    уникальность имени/адреса и собирает vms_full. Для preset-ВМ stand_no берётся
+    из PRESET_VMS; для остальных — из stand_no (передан с сервера).
     """
     ipr = await get_ip_range(db, payload.ip_range_id)
     if not ipr:
@@ -285,11 +312,16 @@ async def _build_vms_full_for_create(
             errors.append(f"ip {ip_str} is already in use")
             continue
 
+        # Preset-ВМ имеют фиксированный stand_no, остальные наследуют от сервера.
+        preset = PRESET_VMS.get(name)
+        vm_stand_no = preset["stand_no"] if preset else stand_no
+
         vms_full[name] = VMSpec(
             cpu=item.cpu,
             ram=item.ram,
             ip_bridge=ip_address(ip_str),
             server_id=server_id,
+            stand_no=vm_stand_no,
         )
 
     if errors:
@@ -319,9 +351,10 @@ async def create(
     # информация о сервере (для воркера)
     srv = await get_physical_server_from_remote(server_ref, token)
     server_id = int(srv.id)
+    server_stand_no = _server_stand_no(getattr(srv, "name", None))
 
     # пул и занятость IP — проверяем и собираем vms_full
-    vms_full = await _build_vms_full_for_create(db, payload, server_id)
+    vms_full = await _build_vms_full_for_create(db, payload, server_id, stand_no=server_stand_no)
 
     task_id = _uuid_task()
     env = _env(
@@ -349,8 +382,13 @@ async def create_default_vms(
     server_id = int(srv.id)
 
     vms_full: Dict[str, VMSpec] = {
-        name: VMSpec(cpu=int(cfg["cpu"]), ram=int(cfg["ram"]),
-                     ip_bridge=ip_address(str(cfg["ip"])), server_id=server_id)
+        name: VMSpec(
+            cpu=int(cfg["cpu"]),
+            ram=int(cfg["ram"]),
+            ip_bridge=ip_address(str(cfg["ip"])),
+            server_id=server_id,
+            stand_no=int(cfg["stand_no"]),
+        )
         for name, cfg in PRESET_VMS.items()
     }
 
@@ -443,7 +481,9 @@ async def batch_update_vms(payload: BatchVMUpdateRequest,
         cpu = patch.cpu if patch.cpu is not None else _vm_cpu(vm)
         ram = patch.ram if patch.ram is not None else _vm_ram(vm)
         vms_full[name] = VMSpec(cpu=cpu, ram=ram,
-                                ip_bridge=ip_address(str(cast(Any, vm.ip_address))), server_id=_vm_server_id(vm))
+                                ip_bridge=ip_address(str(cast(Any, vm.ip_address))),
+                                server_id=_vm_server_id(vm),
+                                stand_no=_vm_stand_no(vm))
 
     task_id = _uuid_task()
     env = _env(
@@ -548,6 +588,7 @@ async def astra_update(payload: AstraUpdateRequest,
             ram=_vm_ram(vm),
             ip_bridge=ip_address(str(cast(Any, vm.ip_address))),
             server_id=_vm_server_id(vm),
+            stand_no=_vm_stand_no(vm),
         )
         for vm in vms
     }

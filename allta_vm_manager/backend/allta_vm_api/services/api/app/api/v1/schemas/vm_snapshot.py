@@ -4,10 +4,10 @@ from enum import Enum
 from typing import Dict, List, Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # одинаковая структура server в тасках
-from app.api.v1.schemas.vm import ServerTaskInfo
+from app.api.v1.schemas.vm import ServerTaskInfo, strip_stand_prefix
 
 
 # ----- Pydantic-схема для ответа -----
@@ -95,8 +95,19 @@ class SnapshotSelection(BaseModel):
     Можно указывать ids и/или names одновременно — возьмём объединение.
     """
     ids: Optional[List[int]] = Field(default=None, description="Список id ВМ", examples=[[10, 12]])
-    names: Optional[List[str]] = Field(default=None, description="Список имён ВМ", examples=[["ws-01", "ws-02"]])
+    names: Optional[List[str]] = Field(
+        default=None,
+        description="Список имён ВМ (допускается префикс `stand<N>_`)",
+        examples=[["ws-01", "ws-02"]],
+    )
     snapshot: str = Field(..., min_length=1, max_length=128, examples=["golden-2025-02"])
+
+    @field_validator("names", mode="before")
+    @classmethod
+    def _strip_names(cls, value):
+        if isinstance(value, list):
+            return [strip_stand_prefix(str(n)) for n in value]
+        return value
 
     @model_validator(mode="after")
     def _at_least_one_selector(self):

@@ -1,3 +1,10 @@
+allta_app - v2.66.0
+* Add test timeout
+* Refactoring allta_back
+
+
+
+
 allta_app - v2.65.1
 * Add 1.8.6.30
 

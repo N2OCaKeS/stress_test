@@ -62,6 +62,36 @@ def _looks_like_server_query(value: str) -> bool:
     return len(parts) == 2 and parts[0].isdigit() and bool(parts[1].strip())
 
 
+_STAND_ONLY_RE = re.compile(r"^(?i:stand)(\d+)$")
+
+
+def _stand_query_number(value: str) -> int | None:
+    """`12` или `stand12` → 12; иначе None."""
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if stripped.isdigit():
+        return int(stripped)
+    m = _STAND_ONLY_RE.match(stripped)
+    return int(m.group(1)) if m else None
+
+
+def _get_vm_by_stand_no(stand_no: int) -> dict:
+    matches = [
+        vm for vm in list_vms()
+        if vm.get("stand_no") is not None and int(vm["stand_no"]) == stand_no
+    ]
+    if not matches:
+        raise VMError(f"ВМ со стендом #{stand_no} не найдена.")
+    if len(matches) > 1:
+        names = ", ".join(str(vm.get("name") or "").strip() for vm in matches)
+        raise VMError(
+            f"Найдено несколько ВМ со стендом #{stand_no}: {names}. "
+            "Укажите имя ВМ явно."
+        )
+    return matches[0]
+
+
 def list_vms() -> List[dict]:
     r = _request("GET", "/vm/", params={"skip": 0, "limit": 100}, timeout=20)
     data = _parse_json(r, context="список ВМ")
@@ -242,6 +272,11 @@ def resolve_vm_ssh_target(name: str) -> dict:
         vm = get_vm_by_name(query)
     except Exception as e:
         vm_by_name_error = e
+
+    if vm is None:
+        stand_no = _stand_query_number(query)
+        if stand_no is not None:
+            vm = _get_vm_by_stand_no(stand_no)
 
     if vm is None and _looks_like_server_query(query):
         vm = _get_vm_by_server_query(query)

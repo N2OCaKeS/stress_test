@@ -18,6 +18,28 @@ class VMFixedStatus(str, Enum):
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{3,64}$")
 
+# API-формат имени ВМ — "stand<N>_<db_name>". На входе принимаем как с префиксом,
+# так и без; в БД всегда лежит чистый db_name. На выходе VMRead формирует префикс.
+_STAND_PREFIX_RE = re.compile(r"^stand(\d+)_")
+
+
+def strip_stand_prefix(name: str) -> str:
+    """Снять префикс `stand<N>_` с имени ВМ, если он есть. Возвращает db-имя."""
+    if not name:
+        return name
+    stripped = name.strip()
+    match = _STAND_PREFIX_RE.match(stripped)
+    if not match:
+        return stripped
+    return stripped[match.end():]
+
+
+def format_stand_api_name(db_name: str, stand_no: Optional[int]) -> str:
+    """Сформировать API-имя `stand<N>_<db_name>` (либо db_name, если N не задан)."""
+    if stand_no is None:
+        return db_name
+    return f"stand{int(stand_no)}_{db_name}"
+
 
 def normalize_status(value: str) -> str:
     v = value.strip()
@@ -70,6 +92,11 @@ class VMStatusUpdate(BaseModel):
 class VMRead(VMBase):
     id: int
     status: Optional[str] = None
+    stand_no: Optional[int] = Field(
+        default=None,
+        description="Номер стенда. В поле `name` уже включён префикс `stand<N>_`, если задан.",
+        examples=[6],
+    )
     # для UI — расшифрованный пароль, если сохранён
     password: Optional[str] = Field(default=None, description="Расшифрованный пароль ВМ (если сохранён).")
 
@@ -89,8 +116,15 @@ class BatchVMCreateRequest(BaseModel):
     ip_range_id: int = Field(..., examples=[5])
     # общий пароль для всей группы ВМ (в открытом виде; шифрует воркер при записи в БД)
     password: str = Field(..., min_length=1, examples=["S3curePass!"])
-    # ключ — имя ВМ
+    # ключ — имя ВМ (допустим префикс `stand<N>_`, на хранение префикс снимается)
     vms: Dict[str, CreateVMItem]
+
+    @field_validator("vms", mode="before")
+    @classmethod
+    def _strip_vm_keys(cls, value):
+        if isinstance(value, dict):
+            return {strip_stand_prefix(str(k)): v for k, v in value.items()}
+        return value
 
     @model_validator(mode="after")
     def _exactly_one_server_ref(self):
@@ -123,8 +157,15 @@ class PatchItem(BaseModel):
 
 
 class BatchVMUpdateRequest(BaseModel):
-    # ключ — имя ВМ
+    # ключ — имя ВМ (допустим префикс `stand<N>_`)
     vms: Dict[str, PatchItem]
+
+    @field_validator("vms", mode="before")
+    @classmethod
+    def _strip_vm_keys(cls, value):
+        if isinstance(value, dict):
+            return {strip_stand_prefix(str(k)): v for k, v in value.items()}
+        return value
 
     @model_validator(mode="after")
     def _non_empty_patches(self):
@@ -149,7 +190,17 @@ class BatchVMUpdateRequest(BaseModel):
 class VMDeleteRequest(BaseModel):
     # Можно указывать и ids, и names одновременно (хотя разрешение/поиск БД дальше всё равно уточнит фактически найденные)
     ids: Optional[List[int]] = Field(default=None, description="Идентификаторы ВМ")
-    names: Optional[List[str]] = Field(default=None, description="Имена ВМ")
+    names: Optional[List[str]] = Field(
+        default=None,
+        description="Имена ВМ (допускается префикс `stand<N>_`, он будет снят)",
+    )
+
+    @field_validator("names", mode="before")
+    @classmethod
+    def _strip_names(cls, value):
+        if isinstance(value, list):
+            return [strip_stand_prefix(str(n)) for n in value]
+        return value
 
     @model_validator(mode="after")
     def _at_least_one(self):
@@ -171,7 +222,17 @@ class AstraUpdateRequest(BaseModel):
     rc: str = Field(..., min_length=1, examples=["1.8.1.6"])
     # можно выбрать по ids или по names; обе группы допустимы одновременно — возьмём объединение
     ids: Optional[List[int]] = Field(default=None, description="Идентификаторы ВМ")
-    names: Optional[List[str]] = Field(default=None, description="Имена ВМ")
+    names: Optional[List[str]] = Field(
+        default=None,
+        description="Имена ВМ (допускается префикс `stand<N>_`)",
+    )
+
+    @field_validator("names", mode="before")
+    @classmethod
+    def _strip_names(cls, value):
+        if isinstance(value, list):
+            return [strip_stand_prefix(str(n)) for n in value]
+        return value
 
     @model_validator(mode="after")
     def _at_least_one_selector(self):
@@ -192,13 +253,23 @@ class AstraUpdateRequest(BaseModel):
 
 class AlltaUpdateRequest(BaseModel):
     ids: Optional[List[int]] = Field(default=None, description="Идентификаторы ВМ")
-    names: Optional[List[str]] = Field(default=None, description="Имена ВМ")
+    names: Optional[List[str]] = Field(
+        default=None,
+        description="Имена ВМ (допускается префикс `stand<N>_`)",
+    )
     password: Optional[str] = Field(
         default=None,
         min_length=1,
         description="Если задан, после allta update пароль будет изменён на указанный.",
         examples=["S3curePass!"],
     )
+
+    @field_validator("names", mode="before")
+    @classmethod
+    def _strip_names(cls, value):
+        if isinstance(value, list):
+            return [strip_stand_prefix(str(n)) for n in value]
+        return value
 
     @model_validator(mode="after")
     def _at_least_one_selector(self):
@@ -219,13 +290,23 @@ class AlltaUpdateRequest(BaseModel):
 
 class PasswdRefreshRequest(BaseModel):
     ids: Optional[List[int]] = Field(default=None, description="Идентификаторы ВМ")
-    names: Optional[List[str]] = Field(default=None, description="Имена ВМ")
+    names: Optional[List[str]] = Field(
+        default=None,
+        description="Имена ВМ (допускается префикс `stand<N>_`)",
+    )
     password: str = Field(
         ...,
         min_length=1,
         description="Новый пароль, который будет установлен после allta update на всех снимках.",
         examples=["S3curePass!"],
     )
+
+    @field_validator("names", mode="before")
+    @classmethod
+    def _strip_names(cls, value):
+        if isinstance(value, list):
+            return [strip_stand_prefix(str(n)) for n in value]
+        return value
 
     @model_validator(mode="after")
     def _at_least_one_selector(self):
@@ -270,6 +351,10 @@ class VMSpec(BaseModel):
     ip_bridge: IPvAnyAddress
     server_id: int
     host_port: str = Field(default="22", alias="host-port")
+    stand_no: Optional[int] = Field(
+        default=None,
+        description="Номер стенда ВМ (для API-имени `stand<N>_<hostname>`). Воркер сохраняет в БД.",
+    )
     model_config = {"populate_by_name": True}
 
 

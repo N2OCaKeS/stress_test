@@ -196,6 +196,8 @@ def task_vm_create(self, envelope: dict) -> dict:
             created_vm_objs: list[VirtualMachine] = []
             enc_pwd = _CRYPTO.encrypt(vm_password)
             for name, spec in vms_full.items():
+                raw_stand_no = spec.get("stand_no")
+                stand_no = int(raw_stand_no) if raw_stand_no is not None else None
                 vm_obj = VirtualMachine(
                     name=name,
                     cpu=int(spec["cpu"]),
@@ -204,6 +206,7 @@ def task_vm_create(self, envelope: dict) -> dict:
                     server_id=int(spec["server_id"]),
                     status="free",
                     password_enc=enc_pwd,
+                    stand_no=stand_no,
                 )
                 db.add(vm_obj)
                 created_vm_objs.append(vm_obj)
@@ -302,6 +305,8 @@ def task_vm_base_create(self, envelope: dict) -> dict:
             created_vm_objs: list[VirtualMachine] = []
             enc_pwd = _CRYPTO.encrypt(vm_password)
             for name, spec in vms_full.items():
+                raw_stand_no = spec.get("stand_no")
+                stand_no = int(raw_stand_no) if raw_stand_no is not None else None
                 vm_obj = VirtualMachine(
                     name=name,
                     cpu=int(spec["cpu"]),
@@ -310,6 +315,7 @@ def task_vm_base_create(self, envelope: dict) -> dict:
                     server_id=int(spec["server_id"]),
                     status="free",
                     password_enc=enc_pwd,
+                    stand_no=stand_no,
                 )
                 db.add(vm_obj)
                 created_vm_objs.append(vm_obj)

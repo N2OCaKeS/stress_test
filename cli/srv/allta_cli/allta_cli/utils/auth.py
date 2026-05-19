@@ -5,10 +5,8 @@ import os
 import time
 from typing import Optional
 
-import requests
-
 from allta_cli.utils import ui
-from allta_cli.utils.config import API_BASE_URL, SESSION_FILE, TOKEN_TTL_HOURS_DEFAULT
+from allta_cli.utils.config import API_BASE_URL, AUTH_API_BASE, SESSION_FILE, TOKEN_TTL_HOURS_DEFAULT
 from allta_cli.utils.http_fallback import request_with_http_fallback
 
 SESSION_AUTH_TYPE_PASSWORD = "password"
@@ -92,6 +90,8 @@ def login(
     Входит через /login, сохраняет файл сессии (token + iat) и возвращает токен.
     Бросает AuthError/NotAuthenticatedError при ошибках.
     """
+    import requests
+
     base = (api_base_url or API_BASE_URL).rstrip("/")
     url = f"{base}:21500/api/auth/login"
     data = {"username": login, "password": password, "grant_type": "password"}
@@ -131,6 +131,8 @@ def login_with_api_token(
     """
     Проверяет API token через /verify, сохраняет его локально и возвращает токен.
     """
+    import requests
+
     base = (api_base_url or API_BASE_URL).rstrip("/")
     url = f"{base}:21500/api/auth/verify"
     headers = {"Authorization": f"Bearer {api_token}"}
@@ -172,6 +174,8 @@ def logout(
     Отзывает текущий токен на сервере (/logout) и удаляет локальный файл сессии.
     Не падает, если токен уже невалиден, но сообщит об этом при verbose=True.
     """
+    import requests
+
     base = (api_base_url or API_BASE_URL).rstrip("/")
     url = f"{base}:21500/api/auth/logout"
 
@@ -250,3 +254,60 @@ def current_login() -> str:
     if not login:
         raise AuthError("В сессии не найден логин. Выполните вход заново.")
     return str(login)
+
+
+# ==== API: профиль и список пользователей ====
+ADMIN_ROLE = "admin"
+
+
+def _auth_api_get(path: str, *, timeout: int = 20, verbose: bool = False):
+    import requests
+
+    token = load_token(verbose=False)
+    url = f"{AUTH_API_BASE}{path}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    try:
+        r = request_with_http_fallback("GET", url, headers=headers, timeout=timeout, log=verbose)
+    except requests.RequestException as e:
+        raise AuthError(f"Не удалось обратиться к auth API ({path}): {e}") from e
+
+    if r.status_code == 401:
+        raise TokenExpiredError("Токен отклонён сервером (401). Выполните вход заново.")
+    if r.status_code == 403:
+        raise AuthError("Доступ запрещён (403). У пользователя нет нужных прав.")
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        raise AuthError(f"Auth API вернул HTTP {r.status_code} для {path}.") from e
+
+    try:
+        return r.json()
+    except ValueError as e:
+        raise AuthError(f"Auth API вернул не-JSON для {path}.") from e
+
+
+def current_profile(*, verbose: bool = False) -> dict:
+    """Возвращает профиль текущего пользователя из /verify: {login, role, id}."""
+    data = _auth_api_get("/verify", verbose=verbose)
+    if not isinstance(data, dict) or "login" not in data or "role" not in data:
+        raise AuthError("Auth API вернул неожиданный формат профиля.")
+    return data
+
+
+def list_users(*, verbose: bool = False) -> list[dict]:
+    """Возвращает список всех пользователей из /v1/admin/. Требуются права admin."""
+    data = _auth_api_get("/v1/admin/", verbose=verbose)
+    if not isinstance(data, list):
+        raise AuthError("Auth API вернул не список пользователей для /v1/admin/.")
+    return data
+
+
+def ensure_admin(*, verbose: bool = False) -> dict:
+    """Проверяет, что текущий пользователь — администратор. Возвращает профиль или
+    бросает AuthError с понятным сообщением."""
+    profile = current_profile(verbose=verbose)
+    if str(profile.get("role")) != ADMIN_ROLE:
+        raise AuthError(
+            f"Команда доступна только администратору. Ваша роль: '{profile.get('role')}'."
+        )
+    return profile

@@ -3,6 +3,7 @@ import os
 import shlex
 
 API_BASE_URL = str("https://allta.devos.astralinux.ru").rstrip("/")
+AUTH_API_BASE = f"{API_BASE_URL}:21500/api/auth".rstrip("/")
 VM_API_BASE = f"{API_BASE_URL}:21501/api/vm/v1".rstrip("/")
 SERVER_API_BASE = f"{API_BASE_URL}:21501/api/server/v1".rstrip("/")
 
@@ -21,6 +22,9 @@ JIRA_STORY_POINTS_FIELD = os.environ.get("ALLTA_JIRA_STORY_POINTS_FIELD") or os.
 JIRA_AUTH_MODE = (os.environ.get("ALLTA_JIRA_AUTH_MODE") or os.environ.get("JIRA_AUTH_MODE") or "bearer").strip().lower()
 JIRA_BOARD_ID = os.environ.get("ALLTA_JIRA_BOARD_ID") or os.environ.get("JIRA_BOARD_ID") or "340"
 JIRA_PRIORITY_ID = os.environ.get("ALLTA_JIRA_PRIORITY_ID") or os.environ.get("JIRA_PRIORITY_ID") or "2"
+
+_JIRA_SERVICE_USERS_RAW = os.environ.get("ALLTA_JIRA_SERVICE_USERS") or "allta,lib"
+JIRA_SERVICE_USERS = frozenset(s.strip() for s in _JIRA_SERVICE_USERS_RAW.split(",") if s.strip())
 
 GIT_REPO_URL = "https://git.astralinux.ru/scm/qa/stress_test.git"
 GIT_DEST_DIR = Path(os.path.expanduser("~/git"))

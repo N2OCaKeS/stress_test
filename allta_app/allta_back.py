@@ -103,6 +103,12 @@ AUDITD_FLAGS: dict[str, str] = {
 }
 
 
+# Индивидуальные таймауты для тестов (в часах)
+# Если теста нет в словаре — используется timeout_hours 
+TEST_TIMEOUTS: dict[str, int] = {
+    'syslog-ng-cwl': 36,  # 36 часов
+}
+
 # ---------------------------------------------------------------------------
 # Вспомогательные функции
 # ---------------------------------------------------------------------------
@@ -192,13 +198,17 @@ def execute_test(test_name: str,
     """
     Запуск одного теста с логированием и замером времени.
     Если тест выполняется дольше timeout_hours — принудительно завершается.
+    Для отдельных тестов можно указать индивидуальный таймаут в TEST_TIMEOUTS.
     """
+    # Индивидуальный таймаут для теста, если задан
+    effective_timeout = TEST_TIMEOUTS.get(test_name, timeout_hours)
+
     save_all_output(f'Тест: {test_name}\n')
     print(f'Тест: \033[92m{test_name}\033[0m')
     save_all_output(f'Ядро: {kernel}\n')
     print(f'Ядро: \033[92m{kernel}\033[0m')
-    save_all_output('Выполняется...\n')
-    print('Выполняется...')
+    save_all_output(f'Выполняется... (таймаут: {effective_timeout} ч.)\n')
+    print(f'Выполняется... (таймаут: {effective_timeout} ч.)')
 
     # Запись в conf-файл
     with open(f'conf/col3_body_{stand}.conf', 'w') as w:
@@ -217,8 +227,7 @@ def execute_test(test_name: str,
                                   cti=cti,
                                   pp=pp,
                                   testnum=testnum,
-                                  tes=tes,
-                              )
+                                  tes=tes,)
 
     command = f'./backup_image.py {cmd_args}'
     process = subprocess.Popen(command, shell=True, preexec_fn=os.setsid)
@@ -229,14 +238,14 @@ def execute_test(test_name: str,
 
     waiter = threading.Thread(target=wait_for_process)
     waiter.start()
-    waiter.join(timeout=timeout_hours * 3600)
+    waiter.join(timeout=effective_timeout * 3600)
 
     timed_out = False
     if waiter.is_alive():
         # Таймаут истёк — убиваем процесс
         timed_out = True
-        save_all_output(f'[WATCHDOG] Тест {test_name} превысил лимит в {timeout_hours} ч. Завершаю принудительно...\n')
-        print(f'[WATCHDOG] Тест \033[91m{test_name}\033[0m превысил лимит в {timeout_hours} ч. Завершаю принудительно...')
+        save_all_output(f'[WATCHDOG] Тест {test_name} превысил лимит в {effective_timeout} ч. Завершаю принудительно...\n')
+        print(f'[WATCHDOG] Тест \033[91m{test_name}\033[0m превысил лимит в {effective_timeout} ч. Завершаю принудительно...')
 
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)

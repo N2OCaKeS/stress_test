@@ -163,21 +163,21 @@ class PerfBench(Test):
         log.info("Запуск Perf Bench")
         
         tests = [
-            # Sched тесты (планировщик и IPC)
-            ("sched pipe", "sched pipe"),
-            ("sched messaging", "sched messaging"),
+            # ========== ПЛАНИРОВЩИК И IPC ==========
+            ("sched pipe", "sched pipe"),           # pipe через планировщик
+            ("sched messaging", "sched messaging"), # IPC через планировщик
             
-            # Mem тесты (производительность памяти)
-            ("memcpy", "mem memcpy"),
+            # ========== ПАМЯТЬ (ИСКЛЮЧЕНА) ==========
+            # ("memcpy", "mem memcpy"),              # зависит от железа
             
-            # Futex тесты (быстрые блокировки)
-            ("futex hash", "futex hash"),
-            ("futex wake", "futex wake"),
-            ("futex requeue", "futex requeue"),
+            # ========== СИНХРОНИЗАЦИЯ ==========
+            ("futex hash", "futex hash"),           # хэш-таблица с futex
+            ("futex wake", "futex wake"),           # пробуждение futex
+            ("futex requeue", "futex requeue"),     # перемещение очереди futex
             
-            # Epoll тесты (опрос событий)
-            ("epoll wait", "epoll wait"),
-            ("epoll ctl", "epoll ctl"),
+            # ========== СОБЫТИЯ ==========
+            ("epoll wait", "epoll wait"),           # ожидание epoll
+            ("epoll ctl", "epoll ctl"),             # управление epoll
         ]
         
         status_codes = []

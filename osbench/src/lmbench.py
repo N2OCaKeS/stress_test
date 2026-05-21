@@ -73,31 +73,31 @@ class LMBench(Test):
         system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True)
 
         tests = [
-            # Ядро
-            ("lat_syscall", "null"),
-            ("lat_syscall", "read"),
-            ("lat_syscall", "write"),
-            ("lat_ctx", "-s 0 2 4 8 16 24 32 64 128"),
-            ("lat_sig", "install"),
-            ("lat_sig", "catch"),
+            # ========== ЯДРО И СИСТЕМНЫЕ ВЫЗОВЫ ==========
+            ("lat_syscall", "null"),      # системный вызов getppid
+            ("lat_syscall", "read"),      # системный вызов read /dev/zero
+            ("lat_syscall", "write"),     # системный вызов write /dev/null
+            ("lat_ctx", "-s 0 2 4 8 16 24 32 64 128"),  # контекст переключения процессов
+            ("lat_sig", "install"),       # установка обработчика сигнала
+            ("lat_sig", "catch"),         # перехват сигнала
             
-            # Память
-            ("lat_mem_rd", "16384 512"),
-            ("bw_mem", "64M cp"),
-            ("bw_mem", "64M rd"),
-            ("bw_mem", "64M wr"),
-            ("bw_mem", "16384M cp"),
+            # ========== ПАМЯТЬ (ИСКЛЮЧЕНЫ - ЗАВИСЯТ ОТ ЖЕЛЕЗА) ==========
+            # ("lat_mem_rd", "16384 512"),
+            # ("bw_mem", "64M cp"),
+            # ("bw_mem", "64M rd"),
+            # ("bw_mem", "64M wr"),
+            # ("bw_mem", "16384M cp"),
             
-            # IPC
-            ("lat_pipe", ""),
-            ("bw_pipe", ""),
-            ("lat_proc", "fork"),
-            ("lat_proc", "exec"),
+            # ========== IPC И ПРОЦЕССЫ ==========
+            ("lat_pipe", ""),             # задержка в pipe
+            ("bw_pipe", ""),              # пропускная способность pipe
+            ("lat_proc", "fork"),         # время fork
+            ("lat_proc", "exec"),         # время exec
             
-            # Файловая система
-            ("lat_fs", "0K"),
-            ("lat_fs", "10K"),
-            ("bw_file_rd", f"65536 open2close {self.test_file}"),
+            # ========== ФАЙЛОВАЯ СИСТЕМА ==========
+            ("lat_fs", "0K"),             # латентность ФС для маленького файла
+            ("lat_fs", "10K"),            # латентность ФС для файла 10KB
+            ("bw_file_rd", f"65536 open2close {self.test_file}"),  # пропускная способность при чтении файла
         ]
 
         with open(self.results_file, 'w') as f:

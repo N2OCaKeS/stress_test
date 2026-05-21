@@ -1,0 +1,157 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-service-config
+  namespace: dbos
+data:
+  APP_ENV: production
+  APP_HOST: 0.0.0.0
+  APP_PORT: "8002"
+  APP_LOG_LEVEL: INFO
+  # Cluster-internal URLs соседних сервисов
+  AUTH_SERVICE_URL: http://auth-service:8000
+  LOGGING_SERVICE_URL: http://logging-service:8001
+  # Worker-coupling: DSN базы server_worker (для INSERT в tasks) + Redis broker.
+  # Worker и server_service пишут/читают одну и ту же taskiq-очередь.
+  SERVER_WORKER_DATABASE_URL: postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db
+  # Кэширование TLS-introspect к auth_service. На внутрикластерном http
+  # без TLS значение игнорируется; включай при https.
+  INTROSPECT_TLS_VERIFY: "true"
+  # Internal endpoints (worker → server_service): требовать
+  # `X-Target-Department-Id` от caller'а. В проде ОБЯЗАТЕЛЬНО true.
+  INTERNAL_REQUIRE_DEPT_HEADER: "true"
+  # slowapi: глобальный per-IP rate-limit. Health/ready исключены.
+  SLOWAPI_RATE_LIMIT: "500/minute"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-service
+  namespace: dbos
+  labels:
+    app: server-service
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0          # zero-downtime обновление
+  selector:
+    matchLabels:
+      app: server-service
+  template:
+    metadata:
+      labels:
+        app: server-service
+    spec:
+      containers:
+        - name: server-service
+          image: dbos/server-service:latest
+          imagePullPolicy: Never   # образ импортирован локально в k3s
+          ports:
+            - containerPort: 8002
+          envFrom:
+            - configMapRef:
+                name: server-service-config
+          env:
+            # ── Собственная БД server_service ────────────────────────────────
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(SERVER_DB_USER):$(SERVER_DB_PASSWORD)@server-postgres:5432/server_db"
+            - name: SERVER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_USER }
+            - name: SERVER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_PASSWORD }
+            # ── Worker coupling: креды БД воркера для dispatch ───────────────
+            - name: WORKER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_USER }
+            - name: WORKER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_PASSWORD }
+            # ── Redis-broker URL с password (taskiq publish) ─────────────────
+            # `_require_redis_auth_in_prod` в Settings рубит запуск без password.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
+            - name: SERVER_WORKER_REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            # ── Шифрование хранимых паролей (server accounts + IPMI) ─────────
+            # AES-256-GCM + HKDF-SHA256 от мастер-ключа. Версия активного
+            # ключа пишется в новые ciphertext'ы как `v<N>$...`.
+            - name: SERVER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_ENCRYPTION_KEY }
+            - name: SERVER_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_ENCRYPTION_KEY_VERSION }
+            # ── Service-to-service auth ──────────────────────────────────────
+            # SERVICE_API_KEY — outbound bearer для introspect/service-access
+            # в auth_service. Должен совпадать с SERVICE_API_KEYS[server_service]
+            # на стороне auth_service.
+            - name: SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_SERVICE_API_KEY }
+            # SERVICE_API_KEYS — inbound bearer'ы (worker → server_service
+            # internal endpoints) в формате per-service map. Альтернативный
+            # legacy-режим с одним SERVICE_API_KEY ниже.
+            - name: SERVICE_API_KEYS
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_INBOUND_SERVICE_API_KEYS }
+            # LOGGING_SERVICE_API_KEY — outbound bearer для POST /events
+            # в loging_service (audit emission). Пусто отключает удалённый
+            # аудит — в проде должно быть заполнено.
+            - name: LOGGING_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+          command: ["sh", "-c"]
+          args:
+            - |
+              python -m alembic upgrade head &&
+              exec uvicorn src.main:app --host 0.0.0.0 --port 8002 --workers 2 --proxy-headers
+          readinessProbe:
+            httpGet:
+              path: /api/server/v1/ready
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/server/v1/health
+              port: 8002
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-service
+  namespace: dbos
+spec:
+  type: ClusterIP                # внешний доступ — через Ingress (50-ingress.yaml)
+  selector:
+    app: server-service
+  ports:
+    - port: 8002
+      targetPort: 8002
+
+---
+# Защита от вытеснения всех реплик одновременно при обновлении ноды/k3s.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: server-service-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: server-service

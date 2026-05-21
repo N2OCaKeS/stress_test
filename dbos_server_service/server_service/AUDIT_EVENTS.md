@@ -1,0 +1,234 @@
+# AUDIT_EVENTS — server_service
+
+Канонический список audit-событий, которые эмитит `server_service` в
+`loging_service`. Источник истины — `src/services/audit_events.py:SERVICE_EVENTS`.
+На startup сервис POST'ит этот список в
+`loging_service POST /api/logging/v1/services/server_service/events`,
+чтобы loging_service знал severity-defaults для пар `(action, status)`.
+
+**Severity:** `default_severity` относится к `status=success`. Для
+`status=denied`/`failure` правила в loging_service дефолтят severity
+самостоятельно (обычно WARNING / CRITICAL). Сам severity может быть
+override'нут на стороне loging_service через rule-движок.
+
+Все события используют схему naming: `<entity>.<verb>` (compound entity
+имена остаются как один сегмент: `server_account.view_password`,
+`ipmi_controller.credentials_rotated_callback`). HTTP middleware —
+`http.<outcome>`. Lifecycle — `service.<verb>`. Internal degradation —
+`internal.<reason>`.
+
+Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
+
+---
+
+## Lifecycle
+
+| action | default_severity | эмитится при | target_type | детали (`details`) |
+|---|---|---|---|---|
+| `service.started` | INFO | старт приложения (`_run_startup_audit_sequence` в `main.py`) | `service` | `actor_type=system`, `actor_id=server_service`, `request_id=startup-<pid>`. Не пользовательское — lifecycle |
+
+---
+
+## HTTP middleware
+
+Эмитятся в `main.py::audit_access` middleware на основе HTTP-кода ответа.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `http.access_denied` | CRITICAL | response 401 / 403 | `http_endpoint` (path) | `method`, `path`, `status_code` |
+| `http.client_error` | WARNING | response 4xx (кроме 401/403, 429 исключён) | `http_endpoint` | `method`, `path`, `status_code` |
+| `http.server_error` | CRITICAL | response 5xx | `http_endpoint` | `method`, `path`, `status_code` |
+| `http.platform_admin_blocked` | WARNING | `platform_admin_guard` middleware отбил `account_admin`/`loging_admin` 403 (loging_reader **не** блокируется) | `http_endpoint` | `platform_role`, `method`, `path`, `reason=platform_admin_business_data_blocked` |
+
+> **`429` (rate-limit) в audit не пишется** — by design, anti-amplification.
+> Брутфорс оставляет только HTTP access-log.
+
+---
+
+## Server (CRUD + power)
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `server.create` | INFO | INSERT в `servers` | `server` | `hostname`, `ip_address`, `department_id` (whitelist в audit_service) |
+| `server.view` | INFO | denied на GET /{id} (cross-dept / nonexistent) — success на read не аудитим (шум) | `server` | `reason in {not_found_or_cross_dept, cross_department}` |
+| `server.update` | INFO | UPDATE через PATCH | `server` | поля diff'а (whitelist), `department_id` |
+| `server.delete` | CRITICAL | hard-delete + CASCADE | `server` | `department_id` |
+| `server.power_on` | WARNING | dispatch `power.on` в worker | `server` | `task_id`, `task_kind=power.on`, `department_id`. denied/failure: `reason in {not_found_or_cross_dept, no_view_permission, permission_denied, decommissioned, no_ipmi, idempotent_conflict, worker_unreachable}` |
+| `server.power_off` | WARNING | dispatch `power.off` — всегда hard ForceOff (никакого graceful/ACPI shutdown'а) | `server` | как `power_on` |
+| `server.power_reboot` | WARNING | dispatch `power.reboot` | `server` | как `power_on` |
+| `server.power_status` | INFO | POST `/servers/{id}/power/status` — dispatch live BMC-probe `power.status` | `server` | `task_id`, `task_kind=power.status`, `department_id`. denied/failure: как у других power-операций |
+| `server.inventory_sync` | INFO | dispatch `inventory.sync` (SSH-probe) | `server` | `task_id`, `task_kind=inventory.sync` |
+| `server.inventory_probe` | INFO | dispatch lightweight inventory probe (быстрый ping без полного sync'а) | `server` | `task_id`, `task_kind=inventory.probe` |
+| `server.power_status_cached` | INFO | GET `/ipmi/power` — кэшированный `power_state` из БД без BMC-probe | `server` | `department_id`, `power_state`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
+| `server.acquire` | INFO | POST `/servers/{id}/busy` — успех захвата (busy_state → busy) | `server` | `department_id`, `purpose`, `lease_until`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, decommissioned, already_busy}` |
+| `server.release` | INFO | DELETE `/servers/{id}/busy` — успех освобождения (busy_state → free) | `server` | `department_id`, `previous_user_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, not_busy, race_already_free}` |
+| `server.update_os_version` | INFO | POST `/servers/{id}/os-sync` — ручной апдейт `os_version_id` без inventory probe | `server` | `department_id`, `previous_os_version_id`, `new_os_version_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, invalid_os_version}` |
+
+---
+
+## Server / IPMI worker callbacks (write-direction internal API)
+
+Worker → server_service эмиты от `/internal/*` endpoint'ов, которые
+worker дёргает после реальной работы.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `server.inventory_received` | INFO | POST `/internal/servers/{id}/inventory` — worker отдал hardware-facts после `inventory.sync` | `server` | `server_id`, `department_id`, `cpu_brand`, `cpu_model`, `os_version`, `disks`. denied: `reason=permission_denied` |
+| `ipmi_controller.credentials_rotated_callback` | WARNING | POST `/internal/ipmi-controllers/{id}/credentials_rotated` — worker подтвердил ротацию (отдал plaintext, server_service зашифровал) | `ipmi_controller` | `server_id`, `controller_id`, `department_id` |
+| `secrets.reencrypt_batch` | INFO | POST `/internal/secrets/reencrypt_batch` — фоновая ротация мастер-ключа (`processed=0 ∧ errors>0` → status=failure для эскалации severity) | `secret` | `limit`, `processed`, `errors` |
+
+---
+
+## Server account / IPMI controller — секреты (raw decrypt)
+
+Эмитятся при показе расшифрованных секретов через `/internal/*` endpoints
+для worker'а, а также при user-initiated ротации пароля аккаунта.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `server_account.view_password` | WARNING | GET `/internal/servers/{id}/accounts/{aid}/password` — расшифрован и отдан plaintext | `server_account` | `server_id`, `account_id`, `department_id` |
+| `server_account.password_revealed` | WARNING | POST `/api/server/v1/server-accounts/{id}/reveal-password` — user-facing раскрытие plaintext'а в base64 для UI/CLI (services/server_account.reveal_password) | `server_account` | `server_id`, `login`, `department_id`. denied/failure: `reason in {permission_denied, not_found_or_cross_dept, no_password_stored, decrypt_failed}` |
+| `server_account.rotate_password` | CRITICAL | (a) POST `/api/server/v1/server-accounts/{id}/rotate_password` — user-initiated ротация записи в БД без SSH apply (services/server_account.py); (b) POST `/internal/servers/{id}/accounts/{aid}/password/rotate` — worker положил новый ciphertext после SSH apply (internal_service) | `server_account` | `server_id`, `login`, `rotated_at`; для (a) дополнительно `department_id`, `reason=user_initiated`. denied/failure: `reason in {permission_denied, not_found_or_cross_dept, account_not_found}` |
+| `ipmi_controller.view_credentials` | WARNING | GET `/internal/servers/{id}/ipmi/credentials` — расшифрованы IPMI-creds | `ipmi_controller` | `server_id`, `department_id` |
+| `ipmi_controller.credentials_revealed` | WARNING | POST `/api/server/v1/ipmi-controllers/{id}/reveal-credentials` — user-facing раскрытие BMC-логина и base64(password) для UI/CLI (services/ipmi_controller.reveal_credentials) | `ipmi_controller` | `server_id`, `username`, `department_id`. denied/failure: `reason in {permission_denied, not_found_or_cross_dept, decrypt_failed}` |
+
+---
+
+## Worker-dispatch (admin-initiated rotation)
+
+Public endpoint'ы, через которые user (обычно admin) запускает ротацию
+паролей. Сам rewrite в БД делает worker через callback'и выше.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `server_account.rotate_password_dispatch` | CRITICAL | POST `/api/server/v1/server-accounts/{id}/rotate` — dispatch SSH-rotation task | `server_account` | `task_id`, `task_kind=account.rotate_password` |
+| `ipmi_controller.rotate_dispatch` | CRITICAL | POST `/api/server/v1/ipmi-controllers/{id}/rotate` — dispatch BMC-rotation (currently safety-guarded; worker fails fast пока storage round-trip не реализован) | `ipmi_controller` | `task_id`, `task_kind=ipmi.rotate_password` |
+
+---
+
+## Internal degradation
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `internal.dept_header_missing` | WARNING | `/internal/*` дёрнули без `X-Target-Department-Id` в soft mode (`INTERNAL_REQUIRE_DEPT_HEADER=false`) | `http_endpoint` | `path`, `caller_username` |
+
+> **Default (prod):** `INTERNAL_REQUIRE_DEPT_HEADER=true` → отсутствие
+> header'а отбивается 403 ДО этого audit-события. Soft mode оставлен
+> только для dev/test.
+
+> **Actor-vs-server department check** — отдельный always-on guard. Если
+> `identity.department_id != server.department_id` (или `None` для
+> platform-роли), endpoint отдаёт 403 `TARGET_DEPARTMENT_MISMATCH` с
+> denied-audit `<action>` (например `ipmi_controller.view_credentials`,
+> `server_account.view_password`, `server_account.rotate_password`,
+> `server.inventory_received` и т.д.) и `details.reason=actor_department_mismatch`,
+> `details.actor_department_id`, `details.server_department_id`.
+> Не зависит от `INTERNAL_REQUIRE_DEPT_HEADER` — soft mode **не открывает**
+> cross-department leak.
+
+---
+
+## Permission matrix (entity_permissions)
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `permission.grant` | CRITICAL | INSERT в `entity_permissions` через PUT `/permissions/{e}/{r}/{a}` | `entity_permission` | `entity_type`, `role`, `action`, `target_department_id` |
+| `permission.revoke` | CRITICAL | DELETE из `entity_permissions` через DELETE `/permissions/{e}/{r}/{a}` | `entity_permission` | `entity_type`, `role`, `action`, `target_department_id` |
+
+---
+
+## Server accounts — CRUD (user-facing)
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `server_account.create` | CRITICAL | INSERT в `server_accounts` (содержит шифр-пароль) | `server_account` | `server_id`, `login`, `has_sudo`, `department_id` |
+| `server_account.view` | INFO | denied на GET (cross-dept / nonexistent) — success на read не аудитим (шум) | `server_account` | `reason in {permission_denied, cross_department}` |
+| `server_account.list` | INFO | denied на GET list (success — by design не аудитится) | `server_account` | `reason=permission_denied` |
+| `server_account.update` | INFO | PATCH — изменение метаданных (login/unix_groups/sudo) | `server_account` | поля diff'а (whitelist) |
+| `server_account.delete` | CRITICAL | hard-delete | `server_account` | `server_id`, `login` |
+
+---
+
+## IPMI controllers — CRUD (user-facing)
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `ipmi_controller.create` | CRITICAL | INSERT в `ipmi_controllers` (шифр-пароль BMC) | `ipmi_controller` | `server_id`, `kind`, `bmc_vendor`, `endpoint_url`, `username` |
+| `ipmi_controller.view` | INFO | denied на GET (cross-dept / nonexistent / not registered) | `ipmi_controller` | `reason in {permission_denied, cross_department, not_registered}` |
+| `ipmi_controller.list` | INFO | denied на GET list | `ipmi_controller` | `reason=permission_denied` |
+| `ipmi_controller.update` | INFO | PATCH (kind/bmc_vendor/endpoint/username — не password) | `ipmi_controller` | поля diff'а; при смене `bmc_vendor` — новое значение в `details.bmc_vendor` |
+| `ipmi_controller.delete` | CRITICAL | hard-delete | `ipmi_controller` | `server_id`, `kind` |
+| `ipmi_controller.rotate_credentials` | CRITICAL | direct PATCH (legacy) — currently не используется в пользу dispatch+callback | `ipmi_controller` | `server_id` |
+| `ipmi_controller.view_credentials_meta` | INFO | GET `/ipmi/credentials` — метаданные controller'а без plaintext-пароля (kind/endpoint_url/username/last_probed_at) | `ipmi_controller` | `server_id`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept, not_registered}` |
+
+---
+
+## Disks — CRUD
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `disk.create` | INFO | INSERT в `server_disks` | `disk` | `server_id`, `device_name`, `kind`, `size_bytes` |
+| `disk.view` | INFO | denied на GET (cross-dept / nonexistent) | `disk` | `reason` |
+| `disk.list` | INFO | denied на GET list | `disk` | `reason=permission_denied` |
+| `disk.update` | INFO | PATCH | `disk` | поля diff'а |
+| `disk.delete` | WARNING | DELETE | `disk` | `server_id`, `device_name` |
+
+---
+
+## OS versions — глобальный каталог
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `os_version.create` | INFO | INSERT в `os_versions` | `os_version` | `name` |
+| `os_version.view` | INFO | denied на GET | `os_version` | `reason=permission_denied` |
+| `os_version.list` | INFO | denied на GET list | `os_version` | `reason=permission_denied` |
+| `os_version.update` | INFO | PATCH | `os_version` | поля diff'а |
+| `os_version.delete` | WARNING | DELETE | `os_version` | `name` |
+
+---
+
+## Installed packages — live SSH-probe через worker
+
+Таблицы `server_installed_packages` больше нет; единственный endpoint —
+`POST /servers/{id}/installed-packages?pattern=...` (см. миграцию
+`c8e4f6a9b1d2_drop_installed_packages_table`). server_service эмитит
+dispatch-событие, server_worker (`tasks/installed_packages.py`) —
+выполнение task'а с тем же `action`.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `installed_packages.list` | INFO | dispatch success / denied / worker failure + worker task SUCCEEDED/FAILED | `server` | `task_id`, `task_kind`, `pattern`, `department_id`, `package_manager`, `count`, либо `reason` |
+
+---
+
+## Что НЕ аудитится (by design)
+
+- **Health/Ready endpoints** (`/health`, `/ready`) — k8s probes, шумно.
+- **429 rate-limit** — anti-amplification (см. middleware order в `main.py`).
+- **Успешный GET /{id}** (`server.view` / `*.view` на success) — слишком много шума на rendering UI. Denied (cross-dept / not found) — аудитится.
+- **Успешный GET list** (`*.list` на success) — то же.
+- **Stub-эндпоинты (501)** — попадают в `http.client_error` через middleware.
+
+---
+
+## SIEM-rules (рекомендуемые)
+
+- `action=http.platform_admin_blocked` — попытка `account_admin`/`loging_admin` тронуть business data. Должен срабатывать редко (любое срабатывание — расследование).
+- `action in {server_account.view_password, server_account.password_revealed, ipmi_controller.view_credentials, ipmi_controller.credentials_revealed} AND severity=WARNING` — каждое раскрытие секрета. Кросс-чекать с request_id worker-job'ы и (для `*_revealed`) с identity актёра (user/UI vs worker_bot).
+- `action=permission.grant OR permission.revoke` — любое изменение матрицы прав. (Управление каталогом service-ролей переехало в auth_service — соответствующее SIEM-правило живёт там.)
+- `action=server.power_* AND status=denied, reason=not_found_or_cross_dept` — cross-dept probe.
+- `action=internal.dept_header_missing` — если есть в проде, значит `INTERNAL_REQUIRE_DEPT_HEADER` случайно выключен или worker сломался.
+- `action in {ipmi_controller.view_credentials, server_account.view_password, server_account.rotate_password, server.inventory_received, ipmi_controller.credentials_rotated_callback} AND status=denied AND details.reason=actor_department_mismatch` — caller (worker_bot или admin) пытается работать с сервером чужого отдела через `/internal/*`. Высокий приоритет — компрометированный/неправильно выданный PAT.
+- `action=secrets.reencrypt_batch AND status=failure` — total-failure батча (все строки упали с decrypt/encrypt). Сигнал битого ciphertext или неправильной версии master-key.
+- `action=ipmi_controller.credentials_rotated_callback` — каждое подтверждение BMC-ротации worker'ом. CRITICAL-cross-check с dispatch'ем.
+
+---
+
+## Источник
+
+`src/services/audit_events.py:SERVICE_EVENTS` — список, отправляемый
+loging_service'у на startup. При изменении этого файла обновите эту
+таблицу синхронно (либо генерируйте её скриптом).
+
+Регистрация: `audit_events.register_events()` (POST в loging_service на
+startup, best-effort — недоступность loging_service не блокирует boot).

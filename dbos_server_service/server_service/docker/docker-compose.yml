@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  server_service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: server_service
+    environment:
+      APP_ENV: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8002
+      DATABASE_URL: postgresql+psycopg://server_user:server_password@server_postgres:5432/server_db
+      SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
+      SERVER_ENCRYPTION_KEY_VERSION: "1"
+    ports:
+      - "8002:8002"
+    volumes:
+      - ../src:/app/src
+      - ../alembic.ini:/app/alembic.ini:ro
+    # Run migrations, then start uvicorn with auto-reload
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload"
+    depends_on:
+      - server_postgres
+
+  server_postgres:
+    image: postgres:16
+    container_name: server_postgres
+    environment:
+      POSTGRES_DB: server_db
+      POSTGRES_USER: server_user
+      POSTGRES_PASSWORD: server_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - server_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  server_postgres_data:

@@ -1,0 +1,73 @@
+# ШАБЛОН. Реальный 50-ingress.yaml генерирует scripts/k8s/gen_secrets.sh
+# (подставляет __INGRESS_HOST__ → ваш домен).
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dbos-ingress
+  namespace: dbos
+  annotations:
+    # Traefik: редирект HTTP → HTTPS
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - __INGRESS_HOST__
+      secretName: dbos-tls
+  rules:
+    - host: __INGRESS_HOST__
+      http:
+        paths:
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8000
+          - path: /api/logging
+            pathType: Prefix
+            backend:
+              service:
+                name: logging-service
+                port:
+                  number: 8001
+
+---
+# Отдельный Ingress на HTTP (80) — редиректит на HTTPS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dbos-ingress-redirect
+  namespace: dbos
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # Middleware для редиректа HTTP → HTTPS
+    traefik.ingress.kubernetes.io/router.middlewares: dbos-https-redirect@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: __INGRESS_HOST__
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8000
+
+---
+# Middleware для редиректа HTTP→HTTPS (Traefik CRD)
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: https-redirect
+  namespace: dbos
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

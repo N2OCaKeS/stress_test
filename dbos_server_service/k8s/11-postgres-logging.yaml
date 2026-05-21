@@ -1,0 +1,85 @@
+# Postgres для loging_service — изолирован от auth_service.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: logging-postgres-data
+  namespace: dbos
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logging-postgres
+  namespace: dbos
+  labels:
+    app: logging-postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: logging-postgres
+  template:
+    metadata:
+      labels:
+        app: logging-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: logging_db
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_PASSWORD }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "logging_user", "-d", "logging_db"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi" }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: logging-postgres-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logging-postgres
+  namespace: dbos
+spec:
+  type: ClusterIP
+  selector:
+    app: logging-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

@@ -8,6 +8,13 @@
   Роли:          reader / operator / admin для каждого сервиса
   Бот:           nt-deploy-bot
   Правила логов: 5 правил из коробки
+  Серверы:       4 dev-сервера в отделе НТ (с ssh/ipmi/hostname) — добавляется,
+                 если SERVER_URL доступен (по умолчанию — да).
+  Аккаунты:      3 server_account с зашифрованными паролями.
+  IPMI:          2 ipmi_controller (Redfish/iDRAC) с зашифрованными credentials.
+
+Скрипт идемпотентен: 409-конфликты (duplicate) на серверной части молча
+переводятся в OK, чтобы повторный запуск на наполненной БД не падал.
 """
 
 import os
@@ -17,6 +24,7 @@ import httpx
 
 AUTH_URL    = os.environ.get("AUTH_URL", "http://localhost:8000")
 LOG_URL     = os.environ.get("LOG_URL", "http://localhost:8001")
+SERVER_URL  = os.environ.get("SERVER_URL", "http://localhost:8002")
 ADMIN_USER  = "admin"
 ADMIN_PASS  = "1234"
 LOG_API_KEY = "dev-logging-api-key"
@@ -67,6 +75,174 @@ def must(status: int, body: dict, label: str) -> dict:
     return body
 
 
+# ── server_service seeding ────────────────────────────────────────────────────
+
+def _post_idempotent(c: httpx.Client, path: str, body: dict, label: str) -> dict | None:
+    """POST с обработкой 409 как «уже есть». Возвращает body на успехе, None на 409."""
+    r = c.post(path, json=body)
+    if r.status_code in (200, 201):
+        ok(label)
+        return r.json() if r.content else {}
+    if r.status_code == 409:
+        ok(f"{label} (уже есть)")
+        return None
+    fail(f"{label}: HTTP {r.status_code} — {r.text}")
+    sys.exit(1)
+
+
+def _find_existing_server(c: httpx.Client, hostname: str) -> dict | None:
+    """Поиск сервера по hostname среди списка (для resolve id после 409)."""
+    r = c.get("/api/server/v1/servers", params={"limit": 500})
+    if r.status_code != 200:
+        return None
+    for item in r.json().get("items", []):
+        if item.get("hostname") == hostname:
+            return item
+    return None
+
+
+def _seed_server_service(dept_id: str) -> None:
+    """Залить набор dev-серверов / аккаунтов / IPMI под отдел НТ.
+
+    Поднимается под токеном `nt_admin` (admin service-роль в server_service,
+    выдана при создании пользователя). Падать в OK на 409 — основа
+    идемпотентности при повторном `seed_dev.py` без чистки БД.
+    """
+    section("server_service: серверы / аккаунты / IPMI")
+
+    r = httpx.post(f"{AUTH_URL}/api/auth/v1/login",
+                   json={"username": "nt_admin", "password": DEV_PASS})
+    if r.status_code != 200:
+        fail(f"Не удалось залогиниться как nt_admin: {r.text}")
+        sys.exit(1)
+    nt = httpx.Client(
+        base_url=SERVER_URL,
+        headers={"Authorization": f"Bearer {r.json()['access_token']}"},
+        timeout=10,
+    )
+
+    # ── Серверы ──
+    servers = [
+        {
+            "hostname": "nt-load-01.dev.local",
+            "display_name": "NT Load Generator 01",
+            "ip_address": "10.20.1.11",
+            "mgmt_ip_address": "10.20.101.11",
+            "ssh_port": 22,
+            "serial_number": "NT-LOAD-01-SN",
+            "location": "DC1 / R12 / U17",
+        },
+        {
+            "hostname": "nt-load-02.dev.local",
+            "display_name": "NT Load Generator 02",
+            "ip_address": "10.20.1.12",
+            "mgmt_ip_address": "10.20.101.12",
+            "ssh_port": 22,
+            "serial_number": "NT-LOAD-02-SN",
+            "location": "DC1 / R12 / U18",
+        },
+        {
+            "hostname": "nt-db-01.dev.local",
+            "display_name": "NT Postgres Target 01",
+            "ip_address": "10.20.2.21",
+            "mgmt_ip_address": "10.20.102.21",
+            "ssh_port": 22,
+            "serial_number": "NT-DB-01-SN",
+            "location": "DC1 / R14 / U03",
+        },
+        {
+            "hostname": "nt-bench-01.dev.local",
+            "display_name": "NT Sysbench Box",
+            "ip_address": "10.20.3.31",
+            "ssh_port": 2222,
+            "serial_number": "NT-BENCH-01-SN",
+            "location": "DC2 / R02 / U09",
+        },
+    ]
+
+    server_ids: dict[str, str] = {}
+    for s in servers:
+        payload = dict(s, department_id=dept_id)
+        body = _post_idempotent(nt, "/api/server/v1/servers", payload,
+                                f"server {s['hostname']}")
+        if body and body.get("id"):
+            server_ids[s["hostname"]] = body["id"]
+        else:
+            # 409 — достанем id через list-эндпоинт чтобы можно было создать аккаунты.
+            existing = _find_existing_server(nt, s["hostname"])
+            if existing:
+                server_ids[s["hostname"]] = existing["id"]
+
+    # ── server_account (зашифрованные пароли — server_service шифрует сам) ──
+    accounts = [
+        {
+            "server_hostname": "nt-load-01.dev.local",
+            "login": "loadgen",
+            "password": "dev-loadgen-secret-1",
+            "has_sudo": True,
+            "unix_groups": ["loadtest"],
+            "shell": "/bin/bash",
+            "home_dir": "/home/loadgen",
+        },
+        {
+            "server_hostname": "nt-load-02.dev.local",
+            "login": "loadgen",
+            "password": "dev-loadgen-secret-2",
+            "has_sudo": False,
+            "unix_groups": ["loadtest"],
+            "shell": "/bin/bash",
+            "home_dir": "/home/loadgen",
+        },
+        {
+            "server_hostname": "nt-db-01.dev.local",
+            "login": "postgres",
+            "password": "dev-postgres-secret",
+            "has_sudo": False,
+            "unix_groups": ["postgres"],
+            "shell": "/bin/bash",
+            "home_dir": "/var/lib/postgresql",
+        },
+    ]
+    for acc in accounts:
+        srv_id = server_ids.get(acc.pop("server_hostname"))
+        if not srv_id:
+            continue
+        _post_idempotent(
+            nt,
+            "/api/server/v1/server-accounts",
+            dict(acc, server_id=srv_id),
+            f"account {acc['login']} на {srv_id[:12]}…",
+        )
+
+    # ── IPMI контроллеры (Redfish/iDRAC, пароли шифруются сервисом) ──
+    ipmis = [
+        {
+            "server_hostname": "nt-load-01.dev.local",
+            "kind": "redfish",
+            "endpoint_url": "https://10.20.101.11/redfish/v1",
+            "username": "admin",
+            "password": "dev-bmc-secret-load-01",
+        },
+        {
+            "server_hostname": "nt-db-01.dev.local",
+            "kind": "idrac",
+            "endpoint_url": "https://10.20.102.21",
+            "username": "root",
+            "password": "dev-bmc-secret-db-01",
+        },
+    ]
+    for ipmi in ipmis:
+        srv_id = server_ids.get(ipmi.pop("server_hostname"))
+        if not srv_id:
+            continue
+        _post_idempotent(
+            nt,
+            f"/api/server/v1/servers/{srv_id}/ipmi",
+            ipmi,
+            f"ipmi {ipmi['kind']} на {srv_id[:12]}…",
+        )
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -75,8 +251,9 @@ def main() -> None:
     print("  DBOS Server Manager — наполнение dev-окружения")
     print("=" * WIDTH)
 
-    _wait(LOG_URL, "/api/logging/v1/health", "loging_service"); print()
-    _wait(AUTH_URL, "/api/auth/v1/health",   "auth_service");   print()
+    _wait(LOG_URL,    "/api/logging/v1/health", "loging_service"); print()
+    _wait(AUTH_URL,   "/api/auth/v1/health",    "auth_service");   print()
+    _wait(SERVER_URL, "/api/server/v1/health",  "server_service"); print()
 
     # Логин как account_admin
     r = httpx.post(f"{AUTH_URL}/api/auth/v1/login",
@@ -102,35 +279,49 @@ def main() -> None:
         s, b = post(auth, "/api/auth/v1/services", svc)
         must(s, b, f"{svc['service_name']} ({svc['display_name']})")
 
-    # ── Роли сервисов ─────────────────────────────────────────────────────────
-    section("Роли сервисов")
-    # admin создаётся автоматически при создании сервиса
-    for svc_name, roles in {
-        "config_service": [
-            ("reader",   "Читатель", "Только чтение конфигов"),
-            ("operator", "Оператор", "Чтение + обновление конфигов"),
-        ],
-        "server_service": [
-            ("reader",   "Читатель", "Просмотр списка серверов"),
-            ("operator", "Оператор", "Управление серверами"),
-        ],
-    }.items():
-        for role_name, display, desc in roles:
-            s, b = post(auth, f"/api/auth/v1/services/{svc_name}/roles",
-                        {"role_name": role_name, "display_name": display, "description": desc})
-            must(s, b, f"{svc_name}:{role_name}")
-
     # ── Отдел НТ ─────────────────────────────────────────────────────────────
+    # Department-доступ к сервисам должен быть выдан ДО создания ролей —
+    # каталог ролей теперь per-(department, service), а системная роль `admin`
+    # сидится автоматически при grant_access.
     section("Отдел НТ")
     s, b = post(auth, "/api/auth/v1/departments",
                 {"name": "nt", "display_name": "НТ — Нагрузочное тестирование"})
     dept = must(s, b, "отдел НТ")
     dept_id = dept["department_id"]
 
-    for svc_name in ["config_service", "server_service"]:
+    for svc_name in ["config_service", "server_service", "loging_service"]:
         s, b = post(auth, f"/api/auth/v1/departments/{dept_id}/services",
                     {"service_name": svc_name})
         must(s, b, f"НТ → доступ к {svc_name}")
+
+    # ── Роли сервисов (per-department) ────────────────────────────────────────
+    # `admin` создаётся как is_system при выдаче доступа департаменту — здесь
+    # добавляем только остальные роли.
+    #
+    # `worker_bot` — least-privilege scope для server_worker. Гранты сидятся
+    # миграцией `43cf9cfef9e1_seed_worker_bot_entity_permissions.py` в
+    # server_service: только view_password/rotate_password (server_account)
+    # и view_credentials/rotate_credentials (ipmi_controller). Никаких
+    # power.{on,off,reboot}, server.delete, permission.grant и т.п.
+    section("Роли сервисов (отдел НТ)")
+    for svc_name, roles in {
+        "config_service": [
+            ("reader",   "Читатель", "Только чтение конфигов"),
+            ("operator", "Оператор", "Чтение + обновление конфигов"),
+        ],
+        "server_service": [
+            ("reader",     "Читатель",     "Просмотр списка серверов"),
+            ("operator",   "Оператор",     "Управление серверами"),
+            ("worker_bot", "Сервисный бот", "Least-privilege для server_worker: доступ к зашифрованным паролям/IPMI-credentials и их ротация. Не имеет power/CRUD/permission_grant."),
+        ],
+        "loging_service": [
+            ("reader",   "Читатель", "Просмотр логов отдела"),
+        ],
+    }.items():
+        for role_name, display, desc in roles:
+            s, b = post(auth, f"/api/auth/v1/departments/{dept_id}/services/{svc_name}/roles",
+                        {"role_name": role_name, "display_name": display, "description": desc})
+            must(s, b, f"{svc_name}:{role_name}")
 
     # ── Пользователи ─────────────────────────────────────────────────────────
     section("Пользователи")
@@ -140,7 +331,14 @@ def main() -> None:
          "_label": "loging_admin (управление логированием)"},
         {"username": "nt_admin",      "password": DEV_PASS,
          "department_id": dept_id, "platform_role": "department_admin",
-         "_label": "nt_admin (администратор отдела НТ)"},
+         # admin в server_service нужен чтобы department_admin мог реально
+         # CRUD'ить сервера/аккаунты/IPMI через API — без service-роли
+         # entity_permissions матрица не пустит даже department_admin'а.
+         # Используем для seed'инга dev-серверов ниже.
+         "initial_roles": [
+             {"service_name": "server_service", "roles": ["admin"]},
+         ],
+         "_label": "nt_admin (администратор отдела НТ + admin в server_service)"},
         {"username": "nt_developer",  "password": DEV_PASS,
          "department_id": dept_id,
          "_label": "nt_developer (разработчик НТ)"},
@@ -154,6 +352,12 @@ def main() -> None:
          "platform_role": "loging_reader",
          "department_id": dept_id,
          "_label": "loging_reader (читатель логов НТ через platform_role)"},
+        {"username": "user", "password": DEV_PASS,
+         "department_id": dept_id,
+         "initial_roles": [
+             {"service_name": "config_service", "roles": ["reader"]},
+         ],
+         "_label": "user (обычный пользователь НТ, reader в config_service)"},
     ]
     created_users = {}
     for u in users:
@@ -164,11 +368,13 @@ def main() -> None:
 
     # ── Роль loging.reader для nt_senior ─────────────────────────────────────
     section("Роли в loging_service")
-    # Назначаем nt_senior роль reader в loging_service
     nt_senior_id = created_users.get("nt_senior")
     if nt_senior_id:
-        status_r, body_r = post(auth, f"/api/auth/v1/services/loging_service/roles/reader/assign",
-                                {"user_id": nt_senior_id})
+        status_r, body_r = post(
+            auth,
+            f"/api/auth/v1/departments/{dept_id}/services/loging_service/roles/reader/assign",
+            {"user_ids": [nt_senior_id]},
+        )
         if status_r in (200, 201):
             ok("nt_senior → reader в loging_service")
         elif status_r == 409:
@@ -188,6 +394,58 @@ def main() -> None:
     s2, b2 = post(auth, f"/api/auth/v1/bots/{bot['bot_id']}/tokens", {"name": "dev-token"})
     if s2 == 201:
         ok(f"  токен: {b2.get('token', '')[:40]}…")
+
+    # ── server_worker service user + PAT ─────────────────────────────────────
+    # Worker аутентифицируется как обычный пользователь (а не bot) потому что
+    # service_roles для bot-ов в auth_service сейчас не поддерживаются. PAT
+    # живёт пока не отозван, что подходит для долгоиграющего воркера.
+    #
+    # Роль `worker_bot` (а НЕ `admin`!) — least-privilege scope: только
+    # view_password/rotate_password на server_account и
+    # view_credentials/rotate_credentials на ipmi_controller. Никаких
+    # power.{on,off,reboot}, server.delete, permission_grant, role_create.
+    # Гранты сидятся миграцией `43cf9cfef9e1` в server_service.
+    # Раньше воркер сидился с глобальным admin-PAT — теперь scope сужен.
+    section("Сервисный аккаунт server_worker")
+    s, b = post(auth, "/api/auth/v1/users", {
+        "username": "server_worker_user",
+        "password": DEV_PASS,
+        "department_id": dept_id,
+        "initial_roles": [
+            {"service_name": "server_service", "roles": ["worker_bot"]},
+        ],
+    })
+    must(s, b, "server_worker_user (worker_bot least-privilege в server_service)")
+
+    r_login = httpx.post(f"{AUTH_URL}/api/auth/v1/login",
+                        json={"username": "server_worker_user", "password": DEV_PASS})
+    if r_login.status_code != 200:
+        fail(f"Не удалось залогиниться как server_worker_user: {r_login.text}")
+        sys.exit(1)
+    worker_user_token = r_login.json()["access_token"]
+    worker_auth = httpx.Client(base_url=AUTH_URL,
+                              headers={"Authorization": f"Bearer {worker_user_token}"}, timeout=10)
+    s, b = post(worker_auth, "/api/auth/v1/tokens", {
+        "name": "server_worker_pat",
+        "allowed_services": ["server_service", "loging_service"],
+    })
+    worker_pat = b.get("token", "")
+    if s == 201 and worker_pat:
+        ok("  PAT для server_worker (используется автоматически при make up):")
+        print(f"\n    {worker_pat}\n")
+        try:
+            with open("/shared/.worker_pat", "w") as f:
+                f.write(worker_pat)
+            ok("  PAT записан в .dev/.worker_pat (mount /shared у seeder и worker)")
+        except OSError as exc:
+            fail(f"  не удалось записать /shared/.worker_pat: {exc}")
+
+    # ── server_service: dev-сервера + аккаунты + IPMI ────────────────────────
+    # Сидим типовой парк через REST (паролы шифрует server_service внутри —
+    # ключ encryption-секрета в seeder контейнер не пробрасывается). Поэтому
+    # действуем как обычный пользователь под токеном nt_admin (admin в
+    # server_service). Идемпотентность — через перехват 409.
+    _seed_server_service(dept_id)
 
     # ── Правила логирования ───────────────────────────────────────────────────
     section("Правила логирования")
@@ -270,16 +528,24 @@ def main() -> None:
     {'nt_senior':<16}  {'reader в loging_service':<26}  Логи НТ (только чтение)
     {'nt_developer':<16}  {'пользователь НТ':<26}  —
     {'nt_viewer':<16}  {'пользователь НТ':<26}  —
+    {'user':<16}  {'reader в config_service':<26}  —
 
   Документация API:
 
     auth_service    →  http://localhost:8000/docs
     loging_service  →  http://localhost:8001/docs
+    server_service  →  http://localhost:8002/docs    (nt_admin / {DEV_PASS})
+
+  server_service-данные:
+    4 сервера НТ (nt-load-01/02, nt-db-01, nt-bench-01), 3 server_account
+    (loadgen ×2 + postgres) с шифрованными паролями, 2 IPMI-контроллера
+    (Redfish/iDRAC).
 
   Authorize → OAuth2Password:
     auth_service   : admin / {DEV_PASS}
     loging_service : loging_admin / {DEV_PASS}   (полный доступ)
                    : nt_senior / {DEV_PASS}       (читатель логов НТ)
+    server_service : nt_admin / {DEV_PASS}        (admin в server_service)
 
   Ротация логов:
     Все события → 90 дней (настраивается через PUT /api/logging/v1/retention)

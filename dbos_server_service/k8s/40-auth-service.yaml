@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: dbos
+data:
+  APP_ENV: production
+  APP_HOST: 0.0.0.0
+  APP_PORT: "8000"
+  APP_LOG_LEVEL: INFO
+  APP_DEBUG: "false"
+  ACCESS_TOKEN_TTL_MINUTES: "10"
+  REFRESH_TOKEN_TTL_DAYS: "14"
+  # URL logging_service внутри namespace
+  LOGGING_SERVICE_URL: http://logging-service:8001
+  # Docker registry token-flow
+  DOCKER_REGISTRY_ISSUER: auth_service
+  DOCKER_TOKEN_TTL_MINUTES: "5"
+  # DOCKER_REGISTRY_SERVICE — впишите hostname вашего реального registry
+  DOCKER_REGISTRY_SERVICE: registry.local:5000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: dbos
+  labels:
+    app: auth-service
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: dbos/auth-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: auth-service-config
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(AUTH_DB_USER):$(AUTH_DB_PASSWORD)@auth-postgres:5432/auth_db"
+            - name: AUTH_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_DB_USER }
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_DB_PASSWORD }
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_SECRET_KEY }
+            - name: DOCKER_RSA_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: DOCKER_RSA_PRIVATE_KEY }
+            - name: LOGGING_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+            - name: INITIAL_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_USERNAME }
+            - name: INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_PASSWORD }
+            - name: INITIAL_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_EMAIL }
+          command: ["sh", "-c"]
+          args:
+            - |
+              python -m alembic upgrade head &&
+              exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2
+          readinessProbe:
+            httpGet:
+              path: /api/auth/v1/ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/auth/v1/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: dbos
+spec:
+  type: ClusterIP                # внешний доступ — через Ingress (50-ingress.yaml)
+  selector:
+    app: auth-service
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service

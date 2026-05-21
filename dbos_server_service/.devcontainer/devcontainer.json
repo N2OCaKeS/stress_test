@@ -26,7 +26,6 @@
         }
       },
       "extensions": [
-        "Anthropic.claude-code",
         "mhutchie.git-graph",
         "donjayamanne.githistory",
         "yzhang.markdown-all-in-one",
@@ -40,7 +39,6 @@
         "Gruntfuggly.todo-tree",
         "ms-python.isort",
         "hediet.vscode-drawio",
-        "openai.chatgpt",
         "ms-python.black-formatter",
         "ms-python.autopep8",
         "njpwerner.autodocstring",

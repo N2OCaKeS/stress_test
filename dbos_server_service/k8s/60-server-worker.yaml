@@ -1,0 +1,137 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-worker-config
+  namespace: dbos
+data:
+  APP_ENV: production
+  WORKER_LOG_LEVEL: INFO
+  # Cluster-internal URLs соседних сервисов.
+  AUTH_SERVICE_URL: http://auth-service:8000
+  LOGGING_SERVICE_URL: http://logging-service:8001
+  SERVER_SERVICE_URL: http://server-service:8002
+  # ── Redfish / BMC ────────────────────────────────────────────────────────
+  # Slot iDRAC root-account для rotate-password. Dell = 2, HPE = 1, SMC = 3.
+  IPMI_USER_ID: "2"
+  # iDRAC ходит с self-signed cert'ом. Включай "true" только если все BMC
+  # стенда провижены из внутреннего CA.
+  REDFISH_VERIFY_TLS: "false"
+  REDFISH_TIMEOUT_SECONDS: "30"
+  # ── Background master-key rotation ───────────────────────────────────────
+  # Periodic `secrets.reencrypt_lazy` — доедает миграцию шифрования паролей
+  # после bump'а SERVER_ENCRYPTION_KEY_VERSION. Активен только когда
+  # очередь RUNNING_TASKS пуста (не мешает power/SSH задачам).
+  SECRETS_REENCRYPT_ENABLED: "true"
+  SECRETS_REENCRYPT_INTERVAL_SECONDS: "300"
+  SECRETS_REENCRYPT_BATCH_SIZE: "100"
+  # ── Scheduler / heartbeat / sweep ────────────────────────────────────────
+  # Heartbeat + orphan-sweep требуют scheduler (отдельный pod / sidecar
+  # `taskiq scheduler src.main:scheduler`). Если scheduler не запущен —
+  # выставь false, иначе worker'ы лезут в periodic-задачи без координатора.
+  SCHEDULER_ENABLED: "true"
+  WORKER_SHUTDOWN_TIMEOUT_SECONDS: "30"
+  WORKER_ORPHAN_THRESHOLD_SECONDS: "1800"
+  WORKER_HEARTBEAT_STALE_SECONDS: "300"
+  WORKER_HEARTBEAT_CLEANUP_THRESHOLD_SECONDS: "604800"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-worker
+  namespace: dbos
+  labels:
+    app: server-worker
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: server-worker
+  template:
+    metadata:
+      labels:
+        app: server-worker
+    spec:
+      containers:
+        - name: server-worker
+          image: dbos/server-worker:latest
+          imagePullPolicy: Never   # образ импортирован локально в k3s
+          envFrom:
+            - configMapRef:
+                name: server-worker-config
+          env:
+            # ── Собственная БД worker'а (tasks, outbox, heartbeats) ──────────
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db"
+            - name: WORKER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_USER }
+            - name: WORKER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_PASSWORD }
+            # ── taskiq broker (Redis с обязательным password в prod) ─────────
+            # `_require_redis_auth_in_prod` в Settings отвергает запуск
+            # без password — защита от RPUSH из соседнего pod'а.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            # ── Identity worker'а перед server_service ───────────────────────
+            # PAT (bot-token) для bearer-аутентификации в /internal/*
+            # endpoints server_service. Issued через auth_service /bots/...
+            # и заводится в k8s Secret оператором (или make seed для дев).
+            - name: WORKER_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_BOT_TOKEN }
+            # ── Outbound bearer'ы (audit + introspect) ───────────────────────
+            # LOGGING_SERVICE_API_KEY — POST /events в loging_service.
+            # `_require_logging_api_key_in_prod` рубит запуск без ключа
+            # в production (audit-канал не должен молча умолкать).
+            - name: LOGGING_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+            # SERVICE_API_KEY — outbound для introspect собственного
+            # bot-токена worker'а в auth_service.
+            - name: SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_SERVICE_API_KEY }
+            # ── Worker identity ──────────────────────────────────────────────
+            # В k8s hostname == имя pod'а: достаточно для стабильного
+            # worker_id (пишется в tasks.worker_id + worker_heartbeats).
+            - name: WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          command: ["sh", "-c"]
+          args:
+            - |
+              python -m alembic upgrade head &&
+              exec taskiq worker src.main:broker --workers 2
+          # Worker — taskiq consumer, без HTTP. Liveness через
+          # `taskiq` процесс (k8s рестартует контейнер по exit-code).
+          # `terminationGracePeriodSeconds` синхронизирован с
+          # WORKER_SHUTDOWN_TIMEOUT_SECONDS — даём running task'ам
+          # шанс закончиться (или mark_pending_for_retry) до SIGKILL.
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      terminationGracePeriodSeconds: 35
+
+---
+# Защита от вытеснения всех реплик одновременно при обновлении ноды/k3s.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: server-worker-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: server-worker

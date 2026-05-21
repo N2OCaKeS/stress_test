@@ -1,0 +1,266 @@
+"""Platform-admin guard middleware — отрезает platform-admin'ов от бизнес-данных.
+
+### Зачем
+
+Модель безопасности (§7 + §8 в репо-уровневом ``1.txt``) явно разделяет
+**три плоскости администраторов**:
+
+* ``account_admin`` — управляет платформой (пользователи, департаменты,
+  сервисы); создан без департамента → не имеет сервисных ролей нигде.
+* ``loging_admin`` — управляет аудитом; создан без департамента → не
+  имеет сервисных ролей нигде.
+
+``loging_reader`` НЕ блокируется: у него есть department_id (читает логи
+своего отдела), и он одновременно может быть обычным сотрудником с
+сервисными ролями в server_service. Доступ для него регулирует обычная
+матрица прав, не middleware. Старая шапка для истории:
+
+  сервисы); **не видит бизнес-данные**.
+* ``loging_admin`` / ``loging_reader`` — управляют/читают аудит;
+  **не видят бизнес-данные**.
+* ``department_admin`` — управляет своим департаментом, **имеет** доступ
+  к бизнес-данным своего департамента.
+
+Эти три platform-роли создаются **без департамента** (``department_id IS NULL``)
+и **не могут получить ни одной сервисной роли ни в одном прикладном сервисе**.
+Если такой пользователь предъявит JWT прикладному сервису, у него будет
+пустой ``service_roles`` → 403 на любом action-чеке.
+
+Но раньше код в ``services/permissions.py`` пропускал ``account_admin`` как
+global bypass матрицы — это нарушало модель: platform-admin технически мог
+читать/писать business data ``server_service``. Этот middleware закрывает
+дыру **до** того, как запрос вообще попадёт в endpoint-логику.
+
+### Что блокируется
+
+Любой запрос к ``server_service``, у которого Bearer-токен принадлежит
+``platform_role ∈ {account_admin, loging_admin}``, отбивается
+403 ``PLATFORM_ADMIN_BUSINESS_DATA_DENIED``. ``department_admin``
+**не блокируется** — у него есть легитимный доступ к бизнес-данным своего
+отдела. Сервисные роли (``reader``/``operator``/``admin``/``worker_bot``/...)
+тоже **не блокируются** — это обычная rbac-плоскость.
+
+### Что НЕ блокируется (allowlist путей)
+
+* ``/api/server/v1/health`` — liveness probe для k8s, ходит без JWT.
+* ``/api/server/v1/ready`` — readiness probe (SELECT 1 + JSON), без JWT.
+* ``/openapi.json`` / ``/docs`` / ``/redoc`` — публичный Swagger в dev/test
+  (в production они отключены через ``settings.app_env``, см. ``main.py``).
+* Запросы без Authorization-header'а — проходят дальше (Bearer-валидация
+  на уровне ``Depends(get_current_identity)`` отобьёт их 401, либо
+  endpoint анонимный).
+
+### Порядок middleware
+
+Middleware регистрируется **после** ``attach_request_id_and_context`` и
+**до** ``audit_access``/``rate_limit_middleware``:
+
+* ``attach_request_id_and_context`` уже выставил ``request.state.request_id``
+  и ``audit_context`` — нам нужен request_id, чтобы вернуть его в ошибке.
+* ``audit_access`` находится «внутри» (innermost) — наш 403 на самом деле
+  попадает в ``audit_access`` и эмитит ``http.access_denied`` (CRITICAL),
+  плюс мы сами эмитим ``http.platform_admin_blocked`` (WARNING) с
+  explicit-причиной, чтобы SIEM не мешал их с обычными permission_denied.
+* ``rate_limit_middleware`` outermost — 403 platform-admin тоже идёт под
+  rate-limit'ом, чтобы атакующий не мог DoS'ить audit-канал
+  «platform_admin_blocked»-spam'ом.
+
+### Что делается через introspect
+
+Чтобы понять, ``platform_role`` ли это, middleware зовёт тот же
+``_introspect()`` helper, что и обычная dependency
+``get_current_identity``. Это **тот же** HTTP-roundtrip — никакой новой
+нагрузки на ``auth_service``: на endpoint-фазе ``CurrentIdentity``
+сделал бы ровно тот же call, мы просто сделали его на middleware-фазе
+для тех путей, которые не aware о ``CurrentIdentity`` (например,
+``/openapi.json`` без depends).
+
+Поэтому: middleware **не дублирует** introspect — он ставит его раньше,
+а endpoint-уровень всё равно дёрнет ``CurrentIdentity`` отдельно. Это
+не оптимально по сети, но **корректно** (без кэша). TTL-кэш introspect
+давно намечен в TODO (``services/server_service.md`` секция «Depends»);
+когда он появится — оба пути его подхватят без изменений здесь.
+
+В случае любой ошибки introspect (``AuthenticationError`` / network
+fail) middleware **не блокирует** — пропускает дальше. Endpoint-уровень
+``CurrentIdentity`` сам отдаст 401/503 правильно. Мы не хотим
+маскировать сетевые сбои под 403 platform-admin.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import Request
+from starlette.responses import JSONResponse
+
+from src.core.constants import PlatformRole
+from src.core.exceptions import AppException
+# Импортируем модуль целиком, а не функции, чтобы monkeypatch в тестах
+# (patches `src.dependencies.auth._introspect`) реально срабатывал при
+# вызове через `auth_deps._introspect(...)`. Если импортировать функции
+# напрямую (`from ... import _introspect`), создаётся локальная ссылка
+# на оригинал, и patch остаётся незамеченным.
+from src.dependencies import auth as auth_deps
+from src.services import audit_service
+
+# Платформенные роли, которым **запрещён любой доступ** к бизнес-плоскости
+# server_service. По §7 модели account_admin/loging_admin создаются без
+# департамента — у них нет dept-привязки, чтобы вообще видеть business data.
+#
+# loging_reader НЕ блокируется: у него есть department_id (читает логи
+# своего отдела), и он может одновременно быть обычным сотрудником с
+# сервисными ролями в server_service. Если он не имеет сервисной роли
+# в server_service — матрица прав сама отдаст 403, middleware не нужен.
+#
+# Set типизирован по PlatformRole-enum, а не по str — `identity.platform_role`
+# уже приведён к enum через Pydantic, проверка членства идёт по enum-объектам.
+# StrEnum остаётся `str`-subtype, поэтому JSON-сериализация и `in`-проверки
+# по тексту работают как с обычными строками.
+BLOCKED_PLATFORM_ROLES: frozenset[PlatformRole] = frozenset(
+    {PlatformRole.ACCOUNT_ADMIN, PlatformRole.LOGING_ADMIN}
+)
+
+# Public-paths, которые пропускаются без introspect. Health/ready ходят
+# без JWT (k8s probe), openapi/docs — публичные в dev (в production они
+# отключены через docs_url=None в main.create_application).
+_PUBLIC_SUFFIXES: tuple[str, ...] = (
+    "/health",
+    "/ready",
+    "/openapi.json",
+    "/docs",
+    "/redoc",
+)
+
+
+def _is_public_path(path: str) -> bool:
+    """True для путей, которые middleware пропускает без проверки токена.
+
+    Соответствует двум классам:
+
+    * **k8s probes** (``/api/server/v1/health``, ``/api/server/v1/ready``)
+      — не должны зависеть от auth_service.
+    * **OpenAPI/Swagger** (``/openapi.json``, ``/docs``, ``/redoc``, плюс
+      их static-подресурсы Swagger UI) — публичные в dev/test, в проде
+      отключены в ``main.py``.
+
+    Используем ``endswith`` + ``startswith`` для корневых ``/docs`` и
+    ``/redoc`` (FastAPI Swagger UI делает ещё запросы к
+    ``/docs/oauth2-redirect`` и подобным — все они должны проходить).
+    """
+    if path.endswith(_PUBLIC_SUFFIXES):
+        return True
+    # Swagger UI подгружает свои static'и (``/docs/oauth2-redirect`` и пр.)
+    # — пропускаем всё, что начинается с ``/docs/`` или ``/redoc/``.
+    if path.startswith(("/docs/", "/redoc/")):
+        return True
+    return False
+
+
+def _build_forbidden_response(request: Request, role: PlatformRole) -> JSONResponse:
+    """Стандартный envelope для ``PLATFORM_ADMIN_BUSINESS_DATA_DENIED``.
+
+    Совместим по shape с ``app_exception_handler`` — те же поля
+    (``error``/``error_code``/``message``/``details``/``request_id``/``timestamp``).
+    """
+    return JSONResponse(
+        status_code=403,
+        content={
+            "error": "forbidden",
+            "error_code": "PLATFORM_ADMIN_BUSINESS_DATA_DENIED",
+            "message": (
+                "Platform admins cannot access business data of "
+                "server_service. See security model § 7-8."
+            ),
+            "details": {
+                "platform_role": role,
+                "blocked_platform_roles": sorted(BLOCKED_PLATFORM_ROLES),
+            },
+            "request_id": getattr(request.state, "request_id", None),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+async def platform_admin_guard(request: Request, call_next):
+    """ASGI middleware: блокирует platform-admin'ов на ВСЁМ server_service.
+
+    Алгоритм:
+
+    1. ``_is_public_path(path)`` → пропускаем (health/ready/openapi).
+    2. Нет ``Authorization: Bearer ...`` → пропускаем; ``get_current_identity``
+       сам отобьёт 401 если endpoint его требует, а анонимные endpoint'ы
+       пройдут как обычно.
+    3. ``_introspect(token)`` → ``identity``. Если ``_introspect`` бросает
+       любое исключение (network, invalid token, и т.д.) — мы **не**
+       блокируем, передаём дальше. Endpoint-уровень
+       ``Depends(get_current_identity)`` сделает свой ``_introspect`` и
+       отдаст пользователю правильный 401/503.
+    4. ``identity.platform_role ∈ BLOCKED_PLATFORM_ROLES`` → audit + 403.
+    5. Иначе → пропускаем, нормальный flow.
+
+    Audit-event ``http.platform_admin_blocked`` (WARNING) эмитится с
+    explicit-причиной — SIEM-rule «попытка platform-admin'а тронуть
+    business data server_service» строится по этому action-key, не
+    по generic ``http.access_denied``.
+    """
+    path = request.url.path
+    if _is_public_path(path):
+        return await call_next(request)
+
+    token = auth_deps._extract_bearer(request)
+    if token is None:
+        # Анонимный запрос → пусть endpoint решает (нужен ли там auth).
+        # CurrentIdentity дальше отобьёт его 401 если bearer обязателен.
+        return await call_next(request)
+
+    # Introspect через TTL-кэш. Раньше middleware и endpoint dep оба
+    # звали `_introspect` — на 500 RPS это 1000 introspect'ов/сек на один
+    # токен. Теперь оба пути идут через `_get_or_cache_introspect(token)`
+    # (TTL 5s) — один outbound roundtrip на токен в окне 5s.
+    try:
+        body = await auth_deps._get_or_cache_introspect(token)
+    except AppException:
+        # 401 (INVALID_TOKEN_FORMAT) / 503 (AUTH_SERVICE_*) / любые наши
+        # AppException-исключения — не маскируем под platform-admin блок,
+        # пусть endpoint-фаза их обработает по обычному пути.
+        return await call_next(request)
+    except Exception:  # noqa: BLE001 — defence-in-depth: не падаем guard'ом
+        # Любая непредвиденная ошибка introspect (например, JSONDecodeError
+        # от шумящего auth_service) — лучше пропустить запрос, чем дать
+        # false-positive «platform_admin блокирован». Endpoint-уровень
+        # отдаст ServiceUnavailableError по-нормальному.
+        return await call_next(request)
+
+    if not body.get("active"):
+        # Невалидный/протухший токен — пусть endpoint отдаст 401
+        # ACCESS_TOKEN_INVALID. Не наша забота.
+        return await call_next(request)
+
+    identity = auth_deps._to_identity(body)
+    role = identity.platform_role
+    if role not in BLOCKED_PLATFORM_ROLES:
+        # Обычные пользователи, department_admin, worker_bot (через PAT —
+        # у него service_roles, нет platform_role) — пропускаем.
+        return await call_next(request)
+
+    # Platform-admin поймал бизнес-эндпоинт. Эмитим explicit audit + 403.
+    # `details.path` намеренно содержит конкретный URL — для SIEM-rule
+    # «кто-то из platform_admins пробовал тронуть server_service».
+    audit_service.emit(
+        "http.platform_admin_blocked",
+        actor_id=identity.user_id or None,
+        actor_type="user",
+        username=identity.username or None,
+        target_type="http_endpoint",
+        target_id=path,
+        status="denied",
+        allowed=False,
+        details={
+            "platform_role": role,
+            "method": request.method,
+            "path": path,
+            "reason": "platform_admin_business_data_blocked",
+        },
+    )
+    return _build_forbidden_response(request, role)

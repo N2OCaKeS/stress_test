@@ -1,0 +1,130 @@
+"""Pydantic-схемы запроса/ответа для эндпоинтов /servers."""
+
+from datetime import datetime
+from ipaddress import IPv4Address, IPv6Address
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ServerCreate(BaseModel):
+    """Тело POST /servers — обязательные поля при регистрации сервера."""
+
+    hostname: str = Field(..., max_length=255, description="Уникальное hostname сервера (FQDN, ровно один).")
+    display_name: str | None = Field(default=None, max_length=256, description="Опциональное человекочитаемое имя для UI.")
+    ip_address: IPv4Address | IPv6Address = Field(description="Основной IP сервера. UNIQUE в БД (INET-тип).")
+    mgmt_ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Management IP (BMC/iDRAC), если отделён от основного.")
+    ssh_port: int = Field(default=22, ge=1, le=65535, description="SSH-порт для worker-операций (default 22).")
+    department_id: str = Field(description="Department-владелец сервера. Должен совпадать с department'ом caller'а, иначе 403 DEPARTMENT_ISOLATION.")
+    os_version_id: str | None = Field(default=None, description="FK на os_versions. Может быть пустым до первой инвентаризации.")
+    cpu_brand: str | None = Field(default=None, max_length=64, description='Производитель CPU ("Intel", "AMD", "MCST"...). Свободная строка.')
+    cpu_model: str | None = Field(default=None, max_length=256, description='Модель CPU ("Xeon Silver 4314"). Свободная строка, обычно из lscpu Model name.')
+    cpu_cores: int | None = Field(default=None, ge=0, description="Количество физических ядер CPU.")
+    cpu_threads: int | None = Field(default=None, ge=0, description="Количество потоков CPU (с учётом SMT/HT).")
+    cpu_frequency_ghz: float | None = Field(default=None, ge=0, description="Базовая частота CPU в ГГц.")
+    ram_total_mb: int | None = Field(default=None, ge=0, description="Объём RAM в МБ.")
+    network_interface_name: str | None = Field(default=None, max_length=64, description="Имя основного network-интерфейса (eth0, ens192, ...).")
+    serial_number: str | None = Field(default=None, max_length=128, description="Серийный номер железа. UNIQUE в БД, если задан.")
+    asset_tag: str | None = Field(default=None, max_length=128, description="Инвентарный номер (бирка).")
+    location: str | None = Field(default=None, max_length=256, description="Физическое расположение (DC/стойка/юнит).")
+
+
+class ServerUpdate(BaseModel):
+    """Тело PATCH /servers/{id}. Все поля опциональны — `model_dump(exclude_unset=True)` даёт диф."""
+
+    display_name: str | None = Field(default=None, description="Опциональное человекочитаемое имя.")
+    ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Сменить основной IP.")
+    mgmt_ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Сменить management IP.")
+    ssh_port: int | None = Field(default=None, ge=1, le=65535, description="Сменить SSH-порт.")
+    os_version_id: str | None = Field(default=None, description="Сменить FK на os_versions.")
+    cpu_brand: str | None = Field(default=None, max_length=64, description="Обновить производителя CPU.")
+    cpu_model: str | None = Field(default=None, max_length=256, description="Обновить модель CPU.")
+    cpu_cores: int | None = Field(default=None, ge=0, description="Обновить количество ядер CPU.")
+    cpu_threads: int | None = Field(default=None, ge=0, description="Обновить количество потоков CPU.")
+    cpu_frequency_ghz: float | None = Field(default=None, ge=0, description="Обновить базовую частоту CPU в ГГц.")
+    ram_total_mb: int | None = Field(default=None, ge=0, description="Обновить объём RAM.")
+    network_interface_name: str | None = Field(default=None, description="Сменить имя сетевого интерфейса.")
+    serial_number: str | None = Field(default=None, description="Сменить serial_number (UNIQUE).")
+    asset_tag: str | None = Field(default=None, description="Сменить инвентарный номер.")
+    location: str | None = Field(default=None, description="Сменить физическое расположение.")
+
+
+class ServerAcquireRequest(BaseModel):
+    """Тело POST /servers/{id}/busy — захват сервера под тест/задачу."""
+
+    lease_until: datetime | None = Field(
+        default=None,
+        description=(
+            "Опциональный таймстамп окончания lease'а (UTC). Носит "
+            "информационный характер — auto-release сервером не делается. "
+            "Записывается в `busy_note` через сериализацию вместе с purpose."
+        ),
+    )
+    purpose: str | None = Field(
+        default=None, max_length=256,
+        description="Человекочитаемая метка о причине захвата (теста, сценария).",
+    )
+
+
+class ServerOsVersionUpdate(BaseModel):
+    """Тело POST /servers/{id}/os-sync — смена os_version_id вручную."""
+
+    os_version_id: str | None = Field(
+        ...,
+        description=(
+            "FK на os_versions.id. `None` сбрасывает версию (например, после "
+            "переустановки до первой инвентаризации)."
+        ),
+    )
+
+
+class ServerResponse(BaseModel):
+    """Карточка сервера в ответе GET/POST/PATCH /servers."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Server ID (prefix srv_).")
+    hostname: str = Field(description="Уникальное hostname.")
+    display_name: str | None = Field(default=None, description="Человекочитаемое имя.")
+    ip_address: IPv4Address | IPv6Address = Field(description="Основной IP.")
+    mgmt_ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Management IP (BMC).")
+    ssh_port: int = Field(description="SSH-порт.")
+    os_version_id: str | None = Field(default=None, description="FK на os_versions.")
+    os_last_synced_at: datetime | None = Field(default=None, description="Последняя синхронизация OS-инвентарником.")
+    department_id: str = Field(description="Department-владелец.")
+    status: str = Field(description="Статус сервера: unknown/online/offline/maintenance/decommissioned.")
+    power_state: str = Field(description="Состояние питания: on/off/unknown (из кэша).")
+    busy_state: str = Field(description="Состояние занятости: free/busy/testing.")
+    busy_user_id: str | None = Field(default=None, description="user_id того, кто взял сервер (если busy/testing).")
+    busy_since: datetime | None = Field(default=None, description="С какого момента сервер занят.")
+    busy_note: str | None = Field(default=None, description="Произвольная метка о причине занятости.")
+    serial_number: str | None = Field(default=None, description="Серийный номер железа.")
+    asset_tag: str | None = Field(default=None, description="Инвентарный номер.")
+    location: str | None = Field(default=None, description="Физическое расположение.")
+    cpu_brand: str | None = Field(default=None, description="Производитель CPU.")
+    cpu_model: str | None = Field(default=None, description="Модель CPU.")
+    cpu_cores: int | None = Field(default=None, description="Физические ядра CPU.")
+    cpu_threads: int | None = Field(default=None, description="Потоки CPU.")
+    cpu_frequency_ghz: float | None = Field(default=None, description="Базовая частота CPU в ГГц.")
+    ram_total_mb: int | None = Field(default=None, description="RAM в МБ.")
+    network_interface_name: str | None = Field(default=None, description="Имя сетевого интерфейса.")
+    decommissioned_at: datetime | None = Field(default=None, description="Когда сервер выведен из эксплуатации.")
+    created_at: datetime = Field(description="Когда карточка создана.")
+    updated_at: datetime = Field(description="Когда карточка изменена в последний раз.")
+    created_by: str | None = Field(default=None, description="user_id, создавший карточку.")
+
+
+class ServerTaskDispatchResponse(BaseModel):
+    """Стандартный ответ на dispatch worker-task'и (`{task_id, status}`).
+
+    Используется live BMC-probe (`POST /servers/{id}/power/status` →
+    `power.status`) и lightweight inventory-probe (`POST /servers/{id}/
+    inventory/probe` → `inventory.probe`). Структура одинаковая, поэтому
+    держим одну общую схему вместо per-task-kind дубликатов.
+    """
+
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(description="Статус: queued.")
+
+
+# Legacy alias — старые endpoint'ы и тесты импортируют исторический имя.
+ServerPowerStatusDispatchResponse = ServerTaskDispatchResponse

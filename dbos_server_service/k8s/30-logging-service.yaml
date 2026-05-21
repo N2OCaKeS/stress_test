@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logging-service-config
+  namespace: dbos
+data:
+  APP_ENV: production
+  APP_HOST: 0.0.0.0
+  APP_PORT: "8001"
+  APP_LOG_LEVEL: INFO
+  # URL auth_service внутри namespace — для проверки Bearer JWT
+  AUTH_SERVICE_URL: http://auth-service:8000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logging-service
+  namespace: dbos
+  labels:
+    app: logging-service
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0          # zero-downtime обновление
+  selector:
+    matchLabels:
+      app: logging-service
+  template:
+    metadata:
+      labels:
+        app: logging-service
+    spec:
+      containers:
+        - name: logging-service
+          image: dbos/logging-service:latest
+          imagePullPolicy: Never   # критично: образ импортирован локально в k3s
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: logging-service-config
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(LOGGING_DB_USER):$(LOGGING_DB_PASSWORD)@logging-postgres:5432/logging_db"
+            - name: LOGGING_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_USER }
+            - name: LOGGING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_PASSWORD }
+            - name: SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+            # Outbound bearer для POST /introspect в auth_service. На per-service
+            # SERVICE_API_KEYS режиме обязателен — production-guard в Settings
+            # отвергает запуск без него, если SERVICE_API_KEYS заполнен.
+            - name: INTROSPECT_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_INTROSPECT_SERVICE_API_KEY }
+            - name: LOGGING_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_USERNAME }
+            - name: LOGGING_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_PASSWORD }
+          command: ["sh", "-c"]
+          args:
+            - |
+              python -m alembic upgrade head &&
+              exec uvicorn src.main:app --host 0.0.0.0 --port 8001 --workers 2
+          readinessProbe:
+            httpGet:
+              path: /api/logging/v1/ready
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/logging/v1/health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logging-service
+  namespace: dbos
+spec:
+  type: ClusterIP                # внешний доступ — через Ingress (50-ingress.yaml)
+  selector:
+    app: logging-service
+  ports:
+    - port: 8001
+      targetPort: 8001
+
+---
+# Защита от вытеснения всех реплик одновременно при обновлении ноды/k3s
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: logging-service-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: logging-service

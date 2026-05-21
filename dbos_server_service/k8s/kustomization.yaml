@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dbos
+
+resources:
+  - 00-namespace.yaml
+  - 10-postgres-auth.yaml
+  - 11-postgres-logging.yaml
+  - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh (Secret + dbos-tls)
+  - 30-logging-service.yaml
+  - 40-auth-service.yaml
+  - 50-server-service.yaml
+  - 60-server-worker.yaml
+  - 50-ingress.yaml          # генерируется scripts/k8s/gen_secrets.sh из 50-ingress.yaml.template

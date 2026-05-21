@@ -35,3 +35,8 @@ k8s/backups/
 .vscode/
 *.swp
 *.swo
+
+# Внутренняя документация и рабочие заметки (не в VCS)
+obsidian/
+CLAUDE.md
+.claude/

@@ -1,0 +1,218 @@
+# Dev-стек для ручной отладки В КОНТЕЙНЕРАХ (без devcontainer).
+#
+# Поднимает на хосте:
+#   postgres        :5432  (четыре БД: dev_auth, dev_logging, dev_server, dev_server_worker)
+#   redis           :6379  (брокер задач для server_worker)
+#   loging_service  :8001  (uvicorn --reload, src/ примонтирован)
+#   auth_service    :8000  (uvicorn --reload, src/ примонтирован)
+#   server_service  :8002  (uvicorn --reload, src/ примонтирован)
+#   server_worker          (taskiq worker, src/ примонтирован)
+#
+# Использование:
+#   make up           поднять стек (данные сохраняются)
+#   make seed         чистая БД + наполнить dev-данными
+#   make logs         tail логи обоих сервисов
+#   make down         остановить (данные сохраняются)
+#   make down-v       остановить + снести том postgres
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbos_dev_pg:/var/lib/postgresql/data
+      - ./scripts/init_dev_db.sql:/docker-entrypoint-initdb.d/init_dev_db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    # AUTH обязателен: без `--requirepass` любой контейнер в сети может RPUSH
+    # в taskiq queue и инициировать power-cycle / password rotation.
+    # `REDIS_PASSWORD` обязателен в проде; default используется только в dev-стеке.
+    command:
+      - "sh"
+      - "-c"
+      - "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-dev-redis-password}
+    volumes:
+      - dbos_dev_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  loging_service:
+    build:
+      context: ./loging_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_logging
+      SERVICE_API_KEY: dev-logging-api-key
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_ADMIN_USERNAME: admin
+      LOGGING_ADMIN_PASSWORD: "1234"
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload"
+    volumes:
+      - ./loging_service/src:/app/src
+      - ./loging_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8001/api/logging/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  auth_service:
+    build:
+      context: ./auth_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_auth
+      SECRET_KEY: dev-secret-key-for-local-must-be-32-chars!
+      ACCESS_TOKEN_TTL_MINUTES: "60"
+      REFRESH_TOKEN_TTL_DAYS: "14"
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      LOGGING_SERVICE_API_KEY: dev-logging-api-key
+      SERVICE_API_KEY: dev-logging-api-key
+      INITIAL_ADMIN_USERNAME: admin
+      INITIAL_ADMIN_PASSWORD: "1234"
+      INITIAL_ADMIN_EMAIL: admin@example.com
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./auth_service/src:/app/src
+      - ./auth_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8000/api/auth/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  server_service:
+    build:
+      context: ./server_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server
+      AUTH_SERVICE_URL: http://auth_service:8000
+      SERVICE_API_KEY: dev-logging-api-key
+      SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
+      SERVER_ENCRYPTION_KEY_VERSION: "1"
+      SERVER_WORKER_DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
+      SERVER_WORKER_REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/0
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload"
+    volumes:
+      - ./server_service/src:/app/src
+      - ./server_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8002/api/server/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  server_worker:
+    build:
+      context: ./server_worker
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
+      REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/0
+      SERVER_SERVICE_URL: http://server_service:8002
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      WORKER_BOT_TOKEN: ""
+      LOGGING_SERVICE_API_KEY: dev-logging-api-key
+      SERVICE_API_KEY: dev-logging-api-key
+      WORKER_LOG_LEVEL: INFO
+    # If WORKER_BOT_TOKEN is not provided via env but a PAT file is mounted
+    # (written by `make seed`), source it before starting taskiq.
+    command: >
+      sh -c "if [ -z \"$$WORKER_BOT_TOKEN\" ] && [ -s /shared/.worker_pat ]; then
+               export WORKER_BOT_TOKEN=$$(cat /shared/.worker_pat);
+               echo 'server_worker: loaded WORKER_BOT_TOKEN from /shared/.worker_pat';
+             fi;
+             python -m alembic upgrade head &&
+             exec taskiq worker src.main:broker --workers 2"
+    volumes:
+      - ./server_worker/src:/app/src
+      - ./server_worker/alembic.ini:/app/alembic.ini:ro
+      - ./.dev:/shared:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+
+  # Одноразовый раннер seed_dev.py. Не стартует автоматически (profile=tools).
+  # Запуск:  docker compose -f docker-compose.dev.yml run --rm seeder
+  seeder:
+    profiles: ["tools"]
+    build:
+      context: ./auth_service
+      dockerfile: docker/Dockerfile
+    environment:
+      AUTH_URL: http://auth_service:8000
+      LOG_URL: http://loging_service:8001
+      SERVER_URL: http://server_service:8002
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./.dev:/shared:rw
+    command: ["python", "/scripts/seed_dev.py"]
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+
+volumes:
+  dbos_dev_pg:
+  dbos_dev_redis:

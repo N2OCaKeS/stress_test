@@ -1,0 +1,45 @@
+name: server-tests
+
+# Isolated test stack: test DB + test runner.
+# Usage:
+#   docker compose -f tests/docker-compose.test.yml run --rm test-runner          # all tests
+#   docker compose -f tests/docker-compose.test.yml down -v                       # cleanup
+
+services:
+
+  # ── Isolated test database ────────────────────────────────────────────────
+  test-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: server_db_test
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d server_db_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  # ── Test runner ───────────────────────────────────────────────────────────
+  test-runner:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@test-postgres:5432/server_db_test
+      TEST_DATABASE_URL: postgresql+psycopg://app_user:app_password@test-postgres:5432/server_db_test
+      AUTH_SERVICE_URL: http://auth-not-used-in-smoke-tests
+      SERVER_ENCRYPTION_KEY: test-server-encryption-key-do-not-use-anywhere-else
+      SERVER_ENCRYPTION_KEY_VERSION: "1"
+      PYTHONPATH: /app
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+    # Bind tests/ and src/ for fast iteration (no rebuild on new test files).
+    # Paths are relative to this compose file (server_service/tests/).
+    volumes:
+      - .:/app/tests
+      - ../src:/app/src
+      - ../alembic.ini:/app/alembic.ini:ro
+    # Default: run all tests. Override via `run --rm test-runner pytest ...`
+    command: ["pytest", "tests/", "-v", "--tb=short"]
